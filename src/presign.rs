@@ -47,7 +47,8 @@ async fn do_presign<C: CSCurve>(
     args: PresignArguments<C>,
 ) -> Result<PresignOutput<C>, ProtocolError> {
     // Spec 1.2 + 1.3
-    let big_k: C::ProjectivePoint = args.triple0.1.big_a.into();
+    let big_k: C::ProjectivePoint = args.triple0.1.big_a.into();    
+    
     let big_d = args.triple0.1.big_b;
     let big_kd = args.triple0.1.big_c;
 
@@ -61,7 +62,7 @@ async fn do_presign<C: CSCurve>(
 
     let k_i = args.triple0.0.a;
     let k_prime_i = bt_lambda * k_i;
-    let kd_i: C::Scalar = bt_lambda * args.triple0.0.c;
+    let kd_i: C::Scalar = bt_lambda * args.triple0.0.c;  // if this is zero, then the broadcast kdi is also zero.
 
     let a_i = args.triple1.0.a;
     let b_i = args.triple1.0.b;
@@ -96,6 +97,13 @@ async fn do_presign<C: CSCurve>(
     seen.put(me);
     while !seen.full() {
         let (from, kd_j): (_, ScalarPrimitive<C>) = chan.recv(wait0).await?;
+
+        if kd_j.is_zero().into() {
+            return Err(ProtocolError::AssertionFailed(
+                "Received zero share of kd, indicating a triple wasn't available.".to_string(),
+            ));
+        }
+
         if !seen.put(from) {
             continue;
         }
