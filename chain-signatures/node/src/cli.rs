@@ -26,6 +26,13 @@ pub enum Cli {
             default_value("https://rpc.testnet.near.org")
         )]
         near_rpc: String,
+        /// Light client address
+        #[arg(
+            long,
+            env("MPC_RECOVERY_LIGHT_CLIENT_ADDR"),
+            default_value("http://localhost:3030")
+        )]
+        light_client_addr: String,
         /// MPC contract id
         #[arg(
             long,
@@ -101,6 +108,7 @@ impl Cli {
         match self {
             Cli::Start {
                 near_rpc,
+                light_client_addr,
                 account_id,
                 mpc_contract_id,
                 account_sk,
@@ -122,6 +130,8 @@ impl Cli {
                     "start".to_string(),
                     "--near-rpc".to_string(),
                     near_rpc,
+                    "--light-client-addr".to_string(),
+                    light_client_addr,
                     "--mpc-contract-id".to_string(),
                     mpc_contract_id.to_string(),
                     "--account-id".to_string(),
@@ -178,6 +188,7 @@ fn spinup_indexer(
     options: &indexer::Options,
     mpc_contract_id: &AccountId,
     account_id: &AccountId,
+    light_client_addr: Url,
     sign_queue: &Arc<RwLock<SignQueue>>,
     gcp: &GcpService,
 ) -> std::thread::JoinHandle<()> {
@@ -203,8 +214,14 @@ fn spinup_indexer(
             // TODO/NOTE: currently indexer does not have any interrupt handlers and will never yield back
             // as successful. We can add interrupt handlers in the future but this is not important right
             // now since we managing nodes through integration tests that can kill it or through docker.
-            let Err(err) = indexer::run(options, mpc_contract_id, account_id, sign_queue, gcp)
-            else {
+            let Err(err) = indexer::run(
+                options,
+                mpc_contract_id,
+                account_id,
+                light_client_addr.clone(),
+                sign_queue,
+                gcp,
+            ) else {
                 break;
             };
             tracing::error!(%err, "indexer failed");
@@ -239,6 +256,7 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
         Cli::Start {
             near_rpc,
             web_port,
+            light_client_addr,
             mpc_contract_id,
             account_id,
             account_sk,
@@ -262,10 +280,12 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
                 .block_on(async {
                     let (sender, receiver) = mpsc::channel(16384);
                     let gcp_service = GcpService::init(&account_id, &storage_options).await?;
+
                     let indexer_handle = spinup_indexer(
                         &indexer_options,
                         &mpc_contract_id,
                         &account_id,
+                        Url::parse(&light_client_addr).unwrap(),
                         &sign_queue,
                         &gcp_service,
                     );

@@ -59,6 +59,7 @@ impl<'a> Node<'a> {
         };
         let args = mpc_recovery_node::cli::Cli::Start {
             near_rpc: near_rpc.clone(),
+            light_client_addr: ctx.light_client.address.clone(),
             mpc_contract_id: mpc_contract_id.clone(),
             account_id: account_id.clone(),
             account_sk: account_sk.to_string().parse()?,
@@ -146,6 +147,7 @@ impl<'a> Node<'a> {
             near_crypto::SecretKey::from_seed(near_crypto::KeyType::ED25519, "integration-test");
         let args = mpc_recovery_node::cli::Cli::Start {
             near_rpc: near_rpc.clone(),
+            light_client_addr: ctx.light_client.address.clone(),
             mpc_contract_id: mpc_contract_id.clone(),
             account_id: account_id.clone(),
             account_sk: account_sk.to_string().parse()?,
@@ -479,6 +481,79 @@ impl<'a> LakeIndexer<'a> {
             rpc_host_address_proxied,
             toxi_server_process,
             toxi_server_container,
+        })
+    }
+}
+
+pub struct LightClient<'a> {
+    pub container: Container<'a, GenericImage>,
+    pub bucket_name: String, // TODO: Do we need this?
+    pub region: String,      // TODO: Do we need this?
+    pub address: String,
+    pub host_address: String,
+    // TODO: any additional fields?
+}
+
+impl<'a> LightClient<'a> {
+    pub const CONTAINER_RPC_PORT: u16 = 3031; // TODO: is this port ok?
+
+    pub async fn run(
+        docker_client: &'a DockerClient,
+        network: &str,
+        bucket_name: String,
+        region: String,
+    ) -> anyhow::Result<LightClient<'a>> {
+        tracing::info!(
+            network,
+            bucket_name,
+            region,
+            "running LightClient container..."
+        );
+
+        let image = GenericImage::new(
+            "ghcr.io/near/near-light-client/light-client",
+            "f4ce326d9c2a6728e8bc39b4d8720f81be87dc43",
+        ) // TODO: deploy and update docker image version
+        // .with_env_var("AWS_ACCESS_KEY_ID", "FAKE_LOCALSTACK_KEY_ID") // Replace with LightCLient specific env vars if any
+        // .with_env_var("AWS_SECRET_ACCESS_KEY", "FAKE_LOCALSTACK_ACCESS_KEY")
+        .with_wait_for(WaitFor::message_on_stderr("Starting Streamer")) // TODO: replace with message from LightClient
+        .with_exposed_port(Self::CONTAINER_RPC_PORT);
+        let image: RunnableImage<GenericImage> = (
+            image,
+            vec![
+                "--bucket".to_string(), // TODO: check if we need these args, what args do we need?
+                bucket_name.clone(),
+                "--region".to_string(),
+                region.clone(),
+                "--stream-while-syncing".to_string(),
+                "sync-from-latest".to_string(),
+            ],
+        )
+            .into();
+        let image = image.with_network(network);
+        let container = docker_client.cli.run(image);
+        let address = docker_client
+            .get_network_ip_address(&container, network)
+            .await?;
+
+        // TODO: check address and host_port, is it what we need?
+        let address = format!("http://{}:{}", address, Self::CONTAINER_RPC_PORT);
+        let host_port = container.get_host_port_ipv4(Self::CONTAINER_RPC_PORT);
+        let host_address = format!("http://127.0.0.1:{host_port}");
+
+        tracing::info!(
+            bucket_name,
+            region,
+            address,
+            host_address,
+            "NEAR Lake Indexer container is running"
+        );
+        Ok(LightClient {
+            container,
+            bucket_name,
+            region,
+            address,
+            host_address,
         })
     }
 }

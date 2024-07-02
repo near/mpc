@@ -50,6 +50,7 @@ impl Node {
         let mpc_contract_id = ctx.mpc_contract.id().clone();
         let cli = mpc_recovery_node::cli::Cli::Start {
             near_rpc: near_rpc.clone(),
+            light_client_addr: ctx.light_client.address.clone(),
             mpc_contract_id: mpc_contract_id.clone(),
             account_id: account_id.clone(),
             account_sk: account_sk.to_string().parse()?,
@@ -108,6 +109,7 @@ impl Node {
         let mpc_contract_id = ctx.mpc_contract.id().clone();
         let cli = mpc_recovery_node::cli::Cli::Start {
             near_rpc: near_rpc.clone(),
+            light_client_addr: ctx.light_client.address.clone(),
             mpc_contract_id: mpc_contract_id.clone(),
             account_id: account_id.clone(),
             account_sk: account_sk.to_string().parse()?,
