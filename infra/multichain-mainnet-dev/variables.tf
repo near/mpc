@@ -99,7 +99,7 @@ variable "static_env" {
     },
     {
       name  = "MPC_RECOVERY_INDEXER_START_BLOCK_HEIGHT"
-      value = 159307004
+      value = 122414750
     },
     {
       name  = "AWS_DEFAULT_REGION"
@@ -107,7 +107,7 @@ variable "static_env" {
     },
     {
       name  = "MPC_RECOVERY_GCP_PROJECT_ID"
-      value = "pagoda-discovery-platform-prod"
+      value = "pagoda-discovery-platform-dev"
     },
     {
       name  = "MPC_RECOVERY_WEB_PORT"
