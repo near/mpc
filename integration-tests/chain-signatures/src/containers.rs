@@ -307,14 +307,11 @@ impl<'a> LakeIndexer<'a> {
             "running NEAR Lake Indexer container..."
         );
 
-        let image = GenericImage::new(
-            "ghcr.io/near/near-lake-indexer",
-            "node-1.40-rc.1-localstack",
-        )
-        .with_env_var("AWS_ACCESS_KEY_ID", "FAKE_LOCALSTACK_KEY_ID")
-        .with_env_var("AWS_SECRET_ACCESS_KEY", "FAKE_LOCALSTACK_ACCESS_KEY")
-        .with_wait_for(WaitFor::message_on_stderr("Starting Streamer"))
-        .with_exposed_port(Self::CONTAINER_RPC_PORT);
+        let image = GenericImage::new("ghcr.io/near/near-lake-indexer", "node-1.40.0-localstack")
+            .with_env_var("AWS_ACCESS_KEY_ID", "FAKE_LOCALSTACK_KEY_ID")
+            .with_env_var("AWS_SECRET_ACCESS_KEY", "FAKE_LOCALSTACK_ACCESS_KEY")
+            .with_wait_for(WaitFor::message_on_stderr("Starting Streamer"))
+            .with_exposed_port(Self::CONTAINER_RPC_PORT);
         let image: RunnableImage<GenericImage> = (
             image,
             vec![
