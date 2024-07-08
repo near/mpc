@@ -191,7 +191,7 @@ impl VersionedMpcContract {
         match self.sign_result(&request) {
             None => {
                 self.add_sign_request(&request);
-                log!(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
+                env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
                 Self::ext(env::current_account_id()).sign_helper(request, 0)
             }
             Some(_) => env::panic_str("Signature for this payload already requested"),
@@ -558,10 +558,7 @@ impl VersionedMpcContract {
                             "Signature was not provided in time. Please, try again.".to_string(),
                         ))
                     } else {
-                        log!(&format!(
-                            "sign_helper: signature not ready yet (depth={})",
-                            depth
-                        ));
+                        log!("sign_helper: signature not ready yet (depth={})", depth);
                         let account_id = env::current_account_id();
                         PromiseOrValue::Promise(
                             Self::ext(account_id).sign_helper(request, depth + 1),

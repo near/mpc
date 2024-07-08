@@ -120,6 +120,17 @@ dependencies = [
 
 [[package]]
 name = "ahash"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "891477e0c6a8957309ee5c45a6368af3ae14bb510732d2684ffa19af310920f9"
+dependencies = [
+ "getrandom 0.2.15",
+ "once_cell",
+ "version_check",
+]
+
+[[package]]
+name = "ahash"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e89da841a80418a9b391ebaea17f5c112ffaaa96f621d2c285b5174da76b9011"
@@ -554,7 +565,7 @@ version = "1.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bf0ff573cd2ca6c250526ce550dc6a98d4d8f91605cc8409650e7a3bb3b5045"
 dependencies = [
- "ahash",
+ "ahash 0.8.11",
  "aws-credential-types",
  "aws-runtime",
  "aws-sigv4",
@@ -574,7 +585,7 @@ dependencies = [
  "hmac 0.12.1",
  "http 0.2.12",
  "http-body 0.4.6",
- "lru",
+ "lru 0.12.3",
  "once_cell",
  "percent-encoding 2.3.1",
  "regex-lite",
@@ -2777,6 +2788,9 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
+dependencies = [
+ "ahash 0.7.8",
+]
 
 [[package]]
 name = "hashbrown"
@@ -2784,7 +2798,7 @@ version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 dependencies = [
- "ahash",
+ "ahash 0.8.11",
  "allocator-api2",
 ]
 
@@ -3555,6 +3569,15 @@ name = "log"
 version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
+
+[[package]]
+name = "lru"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e999beba7b6e8345721bd280141ed958096a2e4abdf74f67ff4ce49b4b54e47a"
+dependencies = [
+ "hashbrown 0.12.3",
+]
 
 [[package]]
 name = "lru"
@@ -4382,7 +4405,7 @@ dependencies = [
  "near-primitives-core 0.20.1",
  "near-rpc-error-macro 0.20.1",
  "near-stdx 0.20.1",
- "near-vm-runner",
+ "near-vm-runner 0.20.1",
  "num-rational 0.3.2",
  "once_cell",
  "primitive-types",
@@ -4545,22 +4568,23 @@ dependencies = [
 
 [[package]]
 name = "near-sdk"
-version = "5.1.0"
-source = "git+https://github.com/near/near-sdk-rs.git?rev=5a9acaedc95c5721d2088f263bc99e3de574decf#5a9acaedc95c5721d2088f263bc99e3de574decf"
+version = "5.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "951ac0ba9c90e4ed6e927914d2ecee3d8ae2d74e794656b5ca42a992bd370863"
 dependencies = [
  "base64 0.21.7",
  "borsh",
  "bs58 0.5.1",
  "near-account-id",
- "near-crypto 0.20.1",
+ "near-crypto 0.23.0",
  "near-gas",
- "near-parameters 0.20.1",
- "near-primitives 0.20.1",
- "near-primitives-core 0.20.1",
+ "near-parameters 0.23.0",
+ "near-primitives 0.23.0",
+ "near-primitives-core 0.23.0",
  "near-sdk-macros",
  "near-sys",
  "near-token",
- "near-vm-runner",
+ "near-vm-runner 0.23.0",
  "once_cell",
  "serde",
  "serde_json",
@@ -4569,8 +4593,9 @@ dependencies = [
 
 [[package]]
 name = "near-sdk-macros"
-version = "5.1.0"
-source = "git+https://github.com/near/near-sdk-rs.git?rev=5a9acaedc95c5721d2088f263bc99e3de574decf#5a9acaedc95c5721d2088f263bc99e3de574decf"
+version = "5.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa2d758ff2701e7a53292a9dc2eeede6ed648574456c14f2464bf0a3ba047be3"
 dependencies = [
  "Inflector",
  "darling 0.20.9",
@@ -4614,8 +4639,9 @@ checksum = "29e1897481272eb144328abd51ca9f59b5b558e7a6dc6e2177c8c9bb18fbd818"
 
 [[package]]
 name = "near-sys"
-version = "0.2.1"
-source = "git+https://github.com/near/near-sdk-rs.git?rev=5a9acaedc95c5721d2088f263bc99e3de574decf#5a9acaedc95c5721d2088f263bc99e3de574decf"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbf4ca5c805cb78700e10e43484902d8da05f25788db277999d209568aaf4c8e"
 
 [[package]]
 name = "near-time"
@@ -4665,6 +4691,35 @@ dependencies = [
  "sha2 0.10.8",
  "sha3",
  "strum 0.24.1",
+ "thiserror",
+ "tracing",
+ "zeropool-bn",
+]
+
+[[package]]
+name = "near-vm-runner"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b382e9fda99cdc6f1684d95e9f10ef0ed556c14ff972099269e96f8fde84064"
+dependencies = [
+ "borsh",
+ "ed25519-dalek 2.1.1",
+ "enum-map",
+ "lru 0.7.8",
+ "near-crypto 0.23.0",
+ "near-parameters 0.23.0",
+ "near-primitives-core 0.23.0",
+ "near-stdx 0.23.0",
+ "num-rational 0.3.2",
+ "once_cell",
+ "ripemd",
+ "rustix 0.38.34",
+ "serde",
+ "serde_repr",
+ "sha2 0.10.8",
+ "sha3",
+ "strum 0.24.1",
+ "tempfile",
  "thiserror",
  "tracing",
  "zeropool-bn",
