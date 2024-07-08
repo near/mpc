@@ -1011,8 +1011,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93f2635620bf0b9d4576eb7bb9a38a55df78bd1205d26fa994b25911a69f212f"
 dependencies = [
  "bitcoin_hashes",
- "rand 0.7.3",
- "rand_core 0.5.1",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
  "serde",
  "unicode-normalization",
 ]
@@ -2693,16 +2693,16 @@ dependencies = [
 
 [[package]]
 name = "google-datastore1"
-version = "5.0.5+20240617"
+version = "5.0.4+20240226"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e6427c44293dbdcc7bcad67aa0eff2fe72bcd7de03c73c6da26db4c019557c4"
+checksum = "9d822056b35f25b564e77b0cfd9bdcbad8fc5c891bf079d61536572d67bfc8e3"
 dependencies = [
  "anyhow",
  "google-apis-common",
  "http 0.2.12",
  "hyper 0.14.29",
- "hyper-rustls 0.25.0",
- "itertools 0.13.0",
+ "hyper-rustls 0.24.2",
+ "itertools 0.10.5",
  "mime",
  "serde",
  "serde_json",
@@ -3717,7 +3717,7 @@ name = "mpc-keys"
 version = "0.1.0"
 dependencies = [
  "borsh",
- "hex 0.3.2",
+ "hex 0.4.3",
  "hpke",
  "rand 0.8.5",
  "serde",
