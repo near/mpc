@@ -44,8 +44,8 @@ url = { version = "2.4.0", features = ["serde"] }
 near-account-id = "1.0.0"
 near-crypto = "0.23.0"
 near-fetch = "0.5.0"
-near-lake-framework = { git = "https://github.com/near/near-lake-framework-rs/", branch = "node/1.40" }
-near-lake-primitives = { git = "https://github.com/near/near-lake-framework-rs/", branch = "node/1.40" }
+near-lake-framework = { git = "https://github.com/near/near-lake-framework-rs", branch = "node/1.40" }
+near-lake-primitives = { git = "https://github.com/near/near-lake-framework-rs", branch = "node/1.40" }
 near-primitives = "0.23.0"
 near-sdk = { git = "https://github.com/near/near-sdk-rs.git", rev = "5a9acaedc95c5721d2088f263bc99e3de574decf", features = [
     "legacy",
