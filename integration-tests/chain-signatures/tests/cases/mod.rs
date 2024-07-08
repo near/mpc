@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::actions::{self, wait_for};
+use crate::actions::{self, add_latency, wait_for};
 use crate::with_multichain_nodes;
 
 use crypto_shared::{self, derive_epsilon, derive_key, x_coordinate, ScalarExt};
@@ -310,6 +310,29 @@ async fn test_signature_offline_node_back_online() -> anyhow::Result<()> {
             // retry the same payload multiple times because we might pick a presignature that is not present in node 2 initially
             actions::single_payload_signature_production(&ctx, &state_0).await?;
 
+            Ok(())
+        })
+    })
+    .await
+}
+
+#[test(tokio::test)]
+async fn test_lake_congestion() -> anyhow::Result<()> {
+    with_multichain_nodes(MultichainConfig::default(), |ctx| {
+        Box::pin(async move {
+            // Currently, with a 10+-1 latency it cannot generate enough tripplets in time
+            // with a 5+-1 latency it fails to wait for signature response
+            add_latency("lake-rpc", true, 1.0, 2_000, 200).await?;
+            // Also mock lake indexer in high load that it becomes slower to finish process
+            // sig req and write to s3
+            // with a 1s latency it fails to wait for signature response in time
+            add_latency("lake-s3", false, 1.0, 100, 10).await?;
+
+            let state_0 = wait_for::running_mpc(&ctx, Some(0)).await?;
+            assert_eq!(state_0.participants.len(), 3);
+            wait_for::has_at_least_triples(&ctx, 2).await?;
+            wait_for::has_at_least_presignatures(&ctx, 2).await?;
+            actions::single_signature_rogue_responder(&ctx, &state_0).await?;
             Ok(())
         })
     })
