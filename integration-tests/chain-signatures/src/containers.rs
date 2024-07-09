@@ -314,7 +314,7 @@ impl<'a> LakeIndexer<'a> {
         let toxi_server = async_process::Command::new("toxiproxy-server")
             .kill_on_drop(true)
             .spawn()
-            .with_context(|| "failed to run toxiproxy-server")?;
+            .with_context(|| "failed to run the toxiproxy-server")?;
         utils::ping_until_ok(
             &format!("{}/version", Self::TOXI_SERVER_PROCESS_ADDRESS),
             10,
