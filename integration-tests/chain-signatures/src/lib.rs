@@ -233,6 +233,11 @@ impl Nodes<'_> {
         }
         Ok(gcp_services)
     }
+
+    pub fn proxy_name_for_node(&self, id: usize) -> String {
+        let account_id = self.near_accounts();
+        format!("rpc_from_node_{}", account_id[id].id())
+    }
 }
 
 pub struct Context<'a> {

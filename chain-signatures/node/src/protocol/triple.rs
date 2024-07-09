@@ -282,7 +282,6 @@ impl TripleManager {
             self.taken.insert(id0, Instant::now());
             self.taken.insert(id1, Instant::now());
 
-            // only remove the triples locally when the datastore removal was successful
             Ok((
                 self.triples.remove(&id0).unwrap(),
                 self.triples.remove(&id1).unwrap(),

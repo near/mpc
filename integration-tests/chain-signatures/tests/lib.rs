@@ -137,8 +137,7 @@ where
     let sk_local_path = nodes.ctx().storage_options.sk_share_local_path.clone();
 
     let connector = JsonRpcClient::new_client();
-    // Also use proxied rpc to mock unstable when submit transaction
-    let jsonrpc_client = connector.connect(&nodes.ctx().lake_indexer.rpc_host_address_proxied);
+    let jsonrpc_client = connector.connect(&nodes.ctx().lake_indexer.rpc_host_address);
     let rpc_client = near_fetch::Client::from_client(jsonrpc_client.clone());
     let result = f(MultichainTestContext {
         nodes,

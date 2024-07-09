@@ -322,7 +322,10 @@ async fn test_lake_congestion() -> anyhow::Result<()> {
         Box::pin(async move {
             // Currently, with a 10+-1 latency it cannot generate enough tripplets in time
             // with a 5+-1 latency it fails to wait for signature response
-            add_latency("lake-rpc", true, 1.0, 2_000, 200).await?;
+            add_latency(&ctx.nodes.proxy_name_for_node(0), true, 1.0, 2_000, 200).await?;
+            add_latency(&ctx.nodes.proxy_name_for_node(1), true, 1.0, 2_000, 200).await?;
+            add_latency(&ctx.nodes.proxy_name_for_node(2), true, 1.0, 2_000, 200).await?;
+
             // Also mock lake indexer in high load that it becomes slower to finish process
             // sig req and write to s3
             // with a 1s latency it fails to wait for signature response in time
@@ -334,6 +337,44 @@ async fn test_lake_congestion() -> anyhow::Result<()> {
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
             actions::single_signature_rogue_responder(&ctx, &state_0).await?;
             Ok(())
+        })
+    })
+    .await
+}
+
+#[test(tokio::test)]
+async fn test_multichain_reshare_with_lake_congestion() -> anyhow::Result<()> {
+    let config = MultichainConfig::default();
+    with_multichain_nodes(config.clone(), |mut ctx| {
+        Box::pin(async move {
+            let state = wait_for::running_mpc(&ctx, Some(0)).await?;
+            assert!(state.threshold == 2);
+            assert!(state.participants.len() == 3);
+
+            // add latency to node1->rpc, but not node0->rpc
+            add_latency(&ctx.nodes.proxy_name_for_node(1), true, 1.0, 2_000, 200).await?;
+            // remove node2, node0 and node1 should still reach concensus
+            // this fails if the latency above is too long (10s)
+            assert!(ctx.remove_participant(None).await.is_ok());
+            let state = wait_for::running_mpc(&ctx, Some(0)).await?;
+            assert!(state.participants.len() == 2);
+            // Going below T should error out
+            assert!(ctx.remove_participant(None).await.is_err());
+            let state = wait_for::running_mpc(&ctx, Some(0)).await?;
+            assert!(state.participants.len() == 2);
+            assert!(ctx.add_participant().await.is_ok());
+            // add latency to node2->rpc
+            add_latency(&ctx.nodes.proxy_name_for_node(2), true, 1.0, 2_000, 200).await?;
+            let state = wait_for::running_mpc(&ctx, Some(0)).await?;
+            assert!(state.participants.len() == 3);
+            assert!(ctx.remove_participant(None).await.is_ok());
+            let state = wait_for::running_mpc(&ctx, Some(0)).await?;
+            assert!(state.participants.len() == 2);
+            // make sure signing works after reshare
+            let new_state = wait_for::running_mpc(&ctx, None).await?;
+            wait_for::has_at_least_triples(&ctx, 2).await?;
+            wait_for::has_at_least_presignatures(&ctx, 2).await?;
+            actions::single_signature_production(&ctx, &new_state).await
         })
     })
     .await
