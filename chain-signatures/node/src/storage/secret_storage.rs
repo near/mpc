@@ -65,16 +65,15 @@ impl SecretNodeStorage for SecretManagerNodeStorage {
             .load_secret(&self.sk_share_secret_id)
             .await?;
         match raw_data {
-            Some(data) if data.len() > 1 => {
-                if let Ok(persistent_node_data) = serde_json::from_slice(&data) {
-                    Ok(Some(persistent_node_data))
-                } else {
-                    tracing::info!("failed to convert stored data to key share, presuming it is missing");
+            Some(data) if data.len() > 1 => match serde_json::from_slice(&data) {
+                Ok(persistent_node_data) => Ok(Some(persistent_node_data)),
+                Err(err) => {
+                    tracing::warn!(%err, data_len = data.len(), "failed to convert stored data to key share, presuming it is missing");
                     Ok(None)
                 }
             },
             _ => {
-                tracing::info!("failed to load existing key share, presuming it is missing");
+                tracing::warn!("failed to load existing key share, presuming it is missing");
                 Ok(None)
             }
         }
