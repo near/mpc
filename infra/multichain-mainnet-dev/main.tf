@@ -142,23 +142,25 @@ resource "google_compute_target_http_proxy" "default" {
 resource "google_compute_url_map" "default" {
   count           = length(var.node_configs)
   name            = "multichain-mainnet-dev-url-map-${count.index}"
-  default_service = google_compute_backend_service.multichain_backend.id
+  default_service = google_compute_backend_service.multichain_backend[count.index].id
 }
 
 resource "google_compute_backend_service" "multichain_backend" {
-  name                  = "multichain-service-mainnet-dev"
+  count                 = length(var.node_configs)
+  name                  = "multichain-service-mainnet-dev-${count.index}"
   load_balancing_scheme = "EXTERNAL"
 
   backend {
-    group = google_compute_instance_group.multichain_group.id
+    group = google_compute_instance_group.multichain_group[count.index].id
   }
 
   health_checks = [google_compute_health_check.multichain_healthcheck.id]
 }
 
 resource "google_compute_instance_group" "multichain_group" {
-  name      = "multichain-instance-group-mainnet-dev"
-  instances = module.instances[*].self_links[0]
+  count     = length(var.node_configs)
+  name      = "multichain-instance-group-mainnet-dev-${count.index}"
+  instances = [module.instances[count.index].self_links[0]]
 
   zone = "us-central1-a"
   named_port {
