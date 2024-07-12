@@ -216,15 +216,15 @@ pub enum SignatureError {
 #[derive(Debug, thiserror::Error)]
 pub enum WaitForError {
     #[error("Json RPC request error: {0}")]
-    JsonRpcError(String),
+    JsonRpc(String),
     #[error("signature tx error: {0}")]
-    SignatureError(SignatureError),
+    Signature(SignatureError),
     #[error("Serde json error: {0}")]
-    SerdeJsonError(String),
+    SerdeJson(String),
     #[error("Parsing error")]
-    ParsingError,
-    #[error("Near fetch error: {0}")]
-    FetchError(String),
+    Parsing,
+    #[error("Near fetch: {0}")]
+    Fetch(String),
 }
 
 pub async fn signature_responded(
@@ -243,12 +243,12 @@ pub async fn signature_responded(
             })
             .await
         {
-            Err(error) => return Err(WaitForError::JsonRpcError(format!("{error:?}"))),
+            Err(error) => return Err(WaitForError::JsonRpc(format!("{error:?}"))),
             Ok(outcome_view) => outcome_view,
         };
 
         let Some(outcome) = outcome_view.final_execution_outcome else {
-            return Err(WaitForError::SignatureError(
+            return Err(WaitForError::Signature(
                 SignatureError::NotYetAvailable,
             ));
         };
@@ -256,13 +256,13 @@ pub async fn signature_responded(
         let outcome = outcome.into_outcome();
 
         let FinalExecutionStatus::SuccessValue(payload) = outcome.status else {
-            return Err(WaitForError::SignatureError(SignatureError::Failed(
+            return Err(WaitForError::Signature(SignatureError::Failed(
                 format!("{:?}", outcome.status),
             )));
         };
 
         let result: SignatureResponse = match serde_json::from_slice(&payload) {
-            Err(error) => return Err(WaitForError::SerdeJsonError(format!("{error:?}"))),
+            Err(error) => return Err(WaitForError::SerdeJson(format!("{error:?}"))),
             Ok(response) => response,
         };
         let signature = cait_sith::FullSignature::<Secp256k1> {
@@ -274,14 +274,14 @@ pub async fn signature_responded(
     };
 
     let mut result: Result<FullSignature<Secp256k1>, WaitForError> = Err(
-        WaitForError::SignatureError(SignatureError::NotYetAvailable),
+        WaitForError::Signature(SignatureError::NotYetAvailable),
     );
 
     // retry getting tx status for 5 times
     let mut retries = 5;
     while let Err(error) = result {
         match error {
-            WaitForError::SignatureError(SignatureError::Failed(_)) => return Err(error),
+            WaitForError::Signature(SignatureError::Failed(_)) => return Err(error),
             _ => {
                 if retries < 0 {
                     return Err(error);
@@ -311,11 +311,11 @@ pub async fn signature_payload_responded(
     };
 
     let mut result: Result<FullSignature<Secp256k1>, WaitForError> = Err(
-        WaitForError::SignatureError(SignatureError::Failed(format!("na"))),
+        WaitForError::Signature(SignatureError::Failed("Signature timed out".to_string())),
     );
 
     let mut retries = 3;
-    while let Err(WaitForError::SignatureError(SignatureError::Failed(ref error_message))) = result
+    while let Err(WaitForError::Signature(SignatureError::Failed(ref error_message))) = result
     {
         if retries < 3 {
             println!("single_payload_signature_production: the signature request result is {error_message:?}");

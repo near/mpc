@@ -221,18 +221,18 @@ pub async fn request_sign_non_random(
             .public_key()
             .to_string()
             .parse()
-            .map_err(|_| WaitForError::ParsingError)?,
+            .map_err(|_| WaitForError::Parsing)?,
         secret_key: account
             .secret_key()
             .to_string()
             .parse()
-            .map_err(|_| WaitForError::ParsingError)?,
+            .map_err(|_| WaitForError::Parsing)?,
     };
     let (nonce, block_hash, _) = ctx
         .rpc_client
         .fetch_nonce(&signer.account_id, &signer.public_key)
         .await
-        .map_err(|error| WaitForError::FetchError(format!("{error:?}")))?;
+        .map_err(|error| WaitForError::Fetch(format!("{error:?}")))?;
 
     let request = SignRequest {
         payload: payload_hashed,
@@ -254,7 +254,7 @@ pub async fn request_sign_non_random(
                     args: serde_json::to_vec(&serde_json::json!({
                         "request": request,
                     }))
-                    .map_err(|error| WaitForError::SerdeJsonError(format!("{error:?}")))?,
+                    .map_err(|error| WaitForError::SerdeJson(format!("{error:?}")))?,
                     gas: 300_000_000_000_000,
                     deposit: 1,
                 }))],
@@ -262,7 +262,7 @@ pub async fn request_sign_non_random(
             .sign(&signer),
         })
         .await
-        .map_err(|error| WaitForError::JsonRpcError(format!("{error:?}")))?;
+        .map_err(|error| WaitForError::JsonRpc(format!("{error:?}")))?;
     tokio::time::sleep(Duration::from_secs(1)).await;
     Ok((payload, payload_hashed, account, tx_hash))
 }
