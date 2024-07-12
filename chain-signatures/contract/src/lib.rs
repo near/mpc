@@ -14,7 +14,8 @@ use near_sdk::{
 };
 
 use primitives::{
-    CandidateInfo, Candidates, ParticipantInfo, Participants, PkVotes, SignRequest, Votes,
+    CandidateInfo, Candidates, ParticipantInfo, Participants, PkVotes, SignRequest,
+    SignaturePromiseError, SignatureResult, Votes,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -23,8 +24,11 @@ const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(250);
 // Register used to receive data id from `promise_await_data`.
 const DATA_ID_REGISTER: u64 = 0;
 
-// Prepaid gas for a `sign_on_finish` call
-const SIGN_ON_FINISH_CALL_GAS: Gas = Gas::from_tgas(5);
+// Prepaid gas for a `clear_state_on_finish` call
+const CLEAR_STATE_ON_FINISH_CALL_GAS: Gas = Gas::from_tgas(5);
+
+// Prepaid gas for a `return_signature_on_finish` call
+const RETURN_SIGNATURE_ON_FINISH_CALL_GAS: Gas = Gas::from_tgas(5);
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug)]
 pub struct InitializingContractState {
@@ -216,16 +220,15 @@ impl VersionedMpcContract {
         let predecessor = env::predecessor_account_id();
         let request = SignatureRequest::new(payload, &predecessor, &path);
         if !self.request_already_exists(&request) {
-            self.mark_request_pending(&request);
             match self {
                 Self::V0(mpc_contract) => {
                     let index = mpc_contract.next_available_yield_resume_request_index;
                     mpc_contract.next_available_yield_resume_request_index += 1;
 
                     let yield_promise = env::promise_yield_create(
-                        "sign_on_finish",
+                        "clear_state_on_finish",
                         &serde_json::to_vec(&(index,)).unwrap(),
-                        SIGN_ON_FINISH_CALL_GAS,
+                        CLEAR_STATE_ON_FINISH_CALL_GAS,
                         GasWeight(0),
                         DATA_ID_REGISTER,
                     );
@@ -235,6 +238,16 @@ impl VersionedMpcContract {
                         .expect("")
                         .try_into()
                         .expect("");
+
+                    mpc_contract.add_request(&request, &Some(data_id));
+                    mpc_contract.add_yield_resume_request(
+                        index,
+                        YieldResumeRequest {
+                            data_id,
+                            account_id: env::signer_account_id(),
+                            signature_request: request,
+                        },
+                    );
 
                     log!(
                         "sign: predecessor={}, payload={:?}, path={:?}, key_version={}, data_id={:?}",
@@ -248,18 +261,17 @@ impl VersionedMpcContract {
                         &serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap(),
                     );
 
-                    mpc_contract.add_request(&request, &Some(data_id));
-                    mpc_contract.add_yield_resume_request(
-                        index,
-                        YieldResumeRequest {
-                            data_id,
-                            account_id: env::signer_account_id(),
-                            signature_request: request,
-                        },
+                    let final_yield_promise = env::promise_then(
+                        yield_promise,
+                        env::current_account_id(),
+                        "return_signature_on_finish",
+                        &[],
+                        NearToken::from_near(0),
+                        RETURN_SIGNATURE_ON_FINISH_CALL_GAS,
                     );
                     // The return value for this function call will be the value
                     // returned by the `sign_on_finish` callback.
-                    env::promise_return(yield_promise);
+                    env::promise_return(final_yield_promise);
                 }
             }
         } else {
@@ -268,19 +280,34 @@ impl VersionedMpcContract {
     }
 
     #[private]
-    pub fn sign_on_finish(
+    pub fn return_signature_on_finish(
+        &mut self,
+        #[callback_unwrap] signature: SignatureResult<SignatureResponse, SignaturePromiseError>,
+    ) -> SignatureResponse {
+        match self {
+            Self::V0(_) => match signature {
+                SignatureResult::Ok(signature) => signature,
+                SignatureResult::Err(_) => {
+                    env::panic_str("Signature has timed out");
+                }
+            },
+        }
+    }
+
+    #[private]
+    pub fn clear_state_on_finish(
         &mut self,
         yield_resume_request_index: u64,
         #[callback_result] signature: Result<SignatureResponse, PromiseError>,
-    ) -> SignatureResponse {
+    ) -> SignatureResult<SignatureResponse, SignaturePromiseError> {
         match self {
             Self::V0(mpc_contract) => {
                 // Clean up the local state
                 mpc_contract.remove_request_by_yield_resume_index(yield_resume_request_index);
 
                 match signature {
-                    Ok(signature) => signature,
-                    Err(_) => env::panic_str("signature request timed out"),
+                    Ok(signature) => SignatureResult::Ok(signature),
+                    Err(_) => SignatureResult::Err(SignaturePromiseError::Failed),
                 }
             }
         }
@@ -334,7 +361,7 @@ impl VersionedMpcContract {
                         );
                     } else {
                         env::panic_str(
-                            "such request does not exist in contract's pending requests.",
+                            "this sign request was removed from pending requests: timed out or completed.",
                         )
                     }
                 }
@@ -667,14 +694,6 @@ impl VersionedMpcContract {
         match self {
             Self::V0(mpc_contract) => {
                 mpc_contract.clean_payloads(requests, counter);
-            }
-        }
-    }
-
-    fn mark_request_pending(&mut self, request: &SignatureRequest) {
-        match self {
-            Self::V0(mpc_contract) => {
-                mpc_contract.add_request(request, &None);
             }
         }
     }

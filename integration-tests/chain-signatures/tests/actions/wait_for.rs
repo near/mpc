@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::actions;
 use crate::MultichainTestContext;
 
@@ -203,12 +205,34 @@ pub async fn has_at_least_mine_presignatures<'a>(
     Ok(state_views)
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum SignatureError {
+    #[error("tx final outcome not yet available")]
+    NotYetAvailable,
+    #[error("tx was unsuccessful: {0}")]
+    Failed(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum WaitForError {
+    #[error("Json RPC request error: {0}")]
+    JsonRpcError(String),
+    #[error("signature tx error: {0}")]
+    SignatureError(SignatureError),
+    #[error("Serde json error: {0}")]
+    SerdeJsonError(String),
+    #[error("Parsing error")]
+    ParsingError,
+    #[error("Near fetch error: {0}")]
+    FetchError(String),
+}
+
 pub async fn signature_responded(
     ctx: &MultichainTestContext<'_>,
     tx_hash: CryptoHash,
-) -> anyhow::Result<FullSignature<Secp256k1>> {
+) -> Result<FullSignature<Secp256k1>, WaitForError> {
     let is_tx_ready = || async {
-        let outcome_view = ctx
+        let outcome_view = match ctx
             .jsonrpc_client
             .call(RpcTransactionStatusRequest {
                 transaction_info: TransactionInfo::TransactionId {
@@ -217,19 +241,30 @@ pub async fn signature_responded(
                 },
                 wait_until: near_primitives::views::TxExecutionStatus::Final,
             })
-            .await?;
+            .await
+        {
+            Err(error) => return Err(WaitForError::JsonRpcError(format!("{error:?}"))),
+            Ok(outcome_view) => outcome_view,
+        };
 
         let Some(outcome) = outcome_view.final_execution_outcome else {
-            anyhow::bail!("final execution outcome not available");
+            return Err(WaitForError::SignatureError(
+                SignatureError::NotYetAvailable,
+            ));
         };
 
         let outcome = outcome.into_outcome();
 
         let FinalExecutionStatus::SuccessValue(payload) = outcome.status else {
-            anyhow::bail!("tx finished unsuccessfully: {:?}", outcome.status);
+            return Err(WaitForError::SignatureError(SignatureError::Failed(
+                format!("{:?}", outcome.status),
+            )));
         };
 
-        let result: SignatureResponse = serde_json::from_slice(&payload)?;
+        let result: SignatureResponse = match serde_json::from_slice(&payload) {
+            Err(error) => return Err(WaitForError::SerdeJsonError(format!("{error:?}"))),
+            Ok(response) => response,
+        };
         let signature = cait_sith::FullSignature::<Secp256k1> {
             big_r: result.big_r.affine_point,
             s: result.s.scalar,
@@ -238,11 +273,29 @@ pub async fn signature_responded(
         Ok(signature)
     };
 
-    let signature = is_tx_ready
-        .retry(&ExponentialBuilder::default().with_max_times(6))
-        .await
-        .with_context(|| "failed to wait for signature response")?;
-    Ok(signature)
+    let mut result: Result<FullSignature<Secp256k1>, WaitForError> = Err(
+        WaitForError::SignatureError(SignatureError::NotYetAvailable),
+    );
+
+    // retry getting tx status for 5 times
+    let mut retries = 5;
+    while let Err(error) = result {
+        match error {
+            WaitForError::SignatureError(SignatureError::Failed(_)) => return Err(error),
+            _ => {
+                if retries < 0 {
+                    return Err(error);
+                }
+                if retries < 5 {
+                    tokio::time::sleep(Duration::from_secs(20)).await;
+                }
+                result = is_tx_ready().await;
+            }
+        }
+        retries -= 1;
+    }
+
+    result
 }
 
 pub async fn signature_payload_responded(
@@ -250,18 +303,33 @@ pub async fn signature_payload_responded(
     account: Account,
     payload: [u8; 32],
     payload_hashed: [u8; 32],
-) -> anyhow::Result<FullSignature<Secp256k1>> {
+) -> Result<FullSignature<Secp256k1>, WaitForError> {
     let is_signature_ready = || async {
         let (_, _, _, tx_hash) =
             actions::request_sign_non_random(ctx, account.clone(), payload, payload_hashed).await?;
         signature_responded(ctx, tx_hash).await
     };
 
-    let signature = is_signature_ready
-        .retry(&ExponentialBuilder::default().with_max_times(6))
-        .await
-        .with_context(|| "failed to wait for signature response")?;
-    Ok(signature)
+    let mut result: Result<FullSignature<Secp256k1>, WaitForError> = Err(
+        WaitForError::SignatureError(SignatureError::Failed(format!("na"))),
+    );
+
+    let mut retries = 3;
+    while let Err(WaitForError::SignatureError(SignatureError::Failed(ref error_message))) = result
+    {
+        if retries < 3 {
+            println!("single_payload_signature_production: the signature request result is {error_message:?}");
+        }
+        if retries <= 0 {
+            break;
+        }
+        println!("single_payload_signature_production: issuing a new signature request with same payload");
+        result = is_signature_ready().await;
+
+        retries -= 1;
+    }
+
+    result
 }
 
 // Check that the rogue message failed

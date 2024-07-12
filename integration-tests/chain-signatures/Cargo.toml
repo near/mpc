@@ -23,6 +23,7 @@ testcontainers = { version = "0.15", features = ["experimental"] }
 tokio = { version = "1.28", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "1"
 
 # crypto dependencies
 cait-sith = { git = "https://github.com/LIT-Protocol/cait-sith.git", features = [

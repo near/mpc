@@ -3763,6 +3763,7 @@ dependencies = [
  "serde_json",
  "test-log",
  "testcontainers",
+ "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
