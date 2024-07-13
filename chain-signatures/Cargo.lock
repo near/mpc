@@ -4757,7 +4757,7 @@ dependencies = [
 [[package]]
 name = "near-workspaces"
 version = "0.10.0"
-source = "git+https://github.com/near/near-workspaces-rs?branch=node/1.40#f3aa1a5503e893680a675f7a0ffcc61f72104137"
+source = "git+https://github.com/near/near-workspaces-rs?branch=node/1.40#6c16f12f84e5c43b03f9f757ae2f11d1c6ebf32e"
 dependencies = [
  "async-trait",
  "base64 0.21.7",

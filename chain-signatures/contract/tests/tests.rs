@@ -8,6 +8,7 @@ use k256::elliptic_curve::point::DecompressPoint;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, FieldBytes, Secp256k1};
 use mpc_contract::primitives::{CandidateInfo, ParticipantInfo, SignRequest};
+use mpc_contract::SignatureRequest;
 use near_sdk::NearToken;
 use near_workspaces::network::Sandbox;
 use near_workspaces::{AccountId, Contract, Worker};
@@ -84,6 +85,161 @@ async fn init_with_candidates(pk: Option<near_crypto::PublicKey>) -> (Worker<San
     (worker, contract)
 }
 
+async fn init_env() -> (Worker<Sandbox>, Contract, k256::SecretKey) {
+    let sk = k256::SecretKey::random(&mut rand::thread_rng());
+    let pk = sk.public_key();
+    let (worker, contract) = init_with_candidates(Some(near_crypto::PublicKey::SECP256K1(
+        near_crypto::Secp256K1PublicKey::try_from(
+            &pk.as_affine().to_encoded_point(false).as_bytes()[1..65],
+        )
+        .unwrap(),
+    )))
+    .await;
+
+    (worker, contract, sk)
+}
+
+/// Process the message, creating the same hash with type of Digest, Scalar, and [u8; 32]
+async fn process_message(msg: &str) -> (impl Digest, k256::Scalar, [u8; 32]) {
+    let msg = msg.as_bytes();
+    let digest = <k256::Secp256k1 as ecdsa::hazmat::DigestPrimitive>::Digest::new_with_prefix(msg);
+    let bytes: FieldBytes = digest.clone().finalize_fixed();
+    let scalar_hash =
+        <k256::Scalar as Reduce<<Secp256k1 as k256::elliptic_curve::Curve>::Uint>>::reduce_bytes(
+            &bytes,
+        );
+
+    let payload_hash: [u8; 32] = bytes.into();
+    (digest, scalar_hash, payload_hash)
+}
+
+async fn create_response(
+    predecessor_id: &AccountId,
+    msg: &str,
+    path: &str,
+    sk: &k256::SecretKey,
+) -> ([u8; 32], SignatureRequest, SignatureResponse) {
+    let (digest, scalar_hash, payload_hash) = process_message(msg).await;
+    let pk = sk.public_key();
+
+    let epsilon = derive_epsilon(predecessor_id, &path);
+    let derived_sk = derive_secret_key(&sk, epsilon);
+    let derived_pk = derive_key(pk.into(), epsilon);
+    let signing_key = k256::ecdsa::SigningKey::from(&derived_sk);
+    let verifying_key =
+        k256::ecdsa::VerifyingKey::from(&k256::PublicKey::from_affine(derived_pk).unwrap());
+
+    let (signature, _): (ecdsa::Signature<Secp256k1>, _) =
+        signing_key.try_sign_digest(digest).unwrap();
+    verifying_key.verify(msg.as_bytes(), &signature).unwrap();
+
+    let s = signature.s();
+    let (r_bytes, _s_bytes) = signature.split_bytes();
+
+    let respond_req = SignatureRequest::new(payload_hash, predecessor_id, path);
+    let big_r =
+        AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
+    let s: k256::Scalar = s.as_ref().clone();
+
+    let recovery_id = if check_ec_signature(&derived_pk, &big_r, &s, scalar_hash, 0).is_ok() {
+        0
+    } else if check_ec_signature(&derived_pk, &big_r, &s, scalar_hash, 1).is_ok() {
+        1
+    } else {
+        panic!("unable to use recovery id of 0 or 1");
+    };
+
+    let respond_resp = SignatureResponse {
+        big_r: SerializableAffinePoint {
+            affine_point: big_r,
+        },
+        s: SerializableScalar { scalar: s },
+        recovery_id,
+    };
+
+    (payload_hash, respond_req, respond_resp)
+}
+
+async fn sign_and_validate(
+    request: &SignRequest,
+    respond_req: &SignatureRequest,
+    respond_resp: &SignatureResponse,
+    contract: &Contract,
+) -> anyhow::Result<()> {
+    let status = contract
+        .call("sign")
+        .args_json(serde_json::json!({
+            "request": request,
+        }))
+        .deposit(NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact_async()
+        .await?;
+
+    // Call `respond` as if we are the MPC network itself.
+    contract
+        .call("respond")
+        .args_json(serde_json::json!({
+            "request": respond_req,
+            "response": respond_resp
+        }))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+
+    // Finally wait the result:
+    let returned_resp: SignatureResponse = status.await?.json()?;
+    assert_eq!(
+        &returned_resp, respond_resp,
+        "Returned signature response does not match"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_sign_request() -> anyhow::Result<()> {
+    let (_, contract, sk) = init_env().await;
+    let predecessor_id = contract.id();
+
+    let messages = [
+        "hello world",
+        "hello world!",
+        "hello world!!",
+        "hello world!!!",
+        "hello world!!!!",
+    ];
+    let path = "test";
+
+    for msg in messages {
+        let (payload_hash, respond_req, respond_resp) =
+            create_response(&predecessor_id, msg, path, &sk).await;
+        let request = SignRequest {
+            payload: payload_hash,
+            path: path.into(),
+            key_version: 0,
+        };
+
+        sign_and_validate(&request, &respond_req, &respond_resp, &contract).await?;
+    }
+
+    // check duplicate requests can also be signed:
+    let duplicate_msg = "welp";
+    let (payload_hash, respond_req, respond_resp) =
+        create_response(&predecessor_id, duplicate_msg, path, &sk).await;
+    let request = SignRequest {
+        payload: payload_hash,
+        path: path.into(),
+        key_version: 0,
+    };
+
+    sign_and_validate(&request, &respond_req, &respond_resp, &contract).await?;
+    sign_and_validate(&request, &respond_req, &respond_resp, &contract).await?;
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_contract_initialization() -> anyhow::Result<()> {
     let (_, contract) = init().await;
@@ -130,135 +286,6 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         result.is_failure(),
         "initializing with valid candidates again should fail"
     );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_contract_sign_request() -> anyhow::Result<()> {
-    let sk = k256::SecretKey::random(&mut rand::thread_rng());
-    let pk = sk.public_key();
-
-    let (_, contract) = init_with_candidates(Some(near_crypto::PublicKey::SECP256K1(
-        near_crypto::Secp256K1PublicKey::try_from(
-            &pk.as_affine().to_encoded_point(false).as_bytes()[1..65],
-        )
-        .unwrap(),
-    )))
-    .await;
-    let predecessor_id = contract.id();
-    let path = "test".to_string();
-
-    let msg = b"hello world";
-    let digest = <k256::Secp256k1 as ecdsa::hazmat::DigestPrimitive>::Digest::new_with_prefix(msg);
-
-    let epsilon = derive_epsilon(predecessor_id, &path);
-    let derived_sk = derive_secret_key(&sk, epsilon);
-    let derived_pk = derive_key(pk.into(), epsilon);
-    let signing_key = k256::ecdsa::SigningKey::from(&derived_sk);
-    let verifying_key =
-        k256::ecdsa::VerifyingKey::from(&k256::PublicKey::from_affine(derived_pk).unwrap());
-
-    let signature: ecdsa::Signature<Secp256k1> =
-        signing_key.try_sign_digest(digest.clone()).unwrap();
-    verifying_key.verify(&msg[..], &signature).unwrap();
-
-    let s = signature.s();
-    let (r_bytes, _s_bytes) = signature.split_bytes();
-
-    let bytes: FieldBytes = digest.finalize_fixed();
-    let scalar_hash =
-        <k256::Scalar as Reduce<<Secp256k1 as k256::elliptic_curve::Curve>::Uint>>::reduce_bytes(
-            &bytes,
-        );
-    let payload_hash: [u8; 32] = bytes.into();
-
-    let respond_req = mpc_contract::SignatureRequest::new(payload_hash, &predecessor_id, &path);
-    let big_r =
-        AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
-    let s: k256::Scalar = s.as_ref().clone();
-
-    let expected_public_key = derive_key(pk.into(), respond_req.epsilon.scalar);
-    let recovery_id =
-        if check_ec_signature(&expected_public_key, &big_r, &s, scalar_hash, 0).is_ok() {
-            0
-        } else if check_ec_signature(&expected_public_key, &big_r, &s, scalar_hash, 1).is_ok() {
-            1
-        } else {
-            panic!("unable to use recovery id of 0 or 1");
-        };
-
-    let respond_resp = SignatureResponse {
-        big_r: SerializableAffinePoint {
-            affine_point: big_r,
-        },
-        s: SerializableScalar { scalar: s },
-        recovery_id,
-    };
-
-    let request = SignRequest {
-        payload: payload_hash,
-        path,
-        key_version: 0,
-    };
-
-    let status = contract
-        .call("sign")
-        .args_json(serde_json::json!({
-            "request": request,
-        }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await?;
-
-    // Call `respond` as if we are the MPC network itself.
-    contract
-        .call("respond")
-        .args_json(serde_json::json!({
-            "request": respond_req,
-            "response": respond_resp
-        }))
-        .max_gas()
-        .transact()
-        .await?
-        .into_result()?;
-
-    // Finally wait the result:
-    let execution = status.await?;
-    println!("{execution:#?}");
-
-
-    let status = contract
-        .call("sign")
-        .args_json(serde_json::json!({
-            "request": request,
-        }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await?;
-
-    // yield resume should have a max limit of about 200. Let's get as close as possible to test out this
-    // boundary and see if it fails:
-    let blocks_to_wait = 195;
-    tokio::time::sleep(tokio::time::Duration::from_secs(blocks_to_wait)).await;
-
-    // Call `respond` as if we are the MPC network itself.
-    contract
-        .call("respond")
-        .args_json(serde_json::json!({
-            "request": respond_req,
-            "response": respond_resp
-        }))
-        .max_gas()
-        .transact()
-        .await?
-        .into_result()?;
-
-    let execution = status.await?;
-    println!("{execution:#?}");
-
 
     Ok(())
 }

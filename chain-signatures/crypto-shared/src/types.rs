@@ -89,7 +89,7 @@ fn serializeable_scalar_roundtrip() {
     }
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct SignatureResponse {
     pub big_r: SerializableAffinePoint,
     pub s: SerializableScalar,
