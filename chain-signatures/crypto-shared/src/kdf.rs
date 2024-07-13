@@ -4,7 +4,7 @@ use k256::{
     ecdsa::{RecoveryId, Signature, VerifyingKey},
     elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic},
     sha2::{Digest, Sha256},
-    Scalar, Secp256k1,
+    Scalar, Secp256k1, SecretKey,
 };
 use near_account_id::AccountId;
 
@@ -30,6 +30,10 @@ pub fn derive_epsilon(predecessor_id: &AccountId, path: &str) -> Scalar {
 
 pub fn derive_key(public_key: PublicKey, epsilon: Scalar) -> PublicKey {
     (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * epsilon + public_key).to_affine()
+}
+
+pub fn derive_secret_key(secret_key: &SecretKey, epsilon: Scalar) -> SecretKey {
+    SecretKey::new((epsilon + secret_key.to_nonzero_scalar().as_ref()).into())
 }
 
 /// Get the x coordinate of a point, as a scalar
@@ -61,7 +65,7 @@ pub fn check_ec_signature(
         return Ok(());
     }
 
-    anyhow::bail!("cannot use either recovery id (0 or 1) to recover pubic key")
+    anyhow::bail!("cannot use either recovery id={recovery_id} to recover pubic key")
 }
 
 // #[cfg(not(target_arch = "wasm32"))]
