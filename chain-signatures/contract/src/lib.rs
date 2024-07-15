@@ -199,10 +199,14 @@ impl VersionedMpcContract {
     }
 
     /// This is the root public key combined from all the public keys of the participants.
-    pub fn public_key(&self) -> PublicKey {
+    pub fn public_key(&self) -> crypto_shared::PublicKey {
         match self.state() {
-            ProtocolContractState::Running(state) => state.public_key.clone(),
-            ProtocolContractState::Resharing(state) => state.public_key.clone(),
+            ProtocolContractState::Running(state) => {
+                near_public_key_to_affine_point(state.public_key.clone())
+            }
+            ProtocolContractState::Resharing(state) => {
+                near_public_key_to_affine_point(state.public_key.clone())
+            }
             _ => env::panic_str("public key not available (protocol is not running or resharing)"),
         }
     }
@@ -235,10 +239,7 @@ impl VersionedMpcContract {
             );
 
             // generate the expected public key
-            let expected_public_key = derive_key(
-                near_public_key_to_affine_point(self.public_key()),
-                request.epsilon.scalar,
-            );
+            let expected_public_key = derive_key(self.public_key(), request.epsilon.scalar);
 
             // Check the signature is correct
             if check_ec_signature(
