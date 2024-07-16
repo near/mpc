@@ -325,12 +325,6 @@ impl VersionedMpcContract {
                 &response.big_r,
                 &response.s
             );
-            log!(
-                "respond: signer={}, request={:?} response={:?}",
-                &signer,
-                &request,
-                &response
-            );
 
             // generate the expected public key
             let expected_public_key = derive_key(
