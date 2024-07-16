@@ -146,9 +146,8 @@ impl MpcContract {
             data_id: _,
             account_id: _,
             signature_request,
-        }) = self.yield_resume_requests.get(&index)
+        }) = self.yield_resume_requests.remove(&index)
         {
-            self.yield_resume_requests.remove(&index);
             self.pending_requests.remove(&signature_request);
             self.request_counter -= 1;
         } else {
@@ -235,9 +234,9 @@ impl VersionedMpcContract {
 
                     // Store the request in the contract's local state
                     let data_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-                        .expect("")
+                        .expect("read_register failed")
                         .try_into()
-                        .expect("");
+                        .expect("conversion to CryptoHash failed");
 
                     mpc_contract.add_request(&request, &Some(data_id));
                     mpc_contract.add_yield_resume_request(

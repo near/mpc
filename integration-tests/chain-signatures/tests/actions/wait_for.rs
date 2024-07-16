@@ -4,8 +4,8 @@ use crate::actions;
 use crate::MultichainTestContext;
 
 use anyhow::Context;
-use backon::ExponentialBuilder;
 use backon::Retryable;
+use backon::{ConstantBuilder, ExponentialBuilder};
 use cait_sith::FullSignature;
 use crypto_shared::SignatureResponse;
 use k256::Secp256k1;
@@ -248,17 +248,16 @@ pub async fn signature_responded(
         };
 
         let Some(outcome) = outcome_view.final_execution_outcome else {
-            return Err(WaitForError::Signature(
-                SignatureError::NotYetAvailable,
-            ));
+            return Err(WaitForError::Signature(SignatureError::NotYetAvailable));
         };
 
         let outcome = outcome.into_outcome();
 
         let FinalExecutionStatus::SuccessValue(payload) = outcome.status else {
-            return Err(WaitForError::Signature(SignatureError::Failed(
-                format!("{:?}", outcome.status),
-            )));
+            return Err(WaitForError::Signature(SignatureError::Failed(format!(
+                "{:?}",
+                outcome.status
+            ))));
         };
 
         let result: SignatureResponse = match serde_json::from_slice(&payload) {
@@ -273,29 +272,11 @@ pub async fn signature_responded(
         Ok(signature)
     };
 
-    let mut result: Result<FullSignature<Secp256k1>, WaitForError> = Err(
-        WaitForError::Signature(SignatureError::NotYetAvailable),
-    );
+    let strategy = ConstantBuilder::default()
+        .with_delay(Duration::from_secs(20))
+        .with_max_times(5);
 
-    // retry getting tx status for 5 times
-    let mut retries = 5;
-    while let Err(error) = result {
-        match error {
-            WaitForError::Signature(SignatureError::Failed(_)) => return Err(error),
-            _ => {
-                if retries < 0 {
-                    return Err(error);
-                }
-                if retries < 5 {
-                    tokio::time::sleep(Duration::from_secs(20)).await;
-                }
-                result = is_tx_ready().await;
-            }
-        }
-        retries -= 1;
-    }
-
-    result
+    is_tx_ready.retry(&strategy).await
 }
 
 pub async fn signature_payload_responded(
@@ -310,13 +291,12 @@ pub async fn signature_payload_responded(
         signature_responded(ctx, tx_hash).await
     };
 
-    let mut result: Result<FullSignature<Secp256k1>, WaitForError> = Err(
-        WaitForError::Signature(SignatureError::Failed("Signature timed out".to_string())),
-    );
+    let mut result: Result<FullSignature<Secp256k1>, WaitForError> = Err(WaitForError::Signature(
+        SignatureError::Failed("Signature timed out".to_string()),
+    ));
 
     let mut retries = 3;
-    while let Err(WaitForError::Signature(SignatureError::Failed(ref error_message))) = result
-    {
+    while let Err(WaitForError::Signature(SignatureError::Failed(ref error_message))) = result {
         if retries < 3 {
             println!("single_payload_signature_production: the signature request result is {error_message:?}");
         }
