@@ -212,7 +212,6 @@ async fn sign_and_validate(
 async fn test_contract_sign_request() -> anyhow::Result<()> {
     let (_, contract, sk) = init_env().await;
     let predecessor_id = contract.id();
-    let path = "test";
 
     let messages = [
         "hello world",

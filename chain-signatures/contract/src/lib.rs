@@ -146,9 +146,8 @@ impl MpcContract {
             data_id: _,
             account_id: _,
             signature_request,
-        }) = self.yield_resume_requests.get(&index)
+        }) = self.yield_resume_requests.remove(&index)
         {
-            self.yield_resume_requests.remove(&index);
             self.pending_requests.remove(&signature_request);
             self.request_counter -= 1;
         } else {
@@ -235,9 +234,9 @@ impl VersionedMpcContract {
 
                     // Store the request in the contract's local state
                     let data_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-                        .expect("")
+                        .expect("read_register failed")
                         .try_into()
-                        .expect("");
+                        .expect("conversion to CryptoHash failed");
 
                     mpc_contract.add_request(&request, &Some(data_id));
                     mpc_contract.add_yield_resume_request(
@@ -325,12 +324,6 @@ impl VersionedMpcContract {
                 &request,
                 &response.big_r,
                 &response.s
-            );
-            log!(
-                "respond: signer={}, request={:?} response={:?}",
-                &signer,
-                &request,
-                &response
             );
 
             // generate the expected public key
@@ -623,15 +616,11 @@ impl VersionedMpcContract {
     #[init]
     pub fn init(threshold: usize, candidates: BTreeMap<AccountId, CandidateInfo>) -> Self {
         log!(
-            "init: signer={}, threshold={}, candidates={}",
+            "init: signer={}, treshhold={}, candidates={}",
             env::signer_account_id(),
             threshold,
             serde_json::to_string(&candidates).unwrap()
         );
-
-        if threshold > candidates.len() {
-            env::panic_str("threshold cannot be greater than the number of candidates");
-        }
 
         Self::V0(MpcContract::init(threshold, candidates))
     }
@@ -653,10 +642,6 @@ impl VersionedMpcContract {
             threshold,
             public_key
         );
-
-        if threshold > participants.len() {
-            env::panic_str("threshold cannot be greater than the number of participants");
-        }
 
         Self::V0(MpcContract {
             protocol_state: ProtocolContractState::Running(RunningContractState {
