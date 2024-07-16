@@ -236,45 +236,36 @@ impl MessageHandler for RunningState {
 
         // remove the triple_id that has already failed or taken from the triple_bins
         // and refresh the timestamp of failed and taken
-        queue
-            .triple_bins
-            .entry(self.epoch)
-            .or_default()
-            .retain(|id, queue| {
-                if let Some(first_msg) = queue.front() {
-                    // Skip this triple if its message already timed out
-                    if util::is_elapsed_longer_than_timeout(
-                        first_msg.timestamp,
-                        crate::types::PROTOCOL_TRIPLE_TIMEOUT,
-                    ) {
-                        return false;
-                    }
-                } else {
-                    return false;
-                }
-                let has_failed = triple_manager.failed_triples.contains_key(id);
-                if has_failed {
-                    triple_manager.failed_triples.insert(*id, Instant::now());
-                }
-                let is_taken = triple_manager.taken.contains_key(id);
-                if is_taken {
-                    triple_manager.taken.insert(*id, Instant::now());
-                }
-                !has_failed && !is_taken
-            });
+        let triple_messages = queue.triple_bins.entry(self.epoch).or_default();
+        triple_messages.retain(|id, queue| {
+            if queue.is_empty() {
+                return false;
+            }
 
-        for (id, queue) in queue.triple_bins.entry(self.epoch).or_default() {
-            if let Some(first_msg) = queue.front() {
+            for msg in queue {
                 // Skip this triple if its message already timed out
                 if util::is_elapsed_longer_than_timeout(
-                    first_msg.timestamp,
+                    msg.timestamp,
                     crate::types::PROTOCOL_TRIPLE_TIMEOUT,
                 ) {
-                    continue;
+                    return false;
                 }
-            } else {
-                continue;
             }
+
+            let has_failed = triple_manager.failed_triples.contains_key(id);
+            if has_failed {
+                // Extend the expiration of the failed_triple because we received a new message.
+                triple_manager.failed_triples.insert(*id, Instant::now());
+            }
+            let is_taken = triple_manager.taken.contains_key(id);
+            if is_taken {
+                // Extend the expiration of the taken because we received a new message.
+                triple_manager.taken.insert(*id, Instant::now());
+            }
+            !has_failed && !is_taken
+        });
+
+        for (id, queue) in triple_messages {
             let protocol = match triple_manager.get_or_generate(*id, participants) {
                 Ok(protocol) => protocol,
                 Err(err) => {
