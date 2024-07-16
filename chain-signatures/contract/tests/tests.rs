@@ -162,8 +162,7 @@ async fn create_response(
 
 async fn sign_and_validate(
     request: &SignRequest,
-    respond_req: &SignatureRequest,
-    respond_resp: &SignatureResponse,
+    respond: Option<(&SignatureRequest, &SignatureResponse)>,
     contract: &Contract,
 ) -> anyhow::Result<()> {
     let status = contract
@@ -175,25 +174,36 @@ async fn sign_and_validate(
         .max_gas()
         .transact_async()
         .await?;
+    dbg!(&status);
 
-    // Call `respond` as if we are the MPC network itself.
-    contract
-        .call("respond")
-        .args_json(serde_json::json!({
-            "request": respond_req,
-            "response": respond_resp
-        }))
-        .max_gas()
-        .transact()
-        .await?
-        .into_result()?;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    if let Some((respond_req, respond_resp)) = respond {
+        // Call `respond` as if we are the MPC network itself.
+        let respond = contract
+            .call("respond")
+            .args_json(serde_json::json!({
+                "request": respond_req,
+                "response": respond_resp
+            }))
+            .max_gas()
+            .transact()
+            .await?;
+        dbg!(&respond);
+    }
+
+    let execution = status.await?;
+    dbg!(&execution);
+    let execution = execution.into_result()?;
 
     // Finally wait the result:
-    let returned_resp: SignatureResponse = status.await?.json()?;
-    assert_eq!(
-        &returned_resp, respond_resp,
-        "Returned signature response does not match"
-    );
+    let returned_resp: SignatureResponse = execution.json()?;
+    if let Some((_, respond_resp)) = respond {
+        assert_eq!(
+            &returned_resp, respond_resp,
+            "Returned signature request does not match"
+        );
+    }
 
     Ok(())
 }
@@ -202,6 +212,7 @@ async fn sign_and_validate(
 async fn test_contract_sign_request() -> anyhow::Result<()> {
     let (_, contract, sk) = init_env().await;
     let predecessor_id = contract.id();
+    let path = "test";
 
     let messages = [
         "hello world",
@@ -210,9 +221,9 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
         "hello world!!!",
         "hello world!!!!",
     ];
-    let path = "test";
 
     for msg in messages {
+        println!("submitting: {msg}");
         let (payload_hash, respond_req, respond_resp) =
             create_response(&predecessor_id, msg, path, &sk).await;
         let request = SignRequest {
@@ -221,7 +232,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
             key_version: 0,
         };
 
-        sign_and_validate(&request, &respond_req, &respond_resp, &contract).await?;
+        sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
     }
 
     // check duplicate requests can also be signed:
@@ -233,9 +244,69 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
         path: path.into(),
         key_version: 0,
     };
+    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
 
-    sign_and_validate(&request, &respond_req, &respond_resp, &contract).await?;
-    sign_and_validate(&request, &respond_req, &respond_resp, &contract).await?;
+    // Check that a sign with no response from MPC network properly errors out:
+    let err = sign_and_validate(&request, None, &contract)
+        .await
+        .expect_err("should have failed with timeout");
+    assert!(err.to_string().contains("Signature has timed out"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
+    let (_, contract, sk) = init_env().await;
+    let predecessor_id = contract.id();
+    let path = "testing-no-deposit";
+
+    // Try to sign with no deposit, should fail.
+    let msg = "without-deposit";
+    let (payload_hash, respond_req, respond_resp) =
+        create_response(&predecessor_id, msg, path, &sk).await;
+    let request = SignRequest {
+        payload: payload_hash,
+        path: path.into(),
+        key_version: 0,
+    };
+
+    let status = contract
+        .call("sign")
+        .args_json(serde_json::json!({
+            "request": request,
+        }))
+        .max_gas()
+        .transact_async()
+        .await?;
+    dbg!(&status);
+
+    // Responding to the request should fail with missing request because the deposit is too low,
+    // so the request should have never made it into the request queue and subsequently the MPC network.
+    let respond = contract
+        .call("respond")
+        .args_json(serde_json::json!({
+            "request": respond_req,
+            "response": respond_resp
+        }))
+        .max_gas()
+        .transact()
+        .await?;
+    dbg!(&respond);
+    assert!(respond
+        .into_result()
+        .unwrap_err()
+        .to_string()
+        .contains("timed out or completed"));
+
+    let execution = status.await?;
+    dbg!(&execution);
+    assert!(execution
+        .into_result()
+        .unwrap_err()
+        .to_string()
+        .contains("required deposit is 1"));
 
     Ok(())
 }
