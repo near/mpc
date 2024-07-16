@@ -242,27 +242,9 @@ impl MessageHandler for RunningState {
                 return false;
             }
 
-            for msg in queue {
-                // Skip this triple if its message already timed out
-                if util::is_elapsed_longer_than_timeout(
-                    msg.timestamp,
-                    crate::types::PROTOCOL_TRIPLE_TIMEOUT,
-                ) {
-                    return false;
-                }
-            }
-
-            let has_failed = triple_manager.failed_triples.contains_key(id);
-            if has_failed {
-                // Extend the expiration of the failed_triple because we received a new message.
-                triple_manager.failed_triples.insert(*id, Instant::now());
-            }
-            let is_taken = triple_manager.taken.contains_key(id);
-            if is_taken {
-                // Extend the expiration of the taken because we received a new message.
-                triple_manager.taken.insert(*id, Instant::now());
-            }
-            !has_failed && !is_taken
+            // if gc is refreshed, remove the triple message because the triple is currently being GC'ed,
+            // where the triple protocol has previously failed or been utilized.
+            !triple_manager.refresh_gc(id)
         });
 
         for (id, queue) in triple_messages {
@@ -278,6 +260,14 @@ impl MessageHandler for RunningState {
 
             if let Some(protocol) = protocol {
                 while let Some(message) = queue.pop_front() {
+                    // Skip this triple if its message already timed out
+                    if util::is_elapsed_longer_than_timeout(
+                        message.timestamp,
+                        crate::types::PROTOCOL_TRIPLE_TIMEOUT,
+                    ) {
+                        continue;
+                    }
+
                     protocol.message(message.from, message.data);
                 }
             }
@@ -401,9 +391,8 @@ impl MessageHandler for RunningState {
                 queue.extend(leftover_messages);
             }
         }
-        triple_manager.clear_failed_triples();
-        triple_manager.clear_taken();
-        presignature_manager.clear_taken();
+        triple_manager.garbage_collect();
+        presignature_manager.garbage_collect();
         Ok(())
     }
 }

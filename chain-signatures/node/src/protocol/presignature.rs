@@ -1,7 +1,7 @@
 use super::message::PresignatureMessage;
 use super::triple::{Triple, TripleConfig, TripleId, TripleManager};
 use crate::protocol::contract::primitives::Participants;
-use crate::types::{PresignatureProtocol, SecretKeyShare};
+use crate::types::{PresignatureProtocol, SecretKeyShare, TAKEN_TIMEOUT};
 use crate::util::AffinePointExt;
 
 use cait_sith::protocol::{Action, InitializationError, Participant, ProtocolError};
@@ -101,9 +101,10 @@ pub struct PresignatureManager {
     mine: VecDeque<PresignatureId>,
     /// The set of presignatures that were introduced to the system by the current node.
     introduced: HashSet<PresignatureId>,
-    /// The set of presignatures that were already taken. This will be maintained for at most
-    /// presignature timeout period just so messages are cycled through the system.
-    taken: HashMap<PresignatureId, Instant>,
+    /// Garbage collection for presignatures that have either been taken or failed. This
+    /// will be maintained for at most presignature timeout period just so messages are
+    /// cycled through the system.
+    gc: HashMap<PresignatureId, Instant>,
     me: Participant,
     threshold: usize,
     epoch: u64,
@@ -124,7 +125,7 @@ impl PresignatureManager {
             generators: HashMap::new(),
             mine: VecDeque::new(),
             introduced: HashSet::new(),
-            taken: HashMap::new(),
+            gc: HashMap::new(),
             me,
             threshold,
             epoch,
@@ -154,9 +155,9 @@ impl PresignatureManager {
         self.len() == 0
     }
 
-    pub fn clear_taken(&mut self) {
-        self.taken
-            .retain(|_, instant| instant.elapsed() < crate::types::TAKEN_TIMEOUT);
+    pub fn garbage_collect(&mut self) {
+        self.gc
+            .retain(|_, instant| instant.elapsed() < TAKEN_TIMEOUT);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -211,7 +212,7 @@ impl PresignatureManager {
         // Check if the `id` is already in the system. Error out and have the next cycle try again.
         if self.generators.contains_key(&id)
             || self.presignatures.contains_key(&id)
-            || self.taken.contains_key(&id)
+            || self.gc.contains_key(&id)
         {
             return Err(InitializationError::BadParameters(format!(
                 "id collision: presignature_id={id}"
@@ -315,7 +316,7 @@ impl PresignatureManager {
         public_key: &PublicKey,
         private_share: &SecretKeyShare,
     ) -> Result<&mut PresignatureProtocol, GenerationError> {
-        if self.presignatures.contains_key(&id) || self.taken.contains_key(&id) {
+        if self.presignatures.contains_key(&id) || self.gc.contains_key(&id) {
             Err(GenerationError::AlreadyGenerated)
         } else {
             match self.generators.entry(id) {
@@ -377,13 +378,13 @@ impl PresignatureManager {
     }
 
     pub fn take(&mut self, id: PresignatureId) -> Option<Presignature> {
-        self.taken.insert(id, Instant::now());
+        self.gc.insert(id, Instant::now());
         self.presignatures.remove(&id)
     }
 
     pub fn insert_mine(&mut self, presig: Presignature) {
         // Remove from taken list if it was there
-        self.taken.remove(&presig.id);
+        self.gc.remove(&presig.id);
         self.mine.push_back(presig.id);
         self.presignatures.insert(presig.id, presig);
     }
@@ -400,6 +401,7 @@ impl PresignatureManager {
                 let action = match generator.poke() {
                     Ok(action) => action,
                     Err(e) => {
+                        self.gc.insert(*id, Instant::now());
                         self.introduced.remove(id);
                         errors.push(e);
                         break false;
