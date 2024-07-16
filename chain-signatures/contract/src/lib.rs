@@ -616,11 +616,15 @@ impl VersionedMpcContract {
     #[init]
     pub fn init(threshold: usize, candidates: BTreeMap<AccountId, CandidateInfo>) -> Self {
         log!(
-            "init: signer={}, treshhold={}, candidates={}",
+            "init: signer={}, threshold={}, candidates={}",
             env::signer_account_id(),
             threshold,
             serde_json::to_string(&candidates).unwrap()
         );
+
+        if threshold > candidates.len() {
+            env::panic_str("threshold cannot be greater than the number of candidates");
+        }
 
         Self::V0(MpcContract::init(threshold, candidates))
     }
@@ -642,6 +646,10 @@ impl VersionedMpcContract {
             threshold,
             public_key
         );
+
+        if threshold > candidates.len() {
+            env::panic_str("threshold cannot be greater than the number of candidates");
+        }
 
         Self::V0(MpcContract {
             protocol_state: ProtocolContractState::Running(RunningContractState {
