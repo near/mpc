@@ -465,6 +465,7 @@ impl CryptographicProtocol for RunningState {
         }
         drop(messages);
 
+        self.stuck_monitor.write().await.check().await;
         Ok(NodeState::Running(self))
     }
 }

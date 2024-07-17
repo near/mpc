@@ -17,6 +17,7 @@ use k256::Secp256k1;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt;
 use std::time::{Duration, Instant};
 
 use near_account_id::AccountId;
@@ -116,6 +117,29 @@ pub struct TripleManager {
     pub my_account_id: AccountId,
 }
 
+impl fmt::Debug for TripleManager {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TripleManager")
+            .field("triples", &self.triples.keys().collect::<Vec<_>>())
+            .field("generators", &self.generators.keys().collect::<Vec<_>>())
+            .field("queued", &self.queued)
+            .field("ongoing", &self.ongoing)
+            .field("introduced", &self.introduced)
+            .field("taken", &self.taken.keys().collect::<Vec<_>>())
+            .field(
+                "failed_triples",
+                &self.failed_triples.keys().collect::<Vec<_>>(),
+            )
+            .field("mine", &self.mine)
+            .field("me", &self.me)
+            .field("threshold", &self.threshold)
+            .field("epoch", &self.epoch)
+            .field("my_account_id", &self.my_account_id)
+            .field("triple_cfg", &self.triple_cfg)
+            .finish()
+    }
+}
+
 impl TripleManager {
     pub fn new(
         me: Participant,
@@ -172,6 +196,10 @@ impl TripleManager {
     /// all ongoing generation protocols complete.
     pub fn potential_len(&self) -> usize {
         self.len() + self.generators.len()
+    }
+
+    pub fn has_min_triples(&self) -> bool {
+        self.my_len() >= self.triple_cfg.min_triples
     }
 
     /// Clears an entry from failed triples if that triple protocol was created more than 2 hrs ago

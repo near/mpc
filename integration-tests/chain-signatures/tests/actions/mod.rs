@@ -24,6 +24,7 @@ use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_workspaces::Account;
 use rand::Rng;
 use secp256k1::XOnlyPublicKey;
+use wait_for::WaitForError;
 
 use std::time::Duration;
 
@@ -212,16 +213,26 @@ pub async fn request_sign_non_random(
     account: Account,
     payload: [u8; 32],
     payload_hashed: [u8; 32],
-) -> anyhow::Result<([u8; 32], [u8; 32], Account, CryptoHash)> {
+) -> Result<([u8; 32], [u8; 32], Account, CryptoHash), WaitForError> {
     let signer = InMemorySigner {
         account_id: account.id().clone(),
-        public_key: account.secret_key().public_key().to_string().parse()?,
-        secret_key: account.secret_key().to_string().parse()?,
+        public_key: account
+            .secret_key()
+            .public_key()
+            .to_string()
+            .parse()
+            .map_err(|_| WaitForError::Parsing)?,
+        secret_key: account
+            .secret_key()
+            .to_string()
+            .parse()
+            .map_err(|_| WaitForError::Parsing)?,
     };
     let (nonce, block_hash, _) = ctx
         .rpc_client
         .fetch_nonce(&signer.account_id, &signer.public_key)
-        .await?;
+        .await
+        .map_err(|error| WaitForError::Fetch(format!("{error:?}")))?;
 
     let request = SignRequest {
         payload: payload_hashed,
@@ -242,14 +253,16 @@ pub async fn request_sign_non_random(
                     method_name: "sign".to_string(),
                     args: serde_json::to_vec(&serde_json::json!({
                         "request": request,
-                    }))?,
+                    }))
+                    .map_err(|error| WaitForError::SerdeJson(format!("{error:?}")))?,
                     gas: 300_000_000_000_000,
                     deposit: 1,
                 }))],
             }
             .sign(&signer),
         })
-        .await?;
+        .await
+        .map_err(|error| WaitForError::JsonRpc(format!("{error:?}")))?;
     tokio::time::sleep(Duration::from_secs(1)).await;
     Ok((payload, payload_hashed, account, tx_hash))
 }
@@ -258,10 +271,16 @@ pub async fn single_payload_signature_production(
     ctx: &MultichainTestContext<'_>,
     state: &RunningContractState,
 ) -> anyhow::Result<()> {
-    let (payload, payload_hash, account, _) = request_sign(ctx).await?;
-    let signature =
-        wait_for::signature_payload_responded(ctx, account.clone(), payload, payload_hash).await?;
-
+    let (payload, payload_hash, account, tx_hash) = request_sign(ctx).await?;
+    let first_tx_result = wait_for::signature_responded(ctx, tx_hash).await;
+    let signature = match first_tx_result {
+        Ok(sig) => sig,
+        Err(error) => {
+            println!("single_payload_signature_production: first sign tx err out with {error:?}");
+            wait_for::signature_payload_responded(ctx, account.clone(), payload, payload_hash)
+                .await?
+        }
+    };
     let mut mpc_pk_bytes = vec![0x04];
     mpc_pk_bytes.extend_from_slice(&state.public_key.as_bytes()[1..]);
     assert_signature(

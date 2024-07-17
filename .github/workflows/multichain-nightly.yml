@@ -1,0 +1,111 @@
+name: Nightly Chain Signature Tests
+
+# The right schedule
+on:
+  schedule:
+    - cron: "0 3 * * *" # Run once per day at 3:00 am
+
+jobs:
+  # Check the date and see if latest commit is within a day.
+  commited_recently:
+    runs-on: ubuntu-20.04
+    name: Check latest commit
+    outputs:
+      should_run: ${{ steps.should_run.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: print latest_commit
+        run: echo ${{ github.sha }}
+      - id: should_run
+        continue-on-error: true
+        name: Check if the latest commit is within a day
+        if: ${{ github.event_name == 'schedule' }}
+        run: test -z $(git rev-list  --after="24 hours"  ${{ github.sha }}) && echo "::set-output name=should_run::false"
+
+  nightly:
+    strategy:
+      matrix:
+        # FIXME: macos-latest-xl is disabled since colima is erroring out right now
+        os: [warp-ubuntu-latest-x64-4x]
+
+    needs: commited_recently
+    if: ${{ needs.commited_recently.outputs.should_run != 'false' }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Docker
+        if: ${{ matrix.os == 'macos-latest-xl' }}
+        run: |
+          brew install docker
+          colima start
+          # Colima does not expose the Docker socket by default, we have to symlink it
+          # https://github.com/abiosoft/colima/blob/main/docs/FAQ.md#cannot-connect-to-the-docker-daemon-at-unixvarrundockersock-is-the-docker-daemon-running
+          sudo ln -sf $HOME/.colima/default/docker.sock /var/run/docker.sock
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull Relayer & Sandbox Docker Images
+        run: |
+          docker pull ghcr.io/near/os-relayer:12ba6e35690df3979fce0b36a41d0ca0db9c0ab4
+          docker pull ghcr.io/near/near-lake-indexer:node-1.40.0
+          docker pull localstack/localstack:3.5.0
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - uses: WarpBuilds/cache@v1
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: "${{ runner.os }}-cargo-${{ hashFiles('chain-signatures/Cargo.lock') }}"
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1.1.2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install toxiproxy-server
+        run: |
+          wget -O toxiproxy-2.9.0_linux_amd64.deb https://github.com/Shopify/toxiproxy/releases/download/v2.9.0/toxiproxy_2.9.0_linux_amd64.deb
+          sudo dpkg -i toxiproxy-2.9.0_linux_amd64.deb
+
+      - name: Configure AWS
+        run: |
+          # Fake AWS configuration for LocalStack
+          aws configure set region us-east-1
+          aws --profile default configure set aws_access_key_id "123"
+          aws --profile default configure set aws_secret_access_key "456"
+
+      - name: Build Chain-Signatures Contract
+        working-directory: ./chain-signatures
+        run: cargo build -p mpc-contract --target wasm32-unknown-unknown --release
+
+      - name: Build Chain-Signatures Node
+        working-directory: ./chain-signatures
+        run: cargo build -p mpc-recovery-node --release
+
+      - name: Build Chain-Signatures Integration Tests
+        working-directory: ./integration-tests/chain-signatures
+        run: cargo build --tests
+
+      - name: Run Nightly
+        working-directory: ./integration-tests/chain-signatures
+        run: cargo test --package integration-tests-chain-signatures --test lib -- cases::nightly --show-output --ignored
+        env:
+          RUST_LOG: info,workspaces=warn
+          RUST_BACKTRACE: 1
