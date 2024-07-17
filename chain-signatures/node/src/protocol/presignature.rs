@@ -400,7 +400,7 @@ impl PresignatureManager {
         tracing::info!(mine = ?self.mine, "my presignatures");
         let my_presignature_id = self.mine.pop_front()?;
         // SAFETY: This unwrap is safe because taking mine will always succeed since it is only
-        // present when it complete generation where the determination of ownership at completion.
+        // present when generation completes where the determination of ownership is made.
         Some(self.take(my_presignature_id).unwrap())
     }
 
@@ -416,7 +416,7 @@ impl PresignatureManager {
         if self.gc.contains_key(&id) {
             return Err(GenerationError::PresignatureIsGarbageCollected(id));
         }
-        return Err(GenerationError::PresignatureIsMissing(id));
+        Err(GenerationError::PresignatureIsMissing(id))
     }
 
     pub fn insert_mine(&mut self, presig: Presignature) {
