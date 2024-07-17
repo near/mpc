@@ -95,7 +95,6 @@ pub async fn assert_signature(
     let mpc_pk = AffinePoint::from_encoded_point(&mpc_point).unwrap();
     let epsilon = derive_epsilon(account_id, "test");
     let user_pk = derive_key(mpc_pk, epsilon);
-
     assert!(signature.verify(&user_pk, &Scalar::from_bytes(payload),));
 }
 
@@ -348,28 +347,14 @@ pub async fn clear_toxics() -> anyhow::Result<()> {
     Ok(())
 }
 
-// This code was and still is a bit of a mess.
-// Previously converting a Scalar to bytes reversed the bytes and converted to a Scalar.
-// The big_r and s values were generated using chain signatures from an older commit, therefore the signature is generated against a reversed hash.
-// This shows that the old signatures will verify against a reversed payload
 #[tokio::test]
-async fn test_old_signatures_verify() {
+async fn test_signatures_verify() {
     use k256::sha2::{Digest, Sha256};
-    let big_r = "044bf886afee5a6844a25fa6831a01715e990d3d9e96b792a9da91cfbecbf8477cea57097a3db9fc1d4822afade3d1c4e6d66e99568147304ae34bcfa609d90a16";
-    let s = "1f871c67139f617409067ac8a7150481e3a5e2d8a9207ffdaad82098654e95cb";
-    let mpc_key = "02F2B55346FD5E4BFF1F06522561BDCD024CEA25D98A091197ACC04E22B3004DB2";
-    let account_id = "acc_mc.test.near";
-
-    let mut payload = [0u8; 32];
-    for (i, item) in payload.iter_mut().enumerate() {
-        *item = i as u8;
-    }
-
-    let mut hasher = Sha256::new();
-    hasher.update(payload);
-
-    let mut payload_hash: [u8; 32] = hasher.finalize().into();
-    payload_hash.reverse();
+    let big_r = "03d6d674dae94517646708cfde6e2e46a2e666e06b92eba19290eb0ca11d5e45dc";
+    let s = "2a5f2bff1b8e7da4257d480c5610d0d2c35426ee12abb87ff9c3141fe448ab27";
+    let mpc_key = "04cc5ed2a876b6fc54176bcde0805e469ac7eca43a97bfff90acd5babbef3a33b10d14fed35065a06a67b9a243169f33ab20bf9dab49cf6c1466a15349c011ca2b";
+    let account_id = "dev-20240717130550-33209224232133.test.near";
+    let payload_hash: [u8; 32] = hex::decode(  "7be9d96ac6895be4c59e59bb67c015f28cb94669657ddb00e8aa063f62e18031").unwrap().try_into().unwrap();
 
     let payload_hash_scalar = Scalar::from_bytes(&payload_hash);
 
