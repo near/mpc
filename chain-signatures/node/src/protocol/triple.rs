@@ -260,12 +260,16 @@ impl TripleManager {
         if !self.triples.contains_key(&id0) {
             if self.generators.contains_key(&id0) {
                 Err(GenerationError::TripleIsGenerating(id0))
+            } else if self.gc.contains_key(&id0) {
+                Err(GenerationError::TripleIsGarbageCollected(id0))
             } else {
                 Err(GenerationError::TripleIsMissing(id0))
             }
         } else if !self.triples.contains_key(&id1) {
             if self.generators.contains_key(&id1) {
                 Err(GenerationError::TripleIsGenerating(id1))
+            } else if self.gc.contains_key(&id1) {
+                Err(GenerationError::TripleIsGarbageCollected(id1))
             } else {
                 Err(GenerationError::TripleIsMissing(id1))
             }

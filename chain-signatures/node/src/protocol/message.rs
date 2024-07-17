@@ -17,7 +17,6 @@ use near_primitives::hash::CryptoHash;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use std::time::Instant;
 use tokio::sync::RwLock;
 
 #[async_trait::async_trait]
@@ -238,15 +237,21 @@ impl MessageHandler for RunningState {
         // and refresh the timestamp of failed and taken
         let triple_messages = queue.triple_bins.entry(self.epoch).or_default();
         triple_messages.retain(|id, queue| {
-            if queue.is_empty() {
+            if queue.is_empty()
+                || queue.iter().any(|msg| {
+                    util::is_elapsed_longer_than_timeout(
+                        msg.timestamp,
+                        crate::types::PROTOCOL_TRIPLE_TIMEOUT,
+                    )
+                })
+            {
                 return false;
             }
 
-            // if gc is refreshed, remove the triple message because the triple is currently being GC'ed,
-            // where the triple protocol has previously failed or been utilized.
+            // if triple id is in GC, remove this triple message because the triple is currently
+            // being GC'ed, where the triple protocol has previously failed or been utilized.
             !triple_manager.refresh_gc(id)
         });
-
         for (id, queue) in triple_messages {
             let protocol = match triple_manager.get_or_generate(*id, participants) {
                 Ok(protocol) => protocol,
@@ -260,79 +265,100 @@ impl MessageHandler for RunningState {
 
             if let Some(protocol) = protocol {
                 while let Some(message) = queue.pop_front() {
-                    // Skip this triple if its message already timed out
-                    if util::is_elapsed_longer_than_timeout(
-                        message.timestamp,
-                        crate::types::PROTOCOL_TRIPLE_TIMEOUT,
-                    ) {
-                        continue;
-                    }
-
                     protocol.message(message.from, message.data);
                 }
             }
         }
 
         let mut presignature_manager = self.presignature_manager.write().await;
-        for (id, queue) in queue.presignature_bins.entry(self.epoch).or_default() {
-            let mut leftover_messages = Vec::new();
-            while let Some(message) = queue.pop_front() {
-                // Skip message if it already timed out
-                if util::is_elapsed_longer_than_timeout(
-                    message.timestamp,
-                    crate::types::PROTOCOL_PRESIG_TIMEOUT,
-                ) {
+        let presignature_messages = queue.presignature_bins.entry(self.epoch).or_default();
+        presignature_messages.retain(|id, queue| {
+            // Skip message if it already timed out
+            if queue.is_empty()
+                || queue.iter().any(|msg| {
+                    util::is_elapsed_longer_than_timeout(
+                        msg.timestamp,
+                        crate::types::PROTOCOL_PRESIG_TIMEOUT,
+                    )
+                })
+            {
+                return false;
+            }
+
+            // if presignature id is in GC, remove this triple message because the triple is currently
+            // being GC'ed, where the triple protocol has previously failed or been utilized.
+            !presignature_manager.refresh_gc(id)
+        });
+        for (id, queue) in presignature_messages {
+            // this unwrap() is safe since we have already checked that the queue is not empty.
+            let PresignatureMessage {
+                triple0, triple1, ..
+            } = queue.front().unwrap();
+
+            if !queue
+                .iter()
+                .all(|msg| triple0 == &msg.triple0 && triple1 == &msg.triple1)
+            {
+                // Check that all messages in the queue have the same triple0 and triple1, otherwise this is an
+                // invalid message, so we should just bin the whole entire protocol and its message for this presignature id.
+                queue.clear();
+                continue;
+            }
+
+            let protocol = match presignature_manager
+                .get_or_generate(
+                    participants,
+                    *id,
+                    *triple0,
+                    *triple1,
+                    &mut triple_manager,
+                    &self.public_key,
+                    &self.private_share,
+                )
+                .await
+            {
+                Ok(protocol) => protocol,
+                Err(presignature::GenerationError::AlreadyGenerated) => {
+                    tracing::debug!(id, "presignature already generated, nothing left to do");
                     continue;
                 }
-
-                match presignature_manager
-                    .get_or_generate(
-                        participants,
-                        *id,
-                        message.triple0,
-                        message.triple1,
-                        &mut triple_manager,
-                        &self.public_key,
-                        &self.private_share,
-                    )
-                    .await
-                {
-                    Ok(protocol) => protocol.message(message.from, message.data),
-                    Err(presignature::GenerationError::AlreadyGenerated) => {
-                        tracing::debug!(id, "presignature already generated, nothing left to do")
-                    }
-                    Err(presignature::GenerationError::TripleIsGenerating(_)) => {
-                        // Store the message until triple gets generated
-                        leftover_messages.push(message)
-                    }
-                    Err(presignature::GenerationError::TripleIsMissing(_)) => {
-                        // If a triple is missing, that means our system cannot process this presignature. We will have to bin
-                        // this message and have the other node timeout on that generation.
-                        tracing::warn!(
-                            presignature_id = id,
-                            triple0 = message.triple0,
-                            triple1 = message.triple1,
-                            "unable to process presignature: one or more triples are missing",
-                        );
-                    }
-                    Err(presignature::GenerationError::CaitSithInitializationError(error)) => {
-                        // ignore the message since the generation had bad parameters. Also have the other node who
-                        // initiated the protocol resend the message or have it timeout on their side.
-                        tracing::warn!(
-                            presignature_id = id,
-                            ?error,
-                            "unable to initialize incoming presignature protocol"
-                        );
-                        continue;
-                    }
+                Err(presignature::GenerationError::TripleIsGenerating(_)) => {
+                    // We will go back to this presignature bin later when the triple is generated.
+                    continue;
                 }
-            }
-            if !leftover_messages.is_empty() {
-                tracing::warn!(
-                    msg_count = leftover_messages.len(),
-                    "unable to process messages, storing for future"
-                );
-                queue.extend(leftover_messages);
+                Err(presignature::GenerationError::TripleIsGarbageCollected(_)) => {
+                    // This triple has already been removed from the triple manager, so we will have to bin
+                    // the entirety of the messages we received for this presignature id, and have the other node timeout
+                    queue.clear();
+                    continue;
+                }
+                Err(presignature::GenerationError::TripleIsMissing(_)) => {
+                    // If a triple is missing, that means our system cannot process this presignature. We will have to bin
+                    // the entirety of the messages we received for this presignature id, and have the other nodes timeout
+                    // on that generation if it already started on it.
+                    tracing::warn!(
+                        presignature_id = id,
+                        triple0,
+                        triple1,
+                        "unable to process presignature: one or more triples are missing",
+                    );
+                    queue.clear();
+                    continue;
+                }
+                Err(presignature::GenerationError::CaitSithInitializationError(error)) => {
+                    // ignore the message since the generation had bad parameters. Also have the other node who
+                    // initiated the protocol resend the message or have it timeout on their side.
+                    tracing::warn!(
+                        presignature_id = id,
+                        ?error,
+                        "unable to initialize incoming presignature protocol"
+                    );
+                    continue;
+                }
+            };
+
+            while let Some(message) = queue.pop_front() {
+                protocol.message(message.from, message.data);
             }
         }
 
