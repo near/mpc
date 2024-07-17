@@ -32,7 +32,6 @@
               # Native build dependencies
               protobuf
               curl
-              gmp
               openssl
 
               # Development
