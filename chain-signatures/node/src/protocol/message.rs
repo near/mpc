@@ -1,5 +1,5 @@
 use super::cryptography::CryptographicError;
-use super::presignature::{self, PresignatureId};
+use super::presignature::{GenerationError, PresignatureId};
 use super::state::{GeneratingState, NodeState, ResharingState, RunningState};
 use super::triple::TripleId;
 use crate::gcp::error::SecretStorageError;
@@ -290,7 +290,7 @@ impl MessageHandler for RunningState {
             !presignature_manager.refresh_gc(id)
         });
         for (id, queue) in presignature_messages {
-            // this unwrap() is safe since we have already checked that the queue is not empty.
+            // SAFETY: this unwrap() is safe since we have already checked that the queue is not empty.
             let PresignatureMessage {
                 triple0, triple1, ..
             } = queue.front().unwrap();
@@ -318,41 +318,39 @@ impl MessageHandler for RunningState {
                 .await
             {
                 Ok(protocol) => protocol,
-                Err(presignature::GenerationError::AlreadyGenerated) => {
-                    tracing::debug!(id, "presignature already generated, nothing left to do");
-                    continue;
-                }
-                Err(presignature::GenerationError::TripleIsGenerating(_)) => {
+                Err(GenerationError::TripleIsGenerating(_)) => {
                     // We will go back to this presignature bin later when the triple is generated.
                     continue;
                 }
-                Err(presignature::GenerationError::TripleIsGarbageCollected(_)) => {
-                    // This triple has already been removed from the triple manager, so we will have to bin
-                    // the entirety of the messages we received for this presignature id, and have the other node timeout
-                    queue.clear();
-                    continue;
-                }
-                Err(presignature::GenerationError::TripleIsMissing(_)) => {
-                    // If a triple is missing, that means our system cannot process this presignature. We will have to bin
+                Err(
+                    err @ (GenerationError::AlreadyGenerated
+                    | GenerationError::TripleIsGarbageCollected(_)
+                    | GenerationError::TripleIsMissing(_)),
+                ) => {
+                    // This triple has already been generated or removed from the triple manager, so we will have to bin
                     // the entirety of the messages we received for this presignature id, and have the other nodes timeout
-                    // on that generation if it already started on it.
-                    tracing::warn!(
-                        presignature_id = id,
-                        triple0,
-                        triple1,
-                        "unable to process presignature: one or more triples are missing",
-                    );
+                    tracing::debug!(id, ?err, "presignature cannot be generated");
                     queue.clear();
                     continue;
                 }
-                Err(presignature::GenerationError::CaitSithInitializationError(error)) => {
-                    // ignore the message since the generation had bad parameters. Also have the other node who
+                Err(GenerationError::CaitSithInitializationError(error)) => {
+                    // ignore these messages since the generation had bad parameters. Also have the other node who
                     // initiated the protocol resend the message or have it timeout on their side.
                     tracing::warn!(
                         presignature_id = id,
                         ?error,
                         "unable to initialize incoming presignature protocol"
                     );
+                    queue.clear();
+                    continue;
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        presignature_id = id,
+                        ?err,
+                        "Unexpected error encounted while generating presignature"
+                    );
+                    queue.clear();
                     continue;
                 }
             };
@@ -363,58 +361,116 @@ impl MessageHandler for RunningState {
         }
 
         let mut signature_manager = self.signature_manager.write().await;
-        for (receipt_id, queue) in queue.signature_bins.entry(self.epoch).or_default() {
-            let mut leftover_messages = Vec::new();
-            while let Some(message) = queue.pop_front() {
-                // Skip message if it already timed out
+        let signature_messages = queue.signature_bins.entry(self.epoch).or_default();
+        signature_messages.retain(|_, queue| {
+            // Skip message if it already timed out
+            if queue.is_empty() {
+                return false;
+            }
+
+            for msg in queue {
                 if util::is_elapsed_longer_than_timeout(
-                    message.timestamp,
+                    msg.timestamp,
                     crate::types::PROTOCOL_SIGNATURE_TIMEOUT,
                 ) {
-                    continue;
+                    return false;
                 }
 
                 // TODO: make consistent with presignature manager AlreadyGenerated.
-                if signature_manager.has_completed(&message.presignature_id) {
+                if signature_manager.has_completed(&msg.presignature_id) {
                     tracing::info!(
-                        presignature_id = message.presignature_id,
+                        presignature_id = msg.presignature_id,
                         "signature already generated, nothing left to do"
                     );
-                    continue;
-                }
-                // if !self
-                //     .sign_queue
-                //     .read()
-                //     .await
-                //     .contains(message.proposer, receipt_id.clone())
-                // {
-                //     leftover_messages.push(message);
-                //     continue;
-                // };
-                // TODO: Validate that the message matches our sign_queue
-                match signature_manager.get_or_generate(
-                    participants,
-                    *receipt_id,
-                    message.proposer,
-                    message.presignature_id,
-                    message.request.clone(),
-                    message.epsilon,
-                    message.delta,
-                    &mut presignature_manager,
-                )? {
-                    Some(protocol) => protocol.message(message.from, message.data),
-                    None => {
-                        // Store the message until we are ready to process it
-                        leftover_messages.push(message)
-                    }
+                    return false;
                 }
             }
-            if !leftover_messages.is_empty() {
-                tracing::warn!(
-                    msg_count = leftover_messages.len(),
-                    "unable to process messages, storing for future"
-                );
-                queue.extend(leftover_messages);
+
+            true
+        });
+        for (receipt_id, queue) in signature_messages {
+            // SAFETY: this unwrap() is safe since we have already checked that the queue is not empty.
+            let SignatureMessage {
+                proposer,
+                presignature_id,
+                request,
+                epsilon,
+                delta,
+                ..
+            } = queue.front().unwrap();
+
+            if !queue
+                .iter()
+                .all(|msg| presignature_id == &msg.presignature_id)
+            {
+                // Check that all messages in the queue have the same triple0 and triple1, otherwise this is an
+                // invalid message, so we should just bin the whole entire protocol and its message for this presignature id.
+                queue.clear();
+                continue;
+            }
+
+            // if !self
+            //     .sign_queue
+            //     .read()
+            //     .await
+            //     .contains(message.proposer, receipt_id.clone())
+            // {
+            //     leftover_messages.push(message);
+            //     continue;
+            // };
+            // TODO: Validate that the message matches our sign_queue
+            let protocol = match signature_manager.get_or_generate(
+                participants,
+                *receipt_id,
+                *proposer,
+                *presignature_id,
+                request,
+                *epsilon,
+                *delta,
+                &mut presignature_manager,
+            ) {
+                Ok(protocol) => protocol,
+                Err(GenerationError::PresignatureIsGenerating(_)) => {
+                    // We will revisit this this signature request later when the presignature has been generated.
+                    continue;
+                }
+                Err(
+                    GenerationError::AlreadyGenerated
+                    | GenerationError::PresignatureIsGarbageCollected(_)
+                    | GenerationError::PresignatureIsMissing(_),
+                ) => {
+                    // We will have to remove the entirety of the messages we received for this signature request,
+                    // and have the other nodes timeout in the following cases:
+                    // - If a presignature is in GC, then it was used already or failed to be produced.
+                    // - If a presignature is missing, that means our system cannot process this signature.
+                    queue.clear();
+                    continue;
+                }
+                Err(GenerationError::CaitSithInitializationError(error)) => {
+                    // ignore the whole of the messages since the generation had bad parameters. Also have the other node who
+                    // initiated the protocol resend the message or have it timeout on their side.
+                    tracing::warn!(
+                        ?receipt_id,
+                        presignature_id,
+                        ?error,
+                        "unable to initialize incoming signature protocol"
+                    );
+                    queue.clear();
+                    continue;
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        ?receipt_id,
+                        ?err,
+                        "Unexpected error encounted while generating signature"
+                    );
+                    queue.clear();
+                    continue;
+                }
+            };
+
+            while let Some(message) = queue.pop_front() {
+                protocol.message(message.from, message.data);
             }
         }
         triple_manager.garbage_collect();

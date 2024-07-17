@@ -1,6 +1,6 @@
 use super::contract::primitives::Participants;
 use super::message::SignatureMessage;
-use super::presignature::{Presignature, PresignatureId, PresignatureManager};
+use super::presignature::{GenerationError, Presignature, PresignatureId, PresignatureManager};
 use crate::indexer::ContractSignRequest;
 use crate::kdf::into_eth_sig;
 use crate::types::SignatureProtocol;
@@ -319,17 +319,29 @@ impl SignatureManager {
         receipt_id: CryptoHash,
         proposer: Participant,
         presignature_id: PresignatureId,
-        request: ContractSignRequest,
+        request: &ContractSignRequest,
         epsilon: Scalar,
         delta: Scalar,
         presignature_manager: &mut PresignatureManager,
-    ) -> Result<Option<&mut SignatureProtocol>, InitializationError> {
+    ) -> Result<&mut SignatureProtocol, GenerationError> {
         match self.generators.entry(receipt_id) {
             Entry::Vacant(entry) => {
                 tracing::info!(%receipt_id, me = ?self.me, presignature_id, "joining protocol to generate a new signature");
-                let Some(presignature) = presignature_manager.take(presignature_id) else {
-                    tracing::warn!(me = ?self.me, presignature_id, "presignature is missing, can't join signature generation protocol");
-                    return Ok(None);
+                let presignature = match presignature_manager.take(presignature_id) {
+                    Ok(presignature) => presignature,
+                    Err(err @ GenerationError::PresignatureIsGenerating(_)) => {
+                        tracing::warn!(me = ?self.me, presignature_id, "presignature is generating, can't join signature generation protocol");
+                        return Err(err);
+                    }
+                    Err(err @ GenerationError::PresignatureIsMissing(_)) => {
+                        tracing::warn!(me = ?self.me, presignature_id, "presignature is missing, can't join signature generation protocol");
+                        return Err(err);
+                    }
+                    Err(err @ GenerationError::PresignatureIsGarbageCollected(_)) => {
+                        tracing::warn!(me = ?self.me, presignature_id, "presignature is garbage collected, can't join signature generation protocol");
+                        return Err(err);
+                    }
+                    Err(err) => return Err(err),
                 };
                 tracing::info!(me = ?self.me, presignature_id, "found presignature: ready to start signature generation");
                 let generator = Self::generate_internal(
@@ -339,16 +351,16 @@ impl SignatureManager {
                     presignature,
                     GenerationRequest {
                         proposer,
-                        request,
+                        request: request.clone(),
                         epsilon,
                         delta,
                         sign_request_timestamp: Instant::now(),
                     },
                 )?;
                 let generator = entry.insert(generator);
-                Ok(Some(&mut generator.protocol))
+                Ok(&mut generator.protocol)
             }
-            Entry::Occupied(entry) => Ok(Some(&mut entry.into_mut().protocol)),
+            Entry::Occupied(entry) => Ok(&mut entry.into_mut().protocol),
         }
     }
 
