@@ -364,28 +364,16 @@ impl MessageHandler for RunningState {
         let signature_messages = queue.signature_bins.entry(self.epoch).or_default();
         signature_messages.retain(|_, queue| {
             // Skip message if it already timed out
-            if queue.is_empty() {
+            if queue.is_empty()
+                || queue.iter().any(|msg| {
+                    util::is_elapsed_longer_than_timeout(
+                        msg.timestamp,
+                        crate::types::PROTOCOL_SIGNATURE_TIMEOUT,
+                    )
+                })
+            {
                 return false;
             }
-
-            for msg in queue {
-                if util::is_elapsed_longer_than_timeout(
-                    msg.timestamp,
-                    crate::types::PROTOCOL_SIGNATURE_TIMEOUT,
-                ) {
-                    return false;
-                }
-
-                // TODO: make consistent with presignature manager AlreadyGenerated.
-                if signature_manager.has_completed(&msg.presignature_id) {
-                    tracing::info!(
-                        presignature_id = msg.presignature_id,
-                        "signature already generated, nothing left to do"
-                    );
-                    return false;
-                }
-            }
-
             true
         });
         for (receipt_id, queue) in signature_messages {
@@ -435,14 +423,15 @@ impl MessageHandler for RunningState {
                     continue;
                 }
                 Err(
-                    GenerationError::AlreadyGenerated
+                    err @ (GenerationError::AlreadyGenerated
                     | GenerationError::PresignatureIsGarbageCollected(_)
-                    | GenerationError::PresignatureIsMissing(_),
+                    | GenerationError::PresignatureIsMissing(_)),
                 ) => {
                     // We will have to remove the entirety of the messages we received for this signature request,
                     // and have the other nodes timeout in the following cases:
                     // - If a presignature is in GC, then it was used already or failed to be produced.
                     // - If a presignature is missing, that means our system cannot process this signature.
+                    tracing::debug!(%receipt_id, ?err, "signature cannot be generated");
                     queue.clear();
                     continue;
                 }
@@ -475,6 +464,7 @@ impl MessageHandler for RunningState {
         }
         triple_manager.garbage_collect();
         presignature_manager.garbage_collect();
+        signature_manager.garbage_collect();
         Ok(())
     }
 }

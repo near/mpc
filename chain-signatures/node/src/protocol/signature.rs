@@ -324,6 +324,10 @@ impl SignatureManager {
         delta: Scalar,
         presignature_manager: &mut PresignatureManager,
     ) -> Result<&mut SignatureProtocol, GenerationError> {
+        if self.completed.contains_key(&presignature_id) {
+            tracing::warn!(%receipt_id, presignature_id, "presignature has already been used to generate a signature");
+            return Err(GenerationError::AlreadyGenerated);
+        }
         match self.generators.entry(receipt_id) {
             Entry::Vacant(entry) => {
                 tracing::info!(%receipt_id, me = ?self.me, presignature_id, "joining protocol to generate a new signature");
@@ -580,11 +584,9 @@ impl SignatureManager {
         Ok(())
     }
 
-    /// Check whether or not the signature has been completed with this presignature_id.
-    pub fn has_completed(&mut self, presignature_id: &PresignatureId) -> bool {
+    /// Garbage collect all the completed signatures.
+    pub fn garbage_collect(&mut self) {
         self.completed
             .retain(|_, timestamp| timestamp.elapsed() < COMPLETION_EXISTENCE_TIMEOUT);
-
-        self.completed.contains_key(presignature_id)
     }
 }
