@@ -647,8 +647,8 @@ impl VersionedMpcContract {
             public_key
         );
 
-        if threshold > candidates.len() {
-            env::panic_str("threshold cannot be greater than the number of candidates");
+        if threshold > participants.len() {
+            env::panic_str("threshold cannot be greater than the number of participants");
         }
 
         Self::V0(MpcContract {

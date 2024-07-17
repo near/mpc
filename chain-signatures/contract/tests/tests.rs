@@ -50,7 +50,7 @@ async fn init_with_candidates(pk: Option<near_crypto::PublicKey>) -> (Worker<San
     let (worker, contract) = init().await;
     let candidates = candidates();
 
-    let result = if let Some(pk) = pk {
+    let init = if let Some(pk) = pk {
         let participants = candidates
             .into_iter()
             .map(|(k, v)| (k, Into::<ParticipantInfo>::into(v)))
@@ -67,7 +67,7 @@ async fn init_with_candidates(pk: Option<near_crypto::PublicKey>) -> (Worker<San
             .await
             .unwrap()
             .into_result()
-            .unwrap();
+            .unwrap()
     } else {
         contract
             .call("init")
@@ -79,9 +79,9 @@ async fn init_with_candidates(pk: Option<near_crypto::PublicKey>) -> (Worker<San
             .await
             .unwrap()
             .into_result()
-            .unwrap();
+            .unwrap()
     };
-    dbg!(result);
+    dbg!(init);
     (worker, contract)
 }
 
@@ -122,8 +122,8 @@ async fn create_response(
     let (digest, scalar_hash, payload_hash) = process_message(msg).await;
     let pk = sk.public_key();
 
-    let epsilon = derive_epsilon(predecessor_id, &path);
-    let derived_sk = derive_secret_key(&sk, epsilon);
+    let epsilon = derive_epsilon(predecessor_id, path);
+    let derived_sk = derive_secret_key(sk, epsilon);
     let derived_pk = derive_key(pk.into(), epsilon);
     let signing_key = k256::ecdsa::SigningKey::from(&derived_sk);
     let verifying_key =
@@ -139,7 +139,7 @@ async fn create_response(
     let respond_req = SignatureRequest::new(payload_hash, predecessor_id, path);
     let big_r =
         AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
-    let s: k256::Scalar = s.as_ref().clone();
+    let s: k256::Scalar = *s.as_ref();
 
     let recovery_id = if check_ec_signature(&derived_pk, &big_r, &s, scalar_hash, 0).is_ok() {
         0
@@ -212,6 +212,7 @@ async fn sign_and_validate(
 async fn test_contract_sign_request() -> anyhow::Result<()> {
     let (_, contract, sk) = init_env().await;
     let predecessor_id = contract.id();
+    let path = "test";
 
     let messages = [
         "hello world",
@@ -224,7 +225,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
     for msg in messages {
         println!("submitting: {msg}");
         let (payload_hash, respond_req, respond_resp) =
-            create_response(&predecessor_id, msg, path, &sk).await;
+            create_response(predecessor_id, msg, path, &sk).await;
         let request = SignRequest {
             payload: payload_hash,
             path: path.into(),
@@ -237,7 +238,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
     // check duplicate requests can also be signed:
     let duplicate_msg = "welp";
     let (payload_hash, respond_req, respond_resp) =
-        create_response(&predecessor_id, duplicate_msg, path, &sk).await;
+        create_response(predecessor_id, duplicate_msg, path, &sk).await;
     let request = SignRequest {
         payload: payload_hash,
         path: path.into(),
@@ -264,7 +265,7 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
     // Try to sign with no deposit, should fail.
     let msg = "without-deposit";
     let (payload_hash, respond_req, respond_resp) =
-        create_response(&predecessor_id, msg, path, &sk).await;
+        create_response(predecessor_id, msg, path, &sk).await;
     let request = SignRequest {
         payload: payload_hash,
         path: path.into(),
