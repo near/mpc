@@ -374,8 +374,8 @@ impl VersionedMpcContract {
         }
     }
 
-    /// This is the derived key given path
-    pub fn my_derived_public_key(&self, path: String) -> PublicKey {
+    /// This is the derived public key of the caller given path
+    pub fn derived_public_key(&self, path: String) -> PublicKey {
         let predecessor = env::predecessor_account_id();
         let epsilon = derive_epsilon(&predecessor, &path);
         let derived_public_key =
