@@ -125,11 +125,7 @@ impl fmt::Debug for TripleManager {
             .field("queued", &self.queued)
             .field("ongoing", &self.ongoing)
             .field("introduced", &self.introduced)
-            .field("taken", &self.taken.keys().collect::<Vec<_>>())
-            .field(
-                "failed_triples",
-                &self.failed_triples.keys().collect::<Vec<_>>(),
-            )
+            .field("gc", &self.gc.keys().collect::<Vec<_>>())
             .field("mine", &self.mine)
             .field("me", &self.me)
             .field("threshold", &self.threshold)

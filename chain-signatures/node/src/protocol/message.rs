@@ -248,8 +248,8 @@ impl MessageHandler for RunningState {
                 return false;
             }
 
-            // if triple id is in GC, remove this triple message because the triple is currently
-            // being GC'ed, where the triple protocol has previously failed or been utilized.
+            // if triple id is in GC, remove these messages because the triple is currently
+            // being GC'ed, where this particular triple has previously failed or been utilized.
             !triple_manager.refresh_gc(id)
         });
         for (id, queue) in triple_messages {
@@ -285,8 +285,8 @@ impl MessageHandler for RunningState {
                 return false;
             }
 
-            // if presignature id is in GC, remove this triple message because the triple is currently
-            // being GC'ed, where the triple protocol has previously failed or been utilized.
+            // if presignature id is in GC, remove these messages because the presignature is currently
+            // being GC'ed, where this particular presignature has previously failed or been utilized.
             !presignature_manager.refresh_gc(id)
         });
         for (id, queue) in presignature_messages {
