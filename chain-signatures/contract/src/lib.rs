@@ -156,14 +156,6 @@ impl MpcContract {
         }
     }
 
-    fn clean_payloads(&mut self, requests: Vec<SignatureRequest>, counter: u32) {
-        log!("clean_payloads");
-        for payload in requests.iter() {
-            self.pending_requests.remove(payload);
-        }
-        self.request_counter = counter;
-    }
-
     pub fn init(threshold: usize, candidates: BTreeMap<AccountId, CandidateInfo>) -> Self {
         MpcContract {
             protocol_state: ProtocolContractState::Initializing(InitializingContractState {
@@ -703,15 +695,6 @@ impl VersionedMpcContract {
             yield_resume_requests: LookupMap::new(StorageKey::YieldResumeRequests),
             next_available_yield_resume_request_index: 0u64,
         })
-    }
-
-    #[private]
-    pub fn clean_payloads(&mut self, requests: Vec<SignatureRequest>, counter: u32) {
-        match self {
-            Self::V0(mpc_contract) => {
-                mpc_contract.clean_payloads(requests, counter);
-            }
-        }
     }
 
     fn mutable_state(&mut self) -> &mut ProtocolContractState {
