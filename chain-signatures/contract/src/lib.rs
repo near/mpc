@@ -149,8 +149,9 @@ impl MpcContract {
             signature_request,
         }) = self.yield_resume_requests.remove(&index)
         {
-            self.pending_requests.remove(&signature_request);
-            self.request_counter -= 1;
+            if self.pending_requests.remove(&signature_request).is_some() {
+                self.request_counter -= 1;
+            }
         } else {
             env::panic_str("yield resume requests do not contain this request.")
         }
