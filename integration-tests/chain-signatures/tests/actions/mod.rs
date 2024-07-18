@@ -349,7 +349,6 @@ pub async fn clear_toxics() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_signatures_verify() {
-    use k256::sha2::{Digest, Sha256};
     let big_r = "03d6d674dae94517646708cfde6e2e46a2e666e06b92eba19290eb0ca11d5e45dc";
     let s = "2a5f2bff1b8e7da4257d480c5610d0d2c35426ee12abb87ff9c3141fe448ab27";
     let mpc_key = "04cc5ed2a876b6fc54176bcde0805e469ac7eca43a97bfff90acd5babbef3a33b10d14fed35065a06a67b9a243169f33ab20bf9dab49cf6c1466a15349c011ca2b";

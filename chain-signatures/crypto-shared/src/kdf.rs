@@ -4,7 +4,7 @@ use k256::{
     ecdsa::{RecoveryId, Signature, VerifyingKey},
     elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic},
     sha2::{Digest, Sha256},
-    EncodedPoint, Scalar, Secp256k1, SecretKey,
+    Scalar, Secp256k1, SecretKey,
 };
 use near_account_id::AccountId;
 
