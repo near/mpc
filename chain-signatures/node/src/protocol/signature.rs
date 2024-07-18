@@ -542,7 +542,7 @@ impl SignatureManager {
                 Scalar::from_bytes(&request.payload_hash),
             ) else {
                 tracing::error!(%receipt_id, "Failed to generate a recovery ID");
-                break;
+                continue;
             };
             let response = match rpc_client
                 .call(signer, mpc_contract_id, "respond")
@@ -558,7 +558,7 @@ impl SignatureManager {
                 Ok(response) => response,
                 Err(err) => {
                     tracing::error!(%receipt_id, error = ?err, "Failed to publish transaction");
-                    break;
+                    continue;
                 }
             };
 
@@ -568,7 +568,7 @@ impl SignatureManager {
                 }
                 Err(err) => {
                     tracing::error!(%receipt_id, bi_r = signature.big_r.affine_point.to_base58(), s = ?signature.s, error = ?err, "smart contract threw error");
-                    break;
+                    continue;
                 }
             };
 
