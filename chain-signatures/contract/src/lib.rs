@@ -374,9 +374,10 @@ impl VersionedMpcContract {
         }
     }
 
-    /// This is the derived public key of the caller given path
-    pub fn derived_public_key(&self, path: String) -> PublicKey {
-        let predecessor = env::predecessor_account_id();
+    /// This is the derived public key of the caller given path and predecessor
+    /// if predecessor is not provided, it will be the caller of the contract
+    pub fn derived_public_key(&self, path: String, predecessor: Option<AccountId>) -> PublicKey {
+        let predecessor = predecessor.unwrap_or_else(env::predecessor_account_id);
         let epsilon = derive_epsilon(&predecessor, &path);
         let derived_public_key =
             derive_key(near_public_key_to_affine_point(self.public_key()), epsilon);
