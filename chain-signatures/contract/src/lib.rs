@@ -72,15 +72,6 @@ pub enum ProtocolContractState {
 #[borsh(crate = "near_sdk::borsh")]
 pub enum StorageKey {
     PendingRequests,
-    YieldResumeRequests,
-}
-
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone)]
-#[borsh(crate = "near_sdk::borsh")]
-pub struct YieldResumeRequest {
-    data_id: CryptoHash,
-    account_id: AccountId,
-    signature_request: SignatureRequest,
 }
 
 #[near_bindgen]
@@ -93,6 +84,14 @@ impl Default for VersionedMpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
     }
+}
+
+/// The index into calling the YieldResume feature of NEAR. This will allow to resume
+/// a yield call after the contract has been called back via this index.
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone)]
+#[borsh(crate = "near_sdk::borsh")]
+pub struct YieldIndex {
+    data_id: CryptoHash,
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone)]
@@ -116,42 +115,24 @@ impl SignatureRequest {
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
-    pending_requests: LookupMap<SignatureRequest, Option<CryptoHash>>,
+    pending_requests: LookupMap<SignatureRequest, YieldIndex>,
     request_counter: u32,
-    yield_resume_requests: LookupMap<u64, YieldResumeRequest>,
-    next_available_yield_resume_request_index: u64,
 }
 
 impl MpcContract {
-    fn add_request(
-        &mut self,
-        request: &SignatureRequest,
-        yield_resume_data_id: &Option<CryptoHash>,
-    ) {
-        if self.request_counter > 8 {
-            env::panic_str("Too many pending requests. Please, try again later.");
-        }
-        if !self.pending_requests.contains_key(request) {
+    fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) {
+        if self
+            .pending_requests
+            .insert(request, &YieldIndex { data_id })
+            .is_none()
+        {
             self.request_counter += 1;
         }
-        self.pending_requests.insert(request, yield_resume_data_id);
     }
 
-    fn add_yield_resume_request(&mut self, index: u64, yield_resume_request: YieldResumeRequest) {
-        self.yield_resume_requests
-            .insert(&index, &yield_resume_request);
-    }
-
-    fn remove_request_by_yield_resume_index(&mut self, index: u64) {
-        if let Some(YieldResumeRequest {
-            data_id: _,
-            account_id: _,
-            signature_request,
-        }) = self.yield_resume_requests.remove(&index)
-        {
-            if self.pending_requests.remove(&signature_request).is_some() {
-                self.request_counter -= 1;
-            }
+    fn remove_request(&mut self, request: SignatureRequest) {
+        if self.pending_requests.remove(&request).is_some() {
+            self.request_counter -= 1;
         } else {
             env::panic_str("yield resume requests do not contain this request.")
         }
@@ -166,8 +147,6 @@ impl MpcContract {
             }),
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
-            yield_resume_requests: LookupMap::new(StorageKey::YieldResumeRequests),
-            next_available_yield_resume_request_index: 0u64,
         }
     }
 }
@@ -210,17 +189,21 @@ impl VersionedMpcContract {
             GAS_FOR_SIGN_CALL
         );
 
+        match self {
+            Self::V0(mpc_contract) => {
+                if mpc_contract.request_counter > 8 {
+                    env::panic_str("Too many pending requests. Please, try again later.");
+                }
+            }
+        }
         let predecessor = env::predecessor_account_id();
         let request = SignatureRequest::new(payload, &predecessor, &path);
         if !self.request_already_exists(&request) {
             match self {
                 Self::V0(mpc_contract) => {
-                    let index = mpc_contract.next_available_yield_resume_request_index;
-                    mpc_contract.next_available_yield_resume_request_index += 1;
-
                     let yield_promise = env::promise_yield_create(
                         "clear_state_on_finish",
-                        &serde_json::to_vec(&(index,)).unwrap(),
+                        &serde_json::to_vec(&(&request,)).unwrap(),
                         CLEAR_STATE_ON_FINISH_CALL_GAS,
                         GasWeight(0),
                         DATA_ID_REGISTER,
@@ -231,29 +214,18 @@ impl VersionedMpcContract {
                         .expect("read_register failed")
                         .try_into()
                         .expect("conversion to CryptoHash failed");
-
-                    mpc_contract.add_request(&request, &Some(data_id));
-                    mpc_contract.add_yield_resume_request(
-                        index,
-                        YieldResumeRequest {
-                            data_id,
-                            account_id: env::signer_account_id(),
-                            signature_request: request,
-                        },
-                    );
+                    mpc_contract.add_request(&request, data_id);
 
                     log!(
-                        "sign: predecessor={}, payload={:?}, path={:?}, key_version={}, data_id={:?}",
-                        predecessor,
-                        payload,
-                        path,
-                        key_version,
-                        data_id
+                        "sign: predecessor={predecessor}, payload={payload:?}, path={path:?}, key_version={key_version}, data_id={data_id:?}",
                     );
+
                     env::log_str(
                         &serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap(),
                     );
 
+                    // NOTE: there's another promise after the clear_state_on_finish to avoid any errors
+                    // that would rollback the state.
                     let final_yield_promise = env::promise_then(
                         yield_promise,
                         env::current_account_id(),
@@ -290,13 +262,13 @@ impl VersionedMpcContract {
     #[private]
     pub fn clear_state_on_finish(
         &mut self,
-        yield_resume_request_index: u64,
+        request: SignatureRequest,
         #[callback_result] signature: Result<SignatureResponse, PromiseError>,
     ) -> SignatureResult<SignatureResponse, SignaturePromiseError> {
         match self {
             Self::V0(mpc_contract) => {
                 // Clean up the local state
-                mpc_contract.remove_request_by_yield_resume_index(yield_resume_request_index);
+                mpc_contract.remove_request(request);
 
                 match signature {
                     Ok(signature) => SignatureResult::Ok(signature),
@@ -341,7 +313,9 @@ impl VersionedMpcContract {
 
             match self {
                 Self::V0(mpc_contract) => {
-                    if let Some(Some(data_id)) = mpc_contract.pending_requests.get(&request) {
+                    if let Some(YieldIndex { data_id }) =
+                        mpc_contract.pending_requests.get(&request)
+                    {
                         env::promise_yield_resume(
                             &data_id,
                             &serde_json::to_vec(&response).unwrap(),
@@ -671,8 +645,6 @@ impl VersionedMpcContract {
             }),
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
-            yield_resume_requests: LookupMap::new(StorageKey::YieldResumeRequests),
-            next_available_yield_resume_request_index: 0u64,
         })
     }
 
@@ -693,8 +665,6 @@ impl VersionedMpcContract {
             protocol_state: ProtocolContractState::NotInitialized,
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
-            yield_resume_requests: LookupMap::new(StorageKey::YieldResumeRequests),
-            next_available_yield_resume_request_index: 0u64,
         })
     }
 
