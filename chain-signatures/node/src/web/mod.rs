@@ -1,6 +1,7 @@
 mod error;
 
 use self::error::Error;
+use crate::indexer::Indexer;
 use crate::protocol::message::SignedMessage;
 use crate::protocol::{MpcMessage, NodeState};
 use crate::web::error::Result;
@@ -11,6 +12,7 @@ use axum::{Extension, Json, Router};
 use axum_extra::extract::WithRejection;
 use cait_sith::protocol::Participant;
 use mpc_keys::hpke::{self, Ciphered};
+use near_primitives::types::BlockHeight;
 use prometheus::{Encoder, TextEncoder};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
@@ -20,6 +22,7 @@ struct AxumState {
     sender: Sender<MpcMessage>,
     protocol_state: Arc<RwLock<NodeState>>,
     cipher_sk: hpke::SecretKey,
+    indexer: Indexer,
 }
 
 pub async fn run(
@@ -27,12 +30,14 @@ pub async fn run(
     sender: Sender<MpcMessage>,
     cipher_sk: hpke::SecretKey,
     protocol_state: Arc<RwLock<NodeState>>,
+    indexer: Indexer,
 ) -> anyhow::Result<()> {
     tracing::debug!("running a node");
     let axum_state = AxumState {
         sender,
         protocol_state,
         cipher_sk,
+        indexer,
     };
 
     let app = Router::new()
@@ -105,6 +110,7 @@ pub enum StateView {
         presignature_count: usize,
         presignature_mine_count: usize,
         presignature_potential_count: usize,
+        latest_block_height: BlockHeight,
     },
     NotRunning,
 }
@@ -112,6 +118,7 @@ pub enum StateView {
 #[tracing::instrument(level = "debug", skip_all)]
 async fn state(Extension(state): Extension<Arc<AxumState>>) -> Result<Json<StateView>> {
     tracing::debug!("fetching state");
+    let latest_block_height = state.indexer.latest_block_height().await;
     let protocol_state = state.protocol_state.read().await;
     match &*protocol_state {
         NodeState::Running(state) => {
@@ -131,6 +138,7 @@ async fn state(Extension(state): Extension<Arc<AxumState>>) -> Result<Json<State
                 presignature_count,
                 presignature_mine_count,
                 presignature_potential_count,
+                latest_block_height,
             }))
         }
         _ => {
