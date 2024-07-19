@@ -1,3 +1,4 @@
+use crate::gcp::error::DatastoreStorageError;
 use crate::gcp::GcpService;
 use crate::kdf;
 use crate::protocol::{SignQueue, SignRequest};
@@ -8,10 +9,11 @@ use near_lake_framework::{LakeBuilder, LakeContext};
 use near_lake_primitives::actions::ActionMetaDataExt;
 use near_lake_primitives::receipts::ExecutionStatus;
 
+use near_primitives::types::BlockHeight;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 /// Configures indexer.
@@ -82,11 +84,39 @@ pub struct ContractSignRequest {
 #[derive(Debug, Clone)]
 pub struct Indexer {
     latest_block_height: Arc<RwLock<LatestBlockHeight>>,
+    last_updated_timestamp: Arc<RwLock<Instant>>,
 }
 
 impl Indexer {
-    pub async fn latest_block_height(&self) -> u64 {
+    const BEHIND_THRESHOLD: Duration = Duration::from_secs(60);
+
+    fn new(latest_block_height: LatestBlockHeight) -> Self {
+        Self {
+            latest_block_height: Arc::new(RwLock::new(latest_block_height)),
+            last_updated_timestamp: Arc::new(RwLock::new(Instant::now())),
+        }
+    }
+
+    pub async fn latest_block_height(&self) -> BlockHeight {
         self.latest_block_height.read().await.block_height
+    }
+
+    pub async fn is_behind(&self) -> bool {
+        self.last_updated_timestamp.read().await.elapsed() > Self::BEHIND_THRESHOLD
+    }
+
+    async fn update_block_height(
+        &self,
+        block_height: BlockHeight,
+        gcp: &GcpService,
+    ) -> Result<(), DatastoreStorageError> {
+        *self.last_updated_timestamp.write().await = Instant::now();
+        self.latest_block_height
+            .write()
+            .await
+            .set(block_height)
+            .store(gcp)
+            .await
     }
 }
 
@@ -96,7 +126,7 @@ struct Context {
     node_account_id: AccountId,
     gcp_service: GcpService,
     queue: Arc<RwLock<SignQueue>>,
-    latest_block_height: Arc<RwLock<LatestBlockHeight>>,
+    indexer: Indexer,
 }
 
 async fn handle_block(
@@ -159,11 +189,8 @@ async fn handle_block(
         }
     }
 
-    ctx.latest_block_height
-        .write()
-        .await
-        .set(block.block_height())
-        .store(&ctx.gcp_service)
+    ctx.indexer
+        .update_block_height(block.block_height(), &ctx.gcp_service)
         .await?;
 
     crate::metrics::LATEST_BLOCK_HEIGHT
@@ -217,13 +244,13 @@ pub fn run(
         }
     });
 
-    let latest_block_height = Arc::new(RwLock::new(latest_block_height));
+    let indexer = Indexer::new(latest_block_height);
     let context = Context {
         mpc_contract_id: mpc_contract_id.clone(),
         node_account_id: node_account_id.clone(),
         gcp_service: gcp_service.clone(),
         queue: queue.clone(),
-        latest_block_height: latest_block_height.clone(),
+        indexer: indexer.clone(),
     };
 
     let options = options.clone();
@@ -240,10 +267,8 @@ pub fn run(
             }
             i += 1;
 
-            let latest =
-                rt.block_on(async { context.latest_block_height.read().await.block_height });
-
             let Ok(lake) = rt.block_on(async {
+                let latest = context.indexer.latest_block_height().await;
                 let mut lake_builder = LakeBuilder::default()
                     .s3_bucket_name(&options.s3_bucket)
                     .s3_region_name(&options.s3_region)
@@ -276,12 +301,7 @@ pub fn run(
         Ok(())
     });
 
-    Ok((
-        join_handle,
-        Indexer {
-            latest_block_height,
-        },
-    ))
+    Ok((join_handle, indexer))
 }
 
 fn backoff(i: u32) {
