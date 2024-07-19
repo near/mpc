@@ -353,7 +353,11 @@ async fn test_signatures_verify() {
     let s = "2a5f2bff1b8e7da4257d480c5610d0d2c35426ee12abb87ff9c3141fe448ab27";
     let mpc_key = "04cc5ed2a876b6fc54176bcde0805e469ac7eca43a97bfff90acd5babbef3a33b10d14fed35065a06a67b9a243169f33ab20bf9dab49cf6c1466a15349c011ca2b";
     let account_id = "dev-20240717130550-33209224232133.test.near";
-    let payload_hash: [u8; 32] = hex::decode(  "7be9d96ac6895be4c59e59bb67c015f28cb94669657ddb00e8aa063f62e18031").unwrap().try_into().unwrap();
+    let payload_hash: [u8; 32] =
+        hex::decode("7be9d96ac6895be4c59e59bb67c015f28cb94669657ddb00e8aa063f62e18031")
+            .unwrap()
+            .try_into()
+            .unwrap();
 
     let payload_hash_scalar = Scalar::from_bytes(&payload_hash);
 
