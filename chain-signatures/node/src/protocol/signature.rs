@@ -182,15 +182,36 @@ pub struct SignatureManager {
     completed: HashMap<PresignatureId, Instant>,
     /// Generated signatures assigned to the current node that are yet to be published.
     /// Vec<(receipt_id, msg_hash, timestamp, output)>
-    signatures: Vec<(
-        CryptoHash,
-        SignatureRequest,
-        Instant,
-        FullSignature<Secp256k1>,
-    )>,
+    signatures: Vec<ToPublish>,
     me: Participant,
     public_key: PublicKey,
     epoch: u64,
+}
+
+pub const MAX_RETRY: u8 = 10;
+pub struct ToPublish {
+    receipt_id: CryptoHash,
+    request: SignatureRequest,
+    time_added: Instant,
+    signature: FullSignature<Secp256k1>,
+    retry_count: u8,
+}
+
+impl ToPublish {
+    pub fn new(
+        receipt_id: CryptoHash,
+        request: SignatureRequest,
+        time_added: Instant,
+        signature: FullSignature<Secp256k1>,
+    ) -> ToPublish {
+        ToPublish {
+            receipt_id,
+            request,
+            time_added,
+            signature,
+            retry_count: 0,
+        }
+    }
 }
 
 impl SignatureManager {
@@ -437,7 +458,7 @@ impl SignatureManager {
                         };
                         if generator.proposer == self.me {
                             self.signatures
-                                .push((*receipt_id, request, generator.sign_request_timestamp, output));
+                                .push(ToPublish::new(*receipt_id, request, generator.sign_request_timestamp, output));
                         }
                         // Do not retain the protocol
                         return false;
@@ -532,7 +553,16 @@ impl SignatureManager {
         mpc_contract_id: &AccountId,
         my_account_id: &AccountId,
     ) {
-        for (receipt_id, request, time_added, signature) in self.signatures.drain(..) {
+        let mut to_retry: Vec<ToPublish> = Vec::new();
+
+        for mut to_publish in self.signatures.drain(..) {
+            let ToPublish {
+                receipt_id,
+                request,
+                time_added,
+                signature,
+                ..
+            } = &to_publish;
             let expected_public_key = derive_key(self.public_key, request.epsilon.scalar);
             // We do this here, rather than on the client side, so we can use the ecrecover system function on NEAR to validate our signature
             let Ok(signature) = into_eth_sig(
@@ -558,6 +588,11 @@ impl SignatureManager {
                 Ok(response) => response,
                 Err(err) => {
                     tracing::error!(%receipt_id, error = ?err, "Failed to publish transaction");
+                    // Push the response to the back of the queue if it hasn't been retried the max number of times
+                    if to_publish.retry_count < MAX_RETRY {
+                        to_publish.retry_count += 1;
+                        to_retry.push(to_publish);
+                    }
                     continue;
                 }
             };
@@ -584,6 +619,8 @@ impl SignatureManager {
                     .inc();
             }
         }
+        // Put the failed requests at the back of the queue
+        self.signatures.extend(to_retry);
     }
 
     /// Check whether or not the signature has been completed with this presignature_id.
