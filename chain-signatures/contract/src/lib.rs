@@ -143,7 +143,7 @@ impl MpcContract {
             self.request_counter -= 1;
             Ok(())
         } else {
-            Err(MpcContractError::SignError(SignError::RequestNotInPending))
+            Err(MpcContractError::SignError(SignError::RequestNotFound))
         }
     }
 
@@ -179,23 +179,26 @@ impl VersionedMpcContract {
         let latest_key_version: u32 = self.latest_key_version();
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        let payload = Scalar::from_bytes(payload)
-            .ok_or(MpcContractError::SignError(SignError::PayloadMalform))?;
+        let payload = Scalar::from_bytes(payload).ok_or(MpcContractError::SignError(
+            SignError::MalformedPayload("Payload hash cannot be convereted to Scalar".to_string()),
+        ))?;
         if key_version > latest_key_version {
-            return Err(MpcContractError::SignError(SignError::VersionTooHigh));
+            return Err(MpcContractError::SignError(
+                SignError::UnsupportedKeyVersion,
+            ));
         }
         // Check deposit
         let deposit = env::attached_deposit();
         let required_deposit = self.signature_deposit();
         if deposit.as_yoctonear() < required_deposit {
-            return Err(MpcContractError::SignError(SignError::DepositInsufficient(
+            return Err(MpcContractError::SignError(SignError::InsufficientDeposit(
                 deposit.as_yoctonear(),
                 required_deposit,
             )));
         }
         // Make sure sign call will not run out of gas doing recursive calls because the payload will never be removed
         if env::prepaid_gas() < GAS_FOR_SIGN_CALL {
-            return Err(MpcContractError::SignError(SignError::GasInsufficient(
+            return Err(MpcContractError::SignError(SignError::InsufficientGas(
                 env::prepaid_gas(),
                 GAS_FOR_SIGN_CALL,
             )));
@@ -341,14 +344,14 @@ impl VersionedMpcContract {
                         Ok(())
                     } else {
                         Err(MpcContractError::RespondError(
-                            RespondError::RequestNotInPending,
+                            RespondError::RequestNotFound,
                         ))
                     }
                 }
             }
         } else {
             Err(MpcContractError::RespondError(
-                RespondError::ProtocolStateNotRunning,
+                RespondError::ProtocolNotInRunningState,
             ))
         }
     }
@@ -488,7 +491,7 @@ impl VersionedMpcContract {
                 }
             }
             _ => Err(MpcContractError::VoteError(
-                VoteError::ProtocolStateNotExpected("running".to_string()),
+                VoteError::UnexpectedProtocolState("running".to_string()),
             )),
         }
     }
@@ -541,7 +544,7 @@ impl VersionedMpcContract {
                 }
             }
             _ => Err(MpcContractError::VoteError(
-                VoteError::ProtocolStateNotExpected("running".to_string()),
+                VoteError::UnexpectedProtocolState("running".to_string()),
             )),
         }
     }
@@ -584,7 +587,7 @@ impl VersionedMpcContract {
             ProtocolContractState::Running(state) if state.public_key == public_key => Ok(true),
             ProtocolContractState::Resharing(state) if state.public_key == public_key => Ok(true),
             _ => Err(MpcContractError::VoteError(
-                VoteError::ProtocolStateNotExpected(
+                VoteError::UnexpectedProtocolState(
                     "initializing or running/resharing with the same public key".to_string(),
                 ),
             )),
@@ -609,7 +612,7 @@ impl VersionedMpcContract {
                 finished_votes,
             }) => {
                 if *old_epoch + 1 != epoch {
-                    return Err(MpcContractError::VoteError(VoteError::MismatchedEpoch));
+                    return Err(MpcContractError::VoteError(VoteError::EpochMismatch));
                 }
                 let signer_account_id = env::signer_account_id();
                 if !old_participants.contains_key(&signer_account_id) {
@@ -636,12 +639,12 @@ impl VersionedMpcContract {
                     Ok(true)
                 } else {
                     Err(MpcContractError::VoteError(
-                        VoteError::ProtocolStateNotExpected("resharing".to_string()),
+                        VoteError::UnexpectedProtocolState("resharing".to_string()),
                     ))
                 }
             }
             _ => Err(MpcContractError::VoteError(
-                VoteError::ProtocolStateNotExpected("resharing".to_string()),
+                VoteError::UnexpectedProtocolState("resharing".to_string()),
             )),
         }
     }
