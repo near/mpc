@@ -16,7 +16,7 @@ use k256::{AffinePoint, EncodedPoint, Scalar, Secp256k1};
 use mpc_contract::errors;
 use mpc_contract::primitives::SignRequest;
 use mpc_contract::RunningContractState;
-use mpc_contract::SignatureRequest;
+use mpc_contract::primitives::SignatureRequest;
 use mpc_recovery_node::kdf::into_eth_sig;
 use near_crypto::InMemorySigner;
 use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest;
