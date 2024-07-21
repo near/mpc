@@ -135,7 +135,7 @@ impl VersionedMpcContract {
     #[allow(unused_variables)]
     #[handle_result]
     #[payable]
-    pub fn sign(&mut self, request: SignRequest) -> Result<near_sdk::Promise, SignError> {
+    pub fn sign(&mut self, request: SignRequest) -> Result<near_sdk::Promise, MpcContractError> {
         let SignRequest {
             payload,
             path,
@@ -144,33 +144,35 @@ impl VersionedMpcContract {
         let latest_key_version: u32 = self.latest_key_version();
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        let payload = Scalar::from_bytes(payload).ok_or(SignError::MalformedPayload(
-            "Payload hash cannot be convereted to Scalar".to_string(),
+        let payload = Scalar::from_bytes(payload).ok_or(MpcContractError::SignError(
+            SignError::MalformedPayload("Payload hash cannot be convereted to Scalar".to_string()),
         ))?;
         if key_version > latest_key_version {
-            return Err(SignError::UnsupportedKeyVersion);
+            return Err(MpcContractError::SignError(
+                SignError::UnsupportedKeyVersion,
+            ));
         }
         // Check deposit
         let deposit = env::attached_deposit();
         let required_deposit = self.signature_deposit();
         if deposit.as_yoctonear() < required_deposit {
-            return Err(SignError::InsufficientDeposit(
+            return Err(MpcContractError::SignError(SignError::InsufficientDeposit(
                 deposit.as_yoctonear(),
                 required_deposit,
-            ));
+            )));
         }
         // Make sure sign call will not run out of gas doing recursive calls because the payload will never be removed
         if env::prepaid_gas() < GAS_FOR_SIGN_CALL {
-            return Err(SignError::InsufficientGas(
+            return Err(MpcContractError::SignError(SignError::InsufficientGas(
                 env::prepaid_gas(),
                 GAS_FOR_SIGN_CALL,
-            ));
+            )));
         }
 
         match self {
             Self::V0(mpc_contract) => {
                 if mpc_contract.request_counter > 8 {
-                    return Err(SignError::RequestLimitExceeded);
+                    return Err(MpcContractError::SignError(SignError::RequestLimitExceeded));
                 }
             }
         }
@@ -183,17 +185,19 @@ impl VersionedMpcContract {
             env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
             Ok(Self::ext(env::current_account_id()).sign_helper(request))
         } else {
-            Err(SignError::PayloadCollision)
+            Err(MpcContractError::SignError(SignError::PayloadCollision))
         }
     }
 
     /// This is the root public key combined from all the public keys of the participants.
     #[handle_result]
-    pub fn public_key(&self) -> Result<PublicKey, PublicKeyError> {
+    pub fn public_key(&self) -> Result<PublicKey, MpcContractError> {
         match self.state() {
             ProtocolContractState::Running(state) => Ok(state.public_key.clone()),
             ProtocolContractState::Resharing(state) => Ok(state.public_key.clone()),
-            _ => Err(PublicKeyError::ProtocolStateNotRunningOrResharing),
+            _ => Err(MpcContractError::PublicKeyError(
+                PublicKeyError::ProtocolStateNotRunningOrResharing,
+            )),
         }
     }
 
@@ -204,7 +208,7 @@ impl VersionedMpcContract {
         &self,
         path: String,
         predecessor: Option<AccountId>,
-    ) -> Result<PublicKey, PublicKeyError> {
+    ) -> Result<PublicKey, MpcContractError> {
         let predecessor = predecessor.unwrap_or_else(env::predecessor_account_id);
         let epsilon = derive_epsilon(&predecessor, &path);
         let derived_public_key =
@@ -213,7 +217,9 @@ impl VersionedMpcContract {
         let slice: &[u8] = &encoded_point.as_bytes()[1..65];
         let mut data: Vec<u8> = vec![near_sdk::CurveType::SECP256K1 as u8];
         data.extend(slice.to_vec());
-        PublicKey::try_from(data).map_err(|_| PublicKeyError::DerivedKeyConversionFailed)
+        PublicKey::try_from(data).map_err(|_| {
+            MpcContractError::PublicKeyError(PublicKeyError::DerivedKeyConversionFailed)
+        })
     }
 
     /// Key versions refer new versions of the root key that we may choose to generate on cohort changes
@@ -247,9 +253,7 @@ impl VersionedMpcContract {
             );
 
             // generate the expected public key
-            let pk = self
-                .public_key()
-                .map_err(MpcContractError::PublicKeyError)?;
+            let pk = self.public_key()?;
             let expected_public_key =
                 derive_key(near_public_key_to_affine_point(pk), request.epsilon.scalar);
 
