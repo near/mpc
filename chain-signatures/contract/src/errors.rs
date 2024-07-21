@@ -26,8 +26,8 @@ pub enum SignError {
 pub enum RespondError {
     #[error("This sign request had timed out, was completed, or never existed.")]
     RequestNotFound,
-    #[error("Signature could not be verified.")]
-    SignatureNotVerified,
+    #[error("The provided signature is invalid.")]
+    InvalidSignature,
     #[error("The protocol is not in the Running state.")]
     ProtocolNotInRunningState,
 }
