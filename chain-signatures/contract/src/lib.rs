@@ -222,75 +222,47 @@ impl VersionedMpcContract {
         }
     }
 
-    pub fn sign_helper(&mut self, request: SignatureRequest) {
-        match self {
-            Self::V0(mpc_contract) => {
-                let yield_promise = env::promise_yield_create(
-                    "clear_state_on_finish",
-                    &serde_json::to_vec(&(&request,)).unwrap(),
-                    CLEAR_STATE_ON_FINISH_CALL_GAS,
-                    GasWeight(0),
-                    DATA_ID_REGISTER,
-                );
-
-                // Store the request in the contract's local state
-                let data_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-                    .expect("read_register failed")
-                    .try_into()
-                    .expect("conversion to CryptoHash failed");
-
-                mpc_contract.add_request(&request, data_id);
-
-                // NOTE: there's another promise after the clear_state_on_finish to avoid any errors
-                // that would rollback the state.
-                let final_yield_promise = env::promise_then(
-                    yield_promise,
-                    env::current_account_id(),
-                    "return_signature_on_finish",
-                    &[],
-                    NearToken::from_near(0),
-                    RETURN_SIGNATURE_ON_FINISH_CALL_GAS,
-                );
-                // The return value for this function call will be the value
-                // returned by the `sign_on_finish` callback.
-                env::promise_return(final_yield_promise);
-            }
-        }
-    }
-
-    #[private]
+    /// This is the root public key combined from all the public keys of the participants.
     #[handle_result]
-    pub fn return_signature_on_finish(
-        &mut self,
-        #[callback_unwrap] signature: SignatureResult<SignatureResponse, SignaturePromiseError>,
-    ) -> Result<SignatureResponse, MpcContractError> {
-        match self {
-            Self::V0(_) => match signature {
-                SignatureResult::Ok(signature) => Ok(signature),
-                SignatureResult::Err(_) => Err(MpcContractError::SignError(SignError::Timeout)),
-            },
+    pub fn public_key(&self) -> Result<PublicKey, PublicKeyError> {
+        match self.state() {
+            ProtocolContractState::Running(state) => Ok(state.public_key.clone()),
+            ProtocolContractState::Resharing(state) => Ok(state.public_key.clone()),
+            _ => Err(PublicKeyError::ProtocolStateNotRunningOrResharing),
         }
     }
 
-    #[private]
+    /// This is the derived public key of the caller given path and predecessor
+    /// if predecessor is not provided, it will be the caller of the contract
     #[handle_result]
-    pub fn clear_state_on_finish(
-        &mut self,
-        request: SignatureRequest,
-        #[callback_result] signature: Result<SignatureResponse, PromiseError>,
-    ) -> Result<SignatureResult<SignatureResponse, SignaturePromiseError>, MpcContractError> {
-        match self {
-            Self::V0(mpc_contract) => {
-                // Clean up the local state
-                mpc_contract.remove_request(request)?;
-                match signature {
-                    Ok(signature) => Ok(SignatureResult::Ok(signature)),
-                    Err(_) => Ok(SignatureResult::Err(SignaturePromiseError::Failed)),
-                }
-            }
-        }
+    pub fn derived_public_key(
+        &self,
+        path: String,
+        predecessor: Option<AccountId>,
+    ) -> Result<PublicKey, PublicKeyError> {
+        let predecessor = predecessor.unwrap_or_else(env::predecessor_account_id);
+        let epsilon = derive_epsilon(&predecessor, &path);
+        let derived_public_key =
+            derive_key(near_public_key_to_affine_point(self.public_key()?), epsilon);
+        let encoded_point = derived_public_key.to_encoded_point(false);
+        let slice: &[u8] = &encoded_point.as_bytes()[1..65];
+        let mut data: Vec<u8> = vec![near_sdk::CurveType::SECP256K1 as u8];
+        data.extend(slice.to_vec());
+        PublicKey::try_from(data).map_err(|_| PublicKeyError::DerivedKeyConversionFailed)
     }
 
+    /// Key versions refer new versions of the root key that we may choose to generate on cohort changes
+    /// Older key versions will always work but newer key versions were never held by older signers
+    /// Newer key versions may also add new security features, like only existing within a secure enclave
+    /// Currently only 0 is a valid key version
+    pub const fn latest_key_version(&self) -> u32 {
+        0
+    }
+}
+
+// Node API
+#[near_bindgen]
+impl VersionedMpcContract {
     #[handle_result]
     pub fn respond(
         &mut self,
@@ -353,48 +325,6 @@ impl VersionedMpcContract {
                 RespondError::ProtocolNotInRunningState,
             ))
         }
-    }
-
-    /// This is the root public key combined from all the public keys of the participants.
-    #[handle_result]
-    pub fn public_key(&self) -> Result<PublicKey, PublicKeyError> {
-        match self.state() {
-            ProtocolContractState::Running(state) => Ok(state.public_key.clone()),
-            ProtocolContractState::Resharing(state) => Ok(state.public_key.clone()),
-            _ => Err(PublicKeyError::ProtocolStateNotRunningOrResharing),
-        }
-    }
-
-    /// This is the derived public key of the caller given path and predecessor
-    /// if predecessor is not provided, it will be the caller of the contract
-    #[handle_result]
-    pub fn derived_public_key(
-        &self,
-        path: String,
-        predecessor: Option<AccountId>,
-    ) -> Result<PublicKey, PublicKeyError> {
-        let predecessor = predecessor.unwrap_or_else(env::predecessor_account_id);
-        let epsilon = derive_epsilon(&predecessor, &path);
-        let derived_public_key =
-            derive_key(near_public_key_to_affine_point(self.public_key()?), epsilon);
-        let encoded_point = derived_public_key.to_encoded_point(false);
-        let slice: &[u8] = &encoded_point.as_bytes()[1..65];
-        let mut data: Vec<u8> = vec![near_sdk::CurveType::SECP256K1 as u8];
-        data.extend(slice.to_vec());
-        PublicKey::try_from(data).map_err(|_| PublicKeyError::DerivedKeyConversionFailed)
-    }
-
-    /// Key versions refer new versions of the root key that we may choose to generate on cohort changes
-    /// Older key versions will always work but newer key versions were never held by older signers
-    /// Newer key versions may also add new security features, like only existing within a secure enclave
-    /// Currently only 0 is a valid key version
-    pub const fn latest_key_version(&self) -> u32 {
-        0
-    }
-
-    // contract version
-    pub fn version(&self) -> String {
-        env!("CARGO_PKG_VERSION").to_string()
     }
 
     #[handle_result]
@@ -709,6 +639,80 @@ impl VersionedMpcContract {
     pub fn state(&self) -> &ProtocolContractState {
         match self {
             Self::V0(mpc_contract) => &mpc_contract.protocol_state,
+        }
+    }
+
+    // contract version
+    pub fn version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+
+    pub fn sign_helper(&mut self, request: SignatureRequest) {
+        match self {
+            Self::V0(mpc_contract) => {
+                let yield_promise = env::promise_yield_create(
+                    "clear_state_on_finish",
+                    &serde_json::to_vec(&(&request,)).unwrap(),
+                    CLEAR_STATE_ON_FINISH_CALL_GAS,
+                    GasWeight(0),
+                    DATA_ID_REGISTER,
+                );
+
+                // Store the request in the contract's local state
+                let data_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
+                    .expect("read_register failed")
+                    .try_into()
+                    .expect("conversion to CryptoHash failed");
+
+                mpc_contract.add_request(&request, data_id);
+
+                // NOTE: there's another promise after the clear_state_on_finish to avoid any errors
+                // that would rollback the state.
+                let final_yield_promise = env::promise_then(
+                    yield_promise,
+                    env::current_account_id(),
+                    "return_signature_on_finish",
+                    &[],
+                    NearToken::from_near(0),
+                    RETURN_SIGNATURE_ON_FINISH_CALL_GAS,
+                );
+                // The return value for this function call will be the value
+                // returned by the `sign_on_finish` callback.
+                env::promise_return(final_yield_promise);
+            }
+        }
+    }
+
+    #[private]
+    #[handle_result]
+    pub fn return_signature_on_finish(
+        &mut self,
+        #[callback_unwrap] signature: SignatureResult<SignatureResponse, SignaturePromiseError>,
+    ) -> Result<SignatureResponse, MpcContractError> {
+        match self {
+            Self::V0(_) => match signature {
+                SignatureResult::Ok(signature) => Ok(signature),
+                SignatureResult::Err(_) => Err(MpcContractError::SignError(SignError::Timeout)),
+            },
+        }
+    }
+
+    #[private]
+    #[handle_result]
+    pub fn clear_state_on_finish(
+        &mut self,
+        request: SignatureRequest,
+        #[callback_result] signature: Result<SignatureResponse, PromiseError>,
+    ) -> Result<SignatureResult<SignatureResponse, SignaturePromiseError>, MpcContractError> {
+        match self {
+            Self::V0(mpc_contract) => {
+                // Clean up the local state
+                mpc_contract.remove_request(request)?;
+                match signature {
+                    Ok(signature) => Ok(SignatureResult::Ok(signature)),
+                    Err(_) => Ok(SignatureResult::Err(SignaturePromiseError::Failed)),
+                }
+            }
         }
     }
 
