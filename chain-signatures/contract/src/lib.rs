@@ -189,13 +189,15 @@ impl VersionedMpcContract {
         let required_deposit = self.signature_deposit();
         if deposit.as_yoctonear() < required_deposit {
             return Err(MpcContractError::SignError(SignError::DepositInsufficient(
-                "{required_deposit}".to_string(),
+                deposit.as_yoctonear(),
+                required_deposit,
             )));
         }
         // Make sure sign call will not run out of gas doing recursive calls because the payload will never be removed
         if env::prepaid_gas() < GAS_FOR_SIGN_CALL {
             return Err(MpcContractError::SignError(SignError::GasInsufficient(
-                "{GAS_FOR_SIGN_CALL}".to_string(),
+                env::prepaid_gas(),
+                GAS_FOR_SIGN_CALL,
             )));
         }
 

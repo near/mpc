@@ -1,3 +1,5 @@
+use near_sdk::Gas;
+
 #[derive(Debug, thiserror::Error)]
 pub enum SignError {
     #[error("Signature request has timed out.")]
@@ -8,10 +10,10 @@ pub enum SignError {
     PayloadMalform,
     #[error("Contract version is greater than allowed.")]
     VersionTooHigh,
-    #[error("Attached deposit is lower than required: {0}.")]
-    DepositInsufficient(String),
-    #[error("Provided gas is lower than required: {0}.")]
-    GasInsufficient(String),
+    #[error("Attached deposit is lower than required. Attached: {0}, required: {1}.")]
+    DepositInsufficient(u128, u128),
+    #[error("Provided gas is lower than required: Provided: {0}, required {1}.")]
+    GasInsufficient(Gas, Gas),
     #[error("Too many pending requests. Please, try again later.")]
     RequestLimitExceeded,
     #[error("This sign request was removed from pending requests: timed out or completed.")]

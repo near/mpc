@@ -305,10 +305,8 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
     let execution = status.await?;
     dbg!(&execution);
     assert!(execution.into_result().unwrap_err().to_string().contains(
-        &errors::MpcContractError::SignError(errors::SignError::DepositInsufficient(
-            "1".to_string()
-        ))
-        .to_string()
+        &errors::MpcContractError::SignError(errors::SignError::DepositInsufficient(0, 1))
+            .to_string()
     ));
 
     Ok(())
