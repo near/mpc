@@ -310,10 +310,11 @@ impl VersionedMpcContract {
             );
 
             // generate the expected public key
-            let expected_public_key = derive_key(
-                near_public_key_to_affine_point(self.public_key()?),
-                request.epsilon.scalar,
-            );
+            let pk = self
+                .public_key()
+                .map_err(MpcContractError::PublicKeyError)?;
+            let expected_public_key =
+                derive_key(near_public_key_to_affine_point(pk), request.epsilon.scalar);
 
             // Check the signature is correct
             if check_ec_signature(
@@ -326,7 +327,7 @@ impl VersionedMpcContract {
             .is_err()
             {
                 return Err(MpcContractError::RespondError(
-                    RespondError::SignatureNotVerified,
+                    RespondError::InvalidSignature,
                 ));
             }
 
