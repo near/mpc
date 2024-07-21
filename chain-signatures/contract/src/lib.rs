@@ -3,7 +3,7 @@ pub mod primitives;
 
 use crypto_shared::{
     derive_epsilon, derive_key, kdf::check_ec_signature, near_public_key_to_affine_point,
-    types::SignatureResponse, ScalarExt as _, SerializableScalar,
+    types::SignatureResponse, ScalarExt as _,
 };
 use k256::Scalar;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
@@ -11,8 +11,8 @@ use near_sdk::collections::LookupMap;
 use near_sdk::serde::{Deserialize, Serialize};
 
 use near_sdk::{
-    env, log, near_bindgen, AccountId, BorshStorageKey, CryptoHash, Gas, GasWeight, NearToken,
-    PromiseError, PublicKey,
+    env, log, near_bindgen, AccountId, CryptoHash, Gas, GasWeight, NearToken, PromiseError,
+    PublicKey,
 };
 
 use errors::{
@@ -21,7 +21,7 @@ use errors::{
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use primitives::{
     CandidateInfo, Candidates, ParticipantInfo, Participants, PkVotes, SignRequest,
-    SignaturePromiseError, SignatureResult, Votes,
+    SignaturePromiseError, SignatureRequest, SignatureResult, StorageKey, Votes, YieldIndex,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -73,12 +73,6 @@ pub enum ProtocolContractState {
     Resharing(ResharingContractState),
 }
 
-#[derive(BorshSerialize, BorshDeserialize, BorshStorageKey, Hash, Clone, Debug, PartialEq, Eq)]
-#[borsh(crate = "near_sdk::borsh")]
-pub enum StorageKey {
-    PendingRequests,
-}
-
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
 pub enum VersionedMpcContract {
@@ -88,35 +82,6 @@ pub enum VersionedMpcContract {
 impl Default for VersionedMpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
-    }
-}
-
-/// The index into calling the YieldResume feature of NEAR. This will allow to resume
-/// a yield call after the contract has been called back via this index.
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone)]
-#[borsh(crate = "near_sdk::borsh")]
-pub struct YieldIndex {
-    data_id: CryptoHash,
-}
-
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone)]
-#[borsh(crate = "near_sdk::borsh")]
-pub struct SignatureRequest {
-    pub epsilon: SerializableScalar,
-    pub payload_hash: SerializableScalar,
-}
-
-impl SignatureRequest {
-    pub fn new(payload_hash: Scalar, predecessor_id: &AccountId, path: &str) -> Self {
-        let epsilon = derive_epsilon(predecessor_id, path);
-        let epsilon = SerializableScalar { scalar: epsilon };
-        let payload_hash = SerializableScalar {
-            scalar: payload_hash,
-        };
-        SignatureRequest {
-            epsilon,
-            payload_hash,
-        }
     }
 }
 

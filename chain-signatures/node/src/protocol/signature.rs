@@ -12,7 +12,7 @@ use chrono::Utc;
 use crypto_shared::SerializableScalar;
 use crypto_shared::{derive_key, PublicKey};
 use k256::{Scalar, Secp256k1};
-use mpc_contract::SignatureRequest;
+use mpc_contract::primitives::SignatureRequest;
 use rand::rngs::StdRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
