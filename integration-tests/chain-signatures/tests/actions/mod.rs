@@ -88,15 +88,14 @@ pub async fn request_sign(
 pub async fn assert_signature(
     account_id: &near_workspaces::AccountId,
     mpc_pk_bytes: &[u8],
-    payload: &[u8; 32],
+    payload: [u8; 32],
     signature: &FullSignature<Secp256k1>,
 ) {
     let mpc_point = EncodedPoint::from_bytes(mpc_pk_bytes).unwrap();
     let mpc_pk = AffinePoint::from_encoded_point(&mpc_point).unwrap();
     let epsilon = derive_epsilon(account_id, "test");
     let user_pk = derive_key(mpc_pk, epsilon);
-
-    assert!(signature.verify(&user_pk, &Scalar::from_bytes(payload),));
+    assert!(signature.verify(&user_pk, &Scalar::from_bytes(payload).unwrap(),));
 }
 
 // A normal signature, but we try to insert a bad response which fails and the signature is generated
@@ -121,7 +120,16 @@ pub async fn single_signature_rogue_responder(
 
     let mut mpc_pk_bytes = vec![0x04];
     mpc_pk_bytes.extend_from_slice(&state.public_key.as_bytes()[1..]);
-    assert_signature(account.id(), &mpc_pk_bytes, &payload_hash, &signature).await;
+
+    // Useful for populating the "signatures_havent_changed" test's hardcoded values
+    // dbg!(
+    //     hex::encode(signature.big_r.to_encoded_point(true).to_bytes()),
+    //     hex::encode(signature.s.to_bytes()),
+    //     hex::encode(&mpc_pk_bytes),
+    //     hex::encode(&payload_hash),
+    //     account.id(),
+    // );
+    assert_signature(account.id(), &mpc_pk_bytes, payload_hash, &signature).await;
 
     Ok(())
 }
@@ -135,7 +143,7 @@ pub async fn single_signature_production(
 
     let mut mpc_pk_bytes = vec![0x04];
     mpc_pk_bytes.extend_from_slice(&state.public_key.as_bytes()[1..]);
-    assert_signature(account.id(), &mpc_pk_bytes, &payload_hash, &signature).await;
+    assert_signature(account.id(), &mpc_pk_bytes, payload_hash, &signature).await;
 
     Ok(())
 }
@@ -161,7 +169,7 @@ pub async fn rogue_respond(
     let epsilon = derive_epsilon(predecessor, path);
 
     let request = SignatureRequest {
-        payload_hash,
+        payload_hash: Scalar::from_bytes(payload_hash).unwrap().into(),
         epsilon: SerializableScalar { scalar: epsilon },
     };
 
@@ -286,7 +294,7 @@ pub async fn single_payload_signature_production(
     assert_signature(
         account.clone().id(),
         &mpc_pk_bytes,
-        &payload_hash,
+        payload_hash,
         &signature,
     )
     .await;
@@ -348,33 +356,21 @@ pub async fn clear_toxics() -> anyhow::Result<()> {
     Ok(())
 }
 
-// This code was and still is a bit of a mess.
-// Previously converting a Scalar to bytes reversed the bytes and converted to a Scalar.
-// The big_r and s values were generated using chain signatures from an older commit, therefore the signature is generated against a reversed hash.
-// This shows that the old signatures will verify against a reversed payload
+// This test hardcodes the output of the signing process and checks that everything verifies as expected
+// If you find yourself changing the constants in this test you are likely breaking backwards compatibility
 #[tokio::test]
-async fn test_old_signatures_verify() {
-    use k256::sha2::{Digest, Sha256};
-    let big_r = "044bf886afee5a6844a25fa6831a01715e990d3d9e96b792a9da91cfbecbf8477cea57097a3db9fc1d4822afade3d1c4e6d66e99568147304ae34bcfa609d90a16";
-    let s = "1f871c67139f617409067ac8a7150481e3a5e2d8a9207ffdaad82098654e95cb";
-    let mpc_key = "02F2B55346FD5E4BFF1F06522561BDCD024CEA25D98A091197ACC04E22B3004DB2";
-    let account_id = "acc_mc.test.near";
+async fn signatures_havent_changed() {
+    let big_r = "03f13a99141ce0a4043a7c02afdec6d52f25c6b3de01967acc5cf4a3fa43801589";
+    let s = "39e5631fcc06ffccf8469a3cdcdce0651ebafd998a4280ebbf5dc24a749c98fb";
+    let mpc_key = "04b5695a882aeaf36bf3933e21911b5cbcceae7fd7cb424f3ea221c7e8d390aad4ad2c1a427faec960f22a5442739c0a04fd64ab7ce4c93980417bd3d1d8bc04ea";
+    let account_id = "dev-20240719125040-80075249096169.test.near";
+    let payload_hash: [u8; 32] =
+        hex::decode("49f32740939bfdcbd8d1786075df7aca384381ec203975c3a6c1fd80acddcd4c")
+            .unwrap()
+            .try_into()
+            .unwrap();
 
-    let mut payload = [0u8; 32];
-    for (i, item) in payload.iter_mut().enumerate() {
-        *item = i as u8;
-    }
-
-    let mut hasher = Sha256::new();
-    hasher.update(payload);
-
-    let mut payload_hash: [u8; 32] = hasher.finalize().into();
-    payload_hash.reverse();
-
-    let payload_hash_scalar = Scalar::from_bytes(&payload_hash);
-
-    println!("payload_hash: {payload_hash:?}");
-    println!("payload_hash_scallar: {payload_hash_scalar:#?}");
+    let payload_hash_scalar = Scalar::from_bytes(payload_hash).unwrap();
 
     // Derive and convert user pk
     let mpc_pk = hex::decode(mpc_key).unwrap();
@@ -402,17 +398,11 @@ async fn test_old_signatures_verify() {
     let big_r_y_parity = big_r.y_is_odd().unwrap_u8() as i32;
     assert!(big_r_y_parity == 0 || big_r_y_parity == 1);
 
-    let s = hex::decode(s).unwrap();
-    let s = k256::Scalar::from_bytes(s.as_slice());
+    let s = hex::decode(s).unwrap().try_into().unwrap();
+    let s = k256::Scalar::from_bytes(s).unwrap();
     let r = x_coordinate::<k256::Secp256k1>(&big_r);
 
     let signature = cait_sith::FullSignature::<Secp256k1> { big_r, s };
-
-    println!("R: {big_r:#?}");
-    println!("r: {r:#?}");
-    println!("y parity: {}", big_r_y_parity);
-    println!("s: {s:#?}");
-    println!("epsilon: {derivation_epsilon:#?}");
 
     let multichain_sig = into_eth_sig(
         &user_pk,
@@ -421,7 +411,6 @@ async fn test_old_signatures_verify() {
         payload_hash_scalar,
     )
     .unwrap();
-    println!("{multichain_sig:#?}");
 
     // Check signature using cait-sith tooling
     let is_signature_valid_for_user_pk = signature.verify(&user_pk, &payload_hash_scalar);

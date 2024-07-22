@@ -227,6 +227,13 @@ pub enum WaitForError {
     Fetch(String),
 }
 
+/// Used locally for testing to circumvent retrying on all errors. This will avoid retrying
+/// on failed signatures as we should abort early on those when in the retrying loop.
+enum Outcome {
+    Signature(FullSignature<Secp256k1>),
+    Failed(String),
+}
+
 pub async fn signature_responded(
     ctx: &MultichainTestContext<'_>,
     tx_hash: CryptoHash,
@@ -254,29 +261,27 @@ pub async fn signature_responded(
         let outcome = outcome.into_outcome();
 
         let FinalExecutionStatus::SuccessValue(payload) = outcome.status else {
-            return Err(WaitForError::Signature(SignatureError::Failed(format!(
-                "{:?}",
-                outcome.status
-            ))));
+            return Ok(Outcome::Failed(format!("{:?}", outcome.status)));
         };
 
         let result: SignatureResponse = match serde_json::from_slice(&payload) {
             Err(error) => return Err(WaitForError::SerdeJson(format!("{error:?}"))),
             Ok(response) => response,
         };
-        let signature = cait_sith::FullSignature::<Secp256k1> {
+        Ok(Outcome::Signature(cait_sith::FullSignature::<Secp256k1> {
             big_r: result.big_r.affine_point,
             s: result.s.scalar,
-        };
-
-        Ok(signature)
+        }))
     };
 
     let strategy = ConstantBuilder::default()
         .with_delay(Duration::from_secs(20))
         .with_max_times(5);
 
-    is_tx_ready.retry(&strategy).await
+    match is_tx_ready.retry(&strategy).await? {
+        Outcome::Signature(signature) => Ok(signature),
+        Outcome::Failed(err) => Err(WaitForError::Signature(SignatureError::Failed(err))),
+    }
 }
 
 pub async fn signature_payload_responded(
@@ -288,28 +293,15 @@ pub async fn signature_payload_responded(
     let is_signature_ready = || async {
         let (_, _, _, tx_hash) =
             actions::request_sign_non_random(ctx, account.clone(), payload, payload_hashed).await?;
-        signature_responded(ctx, tx_hash).await
+        let result = signature_responded(ctx, tx_hash).await;
+        if let Err(err) = &result {
+            println!("failed to produce signature: {err:?}");
+        }
+        result
     };
 
-    let mut result: Result<FullSignature<Secp256k1>, WaitForError> = Err(WaitForError::Signature(
-        SignatureError::Failed("Signature timed out".to_string()),
-    ));
-
-    let mut retries = 3;
-    while let Err(WaitForError::Signature(SignatureError::Failed(ref error_message))) = result {
-        if retries < 3 {
-            println!("single_payload_signature_production: the signature request result is {error_message:?}");
-        }
-        if retries <= 0 {
-            break;
-        }
-        println!("single_payload_signature_production: issuing a new signature request with same payload");
-        result = is_signature_ready().await;
-
-        retries -= 1;
-    }
-
-    result
+    let strategy = ConstantBuilder::default().with_max_times(3);
+    is_signature_ready.retry(&strategy).await
 }
 
 // Check that the rogue message failed

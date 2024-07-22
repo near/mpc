@@ -32,7 +32,6 @@
               # Native build dependencies
               protobuf
               curl
-              gmp
               openssl
 
               # Development
@@ -55,6 +54,7 @@
               cargo-watch
               cargo-audit
               sccache
+              toxiproxy
 
               # TODO Add podman + docker image dependencies
               # TODO Add AWS-CLI and dummy credentials

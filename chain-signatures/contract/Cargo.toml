@@ -17,6 +17,15 @@ crypto-shared = { path = "../crypto-shared" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 
 [dev-dependencies]
-near-workspaces = { git = "https://github.com/near/near-workspaces-rs", branch = "node/1.40" }
+anyhow = "1"
+rand = "0.8"
 tokio = { version = "1", features = ["full"] }
-anyhow = "1.0.44"
+
+# crypto dependencies
+ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
+signature = "2.2.0"
+digest = "0.10.7"
+
+# near dependencies
+near-crypto = "0.23.0"
+near-workspaces = { git = "https://github.com/near/near-workspaces-rs", branch = "node/1.40" }

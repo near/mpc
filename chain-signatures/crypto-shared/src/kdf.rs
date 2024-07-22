@@ -3,10 +3,10 @@ use anyhow::Context;
 use k256::{
     ecdsa::{RecoveryId, Signature, VerifyingKey},
     elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic},
-    sha2::{Digest, Sha256},
-    Scalar, Secp256k1,
+    Scalar, Secp256k1, SecretKey,
 };
 use near_account_id::AccountId;
+use sha3::{Digest, Sha3_256};
 
 // Constant prefix that ensures epsilon derivation values are used specifically for
 // near-mpc-recovery with key derivation protocol vX.Y.Z.
@@ -20,16 +20,18 @@ pub fn derive_epsilon(predecessor_id: &AccountId, path: &str) -> Scalar {
     // of the accound id in the trie key. We reuse the same constant to
     // indicate the end of the account id in derivation path.
     let derivation_path = format!("{EPSILON_DERIVATION_PREFIX}{},{}", predecessor_id, path);
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha3_256::new();
     hasher.update(derivation_path);
-    let mut bytes = hasher.finalize();
-    // Due to a previous bug in our Scalar conversion code, this hash was reversed, we reverse it here to preserve compatibility, but will likely change this later.
-    bytes.reverse();
-    Scalar::from_bytes(&bytes)
+    let hash: [u8; 32] = hasher.finalize().into();
+    Scalar::from_non_biased(hash)
 }
 
 pub fn derive_key(public_key: PublicKey, epsilon: Scalar) -> PublicKey {
     (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * epsilon + public_key).to_affine()
+}
+
+pub fn derive_secret_key(secret_key: &SecretKey, epsilon: Scalar) -> SecretKey {
+    SecretKey::new((epsilon + secret_key.to_nonzero_scalar().as_ref()).into())
 }
 
 /// Get the x coordinate of a point, as a scalar
@@ -61,11 +63,11 @@ pub fn check_ec_signature(
         return Ok(());
     }
 
-    anyhow::bail!("cannot use either recovery id (0 or 1) to recover pubic key")
+    anyhow::bail!("cannot use either recovery id={recovery_id} to recover pubic key")
 }
 
-// #[cfg(not(target_arch = "wasm32"))]
-fn recover(
+#[cfg(not(target_arch = "wasm32"))]
+pub fn recover(
     prehash: &[u8],
     signature: &Signature,
     recovery_id: RecoveryId,
@@ -74,16 +76,21 @@ fn recover(
         .context("Unable to recover public key")
 }
 
-// TODO Migrate to native function
-// #[cfg(target_arch = "wasm32")]
-// fn recover(
-//     prehash: &[u8],
-//     signature: &Signature,
-//     recovery_id: RecoveryId,
-// ) -> anyhow::Result<VerifyingKey> {
-//     use near_sdk::env;
-//     let recovered_key =
-//         env::ecrecover(prehash, &signature.to_bytes(), recovery_id.to_byte(), false)
-//             .context("Unable to recover public key")?;
-//     VerifyingKey::try_from(&recovered_key[..]).context("Failed to parse returned key")
-// }
+#[cfg(target_arch = "wasm32")]
+pub fn recover(
+    prehash: &[u8],
+    signature: &Signature,
+    recovery_id: RecoveryId,
+) -> anyhow::Result<VerifyingKey> {
+    use k256::EncodedPoint;
+    use near_sdk::env;
+    // While this function also works on native code, it's a bit weird and unsafe.
+    // I'm more comfortable using an existing library instead.
+    let recovered_key_bytes =
+        env::ecrecover(prehash, &signature.to_bytes(), recovery_id.to_byte(), true)
+            .context("Unable to recover public key")?;
+    VerifyingKey::from_encoded_point(&EncodedPoint::from_untagged_bytes(
+        &recovered_key_bytes.into(),
+    ))
+    .context("Failed to parse returned key")
+}

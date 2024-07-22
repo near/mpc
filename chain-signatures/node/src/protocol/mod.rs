@@ -1,12 +1,13 @@
-pub mod contract;
 mod cryptography;
-pub mod presignature;
 mod signature;
-pub mod triple;
 
 pub mod consensus;
+pub mod contract;
 pub mod message;
+pub mod monitor;
+pub mod presignature;
 pub mod state;
+pub mod triple;
 
 pub use consensus::ConsensusError;
 pub use contract::primitives::ParticipantInfo;

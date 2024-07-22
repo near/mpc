@@ -5,6 +5,7 @@ use super::presignature::GenerationError;
 use crate::gcp::error;
 use crate::storage::triple_storage::{LockTripleNodeStorageBox, TripleData};
 use crate::types::TripleProtocol;
+use crate::types::TAKEN_TIMEOUT;
 use crate::util::AffinePointExt;
 
 use cait_sith::protocol::{Action, InitializationError, Participant, ProtocolError};
@@ -16,6 +17,7 @@ use k256::Secp256k1;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt;
 use std::time::{Duration, Instant};
 
 use near_account_id::AccountId;
@@ -103,18 +105,35 @@ pub struct TripleManager {
     /// List of triple ids generation of which was initiated by the current node.
     pub mine: VecDeque<TripleId>,
 
-    /// The set of triple ids that were already taken. This will be maintained for at most
+    /// The set of triple ids that were already taken or failed. This will be maintained for at most
     /// triple timeout period just so messages are cycled through the system.
-    pub taken: HashMap<TripleId, Instant>,
+    pub gc: HashMap<TripleId, Instant>,
 
     pub me: Participant,
     pub threshold: usize,
     pub epoch: u64,
     pub triple_cfg: TripleConfig,
     pub triple_storage: LockTripleNodeStorageBox,
-    /// triple generation protocols that failed.
-    pub failed_triples: HashMap<TripleId, Instant>,
     pub my_account_id: AccountId,
+}
+
+impl fmt::Debug for TripleManager {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TripleManager")
+            .field("triples", &self.triples.keys().collect::<Vec<_>>())
+            .field("generators", &self.generators.keys().collect::<Vec<_>>())
+            .field("queued", &self.queued)
+            .field("ongoing", &self.ongoing)
+            .field("introduced", &self.introduced)
+            .field("gc", &self.gc.keys().collect::<Vec<_>>())
+            .field("mine", &self.mine)
+            .field("me", &self.me)
+            .field("threshold", &self.threshold)
+            .field("epoch", &self.epoch)
+            .field("my_account_id", &self.my_account_id)
+            .field("triple_cfg", &self.triple_cfg)
+            .finish()
+    }
 }
 
 impl TripleManager {
@@ -143,14 +162,13 @@ impl TripleManager {
             queued: VecDeque::new(),
             ongoing: HashSet::new(),
             introduced: HashSet::new(),
-            taken: HashMap::new(),
+            gc: HashMap::new(),
             mine,
             me,
             threshold,
             epoch,
             triple_cfg: *triple_cfg,
             triple_storage,
-            failed_triples: HashMap::new(),
             my_account_id: my_account_id.clone(),
         }
     }
@@ -176,15 +194,21 @@ impl TripleManager {
         self.len() + self.generators.len()
     }
 
-    /// Clears an entry from failed triples if that triple protocol was created more than 2 hrs ago
-    pub fn clear_failed_triples(&mut self) {
-        self.failed_triples
-            .retain(|_, timestamp| timestamp.elapsed() < crate::types::FAILED_TRIPLES_TIMEOUT)
+    pub fn has_min_triples(&self) -> bool {
+        self.my_len() >= self.triple_cfg.min_triples
     }
 
-    pub fn clear_taken(&mut self) {
-        self.taken
-            .retain(|_, timestamp| timestamp.elapsed() < crate::types::TAKEN_TIMEOUT)
+    /// Clears an entry from failed triples if that triple protocol was created more than 2 hrs ago
+    pub fn garbage_collect(&mut self) {
+        self.gc
+            .retain(|_, timestamp| timestamp.elapsed() < TAKEN_TIMEOUT)
+    }
+
+    /// Refresh item in the garbage collection. If it is present, return true and update internally
+    /// the timestamp for gabage collection.
+    pub fn refresh_gc(&mut self, id: &TripleId) -> bool {
+        let entry = self.gc.entry(*id).and_modify(|e| *e = Instant::now());
+        matches!(entry, Entry::Occupied(_))
     }
 
     /// Starts a new Beaver triple generation protocol.
@@ -194,7 +218,7 @@ impl TripleManager {
         // Check if the `id` is already in the system. Error out and have the next cycle try again.
         if self.generators.contains_key(&id)
             || self.triples.contains_key(&id)
-            || self.taken.contains_key(&id)
+            || self.gc.contains_key(&id)
         {
             return Err(InitializationError::BadParameters(format!(
                 "id collision: triple_id={id}"
@@ -260,12 +284,16 @@ impl TripleManager {
         if !self.triples.contains_key(&id0) {
             if self.generators.contains_key(&id0) {
                 Err(GenerationError::TripleIsGenerating(id0))
+            } else if self.gc.contains_key(&id0) {
+                Err(GenerationError::TripleIsGarbageCollected(id0))
             } else {
                 Err(GenerationError::TripleIsMissing(id0))
             }
         } else if !self.triples.contains_key(&id1) {
             if self.generators.contains_key(&id1) {
                 Err(GenerationError::TripleIsGenerating(id1))
+            } else if self.gc.contains_key(&id1) {
+                Err(GenerationError::TripleIsGarbageCollected(id1))
             } else {
                 Err(GenerationError::TripleIsMissing(id1))
             }
@@ -279,9 +307,8 @@ impl TripleManager {
                 tracing::warn!(triple_id = id1, ?err, "unable to delete triple: potentially missing from datastore; deleting from memory only");
             }
 
-            self.taken.insert(id0, Instant::now());
-            self.taken.insert(id1, Instant::now());
-
+            self.gc.insert(id0, Instant::now());
+            self.gc.insert(id1, Instant::now());
             Ok((
                 self.triples.remove(&id0).unwrap(),
                 self.triples.remove(&id1).unwrap(),
@@ -352,7 +379,7 @@ impl TripleManager {
     pub async fn insert_mine(&mut self, triple: Triple) {
         self.mine.push_back(triple.id);
         self.triples.insert(triple.id, triple.clone());
-        self.taken.remove(&triple.id);
+        self.gc.remove(&triple.id);
         self.insert_triples_to_storage(vec![triple]).await;
     }
 
@@ -366,7 +393,7 @@ impl TripleManager {
         id: TripleId,
         participants: &Participants,
     ) -> Result<Option<&mut TripleProtocol>, CryptographicError> {
-        if self.triples.contains_key(&id) || self.taken.contains_key(&id) {
+        if self.triples.contains_key(&id) || self.gc.contains_key(&id) {
             Ok(None)
         } else {
             let potential_len = self.potential_len();
@@ -425,7 +452,7 @@ impl TripleManager {
                     Ok(action) => action,
                     Err(e) => {
                         errors.push(e);
-                        self.failed_triples.insert(*id, Instant::now());
+                        self.gc.insert(*id, Instant::now());
                         self.ongoing.remove(id);
                         self.introduced.remove(id);
                         tracing::info!(

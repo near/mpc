@@ -1,5 +1,6 @@
 use super::contract::primitives::{ParticipantInfo, Participants};
 use super::cryptography::CryptographicError;
+use super::monitor::StuckMonitor;
 use super::presignature::PresignatureManager;
 use super::signature::SignatureManager;
 use super::triple::TripleManager;
@@ -7,6 +8,7 @@ use super::SignQueue;
 use crate::http_client::MessageQueue;
 use crate::storage::triple_storage::TripleData;
 use crate::types::{KeygenProtocol, ReshareProtocol, SecretKeyShare};
+
 use cait_sith::protocol::Participant;
 use crypto_shared::PublicKey;
 use near_account_id::AccountId;
@@ -92,6 +94,7 @@ pub struct RunningState {
     pub private_share: SecretKeyShare,
     pub public_key: PublicKey,
     pub sign_queue: Arc<RwLock<SignQueue>>,
+    pub stuck_monitor: Arc<RwLock<StuckMonitor>>,
     pub triple_manager: Arc<RwLock<TripleManager>>,
     pub presignature_manager: Arc<RwLock<PresignatureManager>>,
     pub signature_manager: Arc<RwLock<SignatureManager>>,

@@ -1753,6 +1753,7 @@ dependencies = [
  "near-sdk",
  "serde",
  "serde_json",
+ "subtle",
 ]
 
 [[package]]
@@ -3749,13 +3750,18 @@ dependencies = [
  "anyhow",
  "borsh",
  "crypto-shared",
+ "digest 0.10.7",
+ "ecdsa 0.16.9",
  "k256",
+ "near-crypto 0.23.0",
  "near-gas",
  "near-sdk",
  "near-workspaces",
+ "rand 0.8.5",
  "schemars",
  "serde",
  "serde_json",
+ "signature 2.2.0",
  "tokio",
 ]
 
@@ -4752,7 +4758,7 @@ dependencies = [
 [[package]]
 name = "near-workspaces"
 version = "0.10.0"
-source = "git+https://github.com/near/near-workspaces-rs?branch=node/1.40#f3aa1a5503e893680a675f7a0ffcc61f72104137"
+source = "git+https://github.com/near/near-workspaces-rs?branch=node/1.40#6c16f12f84e5c43b03f9f757ae2f11d1c6ebf32e"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -6200,6 +6206,7 @@ version = "0.23.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05cff451f60db80f490f3c182b77c35260baace73209e9cdbbe526bfe3a4d402"
 dependencies = [
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
@@ -7687,17 +7694,16 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "ureq"
-version = "2.9.7"
+version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d11a831e3c0b56e438a28308e7c810799e3c118417f342d30ecec080105395cd"
+checksum = "72139d247e5f97a3eff96229a7ae85ead5328a39efe76f8bf5a06313d505b6ea"
 dependencies = [
  "base64 0.22.1",
  "flate2",
  "log",
  "once_cell",
- "rustls 0.22.4",
+ "rustls 0.23.10",
  "rustls-pki-types",
- "rustls-webpki 0.102.5",
  "url 2.5.2",
  "webpki-roots",
 ]
