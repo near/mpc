@@ -111,16 +111,7 @@ pub enum StateView {
         presignature_mine_count: usize,
         presignature_potential_count: usize,
         latest_block_height: BlockHeight,
-    },
-    Unstable {
-        participants: Vec<Participant>,
-        triple_count: usize,
-        triple_mine_count: usize,
-        triple_potential_count: usize,
-        presignature_count: usize,
-        presignature_mine_count: usize,
-        presignature_potential_count: usize,
-        latest_block_height: BlockHeight,
+        is_stable: bool,
     },
     NotRunning,
 }
@@ -144,30 +135,17 @@ async fn state(Extension(state): Extension<Arc<AxumState>>) -> Result<Json<State
             let presignature_potential_count = presignature_read.potential_len();
             let participants = state.participants.keys_vec();
 
-            let state = if is_stable {
-                StateView::Running {
-                    participants,
-                    triple_count,
-                    triple_mine_count,
-                    triple_potential_count,
-                    presignature_count,
-                    presignature_mine_count,
-                    presignature_potential_count,
-                    latest_block_height,
-                }
-            } else {
-                StateView::Unstable {
-                    participants,
-                    triple_count,
-                    triple_mine_count,
-                    triple_potential_count,
-                    presignature_count,
-                    presignature_mine_count,
-                    presignature_potential_count,
-                    latest_block_height,
-                }
-            };
-            Ok(Json(state))
+            Ok(Json(StateView::Running {
+                participants,
+                triple_count,
+                triple_mine_count,
+                triple_potential_count,
+                presignature_count,
+                presignature_mine_count,
+                presignature_potential_count,
+                latest_block_height,
+                is_stable,
+            }))
         }
         _ => {
             tracing::debug!("not running, state unavailable");

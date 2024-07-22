@@ -122,6 +122,9 @@ impl Pool {
             .read()
             .await
             .get(participant)
-            .map_or(false, |state| matches!(state, StateView::Running { .. }))
+            .map_or(false, |state| match state {
+                StateView::Running { is_stable, .. } => *is_stable,
+                _ => false,
+            })
     }
 }

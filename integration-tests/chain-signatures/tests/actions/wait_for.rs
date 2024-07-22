@@ -77,9 +77,6 @@ pub async fn has_at_least_triples<'a>(
                     Ok(state_view)
                 }
                 StateView::Running { .. } => anyhow::bail!("node does not have enough triples yet"),
-                StateView::Unstable { .. } => {
-                    anyhow::bail!("node[unstable] does not have enough triples yet")
-                }
                 StateView::NotRunning => anyhow::bail!("node is not running"),
             }
         }
@@ -116,9 +113,6 @@ pub async fn has_at_least_mine_triples<'a>(
                 } if triple_mine_count >= expected_mine_triple_count => Ok(state_view),
                 StateView::Running { .. } => {
                     anyhow::bail!("node does not have enough mine triples yet")
-                }
-                StateView::Unstable { .. } => {
-                    anyhow::bail!("node[unstable] does not have enough mine triples yet")
                 }
                 StateView::NotRunning => anyhow::bail!("node is not running"),
             }
@@ -157,9 +151,6 @@ pub async fn has_at_least_presignatures<'a>(
                 StateView::Running { .. } => {
                     anyhow::bail!("node does not have enough presignatures yet")
                 }
-                StateView::Unstable { .. } => {
-                    anyhow::bail!("node[unstable] does not have enough presignatures yet")
-                }
                 StateView::NotRunning => anyhow::bail!("node is not running"),
             }
         }
@@ -197,9 +188,6 @@ pub async fn has_at_least_mine_presignatures<'a>(
                 } if presignature_mine_count >= expected_mine_presignature_count => Ok(state_view),
                 StateView::Running { .. } => {
                     anyhow::bail!("node does not have enough mine presignatures yet")
-                }
-                StateView::Unstable { .. } => {
-                    anyhow::bail!("node[unstable] does not have enough mine presignatures yet")
                 }
                 StateView::NotRunning => anyhow::bail!("node is not running"),
             }
