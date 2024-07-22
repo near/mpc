@@ -341,8 +341,8 @@ impl TripleManager {
         if self.mine.len() < 2 {
             return None;
         }
-        let id0 = self.mine.pop_front()?;
-        let id1 = self.mine.pop_front()?;
+        let id0 = self.mine.pop_back()?;
+        let id1 = self.mine.pop_back()?;
         tracing::info!(id0, id1, me = ?self.me, "trying to take two triples");
 
         let take_two_result = self.take_two(id0, id1).await;
@@ -359,8 +359,8 @@ impl TripleManager {
                     ?error,
                     "unable to take two triples: one or both of the triples are missing/not-generated",
                 );
-                self.mine.push_front(id1);
-                self.mine.push_front(id0);
+                self.mine.push_back(id1);
+                self.mine.push_back(id0);
                 None
             }
             Err(error) => {

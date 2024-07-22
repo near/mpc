@@ -398,7 +398,7 @@ impl PresignatureManager {
 
     pub fn take_mine(&mut self) -> Option<Presignature> {
         tracing::info!(mine = ?self.mine, "my presignatures");
-        let my_presignature_id = self.mine.pop_front()?;
+        let my_presignature_id = self.mine.pop_back()?;
         // SAFETY: This unwrap is safe because taking mine will always succeed since it is only
         // present when generation completes where the determination of ownership is made.
         Some(self.take(my_presignature_id).unwrap())
