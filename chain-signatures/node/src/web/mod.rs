@@ -112,6 +112,16 @@ pub enum StateView {
         presignature_potential_count: usize,
         latest_block_height: BlockHeight,
     },
+    Unstable {
+        participants: Vec<Participant>,
+        triple_count: usize,
+        triple_mine_count: usize,
+        triple_potential_count: usize,
+        presignature_count: usize,
+        presignature_mine_count: usize,
+        presignature_potential_count: usize,
+        latest_block_height: BlockHeight,
+    },
     NotRunning,
 }
 
@@ -120,6 +130,8 @@ async fn state(Extension(state): Extension<Arc<AxumState>>) -> Result<Json<State
     tracing::debug!("fetching state");
     let latest_block_height = state.indexer.latest_block_height().await;
     let protocol_state = state.protocol_state.read().await;
+    let is_stable = state.indexer.is_on_track().await;
+
     match &*protocol_state {
         NodeState::Running(state) => {
             let triple_manager_read = state.triple_manager.read().await;
@@ -130,16 +142,32 @@ async fn state(Extension(state): Extension<Arc<AxumState>>) -> Result<Json<State
             let presignature_count = presignature_read.len();
             let presignature_mine_count = presignature_read.my_len();
             let presignature_potential_count = presignature_read.potential_len();
-            Ok(Json(StateView::Running {
-                participants: state.participants.keys().cloned().collect(),
-                triple_count,
-                triple_mine_count,
-                triple_potential_count,
-                presignature_count,
-                presignature_mine_count,
-                presignature_potential_count,
-                latest_block_height,
-            }))
+            let participants = state.participants.keys_vec();
+
+            let state = if is_stable {
+                StateView::Running {
+                    participants,
+                    triple_count,
+                    triple_mine_count,
+                    triple_potential_count,
+                    presignature_count,
+                    presignature_mine_count,
+                    presignature_potential_count,
+                    latest_block_height,
+                }
+            } else {
+                StateView::Unstable {
+                    participants,
+                    triple_count,
+                    triple_mine_count,
+                    triple_potential_count,
+                    presignature_count,
+                    presignature_mine_count,
+                    presignature_potential_count,
+                    latest_block_height,
+                }
+            };
+            Ok(Json(state))
         }
         _ => {
             tracing::debug!("not running, state unavailable");

@@ -39,9 +39,13 @@ impl Pool {
                 continue;
             };
 
-            let Ok(_state): Result<StateView, _> = resp.json().await else {
+            let Ok(state): Result<StateView, _> = resp.json().await else {
                 continue;
             };
+            let StateView::Running { .. } = state else {
+                continue;
+            };
+
             participants.insert(participant, info.clone());
         }
 

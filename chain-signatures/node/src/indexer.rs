@@ -97,10 +97,17 @@ impl Indexer {
         }
     }
 
+    /// Get the latest block height from the chain.
     pub async fn latest_block_height(&self) -> BlockHeight {
         self.latest_block_height.read().await.block_height
     }
 
+    /// Check whether the indexer is on track with the latest block height from the chain.
+    pub async fn is_on_track(&self) -> bool {
+        self.last_updated_timestamp.read().await.elapsed() <= Self::BEHIND_THRESHOLD
+    }
+
+    /// Check whether the indexer is behind with the latest block height from the chain.
     pub async fn is_behind(&self) -> bool {
         self.last_updated_timestamp.read().await.elapsed() > Self::BEHIND_THRESHOLD
     }
