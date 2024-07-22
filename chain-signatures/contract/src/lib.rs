@@ -4,6 +4,7 @@ use crypto_shared::{
     derive_epsilon, derive_key, kdf::check_ec_signature, near_public_key_to_affine_point,
     types::SignatureResponse, ScalarExt as _, SerializableScalar,
 };
+use k256::Scalar;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
 use near_sdk::serde::{Deserialize, Serialize};
@@ -98,13 +99,16 @@ pub struct YieldIndex {
 #[borsh(crate = "near_sdk::borsh")]
 pub struct SignatureRequest {
     pub epsilon: SerializableScalar,
-    pub payload_hash: [u8; 32],
+    pub payload_hash: SerializableScalar,
 }
 
 impl SignatureRequest {
-    pub fn new(payload_hash: [u8; 32], predecessor_id: &AccountId, path: &str) -> Self {
-        let scalar = derive_epsilon(predecessor_id, path);
-        let epsilon = SerializableScalar { scalar };
+    pub fn new(payload_hash: Scalar, predecessor_id: &AccountId, path: &str) -> Self {
+        let epsilon = derive_epsilon(predecessor_id, path);
+        let epsilon = SerializableScalar { scalar: epsilon };
+        let payload_hash = SerializableScalar {
+            scalar: payload_hash,
+        };
         SignatureRequest {
             epsilon,
             payload_hash,
@@ -167,6 +171,9 @@ impl VersionedMpcContract {
             key_version,
         } = request;
         let latest_key_version: u32 = self.latest_key_version();
+        // It's important we fail here because the MPC nodes will fail in an identical way.
+        // This allows users to get the error message
+        let payload = Scalar::from_bytes(payload).expect("Payload hash is bad");
         assert!(
             key_version <= latest_key_version,
             "This version of the signer contract doesn't support versions greater than {}",
@@ -280,6 +287,7 @@ impl VersionedMpcContract {
 
     pub fn respond(&mut self, request: SignatureRequest, response: SignatureResponse) {
         let protocol_state = self.mutable_state();
+
         if let ProtocolContractState::Running(_) = protocol_state {
             let signer = env::signer_account_id();
             log!(
@@ -301,7 +309,7 @@ impl VersionedMpcContract {
                 &expected_public_key,
                 &response.big_r.affine_point,
                 &response.s.scalar,
-                k256::Scalar::from_bytes(&request.payload_hash[..]),
+                request.payload_hash.scalar,
                 response.recovery_id,
             )
             .is_err()

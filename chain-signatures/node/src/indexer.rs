@@ -2,7 +2,9 @@ use crate::gcp::GcpService;
 use crate::kdf;
 use crate::protocol::{SignQueue, SignRequest};
 use crate::types::LatestBlockHeight;
-use crypto_shared::derive_epsilon;
+use anyhow::Context as _;
+use crypto_shared::{derive_epsilon, ScalarExt};
+use k256::Scalar;
 use near_account_id::AccountId;
 use near_lake_framework::{LakeBuilder, LakeContext};
 use near_lake_primitives::actions::ActionMetaDataExt;
@@ -67,13 +69,22 @@ impl Options {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct SignArguments {
-    pub request: ContractSignRequest,
+struct SignArguments {
+    request: UnvalidatedContractSignRequest,
 }
 
+/// What is recieved when sign is called
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+struct UnvalidatedContractSignRequest {
+    pub payload: [u8; 32],
+    pub path: String,
+    pub key_version: u32,
+}
+
+/// A validated version of the sign request
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ContractSignRequest {
-    pub payload: [u8; 32],
+    pub payload: Scalar,
     pub path: String,
     pub key_version: u32,
 }
@@ -113,6 +124,8 @@ async fn handle_block(
                             tracing::warn!("`sign` did not produce entropy");
                             continue;
                         }
+                        let payload = Scalar::from_bytes(arguments.request.payload)
+                            .context("Payload cannot be converted to scalar, not in k256 field")?;
                         let Ok(entropy) = serde_json::from_str::<'_, [u8; 32]>(&receipt.logs()[1])
                         else {
                             tracing::warn!(
@@ -133,9 +146,14 @@ async fn handle_block(
                             entropy = hex::encode(entropy),
                             "indexed new `sign` function call"
                         );
+                        let request = ContractSignRequest {
+                            payload,
+                            path: arguments.request.path,
+                            key_version: arguments.request.key_version,
+                        };
                         pending_requests.push(SignRequest {
                             receipt_id,
-                            request: arguments.request,
+                            request,
                             epsilon,
                             delta,
                             entropy,

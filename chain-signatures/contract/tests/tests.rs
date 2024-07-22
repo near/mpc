@@ -1,12 +1,13 @@
 use crypto_shared::kdf::{check_ec_signature, derive_secret_key};
 use crypto_shared::{
-    derive_epsilon, derive_key, SerializableAffinePoint, SerializableScalar, SignatureResponse,
+    derive_epsilon, derive_key, ScalarExt as _, SerializableAffinePoint, SerializableScalar,
+    SignatureResponse,
 };
 use ecdsa::signature::Verifier;
 use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::DecompressPoint;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
-use k256::{AffinePoint, FieldBytes, Secp256k1};
+use k256::{AffinePoint, FieldBytes, Scalar, Secp256k1};
 use mpc_contract::primitives::{CandidateInfo, ParticipantInfo, SignRequest};
 use mpc_contract::SignatureRequest;
 use near_sdk::NearToken;
@@ -135,8 +136,8 @@ async fn create_response(
 
     let s = signature.s();
     let (r_bytes, _s_bytes) = signature.split_bytes();
-
-    let respond_req = SignatureRequest::new(payload_hash, predecessor_id, path);
+    let payload_hash_s = Scalar::from_bytes(payload_hash).unwrap();
+    let respond_req = SignatureRequest::new(payload_hash_s, predecessor_id, path);
     let big_r =
         AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
     let s: k256::Scalar = *s.as_ref();

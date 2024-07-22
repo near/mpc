@@ -9,8 +9,8 @@ use crate::util::AffinePointExt;
 use cait_sith::protocol::{Action, InitializationError, Participant, ProtocolError};
 use cait_sith::{FullSignature, PresignOutput};
 use chrono::Utc;
+use crypto_shared::SerializableScalar;
 use crypto_shared::{derive_key, PublicKey};
-use crypto_shared::{ScalarExt, SerializableScalar};
 use k256::{Scalar, Secp256k1};
 use mpc_contract::SignatureRequest;
 use rand::rngs::StdRng;
@@ -58,7 +58,7 @@ impl SignQueue {
     pub fn add(&mut self, request: SignRequest) {
         tracing::info!(
             receipt_id = %request.receipt_id,
-            payload = hex::encode(request.request.payload),
+            payload = hex::encode(request.request.payload.to_bytes()),
             entropy = hex::encode(request.entropy),
             "new sign request"
         );
@@ -263,7 +263,7 @@ impl SignatureManager {
             me,
             derive_key(public_key, epsilon),
             output,
-            Scalar::from_bytes(&request.payload),
+            request.payload,
         )?);
         Ok(SignatureGenerator::new(
             protocol,
@@ -470,7 +470,7 @@ impl SignatureManager {
                         self.completed.insert(generator.presignature_id, Instant::now());
                         let request = SignatureRequest {
                             epsilon: SerializableScalar {scalar: generator.epsilon},
-                            payload_hash: generator.request.payload,
+                            payload_hash: generator.request.payload.into(),
                         };
                         if generator.proposer == self.me {
                             self.signatures
@@ -585,7 +585,7 @@ impl SignatureManager {
                 &expected_public_key,
                 &signature.big_r,
                 &signature.s,
-                Scalar::from_bytes(&request.payload_hash),
+                request.payload_hash.scalar,
             ) else {
                 tracing::error!(%receipt_id, "Failed to generate a recovery ID");
                 continue;

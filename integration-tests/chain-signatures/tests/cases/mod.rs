@@ -124,7 +124,7 @@ async fn test_key_derivation() -> anyhow::Result<()> {
                     &user_pk,
                     &sig.big_r,
                     &sig.s,
-                    k256::Scalar::from_bytes(&payload_hashed),
+                    k256::Scalar::from_bytes(payload_hashed).unwrap(),
                 )
                 .unwrap();
 

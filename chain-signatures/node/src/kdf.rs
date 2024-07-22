@@ -13,7 +13,7 @@ pub fn derive_delta(receipt_id: CryptoHash, entropy: [u8; 32]) -> Scalar {
     let info = format!("{DELTA_DERIVATION_PREFIX}:{}", receipt_id);
     let mut okm = [0u8; 32];
     hk.expand(info.as_bytes(), &mut okm).unwrap();
-    Scalar::from_bytes(&okm)
+    Scalar::from_non_biased(okm)
 }
 
 // Constant prefix that ensures delta derivation values are used specifically for

@@ -88,14 +88,14 @@ pub async fn request_sign(
 pub async fn assert_signature(
     account_id: &near_workspaces::AccountId,
     mpc_pk_bytes: &[u8],
-    payload: &[u8; 32],
+    payload: [u8; 32],
     signature: &FullSignature<Secp256k1>,
 ) {
     let mpc_point = EncodedPoint::from_bytes(mpc_pk_bytes).unwrap();
     let mpc_pk = AffinePoint::from_encoded_point(&mpc_point).unwrap();
     let epsilon = derive_epsilon(account_id, "test");
     let user_pk = derive_key(mpc_pk, epsilon);
-    assert!(signature.verify(&user_pk, &Scalar::from_bytes(payload),));
+    assert!(signature.verify(&user_pk, &Scalar::from_bytes(payload).unwrap(),));
 }
 
 // A normal signature, but we try to insert a bad response which fails and the signature is generated
@@ -129,7 +129,7 @@ pub async fn single_signature_rogue_responder(
     //     hex::encode(&payload_hash),
     //     account.id(),
     // );
-    assert_signature(account.id(), &mpc_pk_bytes, &payload_hash, &signature).await;
+    assert_signature(account.id(), &mpc_pk_bytes, payload_hash, &signature).await;
 
     Ok(())
 }
@@ -143,7 +143,7 @@ pub async fn single_signature_production(
 
     let mut mpc_pk_bytes = vec![0x04];
     mpc_pk_bytes.extend_from_slice(&state.public_key.as_bytes()[1..]);
-    assert_signature(account.id(), &mpc_pk_bytes, &payload_hash, &signature).await;
+    assert_signature(account.id(), &mpc_pk_bytes, payload_hash, &signature).await;
 
     Ok(())
 }
@@ -169,7 +169,7 @@ pub async fn rogue_respond(
     let epsilon = derive_epsilon(predecessor, path);
 
     let request = SignatureRequest {
-        payload_hash,
+        payload_hash: Scalar::from_bytes(payload_hash).unwrap().into(),
         epsilon: SerializableScalar { scalar: epsilon },
     };
 
@@ -294,7 +294,7 @@ pub async fn single_payload_signature_production(
     assert_signature(
         account.clone().id(),
         &mpc_pk_bytes,
-        &payload_hash,
+        payload_hash,
         &signature,
     )
     .await;
@@ -370,7 +370,7 @@ async fn signatures_havent_changed() {
             .try_into()
             .unwrap();
 
-    let payload_hash_scalar = Scalar::from_bytes(&payload_hash);
+    let payload_hash_scalar = Scalar::from_bytes(payload_hash).unwrap();
 
     // Derive and convert user pk
     let mpc_pk = hex::decode(mpc_key).unwrap();
@@ -398,8 +398,8 @@ async fn signatures_havent_changed() {
     let big_r_y_parity = big_r.y_is_odd().unwrap_u8() as i32;
     assert!(big_r_y_parity == 0 || big_r_y_parity == 1);
 
-    let s = hex::decode(s).unwrap();
-    let s = k256::Scalar::from_bytes(s.as_slice());
+    let s = hex::decode(s).unwrap().try_into().unwrap();
+    let s = k256::Scalar::from_bytes(s).unwrap();
     let r = x_coordinate::<k256::Secp256k1>(&big_r);
 
     let signature = cait_sith::FullSignature::<Secp256k1> { big_r, s };
