@@ -18,7 +18,7 @@ pub enum SignError {
     InsufficientGas(Gas, Gas),
     #[error("Too many pending requests. Please try again later.")]
     RequestLimitExceeded,
-    #[error("This sign request had timed out, was completed, or never existed.")]
+    #[error("This sign request has timed out, was completed, or never existed.")]
     RequestNotFound,
 }
 
