@@ -1753,6 +1753,7 @@ dependencies = [
  "near-sdk",
  "serde",
  "serde_json",
+ "sha3",
  "subtle",
 ]
 
