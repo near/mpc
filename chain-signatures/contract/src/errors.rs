@@ -28,7 +28,7 @@ pub enum RespondError {
     RequestNotFound,
     #[error("The provided signature is invalid.")]
     InvalidSignature,
-    #[error("The protocol is not in the Running state.")]
+    #[error("The protocol is not Running.")]
     ProtocolNotInRunningState,
 }
 
