@@ -34,7 +34,7 @@ pub enum RespondError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum JoinError {
-    #[error("The protocol is not in the Running state.")]
+    #[error("The protocol is not Running.")]
     ProtocolStateNotRunning,
 }
 
