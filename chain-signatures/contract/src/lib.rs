@@ -616,6 +616,7 @@ impl VersionedMpcContract {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
+    #[private]
     pub fn sign_helper(&mut self, request: SignatureRequest) {
         match self {
             Self::V0(mpc_contract) => {
