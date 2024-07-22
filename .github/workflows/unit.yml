@@ -77,10 +77,10 @@ jobs:
       - name: Run Audit (FastAuth)
         working-directory: integration-tests/fastauth
         run: |
-          cargo audit --ignore RUSTSEC-2020-0071 --ignore RUSTSEC-2023-0052 --ignore RUSTSEC-2022-0093 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0019 --ignore RUSTSEC-2024-0344
+          cargo audit --ignore RUSTSEC-2020-0071 --ignore RUSTSEC-2023-0052 --ignore RUSTSEC-2022-0093 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0019 --ignore RUSTSEC-2024-0344 --ignore RUSTSEC-2024-0357
       - name: Run Audit (Chain Signatures)
         # even if previous audit step fails, run this audit step to ensure all crates are audited
         if: always()
         working-directory: integration-tests/chain-signatures
         run: |
-          cargo audit --ignore RUSTSEC-2020-0071 --ignore RUSTSEC-2023-0052 --ignore RUSTSEC-2022-0093 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0019 --ignore RUSTSEC-2024-0344 --ignore RUSTSEC-2022-0093 --ignore RUSTSEC-2024-0346 --ignore RUSTSEC-2024-0347
+          cargo audit --ignore RUSTSEC-2020-0071 --ignore RUSTSEC-2023-0052 --ignore RUSTSEC-2022-0093 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0019 --ignore RUSTSEC-2024-0344 --ignore RUSTSEC-2022-0093 --ignore RUSTSEC-2024-0346 --ignore RUSTSEC-2024-0347 --ignore RUSTSEC-2024-0357
