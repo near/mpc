@@ -8,6 +8,7 @@ node_configs = [
     sign_sk_secret_id    = "multichain-sign-sk-mainnet-0"
     sk_share_secret_id   = "multichain-sk-share-mainnet-0"
     ip_address           = "34.49.62.49"
+    domain               = "multichain-mainnet-dev-0.dev.api.pagoda.co"
   },
   {
     account              = "multichain-node-dev-1.near"
@@ -17,6 +18,7 @@ node_configs = [
     sign_sk_secret_id    = "multichain-sign-sk-mainnet-1"
     sk_share_secret_id   = "multichain-sk-share-mainnet-1"
     ip_address           = "34.128.137.203"
+    domain               = "multichain-mainnet-dev-1.dev.api.pagoda.co"
   },
   {
     account              = "multichain-node-dev-2.near"
@@ -26,6 +28,7 @@ node_configs = [
     sign_sk_secret_id    = "multichain-sign-sk-mainnet-2"
     sk_share_secret_id   = "multichain-sk-share-mainnet-2"
     ip_address           = "34.49.228.15"
+    domain               = "multichain-mainnet-dev-2.dev.api.pagoda.co"
   },
   {
     account              = "multichain-node-dev-3.near"
@@ -35,6 +38,7 @@ node_configs = [
     sign_sk_secret_id    = "multichain-sign-sk-mainnet-3"
     sk_share_secret_id   = "multichain-sk-share-mainnet-3"
     ip_address           = "34.111.236.127"
+    domain               = "multichain-mainnet-dev-3.dev.api.pagoda.co"
   },
   {
     account              = "multichain-node-dev-4.near"
@@ -44,6 +48,7 @@ node_configs = [
     sign_sk_secret_id    = "multichain-sign-sk-mainnet-4"
     sk_share_secret_id   = "multichain-sk-share-mainnet-4"
     ip_address           = "34.49.151.143"
+    domain               = "multichain-mainnet-dev-4.dev.api.pagoda.co"
   },
   {
     account              = "multichain-node-dev-5.near"
@@ -53,6 +58,7 @@ node_configs = [
     sign_sk_secret_id    = "multichain-sign-sk-mainnet-5"
     sk_share_secret_id   = "multichain-sk-share-mainnet-5"
     ip_address           = "34.128.150.24"
+    domain               = "multichain-mainnet-dev-5.dev.api.pagoda.co"
   },
   {
     account              = "multichain-node-dev-6.near"
@@ -62,6 +68,7 @@ node_configs = [
     sign_sk_secret_id    = "multichain-sign-sk-mainnet-6"
     sk_share_secret_id   = "multichain-sk-share-mainnet-6"
     ip_address           = "34.120.189.165"
+    domain               = "multichain-mainnet-dev-6.dev.api.pagoda.co"
   },
   {
     account              = "multichain-node-dev-7.near"
@@ -71,5 +78,6 @@ node_configs = [
     sign_sk_secret_id    = "multichain-sign-sk-mainnet-7"
     sk_share_secret_id   = "multichain-sk-share-mainnet-7"
     ip_address           = "34.111.38.76"
+    domain               = "multichain-mainnet-dev-7.dev.api.pagoda.co"
   },
 ]

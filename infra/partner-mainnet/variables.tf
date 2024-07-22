@@ -1,13 +1,11 @@
 variable "project_id" {
   description = "The project ID to deploy resource into"
   type        = string
-  default     = "pagoda-discovery-platform-dev"
 }
 
 variable "subnetwork" {
   description = "The name of the subnetwork to deploy instances into"
   type        = string
-  default     = "prod-us-central1"
 }
 
 variable "mig_name" {
@@ -17,9 +15,9 @@ variable "mig_name" {
 }
 
 variable "image" {
-  description = "The Docker image to deploy to GCE instances"
+  description = "The Docker image to deploy to GCE instances. Note: This is a public image repository used for updating your nodes, please do not change this"
   type        = string
-  default     = "us-east1-docker.pkg.dev/pagoda-discovery-platform-dev/multichain/multichain-dev:mainnet-dev"
+  default     = "us-east1-docker.pkg.dev/pagoda-discovery-platform-prod/multichain-public/multichain-testnet:latest"
 }
 
 variable "image_port" {
@@ -31,13 +29,15 @@ variable "image_port" {
 variable "region" {
   description = "The GCP region to deploy instances into"
   type        = string
-  default     = "us-central1"
+}
+
+variable "zone" {
+  type = string
 }
 
 variable "network" {
   description = "The GCP network"
   type        = string
-  default     = "prod"
 }
 
 variable "additional_metadata" {
@@ -70,7 +70,6 @@ variable "node_configs" {
     cipher_sk_secret_id  = string
     sign_sk_secret_id    = string
     sk_share_secret_id   = string
-    ip_address           = string
     domain               = string
   }))
 }
@@ -88,19 +87,19 @@ variable "static_env" {
   default = [
     {
       name  = "MPC_RECOVERY_NEAR_RPC"
-      value = "https://rpc.mainnet.near.org"
+      value = "https://rpc.testnet.near.org"
     },
     {
       name  = "MPC_RECOVERY_CONTRACT_ID"
-      value = "multichain-mpc-dev.near"
+      value = "v2.multichain-mpc.testnet"
     },
     {
       name  = "MPC_RECOVERY_INDEXER_S3_BUCKET"
-      value = "near-lake-data-mainnet"
+      value = "near-lake-data-testnet"
     },
     {
       name  = "MPC_RECOVERY_INDEXER_START_BLOCK_HEIGHT"
-      value = 122414750
+      value = 158767549
     },
     {
       name  = "AWS_DEFAULT_REGION"
@@ -108,7 +107,7 @@ variable "static_env" {
     },
     {
       name  = "MPC_RECOVERY_GCP_PROJECT_ID"
-      value = "pagoda-discovery-platform-dev"
+      value = "<your-project-id>"
     },
     {
       name  = "MPC_RECOVERY_WEB_PORT"
@@ -121,39 +120,15 @@ variable "static_env" {
     {
       name  = "MPC_RECOVERY_INDEXER_S3_REGION"
       value = "eu-central-1"
-    },
-    {
-      name  = "MPC_RECOVERY_MIN_TRIPLES"
-      value = 20
-    },
-    {
-      name  = "MPC_RECOVERY_MAX_TRIPLES"
-      value = 640
-    },
-    {
-      name  = "MPC_RECOVERY_MIN_PRESIGNATURES"
-      value = 10
-    },
-    {
-      name  = "MPC_RECOVERY_MAX_PRESIGNATURES"
-      value = 320
-    },
-    {
-      name  = "MPC_RECOVERY_MAX_CONCURRENT_INTRODUCTION"
-      value = 2
-    },
-    {
-      name  = "MPC_RECOVERY_MAX_CONCURRENT_GENERATION"
-      value = 16
-    },
-    {
-      name  = "MPC_RECOVERY_TRIPLE_TIMEOUT_SEC"
-      value = 1200
     }
   ]
 }
 
+variable "create_network" {
+  default = false
+  description = "Do you want to create a new VPC network (true) or use default GCP network (false)?"
+}
+
 variable "domain" {
-  description = "DNS name of the node"
-  default = ""
+  description = "DNS name for your node"
 }
