@@ -36,7 +36,7 @@ impl Mesh {
         &self.active_potential_participants
     }
 
-    /// Get all pontential participants, but they not necessarily be active.
+    /// Get all pontential participants, but they may not necessarily be active.
     pub async fn potential_participants(&self) -> Participants {
         self.connections.potential_participants().await
     }
@@ -54,6 +54,18 @@ impl Mesh {
             }
         }
         participants
+    }
+
+    /// Get active participants that have a stable connection. This is useful for arbitrary metrics to
+    /// say whether or not a node is stable, such as a node being on track with the latest block height.
+    pub async fn stable_participants(&self) -> Participants {
+        let mut stable = Participants::default();
+        for (participant, info) in self.active_participants().iter() {
+            if self.connections.is_participant_stable(participant).await {
+                stable.insert(participant, info.clone());
+            }
+        }
+        stable
     }
 
     pub async fn establish_participants(&mut self, contract_state: &ProtocolState) {

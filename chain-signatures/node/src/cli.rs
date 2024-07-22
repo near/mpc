@@ -259,7 +259,6 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
                 sign_queue,
                 key_storage,
                 triple_storage,
-                indexer.clone(),
                 Config {
                     triple_cfg: TripleConfig {
                         min_triples,

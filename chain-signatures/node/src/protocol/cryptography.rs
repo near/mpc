@@ -413,11 +413,16 @@ impl CryptographicProtocol for RunningState {
             .with_label_values(&[my_account_id.as_str()])
             .set(presignature_manager.potential_len() as i64 - presignature_manager.len() as i64);
 
+        // NOTE: signatures should only use stable and not active participants. The difference here is that
+        // stable participants utilizes more than the online status of a node, such as whether or not their
+        // block height is up to date, such that they too can process signature requests. If they cannot
+        // then they are considered unstable and should not be a part of signature generation this round.
+        let stable = ctx.mesh().stable_participants().await;
         let mut sign_queue = self.sign_queue.write().await;
         crate::metrics::SIGN_QUEUE_SIZE
             .with_label_values(&[my_account_id.as_str()])
             .set(sign_queue.len() as i64);
-        sign_queue.organize(self.threshold, active, ctx.me().await, &my_account_id);
+        sign_queue.organize(self.threshold, &stable, ctx.me().await, &my_account_id);
         let my_requests = sign_queue.my_requests(ctx.me().await);
         crate::metrics::SIGN_QUEUE_MINE_SIZE
             .with_label_values(&[my_account_id.as_str()])
@@ -426,7 +431,7 @@ impl CryptographicProtocol for RunningState {
         let mut signature_manager = self.signature_manager.write().await;
         signature_manager.handle_requests(
             self.threshold,
-            active,
+            &stable,
             my_requests,
             &mut presignature_manager,
         );

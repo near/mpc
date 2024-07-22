@@ -23,7 +23,6 @@ use self::cryptography::CryptographicCtx;
 use self::message::MessageCtx;
 use self::presignature::PresignatureConfig;
 use self::triple::TripleConfig;
-use crate::indexer::Indexer;
 use crate::mesh::{Mesh, NetworkConfig};
 use crate::protocol::consensus::ConsensusProtocol;
 use crate::protocol::cryptography::CryptographicProtocol;
@@ -59,7 +58,6 @@ struct Ctx {
     sign_queue: Arc<RwLock<SignQueue>>,
     secret_storage: SecretNodeStorageBox,
     triple_storage: LockTripleNodeStorageBox,
-    indexer: Indexer,
     cfg: Config,
     mesh: Mesh,
 }
@@ -170,7 +168,6 @@ impl MpcSignProtocol {
         sign_queue: Arc<RwLock<SignQueue>>,
         secret_storage: SecretNodeStorageBox,
         triple_storage: LockTripleNodeStorageBox,
-        indexer: Indexer,
         cfg: Config,
     ) -> (Self, Arc<RwLock<NodeState>>) {
         let state = Arc::new(RwLock::new(NodeState::Starting));
@@ -184,7 +181,6 @@ impl MpcSignProtocol {
             signer,
             secret_storage,
             triple_storage,
-            indexer,
             cfg,
             mesh: Mesh::default(),
         };

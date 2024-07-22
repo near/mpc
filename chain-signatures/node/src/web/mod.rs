@@ -129,8 +129,8 @@ pub enum StateView {
 async fn state(Extension(state): Extension<Arc<AxumState>>) -> Result<Json<StateView>> {
     tracing::debug!("fetching state");
     let latest_block_height = state.indexer.latest_block_height().await;
-    let protocol_state = state.protocol_state.read().await;
     let is_stable = state.indexer.is_on_track().await;
+    let protocol_state = state.protocol_state.read().await;
 
     match &*protocol_state {
         NodeState::Running(state) => {
