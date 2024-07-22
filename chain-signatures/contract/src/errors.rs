@@ -24,7 +24,7 @@ pub enum SignError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RespondError {
-    #[error("This sign request had timed out, was completed, or never existed.")]
+    #[error("This sign request has timed out, was completed, or never existed.")]
     RequestNotFound,
     #[error("The provided signature is invalid.")]
     InvalidSignature,
