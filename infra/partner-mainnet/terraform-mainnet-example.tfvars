@@ -14,7 +14,7 @@ node_configs = [
     # These 3 values below should match your secret names in google secrets manager
     account_sk_secret_id = "multichain-account-sk-mainnet-0"
     cipher_sk_secret_id  = "multichain-cipher-sk-mainnet-0"
-    sign_sk_secret_id    = null
+    sign_sk_secret_id    = "multichain-sign-sk-mainnet-0"
     sk_share_secret_id   = "multichain-sk-share-mainnet-0"
     domain               = "{your-domain-or-subdomain}"
   },

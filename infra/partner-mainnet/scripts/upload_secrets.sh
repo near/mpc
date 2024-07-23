@@ -9,6 +9,8 @@
 
 # Should be a .txt file ^
 
+# DO NOT COMMIT THE TXT FILE TO SOURCE CONTROL, DELETE AFTER SECRETS HAVE BEEN CREATED AND NETWORK IS FUNCTIONAL
+
 while getopts ":d:f:" opt; do
   case $opt in
     d) DEST_PROJECT="$OPTARG"
