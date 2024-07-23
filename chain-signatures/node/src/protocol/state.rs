@@ -1,5 +1,6 @@
 use super::contract::primitives::{ParticipantInfo, Participants};
 use super::cryptography::CryptographicError;
+use super::monitor::StuckMonitor;
 use super::presignature::PresignatureManager;
 use super::signature::SignatureManager;
 use super::triple::TripleManager;
@@ -7,11 +8,13 @@ use super::SignQueue;
 use crate::http_client::MessageQueue;
 use crate::storage::triple_storage::TripleData;
 use crate::types::{KeygenProtocol, ReshareProtocol, SecretKeyShare};
+
 use cait_sith::protocol::Participant;
 use crypto_shared::PublicKey;
 use near_account_id::AccountId;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -92,6 +95,7 @@ pub struct RunningState {
     pub private_share: SecretKeyShare,
     pub public_key: PublicKey,
     pub sign_queue: Arc<RwLock<SignQueue>>,
+    pub stuck_monitor: Arc<RwLock<StuckMonitor>>,
     pub triple_manager: Arc<RwLock<TripleManager>>,
     pub presignature_manager: Arc<RwLock<PresignatureManager>>,
     pub signature_manager: Arc<RwLock<SignatureManager>>,
@@ -154,6 +158,20 @@ pub enum NodeState {
     Running(RunningState),
     Resharing(ResharingState),
     Joining(JoiningState),
+}
+
+impl Display for NodeState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match *self {
+            NodeState::Starting => write!(f, "Starting"),
+            NodeState::Started(_) => write!(f, "Started"),
+            NodeState::Generating(_) => write!(f, "Generating"),
+            NodeState::WaitingForConsensus(_) => write!(f, "WaitingForConsensus"),
+            NodeState::Running(_) => write!(f, "Running"),
+            NodeState::Resharing(_) => write!(f, "Resharing"),
+            NodeState::Joining(_) => write!(f, "Joining"),
+        }
+    }
 }
 
 impl NodeState {

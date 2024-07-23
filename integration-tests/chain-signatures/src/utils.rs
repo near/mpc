@@ -2,6 +2,7 @@ use anyhow::Context;
 use hyper::{Body, Client, Method, Request, StatusCode, Uri};
 use near_workspaces::result::ExecutionFinalResult;
 use near_workspaces::{Account, AccountId};
+use std::fs;
 
 pub async fn vote_join(
     accounts: Vec<Account>,
@@ -97,5 +98,24 @@ pub async fn ping_until_ok(addr: &str, timeout: u64) -> anyhow::Result<()> {
         }
     })
     .await?;
+    Ok(())
+}
+
+pub async fn clear_local_sk_shares(sk_local_path: Option<String>) -> anyhow::Result<()> {
+    if let Some(sk_share_local_path) = sk_local_path {
+        let pattern = format!("{sk_share_local_path}*");
+        for entry in glob::glob(&pattern).expect("Failed to read glob pattern") {
+            match entry {
+                Ok(path) => {
+                    if path.is_file() {
+                        if let Err(e) = fs::remove_file(&path) {
+                            eprintln!("Failed to delete file {:?}: {}", path.display(), e);
+                        }
+                    }
+                }
+                Err(e) => eprintln!("{:?}", e),
+            }
+        }
+    }
     Ok(())
 }

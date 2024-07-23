@@ -1,5 +1,6 @@
 use crate::{execute, utils, MultichainConfig};
 
+use crate::containers::LakeIndexer;
 use async_process::Child;
 use mpc_keys::hpke;
 use near_workspaces::AccountId;
@@ -16,6 +17,8 @@ pub struct Node {
 
     // process held so it's not dropped. Once dropped, process will be killed.
     process: Child,
+    // near rpc address, after proxy
+    pub near_rpc: String,
 }
 
 pub struct NodeConfig {
@@ -25,6 +28,8 @@ pub struct NodeConfig {
     pub cipher_pk: hpke::PublicKey,
     pub cipher_sk: hpke::SecretKey,
     pub cfg: MultichainConfig,
+    // near rpc address, after proxy
+    pub near_rpc: String,
 }
 
 impl Node {
@@ -39,17 +44,29 @@ impl Node {
         let sign_sk =
             near_crypto::SecretKey::from_seed(near_crypto::KeyType::ED25519, "integration-test");
 
-        let storage_options = ctx.storage_options.clone();
         let indexer_options = mpc_recovery_node::indexer::Options {
             s3_bucket: ctx.localstack.s3_bucket.clone(),
             s3_region: ctx.localstack.s3_region.clone(),
             s3_url: Some(ctx.localstack.s3_host_address.clone()),
             start_block_height: 0,
         };
+
         let near_rpc = ctx.lake_indexer.rpc_host_address.clone();
+        let proxy_name = format!("rpc_from_node_{}", account_id);
+        let rpc_port_proxied = utils::pick_unused_port().await?;
+        let rpc_address_proxied = format!("http://127.0.0.1:{}", rpc_port_proxied);
+        let address = format!("http://127.0.0.1:{web_port}");
+        tracing::info!(
+            "Proxy RPC address {} accessed by node@{} to {}",
+            near_rpc,
+            address,
+            rpc_address_proxied
+        );
+        LakeIndexer::populate_proxy(&proxy_name, true, &rpc_address_proxied, &near_rpc).await?;
+
         let mpc_contract_id = ctx.mpc_contract.id().clone();
         let cli = mpc_recovery_node::cli::Cli::Start {
-            near_rpc: near_rpc.clone(),
+            near_rpc: rpc_address_proxied.clone(),
             mpc_contract_id: mpc_contract_id.clone(),
             account_id: account_id.clone(),
             account_sk: account_sk.to_string().parse()?,
@@ -57,9 +74,9 @@ impl Node {
             cipher_pk: hex::encode(cipher_pk.to_bytes()),
             cipher_sk: hex::encode(cipher_sk.to_bytes()),
             sign_sk: Some(sign_sk.clone()),
-            indexer_options: indexer_options.clone(),
+            indexer_options,
             my_address: None,
-            storage_options: storage_options.clone(),
+            storage_options: ctx.storage_options.clone(),
             min_triples: cfg.triple_cfg.min_triples,
             max_triples: cfg.triple_cfg.max_triples,
             max_concurrent_introduction: cfg.triple_cfg.max_concurrent_introduction,
@@ -70,7 +87,6 @@ impl Node {
 
         let mpc_node_id = format!("multichain/{account_id}", account_id = account_id);
         let process = execute::spawn_multichain(ctx.release, &mpc_node_id, cli)?;
-        let address = format!("http://127.0.0.1:{web_port}");
         tracing::info!("node is starting at {}", address);
         utils::ping_until_ok(&address, 60).await?;
         tracing::info!("node started [node_account_id={account_id}, {address}]");
@@ -85,6 +101,7 @@ impl Node {
             cfg: cfg.clone(),
             web_port,
             process,
+            near_rpc: rpc_address_proxied,
         })
     }
 
@@ -104,7 +121,7 @@ impl Node {
         };
         let sign_sk =
             near_crypto::SecretKey::from_seed(near_crypto::KeyType::ED25519, "integration-test");
-        let near_rpc = ctx.lake_indexer.rpc_host_address.clone();
+        let near_rpc = config.near_rpc;
         let mpc_contract_id = ctx.mpc_contract.id().clone();
         let cli = mpc_recovery_node::cli::Cli::Start {
             near_rpc: near_rpc.clone(),
@@ -143,6 +160,7 @@ impl Node {
             cfg,
             web_port,
             process,
+            near_rpc,
         })
     }
 
@@ -156,6 +174,7 @@ impl Node {
             cipher_pk: self.cipher_pk.clone(),
             cipher_sk: self.cipher_sk.clone(),
             cfg: self.cfg.clone(),
+            near_rpc: self.near_rpc.clone(),
         })
     }
 }

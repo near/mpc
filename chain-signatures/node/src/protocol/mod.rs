@@ -1,12 +1,13 @@
-pub mod contract;
 mod cryptography;
-pub mod presignature;
 mod signature;
-pub mod triple;
 
 pub mod consensus;
+pub mod contract;
 pub mod message;
+pub mod monitor;
+pub mod presignature;
 pub mod state;
+pub mod triple;
 
 pub use consensus::ConsensusError;
 pub use contract::primitives::ParticipantInfo;
@@ -210,11 +211,11 @@ impl MpcSignProtocol {
                 let msg_result = self.receiver.try_recv();
                 match msg_result {
                     Ok(msg) => {
-                        tracing::debug!("received a new message");
+                        tracing::trace!("received a new message");
                         queue.push(msg);
                     }
                     Err(TryRecvError::Empty) => {
-                        tracing::debug!("no new messages received");
+                        tracing::trace!("no new messages received");
                         break;
                     }
                     Err(TryRecvError::Disconnected) => {
@@ -262,9 +263,14 @@ impl MpcSignProtocol {
             };
 
             let crypto_time = Instant::now();
+            tracing::debug!("State progress. Node state: {}", state);
             let mut state = match state.progress(&mut self).await {
-                Ok(state) => state,
+                Ok(state) => {
+                    tracing::debug!("Progress ok. New state: {}", state);
+                    state
+                }
                 Err(err) => {
+                    tracing::debug!("Progress error. State not changed");
                     tracing::info!("protocol unable to progress: {err:?}");
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
@@ -276,9 +282,18 @@ impl MpcSignProtocol {
 
             let consensus_time = Instant::now();
             if let Some(contract_state) = contract_state {
+                tracing::debug!(
+                    "State advance. Node state: {}, contract state: {:?}",
+                    state,
+                    contract_state
+                );
                 state = match state.advance(&mut self, contract_state).await {
-                    Ok(state) => state,
+                    Ok(state) => {
+                        tracing::debug!("Advance ok. New node state: {}", state);
+                        state
+                    }
                     Err(err) => {
+                        tracing::debug!("Advance error. State not changed");
                         tracing::info!("protocol unable to advance: {err:?}");
                         tokio::time::sleep(Duration::from_millis(100)).await;
                         continue;

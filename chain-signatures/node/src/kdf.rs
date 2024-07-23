@@ -1,11 +1,7 @@
 use anyhow::Context;
-use crypto_shared::{x_coordinate, ScalarExt, SignatureResponse};
+use crypto_shared::{kdf::recover, x_coordinate, ScalarExt, SignatureResponse};
 use hkdf::Hkdf;
-use k256::{
-    ecdsa::{RecoveryId, VerifyingKey},
-    elliptic_curve::sec1::ToEncodedPoint,
-    Scalar,
-};
+use k256::{ecdsa::RecoveryId, elliptic_curve::sec1::ToEncodedPoint, Scalar};
 use near_primitives::hash::CryptoHash;
 use sha2::Sha256;
 
@@ -17,7 +13,7 @@ pub fn derive_delta(receipt_id: CryptoHash, entropy: [u8; 32]) -> Scalar {
     let info = format!("{DELTA_DERIVATION_PREFIX}:{}", receipt_id);
     let mut okm = [0u8; 32];
     hk.expand(info.as_bytes(), &mut okm).unwrap();
-    Scalar::from_bytes(&okm)
+    Scalar::from_non_biased(okm)
 }
 
 // Constant prefix that ensures delta derivation values are used specifically for
@@ -34,7 +30,7 @@ pub fn into_eth_sig(
     let public_key = public_key.to_encoded_point(false);
     let signature = k256::ecdsa::Signature::from_scalars(x_coordinate(big_r), s)
         .context("cannot create signature from cait_sith signature")?;
-    let pk0 = VerifyingKey::recover_from_prehash(
+    let pk0 = recover(
         &msg_hash.to_bytes(),
         &signature,
         RecoveryId::try_from(0).context("cannot create recovery_id=0")?,
@@ -45,7 +41,7 @@ pub fn into_eth_sig(
         return Ok(SignatureResponse::new(*big_r, *s, 0));
     }
 
-    let pk1 = VerifyingKey::recover_from_prehash(
+    let pk1 = recover(
         &msg_hash.to_bytes(),
         &signature,
         RecoveryId::try_from(1).context("cannot create recovery_id=1")?,

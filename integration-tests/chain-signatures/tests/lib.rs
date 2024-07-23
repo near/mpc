@@ -5,15 +5,13 @@ use crate::actions::wait_for;
 
 use anyhow::anyhow;
 use futures::future::BoxFuture;
-use glob::glob;
 use integration_tests_chain_signatures::containers::DockerClient;
 use integration_tests_chain_signatures::utils::{vote_join, vote_leave};
-use integration_tests_chain_signatures::{run, MultichainConfig, Nodes};
+use integration_tests_chain_signatures::{run, utils, MultichainConfig, Nodes};
 use near_jsonrpc_client::JsonRpcClient;
 
 use near_workspaces::{Account, AccountId};
 
-use std::fs;
 use std::str::FromStr;
 
 pub struct MultichainTestContext<'a> {
@@ -101,22 +99,31 @@ impl MultichainTestContext<'_> {
             .cloned()
             .collect::<Vec<Account>>();
 
+        tracing::info!("Removing vote from: {:?}", voting_accounts);
         let results = vote_leave(
-            voting_accounts,
+            voting_accounts.clone(),
             self.nodes.ctx().mpc_contract.id(),
             leaving_account_id,
         )
         .await;
-
         // Check if any result has failures, and return early with an error if so
         if results
             .iter()
             .any(|result| !result.as_ref().unwrap().failures().is_empty())
         {
+            tracing::error!("Failed vote from: {:?}", voting_accounts);
             return Err(anyhow!("Failed to vote_leave"));
         }
 
         let new_state = wait_for::running_mpc(self, Some(state.epoch + 1)).await?;
+        tracing::info!(
+            "Getting new state, old {} {:?}, new {} {:?}",
+            state.participants.len(),
+            state.public_key,
+            new_state.participants.len(),
+            new_state.public_key
+        );
+
         assert_eq!(state.participants.len(), new_state.participants.len() + 1);
 
         assert_eq!(
@@ -149,26 +156,7 @@ where
         cfg,
     })
     .await;
-    clear_local_sk_shares(sk_local_path).await?;
+    utils::clear_local_sk_shares(sk_local_path).await?;
 
     result
-}
-
-pub async fn clear_local_sk_shares(sk_local_path: Option<String>) -> anyhow::Result<()> {
-    if let Some(sk_share_local_path) = sk_local_path {
-        let pattern = format!("{sk_share_local_path}*");
-        for entry in glob(&pattern).expect("Failed to read glob pattern") {
-            match entry {
-                Ok(path) => {
-                    if path.is_file() {
-                        if let Err(e) = fs::remove_file(&path) {
-                            eprintln!("Failed to delete file {:?}: {}", path.display(), e);
-                        }
-                    }
-                }
-                Err(e) => eprintln!("{:?}", e),
-            }
-        }
-    }
-    Ok(())
 }

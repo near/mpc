@@ -27,7 +27,7 @@ use testcontainers::{Container, GenericImage};
 
 const NETWORK: &str = "mpc_it_network";
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MultichainConfig {
     pub nodes: usize,
     pub threshold: usize,
@@ -109,10 +109,29 @@ impl Nodes<'_> {
     }
 
     pub fn near_accounts(&self) -> Vec<Account> {
-        self.near_acc_sk()
-            .iter()
-            .map(|(account_id, account_sk)| {
-                Account::from_secret_key(account_id.clone(), account_sk.clone(), &self.ctx().worker)
+        let acc_sk = self.near_acc_sk();
+        let mut account_ids = Vec::new();
+        match self {
+            Nodes::Local { nodes, .. } => {
+                for node in nodes {
+                    account_ids.push(node.account_id.clone());
+                }
+            }
+            Nodes::Docker { nodes, .. } => {
+                for node in nodes {
+                    account_ids.push(node.account_id.clone());
+                }
+            }
+        };
+
+        account_ids
+            .into_iter()
+            .map(|account_id| {
+                Account::from_secret_key(
+                    account_id.clone(),
+                    acc_sk.get(&account_id).unwrap().clone(),
+                    &self.ctx().worker,
+                )
             })
             .collect()
     }
@@ -213,6 +232,11 @@ impl Nodes<'_> {
             }
         }
         Ok(gcp_services)
+    }
+
+    pub fn proxy_name_for_node(&self, id: usize) -> String {
+        let account_id = self.near_accounts();
+        format!("rpc_from_node_{}", account_id[id].id())
     }
 }
 
@@ -436,10 +460,9 @@ pub async fn initialize_lake_indexer<'a>(
     docker_client: &'a containers::DockerClient,
     network: &str,
 ) -> anyhow::Result<LakeIndexerCtx<'a>> {
-    let s3_bucket = "near-lake-custom".to_string();
-    let s3_region = "us-east-1".to_string();
-    let localstack =
-        LocalStack::run(docker_client, network, s3_bucket.clone(), s3_region.clone()).await?;
+    let s3_bucket = "near-lake-custom";
+    let s3_region = "us-east-1";
+    let localstack = LocalStack::run(docker_client, network, s3_bucket, s3_region).await?;
 
     let lake_indexer = containers::LakeIndexer::run(
         docker_client,
@@ -454,6 +477,8 @@ pub async fn initialize_lake_indexer<'a>(
 
     tracing::info!("initializing sandbox worker");
     let worker = near_workspaces::sandbox()
+        // use not proxied rpc address because workspace is used in setup (create dev account, deploy
+        // contract which we can assume succeed
         .rpc_addr(&lake_indexer.rpc_host_address)
         .validator_key(ValidatorKey::Known(
             validator_key.account_id.to_string().parse()?,

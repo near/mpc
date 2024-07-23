@@ -5,3 +5,9 @@ members = [
     "node",
 ]
 resolver = "2"
+
+[patch.crates-io]
+# TODO: trigger Cargo.lock update for x25519-dalek once they release.
+# This fixes https://rustsec.org/advisories/RUSTSEC-2024-0344 by pointing to a commit that includes the fix.
+# This fix has yet to be propagated to crates.io so we will patch it instead.
+x25519-dalek = { git = "https://github.com/dalek-cryptography/curve25519-dalek", rev = "5b7082bbc8e0b2106ab0d956064f61fa0f393cdc" }

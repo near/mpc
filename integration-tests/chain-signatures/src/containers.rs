@@ -1,12 +1,17 @@
-use super::{local::NodeConfig, MultichainConfig};
-use anyhow::anyhow;
+use std::path::Path;
+
+use super::{local::NodeConfig, utils, MultichainConfig};
+use anyhow::{anyhow, Context};
+use async_process::Child;
 use bollard::exec::CreateExecOptions;
 use bollard::{container::LogsOptions, network::CreateNetworkOptions, service::Ipam, Docker};
 use futures::{lock::Mutex, StreamExt};
 use mpc_keys::hpke;
 use near_workspaces::AccountId;
 use once_cell::sync::Lazy;
+use serde_json::json;
 use testcontainers::clients::Cli;
+use testcontainers::core::Port;
 use testcontainers::Image;
 use testcontainers::{
     core::{ExecCommand, WaitFor},
@@ -27,6 +32,8 @@ pub struct Node<'a> {
     pub cipher_sk: hpke::SecretKey,
     pub sign_pk: near_workspaces::types::PublicKey,
     cfg: MultichainConfig,
+    // near rpc address, after proxy
+    near_rpc: String,
 }
 
 impl<'a> Node<'a> {
@@ -44,9 +51,20 @@ impl<'a> Node<'a> {
         let sign_sk =
             near_crypto::SecretKey::from_seed(near_crypto::KeyType::ED25519, "integration-test");
         let sign_pk = sign_sk.public_key();
-        let storage_options = ctx.storage_options.clone();
+
+        // Use proxied address to mock slow, congested or unstable rpc connection
         let near_rpc = ctx.lake_indexer.rpc_host_address.clone();
-        let mpc_contract_id = ctx.mpc_contract.id().clone();
+        let proxy_name = format!("rpc_from_node_{}", account_id);
+        let rpc_port_proxied = utils::pick_unused_port().await?;
+        let rpc_address_proxied = format!("{}:{}", near_rpc, rpc_port_proxied);
+        tracing::info!(
+            "Proxy RPC address {} accessed by node@{} to {}",
+            near_rpc,
+            account_id,
+            rpc_address_proxied
+        );
+        LakeIndexer::populate_proxy(&proxy_name, true, &rpc_address_proxied, &near_rpc).await?;
+
         let indexer_options = mpc_recovery_node::indexer::Options {
             s3_bucket: ctx.localstack.s3_bucket.clone(),
             s3_region: ctx.localstack.s3_region.clone(),
@@ -54,8 +72,8 @@ impl<'a> Node<'a> {
             start_block_height: 0,
         };
         let args = mpc_recovery_node::cli::Cli::Start {
-            near_rpc: near_rpc.clone(),
-            mpc_contract_id: mpc_contract_id.clone(),
+            near_rpc: rpc_address_proxied.clone(),
+            mpc_contract_id: ctx.mpc_contract.id().clone(),
             account_id: account_id.clone(),
             account_sk: account_sk.to_string().parse()?,
             web_port: Self::CONTAINER_PORT,
@@ -64,7 +82,7 @@ impl<'a> Node<'a> {
             sign_sk: Some(sign_sk),
             indexer_options: indexer_options.clone(),
             my_address: None,
-            storage_options: storage_options.clone(),
+            storage_options: ctx.storage_options.clone(),
             min_triples: cfg.triple_cfg.min_triples,
             max_triples: cfg.triple_cfg.max_triples,
             max_concurrent_introduction: cfg.triple_cfg.max_concurrent_introduction,
@@ -108,6 +126,7 @@ impl<'a> Node<'a> {
             cipher_sk,
             sign_pk: sign_pk.to_string().parse()?,
             cfg: cfg.clone(),
+            near_rpc: rpc_address_proxied,
         })
     }
 
@@ -120,6 +139,7 @@ impl<'a> Node<'a> {
             cipher_pk: self.cipher_pk.clone(),
             cipher_sk: self.cipher_sk.clone(),
             cfg: self.cfg.clone(),
+            near_rpc: self.near_rpc.clone(),
         }
     }
 
@@ -130,7 +150,7 @@ impl<'a> Node<'a> {
         let account_id = config.account_id;
         let account_sk = config.account_sk;
         let storage_options = ctx.storage_options.clone();
-        let near_rpc = ctx.lake_indexer.rpc_host_address.clone();
+        let near_rpc = config.near_rpc;
         let mpc_contract_id = ctx.mpc_contract.id().clone();
         let indexer_options = mpc_recovery_node::indexer::Options {
             s3_bucket: ctx.localstack.s3_bucket.clone(),
@@ -195,6 +215,7 @@ impl<'a> Node<'a> {
             cipher_sk,
             sign_pk: account_sk.public_key(),
             cfg: cfg.clone(),
+            near_rpc,
         })
     }
 }
@@ -214,12 +235,12 @@ impl<'a> LocalStack<'a> {
     pub async fn run(
         docker_client: &'a DockerClient,
         network: &str,
-        s3_bucket: String,
-        s3_region: String,
+        s3_bucket: &str,
+        s3_region: &str,
     ) -> anyhow::Result<LocalStack<'a>> {
         tracing::info!("running LocalStack container...");
-        let image = GenericImage::new("localstack/localstack", "3.0.0")
-            .with_wait_for(WaitFor::message_on_stdout("Running on"));
+        let image = GenericImage::new("localstack/localstack", "3.5.0")
+            .with_wait_for(WaitFor::message_on_stdout("Ready."));
         let image: RunnableImage<GenericImage> = image.into();
         let image = image.with_network(network);
         let container = docker_client.cli.run(image);
@@ -240,18 +261,19 @@ impl<'a> LocalStack<'a> {
                         "s3api",
                         "create-bucket",
                         "--bucket",
-                        &s3_bucket,
+                        s3_bucket,
                         "--region",
-                        &s3_region,
+                        s3_region,
                     ]),
                     ..Default::default()
                 },
             )
             .await?;
-        docker_client
+        let result = docker_client
             .docker
             .start_exec(&create_result.id, None)
             .await?;
+        tracing::info!(?result, s3_bucket, s3_region, "localstack created bucket");
 
         let s3_address = format!("http://{}:{}", address, Self::S3_CONTAINER_PORT);
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -275,8 +297,8 @@ impl<'a> LocalStack<'a> {
             address,
             s3_address,
             s3_host_address,
-            s3_bucket,
-            s3_region,
+            s3_bucket: s3_bucket.to_string(),
+            s3_region: s3_region.to_string(),
         })
     }
 }
@@ -287,27 +309,137 @@ pub struct LakeIndexer<'a> {
     pub region: String,
     pub rpc_address: String,
     pub rpc_host_address: String,
+    // Toxi Server is only used in network traffic originated from Lake Indexer
+    // to simulate high load and slowness etc. in Lake Indexer
+    // Child process is used for proxy host (local node) to container
+    pub toxi_server_process: Child,
+    // Container toxi server is used for proxy container to container
+    pub toxi_server_container: Container<'a, GenericImage>,
 }
 
 impl<'a> LakeIndexer<'a> {
     pub const CONTAINER_RPC_PORT: u16 = 3030;
 
+    pub const S3_PORT_PROXIED: u16 = 4566;
+    pub const S3_ADDRESS_PROXIED: &'static str = "127.0.0.1:4566";
+    pub const TOXI_SERVER_PROCESS_PORT: u16 = 8474;
+    pub const TOXI_SERVER_EXPOSE_PORT: u16 = 8475;
+    pub const TOXI_SERVER_PROCESS_ADDRESS: &'static str = "http://127.0.0.1:8474";
+    pub const TOXI_SERVER_EXPOSE_ADDRESS: &'static str = "http://127.0.0.1:8475";
+
+    async fn spin_up_toxi_server_process() -> anyhow::Result<Child> {
+        let toxi_server = async_process::Command::new("toxiproxy-server")
+            .kill_on_drop(true)
+            .spawn()
+            .with_context(|| "failed to run toxiproxy-server")?;
+        utils::ping_until_ok(
+            &format!("{}/version", Self::TOXI_SERVER_PROCESS_ADDRESS),
+            10,
+        )
+        .await?;
+        Ok(toxi_server)
+    }
+
+    async fn spin_up_toxi_server_container(
+        docker_client: &'a DockerClient,
+        network: &str,
+    ) -> anyhow::Result<Container<'a, GenericImage>> {
+        let image = GenericImage::new("ghcr.io/shopify/toxiproxy", "2.9.0")
+            .with_exposed_port(Self::CONTAINER_RPC_PORT);
+        let image: RunnableImage<GenericImage> = image.into();
+        let image = image.with_network(network).with_mapped_port(Port {
+            local: Self::TOXI_SERVER_EXPOSE_PORT,
+            internal: Self::TOXI_SERVER_PROCESS_PORT,
+        });
+        let container = docker_client.cli.run(image);
+        container.exec(ExecCommand {
+            cmd: format!("bash -c 'while [[ \"$(curl -s -o /dev/null -w ''%{{http_code}}'' localhost:{}/version)\" != \"200\" ]]; do sleep 1; done'", Self::TOXI_SERVER_PROCESS_PORT),
+            ready_conditions: vec![WaitFor::message_on_stdout("version")]
+        });
+
+        Ok(container)
+    }
+
+    fn remove_protocol(address: &str) -> &str {
+        if let Some(pos) = address.find("://") {
+            &address[pos + 3..]
+        } else {
+            address
+        }
+    }
+
+    // Populate a new proxy in toxi proxy server. It proxies all traffic originated from `listen`
+    // to `upstream`. The proxy can be configured later (adding latency etc.) given the `name`
+    // `listen` and `upstream` must in format `host:port` since toxiproxy operates on tcp level
+    // host = true, proxy between a host client request host/container server
+    // host = false, proxy between a container client to a container server
+    // With current docker setup, container client cannot request host server
+    pub async fn populate_proxy(
+        name: &str,
+        host: bool,
+        listen: &str,
+        upstream: &str,
+    ) -> anyhow::Result<()> {
+        let toxiproxy_client = reqwest::Client::default();
+        let listen = Self::remove_protocol(listen);
+        let upstream = Self::remove_protocol(upstream);
+        let proxies = json!([{
+            "name": name,
+            "listen": listen,
+            "upstream": upstream
+        }]);
+        let proxies_json = serde_json::to_string(&proxies).unwrap();
+        toxiproxy_client
+            .post(format!(
+                "{}/populate",
+                if host {
+                    Self::TOXI_SERVER_PROCESS_ADDRESS
+                } else {
+                    Self::TOXI_SERVER_EXPOSE_ADDRESS
+                }
+            ))
+            .header("Content-Type", "application/json")
+            .body(proxies_json)
+            .send()
+            .await?;
+        Ok(())
+    }
+
     pub async fn run(
         docker_client: &'a DockerClient,
         network: &str,
         s3_address: &str,
-        bucket_name: String,
-        region: String,
+        bucket_name: &str,
+        region: &str,
     ) -> anyhow::Result<LakeIndexer<'a>> {
+        tracing::info!("initializing toxi proxy servers");
+        let toxi_server_process = Self::spin_up_toxi_server_process().await?;
+        let toxi_server_container =
+            Self::spin_up_toxi_server_container(docker_client, network).await?;
+        let toxi_server_container_address = docker_client
+            .get_network_ip_address(&toxi_server_container, network)
+            .await?;
+        let s3_address_proxied = format!(
+            "{}:{}",
+            &toxi_server_container_address,
+            Self::S3_PORT_PROXIED
+        );
+        tracing::info!(
+            s3_address,
+            s3_address_proxied,
+            "Proxy S3 access from Lake Indexer"
+        );
+        Self::populate_proxy("lake-s3", false, &s3_address_proxied, s3_address).await?;
+
         tracing::info!(
             network,
-            s3_address,
+            s3_address_proxied,
             bucket_name,
             region,
             "running NEAR Lake Indexer container..."
         );
 
-        let image = GenericImage::new("ghcr.io/near/near-lake-indexer", "node-1.38")
+        let image = GenericImage::new("ghcr.io/near/near-lake-indexer", "node-1.40.0")
             .with_env_var("AWS_ACCESS_KEY_ID", "FAKE_LOCALSTACK_KEY_ID")
             .with_env_var("AWS_SECRET_ACCESS_KEY", "FAKE_LOCALSTACK_ACCESS_KEY")
             .with_wait_for(WaitFor::message_on_stderr("Starting Streamer"))
@@ -316,11 +448,11 @@ impl<'a> LakeIndexer<'a> {
             image,
             vec![
                 "--endpoint".to_string(),
-                s3_address.to_string(),
+                format!("http://{}", s3_address_proxied),
                 "--bucket".to_string(),
-                bucket_name.clone(),
+                bucket_name.to_string(),
                 "--region".to_string(),
-                region.clone(),
+                region.to_string(),
                 "--stream-while-syncing".to_string(),
                 "sync-from-latest".to_string(),
             ],
@@ -344,10 +476,12 @@ impl<'a> LakeIndexer<'a> {
         );
         Ok(LakeIndexer {
             container,
-            bucket_name,
-            region,
+            bucket_name: bucket_name.to_string(),
+            region: region.to_string(),
             rpc_address,
             rpc_host_address,
+            toxi_server_process,
+            toxi_server_container,
         })
     }
 }
@@ -446,6 +580,27 @@ impl DockerClient {
                     .await
                     .unwrap();
                 stdout.flush().await.unwrap();
+            }
+        });
+
+        Ok(())
+    }
+
+    pub async fn output_logs(&self, id: &str, path: impl AsRef<Path>) -> anyhow::Result<()> {
+        let mut output = self.docker.logs::<String>(
+            id,
+            Some(LogsOptions {
+                follow: true,
+                stdout: true,
+                stderr: true,
+                ..Default::default()
+            }),
+        );
+
+        let mut out = std::fs::File::create(path)?;
+        tokio::spawn(async move {
+            while let Some(Ok(output)) = output.next().await {
+                std::io::Write::write_all(&mut out, output.into_bytes().as_ref()).unwrap();
             }
         });
 

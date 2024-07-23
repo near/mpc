@@ -40,17 +40,18 @@ pub struct Participants {
 impl From<mpc_contract::primitives::Participants> for Participants {
     fn from(contract_participants: mpc_contract::primitives::Participants) -> Self {
         Participants {
-            // take position of participant in contract_participants as id for participants
             participants: contract_participants
                 .participants
                 .into_iter()
-                .enumerate()
-                .map(|(participant_id, participant)| {
-                    let contract_participant_info = participant.1;
+                .map(|(account_id, contract_participant_info)| {
+                    let participant_id = *contract_participants
+                        .account_to_participant_id
+                        .get(&account_id)
+                        .unwrap();
                     (
-                        Participant::from(participant_id as ParticipantId),
+                        Participant::from(participant_id),
                         ParticipantInfo {
-                            id: participant_id as ParticipantId,
+                            id: participant_id,
                             account_id: AccountId::from_str(
                                 contract_participant_info.account_id.as_ref(),
                             )
