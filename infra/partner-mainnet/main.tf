@@ -117,7 +117,7 @@ module "ig_template" {
   source_image_project = "cos-cloud"
   machine_type         = "n2d-standard-2"
 
-  startup_script = "docker rm watchtower ; docker run -d --name watchtower -v /var/run/docker.sock:/var/run/docker.sock containrrr/watchtower --debug --interval 3600"
+  startup_script = "docker rm watchtower ; docker run -d --name watchtower -v /var/run/docker.sock:/var/run/docker.sock containrrr/watchtower --debug --interval 30"
 
   source_image = reverse(split("/", module.gce-container[count.index].source_image))[0]
   metadata     = merge(var.additional_metadata, { "gce-container-declaration" = module.gce-container["${count.index}"].metadata_value })
