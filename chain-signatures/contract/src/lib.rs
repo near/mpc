@@ -1,29 +1,32 @@
 pub mod errors;
 pub mod primitives;
+pub mod state;
 
 use crypto_shared::{
     derive_epsilon, derive_key, kdf::check_ec_signature, near_public_key_to_affine_point,
     types::SignatureResponse, ScalarExt as _,
 };
+use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::Scalar;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
-use near_sdk::serde::{Deserialize, Serialize};
-
 use near_sdk::{
     env, log, near_bindgen, AccountId, CryptoHash, Gas, GasWeight, NearToken, PromiseError,
     PublicKey,
 };
-
-use errors::{
-    InitError, JoinError, MpcContractError, PublicKeyError, RespondError, SignError, VoteError,
-};
-use k256::elliptic_curve::sec1::ToEncodedPoint;
 use primitives::{
     CandidateInfo, Candidates, Participants, PkVotes, SignRequest, SignaturePromiseError,
     SignatureRequest, SignatureResult, StorageKey, Votes, YieldIndex,
 };
 use std::collections::{BTreeMap, HashSet};
+
+use crate::errors::{
+    InitError, JoinError, MpcContractError, PublicKeyError, RespondError, SignError, VoteError,
+};
+
+pub use state::{
+    InitializingContractState, ProtocolContractState, ResharingContractState, RunningContractState,
+};
 
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(250);
 
@@ -35,43 +38,6 @@ const CLEAR_STATE_ON_FINISH_CALL_GAS: Gas = Gas::from_tgas(5);
 
 // Prepaid gas for a `return_signature_on_finish` call
 const RETURN_SIGNATURE_ON_FINISH_CALL_GAS: Gas = Gas::from_tgas(5);
-
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug)]
-pub struct InitializingContractState {
-    pub candidates: Candidates,
-    pub threshold: usize,
-    pub pk_votes: PkVotes,
-}
-
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug)]
-pub struct RunningContractState {
-    pub epoch: u64,
-    pub participants: Participants,
-    pub threshold: usize,
-    pub public_key: PublicKey,
-    pub candidates: Candidates,
-    pub join_votes: Votes,
-    pub leave_votes: Votes,
-}
-
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug)]
-pub struct ResharingContractState {
-    pub old_epoch: u64,
-    pub old_participants: Participants,
-    // TODO: only store diff to save on storage
-    pub new_participants: Participants,
-    pub threshold: usize,
-    pub public_key: PublicKey,
-    pub finished_votes: HashSet<AccountId>,
-}
-
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug)]
-pub enum ProtocolContractState {
-    NotInitialized,
-    Initializing(InitializingContractState),
-    Running(RunningContractState),
-    Resharing(ResharingContractState),
-}
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
