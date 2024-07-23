@@ -11,7 +11,7 @@ fn main() {
     println!("sign public key sign_pk: {}", sign_pk);
     println!("sign secret key sign_sk: {}", sign_sk);
     let near_account_sk = near_crypto::SecretKey::from_random(near_crypto::KeyType::ED25519);
-    let near_account_pk = sign_sk.public_key();
+    let near_account_pk = near_account_sk.public_key();
     println!("near account public key: {}", near_account_pk);
     println!("near account secret key: {}", near_account_sk);
 }
