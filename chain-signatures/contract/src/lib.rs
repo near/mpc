@@ -526,6 +526,15 @@ impl VersionedMpcContract {
         // Only voters can propose updates:
         self.voter()?;
 
+        let attached = env::attached_deposit();
+        let required = ProposedUpdates::required_deposit(&code, &config);
+        if attached < required {
+            return Err(MpcContractError::from(VoteError::InsufficientDeposit(
+                attached.as_yoctonear(),
+                required.as_yoctonear(),
+            )));
+        }
+
         let Some(id) = self.proposed_updates().propose(code, config) else {
             return Err(MpcContractError::from(VoteError::Unexpected(
                 "cannot propose update due to incorrect parameters".into(),
