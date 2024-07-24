@@ -10,6 +10,7 @@ use near_sdk::{env, AccountId, Gas, NearToken, Promise};
 #[derive(
     Copy,
     Clone,
+    Default,
     Debug,
     BorshDeserialize,
     BorshSerialize,
@@ -23,6 +24,14 @@ use near_sdk::{env, AccountId, Gas, NearToken, Promise};
 )]
 pub struct UpdateId(pub(crate) u64);
 
+impl UpdateId {
+    pub fn next(&mut self) -> Self {
+        let id = self.0;
+        self.0 += 1;
+        Self(id)
+    }
+}
+
 impl From<u64> for UpdateId {
     fn from(id: u64) -> Self {
         Self(id)
@@ -35,11 +44,16 @@ pub enum Update {
     Contract(Vec<u8>),
 }
 
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct UpdateEntry {
+    updates: Vec<Update>,
+    votes: HashSet<AccountId>,
+}
+
 #[derive(Default, Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposedUpdates {
-    updates: HashMap<UpdateId, Vec<Update>>,
-    votes: HashMap<UpdateId, HashSet<AccountId>>,
-    next_id: u64,
+    entries: HashMap<UpdateId, UpdateEntry>,
+    next_id: UpdateId,
 }
 
 impl ProposedUpdates {
@@ -56,11 +70,14 @@ impl ProposedUpdates {
             (None, None) => return None,
         };
 
-        let id = UpdateId::from(self.next_id);
-        self.next_id += 1;
-
-        self.updates.insert(id, updates);
-        self.votes.insert(id, HashSet::new());
+        let id = self.next_id.next();
+        self.entries.insert(
+            id,
+            UpdateEntry {
+                updates,
+                votes: HashSet::new(),
+            },
+        );
 
         Some(id)
     }
@@ -69,21 +86,20 @@ impl ProposedUpdates {
     ///
     /// Returns Some(votes) if the given [`UpdateId`] exists, otherwise None.
     pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<&HashSet<AccountId>> {
-        let votes = self.votes.get_mut(id)?;
-        votes.insert(voter);
-        Some(votes)
+        let entry = self.entries.get_mut(id)?;
+        entry.votes.insert(voter);
+        Some(&entry.votes)
     }
 
-    pub fn remove(&mut self, id: &UpdateId) -> Option<Vec<Update>> {
-        self.votes.remove(id);
-        self.updates.remove(id)
+    fn remove(&mut self, id: &UpdateId) -> Option<UpdateEntry> {
+        self.entries.remove(id)
     }
 
     pub fn do_update(&mut self, id: &UpdateId, config_callback: &str, gas: Gas) -> Option<Promise> {
-        let updates = self.remove(id)?;
+        let entry = self.remove(id)?;
 
         let mut promise = Promise::new(env::current_account_id());
-        for update in updates {
+        for update in entry.updates {
             match update {
                 Update::Config(config) => {
                     promise = promise.function_call(
