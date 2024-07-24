@@ -24,6 +24,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
 const CONTRACT_FILE_PATH: &str = "../../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
+const INVALID_CONTRACT: &str = "../../target/wasm32-unknown-unknown/release/mpc_test_contract.wasm";
 const PARTICIPANT_LEN: usize = 3;
 
 fn candidates(names: Option<Vec<AccountId>>) -> HashMap<AccountId, CandidateInfo> {
@@ -404,6 +405,7 @@ async fn test_contract_propose_update() {
 
     test_propose_update_config(&contract, &accounts).await;
     test_propose_update_contract(&contract, &accounts).await;
+    test_invalid_contract_deploy(&contract, &accounts).await;
 }
 
 async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
@@ -558,6 +560,66 @@ async fn test_propose_update_contract(contract: &Contract, accounts: &[Account])
 
     dbg!(&execution);
 
+    let state: mpc_contract::ProtocolContractState = execution.json().unwrap();
+    dbg!(state);
+}
+
+async fn test_invalid_contract_deploy(contract: &Contract, accounts: &[Account]) {
+    const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
+    let state: mpc_contract::ProtocolContractState =
+        contract.view("state").await.unwrap().json().unwrap();
+
+    // Let's propose a contract update instead now.
+    let new_wasm = std::fs::read(INVALID_CONTRACT).unwrap();
+    let execution = accounts[0]
+        .call(contract.id(), "propose_update")
+        .args_json(serde_json::json!({
+            "code": &new_wasm,
+        }))
+        .max_gas()
+        .deposit(CONTRACT_DEPLOY)
+        .transact()
+        .await
+        .unwrap();
+    dbg!(&execution);
+    assert!(execution.is_success());
+    let proposal_id: UpdateId = execution.json().unwrap();
+    for (i, voter) in accounts.iter().enumerate() {
+        let execution = voter
+            .call(contract.id(), "vote_update")
+            .args_json(serde_json::json!({
+                "id": proposal_id,
+            }))
+            .max_gas()
+            .transact()
+            .await
+            .unwrap();
+
+        if i < 2 {
+            assert!(
+                execution.is_success(),
+                "execution should have succeeded: {state:#?}\n{execution:#?}"
+            );
+        }
+
+        if i == 1 {
+            dbg!(&execution);
+        }
+    }
+
+    // Try calling into state and see if it works after the contract updates with an invalid
+    // contract. It will fail in `migrate` so a state rollback on the contract code should have
+    // happened.
+    let execution = accounts[0]
+        .call(contract.id(), "state")
+        .args_json(serde_json::json!({
+            "id": proposal_id,
+        }))
+        .transact()
+        .await
+        .unwrap();
+
+    dbg!(&execution);
     let state: mpc_contract::ProtocolContractState = execution.json().unwrap();
     dbg!(state);
 }
