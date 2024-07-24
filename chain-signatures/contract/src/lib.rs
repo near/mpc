@@ -13,8 +13,8 @@ use k256::Scalar;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
 use near_sdk::{
-    env, log, near_bindgen, AccountId, CryptoHash, Gas, GasWeight, NearToken, PromiseError,
-    PublicKey,
+    env, log, near_bindgen, AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise,
+    PromiseError, PublicKey,
 };
 use primitives::{
     CandidateInfo, Candidates, Participants, PkVotes, SignRequest, SignaturePromiseError,
@@ -524,7 +524,7 @@ impl VersionedMpcContract {
         config: Option<Config>,
     ) -> Result<UpdateId, MpcContractError> {
         // Only voters can propose updates:
-        self.voter()?;
+        let proposer = self.voter()?;
 
         let attached = env::attached_deposit();
         let required = ProposedUpdates::required_deposit(&code, &config);
@@ -540,6 +540,13 @@ impl VersionedMpcContract {
                 "cannot propose update due to incorrect parameters".into(),
             )));
         };
+
+        // Refund the difference if the propser attached more than required.
+        if let Some(diff) = attached.checked_sub(required) {
+            if diff > NearToken::from_yoctonear(0) {
+                Promise::new(proposer).transfer(diff);
+            }
+        }
 
         Ok(id)
     }
@@ -562,10 +569,7 @@ impl VersionedMpcContract {
             return Ok(false);
         }
 
-        let Some(_promise) =
-            self.proposed_updates()
-                .do_update(&id, "update_config", UPDATE_CONFIG_GAS)
-        else {
+        let Some(_promise) = self.proposed_updates().do_update(&id, UPDATE_CONFIG_GAS) else {
             return Err(MpcContractError::from(VoteError::UpdateNotFound));
         };
 
@@ -634,6 +638,22 @@ impl VersionedMpcContract {
             proposed_updates: ProposedUpdates::default(),
             config: Config::default(),
         }))
+    }
+
+    /// This will be called internally by the contract to migrate the state when a new contract
+    /// is deployed. This function should be changed every time state is changed to do the proper
+    /// migrate flow.
+    ///
+    /// If nothing is changed, then this function will just return the current state. If it fails
+    /// to read the state, then it will return an error.
+    #[private]
+    #[init(ignore_state)]
+    #[handle_result]
+    pub fn migrate() -> Result<Self, MpcContractError> {
+        let old: MpcContract = env::state_read().ok_or(MpcContractError::InitError(
+            InitError::ContractStateIsMissing,
+        ))?;
+        Ok(VersionedMpcContract::V0(old))
     }
 
     pub fn state(&self) -> &ProtocolContractState {

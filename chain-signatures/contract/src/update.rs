@@ -102,7 +102,7 @@ impl ProposedUpdates {
         self.entries.remove(id)
     }
 
-    pub fn do_update(&mut self, id: &UpdateId, config_callback: &str, gas: Gas) -> Option<Promise> {
+    pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
         let entry = self.remove(id)?;
 
         let mut promise = Promise::new(env::current_account_id());
@@ -110,13 +110,21 @@ impl ProposedUpdates {
             match update {
                 Update::Config(config) => {
                     promise = promise.function_call(
-                        config_callback.into(),
+                        "update_config".into(),
                         serde_json::to_vec(&(&config,)).unwrap(),
                         NearToken::from_near(0),
                         gas,
                     );
                 }
-                Update::Contract(code) => promise = promise.deploy_contract(code),
+                Update::Contract(code) => {
+                    // deploy contract then do a `migrate` call to migrate state.
+                    promise = promise.deploy_contract(code).function_call(
+                        "migrate".into(),
+                        Vec::new(),
+                        NearToken::from_near(0),
+                        gas,
+                    );
+                }
             }
         }
         Some(promise)

@@ -50,6 +50,8 @@ pub enum PublicKeyError {
 pub enum InitError {
     #[error("Threshold cannot be greater than the number of candidates")]
     ThresholdTooHigh,
+    #[error("Cannot load in contract due to missing state")]
+    ContractStateIsMissing,
 }
 
 #[derive(Debug, thiserror::Error)]
