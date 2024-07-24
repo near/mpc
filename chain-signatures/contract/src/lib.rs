@@ -1,6 +1,8 @@
+pub mod config;
 pub mod errors;
 pub mod primitives;
 pub mod state;
+pub mod update;
 
 use crypto_shared::{
     derive_epsilon, derive_key, kdf::check_ec_signature, near_public_key_to_affine_point,
@@ -20,9 +22,11 @@ use primitives::{
 };
 use std::collections::{BTreeMap, HashSet};
 
+use crate::config::Config;
 use crate::errors::{
     InitError, JoinError, MpcContractError, PublicKeyError, RespondError, SignError, VoteError,
 };
+use crate::update::{ProposedUpdates, UpdateId};
 
 pub use state::{
     InitializingContractState, ProtocolContractState, ResharingContractState, RunningContractState,
@@ -38,6 +42,9 @@ const CLEAR_STATE_ON_FINISH_CALL_GAS: Gas = Gas::from_tgas(5);
 
 // Prepaid gas for a `return_signature_on_finish` call
 const RETURN_SIGNATURE_ON_FINISH_CALL_GAS: Gas = Gas::from_tgas(5);
+
+// Prepaid gas for a `update_config` call
+const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
@@ -56,6 +63,8 @@ pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_requests: LookupMap<SignatureRequest, YieldIndex>,
     request_counter: u32,
+    proposed_updates: ProposedUpdates,
+    config: Config,
 }
 
 impl MpcContract {
@@ -87,6 +96,8 @@ impl MpcContract {
             }),
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
+            proposed_updates: ProposedUpdates::default(),
+            config: Config::default(),
         }
     }
 }
@@ -313,6 +324,7 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             candidate_account_id
         );
+        let voter = self.voter()?;
         let protocol_state = self.mutable_state();
         match protocol_state {
             ProtocolContractState::Running(RunningContractState {
@@ -324,15 +336,11 @@ impl VersionedMpcContract {
                 join_votes,
                 ..
             }) => {
-                let signer_account_id = env::signer_account_id();
-                if !participants.contains_key(&signer_account_id) {
-                    return Err(MpcContractError::VoteError(VoteError::VoterNotParticipant));
-                }
                 let candidate_info = candidates
                     .get(&candidate_account_id)
                     .ok_or(MpcContractError::VoteError(VoteError::JoinNotCandidate))?;
                 let voted = join_votes.entry(candidate_account_id.clone());
-                voted.insert(signer_account_id);
+                voted.insert(voter);
                 if voted.len() >= *threshold {
                     let mut new_participants = participants.clone();
                     new_participants
@@ -416,6 +424,7 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             public_key
         );
+        let voter = self.voter()?;
         let protocol_state = self.mutable_state();
         match protocol_state {
             ProtocolContractState::Initializing(InitializingContractState {
@@ -423,12 +432,8 @@ impl VersionedMpcContract {
                 threshold,
                 pk_votes,
             }) => {
-                let signer_account_id = env::signer_account_id();
-                if !candidates.contains_key(&signer_account_id) {
-                    return Err(MpcContractError::VoteError(VoteError::VoterNotParticipant));
-                }
                 let voted = pk_votes.entry(public_key.clone());
-                voted.insert(signer_account_id);
+                voted.insert(voter);
                 if voted.len() >= *threshold {
                     *protocol_state = ProtocolContractState::Running(RunningContractState {
                         epoch: 0,
@@ -461,11 +466,12 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             epoch
         );
+        let voter = self.voter()?;
         let protocol_state = self.mutable_state();
         match protocol_state {
             ProtocolContractState::Resharing(ResharingContractState {
                 old_epoch,
-                old_participants,
+                old_participants: _,
                 new_participants,
                 threshold,
                 public_key,
@@ -474,11 +480,7 @@ impl VersionedMpcContract {
                 if *old_epoch + 1 != epoch {
                     return Err(MpcContractError::VoteError(VoteError::EpochMismatch));
                 }
-                let signer_account_id = env::signer_account_id();
-                if !old_participants.contains_key(&signer_account_id) {
-                    return Err(MpcContractError::VoteError(VoteError::VoterNotParticipant));
-                }
-                finished_votes.insert(signer_account_id);
+                finished_votes.insert(voter);
                 if finished_votes.len() >= *threshold {
                     *protocol_state = ProtocolContractState::Running(RunningContractState {
                         epoch: *old_epoch + 1,
@@ -499,14 +501,73 @@ impl VersionedMpcContract {
                     Ok(true)
                 } else {
                     Err(MpcContractError::VoteError(
-                        VoteError::UnexpectedProtocolState("resharing".to_string()),
+                        VoteError::UnexpectedProtocolState("Running".to_string()),
                     ))
                 }
             }
             _ => Err(MpcContractError::VoteError(
-                VoteError::UnexpectedProtocolState("resharing".to_string()),
+                VoteError::UnexpectedProtocolState("Running".to_string()),
             )),
         }
+    }
+
+    /// Propose an update to the contract. [`Update`] are all the possible updates that can be proposed.
+    ///
+    /// returns Some(id) if the proposal was successful, None otherwise
+    #[handle_result]
+    pub fn propose_update(
+        &mut self,
+        code: Option<Vec<u8>>,
+        config: Option<Config>,
+    ) -> Result<UpdateId, VoteError> {
+        // Only voters can propose updates:
+        self.voter()?;
+
+        let Some(id) = self.proposed_updates().propose(code, config) else {
+            return Err(VoteError::Unexpected(
+                "cannot propose update due to incorrect parameters".into(),
+            ));
+        };
+
+        env::log_str(&format!("id={id:?}"));
+        Ok(id)
+    }
+
+    /// Vote for a proposed update given the [`UpdateId`] of the update.
+    ///
+    /// Returns Ok(true) if the amount of participants surpassed the threshold and the update was executed.
+    #[handle_result]
+    pub fn vote_update(&mut self, id: UpdateId) -> Result<bool, MpcContractError> {
+        let threshold = match self {
+            Self::V0(contract) => match &contract.protocol_state {
+                ProtocolContractState::Running(state) => state.threshold,
+                ProtocolContractState::Resharing(state) => state.threshold,
+                _ => {
+                    return Err(MpcContractError::VoteError(
+                        VoteError::UnexpectedProtocolState("Initialized or NotInitialized".into()),
+                    ))
+                }
+            },
+        };
+
+        let voter = self.voter()?;
+        let Some(votes) = self.proposed_updates().vote(&id, voter) else {
+            return Err(MpcContractError::VoteError(VoteError::UpdateNotFound));
+        };
+
+        // Not enough votes, wait for more.
+        if votes.len() < threshold {
+            return Ok(false);
+        }
+
+        let Some(_promise) =
+            self.proposed_updates()
+                .do_update(&id, "update_config", UPDATE_CONFIG_GAS)
+        else {
+            return Err(MpcContractError::VoteError(VoteError::UpdateNotFound));
+        };
+
+        Ok(true)
     }
 }
 
@@ -568,12 +629,20 @@ impl VersionedMpcContract {
             }),
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
+            proposed_updates: ProposedUpdates::default(),
+            config: Config::default(),
         }))
     }
 
     pub fn state(&self) -> &ProtocolContractState {
         match self {
             Self::V0(mpc_contract) => &mpc_contract.protocol_state,
+        }
+    }
+
+    pub fn config(&self) -> &Config {
+        match self {
+            Self::V0(mpc_contract) => &mpc_contract.config,
         }
     }
 
@@ -653,6 +722,15 @@ impl VersionedMpcContract {
     }
 
     #[private]
+    pub fn update_config(&mut self, config: Config) {
+        match self {
+            Self::V0(mpc_contract) => {
+                mpc_contract.config = config;
+            }
+        }
+    }
+
+    #[private]
     #[init(ignore_state)]
     pub fn clean(keys: Vec<near_sdk::json_types::Base64VecU8>) -> Self {
         log!("clean: keys={:?}", keys);
@@ -663,6 +741,8 @@ impl VersionedMpcContract {
             protocol_state: ProtocolContractState::NotInitialized,
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
+            proposed_updates: ProposedUpdates::default(),
+            config: Config::default(),
         })
     }
 
@@ -690,5 +770,38 @@ impl VersionedMpcContract {
                     * NearToken::from_millinear(50).as_yoctonear()
             }
         }
+    }
+
+    fn proposed_updates(&mut self) -> &mut ProposedUpdates {
+        match self {
+            Self::V0(contract) => &mut contract.proposed_updates,
+        }
+    }
+
+    fn voter(&self) -> Result<AccountId, VoteError> {
+        let voter = env::signer_account_id();
+        match self {
+            Self::V0(contract) => match &contract.protocol_state {
+                ProtocolContractState::Initializing(state) => {
+                    if !state.candidates.contains_key(&voter) {
+                        return Err(VoteError::VoterNotParticipant);
+                    }
+                }
+                ProtocolContractState::Running(state) => {
+                    if !state.participants.contains_key(&voter) {
+                        return Err(VoteError::VoterNotParticipant);
+                    }
+                }
+                ProtocolContractState::Resharing(state) => {
+                    if !state.old_participants.contains_key(&voter) {
+                        return Err(VoteError::VoterNotParticipant);
+                    }
+                }
+                ProtocolContractState::NotInitialized => {
+                    return Err(VoteError::UnexpectedProtocolState("NotInitialized".into()))
+                }
+            },
+        }
+        Ok(voter)
     }
 }

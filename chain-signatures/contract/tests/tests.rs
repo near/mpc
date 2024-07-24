@@ -8,13 +8,15 @@ use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::DecompressPoint;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, FieldBytes, Scalar, Secp256k1};
+use mpc_contract::config::{min_to_ms, Config};
 use mpc_contract::errors;
 use mpc_contract::primitives::{
     CandidateInfo, ParticipantInfo, Participants, SignRequest, SignatureRequest,
 };
+use mpc_contract::update::UpdateId;
 use near_sdk::NearToken;
 use near_workspaces::network::Sandbox;
-use near_workspaces::{AccountId, Contract, Worker};
+use near_workspaces::{Account, AccountId, Contract, Worker};
 use signature::digest::{Digest, FixedOutput};
 use signature::DigestSigner;
 
@@ -22,14 +24,23 @@ use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
 const CONTRACT_FILE_PATH: &str = "../../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
+const PARTICIPANT_LEN: usize = 3;
 
-fn candidates() -> HashMap<AccountId, CandidateInfo> {
+fn candidates(names: Option<Vec<AccountId>>) -> HashMap<AccountId, CandidateInfo> {
     let mut candidates: HashMap<AccountId, CandidateInfo> = HashMap::new();
-    for account_id in ["alice.near", "bob.near", "caesar.near"] {
+    let names = names.unwrap_or_else(|| {
+        vec![
+            "alice.near".parse().unwrap(),
+            "bob.near".parse().unwrap(),
+            "caesar.near".parse().unwrap(),
+        ]
+    });
+
+    for account_id in names {
         candidates.insert(
-            AccountId::from_str(account_id).unwrap(),
+            account_id.clone(),
             CandidateInfo {
-                account_id: AccountId::from_str(account_id).unwrap(),
+                account_id,
                 url: "127.0.0.1".into(),
                 cipher_pk: [0; 32],
                 sign_pk: near_sdk::PublicKey::from_str(
@@ -42,6 +53,17 @@ fn candidates() -> HashMap<AccountId, CandidateInfo> {
     candidates
 }
 
+/// Create `amount` accounts and return them along with the candidate info.
+async fn accounts(worker: &Worker<Sandbox>) -> (Vec<Account>, HashMap<AccountId, CandidateInfo>) {
+    let mut accounts = Vec::with_capacity(PARTICIPANT_LEN);
+    for _ in 0..PARTICIPANT_LEN {
+        let account = worker.dev_create_account().await.unwrap();
+        accounts.push(account);
+    }
+    let candidates = candidates(Some(accounts.iter().map(|a| a.id().clone()).collect()));
+    (accounts, candidates)
+}
+
 async fn init() -> (Worker<Sandbox>, Contract) {
     let worker = near_workspaces::sandbox().await.unwrap();
     let wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
@@ -49,9 +71,11 @@ async fn init() -> (Worker<Sandbox>, Contract) {
     (worker, contract)
 }
 
-async fn init_with_candidates(pk: Option<near_crypto::PublicKey>) -> (Worker<Sandbox>, Contract) {
+async fn init_with_candidates(
+    pk: Option<near_crypto::PublicKey>,
+) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
-    let candidates = candidates();
+    let (accounts, candidates) = accounts(&worker).await;
 
     let init = if let Some(pk) = pk {
         let participants_map = candidates
@@ -94,21 +118,22 @@ async fn init_with_candidates(pk: Option<near_crypto::PublicKey>) -> (Worker<San
             .unwrap()
     };
     dbg!(init);
-    (worker, contract)
+    (worker, contract, accounts)
 }
 
-async fn init_env() -> (Worker<Sandbox>, Contract, k256::SecretKey) {
+async fn init_env() -> (Worker<Sandbox>, Contract, Vec<Account>, k256::SecretKey) {
     let sk = k256::SecretKey::random(&mut rand::thread_rng());
     let pk = sk.public_key();
-    let (worker, contract) = init_with_candidates(Some(near_crypto::PublicKey::SECP256K1(
-        near_crypto::Secp256K1PublicKey::try_from(
-            &pk.as_affine().to_encoded_point(false).as_bytes()[1..65],
-        )
-        .unwrap(),
-    )))
-    .await;
+    let (worker, contract, accounts) =
+        init_with_candidates(Some(near_crypto::PublicKey::SECP256K1(
+            near_crypto::Secp256K1PublicKey::try_from(
+                &pk.as_affine().to_encoded_point(false).as_bytes()[1..65],
+            )
+            .unwrap(),
+        )))
+        .await;
 
-    (worker, contract, sk)
+    (worker, contract, accounts, sk)
 }
 
 /// Process the message, creating the same hash with type of Digest, Scalar, and [u8; 32]
@@ -222,7 +247,7 @@ async fn sign_and_validate(
 
 #[tokio::test]
 async fn test_contract_sign_request() -> anyhow::Result<()> {
-    let (_, contract, sk) = init_env().await;
+    let (_, contract, _, sk) = init_env().await;
     let predecessor_id = contract.id();
     let path = "test";
 
@@ -272,7 +297,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
-    let (_, contract, sk) = init_env().await;
+    let (_, contract, _, sk) = init_env().await;
     let predecessor_id = contract.id();
     let path = "testing-no-deposit";
 
@@ -325,7 +350,7 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_contract_initialization() -> anyhow::Result<()> {
     let (_, contract) = init().await;
-    let valid_candidates = candidates();
+    let valid_candidates = candidates(None);
 
     // Empty candidates should fail.
     let candidates: HashMap<AccountId, CandidateInfo> = HashMap::new();
@@ -370,4 +395,145 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     );
 
     Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_propose_update() {
+    let (_, contract, accounts, _) = init_env().await;
+    dbg!(contract.id());
+
+    test_propose_update_config(&contract, &accounts).await;
+    test_propose_update_contract(&contract, &accounts).await;
+}
+
+async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
+    // contract should not be able to propose updates unless its apart of the participant/voter set.
+    let execution = contract
+        .call("propose_update")
+        .args_json(serde_json::json!({
+            "contract": vec![1, 2, 3],
+        }))
+        .transact()
+        .await
+        .unwrap();
+    dbg!(&execution);
+    assert!(execution.is_failure());
+
+    // have each participant propose a new update:
+    let new_config = Config {
+        triple_timeout: min_to_ms(10),
+        ..Default::default()
+    };
+    let mut proposals = Vec::with_capacity(accounts.len());
+    for account in accounts {
+        let execution = account
+            .call(contract.id(), "propose_update")
+            .args_json(serde_json::json!({
+                "config": &new_config,
+            }))
+            .transact()
+            .await
+            .unwrap();
+        assert!(execution.is_success());
+        dbg!(execution.logs());
+        let proposal_id: UpdateId = execution.json().unwrap();
+        dbg!(&proposal_id);
+        proposals.push(proposal_id);
+    }
+
+    let old_config: Config = contract.view("config").await.unwrap().json().unwrap();
+    let state: mpc_contract::ProtocolContractState =
+        contract.view("state").await.unwrap().json().unwrap();
+
+    // check that each participant can vote on a singular proposal and have it reflect changes:
+    let first_proposal = &proposals[0];
+    for (i, voter) in accounts.iter().enumerate() {
+        dbg!(voter.id());
+        let execution = voter
+            .call(contract.id(), "vote_update")
+            .args_json(serde_json::json!({
+                "id": first_proposal,
+            }))
+            .transact()
+            .await
+            .unwrap();
+
+        // NOTE: since 2 out of 3 participants are required to pass a proposal, having the third one also
+        // vote should fail.
+        if i < 2 {
+            assert!(
+                execution.is_success(),
+                "execution should have succeeded: {state:#?}\n{execution:#?}"
+            );
+        } else {
+            assert!(
+                execution.is_failure(),
+                "execution should have failed: {state:#?}\n{execution:#?}"
+            );
+        }
+    }
+    // check that the proposal executed since the threshold got changed.
+    let config: Config = contract.view("config").await.unwrap().json().unwrap();
+    assert_ne!(config, old_config);
+    assert_eq!(config, new_config);
+}
+
+async fn test_propose_update_contract(contract: &Contract, accounts: &[Account]) {
+    let state: mpc_contract::ProtocolContractState =
+        contract.view("state").await.unwrap().json().unwrap();
+
+    // Let's propose a contract update instead now.
+    let new_wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
+    let execution = accounts[0]
+        .call(contract.id(), "propose_update")
+        .args_json(serde_json::json!({
+            "code": &new_wasm,
+        }))
+        .max_gas()
+        .transact()
+        .await
+        .unwrap();
+    dbg!(&execution);
+    assert!(execution.is_success());
+    let proposal_id: UpdateId = execution.json().unwrap();
+    for (i, voter) in accounts.iter().enumerate() {
+        let execution = voter
+            .call(contract.id(), "vote_update")
+            .args_json(serde_json::json!({
+                "id": proposal_id,
+            }))
+            .max_gas()
+            .transact()
+            .await
+            .unwrap();
+
+        // NOTE: since 2 out of 3 participants are required to pass a proposal, having the third one also
+        // vote should fail.
+        if i < 2 {
+            assert!(
+                execution.is_success(),
+                "execution should have succeeded: {state:#?}\n{execution:#?}"
+            );
+        } else {
+            assert!(
+                execution.is_failure(),
+                "execution should have failed: {state:#?}\n{execution:#?}"
+            );
+        }
+    }
+
+    // Try calling into state and see if it works.
+    let execution = accounts[0]
+        .call(contract.id(), "state")
+        .args_json(serde_json::json!({
+            "id": proposal_id,
+        }))
+        .transact()
+        .await
+        .unwrap();
+
+    dbg!(&execution);
+
+    let state: mpc_contract::ProtocolContractState = execution.json().unwrap();
+    dbg!(state);
 }

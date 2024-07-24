@@ -66,8 +66,18 @@ pub enum VoteError {
     EpochMismatch,
     #[error("Number of participants cannot go below threshold.")]
     ParticipantsBelowThreshold,
+    #[error("Update not found.")]
+    UpdateNotFound,
     #[error("Unexpected protocol state: {0}")]
     UnexpectedProtocolState(String),
+    #[error("Unexpected: {0}")]
+    Unexpected(String),
+}
+
+impl near_sdk::FunctionError for VoteError {
+    fn panic(&self) -> ! {
+        crate::env::panic_str(&self.to_string())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -77,7 +87,7 @@ pub enum MpcContractError {
     #[error("respond fn error: {0}")]
     RespondError(RespondError),
     #[error("vote_* fn error: {0}")]
-    VoteError(VoteError),
+    VoteError(#[from] VoteError),
     #[error("init fn error: {0}")]
     InitError(InitError),
     #[error("join fn error: {0}")]
