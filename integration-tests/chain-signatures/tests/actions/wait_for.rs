@@ -77,7 +77,7 @@ pub async fn has_at_least_triples<'a>(
                     Ok(state_view)
                 }
                 StateView::Running { .. } => anyhow::bail!("node does not have enough triples yet"),
-                StateView::NotRunning => anyhow::bail!("node is not running"),
+                state => anyhow::bail!("node is not running {state:?}"),
             }
         }
     };
@@ -114,7 +114,7 @@ pub async fn has_at_least_mine_triples<'a>(
                 StateView::Running { .. } => {
                     anyhow::bail!("node does not have enough mine triples yet")
                 }
-                StateView::NotRunning => anyhow::bail!("node is not running"),
+                state => anyhow::bail!("node is not running {state:?}"),
             }
         }
     };
@@ -151,7 +151,7 @@ pub async fn has_at_least_presignatures<'a>(
                 StateView::Running { .. } => {
                     anyhow::bail!("node does not have enough presignatures yet")
                 }
-                StateView::NotRunning => anyhow::bail!("node is not running"),
+                state => anyhow::bail!("node is not running {state:?}"),
             }
         }
     };
@@ -189,7 +189,7 @@ pub async fn has_at_least_mine_presignatures<'a>(
                 StateView::Running { .. } => {
                     anyhow::bail!("node does not have enough mine presignatures yet")
                 }
-                StateView::NotRunning => anyhow::bail!("node is not running"),
+                state => anyhow::bail!("node is not running {state:?}"),
             }
         }
     };
