@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use borsh::{self, BorshDeserialize, BorshSerialize};
+use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{AccountId, PublicKey};
-use serde::{Deserialize, Serialize};
 
 use crate::primitives::{Candidates, Participants, PkVotes, Votes};
 
