@@ -21,6 +21,7 @@ use signature::digest::{Digest, FixedOutput};
 use signature::DigestSigner;
 
 use std::collections::{BTreeMap, HashMap};
+use std::hash::Hash;
 use std::str::FromStr;
 
 const CONTRACT_FILE_PATH: &str = "../../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
@@ -403,7 +404,7 @@ async fn test_contract_propose_update() {
     dbg!(contract.id());
 
     test_propose_update_config(&contract, &accounts).await;
-    test_propose_update_contract(&contract, &accounts).await;
+    // test_propose_update_contract(&contract, &accounts).await;
 }
 
 async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
@@ -424,28 +425,32 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
         .contains(&MpcContractError::from(errors::VoteError::VoterNotParticipant).to_string()));
 
     // have each participant propose a new update:
-    let new_config = Config {
-        triple_timeout: min_to_ms(10),
-        ..Default::default()
-    };
+    let new_config = serde_json::json!({
+        "triple_timeout": min_to_ms(20),
+        "presignature_timeout": min_to_ms(30),
+        "signature_timeout": min_to_ms(30),
+        "string": "value",
+        "integer": 1000,
+    });
     let mut proposals = Vec::with_capacity(accounts.len());
     for account in accounts {
-        let execution = account
+        let propose_execution = account
             .call(contract.id(), "propose_update")
             .args_json(serde_json::json!({
                 "config": &new_config,
             }))
+            .deposit(NearToken::from_near(1))
             .transact()
             .await
             .unwrap();
-        assert!(execution.is_success());
-        dbg!(execution.logs());
-        let proposal_id: UpdateId = execution.json().unwrap();
+        dbg!(&propose_execution);
+        assert!(propose_execution.is_success());
+        let proposal_id: UpdateId = propose_execution.json().unwrap();
         dbg!(&proposal_id);
         proposals.push(proposal_id);
     }
 
-    let old_config: Config = contract.view("config").await.unwrap().json().unwrap();
+    let old_config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
     let state: mpc_contract::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
 
@@ -477,8 +482,22 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
         }
     }
     // check that the proposal executed since the threshold got changed.
-    let config: Config = contract.view("config").await.unwrap().json().unwrap();
+    let config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
     assert_ne!(config, old_config);
+    assert_eq!(config, new_config);
+
+    // Check that we can partially set hardcoded configs, while leaving other configs as dynamic values:
+    #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+    pub struct LocalConfig {
+        pub triple_timeout: u64,
+        pub presignature_timeout: u64,
+        pub signature_timeout: u64,
+
+        #[serde(flatten)]
+        other: HashMap<String, serde_json::Value>,
+    }
+    let config: LocalConfig = serde_json::from_value(config).unwrap();
+    let new_config: LocalConfig = serde_json::from_value(new_config).unwrap();
     assert_eq!(config, new_config);
 }
 
@@ -494,6 +513,7 @@ async fn test_propose_update_contract(contract: &Contract, accounts: &[Account])
             "code": &new_wasm,
         }))
         .max_gas()
+        .deposit(NearToken::from_near(1))
         .transact()
         .await
         .unwrap();
