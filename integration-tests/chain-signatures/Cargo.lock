@@ -4238,12 +4238,13 @@ dependencies = [
 
 [[package]]
 name = "mpc-contract"
-version = "0.2.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "borsh",
  "crypto-shared",
  "k256",
  "near-gas",
+ "near-rng",
  "near-sdk",
  "schemars",
  "serde",
@@ -4263,7 +4264,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-recovery-node"
-version = "0.2.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4299,6 +4300,7 @@ dependencies = [
  "prometheus",
  "rand 0.8.5",
  "reqwest 0.11.27",
+ "semver",
  "serde",
  "serde_json",
  "sha2 0.10.8",
@@ -5040,6 +5042,12 @@ dependencies = [
  "sha2 0.10.8",
  "thiserror",
 ]
+
+[[package]]
+name = "near-rng"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1efd376ff92ef9c5ef550f808406056854815f10e046703ae97f61946ef53a12"
 
 [[package]]
 name = "near-rpc-error-core"

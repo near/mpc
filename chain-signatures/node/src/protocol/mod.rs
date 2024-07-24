@@ -350,9 +350,6 @@ async fn get_my_participant(protocol: &MpcSignProtocol) -> Participant {
 }
 
 fn node_version() -> i64 {
-    let parts: Vec<&str> = env!("CARGO_PKG_VERSION").split('-').collect();
-    parts[0]
-        .split('.')
-        .map(|s| s.parse::<i64>().unwrap())
-        .fold(0, |acc, x| acc * 1000 + x)
+    let version = semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+    (version.patch + version.minor * 1000 + version.major * 1000000) as i64
 }
