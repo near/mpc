@@ -352,6 +352,9 @@ impl CryptographicProtocol for RunningState {
         ctx: C,
     ) -> Result<NodeState, CryptographicError> {
         let active = ctx.mesh().active_participants();
+        let me = ctx.me().await;
+        let potential = ctx.mesh().potential_participants().await;
+        tracing::warn!("=== from {:?} active {:?} potential {:?}" , me, active.keys_vec(), potential.keys_vec());
         if active.len() < self.threshold {
             tracing::info!(
                 active = ?active.keys_vec(),

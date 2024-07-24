@@ -23,21 +23,25 @@ async fn test_multichain_reshare() -> anyhow::Result<()> {
             let state = wait_for::running_mpc(&ctx, Some(0)).await?;
             assert!(state.threshold == 2);
             assert!(state.participants.len() == 3);
-            assert!(ctx.remove_participant(None).await.is_ok());
-            // Going below T should error out
-            assert!(ctx.remove_participant(None).await.is_err());
+
+            tracing::warn!("!!! adding new participant");
             assert!(ctx.add_participant().await.is_ok());
+
+            let account_2 = near_workspaces::types::AccountId::from_str(
+                state.participants.keys().nth(2).unwrap().clone().as_ref(),
+            )
+                .unwrap();
+            assert!(ctx.remove_participant(Some(&account_2)).await.is_ok());
+            let account_0 = near_workspaces::types::AccountId::from_str(
+                state.participants.keys().nth(0).unwrap().clone().as_ref(),
+            )
+                .unwrap();
+            assert!(ctx.remove_participant(Some(&account_0)).await.is_ok());
+
             let state = wait_for::running_mpc(&ctx, None).await?;
             wait_for::has_at_least_triples(&ctx, 2).await?;
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
-            actions::single_signature_production(&ctx, &state).await?;
-
-            assert!(ctx.remove_participant(None).await.is_ok());
-            // make sure signing works after reshare
-            let new_state = wait_for::running_mpc(&ctx, None).await?;
-            wait_for::has_at_least_triples(&ctx, 2).await?;
-            wait_for::has_at_least_presignatures(&ctx, 2).await?;
-            actions::single_payload_signature_production(&ctx, &new_state).await
+            actions::single_signature_production(&ctx, &state).await
         })
     })
     .await

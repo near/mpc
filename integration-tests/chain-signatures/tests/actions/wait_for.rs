@@ -70,6 +70,8 @@ pub async fn has_at_least_triples<'a>(
                 .json()
                 .await?;
 
+            tracing::warn!("=== {} {:?}", id, state_view);
+
             match state_view {
                 StateView::Running { triple_count, .. }
                     if triple_count >= expected_triple_count =>
