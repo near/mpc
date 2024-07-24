@@ -8,7 +8,7 @@ use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::DecompressPoint;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, FieldBytes, Scalar, Secp256k1};
-use mpc_contract::config::{min_to_ms, Config};
+use mpc_contract::config::min_to_ms;
 use mpc_contract::errors::{self, MpcContractError};
 use mpc_contract::primitives::{
     CandidateInfo, ParticipantInfo, Participants, SignRequest, SignatureRequest,
@@ -21,7 +21,6 @@ use signature::digest::{Digest, FixedOutput};
 use signature::DigestSigner;
 
 use std::collections::{BTreeMap, HashMap};
-use std::hash::Hash;
 use std::str::FromStr;
 
 const CONTRACT_FILE_PATH: &str = "../../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
