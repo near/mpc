@@ -48,7 +48,7 @@ pub enum Update {
 struct UpdateEntry {
     updates: Vec<Update>,
     votes: HashSet<AccountId>,
-    bytes_used: u64,
+    bytes_used: u128,
 }
 
 #[derive(Default, Debug, BorshSerialize, BorshDeserialize)]
@@ -58,6 +58,10 @@ pub struct ProposedUpdates {
 }
 
 impl ProposedUpdates {
+    pub fn required_deposit(code: &Option<Vec<u8>>, config: &Option<Config>) -> NearToken {
+        required_deposit(bytes_used(&code, &config))
+    }
+
     /// Propose an update given the new contract code and/or config.
     ///
     /// Returns Some(UpdateId) if the update was successfully proposed, otherwise None.
@@ -119,14 +123,22 @@ impl ProposedUpdates {
     }
 }
 
-fn bytes_used(code: &Option<Vec<u8>>, config: &Option<Config>) -> u64 {
-    let mut bytes_used = 0;
+fn bytes_used(code: &Option<Vec<u8>>, config: &Option<Config>) -> u128 {
+    let mut bytes_used = std::mem::size_of::<UpdateEntry>() as u128;
+
+    // Assume a high max of 128 participant votes per update entry.
+    bytes_used += 128 * std::mem::size_of::<AccountId>() as u128;
+
     if let Some(config) = config {
         let bytes = serde_json::to_vec(&config).unwrap();
-        bytes_used += bytes.len() as u64;
+        bytes_used += bytes.len() as u128;
     }
     if let Some(code) = code {
-        bytes_used += code.len() as u64;
+        bytes_used += code.len() as u128;
     }
     bytes_used
+}
+
+fn required_deposit(bytes_used: u128) -> NearToken {
+    env::storage_byte_cost().saturating_mul(bytes_used)
 }
