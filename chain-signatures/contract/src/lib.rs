@@ -109,7 +109,6 @@ impl VersionedMpcContract {
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each signature request.
     /// The fee changes based on how busy the network is.
-    #[allow(unused_variables)]
     #[handle_result]
     #[payable]
     pub fn sign(&mut self, request: SignRequest) -> Result<near_sdk::Promise, MpcContractError> {
@@ -517,6 +516,7 @@ impl VersionedMpcContract {
     /// Propose an update to the contract. [`Update`] are all the possible updates that can be proposed.
     ///
     /// returns Some(id) if the proposal was successful, None otherwise
+    #[payable]
     #[handle_result]
     pub fn propose_update(
         &mut self,
