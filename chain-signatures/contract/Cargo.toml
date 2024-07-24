@@ -15,6 +15,7 @@ schemars = "0.8"
 k256 = { version = "0.13.1", features = ["sha256", "ecdsa", "serde", "arithmetic", "expose-field"] }
 crypto-shared = { path = "../crypto-shared" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
+near-rng = "0.1.1"
 thiserror = "1"
 
 [dev-dependencies]
