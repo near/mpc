@@ -501,12 +501,15 @@ impl VersionedMpcContract {
                     Ok(true)
                 } else {
                     Err(MpcContractError::VoteError(
-                        VoteError::UnexpectedProtocolState("Running".to_string()),
+                        VoteError::UnexpectedProtocolState("Running: invalid epoch".to_string()),
                     ))
                 }
             }
-            _ => Err(MpcContractError::VoteError(
-                VoteError::UnexpectedProtocolState("Running".to_string()),
+            ProtocolContractState::NotInitialized => Err(MpcContractError::VoteError(
+                VoteError::UnexpectedProtocolState("NotInitialized".to_string()),
+            )),
+            ProtocolContractState::Initializing(_) => Err(MpcContractError::VoteError(
+                VoteError::UnexpectedProtocolState("Initializing".to_string()),
             )),
         }
     }
@@ -519,40 +522,30 @@ impl VersionedMpcContract {
         &mut self,
         code: Option<Vec<u8>>,
         config: Option<Config>,
-    ) -> Result<UpdateId, VoteError> {
+    ) -> Result<UpdateId, MpcContractError> {
         // Only voters can propose updates:
         self.voter()?;
 
         let Some(id) = self.proposed_updates().propose(code, config) else {
-            return Err(VoteError::Unexpected(
+            return Err(MpcContractError::from(VoteError::Unexpected(
                 "cannot propose update due to incorrect parameters".into(),
-            ));
+            )));
         };
 
-        env::log_str(&format!("id={id:?}"));
         Ok(id)
     }
 
     /// Vote for a proposed update given the [`UpdateId`] of the update.
     ///
-    /// Returns Ok(true) if the amount of participants surpassed the threshold and the update was executed.
+    /// Returns Ok(true) if the amount of voters surpassed the threshold and the update was executed.
+    /// Returns Ok(false) if the amount of voters did not surpass the threshold. Returns Err if the update
+    /// was not found or if the voter is not a participant in the protocol.
     #[handle_result]
     pub fn vote_update(&mut self, id: UpdateId) -> Result<bool, MpcContractError> {
-        let threshold = match self {
-            Self::V0(contract) => match &contract.protocol_state {
-                ProtocolContractState::Running(state) => state.threshold,
-                ProtocolContractState::Resharing(state) => state.threshold,
-                _ => {
-                    return Err(MpcContractError::VoteError(
-                        VoteError::UnexpectedProtocolState("Initialized or NotInitialized".into()),
-                    ))
-                }
-            },
-        };
-
+        let threshold = self.threshold()?;
         let voter = self.voter()?;
         let Some(votes) = self.proposed_updates().vote(&id, voter) else {
-            return Err(MpcContractError::VoteError(VoteError::UpdateNotFound));
+            return Err(MpcContractError::from(VoteError::UpdateNotFound));
         };
 
         // Not enough votes, wait for more.
@@ -564,7 +557,7 @@ impl VersionedMpcContract {
             self.proposed_updates()
                 .do_update(&id, "update_config", UPDATE_CONFIG_GAS)
         else {
-            return Err(MpcContractError::VoteError(VoteError::UpdateNotFound));
+            return Err(MpcContractError::from(VoteError::UpdateNotFound));
         };
 
         Ok(true)
@@ -772,12 +765,27 @@ impl VersionedMpcContract {
         }
     }
 
+    fn threshold(&self) -> Result<usize, VoteError> {
+        match self {
+            Self::V0(contract) => match &contract.protocol_state {
+                ProtocolContractState::Initializing(state) => Ok(state.threshold),
+                ProtocolContractState::Running(state) => Ok(state.threshold),
+                ProtocolContractState::Resharing(state) => Ok(state.threshold),
+                ProtocolContractState::NotInitialized => {
+                    Err(VoteError::UnexpectedProtocolState("NotInitialized".into()))
+                }
+            },
+        }
+    }
+
     fn proposed_updates(&mut self) -> &mut ProposedUpdates {
         match self {
             Self::V0(contract) => &mut contract.proposed_updates,
         }
     }
 
+    /// Get our own account id as a voter. Check to see if we are a participant in the protocol.
+    /// If we are not a participant, return an error.
     fn voter(&self) -> Result<AccountId, VoteError> {
         let voter = env::signer_account_id();
         match self {

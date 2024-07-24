@@ -9,7 +9,7 @@ use k256::elliptic_curve::point::DecompressPoint;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, FieldBytes, Scalar, Secp256k1};
 use mpc_contract::config::{min_to_ms, Config};
-use mpc_contract::errors;
+use mpc_contract::errors::{self, MpcContractError};
 use mpc_contract::primitives::{
     CandidateInfo, ParticipantInfo, Participants, SignRequest, SignatureRequest,
 };
@@ -407,17 +407,21 @@ async fn test_contract_propose_update() {
 }
 
 async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
-    // contract should not be able to propose updates unless its apart of the participant/voter set.
+    // contract should not be able to propose updates unless it's a part of the participant/voter set.
     let execution = contract
         .call("propose_update")
         .args_json(serde_json::json!({
-            "contract": vec![1, 2, 3],
+            "code": vec![1, 2, 3],
         }))
         .transact()
         .await
         .unwrap();
     dbg!(&execution);
-    assert!(execution.is_failure());
+    assert!(execution
+        .into_result()
+        .unwrap_err()
+        .to_string()
+        .contains(&MpcContractError::from(errors::VoteError::VoterNotParticipant).to_string()));
 
     // have each participant propose a new update:
     let new_config = Config {
