@@ -12,7 +12,7 @@ use chrono::Utc;
 use crypto_shared::SerializableScalar;
 use crypto_shared::{derive_key, PublicKey};
 use k256::{Scalar, Secp256k1};
-use mpc_contract::SignatureRequest;
+use mpc_contract::primitives::SignatureRequest;
 use rand::rngs::StdRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
@@ -68,13 +68,13 @@ impl SignQueue {
     pub fn organize(
         &mut self,
         threshold: usize,
-        active: &Participants,
+        stable: &Participants,
         me: Participant,
         my_account_id: &AccountId,
     ) {
         for request in self.unorganized_requests.drain(..) {
             let mut rng = StdRng::from_seed(request.entropy);
-            let subset = active.keys().choose_multiple(&mut rng, threshold);
+            let subset = stable.keys().choose_multiple(&mut rng, threshold);
             let proposer = **subset.choose(&mut rng).unwrap();
             if subset.contains(&&me) {
                 tracing::info!(
@@ -420,7 +420,7 @@ impl SignatureManager {
                 };
                 match action {
                     Action::Wait => {
-                        tracing::debug!("waiting");
+                        tracing::trace!("waiting");
                         // Retain protocol until we are finished
                         return true;
                     }
@@ -488,7 +488,7 @@ impl SignatureManager {
     pub fn handle_requests(
         &mut self,
         threshold: usize,
-        active: &Participants,
+        stable: &Participants,
         my_requests: &mut HashMap<CryptoHash, SignRequest>,
         presignature_manager: &mut PresignatureManager,
     ) {
@@ -500,11 +500,11 @@ impl SignatureManager {
                 presignature_manager.take_mine()
             }
         } {
-            let sig_participants = active.intersection(&[&presignature.participants]);
+            let sig_participants = stable.intersection(&[&presignature.participants]);
             if sig_participants.len() < threshold {
                 tracing::debug!(
                     participants = ?sig_participants.keys_vec(),
-                    "we do not have enough participants to generate a failed signature"
+                    "we do not have enough participants to generate a signature"
                 );
                 failed_presigs.push(presignature);
                 continue;

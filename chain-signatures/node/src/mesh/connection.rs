@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use cait_sith::protocol::Participant;
 use tokio::sync::RwLock;
 
 use crate::protocol::contract::primitives::Participants;
@@ -16,6 +18,7 @@ pub struct Pool {
     http: reqwest::Client,
     connections: RwLock<Participants>,
     potential_connections: RwLock<Participants>,
+    status: RwLock<HashMap<Participant, StateView>>,
 
     /// The currently active participants for this epoch.
     current_active: RwLock<Option<(Participants, Instant)>>,
@@ -33,17 +36,21 @@ impl Pool {
 
         let connections = self.connections.read().await;
 
+        let mut status = self.status.write().await;
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
             let Ok(resp) = self.http.get(format!("{}/state", info.url)).send().await else {
                 continue;
             };
 
-            let Ok(_state): Result<StateView, _> = resp.json().await else {
+            let Ok(state): Result<StateView, _> = resp.json().await else {
                 continue;
             };
+
+            status.insert(*participant, state);
             participants.insert(participant, info.clone());
         }
+        drop(status);
 
         let mut active = self.current_active.write().await;
         *active = Some((participants.clone(), Instant::now()));
@@ -59,17 +66,21 @@ impl Pool {
 
         let connections = self.potential_connections.read().await;
 
+        let mut status = self.status.write().await;
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
             let Ok(resp) = self.http.get(format!("{}/state", info.url)).send().await else {
                 continue;
             };
 
-            let Ok(_state): Result<StateView, _> = resp.json().await else {
+            let Ok(state): Result<StateView, _> = resp.json().await else {
                 continue;
             };
+
+            status.insert(*participant, state);
             participants.insert(participant, info.clone());
         }
+        drop(status);
 
         let mut potential_active = self.potential_active.write().await;
         *potential_active = Some((participants.clone(), Instant::now()));
@@ -104,5 +115,16 @@ impl Pool {
 
     pub async fn potential_participants(&self) -> Participants {
         self.potential_connections.read().await.clone()
+    }
+
+    pub async fn is_participant_stable(&self, participant: &Participant) -> bool {
+        self.status
+            .read()
+            .await
+            .get(participant)
+            .map_or(false, |state| match state {
+                StateView::Running { is_stable, .. } => *is_stable,
+                _ => false,
+            })
     }
 }

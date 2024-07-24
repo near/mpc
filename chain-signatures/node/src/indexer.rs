@@ -1,3 +1,4 @@
+use crate::gcp::error::DatastoreStorageError;
 use crate::gcp::GcpService;
 use crate::kdf;
 use crate::protocol::{SignQueue, SignRequest};
@@ -10,9 +11,11 @@ use near_lake_framework::{LakeBuilder, LakeContext};
 use near_lake_primitives::actions::ActionMetaDataExt;
 use near_lake_primitives::receipts::ExecutionStatus;
 
+use near_primitives::types::BlockHeight;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::time::Instant;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 /// Configures indexer.
@@ -89,13 +92,59 @@ pub struct ContractSignRequest {
     pub key_version: u32,
 }
 
+#[derive(Debug, Clone)]
+pub struct Indexer {
+    latest_block_height: Arc<RwLock<LatestBlockHeight>>,
+    last_updated_timestamp: Arc<RwLock<Instant>>,
+}
+
+impl Indexer {
+    const BEHIND_THRESHOLD: Duration = Duration::from_secs(60);
+
+    fn new(latest_block_height: LatestBlockHeight) -> Self {
+        Self {
+            latest_block_height: Arc::new(RwLock::new(latest_block_height)),
+            last_updated_timestamp: Arc::new(RwLock::new(Instant::now())),
+        }
+    }
+
+    /// Get the latest block height from the chain.
+    pub async fn latest_block_height(&self) -> BlockHeight {
+        self.latest_block_height.read().await.block_height
+    }
+
+    /// Check whether the indexer is on track with the latest block height from the chain.
+    pub async fn is_on_track(&self) -> bool {
+        self.last_updated_timestamp.read().await.elapsed() <= Self::BEHIND_THRESHOLD
+    }
+
+    /// Check whether the indexer is behind with the latest block height from the chain.
+    pub async fn is_behind(&self) -> bool {
+        self.last_updated_timestamp.read().await.elapsed() > Self::BEHIND_THRESHOLD
+    }
+
+    async fn update_block_height(
+        &self,
+        block_height: BlockHeight,
+        gcp: &GcpService,
+    ) -> Result<(), DatastoreStorageError> {
+        *self.last_updated_timestamp.write().await = Instant::now();
+        self.latest_block_height
+            .write()
+            .await
+            .set(block_height)
+            .store(gcp)
+            .await
+    }
+}
+
 #[derive(LakeContext)]
 struct Context {
     mpc_contract_id: AccountId,
     node_account_id: AccountId,
     gcp_service: GcpService,
     queue: Arc<RwLock<SignQueue>>,
-    latest_block_height: Arc<RwLock<LatestBlockHeight>>,
+    indexer: Indexer,
 }
 
 async fn handle_block(
@@ -165,11 +214,8 @@ async fn handle_block(
         }
     }
 
-    ctx.latest_block_height
-        .write()
-        .await
-        .set(block.block_height())
-        .store(&ctx.gcp_service)
+    ctx.indexer
+        .update_block_height(block.block_height(), &ctx.gcp_service)
         .await?;
 
     crate::metrics::LATEST_BLOCK_HEIGHT
@@ -194,12 +240,13 @@ async fn handle_block(
 }
 
 pub fn run(
-    options: Options,
-    mpc_contract_id: AccountId,
-    node_account_id: AccountId,
-    queue: Arc<RwLock<SignQueue>>,
-    gcp_service: crate::gcp::GcpService,
-) -> anyhow::Result<()> {
+    options: &Options,
+    mpc_contract_id: &AccountId,
+    node_account_id: &AccountId,
+    queue: &Arc<RwLock<SignQueue>>,
+    gcp_service: &crate::gcp::GcpService,
+    rt: &tokio::runtime::Runtime,
+) -> anyhow::Result<(JoinHandle<anyhow::Result<()>>, Indexer)> {
     tracing::info!(
         s3_bucket = options.s3_bucket,
         s3_region = options.s3_region,
@@ -209,45 +256,86 @@ pub fn run(
         "starting indexer"
     );
 
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-
-    let (lake, latest_block_height) = rt.block_on(async {
-        let latest = match LatestBlockHeight::fetch(&gcp_service).await {
+    let latest_block_height = rt.block_on(async {
+        match LatestBlockHeight::fetch(gcp_service).await {
             Ok(latest) => latest,
             Err(err) => {
-                tracing::error!(%err, "failed to fetch latest block height; using start_block_height={} instead", options.start_block_height);
+                tracing::warn!(%err, "failed to fetch latest block height; using start_block_height={} instead", options.start_block_height);
                 LatestBlockHeight {
                     account_id: node_account_id.clone(),
                     block_height: options.start_block_height,
                 }
             }
-        };
-
-        let mut lake_builder = LakeBuilder::default()
-            .s3_bucket_name(options.s3_bucket)
-            .s3_region_name(options.s3_region)
-            .start_block_height(latest.block_height);
-
-        if let Some(s3_url) = options.s3_url {
-            let aws_config = aws_config::from_env().load().await;
-            let s3_config = aws_sdk_s3::config::Builder::from(&aws_config)
-                .endpoint_url(s3_url)
-                .build();
-            lake_builder = lake_builder.s3_config(s3_config);
         }
-        let lake = anyhow::Context::context(lake_builder.build(), "could not build lake indexer")?;
-        anyhow::Ok((lake, latest))
-    })?;
+    });
+
+    let indexer = Indexer::new(latest_block_height);
     let context = Context {
-        mpc_contract_id,
-        node_account_id,
-        gcp_service,
-        queue,
-        latest_block_height: Arc::new(RwLock::new(latest_block_height)),
+        mpc_contract_id: mpc_contract_id.clone(),
+        node_account_id: node_account_id.clone(),
+        gcp_service: gcp_service.clone(),
+        queue: queue.clone(),
+        indexer: indexer.clone(),
     };
-    lake.run_with_context(handle_block, &context)?;
-    Ok(())
+
+    let options = options.clone();
+    let join_handle = std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?;
+
+        // If indexer fails for whatever reason, let's spin it back up:
+        let mut i = 0;
+        loop {
+            if i > 0 {
+                tracing::info!("restarting indexer after failure: restart count={i}");
+            }
+            i += 1;
+
+            let Ok(lake) = rt.block_on(async {
+                let latest = context.indexer.latest_block_height().await;
+                let mut lake_builder = LakeBuilder::default()
+                    .s3_bucket_name(&options.s3_bucket)
+                    .s3_region_name(&options.s3_region)
+                    .start_block_height(latest);
+
+                if let Some(s3_url) = &options.s3_url {
+                    let aws_config = aws_config::from_env().load().await;
+                    let s3_config = aws_sdk_s3::config::Builder::from(&aws_config)
+                        .endpoint_url(s3_url)
+                        .build();
+                    lake_builder = lake_builder.s3_config(s3_config);
+                }
+                let lake = lake_builder.build()?;
+                anyhow::Ok(lake)
+            }) else {
+                tracing::error!(?options, "indexer failed to build");
+                backoff(i);
+                continue;
+            };
+
+            // TODO/NOTE: currently indexer does not have any interrupt handlers and will never yield back
+            // as successful. We can add interrupt handlers in the future but this is not important right
+            // now since we managing nodes through integration tests that can kill it or through docker.
+            let Err(err) = lake.run_with_context(handle_block, &context) else {
+                break;
+            };
+            tracing::error!(%err, "indexer failed");
+            backoff(i)
+        }
+        Ok(())
+    });
+
+    Ok((join_handle, indexer))
+}
+
+fn backoff(i: u32) {
+    // Exponential backoff with max delay of 2 minutes
+    let delay = if i <= 7 {
+        2u64.pow(i)
+    } else {
+        // Max out at 2 minutes
+        120
+    };
+    std::thread::sleep(std::time::Duration::from_secs(delay));
 }

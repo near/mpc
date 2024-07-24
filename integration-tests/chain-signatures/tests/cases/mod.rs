@@ -37,7 +37,7 @@ async fn test_multichain_reshare() -> anyhow::Result<()> {
             let new_state = wait_for::running_mpc(&ctx, None).await?;
             wait_for::has_at_least_triples(&ctx, 2).await?;
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
-            actions::single_signature_production(&ctx, &new_state).await
+            actions::single_payload_signature_production(&ctx, &new_state).await
         })
     })
     .await
@@ -318,6 +318,34 @@ async fn test_multichain_reshare_with_lake_congestion() -> anyhow::Result<()> {
             assert!(state.participants.len() == 2);
             // make sure signing works after reshare
             let new_state = wait_for::running_mpc(&ctx, None).await?;
+            wait_for::has_at_least_triples(&ctx, 2).await?;
+            wait_for::has_at_least_presignatures(&ctx, 2).await?;
+            actions::single_payload_signature_production(&ctx, &new_state).await
+        })
+    })
+    .await
+}
+
+#[test(tokio::test)]
+async fn test_multichain_reshare_with_first_node_leave() -> anyhow::Result<()> {
+    let config = MultichainConfig::default();
+    with_multichain_nodes(config.clone(), |mut ctx| {
+        Box::pin(async move {
+            let state = wait_for::running_mpc(&ctx, Some(0)).await?;
+            assert!(state.threshold == 2);
+            assert!(state.participants.len() == 3);
+
+            let account_0 = near_workspaces::types::AccountId::from_str(
+                state.participants.keys().next().unwrap().clone().as_ref(),
+            )
+            .unwrap();
+            // two node vote to kick node 0
+            assert!(ctx.remove_participant(Some(&account_0)).await.is_ok());
+
+            // make sure signing works after reshare
+            let new_state = wait_for::running_mpc(&ctx, None).await?;
+            assert!(new_state.threshold == 2);
+            assert!(new_state.participants.len() == 2);
             wait_for::has_at_least_triples(&ctx, 2).await?;
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
             actions::single_signature_production(&ctx, &new_state).await

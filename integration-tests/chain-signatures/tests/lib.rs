@@ -99,22 +99,31 @@ impl MultichainTestContext<'_> {
             .cloned()
             .collect::<Vec<Account>>();
 
+        tracing::info!("Removing vote from: {:?}", voting_accounts);
         let results = vote_leave(
-            voting_accounts,
+            voting_accounts.clone(),
             self.nodes.ctx().mpc_contract.id(),
             leaving_account_id,
         )
         .await;
-
         // Check if any result has failures, and return early with an error if so
         if results
             .iter()
             .any(|result| !result.as_ref().unwrap().failures().is_empty())
         {
+            tracing::error!("Failed vote from: {:?}", voting_accounts);
             return Err(anyhow!("Failed to vote_leave"));
         }
 
         let new_state = wait_for::running_mpc(self, Some(state.epoch + 1)).await?;
+        tracing::info!(
+            "Getting new state, old {} {:?}, new {} {:?}",
+            state.participants.len(),
+            state.public_key,
+            new_state.participants.len(),
+            new_state.public_key
+        );
+
         assert_eq!(state.participants.len(), new_state.participants.len() + 1);
 
         assert_eq!(

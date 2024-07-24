@@ -1753,6 +1753,7 @@ dependencies = [
  "near-sdk",
  "serde",
  "serde_json",
+ "sha3",
  "subtle",
 ]
 
@@ -3762,6 +3763,7 @@ dependencies = [
  "serde",
  "serde_json",
  "signature 2.2.0",
+ "thiserror",
  "tokio",
 ]
 

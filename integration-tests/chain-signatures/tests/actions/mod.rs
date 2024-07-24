@@ -13,9 +13,10 @@ use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::sec1::FromEncodedPoint;
 use k256::elliptic_curve::ProjectivePoint;
 use k256::{AffinePoint, EncodedPoint, Scalar, Secp256k1};
+use mpc_contract::errors;
 use mpc_contract::primitives::SignRequest;
+use mpc_contract::primitives::SignatureRequest;
 use mpc_contract::RunningContractState;
-use mpc_contract::SignatureRequest;
 use mpc_recovery_node::kdf::into_eth_sig;
 use near_crypto::InMemorySigner;
 use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest;
@@ -111,10 +112,9 @@ pub async fn single_signature_rogue_responder(
 
     let err = wait_for::rogue_message_responded(ctx, rogue_hash).await?;
 
-    assert_eq!(
-        err,
-        "Smart contract panicked: Signature could not be verified".to_string()
-    );
+    assert!(err.contains(
+        &errors::MpcContractError::RespondError(errors::RespondError::InvalidSignature).to_string()
+    ));
 
     let signature = wait_for::signature_responded(ctx, tx_hash).await?;
 

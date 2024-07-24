@@ -342,15 +342,15 @@ impl GcpService {
     ) -> anyhow::Result<Self> {
         let project_id = storage_options.gcp_project_id.clone();
         let secret_manager;
-        let client = hyper::Client::builder().build(
-            hyper_rustls::HttpsConnectorBuilder::new()
-                .with_native_roots()
-                .https_or_http()
-                .enable_http1()
-                .enable_http2()
-                .build(),
-        );
         let datastore = if let Some(gcp_datastore_url) = storage_options.gcp_datastore_url.clone() {
+            let client = hyper::Client::builder().build(
+                hyper_rustls::HttpsConnectorBuilder::new()
+                    .with_native_roots()
+                    .https_or_http()
+                    .enable_http1()
+                    .enable_http2()
+                    .build(),
+            );
             // Assuming custom GCP URL points to an emulator, so the token does not matter
             let authenticator = AccessTokenAuthenticator::builder("TOKEN".to_string())
                 .build()
@@ -361,6 +361,15 @@ impl GcpService {
             datastore.root_url(gcp_datastore_url);
             datastore
         } else {
+            // restring client to use https in production
+            let client = hyper::Client::builder().build(
+                hyper_rustls::HttpsConnectorBuilder::new()
+                    .with_native_roots()
+                    .https_only()
+                    .enable_http1()
+                    .enable_http2()
+                    .build(),
+            );
             let opts = ApplicationDefaultCredentialsFlowOpts::default();
             let authenticator = match ApplicationDefaultCredentialsAuthenticator::builder(opts)
                 .await

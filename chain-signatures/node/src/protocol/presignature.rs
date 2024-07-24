@@ -446,7 +446,7 @@ impl PresignatureManager {
                 };
                 match action {
                     Action::Wait => {
-                        tracing::debug!("waiting");
+                        tracing::trace!("waiting");
                         // Retain protocol until we are finished
                         return true;
                     }
@@ -516,7 +516,7 @@ impl PresignatureManager {
         });
 
         if !errors.is_empty() {
-            tracing::warn!(?errors, "faled to generate some presignatures");
+            tracing::warn!(?errors, "failed to generate some presignatures");
         }
 
         messages
