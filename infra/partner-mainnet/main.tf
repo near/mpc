@@ -113,7 +113,7 @@ module "ig_template" {
     scopes = ["cloud-platform"]
   }
   name_prefix          = "multichain-partner-mainnet-${count.index}"
-  source_image_family  = "cos-stable"
+  source_image_family  = "cos-113-lts"
   source_image_project = "cos-cloud"
   machine_type         = "n2d-standard-2"
 

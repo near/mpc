@@ -43,7 +43,9 @@ variable "network" {
 variable "additional_metadata" {
   type        = map(any)
   description = "Additional metadata to attach to the instance"
-  default     = {}
+  default     = {
+    cos-update-strategy:	"update_enabled"
+  }
 }
 
 variable "service_account" {
