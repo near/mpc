@@ -25,7 +25,7 @@ use near_sdk::{env, AccountId, Gas, NearToken, Promise};
 pub struct UpdateId(pub(crate) u64);
 
 impl UpdateId {
-    pub fn next(&mut self) -> Self {
+    pub fn generate(&mut self) -> Self {
         let id = self.0;
         self.0 += 1;
         Self(id)
@@ -54,12 +54,12 @@ struct UpdateEntry {
 #[derive(Default, Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposedUpdates {
     entries: HashMap<UpdateId, UpdateEntry>,
-    generator: UpdateId,
+    id: UpdateId,
 }
 
 impl ProposedUpdates {
     pub fn required_deposit(code: &Option<Vec<u8>>, config: &Option<Config>) -> NearToken {
-        required_deposit(bytes_used(&code, &config))
+        required_deposit(bytes_used(code, config))
     }
 
     /// Propose an update given the new contract code and/or config.
@@ -76,7 +76,7 @@ impl ProposedUpdates {
             (None, None) => return None,
         };
 
-        let id = self.generator.next();
+        let id = self.id.generate();
         self.entries.insert(
             id,
             UpdateEntry {
