@@ -48,6 +48,7 @@ pub enum Update {
 struct UpdateEntry {
     updates: Vec<Update>,
     votes: HashSet<AccountId>,
+    bytes_used: u64,
 }
 
 #[derive(Default, Debug, BorshSerialize, BorshDeserialize)]
@@ -61,6 +62,7 @@ impl ProposedUpdates {
     ///
     /// Returns Some(UpdateId) if the update was successfully proposed, otherwise None.
     pub fn propose(&mut self, code: Option<Vec<u8>>, config: Option<Config>) -> Option<UpdateId> {
+        let bytes_used = bytes_used(&code, &config);
         let updates = match (code, config) {
             (Some(contract), Some(config)) => {
                 vec![Update::Contract(contract), Update::Config(config)]
@@ -76,6 +78,7 @@ impl ProposedUpdates {
             UpdateEntry {
                 updates,
                 votes: HashSet::new(),
+                bytes_used,
             },
         );
 
@@ -114,4 +117,16 @@ impl ProposedUpdates {
         }
         Some(promise)
     }
+}
+
+fn bytes_used(code: &Option<Vec<u8>>, config: &Option<Config>) -> u64 {
+    let mut bytes_used = 0;
+    if let Some(config) = config {
+        let bytes = serde_json::to_vec(&config).unwrap();
+        bytes_used += bytes.len() as u64;
+    }
+    if let Some(code) = code {
+        bytes_used += code.len() as u64;
+    }
+    bytes_used
 }
