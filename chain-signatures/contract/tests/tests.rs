@@ -439,7 +439,7 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
             .args_json(serde_json::json!({
                 "config": &new_config,
             }))
-            .deposit(NearToken::from_near(1))
+            .deposit(NearToken::from_millinear(100))
             .transact()
             .await
             .unwrap();
@@ -502,6 +502,7 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
 }
 
 async fn test_propose_update_contract(contract: &Contract, accounts: &[Account]) {
+    const CONTRACT_DEPLOY: NearToken = NearToken::from_near(8);
     let state: mpc_contract::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
 
@@ -513,7 +514,7 @@ async fn test_propose_update_contract(contract: &Contract, accounts: &[Account])
             "code": &new_wasm,
         }))
         .max_gas()
-        .deposit(NearToken::from_near(1))
+        .deposit(CONTRACT_DEPLOY)
         .transact()
         .await
         .unwrap();
