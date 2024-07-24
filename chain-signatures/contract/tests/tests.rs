@@ -404,7 +404,7 @@ async fn test_contract_propose_update() {
     dbg!(contract.id());
 
     test_propose_update_config(&contract, &accounts).await;
-    // test_propose_update_contract(&contract, &accounts).await;
+    test_propose_update_contract(&contract, &accounts).await;
 }
 
 async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
