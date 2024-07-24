@@ -3746,7 +3746,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-contract"
-version = "0.2.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
  "borsh",
@@ -3781,7 +3781,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-recovery-node"
-version = "0.2.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
  "async-trait",
