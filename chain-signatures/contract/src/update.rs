@@ -54,7 +54,7 @@ struct UpdateEntry {
 #[derive(Default, Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposedUpdates {
     entries: HashMap<UpdateId, UpdateEntry>,
-    next_id: UpdateId,
+    generator: UpdateId,
 }
 
 impl ProposedUpdates {
@@ -72,7 +72,7 @@ impl ProposedUpdates {
             (None, None) => return None,
         };
 
-        let id = self.next_id.next();
+        let id = self.generator.next();
         self.entries.insert(
             id,
             UpdateEntry {
