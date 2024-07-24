@@ -6,9 +6,8 @@ on:
       - develop
   pull_request:
     paths:
-      - integration-tests/**
-      - node/**
-      - contract/**
+      - integration-tests/chain-signatures/**
+      - chain-signatures/**
 
 env:
   RUSTFLAGS: -D warnings
@@ -18,7 +17,7 @@ jobs:
     strategy:
       matrix:
         # FIXME: macos-latest-xl is disabled since colima is erroring out right now
-        os: [ubuntu-22.04-4core]
+        os: [warp-ubuntu-latest-x64-4x]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -43,8 +42,8 @@ jobs:
       - name: Pull Relayer & Sandbox Docker Images
         run: |
           docker pull ghcr.io/near/os-relayer:12ba6e35690df3979fce0b36a41d0ca0db9c0ab4
-          docker pull ghcr.io/near/near-lake-indexer:e6519c922435f3d18b5f2ddac5d1ec171ef4dd6b
-          docker pull localstack/localstack:latest
+          docker pull ghcr.io/near/near-lake-indexer:node-1.40.0
+          docker pull localstack/localstack:3.5.0
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
@@ -53,12 +52,26 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - uses: Swatinem/rust-cache@v1
+      - uses: WarpBuilds/cache@v1
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: "${{ runner.os }}-cargo-${{ hashFiles('chain-signatures/Cargo.lock') }}"
+          restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v1.1.2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install toxiproxy-server
+        run: |
+          wget -O toxiproxy-2.9.0_linux_amd64.deb https://github.com/Shopify/toxiproxy/releases/download/v2.9.0/toxiproxy_2.9.0_linux_amd64.deb
+          sudo dpkg -i toxiproxy-2.9.0_linux_amd64.deb
 
       - name: Configure AWS
         run: |
@@ -67,15 +80,23 @@ jobs:
           aws --profile default configure set aws_access_key_id "123"
           aws --profile default configure set aws_secret_access_key "456"
 
-      - name: Compile Contract
-        run: cargo build -p mpc-contract --target wasm32-unknown-unknown --release --target-dir target/seperate_wasm
+      - name: Build Chain-Signatures Contract
+        working-directory: ./chain-signatures
+        run: cargo build -p mpc-contract --target wasm32-unknown-unknown --release
 
-      - name: Build MPC Recovery Binary Locally
-        run: |
-          cargo build -p mpc-recovery-node --release
+      - name: Build Chain-Signatures Node
+        working-directory: ./chain-signatures
+        run: cargo build -p mpc-recovery-node --release
+
+      # Build the tests before actually running them to see how long the tests take to run by itself
+      # instead of including the build time in the test time report on Github.
+      - name: Build Chain-Signatures Integration Tests
+        working-directory: ./integration-tests/chain-signatures
+        run: cargo build --tests
 
       - name: Test
-        run: cargo test -p mpc-recovery-integration-tests multichain --jobs 1 -- --test-threads 1
+        working-directory: ./integration-tests/chain-signatures
+        run: cargo test --jobs 1 -- --test-threads 1
         env:
-          RUST_LOG: INFO
+          RUST_LOG: info,workspaces=warn
           RUST_BACKTRACE: 1

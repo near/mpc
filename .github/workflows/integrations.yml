@@ -1,4 +1,4 @@
-name: Build Image and Test
+name: Integration (FastAuth & Image build)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - develop
   pull_request:
     paths:
-      - integration-tests/**
+      - integration-tests/fastauth/**
       - mpc-recovery/**
       - load-tests/**
       - test-oidc-provider/**
@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         # FIXME: macos-latest-xl is disabled since colima is erroring out right now
-        os: [ubuntu-latest]
+        os: [warp-ubuntu-latest-x64-4x]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -59,18 +59,25 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - uses: Swatinem/rust-cache@v1
+      - uses: WarpBuilds/cache@v1
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: "${{ runner.os }}-cargo-${{ hashFiles('integration-tests/fastauth/Cargo.lock') }}"
+          restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v1.1.2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compile Contract
-        run: cargo build -p mpc-contract --target wasm32-unknown-unknown --release --target-dir target/seperate_wasm
-
       - name: Test
-        run: cargo test -p mpc-recovery-integration-tests mpc --jobs 1 -- --test-threads 1
+        working-directory: ./integration-tests/fastauth
+        run: cargo test --jobs 1 -- --test-threads 1
         env:
           RUST_LOG: INFO
           RUST_BACKTRACE: 1
