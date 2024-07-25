@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
 const CONTRACT_FILE_PATH: &str = "../../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
-const INVALID_CONTRACT: &str = "../../target/wasm32-unknown-unknown/release/mpc_test_contract.wasm";
+const INVALID_CONTRACT: &str = "../res/mpc_test_contract.wasm";
 const PARTICIPANT_LEN: usize = 3;
 
 fn candidates(names: Option<Vec<AccountId>>) -> HashMap<AccountId, CandidateInfo> {
