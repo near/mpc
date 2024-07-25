@@ -180,7 +180,7 @@ impl<'a> Node<'a> {
             sign_sk: Some(sign_sk),
         }
         .into_str_args();
-        let image: GenericImage = GenericImage::new("near/mpc-recovery-node", "latest")
+        let image: GenericImage = GenericImage::new("near/mpc-node", "latest")
             .with_wait_for(WaitFor::Nothing)
             .with_exposed_port(Self::CONTAINER_PORT)
             .with_env_var("RUST_LOG", "mpc_node=DEBUG")
