@@ -17,7 +17,7 @@ pub struct DynamicValue(serde_json::Value);
     Clone, Default, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq,
 )]
 pub struct Config {
-    protocol: ProtocolConfig,
+    pub protocol: ProtocolConfig,
 
     /// The remaining entries that can be present in future forms of the configuration.
     #[serde(flatten)]
@@ -97,27 +97,64 @@ mod tests {
     fn test_load_config() {
         let config_str: serde_json::Value = serde_json::from_str(
             r#"{
-                "triple_timeout": 20000,
-                "presignature_timeout": 30000,
-                "signature_timeout": 30000,
-                "string": "value",
-                "integer": 1000
+                "protocol": {
+                    "message_timeout": 10000,
+                    "garbage_timeout": 20000,
+                    "max_concurrent_introduction": 10,
+                    "max_concurrent_generation": 10,
+                    "triple": {
+                        "min_triples": 10,
+                        "max_triples": 100,
+                        "generation_timeout": 10000
+                    },
+                    "presignature": {
+                        "min_presignatures": 10,
+                        "max_presignatures": 100,
+                        "generation_timeout": 10000
+                    },
+                    "signature": {
+                        "generation_timeout": 10000
+                    },
+                    "string": "value",
+                    "integer": 1000
+                },
+                "string": "value2",
+                "integer": 20
             }"#,
         )
         .unwrap();
 
         let config_macro = serde_json::json!({
-            "triple_timeout": 20000,
-            "presignature_timeout": 30000,
-            "signature_timeout": 30000,
-            "string": "value",
-            "integer": 1000,
+            "protocol": {
+                "message_timeout": 10000,
+                "garbage_timeout": 20000,
+                "max_concurrent_introduction": 10,
+                "max_concurrent_generation": 10,
+                "triple": {
+                    "min_triples": 10,
+                    "max_triples": 100,
+                    "generation_timeout": 10000
+                },
+                "presignature": {
+                    "min_presignatures": 10,
+                    "max_presignatures": 100,
+                    "generation_timeout": 10000
+                },
+                "signature": {
+                    "generation_timeout": 10000
+                },
+                "string": "value",
+                "integer": 1000
+            },
+            "string": "value2",
+            "integer": 20
         });
 
         assert_eq!(config_str, config_macro);
 
         let config: Config = serde_json::from_value(config_macro).unwrap();
-        assert_eq!(config.get("string").unwrap(), serde_json::json!("value"));
-        assert_eq!(config.get("integer").unwrap(), serde_json::json!(1000));
+        assert_eq!(config.protocol.message_timeout, 10000);
+        assert_eq!(config.get("integer").unwrap(), serde_json::json!(20));
+        assert_eq!(config.get("string").unwrap(), serde_json::json!("value2"));
     }
 }
