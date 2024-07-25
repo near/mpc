@@ -12,7 +12,7 @@ use k256::Secp256k1;
 use mpc_contract::config::ProtocolConfig;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use near_account_id::AccountId;
 
@@ -36,6 +36,7 @@ pub struct PresignatureGenerator {
     pub triple1: TripleId,
     pub mine: bool,
     pub timestamp: Instant,
+    pub timeout: Duration,
 }
 
 impl PresignatureGenerator {
@@ -45,6 +46,7 @@ impl PresignatureGenerator {
         triple0: TripleId,
         triple1: TripleId,
         mine: bool,
+        timeout: u64,
     ) -> Self {
         Self {
             protocol,
@@ -53,11 +55,12 @@ impl PresignatureGenerator {
             triple1,
             mine,
             timestamp: Instant::now(),
+            timeout: Duration::from_millis(timeout),
         }
     }
 
     pub fn poke(&mut self) -> Result<Action<PresignOutput<Secp256k1>>, ProtocolError> {
-        if self.timestamp.elapsed() > crate::types::PROTOCOL_PRESIG_TIMEOUT {
+        if self.timestamp.elapsed() > self.timeout {
             tracing::info!(
                 self.triple0,
                 self.triple1,
@@ -170,6 +173,7 @@ impl PresignatureManager {
         public_key: &PublicKey,
         private_share: &SecretKeyShare,
         mine: bool,
+        timeout: u64,
     ) -> Result<PresignatureGenerator, InitializationError> {
         let participants: Vec<_> = participants.keys().cloned().collect();
         let protocol = Box::new(cait_sith::presign(
@@ -195,6 +199,7 @@ impl PresignatureManager {
             triple0.id,
             triple1.id,
             mine,
+            timeout,
         ))
     }
 
@@ -206,6 +211,7 @@ impl PresignatureManager {
         triple1: Triple,
         public_key: &PublicKey,
         private_share: &SecretKeyShare,
+        timeout: u64,
     ) -> Result<(), InitializationError> {
         let id = rand::random();
 
@@ -229,6 +235,7 @@ impl PresignatureManager {
             public_key,
             private_share,
             true,
+            timeout,
         )?;
         self.generators.insert(id, generator);
         self.introduced.insert(id);
@@ -280,7 +287,14 @@ impl PresignatureManager {
                     triple_manager.insert_mine(triple0).await;
                     triple_manager.insert_mine(triple1).await;
                 } else {
-                    self.generate(&presig_participants, triple0, triple1, pk, sk_share)?;
+                    self.generate(
+                        &presig_participants,
+                        triple0,
+                        triple1,
+                        pk,
+                        sk_share,
+                        cfg.presignature.generation_timeout,
+                    )?;
                 }
             } else {
                 tracing::debug!("running: we don't have enough triples to generate a presignature");
@@ -306,6 +320,7 @@ impl PresignatureManager {
         triple_manager: &mut TripleManager,
         public_key: &PublicKey,
         private_share: &SecretKeyShare,
+        cfg: &ProtocolConfig,
     ) -> Result<&mut PresignatureProtocol, GenerationError> {
         if self.presignatures.contains_key(&id) {
             Err(GenerationError::AlreadyGenerated)
@@ -362,6 +377,7 @@ impl PresignatureManager {
                         public_key,
                         private_share,
                         false,
+                        cfg.presignature.generation_timeout,
                     )?;
                     let generator = entry.insert(generator);
                     crate::metrics::NUM_TOTAL_HISTORICAL_PRESIGNATURE_GENERATORS

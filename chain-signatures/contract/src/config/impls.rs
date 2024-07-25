@@ -25,6 +25,7 @@ impl Config {
 impl Default for ProtocolConfig {
     fn default() -> Self {
         Self {
+            message_timeout: min_to_ms(5),
             max_concurrent_introduction: 4,
             max_concurrent_generation: 4 * MAX_EXPECTED_PARTICIPANTS,
             triple: TripleConfig::default(),

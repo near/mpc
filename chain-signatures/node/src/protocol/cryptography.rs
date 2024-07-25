@@ -100,6 +100,7 @@ impl CryptographicProtocol for GeneratingState {
                             &ctx.cfg().local.network.sign_sk,
                             ctx.http_client(),
                             ctx.mesh().active_participants(),
+                            &ctx.cfg().protocol,
                         )
                         .await;
                     if !failures.is_empty() {
@@ -161,6 +162,7 @@ impl CryptographicProtocol for GeneratingState {
                             &ctx.cfg().local.network.sign_sk,
                             ctx.http_client(),
                             ctx.mesh().active_participants(),
+                            &ctx.cfg().protocol,
                         )
                         .await;
                     if !failures.is_empty() {
@@ -198,6 +200,7 @@ impl CryptographicProtocol for WaitingForConsensusState {
                 &ctx.cfg().local.network.sign_sk,
                 ctx.http_client(),
                 ctx.mesh().active_participants(),
+                &ctx.cfg().protocol,
             )
             .await;
         if !failures.is_empty() {
@@ -253,6 +256,7 @@ impl CryptographicProtocol for ResharingState {
                             &ctx.cfg().local.network.sign_sk,
                             ctx.http_client(),
                             &active,
+                            &ctx.cfg().protocol,
                         )
                         .await;
                     if !failures.is_empty() {
@@ -320,6 +324,7 @@ impl CryptographicProtocol for ResharingState {
                             &ctx.cfg().local.network.sign_sk,
                             ctx.http_client(),
                             &active,
+                            &ctx.cfg().protocol,
                         )
                         .await;
                     if !failures.is_empty() {
@@ -438,6 +443,7 @@ impl CryptographicProtocol for RunningState {
             &stable,
             my_requests,
             &mut presignature_manager,
+            protocol_cfg,
         );
         drop(sign_queue);
         drop(presignature_manager);
@@ -461,6 +467,7 @@ impl CryptographicProtocol for RunningState {
                 &ctx.cfg().local.network.sign_sk,
                 ctx.http_client(),
                 active,
+                protocol_cfg,
             )
             .await;
         if !failures.is_empty() {

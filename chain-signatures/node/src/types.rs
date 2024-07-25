@@ -16,15 +16,6 @@ use crate::protocol::contract::ResharingContractState;
 
 use near_account_id::AccountId;
 
-/// Default timeout for triple generation protocols. Times out after 20 minutes of being alive.
-pub const PROTOCOL_TRIPLE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
-
-/// Default timeout for presig generation protocols. Times out after 1 minute of being alive since this should be shorted lived.
-pub const PROTOCOL_PRESIG_TIMEOUT: Duration = Duration::from_secs(60);
-
-/// Default timeout for signature generation protocol. Times out after 1 minute of being alive since this should be shorted lived.
-pub const PROTOCOL_SIGNATURE_TIMEOUT: Duration = Duration::from_secs(60);
-
 /// Default invalidation time for failed triples: 2 hrs
 pub const FAILED_TRIPLES_TIMEOUT: Duration = Duration::from_secs(120 * 60);
 

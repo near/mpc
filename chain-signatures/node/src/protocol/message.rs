@@ -243,7 +243,7 @@ impl MessageHandler for RunningState {
                 || queue.iter().any(|msg| {
                     util::is_elapsed_longer_than_timeout(
                         msg.timestamp,
-                        crate::types::PROTOCOL_TRIPLE_TIMEOUT,
+                        protocol_cfg.triple.generation_timeout,
                     )
                 })
             {
@@ -280,7 +280,7 @@ impl MessageHandler for RunningState {
                 || queue.iter().any(|msg| {
                     util::is_elapsed_longer_than_timeout(
                         msg.timestamp,
-                        crate::types::PROTOCOL_PRESIG_TIMEOUT,
+                        protocol_cfg.presignature.generation_timeout,
                     )
                 })
             {
@@ -316,6 +316,7 @@ impl MessageHandler for RunningState {
                     &mut triple_manager,
                     &self.public_key,
                     &self.private_share,
+                    protocol_cfg,
                 )
                 .await
             {
@@ -370,7 +371,7 @@ impl MessageHandler for RunningState {
                 || queue.iter().any(|msg| {
                     util::is_elapsed_longer_than_timeout(
                         msg.timestamp,
-                        crate::types::PROTOCOL_SIGNATURE_TIMEOUT,
+                        protocol_cfg.signature.generation_timeout,
                     )
                 })
             {
@@ -418,6 +419,7 @@ impl MessageHandler for RunningState {
                 *epsilon,
                 *delta,
                 &mut presignature_manager,
+                protocol_cfg,
             ) {
                 Ok(protocol) => protocol,
                 Err(GenerationError::PresignatureIsGenerating(_)) => {
