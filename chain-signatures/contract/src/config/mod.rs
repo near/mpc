@@ -36,6 +36,8 @@ pub struct ProtocolConfig {
     pub triple: TripleConfig,
     /// Configuration for presignature generation.
     pub presignature: PresignatureConfig,
+    /// Configuration for signature generation.
+    pub signature: SignatureConfig,
 
     /// The remaining entries that can be present in future forms of the configuration.
     #[serde(flatten)]
@@ -63,6 +65,16 @@ pub struct PresignatureConfig {
     /// Maximum amount of presignatures that is in the whole network.
     pub max_presignatures: usize,
     /// Timeout for presignature generation in milliseconds.
+    pub generation_timeout: u64,
+
+    /// The remaining entries that can be present in future forms of the configuration.
+    #[serde(flatten)]
+    pub other: HashMap<String, DynamicValue>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+pub struct SignatureConfig {
+    /// Timeout for signature generation in milliseconds.
     pub generation_timeout: u64,
 
     /// The remaining entries that can be present in future forms of the configuration.

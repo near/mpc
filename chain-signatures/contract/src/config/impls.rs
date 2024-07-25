@@ -1,6 +1,8 @@
 use borsh::{self, BorshDeserialize, BorshSerialize};
 
-use super::{Config, DynamicValue, PresignatureConfig, ProtocolConfig, TripleConfig};
+use super::{
+    Config, DynamicValue, PresignatureConfig, ProtocolConfig, SignatureConfig, TripleConfig,
+};
 
 const MAX_EXPECTED_PARTICIPANTS: usize = 32;
 
@@ -27,6 +29,7 @@ impl Default for ProtocolConfig {
             max_concurrent_generation: 4 * MAX_EXPECTED_PARTICIPANTS,
             triple: TripleConfig::default(),
             presignature: PresignatureConfig::default(),
+            signature: Default::default(),
 
             other: Default::default(),
         }
@@ -50,6 +53,16 @@ impl Default for PresignatureConfig {
         Self {
             min_presignatures: 512,
             max_presignatures: 512 * MAX_EXPECTED_PARTICIPANTS * NETWORK_MULTIPLIER,
+            generation_timeout: secs_to_ms(60),
+
+            other: Default::default(),
+        }
+    }
+}
+
+impl Default for SignatureConfig {
+    fn default() -> Self {
+        Self {
             generation_timeout: secs_to_ms(60),
 
             other: Default::default(),
