@@ -65,13 +65,22 @@ pub async fn has_at_least_triples<'a>(
         move || async move {
             let state_view: StateView = ctx
                 .http_client
-                .get(Url::parse(ctx.nodes.url(id)).unwrap().join("/state").unwrap())
+                .get(
+                    Url::parse(ctx.nodes.url(id))
+                        .unwrap()
+                        .join("/state")
+                        .unwrap(),
+                )
                 .send()
                 .await?
                 .json()
                 .await?;
 
-            tracing::warn!("=== {} {:?}", id, state_view);
+            tracing::debug!(
+                "has_at_least_triples state_view from {}: {:?}",
+                id,
+                state_view
+            );
 
             match state_view {
                 StateView::Running { triple_count, .. }
@@ -104,7 +113,12 @@ pub async fn has_at_least_mine_triples<'a>(
         move || async move {
             let state_view: StateView = ctx
                 .http_client
-                .get(Url::parse(ctx.nodes.url(id)).unwrap().join("/state").unwrap())
+                .get(
+                    Url::parse(ctx.nodes.url(id))
+                        .unwrap()
+                        .join("/state")
+                        .unwrap(),
+                )
                 .send()
                 .await?
                 .json()
@@ -141,7 +155,12 @@ pub async fn has_at_least_presignatures<'a>(
         move || async move {
             let state_view: StateView = ctx
                 .http_client
-                .get(Url::parse(ctx.nodes.url(id)).unwrap().join("/state").unwrap())
+                .get(
+                    Url::parse(ctx.nodes.url(id))
+                        .unwrap()
+                        .join("/state")
+                        .unwrap(),
+                )
                 .send()
                 .await?
                 .json()
@@ -178,7 +197,12 @@ pub async fn has_at_least_mine_presignatures<'a>(
         move || async move {
             let state_view: StateView = ctx
                 .http_client
-                .get(Url::parse(ctx.nodes.url(id)).unwrap().join("/state").unwrap())
+                .get(
+                    Url::parse(ctx.nodes.url(id))
+                        .unwrap()
+                        .join("/state")
+                        .unwrap(),
+                )
                 .send()
                 .await?
                 .json()

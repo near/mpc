@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use url::Url;
 use cait_sith::protocol::Participant;
 use tokio::sync::RwLock;
+use url::Url;
 
 use crate::protocol::contract::primitives::Participants;
 use crate::protocol::ProtocolState;
@@ -40,18 +40,30 @@ impl Pool {
         let mut status = self.status.write().await;
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
-            tracing::warn!("... participant {:?} url {}", participant, info.url);
             let Ok(Ok(url)) = Url::parse(&info.url).map(|url| url.join("/state")) else {
+                tracing::error!(
+                    "Pool.ping url is invalid participant {:?} url {} /state",
+                    participant,
+                    info.url
+                );
                 continue;
             };
 
-            let Ok(resp) = self.http.get(url).send().await else {
-                tracing::warn!(",,, resp not ok not adding {:?} {}/state", participant, info.url);
+            let Ok(resp) = self.http.get(url.clone()).send().await else {
+                tracing::warn!(
+                    "Pool.ping resp err participant {:?} url {}",
+                    participant,
+                    url
+                );
                 continue;
             };
 
             let Ok(state): Result<StateView, _> = resp.json().await else {
-                tracing::warn!(",,, state view not ok not adding {:?} {}/state", participant, info.url);
+                tracing::warn!(
+                    "Pool.ping state view err participant {:?} url {}",
+                    participant,
+                    url
+                );
                 continue;
             };
 
@@ -106,7 +118,6 @@ impl Pool {
                 self.set_participants(&participants).await;
             }
             ProtocolState::Running(contract_state) => {
-                tracing::warn!("--- running participants {:?}", contract_state.participants.keys_vec());
                 self.set_participants(&contract_state.participants).await;
             }
             ProtocolState::Resharing(contract_state) => {
@@ -116,15 +127,18 @@ impl Pool {
                     .await;
             }
         }
+        tracing::debug!(
+            "Pool.establish_participants set participants to {:?}",
+            self.connections.read().await.clone().keys_vec()
+        );
     }
 
     async fn set_participants(&self, participants: &Participants) {
         *self.connections.write().await = participants.clone();
-        tracing::warn!("--- set participants to {:?}", self.connections.read().await.keys_vec());
-    }
-
-    pub async fn get_participants(&self) -> Participants {
-        self.connections.read().await.clone()
+        tracing::debug!(
+            "Pool set participants to {:?}",
+            self.connections.read().await.keys_vec()
+        );
     }
 
     async fn set_potential_participants(&self, participants: &Participants) {

@@ -21,23 +21,36 @@ async fn test_multichain_reshare() -> anyhow::Result<()> {
     with_multichain_nodes(config.clone(), |mut ctx| {
         Box::pin(async move {
             let state = wait_for::running_mpc(&ctx, Some(0)).await?;
-            assert!(state.threshold == 2);
-            assert!(state.participants.len() == 3);
 
-            tracing::warn!("!!! adding new participant");
+            wait_for::has_at_least_triples(&ctx, 2).await?;
+            wait_for::has_at_least_presignatures(&ctx, 2).await?;
+            actions::single_signature_production(&ctx, &state).await?;
+
+            tracing::info!("!!! Add participant 3");
             assert!(ctx.add_participant().await.is_ok());
+            let state = wait_for::running_mpc(&ctx, None).await?;
+            wait_for::has_at_least_triples(&ctx, 2).await?;
+            wait_for::has_at_least_presignatures(&ctx, 2).await?;
+            actions::single_signature_production(&ctx, &state).await?;
 
+            tracing::info!("!!! Remove participant 0 and participant 2");
             let account_2 = near_workspaces::types::AccountId::from_str(
                 state.participants.keys().nth(2).unwrap().clone().as_ref(),
             )
-                .unwrap();
+            .unwrap();
             assert!(ctx.remove_participant(Some(&account_2)).await.is_ok());
-            let account_1 = near_workspaces::types::AccountId::from_str(
-                state.participants.keys().nth(1).unwrap().clone().as_ref(),
+            let account_0 = near_workspaces::types::AccountId::from_str(
+                state.participants.keys().next().unwrap().clone().as_ref(),
             )
-                .unwrap();
-            assert!(ctx.remove_participant(Some(&account_1)).await.is_ok());
+            .unwrap();
+            assert!(ctx.remove_participant(Some(&account_0)).await.is_ok());
+            let state = wait_for::running_mpc(&ctx, None).await?;
+            wait_for::has_at_least_triples(&ctx, 2).await?;
+            wait_for::has_at_least_presignatures(&ctx, 2).await?;
+            actions::single_signature_production(&ctx, &state).await?;
 
+            tracing::info!("!!! Add participant 5");
+            assert!(ctx.add_participant().await.is_ok());
             let state = wait_for::running_mpc(&ctx, None).await?;
             wait_for::has_at_least_triples(&ctx, 2).await?;
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
@@ -325,34 +338,6 @@ async fn test_multichain_reshare_with_lake_congestion() -> anyhow::Result<()> {
             wait_for::has_at_least_triples(&ctx, 2).await?;
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
             actions::single_payload_signature_production(&ctx, &new_state).await
-        })
-    })
-    .await
-}
-
-#[test(tokio::test)]
-async fn test_multichain_reshare_with_first_node_leave() -> anyhow::Result<()> {
-    let config = MultichainConfig::default();
-    with_multichain_nodes(config.clone(), |mut ctx| {
-        Box::pin(async move {
-            let state = wait_for::running_mpc(&ctx, Some(0)).await?;
-            assert!(state.threshold == 2);
-            assert!(state.participants.len() == 3);
-
-            let account_0 = near_workspaces::types::AccountId::from_str(
-                state.participants.keys().next().unwrap().clone().as_ref(),
-            )
-            .unwrap();
-            // two node vote to kick node 0
-            assert!(ctx.remove_participant(Some(&account_0)).await.is_ok());
-
-            // make sure signing works after reshare
-            let new_state = wait_for::running_mpc(&ctx, None).await?;
-            assert!(new_state.threshold == 2);
-            assert!(new_state.participants.len() == 2);
-            wait_for::has_at_least_triples(&ctx, 2).await?;
-            wait_for::has_at_least_presignatures(&ctx, 2).await?;
-            actions::single_signature_production(&ctx, &new_state).await
         })
     })
     .await

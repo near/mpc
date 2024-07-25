@@ -72,14 +72,16 @@ impl Mesh {
         self.connections
             .establish_participants(contract_state)
             .await;
-        tracing::warn!("''' Mesh.establish_participants {:?}", self.connections.get_participants().await.keys_vec());
         self.ping().await;
     }
 
     /// Ping the active participants such that we can see who is alive.
     pub async fn ping(&mut self) {
         self.active_participants = self.connections.ping().await;
-        tracing::warn!("''' Mesh.ping {:?}", self.active_participants.keys_vec());
+        tracing::debug!(
+            "Mesh.ping set active participants to {:?}",
+            self.active_participants.keys_vec()
+        );
         self.active_potential_participants = self.connections.ping_potential().await;
     }
 }
