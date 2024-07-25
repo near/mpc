@@ -1,11 +1,59 @@
 use borsh::{self, BorshDeserialize, BorshSerialize};
 
-use super::{Config, DynamicValue};
+use super::{Config, DynamicValue, PresignatureConfig, ProtocolConfig, TripleConfig};
+
+const MAX_EXPECTED_PARTICIPANTS: usize = 32;
+
+// The network multiplier is used to calculate the maximum amount of protocols in totality
+// that should be in the network.
+const NETWORK_MULTIPLIER: usize = 128;
 
 impl Config {
-    pub fn get(&self, key: &str) -> Option<&serde_json::Value> {
-        let value = self.entries.get(key)?;
-        Some(&value.0)
+    pub fn get(&self, key: &str) -> Option<serde_json::Value> {
+        match key {
+            "protocol" => Some(serde_json::to_value(self.protocol.clone()).unwrap()),
+            _ => {
+                let value = self.other.get(key)?;
+                Some(value.0.clone())
+            }
+        }
+    }
+}
+
+impl Default for ProtocolConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_introduction: 4,
+            max_concurrent_generation: 4 * MAX_EXPECTED_PARTICIPANTS,
+            triple: TripleConfig::default(),
+            presignature: PresignatureConfig::default(),
+
+            other: Default::default(),
+        }
+    }
+}
+
+impl Default for TripleConfig {
+    fn default() -> Self {
+        Self {
+            min_triples: 1024,
+            max_triples: 1024 * MAX_EXPECTED_PARTICIPANTS * NETWORK_MULTIPLIER,
+            generation_timeout: min_to_ms(20),
+
+            other: Default::default(),
+        }
+    }
+}
+
+impl Default for PresignatureConfig {
+    fn default() -> Self {
+        Self {
+            min_presignatures: 512,
+            max_presignatures: 512 * MAX_EXPECTED_PARTICIPANTS * NETWORK_MULTIPLIER,
+            generation_timeout: secs_to_ms(60),
+
+            other: Default::default(),
+        }
     }
 }
 

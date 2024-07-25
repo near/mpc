@@ -1,3 +1,4 @@
+use mpc_contract::config::ProtocolConfig;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -39,10 +40,10 @@ impl StuckMonitor {
     /// will report that the protocol is stuck.
     ///
     /// Returns `true` if the protocol is stuck.
-    pub async fn check(&mut self) -> bool {
+    pub async fn check(&mut self, cfg: &ProtocolConfig) -> bool {
         let triple_manager = self.triple_manager.read().await;
         let latest_triples: HashSet<_> = triple_manager.triples.keys().cloned().collect();
-        if triple_manager.has_min_triples() {
+        if triple_manager.has_min_triples(cfg) {
             drop(triple_manager);
             self.reset(latest_triples);
             return false;

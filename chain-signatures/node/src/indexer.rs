@@ -31,11 +31,7 @@ pub struct Options {
     pub s3_bucket: String,
 
     /// AWS S3 region name for NEAR Lake Indexer
-    #[clap(
-        long,
-        env("MPC_INDEXER_S3_REGION"),
-        default_value = "eu-central-1"
-    )]
+    #[clap(long, env("MPC_INDEXER_S3_REGION"), default_value = "eu-central-1")]
     pub s3_region: String,
 
     /// AWS S3 URL for NEAR Lake Indexer (can be used to point to LocalStack)

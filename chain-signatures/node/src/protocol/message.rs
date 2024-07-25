@@ -23,6 +23,7 @@ use tokio::sync::RwLock;
 pub trait MessageCtx {
     async fn me(&self) -> Participant;
     fn mesh(&self) -> &Mesh;
+    fn cfg(&self) -> &crate::config::Config;
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -230,6 +231,7 @@ impl MessageHandler for RunningState {
         ctx: C,
         queue: &mut MpcMessageQueue,
     ) -> Result<(), MessageHandleError> {
+        let protocol_cfg = &ctx.cfg().protocol;
         let participants = ctx.mesh().active_participants();
         let mut triple_manager = self.triple_manager.write().await;
 
@@ -253,7 +255,7 @@ impl MessageHandler for RunningState {
             !triple_manager.refresh_gc(id)
         });
         for (id, queue) in triple_messages {
-            let protocol = match triple_manager.get_or_generate(*id, participants) {
+            let protocol = match triple_manager.get_or_generate(*id, participants, protocol_cfg) {
                 Ok(protocol) => protocol,
                 Err(err) => {
                     // ignore the message since the generation had bad parameters. Also have the other node who

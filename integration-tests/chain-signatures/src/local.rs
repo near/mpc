@@ -77,12 +77,12 @@ impl Node {
             indexer_options,
             my_address: None,
             storage_options: ctx.storage_options.clone(),
-            min_triples: cfg.triple_cfg.min_triples,
-            max_triples: cfg.triple_cfg.max_triples,
-            max_concurrent_introduction: cfg.triple_cfg.max_concurrent_introduction,
-            max_concurrent_generation: cfg.triple_cfg.max_concurrent_generation,
-            min_presignatures: cfg.presig_cfg.min_presignatures,
-            max_presignatures: cfg.presig_cfg.max_presignatures,
+            // min_triples: cfg.triple_cfg.min_triples,
+            // max_triples: cfg.triple_cfg.max_triples,
+            // max_concurrent_introduction: cfg.triple_cfg.max_concurrent_introduction,
+            // max_concurrent_generation: cfg.triple_cfg.max_concurrent_generation,
+            // min_presignatures: cfg.presig_cfg.min_presignatures,
+            // max_presignatures: cfg.presig_cfg.max_presignatures,
         };
 
         let mpc_node_id = format!("multichain/{account_id}", account_id = account_id);
@@ -135,12 +135,12 @@ impl Node {
             indexer_options: indexer_options.clone(),
             my_address: None,
             storage_options: storage_options.clone(),
-            min_triples: cfg.triple_cfg.min_triples,
-            max_triples: cfg.triple_cfg.max_triples,
-            max_concurrent_introduction: cfg.triple_cfg.max_concurrent_introduction,
-            max_concurrent_generation: cfg.triple_cfg.max_concurrent_generation,
-            min_presignatures: cfg.presig_cfg.min_presignatures,
-            max_presignatures: cfg.presig_cfg.max_presignatures,
+            // min_triples: cfg.triple_cfg.min_triples,
+            // max_triples: cfg.triple_cfg.max_triples,
+            // max_concurrent_introduction: cfg.triple_cfg.max_concurrent_introduction,
+            // max_concurrent_generation: cfg.triple_cfg.max_concurrent_generation,
+            // min_presignatures: cfg.presig_cfg.min_presignatures,
+            // max_presignatures: cfg.presig_cfg.max_presignatures,
         };
 
         let mpc_node_id = format!("multichain/{account_id}", account_id = account_id);

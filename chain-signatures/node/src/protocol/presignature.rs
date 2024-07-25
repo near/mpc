@@ -1,5 +1,5 @@
 use super::message::PresignatureMessage;
-use super::triple::{Triple, TripleConfig, TripleId, TripleManager};
+use super::triple::{Triple, TripleId, TripleManager};
 use crate::protocol::contract::primitives::Participants;
 use crate::types::{PresignatureProtocol, SecretKeyShare, TAKEN_TIMEOUT};
 use crate::util::AffinePointExt;
@@ -9,6 +9,7 @@ use cait_sith::{KeygenOutput, PresignArguments, PresignOutput};
 use chrono::Utc;
 use crypto_shared::PublicKey;
 use k256::Secp256k1;
+use mpc_contract::config::ProtocolConfig;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Instant;
@@ -25,12 +26,6 @@ pub struct Presignature {
     pub id: PresignatureId,
     pub output: PresignOutput<Secp256k1>,
     pub participants: Vec<Participant>,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct PresignatureConfig {
-    pub min_presignatures: usize,
-    pub max_presignatures: usize,
 }
 
 /// An ongoing presignature generator.
@@ -117,17 +112,10 @@ pub struct PresignatureManager {
     threshold: usize,
     epoch: u64,
     my_account_id: AccountId,
-    presig_cfg: PresignatureConfig,
 }
 
 impl PresignatureManager {
-    pub fn new(
-        me: Participant,
-        threshold: usize,
-        epoch: u64,
-        my_account_id: &AccountId,
-        presig_cfg: &PresignatureConfig,
-    ) -> Self {
+    pub fn new(me: Participant, threshold: usize, epoch: u64, my_account_id: &AccountId) -> Self {
         Self {
             presignatures: HashMap::new(),
             generators: HashMap::new(),
@@ -138,7 +126,6 @@ impl PresignatureManager {
             threshold,
             epoch,
             my_account_id: my_account_id.clone(),
-            presig_cfg: *presig_cfg,
         }
     }
 
@@ -260,27 +247,18 @@ impl PresignatureManager {
         pk: &PublicKey,
         sk_share: &SecretKeyShare,
         triple_manager: &mut TripleManager,
+        cfg: &ProtocolConfig,
     ) -> Result<(), InitializationError> {
-        let PresignatureConfig {
-            min_presignatures,
-            max_presignatures,
-        } = self.presig_cfg;
-
-        let TripleConfig {
-            max_concurrent_introduction,
-            ..
-        } = triple_manager.triple_cfg;
-
         let not_enough_presignatures = {
             // Stopgap to prevent too many presignatures in the system. This should be around min_presig*nodes*2
             // for good measure so that we have enough presignatures to do sig generation while also maintain
             // the minimum number of presignature where a single node can't flood the system.
-            if self.potential_len() >= max_presignatures {
+            if self.potential_len() >= cfg.presignature.max_presignatures {
                 false
             } else {
                 // We will always try to generate a new triple if we have less than the minimum
-                self.my_len() < min_presignatures
-                    && self.introduced.len() < max_concurrent_introduction
+                self.my_len() < cfg.presignature.min_presignatures
+                    && self.introduced.len() < cfg.max_concurrent_introduction
             }
         };
 

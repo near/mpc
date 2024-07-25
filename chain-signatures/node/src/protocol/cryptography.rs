@@ -97,7 +97,7 @@ impl CryptographicProtocol for GeneratingState {
                         .await
                         .send_encrypted(
                             ctx.me().await,
-                            &ctx.cfg().network_cfg.sign_sk,
+                            &ctx.cfg().local.network.sign_sk,
                             ctx.http_client(),
                             ctx.mesh().active_participants(),
                         )
@@ -158,7 +158,7 @@ impl CryptographicProtocol for GeneratingState {
                         .await
                         .send_encrypted(
                             ctx.me().await,
-                            &ctx.cfg().network_cfg.sign_sk,
+                            &ctx.cfg().local.network.sign_sk,
                             ctx.http_client(),
                             ctx.mesh().active_participants(),
                         )
@@ -195,7 +195,7 @@ impl CryptographicProtocol for WaitingForConsensusState {
             .await
             .send_encrypted(
                 ctx.me().await,
-                &ctx.cfg().network_cfg.sign_sk,
+                &ctx.cfg().local.network.sign_sk,
                 ctx.http_client(),
                 ctx.mesh().active_participants(),
             )
@@ -250,7 +250,7 @@ impl CryptographicProtocol for ResharingState {
                         .await
                         .send_encrypted(
                             ctx.me().await,
-                            &ctx.cfg().network_cfg.sign_sk,
+                            &ctx.cfg().local.network.sign_sk,
                             ctx.http_client(),
                             &active,
                         )
@@ -317,7 +317,7 @@ impl CryptographicProtocol for ResharingState {
                         .await
                         .send_encrypted(
                             ctx.me().await,
-                            &ctx.cfg().network_cfg.sign_sk,
+                            &ctx.cfg().local.network.sign_sk,
                             ctx.http_client(),
                             &active,
                         )
@@ -351,6 +351,7 @@ impl CryptographicProtocol for RunningState {
         mut self,
         ctx: C,
     ) -> Result<NodeState, CryptographicError> {
+        let protocol_cfg = &ctx.cfg().protocol;
         let active = ctx.mesh().active_participants();
         if active.len() < self.threshold {
             tracing::info!(
@@ -366,10 +367,10 @@ impl CryptographicProtocol for RunningState {
         crate::metrics::MESSAGE_QUEUE_SIZE
             .with_label_values(&[my_account_id.as_str()])
             .set(messages.len() as i64);
-        if let Err(err) = triple_manager.stockpile(active) {
+        if let Err(err) = triple_manager.stockpile(active, protocol_cfg) {
             tracing::warn!(?err, "running: failed to stockpile triples");
         }
-        for (p, msg) in triple_manager.poke().await {
+        for (p, msg) in triple_manager.poke(protocol_cfg).await {
             let info = self.fetch_participant(&p)?;
             messages.push(info.clone(), MpcMessage::Triple(msg));
         }
@@ -394,6 +395,7 @@ impl CryptographicProtocol for RunningState {
                 &self.public_key,
                 &self.private_share,
                 &mut triple_manager,
+                protocol_cfg,
             )
             .await
         {
@@ -456,7 +458,7 @@ impl CryptographicProtocol for RunningState {
         let failures = messages
             .send_encrypted(
                 ctx.me().await,
-                &ctx.cfg().network_cfg.sign_sk,
+                &ctx.cfg().local.network.sign_sk,
                 ctx.http_client(),
                 active,
             )
@@ -469,7 +471,7 @@ impl CryptographicProtocol for RunningState {
         }
         drop(messages);
 
-        self.stuck_monitor.write().await.check().await;
+        self.stuck_monitor.write().await.check(protocol_cfg).await;
         Ok(NodeState::Running(self))
     }
 }

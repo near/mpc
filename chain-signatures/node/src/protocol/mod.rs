@@ -21,9 +21,8 @@ pub use state::NodeState;
 use self::consensus::ConsensusCtx;
 use self::cryptography::CryptographicCtx;
 use self::message::MessageCtx;
-use self::presignature::PresignatureConfig;
-use self::triple::TripleConfig;
-use crate::mesh::{Mesh, NetworkConfig};
+use crate::config::Config;
+use crate::mesh::Mesh;
 use crate::protocol::consensus::ConsensusProtocol;
 use crate::protocol::cryptography::CryptographicProtocol;
 use crate::protocol::message::{MessageHandler, MpcMessageQueue};
@@ -40,13 +39,6 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc::{self, error::TryRecvError};
 use tokio::sync::RwLock;
 use url::Url;
-
-#[derive(Clone, Debug)]
-pub struct Config {
-    pub triple_cfg: TripleConfig,
-    pub presig_cfg: PresignatureConfig,
-    pub network_cfg: NetworkConfig,
-}
 
 struct Ctx {
     my_address: Url,
@@ -148,6 +140,10 @@ impl MessageCtx for &MpcSignProtocol {
     fn mesh(&self) -> &Mesh {
         &self.ctx.mesh
     }
+
+    fn cfg(&self) -> &Config {
+        &self.ctx.cfg
+    }
 }
 
 pub struct MpcSignProtocol {
@@ -240,6 +236,22 @@ impl MpcSignProtocol {
                     }
                 };
                 tracing::debug!(?contract_state);
+
+                // Sets the latest configurations from the contract:
+                self.ctx.cfg = match rpc_client::fetch_mpc_config(
+                    &self.ctx.rpc_client,
+                    &self.ctx.mpc_contract_id,
+                    &self.ctx.cfg,
+                )
+                .await
+                {
+                    Ok(config) => config,
+                    Err(e) => {
+                        tracing::error!("could not fetch contract's config: {e}");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        continue;
+                    }
+                };
 
                 // Establish the participants for this current iteration of the protocol loop. This will
                 // set which participants are currently active in the protocol and determines who will be
