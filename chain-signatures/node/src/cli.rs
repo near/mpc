@@ -70,20 +70,12 @@ pub enum Cli {
 
         /// At maximum, how many triple protocols can this current node introduce
         /// at the same time. This should be something like `max_concurrent_gen / num_nodes`
-        #[arg(
-            long,
-            env("MPC_MAX_CONCURRENT_INTRODUCTION"),
-            default_value("2")
-        )]
+        #[arg(long, env("MPC_MAX_CONCURRENT_INTRODUCTION"), default_value("2"))]
         max_concurrent_introduction: usize,
 
         /// At maximum, how many ongoing protocols for triples to be running
         /// at the same time. The rest will be queued up.
-        #[arg(
-            long,
-            env("MPC_MAX_CONCURRENT_GENERATION"),
-            default_value("16")
-        )]
+        #[arg(long, env("MPC_MAX_CONCURRENT_GENERATION"), default_value("16"))]
         max_concurrent_generation: usize,
 
         /// At minimum, how many presignatures to stockpile on this node.
