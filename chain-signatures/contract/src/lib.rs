@@ -101,7 +101,7 @@ impl MpcContract {
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
             proposed_updates: ProposedUpdates::default(),
-            config: config.unwrap_or_else(Config::default),
+            config: config.unwrap_or_default(),
         }
     }
 }
@@ -642,7 +642,7 @@ impl VersionedMpcContract {
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
             proposed_updates: ProposedUpdates::default(),
-            config: config.unwrap_or_else(Config::default),
+            config: config.unwrap_or_default(),
         }))
     }
 
