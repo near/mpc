@@ -13,8 +13,8 @@ use k256::Scalar;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
 use near_sdk::{
-    env, log, near_bindgen, AccountId, CryptoHash, Gas, GasWeight, NearToken, PromiseError,
-    PublicKey,
+    env, log, near_bindgen, AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise,
+    PromiseError, PublicKey,
 };
 use primitives::{
     CandidateInfo, Candidates, Participants, PkVotes, SignRequest, SignaturePromiseError,
@@ -109,7 +109,6 @@ impl VersionedMpcContract {
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each signature request.
     /// The fee changes based on how busy the network is.
-    #[allow(unused_variables)]
     #[handle_result]
     #[payable]
     pub fn sign(&mut self, request: SignRequest) -> Result<near_sdk::Promise, MpcContractError> {
@@ -501,12 +500,15 @@ impl VersionedMpcContract {
                     Ok(true)
                 } else {
                     Err(MpcContractError::VoteError(
-                        VoteError::UnexpectedProtocolState("Running".to_string()),
+                        VoteError::UnexpectedProtocolState("Running: invalid epoch".to_string()),
                     ))
                 }
             }
-            _ => Err(MpcContractError::VoteError(
-                VoteError::UnexpectedProtocolState("Running".to_string()),
+            ProtocolContractState::NotInitialized => Err(MpcContractError::VoteError(
+                VoteError::UnexpectedProtocolState("NotInitialized".to_string()),
+            )),
+            ProtocolContractState::Initializing(_) => Err(MpcContractError::VoteError(
+                VoteError::UnexpectedProtocolState("Initializing".to_string()),
             )),
         }
     }
@@ -514,45 +516,52 @@ impl VersionedMpcContract {
     /// Propose an update to the contract. [`Update`] are all the possible updates that can be proposed.
     ///
     /// returns Some(id) if the proposal was successful, None otherwise
+    #[payable]
     #[handle_result]
     pub fn propose_update(
         &mut self,
         code: Option<Vec<u8>>,
         config: Option<Config>,
-    ) -> Result<UpdateId, VoteError> {
+    ) -> Result<UpdateId, MpcContractError> {
         // Only voters can propose updates:
-        self.voter()?;
+        let proposer = self.voter()?;
+
+        let attached = env::attached_deposit();
+        let required = ProposedUpdates::required_deposit(&code, &config);
+        if attached < required {
+            return Err(MpcContractError::from(VoteError::InsufficientDeposit(
+                attached.as_yoctonear(),
+                required.as_yoctonear(),
+            )));
+        }
 
         let Some(id) = self.proposed_updates().propose(code, config) else {
-            return Err(VoteError::Unexpected(
+            return Err(MpcContractError::from(VoteError::Unexpected(
                 "cannot propose update due to incorrect parameters".into(),
-            ));
+            )));
         };
 
-        env::log_str(&format!("id={id:?}"));
+        // Refund the difference if the propser attached more than required.
+        if let Some(diff) = attached.checked_sub(required) {
+            if diff > NearToken::from_yoctonear(0) {
+                Promise::new(proposer).transfer(diff);
+            }
+        }
+
         Ok(id)
     }
 
     /// Vote for a proposed update given the [`UpdateId`] of the update.
     ///
-    /// Returns Ok(true) if the amount of participants surpassed the threshold and the update was executed.
+    /// Returns Ok(true) if the amount of voters surpassed the threshold and the update was executed.
+    /// Returns Ok(false) if the amount of voters did not surpass the threshold. Returns Err if the update
+    /// was not found or if the voter is not a participant in the protocol.
     #[handle_result]
     pub fn vote_update(&mut self, id: UpdateId) -> Result<bool, MpcContractError> {
-        let threshold = match self {
-            Self::V0(contract) => match &contract.protocol_state {
-                ProtocolContractState::Running(state) => state.threshold,
-                ProtocolContractState::Resharing(state) => state.threshold,
-                _ => {
-                    return Err(MpcContractError::VoteError(
-                        VoteError::UnexpectedProtocolState("Initialized or NotInitialized".into()),
-                    ))
-                }
-            },
-        };
-
+        let threshold = self.threshold()?;
         let voter = self.voter()?;
         let Some(votes) = self.proposed_updates().vote(&id, voter) else {
-            return Err(MpcContractError::VoteError(VoteError::UpdateNotFound));
+            return Err(MpcContractError::from(VoteError::UpdateNotFound));
         };
 
         // Not enough votes, wait for more.
@@ -560,11 +569,8 @@ impl VersionedMpcContract {
             return Ok(false);
         }
 
-        let Some(_promise) =
-            self.proposed_updates()
-                .do_update(&id, "update_config", UPDATE_CONFIG_GAS)
-        else {
-            return Err(MpcContractError::VoteError(VoteError::UpdateNotFound));
+        let Some(_promise) = self.proposed_updates().do_update(&id, UPDATE_CONFIG_GAS) else {
+            return Err(MpcContractError::from(VoteError::UpdateNotFound));
         };
 
         Ok(true)
@@ -632,6 +638,22 @@ impl VersionedMpcContract {
             proposed_updates: ProposedUpdates::default(),
             config: Config::default(),
         }))
+    }
+
+    /// This will be called internally by the contract to migrate the state when a new contract
+    /// is deployed. This function should be changed every time state is changed to do the proper
+    /// migrate flow.
+    ///
+    /// If nothing is changed, then this function will just return the current state. If it fails
+    /// to read the state, then it will return an error.
+    #[private]
+    #[init(ignore_state)]
+    #[handle_result]
+    pub fn migrate() -> Result<Self, MpcContractError> {
+        let old: MpcContract = env::state_read().ok_or(MpcContractError::InitError(
+            InitError::ContractStateIsMissing,
+        ))?;
+        Ok(VersionedMpcContract::V0(old))
     }
 
     pub fn state(&self) -> &ProtocolContractState {
@@ -772,12 +794,27 @@ impl VersionedMpcContract {
         }
     }
 
+    fn threshold(&self) -> Result<usize, VoteError> {
+        match self {
+            Self::V0(contract) => match &contract.protocol_state {
+                ProtocolContractState::Initializing(state) => Ok(state.threshold),
+                ProtocolContractState::Running(state) => Ok(state.threshold),
+                ProtocolContractState::Resharing(state) => Ok(state.threshold),
+                ProtocolContractState::NotInitialized => {
+                    Err(VoteError::UnexpectedProtocolState("NotInitialized".into()))
+                }
+            },
+        }
+    }
+
     fn proposed_updates(&mut self) -> &mut ProposedUpdates {
         match self {
             Self::V0(contract) => &mut contract.proposed_updates,
         }
     }
 
+    /// Get our own account id as a voter. Check to see if we are a participant in the protocol.
+    /// If we are not a participant, return an error.
     fn voter(&self) -> Result<AccountId, VoteError> {
         let voter = env::signer_account_id();
         match self {

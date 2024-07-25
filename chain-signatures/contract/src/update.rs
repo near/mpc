@@ -10,6 +10,7 @@ use near_sdk::{env, AccountId, Gas, NearToken, Promise};
 #[derive(
     Copy,
     Clone,
+    Default,
     Debug,
     BorshDeserialize,
     BorshSerialize,
@@ -23,6 +24,14 @@ use near_sdk::{env, AccountId, Gas, NearToken, Promise};
 )]
 pub struct UpdateId(pub(crate) u64);
 
+impl UpdateId {
+    pub fn generate(&mut self) -> Self {
+        let id = self.0;
+        self.0 += 1;
+        Self(id)
+    }
+}
+
 impl From<u64> for UpdateId {
     fn from(id: u64) -> Self {
         Self(id)
@@ -35,18 +44,29 @@ pub enum Update {
     Contract(Vec<u8>),
 }
 
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct UpdateEntry {
+    updates: Vec<Update>,
+    votes: HashSet<AccountId>,
+    bytes_used: u128,
+}
+
 #[derive(Default, Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposedUpdates {
-    updates: HashMap<UpdateId, Vec<Update>>,
-    votes: HashMap<UpdateId, HashSet<AccountId>>,
-    next_id: u64,
+    entries: HashMap<UpdateId, UpdateEntry>,
+    id: UpdateId,
 }
 
 impl ProposedUpdates {
+    pub fn required_deposit(code: &Option<Vec<u8>>, config: &Option<Config>) -> NearToken {
+        required_deposit(bytes_used(code, config))
+    }
+
     /// Propose an update given the new contract code and/or config.
     ///
     /// Returns Some(UpdateId) if the update was successfully proposed, otherwise None.
     pub fn propose(&mut self, code: Option<Vec<u8>>, config: Option<Config>) -> Option<UpdateId> {
+        let bytes_used = bytes_used(&code, &config);
         let updates = match (code, config) {
             (Some(contract), Some(config)) => {
                 vec![Update::Contract(contract), Update::Config(config)]
@@ -56,11 +76,15 @@ impl ProposedUpdates {
             (None, None) => return None,
         };
 
-        let id = UpdateId::from(self.next_id);
-        self.next_id += 1;
-
-        self.updates.insert(id, updates);
-        self.votes.insert(id, HashSet::new());
+        let id = self.id.generate();
+        self.entries.insert(
+            id,
+            UpdateEntry {
+                updates,
+                votes: HashSet::new(),
+                bytes_used,
+            },
+        );
 
         Some(id)
     }
@@ -69,33 +93,60 @@ impl ProposedUpdates {
     ///
     /// Returns Some(votes) if the given [`UpdateId`] exists, otherwise None.
     pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<&HashSet<AccountId>> {
-        let votes = self.votes.get_mut(id)?;
-        votes.insert(voter);
-        Some(votes)
+        let entry = self.entries.get_mut(id)?;
+        entry.votes.insert(voter);
+        Some(&entry.votes)
     }
 
-    pub fn remove(&mut self, id: &UpdateId) -> Option<Vec<Update>> {
-        self.votes.remove(id);
-        self.updates.remove(id)
+    fn remove(&mut self, id: &UpdateId) -> Option<UpdateEntry> {
+        self.entries.remove(id)
     }
 
-    pub fn do_update(&mut self, id: &UpdateId, config_callback: &str, gas: Gas) -> Option<Promise> {
-        let updates = self.remove(id)?;
+    pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
+        let entry = self.remove(id)?;
 
         let mut promise = Promise::new(env::current_account_id());
-        for update in updates {
+        for update in entry.updates {
             match update {
                 Update::Config(config) => {
                     promise = promise.function_call(
-                        config_callback.into(),
+                        "update_config".into(),
                         serde_json::to_vec(&(&config,)).unwrap(),
                         NearToken::from_near(0),
                         gas,
                     );
                 }
-                Update::Contract(code) => promise = promise.deploy_contract(code),
+                Update::Contract(code) => {
+                    // deploy contract then do a `migrate` call to migrate state.
+                    promise = promise.deploy_contract(code).function_call(
+                        "migrate".into(),
+                        Vec::new(),
+                        NearToken::from_near(0),
+                        gas,
+                    );
+                }
             }
         }
         Some(promise)
     }
+}
+
+fn bytes_used(code: &Option<Vec<u8>>, config: &Option<Config>) -> u128 {
+    let mut bytes_used = std::mem::size_of::<UpdateEntry>() as u128;
+
+    // Assume a high max of 128 participant votes per update entry.
+    bytes_used += 128 * std::mem::size_of::<AccountId>() as u128;
+
+    if let Some(config) = config {
+        let bytes = serde_json::to_vec(&config).unwrap();
+        bytes_used += bytes.len() as u128;
+    }
+    if let Some(code) = code {
+        bytes_used += code.len() as u128;
+    }
+    bytes_used
+}
+
+fn required_deposit(bytes_used: u128) -> NearToken {
+    env::storage_byte_cost().saturating_mul(bytes_used)
 }

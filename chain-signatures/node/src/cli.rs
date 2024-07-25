@@ -22,76 +22,68 @@ pub enum Cli {
         /// NEAR RPC address
         #[arg(
             long,
-            env("MPC_RECOVERY_NEAR_RPC"),
+            env("MPC_NEAR_RPC"),
             default_value("https://rpc.testnet.near.org")
         )]
         near_rpc: String,
         /// MPC contract id
         #[arg(
             long,
-            env("MPC_RECOVERY_CONTRACT_ID"),
+            env("MPC_CONTRACT_ID"),
             default_value("v5.multichain-mpc-dev.testnet")
         )]
         mpc_contract_id: AccountId,
         /// This node's account id
-        #[arg(long, env("MPC_RECOVERY_ACCOUNT_ID"))]
+        #[arg(long, env("MPC_ACCOUNT_ID"))]
         account_id: AccountId,
         /// This node's account ed25519 secret key
-        #[arg(long, env("MPC_RECOVERY_ACCOUNT_SK"))]
+        #[arg(long, env("MPC_ACCOUNT_SK"))]
         account_sk: SecretKey,
         /// The web port for this server
-        #[arg(long, env("MPC_RECOVERY_WEB_PORT"))]
+        #[arg(long, env("MPC_WEB_PORT"))]
         web_port: u16,
         // TODO: need to add in CipherPK type for parsing.
         /// The cipher public key used to encrypt messages between nodes.
-        #[arg(long, env("MPC_RECOVERY_CIPHER_PK"))]
+        #[arg(long, env("MPC_CIPHER_PK"))]
         cipher_pk: String,
         /// The cipher secret key used to decrypt messages between nodes.
-        #[arg(long, env("MPC_RECOVERY_CIPHER_SK"))]
+        #[arg(long, env("MPC_CIPHER_SK"))]
         cipher_sk: String,
         /// The secret key used to sign messages to be sent between nodes.
-        #[arg(long, env("MPC_RECOVERY_SIGN_SK"))]
+        #[arg(long, env("MPC_SIGN_SK"))]
         sign_sk: Option<SecretKey>,
         /// NEAR Lake Indexer options
         #[clap(flatten)]
         indexer_options: indexer::Options,
         /// Local address that other peers can use to message this node.
-        #[arg(long, env("MPC_RECOVERY_LOCAL_ADDRESS"))]
+        #[arg(long, env("MPC_LOCAL_ADDRESS"))]
         my_address: Option<Url>,
         /// Storage options
         #[clap(flatten)]
         storage_options: storage::Options,
         /// At minimum, how many triples to stockpile on this node.
-        #[arg(long, env("MPC_RECOVERY_MIN_TRIPLES"), default_value("20"))]
+        #[arg(long, env("MPC_MIN_TRIPLES"), default_value("20"))]
         min_triples: usize,
         /// At maximum, how many triples to stockpile on this node.
-        #[arg(long, env("MPC_RECOVERY_MAX_TRIPLES"), default_value("640"))]
+        #[arg(long, env("MPC_MAX_TRIPLES"), default_value("640"))]
         max_triples: usize,
 
         /// At maximum, how many triple protocols can this current node introduce
         /// at the same time. This should be something like `max_concurrent_gen / num_nodes`
-        #[arg(
-            long,
-            env("MPC_RECOVERY_MAX_CONCURRENT_INTRODUCTION"),
-            default_value("2")
-        )]
+        #[arg(long, env("MPC_MAX_CONCURRENT_INTRODUCTION"), default_value("2"))]
         max_concurrent_introduction: usize,
 
         /// At maximum, how many ongoing protocols for triples to be running
         /// at the same time. The rest will be queued up.
-        #[arg(
-            long,
-            env("MPC_RECOVERY_MAX_CONCURRENT_GENERATION"),
-            default_value("16")
-        )]
+        #[arg(long, env("MPC_MAX_CONCURRENT_GENERATION"), default_value("16"))]
         max_concurrent_generation: usize,
 
         /// At minimum, how many presignatures to stockpile on this node.
-        #[arg(long, env("MPC_RECOVERY_MIN_PRESIGNATURES"), default_value("10"))]
+        #[arg(long, env("MPC_MIN_PRESIGNATURES"), default_value("10"))]
         min_presignatures: usize,
 
         /// At maximum, how many presignatures to stockpile on the network.
-        #[arg(long, env("MPC_RECOVERY_MAX_PRESIGNATURES"), default_value("320"))]
+        #[arg(long, env("MPC_MAX_PRESIGNATURES"), default_value("320"))]
         max_presignatures: usize,
     },
 }

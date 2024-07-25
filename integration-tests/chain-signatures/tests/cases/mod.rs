@@ -7,10 +7,10 @@ use crypto_shared::{self, derive_epsilon, derive_key, x_coordinate, ScalarExt};
 use integration_tests_chain_signatures::containers::{self, DockerClient};
 use integration_tests_chain_signatures::MultichainConfig;
 use k256::elliptic_curve::point::AffineCoordinates;
-use mpc_recovery_node::kdf::into_eth_sig;
-use mpc_recovery_node::test_utils;
-use mpc_recovery_node::types::LatestBlockHeight;
-use mpc_recovery_node::util::NearPublicKeyExt;
+use mpc_node::kdf::into_eth_sig;
+use mpc_node::test_utils;
+use mpc_node::types::LatestBlockHeight;
+use mpc_node::util::NearPublicKeyExt;
 use test_log::test;
 
 pub mod nightly;

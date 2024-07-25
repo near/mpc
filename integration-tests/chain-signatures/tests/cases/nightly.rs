@@ -1,6 +1,6 @@
 use integration_tests_chain_signatures::MultichainConfig;
-use mpc_recovery_node::protocol::presignature::PresignatureConfig;
-use mpc_recovery_node::protocol::triple::TripleConfig;
+use mpc_node::protocol::presignature::PresignatureConfig;
+use mpc_node::protocol::triple::TripleConfig;
 use test_log::test;
 
 use crate::actions::{self, wait_for};

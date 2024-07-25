@@ -50,6 +50,8 @@ pub enum PublicKeyError {
 pub enum InitError {
     #[error("Threshold cannot be greater than the number of candidates")]
     ThresholdTooHigh,
+    #[error("Cannot load in contract due to missing state")]
+    ContractStateIsMissing,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -68,6 +70,8 @@ pub enum VoteError {
     ParticipantsBelowThreshold,
     #[error("Update not found.")]
     UpdateNotFound,
+    #[error("Attached deposit is lower than required. Attached: {0}, Required: {1}.")]
+    InsufficientDeposit(u128, u128),
     #[error("Unexpected protocol state: {0}")]
     UnexpectedProtocolState(String),
     #[error("Unexpected: {0}")]

@@ -17,7 +17,7 @@ use mpc_contract::errors;
 use mpc_contract::primitives::SignRequest;
 use mpc_contract::primitives::SignatureRequest;
 use mpc_contract::RunningContractState;
-use mpc_recovery_node::kdf::into_eth_sig;
+use mpc_node::kdf::into_eth_sig;
 use near_crypto::InMemorySigner;
 use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest;
 use near_lake_primitives::CryptoHash;

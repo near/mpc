@@ -6,19 +6,19 @@ pub mod triple_storage;
 #[group(id = "storage_options")]
 pub struct Options {
     /// env used to suffix datastore table names to differentiate among environments.
-    #[clap(long, env("MPC_RECOVERY_ENV"))]
+    #[clap(long, env("MPC_ENV"))]
     pub env: String,
     /// GCP project ID.
-    #[clap(long, env("MPC_RECOVERY_GCP_PROJECT_ID"))]
+    #[clap(long, env("MPC_GCP_PROJECT_ID"))]
     pub gcp_project_id: String,
     /// GCP Secret Manager ID that will be used to load/store the node's secret key share.
-    #[clap(long, env("MPC_RECOVERY_SK_SHARE_SECRET_ID"), requires_all=["gcp_project_id"])]
+    #[clap(long, env("MPC_SK_SHARE_SECRET_ID"), requires_all=["gcp_project_id"])]
     pub sk_share_secret_id: Option<String>,
     /// Mostly for integration tests.
     /// GCP Datastore URL that will be used to load/store the node's triples and presignatures.
-    #[arg(long, env("MPC_RECOVERY_GCP_DATASTORE_URL"))]
+    #[arg(long, env("MPC_GCP_DATASTORE_URL"))]
     pub gcp_datastore_url: Option<String>,
-    #[arg(long, env("MPC_RECOVERY_SK_SHARE_LOCAL_PATH"))]
+    #[arg(long, env("MPC_SK_SHARE_LOCAL_PATH"))]
     pub sk_share_local_path: Option<String>,
 }
 
