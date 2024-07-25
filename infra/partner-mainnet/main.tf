@@ -210,7 +210,12 @@ resource "google_compute_backend_service" "multichain_backend" {
   count                 = length(var.node_configs)
   name                  = "multichain-partner-mainnet-backend-service-${count.index}"
   load_balancing_scheme = "EXTERNAL"
+  
 
+  log_config {
+    enable = true
+    sample_rate = 0.5
+  }
   backend {
     group = google_compute_instance_group.multichain_group[count.index].id
   }
