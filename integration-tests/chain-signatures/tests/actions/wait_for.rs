@@ -11,7 +11,7 @@ use crypto_shared::SignatureResponse;
 use k256::Secp256k1;
 use mpc_contract::ProtocolContractState;
 use mpc_contract::RunningContractState;
-use mpc_recovery_node::web::StateView;
+use mpc_node::web::StateView;
 use near_jsonrpc_client::methods::tx::RpcTransactionStatusRequest;
 use near_jsonrpc_client::methods::tx::TransactionInfo;
 use near_lake_primitives::CryptoHash;

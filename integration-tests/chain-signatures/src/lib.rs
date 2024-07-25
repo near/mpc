@@ -13,11 +13,11 @@ use anyhow::Context as _;
 use bollard::exec::{CreateExecOptions, StartExecResults};
 use futures::StreamExt;
 use mpc_contract::primitives::CandidateInfo;
-use mpc_recovery_node::gcp::GcpService;
-use mpc_recovery_node::protocol::presignature::PresignatureConfig;
-use mpc_recovery_node::protocol::triple::TripleConfig;
-use mpc_recovery_node::storage;
-use mpc_recovery_node::storage::triple_storage::TripleNodeStorageBox;
+use mpc_node::gcp::GcpService;
+use mpc_node::protocol::presignature::PresignatureConfig;
+use mpc_node::protocol::triple::TripleConfig;
+use mpc_node::storage;
+use mpc_node::storage::triple_storage::TripleNodeStorageBox;
 use near_crypto::KeyFile;
 use near_workspaces::network::{Sandbox, ValidatorKey};
 use near_workspaces::types::SecretKey;
@@ -278,7 +278,7 @@ pub async fn setup(docker_client: &DockerClient) -> anyhow::Result<Context<'_>> 
         crate::containers::Datastore::run(docker_client, docker_network, gcp_project_id).await?;
 
     let sk_share_local_path = "multichain-integration-secret-manager".to_string();
-    let storage_options = mpc_recovery_node::storage::Options {
+    let storage_options = mpc_node::storage::Options {
         env: "local-test".to_string(),
         gcp_project_id: "multichain-integration".to_string(),
         sk_share_secret_id: None,
