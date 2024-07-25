@@ -27,7 +27,12 @@ pub struct Config {
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct ProtocolConfig {
     /// Message timeout in milliseconds for any protocol message that gets sent over the wire.
+    /// This can be overriden by more specific timeouts in each protocol.
     pub message_timeout: u64,
+    /// Garbage collection timeout in milliseconds for any protocol message. This is the timeout
+    /// used for when any protocols have either been spent or failed, their IDs are kept to keep
+    /// track of the state of the protocol until this timeout reaches.
+    pub garbage_timeout: u64,
     /// Maximum amount of concurrent protocol generation that can be introduced by this node.
     /// This only includes protocols that generate triples and presignatures.
     pub max_concurrent_introduction: usize,

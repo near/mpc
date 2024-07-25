@@ -466,9 +466,9 @@ impl MessageHandler for RunningState {
                 protocol.message(message.from, message.data);
             }
         }
-        triple_manager.garbage_collect();
-        presignature_manager.garbage_collect();
-        signature_manager.garbage_collect();
+        triple_manager.garbage_collect(protocol_cfg);
+        presignature_manager.garbage_collect(protocol_cfg);
+        signature_manager.garbage_collect(protocol_cfg);
         Ok(())
     }
 }

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use cait_sith::protocol::{InitializationError, Participant};
 use cait_sith::triples::TripleGenerationOutput;
@@ -15,12 +14,6 @@ use crate::gcp::{DatastoreResult, GcpService, KeyKind};
 use crate::protocol::contract::ResharingContractState;
 
 use near_account_id::AccountId;
-
-/// Default invalidation time for failed triples: 2 hrs
-pub const FAILED_TRIPLES_TIMEOUT: Duration = Duration::from_secs(120 * 60);
-
-/// Default invalidation time for taken triples and presignatures: 2 hrs
-pub const TAKEN_TIMEOUT: Duration = Duration::from_secs(120 * 60);
 
 pub type SecretKeyShare = <Secp256k1 as CurveArithmetic>::Scalar;
 pub type TripleProtocol =

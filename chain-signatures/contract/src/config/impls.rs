@@ -26,6 +26,7 @@ impl Default for ProtocolConfig {
     fn default() -> Self {
         Self {
             message_timeout: min_to_ms(5),
+            garbage_timeout: hours_to_ms(2),
             max_concurrent_introduction: 4,
             max_concurrent_generation: 4 * MAX_EXPECTED_PARTICIPANTS,
             triple: TripleConfig::default(),
@@ -99,4 +100,8 @@ pub const fn secs_to_ms(secs: u64) -> u64 {
 
 pub const fn min_to_ms(min: u64) -> u64 {
     min * 60 * 1000
+}
+
+pub const fn hours_to_ms(hours: u64) -> u64 {
+    hours * 60 * 60 * 1000
 }

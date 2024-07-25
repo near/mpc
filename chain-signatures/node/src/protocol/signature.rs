@@ -25,9 +25,6 @@ use near_account_id::AccountId;
 use near_fetch::signer::SignerExt;
 use near_primitives::hash::CryptoHash;
 
-/// Duration for which completed signatures are retained.
-pub const COMPLETION_EXISTENCE_TIMEOUT: Duration = Duration::from_secs(120 * 60);
-
 pub struct SignRequest {
     pub receipt_id: CryptoHash,
     pub request: ContractSignRequest,
@@ -660,8 +657,9 @@ impl SignatureManager {
     }
 
     /// Garbage collect all the completed signatures.
-    pub fn garbage_collect(&mut self) {
-        self.completed
-            .retain(|_, timestamp| timestamp.elapsed() < COMPLETION_EXISTENCE_TIMEOUT);
+    pub fn garbage_collect(&mut self, cfg: &ProtocolConfig) {
+        self.completed.retain(|_, timestamp| {
+            timestamp.elapsed() < Duration::from_millis(cfg.garbage_timeout)
+        });
     }
 }

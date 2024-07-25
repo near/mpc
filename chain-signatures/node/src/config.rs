@@ -21,7 +21,7 @@ impl Config {
 
         // We should also override are default initalized config if our overrides are present:
         if let Some(map) = local.over.entries.as_object() {
-            if map.len() > 0 {
+            if !map.is_empty() {
                 let mut base = serde_json::to_value(protocol).unwrap();
                 merge(&mut base, &local.over.entries);
                 protocol = serde_json::from_value(base).unwrap();

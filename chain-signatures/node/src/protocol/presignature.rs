@@ -1,7 +1,7 @@
 use super::message::PresignatureMessage;
 use super::triple::{Triple, TripleId, TripleManager};
 use crate::protocol::contract::primitives::Participants;
-use crate::types::{PresignatureProtocol, SecretKeyShare, TAKEN_TIMEOUT};
+use crate::types::{PresignatureProtocol, SecretKeyShare};
 use crate::util::AffinePointExt;
 
 use cait_sith::protocol::{Action, InitializationError, Participant, ProtocolError};
@@ -153,9 +153,9 @@ impl PresignatureManager {
         self.len() == 0
     }
 
-    pub fn garbage_collect(&mut self) {
+    pub fn garbage_collect(&mut self, cfg: &ProtocolConfig) {
         self.gc
-            .retain(|_, instant| instant.elapsed() < TAKEN_TIMEOUT);
+            .retain(|_, instant| instant.elapsed() < Duration::from_millis(cfg.garbage_timeout));
     }
 
     pub fn refresh_gc(&mut self, id: &PresignatureId) -> bool {

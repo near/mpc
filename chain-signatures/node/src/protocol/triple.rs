@@ -5,7 +5,6 @@ use super::presignature::GenerationError;
 use crate::gcp::error;
 use crate::storage::triple_storage::{LockTripleNodeStorageBox, TripleData};
 use crate::types::TripleProtocol;
-use crate::types::TAKEN_TIMEOUT;
 use crate::util::AffinePointExt;
 
 use cait_sith::protocol::{Action, InitializationError, Participant, ProtocolError};
@@ -190,9 +189,10 @@ impl TripleManager {
     }
 
     /// Clears an entry from failed triples if that triple protocol was created more than 2 hrs ago
-    pub fn garbage_collect(&mut self) {
-        self.gc
-            .retain(|_, timestamp| timestamp.elapsed() < TAKEN_TIMEOUT)
+    pub fn garbage_collect(&mut self, cfg: &ProtocolConfig) {
+        self.gc.retain(|_, timestamp| {
+            timestamp.elapsed() < Duration::from_millis(cfg.garbage_timeout)
+        });
     }
 
     /// Refresh item in the garbage collection. If it is present, return true and update internally
