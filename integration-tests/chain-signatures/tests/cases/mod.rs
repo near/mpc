@@ -32,11 +32,11 @@ async fn test_multichain_reshare() -> anyhow::Result<()> {
             )
                 .unwrap();
             assert!(ctx.remove_participant(Some(&account_2)).await.is_ok());
-            let account_0 = near_workspaces::types::AccountId::from_str(
-                state.participants.keys().nth(0).unwrap().clone().as_ref(),
+            let account_1 = near_workspaces::types::AccountId::from_str(
+                state.participants.keys().nth(1).unwrap().clone().as_ref(),
             )
                 .unwrap();
-            assert!(ctx.remove_participant(Some(&account_0)).await.is_ok());
+            assert!(ctx.remove_participant(Some(&account_1)).await.is_ok());
 
             let state = wait_for::running_mpc(&ctx, None).await?;
             wait_for::has_at_least_triples(&ctx, 2).await?;

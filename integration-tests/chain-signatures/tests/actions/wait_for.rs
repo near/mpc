@@ -18,6 +18,7 @@ use near_lake_primitives::CryptoHash;
 use near_primitives::errors::ActionErrorKind;
 use near_primitives::views::FinalExecutionStatus;
 use near_workspaces::Account;
+use url::Url;
 
 pub async fn running_mpc<'a>(
     ctx: &MultichainTestContext<'a>,
@@ -64,7 +65,7 @@ pub async fn has_at_least_triples<'a>(
         move || async move {
             let state_view: StateView = ctx
                 .http_client
-                .get(format!("{}/state", ctx.nodes.url(id)))
+                .get(Url::parse(ctx.nodes.url(id)).unwrap().join("/state").unwrap())
                 .send()
                 .await?
                 .json()
@@ -103,7 +104,7 @@ pub async fn has_at_least_mine_triples<'a>(
         move || async move {
             let state_view: StateView = ctx
                 .http_client
-                .get(format!("{}/state", ctx.nodes.url(id)))
+                .get(Url::parse(ctx.nodes.url(id)).unwrap().join("/state").unwrap())
                 .send()
                 .await?
                 .json()
@@ -140,7 +141,7 @@ pub async fn has_at_least_presignatures<'a>(
         move || async move {
             let state_view: StateView = ctx
                 .http_client
-                .get(format!("{}/state", ctx.nodes.url(id)))
+                .get(Url::parse(ctx.nodes.url(id)).unwrap().join("/state").unwrap())
                 .send()
                 .await?
                 .json()
@@ -177,7 +178,7 @@ pub async fn has_at_least_mine_presignatures<'a>(
         move || async move {
             let state_view: StateView = ctx
                 .http_client
-                .get(format!("{}/state", ctx.nodes.url(id)))
+                .get(Url::parse(ctx.nodes.url(id)).unwrap().join("/state").unwrap())
                 .send()
                 .await?
                 .json()
