@@ -21,17 +21,12 @@ async fn test_multichain_reshare() -> anyhow::Result<()> {
     with_multichain_nodes(config.clone(), |mut ctx| {
         Box::pin(async move {
             let state = wait_for::running_mpc(&ctx, Some(0)).await?;
-
             wait_for::has_at_least_triples(&ctx, 2).await?;
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
             actions::single_signature_production(&ctx, &state).await?;
 
             tracing::info!("!!! Add participant 3");
             assert!(ctx.add_participant(None).await.is_ok());
-
-            // This is necessary right now, otherwise sign_queue.organize, subset.choose(&mut rng).unwrap() is panic due to subset isn't ready
-            // TODO: fix that
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             let state = wait_for::running_mpc(&ctx, None).await?;
             wait_for::has_at_least_triples(&ctx, 2).await?;
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
@@ -50,8 +45,6 @@ async fn test_multichain_reshare() -> anyhow::Result<()> {
             let node_cfg_0 = ctx.remove_participant(Some(&account_0)).await;
             assert!(node_cfg_0.is_ok());
             let node_cfg_0 = node_cfg_0.unwrap();
-
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             let state = wait_for::running_mpc(&ctx, None).await?;
             wait_for::has_at_least_triples(&ctx, 2).await?;
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
@@ -62,7 +55,6 @@ async fn test_multichain_reshare() -> anyhow::Result<()> {
 
             tracing::info!("!!! Add participant 5");
             assert!(ctx.add_participant(None).await.is_ok());
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             let state = wait_for::running_mpc(&ctx, None).await?;
             wait_for::has_at_least_triples(&ctx, 2).await?;
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
@@ -70,7 +62,6 @@ async fn test_multichain_reshare() -> anyhow::Result<()> {
 
             tracing::info!("!!! Add back participant 0");
             assert!(ctx.add_participant(Some(node_cfg_0)).await.is_ok());
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             let state = wait_for::running_mpc(&ctx, None).await?;
             wait_for::has_at_least_triples(&ctx, 2).await?;
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
