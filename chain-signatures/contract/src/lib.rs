@@ -17,8 +17,8 @@ use near_sdk::{
     PromiseError, PublicKey,
 };
 use primitives::{
-    CandidateInfo, Candidates, Participants, PkVotes, ProposeUpdateArgs, SignRequest,
-    SignaturePromiseError, SignatureRequest, SignatureResult, StorageKey, Votes, YieldIndex,
+    CandidateInfo, Candidates, Participants, PkVotes, SignRequest, SignaturePromiseError,
+    SignatureRequest, SignatureResult, StorageKey, Votes, YieldIndex,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -26,7 +26,7 @@ use crate::config::Config;
 use crate::errors::{
     InitError, JoinError, MpcContractError, PublicKeyError, RespondError, SignError, VoteError,
 };
-use crate::update::{ProposedUpdates, UpdateId};
+use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 
 pub use state::{
     InitializingContractState, ProtocolContractState, ResharingContractState, RunningContractState,

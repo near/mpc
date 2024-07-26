@@ -1,3 +1,4 @@
+use borsh::{BorshDeserialize, BorshSerialize};
 use crypto_shared::kdf::{check_ec_signature, derive_secret_key};
 use crypto_shared::{
     derive_epsilon, derive_key, ScalarExt as _, SerializableAffinePoint, SerializableScalar,
@@ -11,9 +12,9 @@ use k256::{AffinePoint, FieldBytes, Scalar, Secp256k1};
 use mpc_contract::config::{Config, ProtocolConfig};
 use mpc_contract::errors::{self, MpcContractError};
 use mpc_contract::primitives::{
-    CandidateInfo, ParticipantInfo, Participants, ProposeUpdateArgs, SignRequest, SignatureRequest,
+    CandidateInfo, ParticipantInfo, Participants, SignRequest, SignatureRequest,
 };
-use mpc_contract::update::UpdateId;
+use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_sdk::NearToken;
 use near_workspaces::network::Sandbox;
 use near_workspaces::{Account, AccountId, Contract, Worker};
@@ -26,6 +27,57 @@ use std::str::FromStr;
 const CONTRACT_FILE_PATH: &str = "../../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
 const INVALID_CONTRACT: &str = "../res/mpc_test_contract.wasm";
 const PARTICIPANT_LEN: usize = 3;
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct ProposeUpdateArguments {
+    args: ProposeUpdateArgs,
+}
+
+impl ProposeUpdateArguments {
+    fn new_config() -> Self {
+        Self {
+            args: ProposeUpdateArgs {
+                code: None,
+                config: Some(Config {
+                    protocol: ProtocolConfig {
+                        max_concurrent_introduction: 2,
+                        ..ProtocolConfig::default()
+                    },
+                    ..Config::default()
+                }),
+            },
+        }
+    }
+
+    fn dummy_contract() -> Self {
+        Self {
+            args: ProposeUpdateArgs {
+                code: Some(vec![1, 2, 3]),
+                config: None,
+            },
+        }
+    }
+
+    fn current_contract() -> Self {
+        let new_wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
+        Self {
+            args: ProposeUpdateArgs {
+                code: Some(new_wasm),
+                config: None,
+            },
+        }
+    }
+
+    fn invalid_contract() -> Self {
+        let new_wasm = std::fs::read(INVALID_CONTRACT).unwrap();
+        Self {
+            args: ProposeUpdateArgs {
+                code: Some(new_wasm),
+                config: None,
+            },
+        }
+    }
+}
 
 fn candidates(names: Option<Vec<AccountId>>) -> HashMap<AccountId, CandidateInfo> {
     let mut candidates: HashMap<AccountId, CandidateInfo> = HashMap::new();
@@ -412,9 +464,7 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
     // contract should not be able to propose updates unless it's a part of the participant/voter set.
     let execution = contract
         .call("propose_update")
-        .args_json(serde_json::json!({
-            "code": vec![1, 2, 3],
-        }))
+        .args_borsh(ProposeUpdateArguments::dummy_contract())
         .transact()
         .await
         .unwrap();
@@ -437,9 +487,7 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
     for account in accounts {
         let propose_execution = account
             .call(contract.id(), "propose_update")
-            .args_json(serde_json::json!({
-                "config": &new_config,
-            }))
+            .args_borsh(ProposeUpdateArguments::new_config())
             .deposit(NearToken::from_millinear(100))
             .transact()
             .await
@@ -505,14 +553,9 @@ async fn test_propose_update_contract(contract: &Contract, accounts: &[Account])
         contract.view("state").await.unwrap().json().unwrap();
 
     // Let's propose a contract update instead now.
-    let new_wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
-    let args = ProposeUpdateArgs {
-        code: Some(new_wasm),
-        config: None,
-    };
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_borsh(args)
+        .args_borsh(ProposeUpdateArguments::current_contract())
         .max_gas()
         .deposit(CONTRACT_DEPLOY)
         .transact()
@@ -569,12 +612,9 @@ async fn test_invalid_contract_deploy(contract: &Contract, accounts: &[Account])
         contract.view("state").await.unwrap().json().unwrap();
 
     // Let's propose a contract update instead now.
-    let new_wasm = std::fs::read(INVALID_CONTRACT).unwrap();
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_json(serde_json::json!({
-            "code": &new_wasm,
-        }))
+        .args_borsh(ProposeUpdateArguments::invalid_contract())
         .max_gas()
         .deposit(CONTRACT_DEPLOY)
         .transact()
