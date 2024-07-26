@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crypto_shared::{derive_epsilon, SerializableScalar};
 use k256::Scalar;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
@@ -276,4 +277,10 @@ pub enum SignatureResult<T, E> {
 #[derive(Serialize, Deserialize, BorshDeserialize, BorshSerialize, Clone, Debug)]
 pub enum SignaturePromiseError {
     Failed,
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Debug)]
+pub struct ProposeUpdateArgs {
+    pub code: Option<Vec<u8>>,
+    pub config: Option<Config>,
 }

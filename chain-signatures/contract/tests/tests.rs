@@ -11,7 +11,7 @@ use k256::{AffinePoint, FieldBytes, Scalar, Secp256k1};
 use mpc_contract::config::{Config, ProtocolConfig};
 use mpc_contract::errors::{self, MpcContractError};
 use mpc_contract::primitives::{
-    CandidateInfo, ParticipantInfo, Participants, SignRequest, SignatureRequest,
+    CandidateInfo, ParticipantInfo, Participants, ProposeUpdateArgs, SignRequest, SignatureRequest,
 };
 use mpc_contract::update::UpdateId;
 use near_sdk::NearToken;
@@ -404,7 +404,7 @@ async fn test_contract_propose_update() {
     dbg!(contract.id());
 
     test_propose_update_config(&contract, &accounts).await;
-    // _test_propose_update_contract(&contract, &accounts).await;
+    test_propose_update_contract(&contract, &accounts).await;
     test_invalid_contract_deploy(&contract, &accounts).await;
 }
 
@@ -499,18 +499,20 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
     assert_eq!(config, new_config);
 }
 
-async fn _test_propose_update_contract(contract: &Contract, accounts: &[Account]) {
+async fn test_propose_update_contract(contract: &Contract, accounts: &[Account]) {
     const CONTRACT_DEPLOY: NearToken = NearToken::from_near(8);
     let state: mpc_contract::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
 
     // Let's propose a contract update instead now.
     let new_wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
+    let args = ProposeUpdateArgs {
+        code: Some(new_wasm),
+        config: None,
+    };
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_json(serde_json::json!({
-            "code": &new_wasm,
-        }))
+        .args_borsh(args)
         .max_gas()
         .deposit(CONTRACT_DEPLOY)
         .transact()

@@ -17,8 +17,8 @@ use near_sdk::{
     PromiseError, PublicKey,
 };
 use primitives::{
-    CandidateInfo, Candidates, Participants, PkVotes, SignRequest, SignaturePromiseError,
-    SignatureRequest, SignatureResult, StorageKey, Votes, YieldIndex,
+    CandidateInfo, Candidates, Participants, PkVotes, ProposeUpdateArgs, SignRequest,
+    SignaturePromiseError, SignatureRequest, SignatureResult, StorageKey, Votes, YieldIndex,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -524,14 +524,14 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn propose_update(
         &mut self,
-        code: Option<Vec<u8>>,
-        config: Option<Config>,
+        #[serializer(borsh)] args: ProposeUpdateArgs,
     ) -> Result<UpdateId, MpcContractError> {
+        log!("propose_update: args={:?}", args,);
         // Only voters can propose updates:
         let proposer = self.voter()?;
 
         let attached = env::attached_deposit();
-        let required = ProposedUpdates::required_deposit(&code, &config);
+        let required = ProposedUpdates::required_deposit(&args.code, &args.config);
         if attached < required {
             return Err(MpcContractError::from(VoteError::InsufficientDeposit(
                 attached.as_yoctonear(),
@@ -539,7 +539,7 @@ impl VersionedMpcContract {
             )));
         }
 
-        let Some(id) = self.proposed_updates().propose(code, config) else {
+        let Some(id) = self.proposed_updates().propose(args.code, args.config) else {
             return Err(MpcContractError::from(VoteError::Unexpected(
                 "cannot propose update due to incorrect parameters".into(),
             )));
@@ -562,6 +562,11 @@ impl VersionedMpcContract {
     /// was not found or if the voter is not a participant in the protocol.
     #[handle_result]
     pub fn vote_update(&mut self, id: UpdateId) -> Result<bool, MpcContractError> {
+        log!(
+            "vote_update: signer={}, id={:?}",
+            env::signer_account_id(),
+            id,
+        );
         let threshold = self.threshold()?;
         let voter = self.voter()?;
         let Some(votes) = self.proposed_updates().vote(&id, voter) else {
