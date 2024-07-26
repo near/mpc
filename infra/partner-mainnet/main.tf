@@ -68,7 +68,7 @@ resource "google_service_account" "service_account" {
   display_name = "Multichain ${var.env} Account"
 }
 
-resource "google_project_iam_binding" "sa-roles" {
+resource "google_project_iam_member" "sa-roles" {
   for_each = toset([
       "roles/datastore.user",
       "roles/secretmanager.admin",
@@ -76,10 +76,8 @@ resource "google_project_iam_binding" "sa-roles" {
       "roles/iam.serviceAccountAdmin",
   ])
 
-  role = each.key
-  members = [
-    "serviceAccount:${google_service_account.service_account.email}"
-   ]
+  role     = each.key
+  member   = "serviceAccount:${google_service_account.service_account.email}"
    project = var.project_id
 }
 
@@ -194,7 +192,7 @@ resource "google_compute_target_https_proxy" "default_https" {
 resource "google_compute_url_map" "default" {
   count           = length(var.node_configs)
   name            = "multichain-partner-mainnet-url-map-${count.index}"
-  default_service = google_compute_backend_service.multichain_backend.id
+  default_service = google_compute_backend_service.multichain_backend[count.index].id
 }
 
 resource "google_compute_url_map" "redirect_default" {
@@ -207,11 +205,17 @@ resource "google_compute_url_map" "redirect_default" {
 }
 
 resource "google_compute_backend_service" "multichain_backend" {
-  name                  = "multichain-partner-mainnet-backend-service"
+  count                 = length(var.node_configs)
+  name                  = "multichain-partner-mainnet-backend-service-${count.index}"
   load_balancing_scheme = "EXTERNAL"
+  
 
+  log_config {
+    enable = true
+    sample_rate = 0.5
+  }
   backend {
-    group = google_compute_instance_group.multichain_group.id
+    group = google_compute_instance_group.multichain_group[count.index].id
   }
 
   health_checks = [google_compute_health_check.multichain_healthcheck.id]

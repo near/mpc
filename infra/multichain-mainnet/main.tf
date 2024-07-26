@@ -49,35 +49,31 @@ module "gce-container" {
       },
       {
         name  = "MPC_RECOVERY_LOCAL_ADDRESS"
-        value = "http://${google_compute_global_address.external_ips[count.index].address}"
+        value = "https://${var.node_configs[count.index].domain}"
       },
       {
-        name  = "MPC_RECOVERY_SK_SHARE_SECRET_ID"
+        name = "MPC_RECOVERY_SK_SHARE_SECRET_ID"
         value = var.node_configs["${count.index}"].sk_share_secret_id
       },
       {
-        name  = "MPC_RECOVERY_ENV",
+        name = "MPC_RECOVERY_ENV",
         value = var.env
-      },
-      {
-        name  = "MPC_RECOVERY_GCP_PROJECT_ID"
-        value = var.project_id
-      },
+      }
     ])
   }
 }
 
 resource "google_service_account" "service_account" {
-  account_id   = "multichain-${var.env}"
+  account_id   = "multichain-partner-${var.env}"
   display_name = "Multichain ${var.env} Account"
 }
 
 resource "google_project_iam_member" "sa-roles" {
   for_each = toset([
-    "roles/datastore.user",
-    "roles/secretmanager.admin",
-    "roles/storage.objectAdmin",
-    "roles/iam.serviceAccountAdmin",
+      "roles/datastore.user",
+      "roles/secretmanager.admin",
+      "roles/storage.objectAdmin",
+      "roles/iam.serviceAccountAdmin",
   ])
 
   role    = each.key
@@ -87,8 +83,21 @@ resource "google_project_iam_member" "sa-roles" {
 
 resource "google_compute_global_address" "external_ips" {
   count        = length(var.node_configs)
-  name         = "multichain-testnet-partner-${count.index}"
+  name         = "multichain-partner-mainnet-${count.index}"
   address_type = "EXTERNAL"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "google_compute_managed_ssl_certificate" "mainnet_ssl" {
+  count = length(var.node_configs)
+  name = "multichain-partner-mainnet-ssl-${count.index}"
+
+  managed {
+    domains = [var.node_configs[count.index].domain]
+  }
 }
 
 module "ig_template" {
@@ -101,12 +110,12 @@ module "ig_template" {
     email  = google_service_account.service_account.email,
     scopes = ["cloud-platform"]
   }
-  name_prefix          = "multichain-partner-${count.index}"
-  source_image_family  = "cos-stable"
+  name_prefix          = "multichain-partner-mainnet-${count.index}"
+  source_image_family  = "cos-113-lts"
   source_image_project = "cos-cloud"
   machine_type         = "n2d-standard-2"
 
-  startup_script = "docker rm watchtower ; docker run -d --name watchtower -v /var/run/docker.sock:/var/run/docker.sock containrrr/watchtower --debug --interval 3600"
+  startup_script = "docker rm watchtower ; docker run -d --name watchtower -v /var/run/docker.sock:/var/run/docker.sock containrrr/watchtower --debug --interval 30"
 
   source_image = reverse(split("/", module.gce-container[count.index].source_image))[0]
   metadata     = merge(var.additional_metadata, { "gce-container-declaration" = module.gce-container["${count.index}"].metadata_value })
@@ -127,7 +136,7 @@ module "instances" {
   source     = "../modules/instance-from-tpl"
   region     = var.region
   project_id = var.project_id
-  hostname   = "multichain-testnet-partner-${count.index}"
+  hostname   = "multichain-mainnet-partner-${count.index}"
   network    = var.network
   subnetwork = var.subnetwork
 
@@ -136,7 +145,7 @@ module "instances" {
 }
 
 resource "google_compute_health_check" "multichain_healthcheck" {
-  name = "multichain-testnet-partner-healthcheck"
+  name = "multichain-mainnet-partner-healthcheck"
 
   http_health_check {
     port         = 3000
@@ -145,42 +154,76 @@ resource "google_compute_health_check" "multichain_healthcheck" {
 
 }
 
-resource "google_compute_global_forwarding_rule" "default" {
-  count                 = length(var.node_configs)
-  name                  = "multichain-partner-rule-${count.index}"
-  target                = google_compute_target_http_proxy.default[count.index].id
-  port_range            = "80"
+resource "google_compute_global_forwarding_rule" "http_fw" {
+  count      = length(var.node_configs)
+  name       = "multichain-partner-mainnet-http-rule-${count.index}"
+  target     = google_compute_target_http_proxy.default[count.index].id
+  port_range = "80"
+  ip_protocol = "TCP"
   load_balancing_scheme = "EXTERNAL"
-  ip_address            = google_compute_global_address.external_ips[count.index].address
+  ip_address = google_compute_global_address.external_ips[count.index].address
+}
+
+resource "google_compute_global_forwarding_rule" "https_fw" {
+  count      = length(var.node_configs)
+  name       = "multichain-partner-mainnet-https-rule-${count.index}"
+  target     = google_compute_target_https_proxy.default_https[count.index].id
+  port_range = "443"
+  ip_protocol = "TCP"
+  load_balancing_scheme = "EXTERNAL"
+  ip_address = google_compute_global_address.external_ips[count.index].address
 }
 
 resource "google_compute_target_http_proxy" "default" {
-  count       = length(var.node_configs)
-  name        = "multichain-partner-target-proxy-${count.index}"
+  count      = length(var.node_configs)
+  name        = "multichain-partner-mainnet-http-target-proxy-${count.index}"
   description = "a description"
+  url_map     = google_compute_url_map.redirect_default[count.index].id
+}
+
+resource "google_compute_target_https_proxy" "default_https" {
+  count      = length(var.node_configs)
+  name        = "multichain-partner-mainnet-https-target-proxy-${count.index}"
+  description = "a description"
+  ssl_certificates = [ google_compute_managed_ssl_certificate.mainnet_ssl[count.index].self_link ]
   url_map     = google_compute_url_map.default[count.index].id
 }
 
 resource "google_compute_url_map" "default" {
   count           = length(var.node_configs)
-  name            = "multichain-partner-url-map-${count.index}"
-  default_service = google_compute_backend_service.multichain_backend.id
+  name            = "multichain-partner-mainnet-url-map-${count.index}"
+  default_service = google_compute_backend_service.multichain_backend[count.index].id
+}
+
+resource "google_compute_url_map" "redirect_default" {
+  count           = length(var.node_configs)
+  name            = "multichain-partner-mainnet-redirect-url-map-${count.index}"
+  default_url_redirect {
+    strip_query    = false
+    https_redirect = true
+  }
 }
 
 resource "google_compute_backend_service" "multichain_backend" {
-  name                  = "multichain-partner-backend-service"
+  count                 = length(var.node_configs)
+  name                  = "multichain-partner-mainnet-backend-service-${count.index}"
   load_balancing_scheme = "EXTERNAL"
 
+  log_config {
+    enable = true
+    sample_rate = 0.5
+  }
   backend {
-    group = google_compute_instance_group.multichain_group.id
+    group = google_compute_instance_group.multichain_group[count.index].id
   }
 
   health_checks = [google_compute_health_check.multichain_healthcheck.id]
 }
 
 resource "google_compute_instance_group" "multichain_group" {
-  name      = "multichain-partner-instance-group"
-  instances = module.instances[*].self_links[0]
+  count     = length(var.node_configs)
+  name      = "multichain-partner-mainnet-instance-group-${count.index}"
+  instances = [module.instances[count.index].self_links[0]]
 
   zone = var.zone
   named_port {
