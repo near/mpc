@@ -3746,7 +3746,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-contract"
-version = "0.2.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
  "borsh",
@@ -3779,8 +3779,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "mpc-recovery-node"
-version = "0.2.0"
+name = "mpc-node"
+version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3816,6 +3816,7 @@ dependencies = [
  "prometheus",
  "rand 0.8.5",
  "reqwest 0.11.27",
+ "semver",
  "serde",
  "serde_json",
  "sha2 0.10.8",

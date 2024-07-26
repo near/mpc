@@ -101,6 +101,7 @@ async fn msg(
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum StateView {
     Running {
         participants: Vec<Participant>,
@@ -112,6 +113,16 @@ pub enum StateView {
         presignature_potential_count: usize,
         latest_block_height: BlockHeight,
         is_stable: bool,
+    },
+    Resharing {
+        old_participants: Vec<Participant>,
+        new_participants: Vec<Participant>,
+        latest_block_height: BlockHeight,
+        is_stable: bool,
+    },
+    Joining {
+        participants: Vec<Participant>,
+        latest_block_height: BlockHeight,
     },
     NotRunning,
 }
@@ -145,6 +156,23 @@ async fn state(Extension(state): Extension<Arc<AxumState>>) -> Result<Json<State
                 presignature_potential_count,
                 latest_block_height,
                 is_stable,
+            }))
+        }
+        NodeState::Resharing(state) => {
+            let old_participants = state.old_participants.keys_vec();
+            let new_participants = state.new_participants.keys_vec();
+            Ok(Json(StateView::Resharing {
+                old_participants,
+                new_participants,
+                latest_block_height,
+                is_stable,
+            }))
+        }
+        NodeState::Joining(state) => {
+            let participants = state.participants.keys_vec();
+            Ok(Json(StateView::Joining {
+                participants,
+                latest_block_height,
             }))
         }
         _ => {

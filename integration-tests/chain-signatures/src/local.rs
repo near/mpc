@@ -44,7 +44,7 @@ impl Node {
         let sign_sk =
             near_crypto::SecretKey::from_seed(near_crypto::KeyType::ED25519, "integration-test");
 
-        let indexer_options = mpc_recovery_node::indexer::Options {
+        let indexer_options = mpc_node::indexer::Options {
             s3_bucket: ctx.localstack.s3_bucket.clone(),
             s3_region: ctx.localstack.s3_region.clone(),
             s3_url: Some(ctx.localstack.s3_host_address.clone()),
@@ -65,7 +65,7 @@ impl Node {
         LakeIndexer::populate_proxy(&proxy_name, true, &rpc_address_proxied, &near_rpc).await?;
 
         let mpc_contract_id = ctx.mpc_contract.id().clone();
-        let cli = mpc_recovery_node::cli::Cli::Start {
+        let cli = mpc_node::cli::Cli::Start {
             near_rpc: rpc_address_proxied.clone(),
             mpc_contract_id: mpc_contract_id.clone(),
             account_id: account_id.clone(),
@@ -113,7 +113,7 @@ impl Node {
         let account_id = config.account_id;
         let account_sk = config.account_sk;
         let storage_options = ctx.storage_options.clone();
-        let indexer_options = mpc_recovery_node::indexer::Options {
+        let indexer_options = mpc_node::indexer::Options {
             s3_bucket: ctx.localstack.s3_bucket.clone(),
             s3_region: ctx.localstack.s3_region.clone(),
             s3_url: Some(ctx.localstack.s3_host_address.clone()),
@@ -123,7 +123,7 @@ impl Node {
             near_crypto::SecretKey::from_seed(near_crypto::KeyType::ED25519, "integration-test");
         let near_rpc = config.near_rpc;
         let mpc_contract_id = ctx.mpc_contract.id().clone();
-        let cli = mpc_recovery_node::cli::Cli::Start {
+        let cli = mpc_node::cli::Cli::Start {
             near_rpc: near_rpc.clone(),
             mpc_contract_id: mpc_contract_id.clone(),
             account_id: account_id.clone(),

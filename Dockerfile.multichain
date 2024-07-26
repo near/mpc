@@ -16,12 +16,12 @@ COPY chain-signatures/. .
 RUN sed -i 's#"keys",##' Cargo.toml
 RUN sed -i 's#"contract",##' Cargo.toml
 RUN sed -i 's#target-dir = "../target"#target-dir = "target"#' .cargo/config.toml
-RUN cargo build --release --package mpc-recovery-node
+RUN cargo build --release --package mpc-node
 
 FROM debian:stable-slim as runtime
 RUN apt-get update && apt-get install --assume-yes libssl-dev ca-certificates curl
 RUN update-ca-certificates
-COPY --from=builder /usr/src/app/target/release/mpc-recovery-node /usr/local/bin/mpc-recovery-node
+COPY --from=builder /usr/src/app/target/release/mpc-node /usr/local/bin/mpc-node
 WORKDIR /usr/local/bin
 
-ENTRYPOINT [ "mpc-recovery-node" ]
+ENTRYPOINT [ "mpc-node" ]

@@ -4,7 +4,7 @@ use std::{env, fs, io};
 use anyhow::Context;
 use async_process::{Command, ExitStatus, Stdio};
 
-const PACKAGE_MULTICHAIN: &str = "mpc-recovery-node";
+const PACKAGE_MULTICHAIN: &str = "mpc-node";
 const PACKAGE_CONTRACT: &str = "mpc-contract";
 const TARGET_CONTRACT: &str = "wasm32-unknown-unknown";
 const TARGET_FOLDER: &str = "target";
