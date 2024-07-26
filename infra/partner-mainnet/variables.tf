@@ -43,8 +43,8 @@ variable "network" {
 variable "additional_metadata" {
   type        = map(any)
   description = "Additional metadata to attach to the instance"
-  default     = {
-    cos-update-strategy:	"update_enabled"
+  default = {
+    cos-update-strategy : "update_enabled"
   }
 }
 
@@ -77,7 +77,7 @@ variable "node_configs" {
 }
 
 variable "env" {
-  type = string
+  type    = string
   default = "mainnet"
 }
 
@@ -88,19 +88,19 @@ variable "static_env" {
   }))
   default = [
     {
-      name  = "MPC_RECOVERY_NEAR_RPC"
+      name  = "MPC_NEAR_RPC"
       value = "https://rpc.mainnet.near.org"
     },
     {
-      name  = "MPC_RECOVERY_CONTRACT_ID"
+      name  = "MPC_CONTRACT_ID"
       value = "v2.multichain-mpc.testnet"
     },
     {
-      name  = "MPC_RECOVERY_INDEXER_S3_BUCKET"
+      name  = "MPC_INDEXER_S3_BUCKET"
       value = "near-lake-data-mainnet"
     },
     {
-      name  = "MPC_RECOVERY_INDEXER_START_BLOCK_HEIGHT"
+      name  = "MPC_INDEXER_START_BLOCK_HEIGHT"
       value = 124092099
     },
     {
@@ -108,26 +108,26 @@ variable "static_env" {
       value = "eu-central-1"
     },
     {
-      name  = "MPC_RECOVERY_GCP_PROJECT_ID"
+      name  = "MPC_GCP_PROJECT_ID"
       value = "<your-project-id>"
     },
     {
-      name  = "MPC_RECOVERY_WEB_PORT"
+      name  = "MPC_WEB_PORT"
       value = "3000"
     },
     {
       name  = "RUST_LOG"
-      value = "mpc_recovery_node=debug"
+      value = "mpc_node=debug"
     },
     {
-      name  = "MPC_RECOVERY_INDEXER_S3_REGION"
+      name  = "MPC_INDEXER_S3_REGION"
       value = "eu-central-1"
     }
   ]
 }
 
 variable "create_network" {
-  default = false
+  default     = false
   description = "Do you want to create a new VPC network (true) or use default GCP network (false)?"
 }
 

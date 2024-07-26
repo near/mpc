@@ -86,7 +86,7 @@ jobs:
 
       - name: Build Chain-Signatures Node
         working-directory: ./chain-signatures
-        run: cargo build -p mpc-recovery-node --release
+        run: cargo build -p mpc-node --release
 
       # Build the tests before actually running them to see how long the tests take to run by itself
       # instead of including the build time in the test time report on Github.

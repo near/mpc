@@ -65,7 +65,7 @@ impl AffinePointExt for AffinePoint {
 }
 
 pub fn get_triple_timeout() -> Duration {
-    env::var("MPC_RECOVERY_TRIPLE_TIMEOUT_SEC")
+    env::var("MPC_TRIPLE_TIMEOUT_SEC")
         .map(|val| val.parse::<u64>().ok().map(Duration::from_secs))
         .unwrap_or_default()
         .unwrap_or(crate::types::PROTOCOL_TRIPLE_TIMEOUT)

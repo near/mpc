@@ -97,7 +97,7 @@ jobs:
 
       - name: Build Chain-Signatures Node
         working-directory: ./chain-signatures
-        run: cargo build -p mpc-recovery-node --release
+        run: cargo build -p mpc-node --release
 
       - name: Build Chain-Signatures Integration Tests
         working-directory: ./integration-tests/chain-signatures

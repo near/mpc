@@ -76,7 +76,7 @@ variable "node_configs" {
 }
 
 variable "env" {
-  type = string
+  type    = string
   default = "dev"
 }
 
@@ -87,19 +87,19 @@ variable "static_env" {
   }))
   default = [
     {
-      name  = "MPC_RECOVERY_NEAR_RPC"
+      name  = "MPC_NEAR_RPC"
       value = "https://rpc.mainnet.near.org"
     },
     {
-      name  = "MPC_RECOVERY_CONTRACT_ID"
+      name  = "MPC_CONTRACT_ID"
       value = "multichain-mpc-dev.near"
     },
     {
-      name  = "MPC_RECOVERY_INDEXER_S3_BUCKET"
+      name  = "MPC_INDEXER_S3_BUCKET"
       value = "near-lake-data-mainnet"
     },
     {
-      name  = "MPC_RECOVERY_INDEXER_START_BLOCK_HEIGHT"
+      name  = "MPC_INDEXER_START_BLOCK_HEIGHT"
       value = 122414750
     },
     {
@@ -107,47 +107,47 @@ variable "static_env" {
       value = "eu-central-1"
     },
     {
-      name  = "MPC_RECOVERY_GCP_PROJECT_ID"
+      name  = "MPC_GCP_PROJECT_ID"
       value = "pagoda-discovery-platform-dev"
     },
     {
-      name  = "MPC_RECOVERY_WEB_PORT"
+      name  = "MPC_WEB_PORT"
       value = "3000"
     },
     {
       name  = "RUST_LOG"
-      value = "mpc_recovery_node=debug"
+      value = "mpc_node=debug"
     },
     {
-      name  = "MPC_RECOVERY_INDEXER_S3_REGION"
+      name  = "MPC_INDEXER_S3_REGION"
       value = "eu-central-1"
     },
     {
-      name  = "MPC_RECOVERY_MIN_TRIPLES"
+      name  = "MPC_MIN_TRIPLES"
       value = 20
     },
     {
-      name  = "MPC_RECOVERY_MAX_TRIPLES"
+      name  = "MPC_MAX_TRIPLES"
       value = 640
     },
     {
-      name  = "MPC_RECOVERY_MIN_PRESIGNATURES"
+      name  = "MPC_MIN_PRESIGNATURES"
       value = 10
     },
     {
-      name  = "MPC_RECOVERY_MAX_PRESIGNATURES"
+      name  = "MPC_MAX_PRESIGNATURES"
       value = 320
     },
     {
-      name  = "MPC_RECOVERY_MAX_CONCURRENT_INTRODUCTION"
+      name  = "MPC_MAX_CONCURRENT_INTRODUCTION"
       value = 2
     },
     {
-      name  = "MPC_RECOVERY_MAX_CONCURRENT_GENERATION"
+      name  = "MPC_MAX_CONCURRENT_GENERATION"
       value = 16
     },
     {
-      name  = "MPC_RECOVERY_TRIPLE_TIMEOUT_SEC"
+      name  = "MPC_TRIPLE_TIMEOUT_SEC"
       value = 1200
     }
   ]
@@ -155,5 +155,5 @@ variable "static_env" {
 
 variable "domain" {
   description = "DNS name of the node"
-  default = ""
+  default     = ""
 }

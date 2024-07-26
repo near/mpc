@@ -16,28 +16,28 @@ module "gce-container" {
 
     env = concat(var.static_env, [
       {
-        name  = "MPC_RECOVERY_NODE_ID"
+        name  = "MPC_NODE_ID"
         value = "${count.index}"
       },
       {
-        name  = "MPC_RECOVERY_ACCOUNT_ID"
+        name  = "MPC_ACCOUNT_ID"
         value = var.node_configs["${count.index}"].account
       },
       {
-        name  = "MPC_RECOVERY_CIPHER_PK"
+        name  = "MPC_CIPHER_PK"
         value = var.node_configs["${count.index}"].cipher_pk
       },
       {
-        name  = "MPC_RECOVERY_ACCOUNT_SK"
+        name  = "MPC_ACCOUNT_SK"
         value = data.google_secret_manager_secret_version.account_sk_secret_id[count.index].secret_data
       },
       {
-        name  = "MPC_RECOVERY_CIPHER_SK"
+        name  = "MPC_CIPHER_SK"
         value = data.google_secret_manager_secret_version.cipher_sk_secret_id[count.index].secret_data
       },
       {
-        name  = "MPC_RECOVERY_SIGN_SK"
-        value =  data.google_secret_manager_secret_version.sign_sk_secret_id[count.index].secret_data
+        name  = "MPC_SIGN_SK"
+        value = data.google_secret_manager_secret_version.sign_sk_secret_id[count.index].secret_data
       },
       {
         name  = "AWS_ACCESS_KEY_ID"
@@ -48,15 +48,15 @@ module "gce-container" {
         value = data.google_secret_manager_secret_version.aws_secret_key_secret_id.secret_data
       },
       {
-        name  = "MPC_RECOVERY_LOCAL_ADDRESS"
+        name  = "MPC_LOCAL_ADDRESS"
         value = "https://${var.node_configs[count.index].domain}"
       },
       {
-        name  = "MPC_RECOVERY_SK_SHARE_SECRET_ID"
+        name  = "MPC_SK_SHARE_SECRET_ID"
         value = var.node_configs["${count.index}"].sk_share_secret_id
       },
       {
-        name  = "MPC_RECOVERY_ENV",
+        name  = "MPC_ENV",
         value = var.env
       }
     ])
@@ -72,7 +72,7 @@ resource "google_compute_global_address" "external_ips" {
 
 resource "google_compute_managed_ssl_certificate" "mainnet_dev_ssl" {
   count = length(var.node_configs)
-  name = "multichain-mainnet-dev-ssl-${count.index}"
+  name  = "multichain-mainnet-dev-ssl-${count.index}"
 
   managed {
     domains = [var.node_configs["${count.index}"].domain]
@@ -142,13 +142,13 @@ resource "google_compute_global_forwarding_rule" "default" {
 }
 
 resource "google_compute_global_forwarding_rule" "https_fw" {
-  count      = length(var.node_configs)
-  name       = "multichain-mainnet-dev-https-rule-${count.index}"
-  target     = google_compute_target_https_proxy.default_https[count.index].id
-  port_range = "443"
-  ip_protocol = "TCP"
+  count                 = length(var.node_configs)
+  name                  = "multichain-mainnet-dev-https-rule-${count.index}"
+  target                = google_compute_target_https_proxy.default_https[count.index].id
+  port_range            = "443"
+  ip_protocol           = "TCP"
   load_balancing_scheme = "EXTERNAL"
-  ip_address = google_compute_global_address.external_ips[count.index].address
+  ip_address            = google_compute_global_address.external_ips[count.index].address
 }
 
 resource "google_compute_target_http_proxy" "default" {
@@ -159,11 +159,11 @@ resource "google_compute_target_http_proxy" "default" {
 }
 
 resource "google_compute_target_https_proxy" "default_https" {
-  count      = length(var.node_configs)
-  name        = "multichain-mainnet-dev-target-https-proxy-${count.index}"
-  description = "a description"
-  ssl_certificates = [ google_compute_managed_ssl_certificate.mainnet_dev_ssl[count.index].self_link ]
-  url_map     = google_compute_url_map.default[count.index].id
+  count            = length(var.node_configs)
+  name             = "multichain-mainnet-dev-target-https-proxy-${count.index}"
+  description      = "a description"
+  ssl_certificates = [google_compute_managed_ssl_certificate.mainnet_dev_ssl[count.index].self_link]
+  url_map          = google_compute_url_map.default[count.index].id
 }
 
 resource "google_compute_url_map" "default" {
@@ -173,8 +173,8 @@ resource "google_compute_url_map" "default" {
 }
 
 resource "google_compute_url_map" "default_redirect" {
-  count           = length(var.node_configs)
-  name            = "multichain-mainnet-dev-redirect-url-map-${count.index}"
+  count = length(var.node_configs)
+  name  = "multichain-mainnet-dev-redirect-url-map-${count.index}"
 
   default_url_redirect {
     strip_query    = false

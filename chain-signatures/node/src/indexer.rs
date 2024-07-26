@@ -25,28 +25,24 @@ pub struct Options {
     /// AWS S3 bucket name for NEAR Lake Indexer
     #[clap(
         long,
-        env("MPC_RECOVERY_INDEXER_S3_BUCKET"),
+        env("MPC_INDEXER_S3_BUCKET"),
         default_value = "near-lake-data-testnet"
     )]
     pub s3_bucket: String,
 
     /// AWS S3 region name for NEAR Lake Indexer
-    #[clap(
-        long,
-        env("MPC_RECOVERY_INDEXER_S3_REGION"),
-        default_value = "eu-central-1"
-    )]
+    #[clap(long, env("MPC_INDEXER_S3_REGION"), default_value = "eu-central-1")]
     pub s3_region: String,
 
     /// AWS S3 URL for NEAR Lake Indexer (can be used to point to LocalStack)
-    #[clap(long, env("MPC_RECOVERY_INDEXER_S3_URL"))]
+    #[clap(long, env("MPC_INDEXER_S3_URL"))]
     pub s3_url: Option<String>,
 
     /// The block height to start indexing from.
     // Defaults to the latest block on 2023-11-14 07:40:22 AM UTC
     #[clap(
         long,
-        env("MPC_RECOVERY_INDEXER_START_BLOCK_HEIGHT"),
+        env("MPC_INDEXER_START_BLOCK_HEIGHT"),
         default_value = "145964826"
     )]
     pub start_block_height: u64,

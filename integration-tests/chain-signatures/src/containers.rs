@@ -65,13 +65,13 @@ impl<'a> Node<'a> {
         );
         LakeIndexer::populate_proxy(&proxy_name, true, &rpc_address_proxied, &near_rpc).await?;
 
-        let indexer_options = mpc_recovery_node::indexer::Options {
+        let indexer_options = mpc_node::indexer::Options {
             s3_bucket: ctx.localstack.s3_bucket.clone(),
             s3_region: ctx.localstack.s3_region.clone(),
             s3_url: Some(ctx.localstack.s3_host_address.clone()),
             start_block_height: 0,
         };
-        let args = mpc_recovery_node::cli::Cli::Start {
+        let args = mpc_node::cli::Cli::Start {
             near_rpc: rpc_address_proxied.clone(),
             mpc_contract_id: ctx.mpc_contract.id().clone(),
             account_id: account_id.clone(),
@@ -91,10 +91,10 @@ impl<'a> Node<'a> {
             max_presignatures: cfg.presig_cfg.max_presignatures,
         }
         .into_str_args();
-        let image: GenericImage = GenericImage::new("near/mpc-recovery-node", "latest")
+        let image: GenericImage = GenericImage::new("near/mpc-node", "latest")
             .with_wait_for(WaitFor::Nothing)
             .with_exposed_port(Self::CONTAINER_PORT)
-            .with_env_var("RUST_LOG", "mpc_recovery_node=DEBUG")
+            .with_env_var("RUST_LOG", "mpc_node=DEBUG")
             .with_env_var("RUST_BACKTRACE", "1");
         let image: RunnableImage<GenericImage> = (image, args).into();
         let image = image.with_network(&ctx.docker_network);
@@ -152,7 +152,7 @@ impl<'a> Node<'a> {
         let storage_options = ctx.storage_options.clone();
         let near_rpc = config.near_rpc;
         let mpc_contract_id = ctx.mpc_contract.id().clone();
-        let indexer_options = mpc_recovery_node::indexer::Options {
+        let indexer_options = mpc_node::indexer::Options {
             s3_bucket: ctx.localstack.s3_bucket.clone(),
             s3_region: ctx.localstack.s3_region.clone(),
             s3_url: Some(ctx.localstack.s3_host_address.clone()),
@@ -160,7 +160,7 @@ impl<'a> Node<'a> {
         };
         let sign_sk =
             near_crypto::SecretKey::from_seed(near_crypto::KeyType::ED25519, "integration-test");
-        let args = mpc_recovery_node::cli::Cli::Start {
+        let args = mpc_node::cli::Cli::Start {
             near_rpc: near_rpc.clone(),
             mpc_contract_id: mpc_contract_id.clone(),
             account_id: account_id.clone(),
@@ -180,10 +180,10 @@ impl<'a> Node<'a> {
             sign_sk: Some(sign_sk),
         }
         .into_str_args();
-        let image: GenericImage = GenericImage::new("near/mpc-recovery-node", "latest")
+        let image: GenericImage = GenericImage::new("near/mpc-node", "latest")
             .with_wait_for(WaitFor::Nothing)
             .with_exposed_port(Self::CONTAINER_PORT)
-            .with_env_var("RUST_LOG", "mpc_recovery_node=DEBUG")
+            .with_env_var("RUST_LOG", "mpc_node=DEBUG")
             .with_env_var("RUST_BACKTRACE", "1");
         let image: RunnableImage<GenericImage> = (image, args).into();
         let image = image.with_network(&ctx.docker_network);

@@ -3748,7 +3748,7 @@ dependencies = [
  "lazy_static",
  "mpc-contract",
  "mpc-keys",
- "mpc-recovery-node",
+ "mpc-node",
  "near-account-id",
  "near-crypto 0.23.0",
  "near-fetch",
@@ -4263,7 +4263,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mpc-recovery-node"
+name = "mpc-node"
 version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
