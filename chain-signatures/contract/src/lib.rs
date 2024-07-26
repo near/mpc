@@ -526,7 +526,6 @@ impl VersionedMpcContract {
         &mut self,
         #[serializer(borsh)] args: ProposeUpdateArgs,
     ) -> Result<UpdateId, MpcContractError> {
-        log!("propose_update: args={:?}", args,);
         // Only voters can propose updates:
         let proposer = self.voter()?;
 

@@ -45,7 +45,7 @@ pub enum Update {
     Contract(Vec<u8>),
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Debug)]
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug, Default)]
 pub struct ProposeUpdateArgs {
     pub code: Option<Vec<u8>>,
     pub config: Option<Config>,
