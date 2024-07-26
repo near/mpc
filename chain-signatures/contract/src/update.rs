@@ -38,6 +38,7 @@ impl From<u64> for UpdateId {
     }
 }
 
+#[allow(clippy::large_enum_variant)] // TODO: Config is big
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum Update {
     Config(Config),

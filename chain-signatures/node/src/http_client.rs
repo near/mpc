@@ -2,6 +2,7 @@ use crate::protocol::contract::primitives::{ParticipantInfo, Participants};
 use crate::protocol::message::SignedMessage;
 use crate::protocol::MpcMessage;
 use cait_sith::protocol::Participant;
+use mpc_contract::config::ProtocolConfig;
 use mpc_keys::hpke::Ciphered;
 use reqwest::{Client, IntoUrl};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -9,9 +10,6 @@ use std::str::Utf8Error;
 use std::time::{Duration, Instant};
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
-
-// 5 minutes max to wait for this message to be sent by defaults
-const MESSAGE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Debug, thiserror::Error)]
 pub enum SendError {
@@ -102,6 +100,7 @@ impl MessageQueue {
         sign_sk: &near_crypto::SecretKey,
         client: &Client,
         participants: &Participants,
+        cfg: &ProtocolConfig,
     ) -> Vec<SendError> {
         let mut failed = VecDeque::new();
         let mut errors = Vec::new();
@@ -111,7 +110,7 @@ impl MessageQueue {
         let uncompacted = self.deque.len();
         let mut encrypted = HashMap::new();
         while let Some((info, msg, instant)) = self.deque.pop_front() {
-            if instant.elapsed() > message_type_to_timeout(&msg) {
+            if instant.elapsed() > timeout(&msg, cfg) {
                 errors.push(SendError::Timeout(format!(
                     "{} message has timed out: {info:?}",
                     msg.typename(),
@@ -221,13 +220,13 @@ fn partition_ciphered_256kb(encrypted: Vec<EncryptedMessage>) -> Vec<Vec<Encrypt
     result
 }
 
-fn message_type_to_timeout(msg: &MpcMessage) -> Duration {
+fn timeout(msg: &MpcMessage, cfg: &ProtocolConfig) -> Duration {
     match msg {
-        MpcMessage::Generating(_) => MESSAGE_TIMEOUT,
-        MpcMessage::Resharing(_) => MESSAGE_TIMEOUT,
-        MpcMessage::Triple(_) => crate::util::get_triple_timeout(),
-        MpcMessage::Presignature(_) => crate::types::PROTOCOL_PRESIG_TIMEOUT,
-        MpcMessage::Signature(_) => crate::types::PROTOCOL_SIGNATURE_TIMEOUT,
+        MpcMessage::Generating(_) => Duration::from_millis(cfg.message_timeout),
+        MpcMessage::Resharing(_) => Duration::from_millis(cfg.message_timeout),
+        MpcMessage::Triple(_) => Duration::from_millis(cfg.triple.generation_timeout),
+        MpcMessage::Presignature(_) => Duration::from_millis(cfg.presignature.generation_timeout),
+        MpcMessage::Signature(_) => Duration::from_millis(cfg.signature.generation_timeout),
     }
 }
 

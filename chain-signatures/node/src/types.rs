@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use cait_sith::protocol::{InitializationError, Participant};
 use cait_sith::triples::TripleGenerationOutput;
@@ -15,21 +14,6 @@ use crate::gcp::{DatastoreResult, GcpService, KeyKind};
 use crate::protocol::contract::ResharingContractState;
 
 use near_account_id::AccountId;
-
-/// Default timeout for triple generation protocols. Times out after 20 minutes of being alive.
-pub const PROTOCOL_TRIPLE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
-
-/// Default timeout for presig generation protocols. Times out after 1 minute of being alive since this should be shorted lived.
-pub const PROTOCOL_PRESIG_TIMEOUT: Duration = Duration::from_secs(60);
-
-/// Default timeout for signature generation protocol. Times out after 1 minute of being alive since this should be shorted lived.
-pub const PROTOCOL_SIGNATURE_TIMEOUT: Duration = Duration::from_secs(60);
-
-/// Default invalidation time for failed triples: 2 hrs
-pub const FAILED_TRIPLES_TIMEOUT: Duration = Duration::from_secs(120 * 60);
-
-/// Default invalidation time for taken triples and presignatures: 2 hrs
-pub const TAKEN_TIMEOUT: Duration = Duration::from_secs(120 * 60);
 
 pub type SecretKeyShare = <Secp256k1 as CurveArithmetic>::Scalar;
 pub type TripleProtocol =

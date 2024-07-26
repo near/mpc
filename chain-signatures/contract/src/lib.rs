@@ -87,7 +87,11 @@ impl MpcContract {
         }
     }
 
-    pub fn init(threshold: usize, candidates: BTreeMap<AccountId, CandidateInfo>) -> Self {
+    pub fn init(
+        threshold: usize,
+        candidates: BTreeMap<AccountId, CandidateInfo>,
+        config: Option<Config>,
+    ) -> Self {
         MpcContract {
             protocol_state: ProtocolContractState::Initializing(InitializingContractState {
                 candidates: Candidates { candidates },
@@ -97,7 +101,7 @@ impl MpcContract {
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
             proposed_updates: ProposedUpdates::default(),
-            config: Config::default(),
+            config: config.unwrap_or_default(),
         }
     }
 }
@@ -585,6 +589,7 @@ impl VersionedMpcContract {
     pub fn init(
         threshold: usize,
         candidates: BTreeMap<AccountId, CandidateInfo>,
+        config: Option<Config>,
     ) -> Result<Self, MpcContractError> {
         log!(
             "init: signer={}, threshold={}, candidates={}",
@@ -597,7 +602,7 @@ impl VersionedMpcContract {
             return Err(MpcContractError::InitError(InitError::ThresholdTooHigh));
         }
 
-        Ok(Self::V0(MpcContract::init(threshold, candidates)))
+        Ok(Self::V0(MpcContract::init(threshold, candidates, config)))
     }
 
     // This function can be used to transfer the MPC network to a new contract.
@@ -609,6 +614,7 @@ impl VersionedMpcContract {
         participants: Participants,
         threshold: usize,
         public_key: PublicKey,
+        config: Option<Config>,
     ) -> Result<Self, MpcContractError> {
         log!(
             "init_running: signer={}, epoch={}, participants={}, threshold={}, public_key={:?}",
@@ -636,7 +642,7 @@ impl VersionedMpcContract {
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
             proposed_updates: ProposedUpdates::default(),
-            config: Config::default(),
+            config: config.unwrap_or_default(),
         }))
     }
 

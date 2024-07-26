@@ -1,3 +1,4 @@
+use crate::config::{Config, ContractConfig};
 use crate::protocol::ProtocolState;
 
 use near_account_id::AccountId;
@@ -14,6 +15,17 @@ pub async fn fetch_mpc_contract_state(
     protocol_state
         .try_into()
         .map_err(|_| anyhow::anyhow!("protocol state has not been initialized yet"))
+}
+
+pub async fn fetch_mpc_config(
+    rpc_client: &near_fetch::Client,
+    mpc_contract_id: &AccountId,
+    original: &Config,
+) -> anyhow::Result<Config> {
+    let contract_config: ContractConfig =
+        rpc_client.view(mpc_contract_id, "config").await?.json()?;
+    Config::try_from_contract(contract_config, original)
+        .ok_or_else(|| anyhow::anyhow!("failed to parse contract config"))
 }
 
 pub async fn vote_for_public_key(

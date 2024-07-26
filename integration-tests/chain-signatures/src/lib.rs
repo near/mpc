@@ -12,10 +12,9 @@ use crate::containers::LocalStack;
 use anyhow::Context as _;
 use bollard::exec::{CreateExecOptions, StartExecResults};
 use futures::StreamExt;
+use mpc_contract::config::{PresignatureConfig, ProtocolConfig, TripleConfig};
 use mpc_contract::primitives::CandidateInfo;
 use mpc_node::gcp::GcpService;
-use mpc_node::protocol::presignature::PresignatureConfig;
-use mpc_node::protocol::triple::TripleConfig;
 use mpc_node::storage;
 use mpc_node::storage::triple_storage::TripleNodeStorageBox;
 use near_crypto::KeyFile;
@@ -31,8 +30,7 @@ const NETWORK: &str = "mpc_it_network";
 pub struct MultichainConfig {
     pub nodes: usize,
     pub threshold: usize,
-    pub triple_cfg: TripleConfig,
-    pub presig_cfg: PresignatureConfig,
+    pub protocol: ProtocolConfig,
 }
 
 impl Default for MultichainConfig {
@@ -40,15 +38,18 @@ impl Default for MultichainConfig {
         Self {
             nodes: 3,
             threshold: 2,
-            triple_cfg: TripleConfig {
-                min_triples: 8,
-                max_triples: 80,
-                max_concurrent_introduction: 8,
-                max_concurrent_generation: 24,
-            },
-            presig_cfg: PresignatureConfig {
-                min_presignatures: 2,
-                max_presignatures: 20,
+            protocol: ProtocolConfig {
+                triple: TripleConfig {
+                    min_triples: 8,
+                    max_triples: 80,
+                    ..Default::default()
+                },
+                presignature: PresignatureConfig {
+                    min_presignatures: 2,
+                    max_presignatures: 20,
+                    ..Default::default()
+                },
+                ..Default::default()
             },
         }
     }
