@@ -6,16 +6,18 @@ on:
       - develop
   pull_request:
     paths:
+      - .github/workflows/multichain-contract.yml
       - chain-signatures/contract/**
+      - chain-signatures/test-contracts/**
 
 env:
   RUSTFLAGS: -D warnings
 jobs:
   test:
-    name: Test
+    name: MPC Contract Test
     strategy:
       matrix:
-        os: [ubuntu-22.04-4core]
+        os: [warp-ubuntu-latest-x64-4x]
     runs-on: ${{ matrix.os }}
 
     steps:
