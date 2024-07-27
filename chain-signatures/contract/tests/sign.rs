@@ -1,9 +1,10 @@
-use crate::{candidates, create_response, init, init_env, sign_and_validate};
 use mpc_contract::errors;
 use mpc_contract::primitives::{CandidateInfo, SignRequest};
 use near_workspaces::types::AccountId;
 
 use std::collections::HashMap;
+
+use crate::{candidates, create_response, init, init_env, sign_and_validate};
 
 #[tokio::test]
 async fn test_contract_sign_request() -> anyhow::Result<()> {
