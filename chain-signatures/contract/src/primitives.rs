@@ -13,6 +13,7 @@ pub mod hpke {
 #[borsh(crate = "near_sdk::borsh")]
 pub enum StorageKey {
     PendingRequests,
+    ProposedUpdatesEntries,
 }
 
 /// The index into calling the YieldResume feature of NEAR. This will allow to resume
