@@ -1,11 +1,12 @@
+pub mod common;
+use common::{init_env, vote_update_till_completion, CONTRACT_FILE_PATH, INVALID_CONTRACT};
+
 use std::collections::HashMap;
 
-use crate::{init_env, CONTRACT_FILE_PATH, INVALID_CONTRACT};
 use mpc_contract::config::{Config, ProtocolConfig};
 use mpc_contract::errors::{self, MpcContractError};
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_sdk::NearToken;
-use near_workspaces::{Account, Contract};
 
 pub fn dummy_contract() -> ProposeUpdateArgs {
     ProposeUpdateArgs {
@@ -36,18 +37,10 @@ pub fn invalid_contract() -> ProposeUpdateArgs {
 const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(8500);
 
 #[tokio::test]
-async fn test_contract_propose_update() {
+async fn test_propose_contract_max_size_upload() {
     let (_, contract, accounts, _) = init_env().await;
     dbg!(contract.id());
 
-    test_propose_update_size(&contract, &accounts).await;
-    test_propose_update_config(&contract, &accounts).await;
-    test_propose_update_contract(&contract, &accounts).await;
-    test_propose_update_contract_many(&contract, &accounts).await;
-    test_invalid_contract_deploy(&contract, &accounts).await;
-}
-
-async fn test_propose_update_size(contract: &Contract, accounts: &[Account]) {
     // check that we can propose an update with the maximum contract size.
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
@@ -67,7 +60,11 @@ async fn test_propose_update_size(contract: &Contract, accounts: &[Account]) {
     );
 }
 
-async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
+#[tokio::test]
+async fn test_propose_update_config() {
+    let (_, contract, accounts, _) = init_env().await;
+    dbg!(contract.id());
+
     // contract should not be able to propose updates unless it's a part of the participant/voter set.
     let execution = contract
         .call("propose_update")
@@ -92,7 +89,7 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
-    for account in accounts {
+    for account in &accounts {
         let propose_execution = account
             .call(contract.id(), "propose_update")
             .args_borsh((ProposeUpdateArgs {
@@ -159,12 +156,11 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
     assert_eq!(config, new_config);
 }
 
-async fn test_propose_update_contract(contract: &Contract, accounts: &[Account]) {
-    const CONTRACT_DEPLOY: NearToken = NearToken::from_millinear(8500);
-    let state: mpc_contract::ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+#[tokio::test]
+async fn test_propose_update_contract() {
+    let (_, contract, accounts, _) = init_env().await;
+    dbg!(contract.id());
 
-    // Let's propose a contract update instead now.
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh((current_contract(),))
@@ -176,7 +172,7 @@ async fn test_propose_update_contract(contract: &Contract, accounts: &[Account])
     dbg!(&execution);
     assert!(execution.is_success());
     let proposal_id: UpdateId = execution.json().unwrap();
-    vote_update_till_completion(contract, accounts, &proposal_id).await;
+    vote_update_till_completion(&contract, &accounts, &proposal_id).await;
 
     // Try calling into state and see if it works.
     let execution = accounts[0]
@@ -194,10 +190,12 @@ async fn test_propose_update_contract(contract: &Contract, accounts: &[Account])
     dbg!(state);
 }
 
-async fn test_invalid_contract_deploy(contract: &Contract, accounts: &[Account]) {
+#[tokio::test]
+async fn test_invalid_contract_deploy() {
+    let (_, contract, accounts, _) = init_env().await;
+    dbg!(contract.id());
+
     const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
-    let state: mpc_contract::ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
 
     // Let's propose a contract update instead now.
     let execution = accounts[0]
@@ -211,7 +209,7 @@ async fn test_invalid_contract_deploy(contract: &Contract, accounts: &[Account])
     dbg!(&execution);
     assert!(execution.is_success());
     let proposal_id: UpdateId = execution.json().unwrap();
-    vote_update_till_completion(contract, accounts, &proposal_id).await;
+    vote_update_till_completion(&contract, &accounts, &proposal_id).await;
 
     // Try calling into state and see if it works after the contract updates with an invalid
     // contract. It will fail in `migrate` so a state rollback on the contract code should have
@@ -230,14 +228,17 @@ async fn test_invalid_contract_deploy(contract: &Contract, accounts: &[Account])
     dbg!(state);
 }
 
-async fn test_propose_update_contract_many(contract: &Contract, accounts: &[Account]) {
+#[tokio::test]
+async fn test_propose_update_contract_many() {
+    let (_, contract, accounts, _) = init_env().await;
+    dbg!(contract.id());
+
     const PROPOSAL_COUNT: usize = 10;
     let mut proposals = Vec::with_capacity(PROPOSAL_COUNT);
     // Try to propose multiple updates to check if they are being proposed correctly
     // and that we can have many at once living in the contract state.
     for i in 0..PROPOSAL_COUNT {
-        // Let's propose a contract update instead now.
-        let execution = accounts[0]
+        let execution = accounts[i % accounts.len()]
             .call(contract.id(), "propose_update")
             .args_borsh((current_contract(),))
             .max_gas()
@@ -255,33 +256,10 @@ async fn test_propose_update_contract_many(contract: &Contract, accounts: &[Acco
     }
 
     // Vote for the last proposal
-    vote_update_till_completion(contract, accounts, proposals.last().unwrap()).await;
+    vote_update_till_completion(&contract, &accounts, proposals.last().unwrap()).await;
 
     // Let's check that we can call into the state and see all the proposals.
     let state: mpc_contract::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
     dbg!(state);
-}
-
-async fn vote_update_till_completion(
-    contract: &Contract,
-    accounts: &[Account],
-    proposal_id: &UpdateId,
-) {
-    for voter in accounts {
-        let execution = voter
-            .call(contract.id(), "vote_update")
-            .args_json(serde_json::json!({
-                "id": proposal_id,
-            }))
-            .max_gas()
-            .transact()
-            .await
-            .unwrap();
-
-        // Met the threshold, voting completed.
-        if execution.is_failure() {
-            break;
-        }
-    }
 }

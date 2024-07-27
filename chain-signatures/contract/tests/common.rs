@@ -1,6 +1,3 @@
-mod sign;
-mod updates;
-
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
@@ -18,6 +15,7 @@ use k256::{AffinePoint, FieldBytes, Scalar, Secp256k1};
 use mpc_contract::primitives::{
     CandidateInfo, ParticipantInfo, Participants, SignRequest, SignatureRequest,
 };
+use mpc_contract::update::UpdateId;
 use near_sdk::NearToken;
 use near_workspaces::network::Sandbox;
 use near_workspaces::types::AccountId;
@@ -248,4 +246,27 @@ pub async fn sign_and_validate(
     }
 
     Ok(())
+}
+
+pub async fn vote_update_till_completion(
+    contract: &Contract,
+    accounts: &[Account],
+    proposal_id: &UpdateId,
+) {
+    for voter in accounts {
+        let execution = voter
+            .call(contract.id(), "vote_update")
+            .args_json(serde_json::json!({
+                "id": proposal_id,
+            }))
+            .max_gas()
+            .transact()
+            .await
+            .unwrap();
+
+        // Met the threshold, voting completed.
+        if execution.is_failure() {
+            break;
+        }
+    }
 }
