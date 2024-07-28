@@ -314,11 +314,11 @@ impl TripleManager {
             let triple_0 = self
                 .triples
                 .remove(&id0)
-                .ok_or_else(|| GenerationError::TripleIsMissing(id0))?;
+                .ok_or(GenerationError::TripleIsMissing(id0))?;
             let triple_1 = self
                 .triples
                 .remove(&id1)
-                .ok_or_else(|| GenerationError::TripleIsMissing(id1))?;
+                .ok_or(GenerationError::TripleIsMissing(id1))?;
             Ok((triple_0, triple_1))
         }
     }
