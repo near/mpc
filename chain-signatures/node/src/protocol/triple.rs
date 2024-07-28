@@ -298,8 +298,9 @@ impl TripleManager {
                 Err(GenerationError::TripleIsMissing(id1))
             }
         } else {
-            // if we cannot find triples from storage, but we still have triples in memory, then we should still be able to take
-            // them, so the following storage errors can just be handled directly and warned to our logs.
+            // Ensure that the triples have been removed from the datastore if they're going to be used in a signing protocol.
+            // We expect them to be there so warn if they're not.
+            // They may already be in memory, so even if this fails still try to pull them out.
             if let Err(err) = self.delete_triple_from_storage(id0).await {
                 tracing::warn!(triple_id = id0, ?err, "unable to delete triple: potentially missing from datastore; deleting from memory only");
             }
@@ -309,10 +310,16 @@ impl TripleManager {
 
             self.gc.insert(id0, Instant::now());
             self.gc.insert(id1, Instant::now());
-            Ok((
-                self.triples.remove(&id0).unwrap(),
-                self.triples.remove(&id1).unwrap(),
-            ))
+
+            let triple_0 = self
+                .triples
+                .remove(&id0)
+                .ok_or_else(|| GenerationError::TripleIsMissing(id0))?;
+            let triple_1 = self
+                .triples
+                .remove(&id1)
+                .ok_or_else(|| GenerationError::TripleIsMissing(id1))?;
+            Ok((triple_0, triple_1))
         }
     }
 
