@@ -13,38 +13,24 @@ pub enum SignError {
         "This key version is not supported. Call latest_key_version() to get the latest supported version."
     )]
     UnsupportedKeyVersion,
-    #[error("Attached deposit is lower than required.")]
-    InsufficientDeposit,
-    #[error("Provided gas is lower than required.")]
-    InsufficientGas,
     #[error("Too many pending requests. Please try again later.")]
     RequestLimitExceeded,
-    #[error("This sign request has timed out, was completed, or never existed.")]
-    RequestNotFound,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RespondError {
-    #[error("This sign request has timed out, was completed, or never existed.")]
-    RequestNotFound,
     #[error("The provided signature is invalid.")]
     InvalidSignature,
-    #[error("The protocol is not Running.")]
-    ProtocolNotInRunningState,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum JoinError {
-    #[error("The protocol is not Running.")]
-    ProtocolStateNotRunning,
     #[error("Account to join is already in the participant set.")]
     JoinAlreadyParticipant,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum PublicKeyError {
-    #[error("Protocol state is not running or resharing.")]
-    ProtocolStateNotRunningOrResharing,
     #[error("Derived key conversion failed.")]
     DerivedKeyConversionFailed,
 }
@@ -65,18 +51,30 @@ pub enum VoteError {
     KickNotParticipant,
     #[error("Account to join is not in the candidate set.")]
     JoinNotCandidate,
-    #[error("Mismatched epoch.")]
-    EpochMismatch,
     #[error("Number of participants cannot go below threshold.")]
     ParticipantsBelowThreshold,
     #[error("Update not found.")]
     UpdateNotFound,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
+pub enum Common {
+    #[error("The protocol is not Running.")]
+    ProtocolStateNotRunning,
+    #[error("Protocol state is not running or resharing.")]
+    ProtocolStateNotRunningOrResharing,
+    #[error("This sign request has timed out, was completed, or never existed.")]
+    RequestNotFound,
+    #[error("Mismatched epoch.")]
+    EpochMismatch,
     #[error("Attached deposit is lower than required.")]
     InsufficientDeposit,
+    #[error("Provided gas is lower than required.")]
+    InsufficientGas,
     #[error("Unexpected protocol state.")]
     UnexpectedProtocolState,
-    #[error("Unexpected.")]
-    Unexpected,
+    #[error("Data conversion error.")]
+    DataConversion,
 }
 
 /// A list specifying general categories of MPC Contract errors.
@@ -101,16 +99,9 @@ pub enum ErrorKind {
     /// An error occurred while node is performing vote_* call.
     #[error("{0}")]
     Vote(#[from] VoteError),
-    // TODO: remove if not used, check if some of the errors needs to be moved here
-    /// An error from performing IO.
-    #[error("IO")]
-    Io,
-    /// An error from converting data.
-    #[error("DataConversion")]
-    DataConversion,
-    /// An error that cannot be categorized into the other error kinds.
-    #[error("Other")]
-    Other,
+    // Common errors
+    #[error("{0}")]
+    Common(#[from] Common),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -124,7 +115,7 @@ enum ErrorRepr {
     },
 }
 
-/// Error type that workspaces will make use of for all the errors
+/// Error type that this contract will make use of for all the errors
 /// returned from this library
 #[derive(Debug)]
 pub struct Error {

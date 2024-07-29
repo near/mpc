@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::fmt;
 
 use super::{
-    Error, ErrorKind, ErrorRepr, InitError, JoinError, PublicKeyError, RespondError, SignError,
-    VoteError,
+    Common, Error, ErrorKind, ErrorRepr, InitError, JoinError, PublicKeyError, RespondError,
+    SignError, VoteError,
 };
 
 impl Error {
@@ -96,11 +96,17 @@ impl From<VoteError> for Error {
     }
 }
 
-impl VoteError {
+impl From<Common> for Error {
+    fn from(code: Common) -> Self {
+        Self::simple(ErrorKind::Common(code))
+    }
+}
+
+impl Common {
     pub(crate) fn message<T>(self, msg: T) -> Error
     where
         T: Into<Cow<'static, str>>,
     {
-        Error::message(ErrorKind::Vote(self), msg)
+        Error::message(ErrorKind::Common(self), msg)
     }
 }
