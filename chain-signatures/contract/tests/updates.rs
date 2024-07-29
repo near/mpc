@@ -1,10 +1,10 @@
 pub mod common;
 use common::{init_env, vote_update_till_completion, CONTRACT_FILE_PATH, INVALID_CONTRACT};
+use mpc_contract::errors;
 
 use std::collections::HashMap;
 
 use mpc_contract::config::{Config, ProtocolConfig};
-use mpc_contract::errors::{self, MpcContractError};
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_sdk::NearToken;
 
@@ -77,7 +77,7 @@ async fn test_propose_update_config() {
         .into_result()
         .unwrap_err()
         .to_string()
-        .contains(&MpcContractError::from(errors::VoteError::VoterNotParticipant).to_string()));
+        .contains(&errors::VoteError::VoterNotParticipant.to_string()));
 
     // have each participant propose a new update:
     let new_config = Config {
