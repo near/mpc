@@ -3,13 +3,13 @@ use crypto_shared::{kdf::recover, x_coordinate, ScalarExt, SignatureResponse};
 use hkdf::Hkdf;
 use k256::{ecdsa::RecoveryId, elliptic_curve::sec1::ToEncodedPoint, Scalar};
 use near_primitives::hash::CryptoHash;
-use sha2::Sha256;
+use sha3::Sha3_256;
 
 // In case there are multiple requests in the same block (hence same entropy), we need to ensure
 // that we generate different random scalars as delta tweaks.
 // Receipt ID should be unique inside of a block, so it serves us as the request identifier.
 pub fn derive_delta(receipt_id: CryptoHash, entropy: [u8; 32]) -> Scalar {
-    let hk = Hkdf::<Sha256>::new(None, &entropy);
+    let hk = Hkdf::<Sha3_256>::new(None, &entropy);
     let info = format!("{DELTA_DERIVATION_PREFIX}:{}", receipt_id);
     let mut okm = [0u8; 32];
     hk.expand(info.as_bytes(), &mut okm).unwrap();
