@@ -3,7 +3,7 @@
 ## `sign()`
 This is the main function of the contract API. It is used to sign a request with the MPC service.
 ```rust
-pub fn sign(&mut self, request: SignRequest) -> Result<near_sdk::Promise, MpcContractError>
+pub fn sign(&mut self, request: SignRequest) -> Result<near_sdk::Promise, Error>
 ```
 Arguments and return type:
 ```rust
@@ -25,7 +25,7 @@ pub struct SignResult {
 ## `public_key()`
 This is the root public key combined from all the public keys of the participants.
 ```rust
-pub fn public_key(&self) -> Result<PublicKey, MpcContractError>
+pub fn public_key(&self) -> Result<PublicKey, Error>
 ```
 
 ## `derived_public_key()`
@@ -35,7 +35,7 @@ pub fn derived_public_key(
         &self,
         path: String,
         predecessor: Option<AccountId>,
-    ) -> Result<PublicKey, MpcContractError>
+    ) -> Result<PublicKey, Error>
 ```
 
 ## `latest_key_version()`
