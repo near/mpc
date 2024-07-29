@@ -7,7 +7,7 @@ use super::{
 };
 
 impl Error {
-    /// Construct a workspaces [`Error`] with the details of an error which includes
+    /// Construct a contract [`Error`] with the details of an error which includes
     /// the custom error message with further context and the [`ErrorKind`] that
     /// represents the category of error.
     pub fn message<T>(kind: ErrorKind, msg: T) -> Self
@@ -22,7 +22,7 @@ impl Error {
         }
     }
 
-    /// Construct a workspaces [`Error`] with the details of an error which only
+    /// Construct a contract [`Error`] with the details of an error which only
     /// includes the [`ErrorKind`] that represents the category of error.
     pub fn simple(kind: ErrorKind) -> Self {
         Self {
