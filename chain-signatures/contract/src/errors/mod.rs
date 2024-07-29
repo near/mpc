@@ -1,24 +1,22 @@
 use std::borrow::Cow;
 mod impls;
 
-use near_sdk::Gas;
-
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SignError {
     #[error("Signature request has timed out.")]
     Timeout,
     #[error("Signature request has already been submitted. Please try again later.")]
     PayloadCollision,
-    #[error("Malformed payload: {0}")]
-    MalformedPayload(String),
+    #[error("Malformed payload.")]
+    MalformedPayload,
     #[error(
         "This key version is not supported. Call latest_key_version() to get the latest supported version."
     )]
     UnsupportedKeyVersion,
-    #[error("Attached deposit is lower than required. Attached: {0}, Required: {1}.")]
-    InsufficientDeposit(u128, u128),
-    #[error("Provided gas is lower than required. Provided: {0}, required {1}.")]
-    InsufficientGas(Gas, Gas),
+    #[error("Attached deposit is lower than required.")]
+    InsufficientDeposit,
+    #[error("Provided gas is lower than required.")]
+    InsufficientGas,
     #[error("Too many pending requests. Please try again later.")]
     RequestLimitExceeded,
     #[error("This sign request has timed out, was completed, or never existed.")]
@@ -73,12 +71,12 @@ pub enum VoteError {
     ParticipantsBelowThreshold,
     #[error("Update not found.")]
     UpdateNotFound,
-    #[error("Attached deposit is lower than required. Attached: {0}, Required: {1}.")]
-    InsufficientDeposit(u128, u128),
-    #[error("Unexpected protocol state: {0}")]
-    UnexpectedProtocolState(String),
-    #[error("Unexpected: {0}")]
-    Unexpected(String),
+    #[error("Attached deposit is lower than required.")]
+    InsufficientDeposit,
+    #[error("Unexpected protocol state.")]
+    UnexpectedProtocolState,
+    #[error("Unexpected.")]
+    Unexpected,
 }
 
 /// A list specifying general categories of MPC Contract errors.

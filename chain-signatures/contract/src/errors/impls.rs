@@ -57,6 +57,15 @@ impl From<SignError> for Error {
     }
 }
 
+impl SignError {
+    pub(crate) fn message<T>(self, msg: T) -> Error
+    where
+        T: Into<Cow<'static, str>>,
+    {
+        Error::message(ErrorKind::Sign(self), msg)
+    }
+}
+
 impl From<RespondError> for Error {
     fn from(code: RespondError) -> Self {
         Self::simple(ErrorKind::Respond(code))
@@ -84,5 +93,14 @@ impl From<InitError> for Error {
 impl From<VoteError> for Error {
     fn from(code: VoteError) -> Self {
         Self::simple(ErrorKind::Vote(code))
+    }
+}
+
+impl VoteError {
+    pub(crate) fn message<T>(self, msg: T) -> Error
+    where
+        T: Into<Cow<'static, str>>,
+    {
+        Error::message(ErrorKind::Vote(self), msg)
     }
 }

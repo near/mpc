@@ -107,7 +107,7 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
         .into_result()
         .unwrap_err()
         .to_string()
-        .contains(&errors::SignError::InsufficientDeposit(0, 1).to_string()));
+        .contains(&errors::SignError::InsufficientDeposit.to_string()));
 
     Ok(())
 }
