@@ -124,6 +124,6 @@ pub struct Error {
 
 impl near_sdk::FunctionError for Error {
     fn panic(&self) -> ! {
-        crate::env::panic_str(&self.repr.to_string())
+        crate::env::panic_str(&self.to_string())
     }
 }

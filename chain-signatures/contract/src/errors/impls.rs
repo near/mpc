@@ -41,13 +41,10 @@ impl Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.repr)
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.repr.source()
+        match &self.repr {
+            ErrorRepr::Simple(kind) => write!(f, "{}", kind),
+            ErrorRepr::Message { kind, message } => write!(f, "{}: {}", kind, message),
+        }
     }
 }
 
