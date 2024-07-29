@@ -10,8 +10,7 @@ use chrono::Utc;
 use crypto_shared::PublicKey;
 use k256::Secp256k1;
 use mpc_contract::config::ProtocolConfig;
-use rand::rngs::StdRng;
-use rand::{Rng as _, SeedableRng as _};
+use sha3::{Digest, Sha3_256};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
@@ -520,13 +519,21 @@ impl PresignatureManager {
 }
 
 pub fn hash_as_id(triple0: TripleId, triple1: TripleId) -> PresignatureId {
-    use sha3::{Digest, Sha3_256};
     let mut hasher = Sha3_256::new();
     hasher.update(triple0.to_le_bytes());
     hasher.update(triple1.to_le_bytes());
-    let seed: [u8; 32] = hasher.finalize().into();
-    let mut rng = StdRng::from_seed(seed);
-    let id = rng.gen::<u64>();
+    let id: [u8; 32] = hasher.finalize().into();
+    let id = u64::from_le_bytes(first_8_bytes(id));
 
     PresignatureId::from(id)
+}
+
+const fn first_8_bytes(input: [u8; 32]) -> [u8; 8] {
+    let mut output = [0u8; 8];
+    let mut i = 0;
+    while i < 8 {
+        output[i] = input[i];
+        i += 1;
+    }
+    output
 }
