@@ -81,7 +81,7 @@ jobs:
       - name: Run Audit (Chain Signatures)
         # even if previous audit step fails, run this audit step to ensure all crates are audited
         if: always()
-        working-directory: integration-tests/chain-signatures
+        working-directory: chain-signatures
         # ALL audit exceptions must be justified here
         # RUSTSEC-2024-0344 and RUSTSEC-2022-0093 are both to do with ed25519 signatures in near-sdk, we don't sign things with this library so it's safe
         # RUSTSEC-2022-0054 wee-alloc is unmaintained, it's fine for now because we barely use an allocator and the contracts are short lived, but we should find a replacement/use the default allocator
