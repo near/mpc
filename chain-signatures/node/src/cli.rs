@@ -70,8 +70,8 @@ impl Cli {
         match self {
             Cli::Start {
                 near_rpc,
-                account_id,
                 mpc_contract_id,
+                account_id,
                 account_sk,
                 web_port,
                 cipher_pk,
