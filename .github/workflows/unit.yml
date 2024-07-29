@@ -5,6 +5,14 @@ on:
       - main
       - develop
   pull_request:
+    paths:
+      - ".github/workflows/unit.yml"
+      - "chain-signatures/**/*.rs"
+      - "mpc-recovery/**/*.rs"
+      - "load-tests/**/*.rs"
+      - "test-oidc-provider/**/*.rs"
+      - "integration-tests/**/*.rs"
+
 env:
   RUSTFLAGS: -D warnings
 jobs:
