@@ -1,11 +1,11 @@
 mod cryptography;
-mod signature;
 
 pub mod consensus;
 pub mod contract;
 pub mod message;
 pub mod monitor;
 pub mod presignature;
+pub mod signature;
 pub mod state;
 pub mod triple;
 

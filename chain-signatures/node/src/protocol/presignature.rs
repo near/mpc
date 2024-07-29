@@ -10,6 +10,8 @@ use chrono::Utc;
 use crypto_shared::PublicKey;
 use k256::Secp256k1;
 use mpc_contract::config::ProtocolConfig;
+use rand::rngs::StdRng;
+use rand::{Rng as _, SeedableRng as _};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
@@ -213,7 +215,7 @@ impl PresignatureManager {
         private_share: &SecretKeyShare,
         timeout: u64,
     ) -> Result<(), InitializationError> {
-        let id = rand::random();
+        let id = hash_as_id(triple0.id, triple1.id);
 
         // Check if the `id` is already in the system. Error out and have the next cycle try again.
         if self.generators.contains_key(&id)
@@ -515,4 +517,16 @@ impl PresignatureManager {
 
         messages
     }
+}
+
+pub fn hash_as_id(triple0: TripleId, triple1: TripleId) -> PresignatureId {
+    use sha3::{Digest, Sha3_256};
+    let mut hasher = Sha3_256::new();
+    hasher.update(triple0.to_le_bytes());
+    hasher.update(triple1.to_le_bytes());
+    let seed: [u8; 32] = hasher.finalize().into();
+    let mut rng = StdRng::from_seed(seed);
+    let id = rng.gen::<u64>();
+
+    PresignatureId::from(id)
 }
