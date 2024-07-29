@@ -8,12 +8,12 @@ use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::DecompressPoint;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, FieldBytes, Scalar, Secp256k1};
-use mpc_contract::config::min_to_ms;
+use mpc_contract::config::{Config, ProtocolConfig};
 use mpc_contract::errors::{self, MpcContractError};
 use mpc_contract::primitives::{
     CandidateInfo, ParticipantInfo, Participants, SignRequest, SignatureRequest,
 };
-use mpc_contract::update::UpdateId;
+use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_sdk::NearToken;
 use near_workspaces::network::Sandbox;
 use near_workspaces::{Account, AccountId, Contract, Worker};
@@ -26,6 +26,29 @@ use std::str::FromStr;
 const CONTRACT_FILE_PATH: &str = "../../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
 const INVALID_CONTRACT: &str = "../res/mpc_test_contract.wasm";
 const PARTICIPANT_LEN: usize = 3;
+
+fn dummy_contract() -> ProposeUpdateArgs {
+    ProposeUpdateArgs {
+        code: Some(vec![1, 2, 3]),
+        config: None,
+    }
+}
+
+fn current_contract() -> ProposeUpdateArgs {
+    let new_wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
+    ProposeUpdateArgs {
+        code: Some(new_wasm),
+        config: None,
+    }
+}
+
+fn invalid_contract() -> ProposeUpdateArgs {
+    let new_wasm = std::fs::read(INVALID_CONTRACT).unwrap();
+    ProposeUpdateArgs {
+        code: Some(new_wasm),
+        config: None,
+    }
+}
 
 fn candidates(names: Option<Vec<AccountId>>) -> HashMap<AccountId, CandidateInfo> {
     let mut candidates: HashMap<AccountId, CandidateInfo> = HashMap::new();
@@ -412,9 +435,7 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
     // contract should not be able to propose updates unless it's a part of the participant/voter set.
     let execution = contract
         .call("propose_update")
-        .args_json(serde_json::json!({
-            "code": vec![1, 2, 3],
-        }))
+        .args_borsh((dummy_contract(),))
         .transact()
         .await
         .unwrap();
@@ -426,20 +447,22 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
         .contains(&MpcContractError::from(errors::VoteError::VoterNotParticipant).to_string()));
 
     // have each participant propose a new update:
-    let new_config = serde_json::json!({
-        "triple_timeout": min_to_ms(20),
-        "presignature_timeout": min_to_ms(30),
-        "signature_timeout": min_to_ms(30),
-        "string": "value",
-        "integer": 1000,
-    });
+    let new_config = Config {
+        protocol: ProtocolConfig {
+            max_concurrent_introduction: 2,
+            ..ProtocolConfig::default()
+        },
+        ..Config::default()
+    };
+
     let mut proposals = Vec::with_capacity(accounts.len());
     for account in accounts {
         let propose_execution = account
             .call(contract.id(), "propose_update")
-            .args_json(serde_json::json!({
-                "config": &new_config,
-            }))
+            .args_borsh((ProposeUpdateArgs {
+                code: None,
+                config: Some(new_config.clone()),
+            },))
             .deposit(NearToken::from_millinear(100))
             .transact()
             .await
@@ -482,6 +505,7 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
             );
         }
     }
+    let new_config = serde_json::json!(new_config);
     // check that the proposal executed since the threshold got changed.
     let config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
     assert_ne!(config, old_config);
@@ -490,10 +514,7 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
     // Check that we can partially set hardcoded configs, while leaving other configs as dynamic values:
     #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
     pub struct LocalConfig {
-        pub triple_timeout: u64,
-        pub presignature_timeout: u64,
-        pub signature_timeout: u64,
-
+        pub protocol: ProtocolConfig,
         #[serde(flatten)]
         other: HashMap<String, serde_json::Value>,
     }
@@ -503,17 +524,14 @@ async fn test_propose_update_config(contract: &Contract, accounts: &[Account]) {
 }
 
 async fn test_propose_update_contract(contract: &Contract, accounts: &[Account]) {
-    const CONTRACT_DEPLOY: NearToken = NearToken::from_near(8);
+    const CONTRACT_DEPLOY: NearToken = NearToken::from_millinear(8500);
     let state: mpc_contract::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
 
     // Let's propose a contract update instead now.
-    let new_wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_json(serde_json::json!({
-            "code": &new_wasm,
-        }))
+        .args_borsh((current_contract(),))
         .max_gas()
         .deposit(CONTRACT_DEPLOY)
         .transact()
@@ -570,12 +588,9 @@ async fn test_invalid_contract_deploy(contract: &Contract, accounts: &[Account])
         contract.view("state").await.unwrap().json().unwrap();
 
     // Let's propose a contract update instead now.
-    let new_wasm = std::fs::read(INVALID_CONTRACT).unwrap();
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_json(serde_json::json!({
-            "code": &new_wasm,
-        }))
+        .args_borsh((invalid_contract(),))
         .max_gas()
         .deposit(CONTRACT_DEPLOY)
         .transact()

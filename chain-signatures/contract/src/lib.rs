@@ -26,7 +26,7 @@ use crate::config::Config;
 use crate::errors::{
     InitError, JoinError, MpcContractError, PublicKeyError, RespondError, SignError, VoteError,
 };
-use crate::update::{ProposedUpdates, UpdateId};
+use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 
 pub use state::{
     InitializingContractState, ProtocolContractState, ResharingContractState, RunningContractState,
@@ -87,7 +87,11 @@ impl MpcContract {
         }
     }
 
-    pub fn init(threshold: usize, candidates: BTreeMap<AccountId, CandidateInfo>) -> Self {
+    pub fn init(
+        threshold: usize,
+        candidates: BTreeMap<AccountId, CandidateInfo>,
+        config: Option<Config>,
+    ) -> Self {
         MpcContract {
             protocol_state: ProtocolContractState::Initializing(InitializingContractState {
                 candidates: Candidates { candidates },
@@ -97,7 +101,7 @@ impl MpcContract {
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
             proposed_updates: ProposedUpdates::default(),
-            config: Config::default(),
+            config: config.unwrap_or_default(),
         }
     }
 }
@@ -520,14 +524,13 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn propose_update(
         &mut self,
-        code: Option<Vec<u8>>,
-        config: Option<Config>,
+        #[serializer(borsh)] args: ProposeUpdateArgs,
     ) -> Result<UpdateId, MpcContractError> {
         // Only voters can propose updates:
         let proposer = self.voter()?;
 
         let attached = env::attached_deposit();
-        let required = ProposedUpdates::required_deposit(&code, &config);
+        let required = ProposedUpdates::required_deposit(&args.code, &args.config);
         if attached < required {
             return Err(MpcContractError::from(VoteError::InsufficientDeposit(
                 attached.as_yoctonear(),
@@ -535,7 +538,7 @@ impl VersionedMpcContract {
             )));
         }
 
-        let Some(id) = self.proposed_updates().propose(code, config) else {
+        let Some(id) = self.proposed_updates().propose(args.code, args.config) else {
             return Err(MpcContractError::from(VoteError::Unexpected(
                 "cannot propose update due to incorrect parameters".into(),
             )));
@@ -558,6 +561,11 @@ impl VersionedMpcContract {
     /// was not found or if the voter is not a participant in the protocol.
     #[handle_result]
     pub fn vote_update(&mut self, id: UpdateId) -> Result<bool, MpcContractError> {
+        log!(
+            "vote_update: signer={}, id={:?}",
+            env::signer_account_id(),
+            id,
+        );
         let threshold = self.threshold()?;
         let voter = self.voter()?;
         let Some(votes) = self.proposed_updates().vote(&id, voter) else {
@@ -585,6 +593,7 @@ impl VersionedMpcContract {
     pub fn init(
         threshold: usize,
         candidates: BTreeMap<AccountId, CandidateInfo>,
+        config: Option<Config>,
     ) -> Result<Self, MpcContractError> {
         log!(
             "init: signer={}, threshold={}, candidates={}",
@@ -597,7 +606,7 @@ impl VersionedMpcContract {
             return Err(MpcContractError::InitError(InitError::ThresholdTooHigh));
         }
 
-        Ok(Self::V0(MpcContract::init(threshold, candidates)))
+        Ok(Self::V0(MpcContract::init(threshold, candidates, config)))
     }
 
     // This function can be used to transfer the MPC network to a new contract.
@@ -609,6 +618,7 @@ impl VersionedMpcContract {
         participants: Participants,
         threshold: usize,
         public_key: PublicKey,
+        config: Option<Config>,
     ) -> Result<Self, MpcContractError> {
         log!(
             "init_running: signer={}, epoch={}, participants={}, threshold={}, public_key={:?}",
@@ -636,7 +646,7 @@ impl VersionedMpcContract {
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
             proposed_updates: ProposedUpdates::default(),
-            config: Config::default(),
+            config: config.unwrap_or_default(),
         }))
     }
 

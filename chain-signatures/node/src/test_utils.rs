@@ -1,6 +1,7 @@
+use crate::config::Config;
 use crate::protocol::contract::primitives::Participants;
 use crate::protocol::presignature::GenerationError;
-use crate::protocol::triple::{Triple, TripleConfig, TripleId, TripleManager};
+use crate::protocol::triple::{Triple, TripleId, TripleManager};
 use crate::protocol::ParticipantInfo;
 use crate::storage::triple_storage::LockTripleNodeStorageBox;
 use crate::{gcp::GcpService, protocol::message::TripleMessage, storage};
@@ -16,16 +17,11 @@ use tokio::sync::RwLock;
 
 // Constants to be used for testing.
 const STARTING_EPOCH: u64 = 0;
-const TRIPLE_CFG: TripleConfig = TripleConfig {
-    min_triples: 2,
-    max_triples: 10,
-    max_concurrent_introduction: 4,
-    max_concurrent_generation: 16,
-};
 
 struct TestTripleManagers {
     managers: Vec<TripleManager>,
     participants: Participants,
+    config: Config,
 }
 
 impl TestTripleManagers {
@@ -67,7 +63,6 @@ impl TestTripleManagers {
                     Participant::from(num),
                     num_managers as usize,
                     STARTING_EPOCH,
-                    &TRIPLE_CFG,
                     vec![],
                     triple_storage,
                     &account_id,
@@ -77,16 +72,20 @@ impl TestTripleManagers {
         TestTripleManagers {
             managers,
             participants,
+            config: Config::default(),
         }
     }
 
     fn generate(&mut self, index: usize) -> Result<(), InitializationError> {
-        self.managers[index].generate(&self.participants)
+        self.managers[index].generate(
+            &self.participants,
+            self.config.protocol.triple.generation_timeout,
+        )
     }
 
     async fn poke(&mut self, index: usize) -> Result<bool, ProtocolError> {
         let mut quiet = true;
-        let messages = self.managers[index].poke().await;
+        let messages = self.managers[index].poke(&self.config.protocol).await;
         for (
             participant,
             ref tm @ TripleMessage {
@@ -98,7 +97,10 @@ impl TestTripleManagers {
             quiet = false;
             let participant_i: u32 = participant.into();
             let manager = &mut self.managers[participant_i as usize];
-            if let Some(protocol) = manager.get_or_generate(id, &self.participants).unwrap() {
+            if let Some(protocol) = manager
+                .get_or_generate(id, &self.participants, &self.config.protocol)
+                .unwrap()
+            {
                 protocol.message(from, data.to_vec());
             } else {
                 println!("Tried to write to completed mailbox {:?}", tm);

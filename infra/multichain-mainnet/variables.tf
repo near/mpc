@@ -1,13 +1,11 @@
 variable "project_id" {
   description = "The project ID to deploy resource into"
   type        = string
-  default     = "pagoda-discovery-platform-dev"
 }
 
 variable "subnetwork" {
   description = "The name of the subnetwork to deploy instances into"
   type        = string
-  default     = "dev-us-central1"
 }
 
 variable "mig_name" {
@@ -17,9 +15,9 @@ variable "mig_name" {
 }
 
 variable "image" {
-  description = "The Docker image to deploy to GCE instances"
+  description = "The Docker image to deploy to GCE instances. Note: This is a public image repository used for updating your nodes, please do not change this"
   type        = string
-  default     = "us-east1-docker.pkg.dev/pagoda-discovery-platform-dev/multichain/multichain-dev:latest"
+  default     = "us-east1-docker.pkg.dev/pagoda-discovery-platform-prod/multichain-public/multichain-mainnet:latest"
 }
 
 variable "image_port" {
@@ -31,19 +29,23 @@ variable "image_port" {
 variable "region" {
   description = "The GCP region to deploy instances into"
   type        = string
-  default     = "us-central1"
+}
+
+variable "zone" {
+  type = string
 }
 
 variable "network" {
   description = "The GCP network"
   type        = string
-  default     = "dev"
 }
 
 variable "additional_metadata" {
   type        = map(any)
   description = "Additional metadata to attach to the instance"
-  default     = {}
+  default     = {
+    cos-update-strategy:	"update_enabled"
+  }
 }
 
 variable "service_account" {
@@ -70,13 +72,13 @@ variable "node_configs" {
     cipher_sk_secret_id  = string
     sign_sk_secret_id    = string
     sk_share_secret_id   = string
-    ip_address           = string
+    domain               = string
   }))
 }
 
 variable "env" {
-  type    = string
-  default = "dev"
+  type = string
+  default = "mainnet"
 }
 
 variable "static_env" {
@@ -86,40 +88,45 @@ variable "static_env" {
   }))
   default = [
     {
-      name  = "MPC_NEAR_RPC"
-      value = "https://rpc.testnet.near.org"
+      name  = "MPC_RECOVERY_NEAR_RPC"
+      value = "https://rpc.mainnet.near.org"
     },
     {
-      name  = "MPC_CONTRACT_ID"
-      value = "v5.multichain-mpc-dev.testnet"
+      name  = "MPC_RECOVERY_CONTRACT_ID"
+      value = "v1.signer.near"
     },
     {
-      name  = "MPC_INDEXER_S3_BUCKET"
-      value = "near-lake-data-testnet"
+      name  = "MPC_RECOVERY_INDEXER_S3_BUCKET"
+      value = "near-lake-data-mainnet"
     },
     {
-      name  = "MPC_INDEXER_START_BLOCK_HEIGHT"
-      value = 159307004
+      name  = "MPC_RECOVERY_INDEXER_START_BLOCK_HEIGHT"
+      value = 124092099
     },
     {
       name  = "AWS_DEFAULT_REGION"
       value = "eu-central-1"
     },
     {
-      name  = "MPC_GCP_PROJECT_ID"
-      value = "pagoda-discovery-platform-dev"
+      name  = "MPC_RECOVERY_GCP_PROJECT_ID"
+      value = "pagoda-discovery-platform-prod"
     },
     {
-      name  = "MPC_WEB_PORT"
+      name  = "MPC_RECOVERY_WEB_PORT"
       value = "3000"
     },
     {
       name  = "RUST_LOG"
-      value = "mpc_node=debug"
+      value = "mpc_recovery_node=debug"
     },
     {
-      name  = "MPC_INDEXER_S3_REGION"
+      name  = "MPC_RECOVERY_INDEXER_S3_REGION"
       value = "eu-central-1"
     }
   ]
+}
+
+variable "domain" {
+  description = "DNS name for your node"
+  default = null
 }

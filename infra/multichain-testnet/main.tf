@@ -72,7 +72,7 @@ resource "google_service_account" "service_account" {
   display_name = "Multichain ${var.env} Account"
 }
 
-resource "google_project_iam_binding" "sa-roles" {
+resource "google_project_iam_member" "sa-roles" {
   for_each = toset([
     "roles/datastore.user",
     "roles/secretmanager.admin",
@@ -80,10 +80,8 @@ resource "google_project_iam_binding" "sa-roles" {
     "roles/iam.serviceAccountAdmin",
   ])
 
-  role = each.key
-  members = [
-    "serviceAccount:${google_service_account.service_account.email}"
-  ]
+  role    = each.key
+  member  = "serviceAccount:${google_service_account.service_account.email}"
   project = var.project_id
 }
 

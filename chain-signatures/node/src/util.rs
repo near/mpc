@@ -2,7 +2,6 @@ use chrono::{DateTime, LocalResult, TimeZone, Utc};
 use crypto_shared::{near_public_key_to_affine_point, PublicKey};
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use k256::{AffinePoint, EncodedPoint};
-use std::env;
 use std::time::Duration;
 
 pub trait NearPublicKeyExt {
@@ -64,15 +63,9 @@ impl AffinePointExt for AffinePoint {
     }
 }
 
-pub fn get_triple_timeout() -> Duration {
-    env::var("MPC_TRIPLE_TIMEOUT_SEC")
-        .map(|val| val.parse::<u64>().ok().map(Duration::from_secs))
-        .unwrap_or_default()
-        .unwrap_or(crate::types::PROTOCOL_TRIPLE_TIMEOUT)
-}
-
-pub fn is_elapsed_longer_than_timeout(timestamp_sec: u64, timeout: Duration) -> bool {
+pub fn is_elapsed_longer_than_timeout(timestamp_sec: u64, timeout: u64) -> bool {
     if let LocalResult::Single(msg_timestamp) = Utc.timestamp_opt(timestamp_sec as i64, 0) {
+        let timeout = Duration::from_millis(timeout);
         let now_datetime: DateTime<Utc> = Utc::now();
         // Calculate the difference in seconds
         let elapsed_duration = now_datetime.signed_duration_since(msg_timestamp);

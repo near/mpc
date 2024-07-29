@@ -38,10 +38,17 @@ impl From<u64> for UpdateId {
     }
 }
 
+#[allow(clippy::large_enum_variant)] // TODO: Config is big
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum Update {
     Config(Config),
     Contract(Vec<u8>),
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug, Default)]
+pub struct ProposeUpdateArgs {
+    pub code: Option<Vec<u8>>,
+    pub config: Option<Config>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]

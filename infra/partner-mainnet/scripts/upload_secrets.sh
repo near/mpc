@@ -35,7 +35,7 @@ while read -r line || [ -n "$line" ]; do
   SECRET_VALUE=$(echo "$line" | cut -d '=' -f 2-)
   
   echo "Creating secret: $SECRET_NAME in project: $DEST_PROJECT"
-  echo "$SECRET_VALUE" | gcloud secrets create "$SECRET_NAME" --data-file=- --project="$DEST_PROJECT" --replication-policy="automatic"
+  printf "%s" "$SECRET_VALUE" | gcloud secrets create "$SECRET_NAME" --data-file=- --project="$DEST_PROJECT" --replication-policy="automatic"
   
   if [ $? -ne 0 ]; then
     echo "Failed to create secret: $SECRET_NAME in project: $DEST_PROJECT"
