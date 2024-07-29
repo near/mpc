@@ -1,6 +1,6 @@
 use near_sdk::Gas;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SignError {
     #[error("Signature request has timed out.")]
     Timeout,
@@ -22,7 +22,7 @@ pub enum SignError {
     RequestNotFound,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RespondError {
     #[error("This sign request has timed out, was completed, or never existed.")]
     RequestNotFound,
@@ -32,13 +32,15 @@ pub enum RespondError {
     ProtocolNotInRunningState,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum JoinError {
     #[error("The protocol is not Running.")]
     ProtocolStateNotRunning,
+    #[error("Account to join is already in the participant set.")]
+    JoinAlreadyParticipant,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum PublicKeyError {
     #[error("Protocol state is not running or resharing.")]
     ProtocolStateNotRunningOrResharing,
@@ -46,7 +48,7 @@ pub enum PublicKeyError {
     DerivedKeyConversionFailed,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum InitError {
     #[error("Threshold cannot be greater than the number of candidates")]
     ThresholdTooHigh,
@@ -54,7 +56,7 @@ pub enum InitError {
     ContractStateIsMissing,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum VoteError {
     #[error("Voting account is not in the participant set.")]
     VoterNotParticipant,
@@ -62,8 +64,6 @@ pub enum VoteError {
     KickNotParticipant,
     #[error("Account to join is not in the candidate set.")]
     JoinNotCandidate,
-    #[error("Account to join is already in the participant set.")]
-    JoinAlreadyParticipant,
     #[error("Mismatched epoch.")]
     EpochMismatch,
     #[error("Number of participants cannot go below threshold.")]
@@ -78,29 +78,41 @@ pub enum VoteError {
     Unexpected(String),
 }
 
-impl near_sdk::FunctionError for VoteError {
-    fn panic(&self) -> ! {
-        crate::env::panic_str(&self.to_string())
-    }
+/// A list specifying general categories of MPC Contract errors.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum Error {
+    /// An error occurred while user is performing sign request.
+    #[error("sign error {0}")]
+    Sign(#[from] SignError),
+    /// An error occurred while node is performing respond call.
+    #[error("respond error {0}")]
+    Respond(#[from] RespondError),
+    /// An error occurred while node is performing join call.
+    #[error("{0}")]
+    Join(#[from] JoinError),
+    /// An error occurred while user is performing public_key_* call.
+    #[error("{0}")]
+    PublicKey(#[from] PublicKeyError),
+    /// An error occurred while developer is performing init_* call.
+    #[error("{0}")]
+    Init(#[from] InitError),
+    /// An error occurred while node is performing vote_* call.
+    #[error("{0}")]
+    Vote(#[from] VoteError),
+    // TODO: remove if not used, check if some of the errors needs to be moved here
+    /// An error from performing IO.
+    #[error("IO")]
+    Io,
+    /// An error from converting data.
+    #[error("DataConversion")]
+    DataConversion,
+    /// An error that cannot be categorized into the other error kinds.
+    #[error("Other")]
+    Other,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum MpcContractError {
-    #[error("sign fn error: {0}")]
-    SignError(SignError),
-    #[error("respond fn error: {0}")]
-    RespondError(RespondError),
-    #[error("vote_* fn error: {0}")]
-    VoteError(#[from] VoteError),
-    #[error("init fn error: {0}")]
-    InitError(InitError),
-    #[error("join fn error: {0}")]
-    JoinError(JoinError),
-    #[error("public_key fn error: {0}")]
-    PublicKeyError(PublicKeyError),
-}
-
-impl near_sdk::FunctionError for MpcContractError {
+impl near_sdk::FunctionError for Error {
     fn panic(&self) -> ! {
         crate::env::panic_str(&self.to_string())
     }
