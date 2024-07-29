@@ -82,7 +82,7 @@ impl MpcContract {
             self.request_counter -= 1;
             Ok(())
         } else {
-            Err(SignError::RequestNotFound)
+            Err(SignError::RequestNotFound.into())
         }
     }
 
@@ -127,29 +127,25 @@ impl VersionedMpcContract {
             "Payload hash cannot be convereted to Scalar".to_string(),
         ))?;
         if key_version > latest_key_version {
-            return Err(SignError::UnsupportedKeyVersion);
+            return Err(SignError::UnsupportedKeyVersion.into());
         }
         // Check deposit
         let deposit = env::attached_deposit();
         let required_deposit = self.signature_deposit();
         if deposit.as_yoctonear() < required_deposit {
-            return Err(SignError::InsufficientDeposit(
-                deposit.as_yoctonear(),
-                required_deposit,
-            ));
+            return Err(
+                SignError::InsufficientDeposit(deposit.as_yoctonear(), required_deposit).into(),
+            );
         }
         // Make sure sign call will not run out of gas doing recursive calls because the payload will never be removed
         if env::prepaid_gas() < GAS_FOR_SIGN_CALL {
-            return Err(SignError::InsufficientGas(
-                env::prepaid_gas(),
-                GAS_FOR_SIGN_CALL,
-            ));
+            return Err(SignError::InsufficientGas(env::prepaid_gas(), GAS_FOR_SIGN_CALL).into());
         }
 
         match self {
             Self::V0(mpc_contract) => {
                 if mpc_contract.request_counter > 8 {
-                    return Err(SignError::RequestLimitExceeded);
+                    return Err(SignError::RequestLimitExceeded.into());
                 }
             }
         }
@@ -162,7 +158,7 @@ impl VersionedMpcContract {
             env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
             Ok(Self::ext(env::current_account_id()).sign_helper(request))
         } else {
-            Err(SignError::PayloadCollision)
+            Err(SignError::PayloadCollision.into())
         }
     }
 
@@ -172,7 +168,7 @@ impl VersionedMpcContract {
         match self.state() {
             ProtocolContractState::Running(state) => Ok(state.public_key.clone()),
             ProtocolContractState::Resharing(state) => Ok(state.public_key.clone()),
-            _ => Err(PublicKeyError::ProtocolStateNotRunningOrResharing),
+            _ => Err(PublicKeyError::ProtocolStateNotRunningOrResharing.into()),
         }
     }
 
@@ -192,7 +188,7 @@ impl VersionedMpcContract {
         let slice: &[u8] = &encoded_point.as_bytes()[1..65];
         let mut data: Vec<u8> = vec![near_sdk::CurveType::SECP256K1 as u8];
         data.extend(slice.to_vec());
-        PublicKey::try_from(data).map_err(|_| PublicKeyError::DerivedKeyConversionFailed)
+        PublicKey::try_from(data).map_err(|_| PublicKeyError::DerivedKeyConversionFailed.into())
     }
 
     /// Key versions refer new versions of the root key that we may choose to generate on cohort changes
@@ -240,7 +236,7 @@ impl VersionedMpcContract {
             )
             .is_err()
             {
-                return Err(RespondError::InvalidSignature);
+                return Err(RespondError::InvalidSignature.into());
             }
 
             match self {
@@ -254,12 +250,12 @@ impl VersionedMpcContract {
                         );
                         Ok(())
                     } else {
-                        Err(RespondError::RequestNotFound)
+                        Err(RespondError::RequestNotFound.into())
                     }
                 }
             }
         } else {
-            Err(RespondError::ProtocolNotInRunningState)
+            Err(RespondError::ProtocolNotInRunningState.into())
         }
     }
 
@@ -286,7 +282,7 @@ impl VersionedMpcContract {
             }) => {
                 let signer_account_id = env::signer_account_id();
                 if participants.contains_key(&signer_account_id) {
-                    return JoinError::JoinAlreadyParticipant;
+                    return Err(JoinError::JoinAlreadyParticipant.into());
                 }
                 candidates.insert(
                     signer_account_id.clone(),
@@ -299,7 +295,7 @@ impl VersionedMpcContract {
                 );
                 Ok(())
             }
-            _ => Err(JoinError::ProtocolStateNotRunning),
+            _ => Err(JoinError::ProtocolStateNotRunning.into()),
         }
     }
 
@@ -344,7 +340,7 @@ impl VersionedMpcContract {
                     Ok(false)
                 }
             }
-            _ => Err(VoteError::UnexpectedProtocolState("running".to_string())),
+            _ => Err(VoteError::UnexpectedProtocolState("running".to_string()).into()),
         }
     }
 
@@ -367,13 +363,13 @@ impl VersionedMpcContract {
             }) => {
                 let signer_account_id = env::signer_account_id();
                 if !participants.contains_key(&signer_account_id) {
-                    return Err(VoteError::VoterNotParticipant);
+                    return Err(VoteError::VoterNotParticipant.into());
                 }
                 if !participants.contains_key(&kick) {
-                    return Err(VoteError::KickNotParticipant);
+                    return Err(VoteError::KickNotParticipant.into());
                 }
                 if participants.len() <= *threshold {
-                    return Err(VoteError::ParticipantsBelowThreshold);
+                    return Err(VoteError::ParticipantsBelowThreshold.into());
                 }
                 let voted = leave_votes.entry(kick.clone());
                 voted.insert(signer_account_id);
@@ -393,7 +389,7 @@ impl VersionedMpcContract {
                     Ok(false)
                 }
             }
-            _ => Err(VoteError::UnexpectedProtocolState("running".to_string())),
+            _ => Err(VoteError::UnexpectedProtocolState("running".to_string()).into()),
         }
     }
 
@@ -433,7 +429,8 @@ impl VersionedMpcContract {
             ProtocolContractState::Resharing(state) if state.public_key == public_key => Ok(true),
             _ => Err(VoteError::UnexpectedProtocolState(
                 "initializing or running/resharing with the same public key".to_string(),
-            )),
+            )
+            .into()),
         }
     }
 
@@ -456,7 +453,7 @@ impl VersionedMpcContract {
                 finished_votes,
             }) => {
                 if *old_epoch + 1 != epoch {
-                    return Err(VoteError::EpochMismatch);
+                    return Err(VoteError::EpochMismatch.into());
                 }
                 finished_votes.insert(voter);
                 if finished_votes.len() >= *threshold {
@@ -478,17 +475,18 @@ impl VersionedMpcContract {
                 if state.epoch == epoch {
                     Ok(true)
                 } else {
-                    Err(VoteError::UnexpectedProtocolState(
-                        "Running: invalid epoch".to_string(),
-                    ))
+                    Err(
+                        VoteError::UnexpectedProtocolState("Running: invalid epoch".to_string())
+                            .into(),
+                    )
                 }
             }
-            ProtocolContractState::NotInitialized => Err(VoteError::UnexpectedProtocolState(
-                "NotInitialized".to_string(),
-            )),
-            ProtocolContractState::Initializing(_) => Err(VoteError::UnexpectedProtocolState(
-                "Initializing".to_string(),
-            )),
+            ProtocolContractState::NotInitialized => {
+                Err(VoteError::UnexpectedProtocolState("NotInitialized".to_string()).into())
+            }
+            ProtocolContractState::Initializing(_) => {
+                Err(VoteError::UnexpectedProtocolState("Initializing".to_string()).into())
+            }
         }
     }
 
@@ -510,13 +508,15 @@ impl VersionedMpcContract {
             return Err(VoteError::InsufficientDeposit(
                 attached.as_yoctonear(),
                 required.as_yoctonear(),
-            ));
+            )
+            .into());
         }
 
         let Some(id) = self.proposed_updates().propose(args.code, args.config) else {
             return Err(VoteError::Unexpected(
                 "cannot propose update due to incorrect parameters".into(),
-            ));
+            )
+            .into());
         };
 
         // Refund the difference if the propser attached more than required.
@@ -544,7 +544,7 @@ impl VersionedMpcContract {
         let threshold = self.threshold()?;
         let voter = self.voter()?;
         let Some(votes) = self.proposed_updates().vote(&id, voter) else {
-            return Err(VoteError::UpdateNotFound);
+            return Err(VoteError::UpdateNotFound.into());
         };
 
         // Not enough votes, wait for more.
@@ -553,7 +553,7 @@ impl VersionedMpcContract {
         }
 
         let Some(_promise) = self.proposed_updates().do_update(&id, UPDATE_CONFIG_GAS) else {
-            return Err(VoteError::UpdateNotFound);
+            return Err(VoteError::UpdateNotFound.into());
         };
 
         Ok(true)
@@ -578,7 +578,7 @@ impl VersionedMpcContract {
         );
 
         if threshold > candidates.len() {
-            return Err(InitError::ThresholdTooHigh);
+            return Err(InitError::ThresholdTooHigh.into());
         }
 
         Ok(Self::V0(MpcContract::init(threshold, candidates, config)))
@@ -605,7 +605,7 @@ impl VersionedMpcContract {
         );
 
         if threshold > participants.len() {
-            return Err(InitError::ThresholdTooHigh);
+            return Err(InitError::ThresholdTooHigh.into());
         }
 
         Ok(Self::V0(MpcContract {
@@ -702,7 +702,7 @@ impl VersionedMpcContract {
         match self {
             Self::V0(_) => match signature {
                 SignatureResult::Ok(signature) => Ok(signature),
-                SignatureResult::Err(_) => Err(SignError::Timeout),
+                SignatureResult::Err(_) => Err(SignError::Timeout.into()),
             },
         }
     }

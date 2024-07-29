@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+mod impls;
+
 use near_sdk::Gas;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -81,12 +84,12 @@ pub enum VoteError {
 /// A list specifying general categories of MPC Contract errors.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
-pub enum Error {
+pub enum ErrorKind {
     /// An error occurred while user is performing sign request.
-    #[error("sign error {0}")]
+    #[error("{0}")]
     Sign(#[from] SignError),
     /// An error occurred while node is performing respond call.
-    #[error("respond error {0}")]
+    #[error("{0}")]
     Respond(#[from] RespondError),
     /// An error occurred while node is performing join call.
     #[error("{0}")]
@@ -112,8 +115,26 @@ pub enum Error {
     Other,
 }
 
+#[derive(Debug, thiserror::Error)]
+enum ErrorRepr {
+    #[error("{0}")]
+    Simple(ErrorKind),
+    #[error("{message}")]
+    Message {
+        kind: ErrorKind,
+        message: Cow<'static, str>,
+    },
+}
+
+/// Error type that workspaces will make use of for all the errors
+/// returned from this library
+#[derive(Debug)]
+pub struct Error {
+    repr: ErrorRepr,
+}
+
 impl near_sdk::FunctionError for Error {
     fn panic(&self) -> ! {
-        crate::env::panic_str(&self.to_string())
+        crate::env::panic_str(&self.repr.to_string())
     }
 }
