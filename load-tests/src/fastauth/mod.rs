@@ -47,7 +47,7 @@ pub async fn prepare_user_credentials(user: &mut GooseUser) -> TransactionResult
 
     let subaccount = root_account
         .create_subaccount(&format!("user-{}", rand::random::<u64>()))
-         // Balance this values depending on how many users you want to create and available balance
+        // Balance this values depending on how many users you want to create and available balance
         .initial_balance(NearToken::from_near(10))
         .transact()
         .await
