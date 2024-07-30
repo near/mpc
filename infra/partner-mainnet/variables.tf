@@ -137,4 +137,5 @@ variable "create_network" {
 
 variable "domain" {
   description = "DNS name for your node"
+  default = ""
 }
