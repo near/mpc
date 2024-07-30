@@ -4239,7 +4239,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-contract"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "borsh",
  "crypto-shared",
@@ -4264,7 +4264,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-node"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4293,8 +4293,8 @@ dependencies = [
  "near-account-id",
  "near-crypto 0.23.0",
  "near-fetch",
- "near-lake-framework 0.8.0-beta.3",
- "near-lake-primitives 0.8.0-beta.3",
+ "near-lake-framework 0.8.0-beta.3 (git+https://github.com/near/near-lake-framework-rs?branch=node/1.40-and-async-run)",
+ "near-lake-primitives 0.8.0-beta.3 (git+https://github.com/near/near-lake-framework-rs?branch=node/1.40-and-async-run)",
  "near-primitives 0.23.0",
  "near-sdk",
  "once_cell",
@@ -4765,6 +4765,7 @@ dependencies = [
 [[package]]
 name = "near-lake-context-derive"
 version = "0.8.0-beta.3"
+source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40#f1f69235a901f5fd9ff74632ed20c349411de0d7"
 dependencies = [
  "quote",
  "syn 2.0.66",
@@ -4773,32 +4774,10 @@ dependencies = [
 [[package]]
 name = "near-lake-context-derive"
 version = "0.8.0-beta.3"
-source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40#f1f69235a901f5fd9ff74632ed20c349411de0d7"
+source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40-and-async-run#b6fef9886f874ed83006d7ed09eecf22a7ff6624"
 dependencies = [
  "quote",
  "syn 2.0.66",
-]
-
-[[package]]
-name = "near-lake-framework"
-version = "0.8.0-beta.3"
-dependencies = [
- "async-stream",
- "async-trait",
- "aws-config",
- "aws-credential-types",
- "aws-sdk-s3",
- "aws-types",
- "derive_builder",
- "futures",
- "near-lake-context-derive 0.8.0-beta.3",
- "near-lake-primitives 0.8.0-beta.3",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tracing",
 ]
 
 [[package]]
@@ -4825,8 +4804,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-lake-framework"
+version = "0.8.0-beta.3"
+source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40-and-async-run#b6fef9886f874ed83006d7ed09eecf22a7ff6624"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-s3",
+ "aws-types",
+ "derive_builder",
+ "futures",
+ "near-lake-context-derive 0.8.0-beta.3 (git+https://github.com/near/near-lake-framework-rs?branch=node/1.40-and-async-run)",
+ "near-lake-primitives 0.8.0-beta.3 (git+https://github.com/near/near-lake-framework-rs?branch=node/1.40-and-async-run)",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+]
+
+[[package]]
 name = "near-lake-primitives"
 version = "0.8.0-beta.3"
+source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40#f1f69235a901f5fd9ff74632ed20c349411de0d7"
 dependencies = [
  "anyhow",
  "near-crypto 0.23.0",
@@ -4842,7 +4845,7 @@ dependencies = [
 [[package]]
 name = "near-lake-primitives"
 version = "0.8.0-beta.3"
-source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40#f1f69235a901f5fd9ff74632ed20c349411de0d7"
+source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40-and-async-run#b6fef9886f874ed83006d7ed09eecf22a7ff6624"
 dependencies = [
  "anyhow",
  "near-crypto 0.23.0",

@@ -370,7 +370,13 @@ async fn get_my_participant(protocol: &MpcSignProtocol) -> Participant {
     participant_info.id.into()
 }
 
+/// our release versions take the form of "1.0.0-rc.2"
 fn node_version() -> i64 {
     let version = semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
-    (version.patch + version.minor * 1000 + version.major * 1000000) as i64
+    let rc_num = if let Some(rc_str) = version.pre.split('.').nth(1) {
+        rc_str.parse::<u64>().unwrap_or(0)
+    } else {
+        0
+    };
+    (rc_num + version.patch * 1000 + version.minor * 1000000 + version.major * 1000000000) as i64
 }
