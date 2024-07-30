@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use mpc_contract::config::ProtocolConfig;
 use mpc_keys::hpke;
+use near_account_id::AccountId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -46,6 +47,17 @@ impl Config {
             protocol,
             local: original.local.clone(),
         })
+    }
+
+    /// Fetches the latest config from the contract and set the config inplace. The old config
+    /// is returned when swap is completed.
+    pub async fn fetch_inplace(
+        &mut self,
+        rpc_client: &near_fetch::Client,
+        contract_id: &AccountId,
+    ) -> anyhow::Result<Self> {
+        let new_config = crate::rpc_client::fetch_mpc_config(rpc_client, contract_id, self).await?;
+        Ok(std::mem::replace(self, new_config))
     }
 }
 

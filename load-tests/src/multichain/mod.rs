@@ -28,8 +28,7 @@ pub async fn multichain_sign(user: &mut GooseUser) -> TransactionResult {
         .get_session_data::<UserSession>()
         .expect("Session Data must be set");
 
-    let multichain_contract_id =
-        AccountId::try_from("v5.multichain-mpc-dev.testnet".to_string()).unwrap();
+    let multichain_contract_id = AccountId::try_from("v1.signer-dev.testnet".to_string()).unwrap();
     let testnet_rpc_url = "https://rpc.testnet.near.org".to_string();
 
     let signer = InMemorySigner {
@@ -69,7 +68,7 @@ pub async fn multichain_sign(user: &mut GooseUser) -> TransactionResult {
             }))
             .unwrap(),
             gas: 300_000_000_000_000,
-            deposit: 1,
+            deposit: 1, // attach more if you are ok with going above "CHEAP_REQUESTS" limit
         })],
     };
 
@@ -107,7 +106,7 @@ pub async fn multichain_sign(user: &mut GooseUser) -> TransactionResult {
 
     tracing::info!("goose_response: {:?}", rsp);
 
-    let expected_log = "sign_helper: signature ready";
+    let expected_log = "Signature is ready.";
 
     let validate = &Validate::builder()
         .status(200)

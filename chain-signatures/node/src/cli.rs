@@ -25,11 +25,7 @@ pub enum Cli {
         )]
         near_rpc: String,
         /// MPC contract id
-        #[arg(
-            long,
-            env("MPC_CONTRACT_ID"),
-            default_value("v5.multichain-mpc-dev.testnet")
-        )]
+        #[arg(long, env("MPC_CONTRACT_ID"), default_value("v1.signer-dev.testnet"))]
         mpc_contract_id: AccountId,
         /// This node's account id
         #[arg(long, env("MPC_ACCOUNT_ID"))]
@@ -62,6 +58,9 @@ pub enum Cli {
         /// The set of configurations that we will use to override contract configurations.
         #[arg(long, env("MPC_OVERRIDE_CONFIG"), value_parser = clap::value_parser!(OverrideConfig))]
         override_config: Option<OverrideConfig>,
+        /// referer header for mainnet whitelist
+        #[arg(long, env("MPC_CLIENT_HEADER_REFERER"), default_value(None))]
+        client_header_referer: Option<String>,
     },
 }
 
@@ -81,6 +80,7 @@ impl Cli {
                 my_address,
                 storage_options,
                 override_config,
+                client_header_referer,
             } => {
                 let mut args = vec![
                     "start".to_string(),
@@ -110,6 +110,10 @@ impl Cli {
                         "--override-config".to_string(),
                         serde_json::to_string(&override_config).unwrap(),
                     ]);
+                }
+
+                if let Some(client_header_referer) = client_header_referer {
+                    args.extend(["--client-header-referer".to_string(), client_header_referer]);
                 }
 
                 args.extend(indexer_options.into_str_args());
@@ -164,6 +168,7 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
             my_address,
             storage_options,
             override_config,
+            client_header_referer,
         } => {
             let sign_queue = Arc::new(RwLock::new(SignQueue::new()));
             let rt = tokio::runtime::Builder::new_multi_thread()
@@ -200,7 +205,12 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
             let (sender, receiver) = mpsc::channel(16384);
 
             tracing::info!(%my_address, "address detected");
-            let rpc_client = near_fetch::Client::new(&near_rpc);
+            let mut rpc_client = near_fetch::Client::new(&near_rpc);
+            if let Some(referer_param) = client_header_referer {
+                let client_headers = rpc_client.inner_mut().headers_mut();
+                client_headers.insert(http::header::REFERER, referer_param.parse().unwrap());
+            }
+
             tracing::debug!(rpc_addr = rpc_client.rpc_addr(), "rpc client initialized");
             let signer = InMemorySigner::from_secret_key(account_id.clone(), account_sk);
             let (protocol, protocol_state) = MpcSignProtocol::init(

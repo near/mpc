@@ -121,6 +121,10 @@ variable "static_env" {
     {
       name  = "MPC_INDEXER_S3_REGION"
       value = "eu-central-1"
+    },
+    {
+      name  = "MPC_CLIENT_HEADER_REFERER"
+      value = "https://multichain-partner-mainnet-pagoda.api.pagoda.co"
     }
   ]
 }

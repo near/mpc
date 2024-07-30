@@ -1,10 +1,10 @@
 pub mod common;
 use common::{init_env, vote_update_till_completion, CONTRACT_FILE_PATH, INVALID_CONTRACT};
+use mpc_contract::errors;
 
 use std::collections::HashMap;
 
 use mpc_contract::config::{Config, ProtocolConfig};
-use mpc_contract::errors::{self, MpcContractError};
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_sdk::NearToken;
 
@@ -34,7 +34,7 @@ pub fn invalid_contract() -> ProposeUpdateArgs {
 /// This is the current deposit required for a contract deploy. This is subject to change but make
 /// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
 /// not be getting that big.
-const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(8500);
+const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(8600);
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
@@ -77,12 +77,12 @@ async fn test_propose_update_config() {
         .into_result()
         .unwrap_err()
         .to_string()
-        .contains(&MpcContractError::from(errors::VoteError::VoterNotParticipant).to_string()));
+        .contains(&errors::VoteError::VoterNotParticipant.to_string()));
 
     // have each participant propose a new update:
     let new_config = Config {
         protocol: ProtocolConfig {
-            max_concurrent_introduction: 2,
+            max_concurrent_generation: 10000,
             ..ProtocolConfig::default()
         },
         ..Config::default()

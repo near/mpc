@@ -56,5 +56,6 @@ mpc-keys = { path = "../keys" }
 crypto-shared = { path = "../crypto-shared" }
 
 itertools = "0.12.0"
+http = "1.1.0"
 prometheus = { version = "0.13.3" }
 once_cell = "1.13.1"

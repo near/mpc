@@ -199,7 +199,19 @@ impl MpcSignProtocol {
             .set(node_version());
         let mut queue = MpcMessageQueue::default();
         let mut last_state_update = Instant::now();
+        let mut last_config_update = Instant::now();
         let mut last_pinged = Instant::now();
+
+        // Sets the latest configurations from the contract:
+        if let Err(err) = self
+            .ctx
+            .cfg
+            .fetch_inplace(&self.ctx.rpc_client, &self.ctx.mpc_contract_id)
+            .await
+        {
+            tracing::warn!("could not fetch contract's config on startup: {err:?}");
+        }
+
         loop {
             let protocol_time = Instant::now();
             tracing::debug!("trying to advance chain signatures protocol");
@@ -237,22 +249,6 @@ impl MpcSignProtocol {
                 };
                 tracing::debug!(?contract_state);
 
-                // Sets the latest configurations from the contract:
-                self.ctx.cfg = match rpc_client::fetch_mpc_config(
-                    &self.ctx.rpc_client,
-                    &self.ctx.mpc_contract_id,
-                    &self.ctx.cfg,
-                )
-                .await
-                {
-                    Ok(config) => config,
-                    Err(e) => {
-                        tracing::error!("could not fetch contract's config: {e}");
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        continue;
-                    }
-                };
-
                 // Establish the participants for this current iteration of the protocol loop. This will
                 // set which participants are currently active in the protocol and determines who will be
                 // receiving messages.
@@ -263,6 +259,19 @@ impl MpcSignProtocol {
             } else {
                 None
             };
+
+            if last_config_update.elapsed() > Duration::from_secs(5 * 60) {
+                // Sets the latest configurations from the contract:
+                if let Err(err) = self
+                    .ctx
+                    .cfg
+                    .fetch_inplace(&self.ctx.rpc_client, &self.ctx.mpc_contract_id)
+                    .await
+                {
+                    tracing::warn!("could not fetch contract's config: {err:?}");
+                }
+                last_config_update = Instant::now();
+            }
 
             if last_pinged.elapsed() > Duration::from_millis(300) {
                 self.ctx.mesh.ping().await;

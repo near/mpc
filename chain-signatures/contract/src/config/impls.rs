@@ -4,10 +4,12 @@ use super::{
     Config, DynamicValue, PresignatureConfig, ProtocolConfig, SignatureConfig, TripleConfig,
 };
 
+/// This is maximum expected participants we aim to support right now. This can be different
+/// in the future as we scale the network further.
 const MAX_EXPECTED_PARTICIPANTS: u32 = 32;
 
-// The network multiplier is used to calculate the maximum amount of protocols in totality
-// that should be in the network.
+/// The network multiplier is used to calculate the maximum amount of protocols in totality
+/// that should be in the network.
 const NETWORK_MULTIPLIER: u32 = 128;
 
 impl Config {
@@ -27,8 +29,8 @@ impl Default for ProtocolConfig {
         Self {
             message_timeout: min_to_ms(5),
             garbage_timeout: hours_to_ms(2),
-            max_concurrent_introduction: 4,
-            max_concurrent_generation: 4 * MAX_EXPECTED_PARTICIPANTS,
+            max_concurrent_introduction: 2,
+            max_concurrent_generation: 2 * MAX_EXPECTED_PARTICIPANTS,
             triple: TripleConfig::default(),
             presignature: PresignatureConfig::default(),
             signature: Default::default(),
@@ -43,7 +45,7 @@ impl Default for TripleConfig {
         Self {
             min_triples: 1024,
             max_triples: 1024 * MAX_EXPECTED_PARTICIPANTS * NETWORK_MULTIPLIER,
-            generation_timeout: min_to_ms(20),
+            generation_timeout: min_to_ms(10),
 
             other: Default::default(),
         }
@@ -55,7 +57,7 @@ impl Default for PresignatureConfig {
         Self {
             min_presignatures: 512,
             max_presignatures: 512 * MAX_EXPECTED_PARTICIPANTS * NETWORK_MULTIPLIER,
-            generation_timeout: secs_to_ms(60),
+            generation_timeout: secs_to_ms(45),
 
             other: Default::default(),
         }
@@ -65,7 +67,7 @@ impl Default for PresignatureConfig {
 impl Default for SignatureConfig {
     fn default() -> Self {
         Self {
-            generation_timeout: secs_to_ms(60),
+            generation_timeout: secs_to_ms(45),
 
             other: Default::default(),
         }

@@ -3,7 +3,7 @@
 ## `sign()`
 This is the main function of the contract API. It is used to sign a request with the MPC service.
 ```rust
-pub fn sign(&mut self, request: SignRequest) -> Result<near_sdk::Promise, MpcContractError>
+pub fn sign(&mut self, request: SignRequest) -> Result<near_sdk::Promise, Error>
 ```
 Arguments and return type:
 ```rust
@@ -25,7 +25,7 @@ pub struct SignResult {
 ## `public_key()`
 This is the root public key combined from all the public keys of the participants.
 ```rust
-pub fn public_key(&self) -> Result<PublicKey, MpcContractError>
+pub fn public_key(&self) -> Result<PublicKey, Error>
 ```
 
 ## `derived_public_key()`
@@ -35,7 +35,7 @@ pub fn derived_public_key(
         &self,
         path: String,
         predecessor: Option<AccountId>,
-    ) -> Result<PublicKey, MpcContractError>
+    ) -> Result<PublicKey, Error>
 ```
 
 ## `latest_key_version()`
@@ -48,8 +48,8 @@ For more details check `User contract API` impl block in the [chain-signatures/c
 
 # Environments
 Currently, we have 3 environments:
-1. Mainnet: `v1.multichain-mpc.near` // TODO: set when available
-2. Testnet: `v2.multichain-mpc.testnet`
-3. Dev: `v5.multichain-mpc-dev.testnet`
+1. Mainnet: `v1.signer.near` // TODO: set when available
+2. Testnet: `v1.sigenr-prod.testnet`
+3. Dev: `v1.signer-dev.testnet`
 
 Contracts can be changed from v1 to v2, etc. Older contracts should continue functioning.
