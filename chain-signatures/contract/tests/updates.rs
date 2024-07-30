@@ -82,7 +82,7 @@ async fn test_propose_update_config() {
     // have each participant propose a new update:
     let new_config = Config {
         protocol: ProtocolConfig {
-            max_concurrent_introduction: 2,
+            max_concurrent_generation: 10000,
             ..ProtocolConfig::default()
         },
         ..Config::default()
