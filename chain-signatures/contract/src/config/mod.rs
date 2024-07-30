@@ -35,10 +35,10 @@ pub struct ProtocolConfig {
     pub garbage_timeout: u64,
     /// Maximum amount of concurrent protocol generation that can be introduced by this node.
     /// This only includes protocols that generate triples and presignatures.
-    pub max_concurrent_introduction: usize,
+    pub max_concurrent_introduction: u32,
     /// Maximum amount of concurrent protocol generation that can be done per node.
     /// This only includes protocols that generate triples and presignatures.
-    pub max_concurrent_generation: usize,
+    pub max_concurrent_generation: u32,
     /// Configuration for triple generation.
     pub triple: TripleConfig,
     /// Configuration for presignature generation.
@@ -54,9 +54,9 @@ pub struct ProtocolConfig {
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct TripleConfig {
     /// Minimum amount of triples that is owned by each node.
-    pub min_triples: usize,
+    pub min_triples: u32,
     /// Maximum amount of triples that is in the whole network.
-    pub max_triples: usize,
+    pub max_triples: u32,
     /// Timeout for triple generation in milliseconds.
     pub generation_timeout: u64,
 
@@ -68,9 +68,9 @@ pub struct TripleConfig {
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct PresignatureConfig {
     /// Minimum amount of presignatures that is owned by each node.
-    pub min_presignatures: usize,
+    pub min_presignatures: u32,
     /// Maximum amount of presignatures that is in the whole network.
-    pub max_presignatures: usize,
+    pub max_presignatures: u32,
     /// Timeout for presignature generation in milliseconds.
     pub generation_timeout: u64,
 

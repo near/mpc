@@ -261,12 +261,12 @@ impl PresignatureManager {
             // Stopgap to prevent too many presignatures in the system. This should be around min_presig*nodes*2
             // for good measure so that we have enough presignatures to do sig generation while also maintain
             // the minimum number of presignature where a single node can't flood the system.
-            if self.potential_len() >= cfg.presignature.max_presignatures {
+            if self.potential_len() >= cfg.presignature.max_presignatures as usize {
                 false
             } else {
                 // We will always try to generate a new triple if we have less than the minimum
-                self.my_len() < cfg.presignature.min_presignatures
-                    && self.introduced.len() < cfg.max_concurrent_introduction
+                self.my_len() < cfg.presignature.min_presignatures as usize
+                    && self.introduced.len() < cfg.max_concurrent_introduction as usize
             }
         };
 

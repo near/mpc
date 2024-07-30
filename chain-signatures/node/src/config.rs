@@ -32,9 +32,13 @@ impl Config {
     }
 
     pub fn try_from_contract(mut contract: ContractConfig, original: &Config) -> Option<Self> {
-        let mut protocol = contract.remove("protocol")?;
+        let Some(mut protocol) = contract.remove("protocol") else {
+            tracing::warn!("unable to find protocol in contract config");
+            return None;
+        };
         merge(&mut protocol, &original.local.over.entries);
         let Ok(protocol) = serde_json::from_value(protocol) else {
+            tracing::warn!("unable to parse protocol in contract config");
             return None;
         };
 
@@ -77,9 +81,19 @@ impl Default for NetworkConfig {
 ///
 /// The set of configs that can be overridden are only the non-[`LocalConfig`]
 /// ones since we already control those.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OverrideConfig {
-    entries: Value,
+    pub(crate) entries: Value,
+}
+
+impl Default for OverrideConfig {
+    fn default() -> Self {
+        // NOTE: serde_json::Value::default() use Value::Null which is not what we want
+        // so we create a new empty map instead.
+        Self {
+            entries: Value::Object(serde_json::Map::new()),
+        }
+    }
 }
 
 impl OverrideConfig {
