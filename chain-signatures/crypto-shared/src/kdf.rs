@@ -19,6 +19,8 @@ pub fn derive_epsilon(predecessor_id: &AccountId, path: &str) -> Scalar {
     // ',' is ACCOUNT_DATA_SEPARATOR from nearcore that indicate the end
     // of the accound id in the trie key. We reuse the same constant to
     // indicate the end of the account id in derivation path.
+    // Do not reuse this hash function on anything that isn't an account
+    // ID or it'll be vunerable to Hash Melleability/extention attacks.
     let derivation_path = format!("{EPSILON_DERIVATION_PREFIX}{},{}", predecessor_id, path);
     let mut hasher = Sha3_256::new();
     hasher.update(derivation_path);

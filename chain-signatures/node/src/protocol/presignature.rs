@@ -10,6 +10,7 @@ use chrono::Utc;
 use crypto_shared::PublicKey;
 use k256::Secp256k1;
 use mpc_contract::config::ProtocolConfig;
+use sha3::{Digest, Sha3_256};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
@@ -213,7 +214,7 @@ impl PresignatureManager {
         private_share: &SecretKeyShare,
         timeout: u64,
     ) -> Result<(), InitializationError> {
-        let id = rand::random();
+        let id = hash_as_id(triple0.id, triple1.id);
 
         // Check if the `id` is already in the system. Error out and have the next cycle try again.
         if self.generators.contains_key(&id)
@@ -260,12 +261,12 @@ impl PresignatureManager {
             // Stopgap to prevent too many presignatures in the system. This should be around min_presig*nodes*2
             // for good measure so that we have enough presignatures to do sig generation while also maintain
             // the minimum number of presignature where a single node can't flood the system.
-            if self.potential_len() >= cfg.presignature.max_presignatures {
+            if self.potential_len() >= cfg.presignature.max_presignatures as usize {
                 false
             } else {
                 // We will always try to generate a new triple if we have less than the minimum
-                self.my_len() < cfg.presignature.min_presignatures
-                    && self.introduced.len() < cfg.max_concurrent_introduction
+                self.my_len() < cfg.presignature.min_presignatures as usize
+                    && self.introduced.len() < cfg.max_concurrent_introduction as usize
             }
         };
 
@@ -515,4 +516,24 @@ impl PresignatureManager {
 
         messages
     }
+}
+
+pub fn hash_as_id(triple0: TripleId, triple1: TripleId) -> PresignatureId {
+    let mut hasher = Sha3_256::new();
+    hasher.update(triple0.to_le_bytes());
+    hasher.update(triple1.to_le_bytes());
+    let id: [u8; 32] = hasher.finalize().into();
+    let id = u64::from_le_bytes(first_8_bytes(id));
+
+    PresignatureId::from(id)
+}
+
+const fn first_8_bytes(input: [u8; 32]) -> [u8; 8] {
+    let mut output = [0u8; 8];
+    let mut i = 0;
+    while i < 8 {
+        output[i] = input[i];
+        i += 1;
+    }
+    output
 }

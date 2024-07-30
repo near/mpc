@@ -704,7 +704,10 @@ impl VersionedMpcContract {
     ) -> Result<SignatureResponse, Error> {
         match self {
             Self::V0(_) => match signature {
-                SignatureResult::Ok(signature) => Ok(signature),
+                SignatureResult::Ok(signature) => {
+                    log!("Signature is ready.");
+                    Ok(signature)
+                }
                 SignatureResult::Err(_) => Err(SignError::Timeout.into()),
             },
         }

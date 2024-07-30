@@ -4,11 +4,11 @@ use super::{
     Config, DynamicValue, PresignatureConfig, ProtocolConfig, SignatureConfig, TripleConfig,
 };
 
-const MAX_EXPECTED_PARTICIPANTS: usize = 32;
+const MAX_EXPECTED_PARTICIPANTS: u32 = 32;
 
 // The network multiplier is used to calculate the maximum amount of protocols in totality
 // that should be in the network.
-const NETWORK_MULTIPLIER: usize = 128;
+const NETWORK_MULTIPLIER: u32 = 128;
 
 impl Config {
     pub fn get(&self, key: &str) -> Option<serde_json::Value> {
