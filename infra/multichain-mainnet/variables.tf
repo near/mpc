@@ -88,19 +88,19 @@ variable "static_env" {
   }))
   default = [
     {
-      name  = "MPC_RECOVERY_NEAR_RPC"
+      name  = "MPC_NEAR_RPC"
       value = "https://rpc.mainnet.near.org"
     },
     {
-      name  = "MPC_RECOVERY_CONTRACT_ID"
+      name  = "MPC_CONTRACT_ID"
       value = "v1.signer.near"
     },
     {
-      name  = "MPC_RECOVERY_INDEXER_S3_BUCKET"
+      name  = "MPC_INDEXER_S3_BUCKET"
       value = "near-lake-data-mainnet"
     },
     {
-      name  = "MPC_RECOVERY_INDEXER_START_BLOCK_HEIGHT"
+      name  = "MPC_INDEXER_START_BLOCK_HEIGHT"
       value = 124092099
     },
     {
@@ -108,11 +108,11 @@ variable "static_env" {
       value = "eu-central-1"
     },
     {
-      name  = "MPC_RECOVERY_GCP_PROJECT_ID"
+      name  = "MPC_GCP_PROJECT_ID"
       value = "pagoda-discovery-platform-prod"
     },
     {
-      name  = "MPC_RECOVERY_WEB_PORT"
+      name  = "MPC_WEB_PORT"
       value = "3000"
     },
     {
@@ -120,8 +120,12 @@ variable "static_env" {
       value = "mpc_recovery_node=debug"
     },
     {
-      name  = "MPC_RECOVERY_INDEXER_S3_REGION"
+      name  = "MPC_INDEXER_S3_REGION"
       value = "eu-central-1"
+    },
+    {
+      name  = "MPC_CLIENT_HEADER_REFERER"
+      value = "https://multichain-partner-mainnet-pagoda.api.pagoda.co"
     }
   ]
 }
