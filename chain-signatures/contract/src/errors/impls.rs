@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::fmt;
 
 use super::{
-    Common, Error, ErrorKind, ErrorRepr, InitError, JoinError, PublicKeyError, RespondError,
-    SignError, VoteError,
+    ConversionError, Error, ErrorKind, ErrorRepr, InitError, InvalidParameters, InvalidState,
+    JoinError, PublicKeyError, RespondError, SignError, VoteError,
 };
 
 impl Error {
@@ -54,15 +54,6 @@ impl From<SignError> for Error {
     }
 }
 
-impl SignError {
-    pub(crate) fn message<T>(self, msg: T) -> Error
-    where
-        T: Into<Cow<'static, str>>,
-    {
-        Error::message(ErrorKind::Sign(self), msg)
-    }
-}
-
 impl From<RespondError> for Error {
     fn from(code: RespondError) -> Self {
         Self::simple(ErrorKind::Respond(code))
@@ -93,17 +84,47 @@ impl From<VoteError> for Error {
     }
 }
 
-impl From<Common> for Error {
-    fn from(code: Common) -> Self {
-        Self::simple(ErrorKind::Common(code))
+impl From<InvalidParameters> for Error {
+    fn from(code: InvalidParameters) -> Self {
+        Self::simple(ErrorKind::InvalidParameters(code))
     }
 }
 
-impl Common {
+impl InvalidParameters {
     pub(crate) fn message<T>(self, msg: T) -> Error
     where
         T: Into<Cow<'static, str>>,
     {
-        Error::message(ErrorKind::Common(self), msg)
+        Error::message(ErrorKind::InvalidParameters(self), msg)
+    }
+}
+
+impl From<InvalidState> for Error {
+    fn from(code: InvalidState) -> Self {
+        Self::simple(ErrorKind::InvalidState(code))
+    }
+}
+
+impl InvalidState {
+    pub(crate) fn message<T>(self, msg: T) -> Error
+    where
+        T: Into<Cow<'static, str>>,
+    {
+        Error::message(ErrorKind::InvalidState(self), msg)
+    }
+}
+
+impl From<ConversionError> for Error {
+    fn from(code: ConversionError) -> Self {
+        Self::simple(ErrorKind::ConversionError(code))
+    }
+}
+
+impl ConversionError {
+    pub(crate) fn message<T>(self, msg: T) -> Error
+    where
+        T: Into<Cow<'static, str>>,
+    {
+        Error::message(ErrorKind::ConversionError(self), msg)
     }
 }

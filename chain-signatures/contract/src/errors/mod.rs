@@ -7,8 +7,6 @@ pub enum SignError {
     Timeout,
     #[error("Signature request has already been submitted. Please try again later.")]
     PayloadCollision,
-    #[error("Malformed payload.")]
-    MalformedPayload,
     #[error(
         "This key version is not supported. Call latest_key_version() to get the latest supported version."
     )]
@@ -39,8 +37,6 @@ pub enum PublicKeyError {
 pub enum InitError {
     #[error("Threshold cannot be greater than the number of candidates")]
     ThresholdTooHigh,
-    #[error("Cannot load in contract due to missing state")]
-    ContractStateIsMissing,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -53,26 +49,38 @@ pub enum VoteError {
     JoinNotCandidate,
     #[error("Number of participants cannot go below threshold.")]
     ParticipantsBelowThreshold,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
+pub enum InvalidParameters {
+    #[error("Malformed payload.")]
+    MalformedPayload,
+    #[error("Attached deposit is lower than required.")]
+    InsufficientDeposit,
+    #[error("Provided gas is lower than required.")]
+    InsufficientGas,
+    #[error("This sign request has timed out, was completed, or never existed.")]
+    RequestNotFound,
     #[error("Update not found.")]
     UpdateNotFound,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
-pub enum Common {
+pub enum InvalidState {
     #[error("The protocol is not Running.")]
     ProtocolStateNotRunning,
     #[error("Protocol state is not running or resharing.")]
     ProtocolStateNotRunningOrResharing,
-    #[error("This sign request has timed out, was completed, or never existed.")]
-    RequestNotFound,
-    #[error("Mismatched epoch.")]
-    EpochMismatch,
-    #[error("Attached deposit is lower than required.")]
-    InsufficientDeposit,
-    #[error("Provided gas is lower than required.")]
-    InsufficientGas,
     #[error("Unexpected protocol state.")]
     UnexpectedProtocolState,
+    #[error("Cannot load in contract due to missing state")]
+    ContractStateIsMissing,
+    #[error("Mismatched epoch.")]
+    EpochMismatch,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
+pub enum ConversionError {
     #[error("Data conversion error.")]
     DataConversion,
 }
@@ -99,9 +107,15 @@ pub enum ErrorKind {
     /// An error occurred while node is performing vote_* call.
     #[error("{0}")]
     Vote(#[from] VoteError),
-    // Common errors
+    // Invalid parameters errors
     #[error("{0}")]
-    Common(#[from] Common),
+    InvalidParameters(#[from] InvalidParameters),
+    // Invalid state errors
+    #[error("{0}")]
+    InvalidState(#[from] InvalidState),
+    // Conversion errors
+    #[error("{0}")]
+    ConversionError(#[from] ConversionError),
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -8,7 +8,10 @@ use crypto_shared::{
     derive_epsilon, derive_key, kdf::check_ec_signature, near_public_key_to_affine_point,
     types::SignatureResponse, ScalarExt as _,
 };
-use errors::{Common, InitError, JoinError, PublicKeyError, RespondError, SignError, VoteError};
+use errors::{
+    ConversionError, InitError, InvalidParameters, InvalidState, JoinError, PublicKeyError,
+    RespondError, SignError, VoteError,
+};
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::Scalar;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
@@ -82,7 +85,7 @@ impl MpcContract {
             self.request_counter -= 1;
             Ok(())
         } else {
-            Err(Common::RequestNotFound.into())
+            Err(InvalidParameters::RequestNotFound.into())
         }
     }
 
@@ -124,7 +127,8 @@ impl VersionedMpcContract {
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
         let payload = Scalar::from_bytes(payload).ok_or(
-            SignError::MalformedPayload.message("Payload hash cannot be convereted to Scalar"),
+            InvalidParameters::MalformedPayload
+                .message("Payload hash cannot be convereted to Scalar"),
         )?;
         if key_version > latest_key_version {
             return Err(SignError::UnsupportedKeyVersion.into());
@@ -133,7 +137,7 @@ impl VersionedMpcContract {
         let deposit = env::attached_deposit();
         let required_deposit = self.signature_deposit();
         if deposit.as_yoctonear() < required_deposit {
-            return Err(Common::InsufficientDeposit.message(format!(
+            return Err(InvalidParameters::InsufficientDeposit.message(format!(
                 "Attached {}, Required {}",
                 deposit.as_yoctonear(),
                 required_deposit
@@ -141,7 +145,7 @@ impl VersionedMpcContract {
         }
         // Make sure sign call will not run out of gas doing recursive calls because the payload will never be removed
         if env::prepaid_gas() < GAS_FOR_SIGN_CALL {
-            return Err(Common::InsufficientGas.message(format!(
+            return Err(InvalidParameters::InsufficientGas.message(format!(
                 "Provided: {}, required: {}",
                 env::prepaid_gas(),
                 GAS_FOR_SIGN_CALL
@@ -174,7 +178,7 @@ impl VersionedMpcContract {
         match self.state() {
             ProtocolContractState::Running(state) => Ok(state.public_key.clone()),
             ProtocolContractState::Resharing(state) => Ok(state.public_key.clone()),
-            _ => Err(Common::ProtocolStateNotRunningOrResharing.into()),
+            _ => Err(InvalidState::ProtocolStateNotRunningOrResharing.into()),
         }
     }
 
@@ -256,12 +260,12 @@ impl VersionedMpcContract {
                         );
                         Ok(())
                     } else {
-                        Err(Common::RequestNotFound.into())
+                        Err(InvalidParameters::RequestNotFound.into())
                     }
                 }
             }
         } else {
-            Err(Common::ProtocolStateNotRunning.into())
+            Err(InvalidState::ProtocolStateNotRunning.into())
         }
     }
 
@@ -301,7 +305,7 @@ impl VersionedMpcContract {
                 );
                 Ok(())
             }
-            _ => Err(Common::ProtocolStateNotRunning.into()),
+            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
         }
     }
 
@@ -346,7 +350,7 @@ impl VersionedMpcContract {
                     Ok(false)
                 }
             }
-            _ => Err(Common::UnexpectedProtocolState.message("running")),
+            _ => Err(InvalidState::UnexpectedProtocolState.message("running")),
         }
     }
 
@@ -395,7 +399,7 @@ impl VersionedMpcContract {
                     Ok(false)
                 }
             }
-            _ => Err(Common::UnexpectedProtocolState.message("running")),
+            _ => Err(InvalidState::UnexpectedProtocolState.message("running")),
         }
     }
 
@@ -433,7 +437,7 @@ impl VersionedMpcContract {
             }
             ProtocolContractState::Running(state) if state.public_key == public_key => Ok(true),
             ProtocolContractState::Resharing(state) if state.public_key == public_key => Ok(true),
-            _ => Err(Common::UnexpectedProtocolState
+            _ => Err(InvalidState::UnexpectedProtocolState
                 .message("initializing or running/resharing with the same public key")),
         }
     }
@@ -457,7 +461,7 @@ impl VersionedMpcContract {
                 finished_votes,
             }) => {
                 if *old_epoch + 1 != epoch {
-                    return Err(Common::EpochMismatch.into());
+                    return Err(InvalidState::EpochMismatch.into());
                 }
                 finished_votes.insert(voter);
                 if finished_votes.len() >= *threshold {
@@ -479,14 +483,14 @@ impl VersionedMpcContract {
                 if state.epoch == epoch {
                     Ok(true)
                 } else {
-                    Err(Common::UnexpectedProtocolState.message("Running: invalid epoch"))
+                    Err(InvalidState::UnexpectedProtocolState.message("Running: invalid epoch"))
                 }
             }
             ProtocolContractState::NotInitialized => {
-                Err(Common::UnexpectedProtocolState.message("NotInitialized"))
+                Err(InvalidState::UnexpectedProtocolState.message("NotInitialized"))
             }
             ProtocolContractState::Initializing(_) => {
-                Err(Common::UnexpectedProtocolState.message("Initializing"))
+                Err(InvalidState::UnexpectedProtocolState.message("Initializing"))
             }
         }
     }
@@ -506,7 +510,7 @@ impl VersionedMpcContract {
         let attached = env::attached_deposit();
         let required = ProposedUpdates::required_deposit(&args.code, &args.config);
         if attached < required {
-            return Err(Common::InsufficientDeposit.message(format!(
+            return Err(InvalidParameters::InsufficientDeposit.message(format!(
                 "Attached {}, Required {}",
                 attached.as_yoctonear(),
                 required.as_yoctonear(),
@@ -514,7 +518,7 @@ impl VersionedMpcContract {
         }
 
         let Some(id) = self.proposed_updates().propose(args.code, args.config) else {
-            return Err(Common::DataConversion
+            return Err(ConversionError::DataConversion
                 .message("Cannot propose update due to incorrect parameters."));
         };
 
@@ -543,7 +547,7 @@ impl VersionedMpcContract {
         let threshold = self.threshold()?;
         let voter = self.voter()?;
         let Some(votes) = self.proposed_updates().vote(&id, voter) else {
-            return Err(VoteError::UpdateNotFound.into());
+            return Err(InvalidParameters::UpdateNotFound.into());
         };
 
         // Not enough votes, wait for more.
@@ -552,7 +556,7 @@ impl VersionedMpcContract {
         }
 
         let Some(_promise) = self.proposed_updates().do_update(&id, UPDATE_CONFIG_GAS) else {
-            return Err(VoteError::UpdateNotFound.into());
+            return Err(InvalidParameters::UpdateNotFound.into());
         };
 
         Ok(true)
@@ -634,7 +638,7 @@ impl VersionedMpcContract {
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
-        let old: MpcContract = env::state_read().ok_or(InitError::ContractStateIsMissing)?;
+        let old: MpcContract = env::state_read().ok_or(InvalidState::ContractStateIsMissing)?;
         Ok(VersionedMpcContract::V0(old))
     }
 
@@ -783,7 +787,7 @@ impl VersionedMpcContract {
                 ProtocolContractState::Running(state) => Ok(state.threshold),
                 ProtocolContractState::Resharing(state) => Ok(state.threshold),
                 ProtocolContractState::NotInitialized => {
-                    Err(Common::UnexpectedProtocolState.message("NotInitialized"))
+                    Err(InvalidState::UnexpectedProtocolState.message("NotInitialized"))
                 }
             },
         }
@@ -817,7 +821,7 @@ impl VersionedMpcContract {
                     }
                 }
                 ProtocolContractState::NotInitialized => {
-                    return Err(Common::UnexpectedProtocolState.message("NotInitialized"))
+                    return Err(InvalidState::UnexpectedProtocolState.message("NotInitialized"))
                 }
             },
         }

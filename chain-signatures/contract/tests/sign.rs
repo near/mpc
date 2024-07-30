@@ -99,7 +99,7 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
         .into_result()
         .unwrap_err()
         .to_string()
-        .contains(&errors::Common::RequestNotFound.to_string()));
+        .contains(&errors::InvalidParameters::RequestNotFound.to_string()));
 
     let execution = status.await?;
     dbg!(&execution);
@@ -107,7 +107,7 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
         .into_result()
         .unwrap_err()
         .to_string()
-        .contains(&errors::Common::InsufficientDeposit.to_string()));
+        .contains(&errors::InvalidParameters::InsufficientDeposit.to_string()));
 
     Ok(())
 }
