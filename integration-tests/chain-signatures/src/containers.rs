@@ -87,6 +87,7 @@ impl<'a> Node<'a> {
             override_config: Some(OverrideConfig::new(serde_json::to_value(
                 cfg.protocol.clone(),
             )?)),
+            client_header_referer: None,
         }
         .into_str_args();
         let image: GenericImage = GenericImage::new("near/mpc-node", "latest")
@@ -173,6 +174,7 @@ impl<'a> Node<'a> {
             override_config: Some(OverrideConfig::new(serde_json::to_value(
                 cfg.protocol.clone(),
             )?)),
+            client_header_referer: None,
         }
         .into_str_args();
         let image: GenericImage = GenericImage::new("near/mpc-node", "latest")

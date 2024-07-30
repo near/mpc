@@ -81,6 +81,7 @@ impl Node {
             override_config: Some(OverrideConfig::new(serde_json::to_value(
                 cfg.protocol.clone(),
             )?)),
+            client_header_referer: None,
         };
 
         let mpc_node_id = format!("multichain/{account_id}", account_id = account_id);
@@ -136,6 +137,7 @@ impl Node {
             override_config: Some(OverrideConfig::new(serde_json::to_value(
                 cfg.protocol.clone(),
             )?)),
+            client_header_referer: None,
         };
 
         let mpc_node_id = format!("multichain/{account_id}", account_id = account_id);
