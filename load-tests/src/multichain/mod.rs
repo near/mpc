@@ -106,7 +106,7 @@ pub async fn multichain_sign(user: &mut GooseUser) -> TransactionResult {
 
     tracing::info!("goose_response: {:?}", rsp);
 
-    let expected_log = "sign_helper: signature ready";
+    let expected_log = "Signature is ready.";
 
     let validate = &Validate::builder()
         .status(200)
