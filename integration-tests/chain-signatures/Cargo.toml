@@ -49,6 +49,7 @@ mpc-keys = { path = "../../chain-signatures/keys" }
 mpc-node = { path = "../../chain-signatures/node" }
 clap = { version = "4.5.4", features = ["derive"] }
 lazy_static = "1.4.0"
+url = { version = "2.4.0", features = ["serde"] }
 
 [dev-dependencies]
 backon = "0.4"

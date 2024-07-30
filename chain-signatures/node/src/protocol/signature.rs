@@ -70,6 +70,15 @@ impl SignQueue {
         me: Participant,
         my_account_id: &AccountId,
     ) {
+        if stable.len() < threshold {
+            tracing::info!(
+                "Require at least {} stable participants to organize, got {}: {:?}",
+                threshold,
+                stable.len(),
+                stable.keys_vec()
+            );
+            return;
+        }
         for request in self.unorganized_requests.drain(..) {
             let mut rng = StdRng::from_seed(request.entropy);
             let subset = stable.keys().choose_multiple(&mut rng, threshold);
@@ -507,6 +516,15 @@ impl SignatureManager {
         presignature_manager: &mut PresignatureManager,
         cfg: &ProtocolConfig,
     ) {
+        if stable.len() < threshold {
+            tracing::info!(
+                "Require at least {} stable participants to handle_requests, got {}: {:?}",
+                threshold,
+                stable.len(),
+                stable.keys_vec()
+            );
+            return;
+        }
         let mut failed_presigs = Vec::new();
         while let Some(mut presignature) = {
             if self.failed.is_empty() && my_requests.is_empty() {

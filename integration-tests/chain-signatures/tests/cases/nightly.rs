@@ -11,8 +11,8 @@ async fn test_nightly_signature_production() -> anyhow::Result<()> {
     const SIGNATURE_AMOUNT: usize = 1000;
     const NODES: usize = 8;
     const THRESHOLD: usize = 4;
-    const MIN_TRIPLES: usize = 10;
-    const MAX_TRIPLES: usize = 2 * NODES * MIN_TRIPLES;
+    const MIN_TRIPLES: u32 = 10;
+    const MAX_TRIPLES: u32 = 2 * NODES as u32 * MIN_TRIPLES;
 
     let config = MultichainConfig {
         nodes: NODES,

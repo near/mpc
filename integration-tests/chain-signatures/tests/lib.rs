@@ -10,8 +10,10 @@ use integration_tests_chain_signatures::utils::{vote_join, vote_leave};
 use integration_tests_chain_signatures::{run, utils, MultichainConfig, Nodes};
 use near_jsonrpc_client::JsonRpcClient;
 
+use near_workspaces::types::SecretKey;
 use near_workspaces::{Account, AccountId};
 
+use integration_tests_chain_signatures::local::NodeConfig;
 use std::str::FromStr;
 
 pub struct MultichainTestContext<'a> {
@@ -41,18 +43,27 @@ impl MultichainTestContext<'_> {
         Ok(participant_accounts)
     }
 
-    pub async fn add_participant(&mut self) -> anyhow::Result<()> {
+    pub async fn add_participant(
+        &mut self,
+        existing_node: Option<NodeConfig>,
+    ) -> anyhow::Result<()> {
         let state = wait_for::running_mpc(self, None).await?;
+        let account_id: AccountId;
+        let sk: SecretKey;
+        let new_node_account: Account;
 
-        let new_node_account = self.nodes.ctx().worker.dev_create_account().await?;
-        tracing::info!("Adding a new participant: {}", new_node_account.id());
-        self.nodes
-            .start_node(
-                new_node_account.id(),
-                new_node_account.secret_key(),
-                &self.cfg,
-            )
-            .await?;
+        if let Some(node_cfg) = existing_node {
+            account_id = node_cfg.account_id;
+            sk = node_cfg.account_sk;
+            tracing::info!("Adding an existing participant: {}", account_id);
+        } else {
+            new_node_account = self.nodes.ctx().worker.dev_create_account().await?;
+            account_id = new_node_account.id().clone();
+            sk = new_node_account.secret_key().clone();
+            tracing::info!("Adding a new participant: {}", account_id);
+        }
+
+        self.nodes.start_node(&account_id, &sk, &self.cfg).await?;
 
         // Wait for new node to add itself as a candidate
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
@@ -67,7 +78,7 @@ impl MultichainTestContext<'_> {
         assert!(vote_join(
             voting_participants,
             self.nodes.ctx().mpc_contract.id(),
-            new_node_account.id()
+            &account_id,
         )
         .await
         .is_ok());
@@ -85,7 +96,7 @@ impl MultichainTestContext<'_> {
     pub async fn remove_participant(
         &mut self,
         leaving_account_id: Option<&AccountId>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<NodeConfig> {
         let state = wait_for::running_mpc(self, None).await?;
         let participant_accounts = self.participant_accounts().await?;
         let leaving_account_id =
@@ -131,8 +142,7 @@ impl MultichainTestContext<'_> {
             "public key must stay the same"
         );
 
-        self.nodes.kill_node(leaving_account_id).await.unwrap();
-        Ok(())
+        Ok(self.nodes.kill_node(leaving_account_id).await.unwrap())
     }
 }
 

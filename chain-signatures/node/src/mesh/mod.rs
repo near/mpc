@@ -70,6 +70,10 @@ impl Mesh {
     /// Ping the active participants such that we can see who is alive.
     pub async fn ping(&mut self) {
         self.active_participants = self.connections.ping().await;
+        tracing::debug!(
+            "Mesh.ping set active participants to {:?}",
+            self.active_participants.keys_vec()
+        );
         self.active_potential_participants = self.connections.ping_potential().await;
     }
 }

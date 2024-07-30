@@ -1,10 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::hash::Hash;
 
 use crate::config::Config;
+use crate::primitives::StorageKey;
 
 use borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::store::IterableMap;
 use near_sdk::{env, AccountId, Gas, NearToken, Promise};
 
 #[derive(
@@ -45,6 +47,12 @@ pub enum Update {
     Contract(Vec<u8>),
 }
 
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug, Default)]
+pub struct ProposeUpdateArgs {
+    pub code: Option<Vec<u8>>,
+    pub config: Option<Config>,
+}
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct UpdateEntry {
     updates: Vec<Update>,
@@ -52,10 +60,19 @@ struct UpdateEntry {
     bytes_used: u128,
 }
 
-#[derive(Default, Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposedUpdates {
-    entries: HashMap<UpdateId, UpdateEntry>,
+    entries: IterableMap<UpdateId, UpdateEntry>,
     id: UpdateId,
+}
+
+impl Default for ProposedUpdates {
+    fn default() -> Self {
+        Self {
+            entries: IterableMap::new(StorageKey::ProposedUpdatesEntries),
+            id: UpdateId::default(),
+        }
+    }
 }
 
 impl ProposedUpdates {

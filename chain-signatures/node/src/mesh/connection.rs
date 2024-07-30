@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use cait_sith::protocol::Participant;
 use tokio::sync::RwLock;
+use url::Url;
 
 use crate::protocol::contract::primitives::Participants;
 use crate::protocol::ProtocolState;
@@ -39,11 +40,30 @@ impl Pool {
         let mut status = self.status.write().await;
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
-            let Ok(resp) = self.http.get(format!("{}/state", info.url)).send().await else {
+            let Ok(Ok(url)) = Url::parse(&info.url).map(|url| url.join("/state")) else {
+                tracing::error!(
+                    "Pool.ping url is invalid participant {:?} url {} /state",
+                    participant,
+                    info.url
+                );
+                continue;
+            };
+
+            let Ok(resp) = self.http.get(url.clone()).send().await else {
+                tracing::warn!(
+                    "Pool.ping resp err participant {:?} url {}",
+                    participant,
+                    url
+                );
                 continue;
             };
 
             let Ok(state): Result<StateView, _> = resp.json().await else {
+                tracing::warn!(
+                    "Pool.ping state view err participant {:?} url {}",
+                    participant,
+                    url
+                );
                 continue;
             };
 
@@ -69,7 +89,11 @@ impl Pool {
         let mut status = self.status.write().await;
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
-            let Ok(resp) = self.http.get(format!("{}/state", info.url)).send().await else {
+            let Ok(Ok(url)) = Url::parse(&info.url).map(|url| url.join("/state")) else {
+                continue;
+            };
+
+            let Ok(resp) = self.http.get(url).send().await else {
                 continue;
             };
 
@@ -103,10 +127,18 @@ impl Pool {
                     .await;
             }
         }
+        tracing::debug!(
+            "Pool.establish_participants set participants to {:?}",
+            self.connections.read().await.clone().keys_vec()
+        );
     }
 
     async fn set_participants(&self, participants: &Participants) {
         *self.connections.write().await = participants.clone();
+        tracing::debug!(
+            "Pool set participants to {:?}",
+            self.connections.read().await.keys_vec()
+        );
     }
 
     async fn set_potential_participants(&self, participants: &Participants) {
