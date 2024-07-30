@@ -154,7 +154,7 @@ impl VersionedMpcContract {
 
         match self {
             Self::V0(mpc_contract) => {
-                if mpc_contract.request_counter > 8 {
+                if mpc_contract.request_counter > 16 {
                     return Err(SignError::RequestLimitExceeded.into());
                 }
             }
