@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: add JSON contract
-        run: mkdir -p ~/.near-credentials/testnet && echo '${{ secrets.DEV_CONTRACT_JSON }}' > ~/.near-credentials/testnet/v1.signer-dev.testnet.testnet.json
+        run: mkdir -p ~/.near-credentials/testnet && echo '${{ secrets.DEV_CONTRACT_JSON }}' > ~/.near-credentials/testnet/v1.signer-dev.testnet.json
 
       - uses: actions/checkout@v4
       - name: Use Node.js
