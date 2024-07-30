@@ -200,7 +200,10 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
             let (sender, receiver) = mpsc::channel(16384);
 
             tracing::info!(%my_address, "address detected");
-            let rpc_client = near_fetch::Client::new(&near_rpc);
+            let mut rpc_client = near_fetch::Client::new(&near_rpc);
+            let client_headers = rpc_client.inner_mut().headers_mut();
+            client_headers.insert(http::header::REFERER, "https://sweateconomy.com".parse().unwrap());
+
             tracing::debug!(rpc_addr = rpc_client.rpc_addr(), "rpc client initialized");
             let signer = InMemorySigner::from_secret_key(account_id.clone(), account_sk);
             let (protocol, protocol_state) = MpcSignProtocol::init(

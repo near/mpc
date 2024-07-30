@@ -3798,6 +3798,7 @@ dependencies = [
  "hex 0.4.3",
  "highway",
  "hkdf",
+ "http 1.1.0",
  "hyper 0.14.29",
  "hyper-rustls 0.24.2",
  "itertools 0.12.1",
