@@ -66,6 +66,7 @@ impl Default for SignatureConfig {
     fn default() -> Self {
         Self {
             generation_timeout: secs_to_ms(60),
+            garbage_timeout: hours_to_ms(24),
 
             other: Default::default(),
         }

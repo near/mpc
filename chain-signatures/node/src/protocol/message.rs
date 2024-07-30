@@ -365,7 +365,7 @@ impl MessageHandler for RunningState {
 
         let mut signature_manager = self.signature_manager.write().await;
         let signature_messages = queue.signature_bins.entry(self.epoch).or_default();
-        signature_messages.retain(|_, queue| {
+        signature_messages.retain(|receipt_id, queue| {
             // Skip message if it already timed out
             if queue.is_empty()
                 || queue.iter().any(|msg| {
@@ -377,7 +377,8 @@ impl MessageHandler for RunningState {
             {
                 return false;
             }
-            true
+
+            !signature_manager.refresh_gc(receipt_id)
         });
         for (receipt_id, queue) in signature_messages {
             // SAFETY: this unwrap() is safe since we have already checked that the queue is not empty.

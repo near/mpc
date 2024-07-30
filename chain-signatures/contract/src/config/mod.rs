@@ -83,6 +83,8 @@ pub struct PresignatureConfig {
 pub struct SignatureConfig {
     /// Timeout for signature generation in milliseconds.
     pub generation_timeout: u64,
+    /// Garbage collection timeout in milliseconds for signatures generated.
+    pub garbage_timeout: u64,
 
     /// The remaining entries that can be present in future forms of the configuration.
     #[serde(flatten)]
