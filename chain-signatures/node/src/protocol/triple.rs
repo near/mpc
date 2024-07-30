@@ -185,7 +185,7 @@ impl TripleManager {
     }
 
     pub fn has_min_triples(&self, cfg: &ProtocolConfig) -> bool {
-        self.my_len() >= cfg.triple.min_triples
+        self.my_len() >= cfg.triple.min_triples as usize
     }
 
     /// Clears an entry from failed triples if that triple protocol was created more than 2 hrs ago
@@ -250,13 +250,13 @@ impl TripleManager {
             // Stopgap to prevent too many triples in the system. This should be around min_triple*nodes*2
             // for good measure so that we have enough triples to do presig generation while also maintain
             // the minimum number of triples where a single node can't flood the system.
-            if self.potential_len() >= cfg.triple.max_triples {
+            if self.potential_len() >= cfg.triple.max_triples as usize {
                 false
             } else {
                 // We will always try to generate a new triple if we have less than the minimum
-                self.my_len() < cfg.triple.min_triples
-                    && self.introduced.len() < cfg.max_concurrent_introduction
-                    && self.generators.len() < cfg.max_concurrent_generation
+                self.my_len() < cfg.triple.min_triples as usize
+                    && self.introduced.len() < cfg.max_concurrent_introduction as usize
+                    && self.generators.len() < cfg.max_concurrent_generation as usize
             }
         };
 
@@ -401,7 +401,7 @@ impl TripleManager {
             let potential_len = self.potential_len();
             match self.generators.entry(id) {
                 Entry::Vacant(e) => {
-                    if potential_len >= cfg.triple.max_triples {
+                    if potential_len >= cfg.triple.max_triples as usize {
                         // We are at the maximum amount of triples, we cannot generate more. So just in case a node
                         // sends more triple generation requests, reject them and have them tiemout.
                         return Ok(None);
@@ -437,7 +437,7 @@ impl TripleManager {
     /// An empty vector means we cannot progress until we receive a new message.
     pub async fn poke(&mut self, cfg: &ProtocolConfig) -> Vec<(Participant, TripleMessage)> {
         // Add more protocols to the ongoing pool if there is space.
-        let to_generate_len = cfg.max_concurrent_generation - self.ongoing.len();
+        let to_generate_len = cfg.max_concurrent_generation as usize - self.ongoing.len();
         if !self.queued.is_empty() && to_generate_len > 0 {
             for _ in 0..to_generate_len {
                 self.queued.pop_front().map(|id| self.ongoing.insert(id));
