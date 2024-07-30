@@ -116,7 +116,7 @@ variable "static_env" {
     },
     {
       name  = "RUST_LOG"
-      value = "mpc_node=info"
+      value = "mpc_node=debug"
     },
     {
       name  = "MPC_INDEXER_S3_REGION"
