@@ -731,7 +731,7 @@ impl VersionedMpcContract {
                 SignatureResult::Ok(signature) => {
                     log!("Signature is ready.");
                     Ok(signature)
-                },
+                }
                 SignatureResult::Err(_) => Err(MpcContractError::SignError(SignError::Timeout)),
             },
         }
