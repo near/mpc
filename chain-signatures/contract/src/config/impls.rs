@@ -27,8 +27,8 @@ impl Default for ProtocolConfig {
         Self {
             message_timeout: min_to_ms(5),
             garbage_timeout: hours_to_ms(2),
-            max_concurrent_introduction: 4,
-            max_concurrent_generation: 4 * MAX_EXPECTED_PARTICIPANTS,
+            max_concurrent_introduction: 2,
+            max_concurrent_generation: 2 * MAX_EXPECTED_PARTICIPANTS,
             triple: TripleConfig::default(),
             presignature: PresignatureConfig::default(),
             signature: Default::default(),
