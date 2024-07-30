@@ -52,6 +52,8 @@ pub enum InitError {
     ThresholdTooHigh,
     #[error("Cannot load in contract due to missing state")]
     ContractStateIsMissing,
+    #[error("Cannot load in contract due to breakings changes with state")]
+    ContractStateIsBroken,
 }
 
 #[derive(Debug, thiserror::Error)]

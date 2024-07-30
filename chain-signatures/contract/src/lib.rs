@@ -4,6 +4,9 @@ pub mod primitives;
 pub mod state;
 pub mod update;
 
+#[cfg(feature = "migrate")]
+pub mod migrate;
+
 use crypto_shared::{
     derive_epsilon, derive_key, kdf::check_ec_signature, near_public_key_to_affine_point,
     types::SignatureResponse, ScalarExt as _,
@@ -660,10 +663,21 @@ impl VersionedMpcContract {
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, MpcContractError> {
-        let old: MpcContract = env::state_read().ok_or(MpcContractError::InitError(
+        #[cfg(feature = "dev")]
+        {
+            return migrate::migrate_testnet_dev();
+        }
+
+        #[cfg(feature = "testnet")]
+        {
+            return migrate::migrate_testnet_dev();
+        }
+
+        // Future state breaking changes for testnet and mainnet should be here
+        let loaded: MpcContract = env::state_read().ok_or(MpcContractError::InitError(
             InitError::ContractStateIsMissing,
         ))?;
-        Ok(VersionedMpcContract::V0(old))
+        Ok(VersionedMpcContract::V0(loaded))
     }
 
     pub fn state(&self) -> &ProtocolContractState {

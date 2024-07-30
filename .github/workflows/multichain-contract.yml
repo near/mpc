@@ -40,3 +40,10 @@ jobs:
         env:
           RUST_LOG: INFO
           RUST_BACKTRACE: 1
+
+      - name: Compile Contract (dev)
+        run: cd ./chain-signatures && cargo build -p mpc-contract --target wasm32-unknown-unknown --release --features dev
+
+      - name: Run Deploy Checker
+        working-directory: infra/scripts/deploy
+        run: cargo test -- run_dev

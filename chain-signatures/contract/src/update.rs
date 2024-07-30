@@ -54,16 +54,16 @@ pub struct ProposeUpdateArgs {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct UpdateEntry {
-    updates: Vec<Update>,
-    votes: HashSet<AccountId>,
-    bytes_used: u128,
+pub struct UpdateEntry {
+    pub(crate) updates: Vec<Update>,
+    pub(crate) votes: HashSet<AccountId>,
+    pub(crate) bytes_used: u128,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposedUpdates {
-    entries: IterableMap<UpdateId, UpdateEntry>,
-    id: UpdateId,
+    pub(crate) entries: IterableMap<UpdateId, UpdateEntry>,
+    pub(crate) id: UpdateId,
 }
 
 impl Default for ProposedUpdates {
@@ -161,6 +161,26 @@ fn bytes_used(code: &Option<Vec<u8>>, config: &Option<Config>) -> u128 {
     }
     if let Some(code) = code {
         bytes_used += code.len() as u128;
+    }
+    bytes_used
+}
+
+pub fn bytes_used_updates(updates: &[Update]) -> u128 {
+    let mut bytes_used = std::mem::size_of::<UpdateEntry>() as u128;
+
+    // Assume a high max of 128 participant votes per update entry.
+    bytes_used += 128 * std::mem::size_of::<AccountId>() as u128;
+
+    for update in updates {
+        match update {
+            Update::Config(config) => {
+                let bytes = serde_json::to_vec(&config).unwrap();
+                bytes_used += bytes.len() as u128;
+            }
+            Update::Contract(code) => {
+                bytes_used += code.len() as u128;
+            }
+        }
     }
     bytes_used
 }
