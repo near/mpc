@@ -318,7 +318,8 @@ pub fn run(
                 rt.spawn(async move { lake.run_with_context_async(handle_block, &context).await })
             };
             let outcome = rt.block_on(async {
-                // Wait for the indexer to catch up to the latest block height.
+                // while on track, we will keep the task spinning, and check every so often if
+                // the indexer has errored out.
                 while context.indexer.is_on_track().await {
                     tokio::time::sleep(Duration::from_secs(5)).await;
                     if join_handle.is_finished() {
