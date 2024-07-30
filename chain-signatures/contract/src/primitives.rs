@@ -1,8 +1,9 @@
 use crypto_shared::{derive_epsilon, SerializableScalar};
 use k256::Scalar;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
+use near_sdk::collections::LookupMap;
 use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::{AccountId, BorshStorageKey, CryptoHash, PublicKey};
+use near_sdk::{AccountId, BorshStorageKey, CryptoHash, NearToken, PublicKey};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub mod hpke {
@@ -14,6 +15,7 @@ pub mod hpke {
 pub enum StorageKey {
     PendingRequests,
     ProposedUpdatesEntries,
+    Balances,
 }
 
 /// The index into calling the YieldResume feature of NEAR. This will allow to resume
@@ -29,11 +31,18 @@ pub struct YieldIndex {
 pub struct SignatureRequest {
     pub epsilon: SerializableScalar,
     pub payload_hash: SerializableScalar,
+    pub account_id: AccountId,
+    pub signature_fee: NearToken,
 }
 
 impl SignatureRequest {
-    pub fn new(payload_hash: Scalar, predecessor_id: &AccountId, path: &str) -> Self {
-        let epsilon = derive_epsilon(predecessor_id, path);
+    pub fn new(
+        payload_hash: Scalar,
+        predecessor_id: AccountId,
+        path: &str,
+        signature_fee: NearToken,
+    ) -> Self {
+        let epsilon = derive_epsilon(&predecessor_id, path);
         let epsilon = SerializableScalar { scalar: epsilon };
         let payload_hash = SerializableScalar {
             scalar: payload_hash,
@@ -41,6 +50,8 @@ impl SignatureRequest {
         SignatureRequest {
             epsilon,
             payload_hash,
+            account_id: predecessor_id,
+            signature_fee,
         }
     }
 }
@@ -277,4 +288,43 @@ pub enum SignatureResult<T, E> {
 #[derive(Serialize, Deserialize, BorshDeserialize, BorshSerialize, Clone, Debug)]
 pub enum SignaturePromiseError {
     Failed,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct Balances {
+    entries: LookupMap<AccountId, NearToken>,
+}
+
+impl Default for Balances {
+    fn default() -> Self {
+        Self {
+            entries: LookupMap::new(StorageKey::Balances),
+        }
+    }
+}
+
+impl Balances {
+    pub fn get(&self, account_id: &AccountId) -> Option<NearToken> {
+        self.entries.get(account_id)
+    }
+
+    pub fn top_up(&mut self, account_id: &AccountId, amount: NearToken) {
+        let balance = self.entries.get(account_id).unwrap_or_default();
+        self.entries.insert(
+            account_id,
+            &NearToken::from_yoctonear(&balance.as_yoctonear() + &amount.as_yoctonear()),
+        );
+    }
+
+    pub fn withdraw(&mut self, account_id: &AccountId, amount: NearToken) -> bool {
+        let balance = self.entries.get(account_id).unwrap_or_default();
+        if amount > balance {
+            return false;
+        }
+        self.entries.insert(
+            account_id,
+            &NearToken::from_yoctonear(&balance.as_yoctonear() - &amount.as_yoctonear()),
+        );
+        true
+    }
 }

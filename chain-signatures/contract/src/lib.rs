@@ -17,7 +17,7 @@ use near_sdk::{
     PromiseError, PublicKey,
 };
 use primitives::{
-    CandidateInfo, Candidates, Participants, PkVotes, SignRequest, SignaturePromiseError,
+    Balances, CandidateInfo, Candidates, Participants, PkVotes, SignRequest, SignaturePromiseError,
     SignatureRequest, SignatureResult, StorageKey, Votes, YieldIndex,
 };
 use std::collections::{BTreeMap, HashSet};
@@ -32,6 +32,7 @@ pub use state::{
     InitializingContractState, ProtocolContractState, ResharingContractState, RunningContractState,
 };
 
+// TODO: How much gas we need for y/r sign call?
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(250);
 
 // Register used to receive data id from `promise_await_data`.
@@ -62,6 +63,7 @@ impl Default for VersionedMpcContract {
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_requests: LookupMap<SignatureRequest, YieldIndex>,
+    balances: Balances,
     request_counter: u32,
     proposed_updates: ProposedUpdates,
     config: Config,
@@ -102,6 +104,7 @@ impl MpcContract {
             request_counter: 0,
             proposed_updates: ProposedUpdates::default(),
             config: config.unwrap_or_default(),
+            balances: Balances::default(),
         }
     }
 }
@@ -132,16 +135,8 @@ impl VersionedMpcContract {
                 SignError::UnsupportedKeyVersion,
             ));
         }
-        // Check deposit
-        let deposit = env::attached_deposit();
-        let required_deposit = self.signature_deposit();
-        if deposit.as_yoctonear() < required_deposit {
-            return Err(MpcContractError::SignError(SignError::InsufficientDeposit(
-                deposit.as_yoctonear(),
-                required_deposit,
-            )));
-        }
-        // Make sure sign call will not run out of gas doing recursive calls because the payload will never be removed
+        // TODO: make sure it is not possible to call payable function with LAK
+        // Make sure sign call will not run out of gas
         if env::prepaid_gas() < GAS_FOR_SIGN_CALL {
             return Err(MpcContractError::SignError(SignError::InsufficientGas(
                 env::prepaid_gas(),
@@ -157,7 +152,8 @@ impl VersionedMpcContract {
             }
         }
         let predecessor = env::predecessor_account_id();
-        let request = SignatureRequest::new(payload, &predecessor, &path);
+        let signature_fee = NearToken::from_yoctonear(self.signature_fee());
+        let request = SignatureRequest::new(payload, predecessor.clone(), &path, signature_fee);
         if !self.request_already_exists(&request) {
             log!(
                 "sign: predecessor={predecessor}, payload={payload:?}, path={path:?}, key_version={key_version}",
@@ -209,6 +205,33 @@ impl VersionedMpcContract {
     pub const fn latest_key_version(&self) -> u32 {
         0
     }
+
+    #[payable]
+    pub fn top_up(&mut self, account_id: Option<AccountId>) {
+        let account_id = account_id.unwrap_or_else(env::predecessor_account_id);
+        let deposit = env::attached_deposit();
+        log!(
+            "add_deposit: account_id={:?}, deposit={}",
+            account_id,
+            deposit
+        );
+        match self {
+            Self::V0(mpc_contract) => {
+                mpc_contract.balances.top_up(&account_id, deposit);
+            }
+        }
+    }
+
+    pub fn get_balance(&self, account_id: Option<AccountId>) -> Option<NearToken> {
+        let account_id = account_id.unwrap_or_else(env::predecessor_account_id);
+        match self {
+            Self::V0(mpc_contract) => mpc_contract.balances.get(&account_id),
+        }
+    }
+
+    pub fn signature_fee(&self) -> u128 {
+        self.signature_deposit().as_yoctonear()
+    }
 }
 
 // Node API
@@ -254,6 +277,11 @@ impl VersionedMpcContract {
 
             match self {
                 Self::V0(mpc_contract) => {
+                    // withdraw the signature fee
+                    mpc_contract
+                        .balances
+                        .withdraw(&request.account_id, request.signature_fee);
+                    // respond to the request
                     if let Some(YieldIndex { data_id }) =
                         mpc_contract.pending_requests.get(&request)
                     {
@@ -619,6 +647,7 @@ impl VersionedMpcContract {
         threshold: usize,
         public_key: PublicKey,
         config: Option<Config>,
+        balances: Balances,
     ) -> Result<Self, MpcContractError> {
         log!(
             "init_running: signer={}, epoch={}, participants={}, threshold={}, public_key={:?}",
@@ -643,6 +672,7 @@ impl VersionedMpcContract {
                 join_votes: Votes::new(),
                 leave_votes: Votes::new(),
             }),
+            balances,
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_counter: 0,
             proposed_updates: ProposedUpdates::default(),
@@ -765,22 +795,6 @@ impl VersionedMpcContract {
         }
     }
 
-    #[private]
-    #[init(ignore_state)]
-    pub fn clean(keys: Vec<near_sdk::json_types::Base64VecU8>) -> Self {
-        log!("clean: keys={:?}", keys);
-        for key in keys.iter() {
-            env::storage_remove(&key.0);
-        }
-        Self::V0(MpcContract {
-            protocol_state: ProtocolContractState::NotInitialized,
-            pending_requests: LookupMap::new(StorageKey::PendingRequests),
-            request_counter: 0,
-            proposed_updates: ProposedUpdates::default(),
-            config: Config::default(),
-        })
-    }
-
     fn mutable_state(&mut self) -> &mut ProtocolContractState {
         match self {
             Self::V0(ref mut mpc_contract) => &mut mpc_contract.protocol_state,
@@ -793,17 +807,17 @@ impl VersionedMpcContract {
         }
     }
 
-    fn signature_deposit(&self) -> u128 {
+    fn signature_deposit(&self) -> NearToken {
         const CHEAP_REQUESTS: u32 = 3;
         let pending_requests = match self {
             Self::V0(mpc_contract) => mpc_contract.request_counter,
         };
         match pending_requests {
-            0..=CHEAP_REQUESTS => 1,
-            _ => {
+            0..=CHEAP_REQUESTS => NearToken::from_yoctonear(1),
+            _ => NearToken::from_yoctonear(
                 (pending_requests - CHEAP_REQUESTS) as u128
-                    * NearToken::from_millinear(50).as_yoctonear()
-            }
+                    * NearToken::from_millinear(50).as_yoctonear(),
+            ),
         }
     }
 
