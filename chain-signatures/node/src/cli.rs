@@ -25,11 +25,7 @@ pub enum Cli {
         )]
         near_rpc: String,
         /// MPC contract id
-        #[arg(
-            long,
-            env("MPC_CONTRACT_ID"),
-            default_value("v5.multichain-mpc-dev.testnet")
-        )]
+        #[arg(long, env("MPC_CONTRACT_ID"), default_value("v1.signer-dev.testnet"))]
         mpc_contract_id: AccountId,
         /// This node's account id
         #[arg(long, env("MPC_ACCOUNT_ID"))]

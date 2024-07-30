@@ -48,8 +48,8 @@ For more details check `User contract API` impl block in the [chain-signatures/c
 
 # Environments
 Currently, we have 3 environments:
-1. Mainnet: `v1.multichain-mpc.near` // TODO: set when available
-2. Testnet: `v2.multichain-mpc.testnet`
-3. Dev: `v5.multichain-mpc-dev.testnet`
+1. Mainnet: `v1.signer.near` // TODO: set when available
+2. Testnet: `v1.sigenr-prod.testnet`
+3. Dev: `v1.signer-dev.testnet`
 
 Contracts can be changed from v1 to v2, etc. Older contracts should continue functioning.
