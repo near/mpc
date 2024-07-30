@@ -134,7 +134,7 @@ impl Indexer {
     }
 }
 
-#[derive(LakeContext)]
+#[derive(Clone, LakeContext)]
 struct Context {
     mpc_contract_id: AccountId,
     node_account_id: AccountId,
@@ -313,10 +313,40 @@ pub fn run(
             // TODO/NOTE: currently indexer does not have any interrupt handlers and will never yield back
             // as successful. We can add interrupt handlers in the future but this is not important right
             // now since we managing nodes through integration tests that can kill it or through docker.
-            let Err(err) = lake.run_with_context(handle_block, &context) else {
-                break;
+            let join_handle = {
+                let context = context.clone();
+                rt.spawn(async move { lake.run_with_context_async(handle_block, &context).await })
             };
-            tracing::error!(%err, "indexer failed");
+            let outcome = rt.block_on(async {
+                // Wait for the indexer to catch up to the latest block height.
+                while context.indexer.is_on_track().await {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    if join_handle.is_finished() {
+                        break;
+                    }
+                }
+
+                // Abort the indexer task if it's still running.
+                if !join_handle.is_finished() {
+                    join_handle.abort();
+                }
+
+                join_handle.await
+            });
+
+            match outcome {
+                Ok(Ok(())) => {
+                    tracing::warn!("indexer finished successfully? -- this should not happen");
+                    break;
+                }
+                Ok(Err(err)) => {
+                    tracing::warn!(%err, "indexer failed");
+                }
+                Err(err) => {
+                    tracing::warn!(%err, "indexer join handle failed");
+                }
+            }
+
             backoff(i)
         }
         Ok(())

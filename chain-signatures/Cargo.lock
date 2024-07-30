@@ -4273,7 +4273,7 @@ dependencies = [
 [[package]]
 name = "near-lake-context-derive"
 version = "0.8.0-beta.3"
-source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40#49307cffc5b1d444f94d25b144f25bd2db28ce7d"
+source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40-and-async-run#b6fef9886f874ed83006d7ed09eecf22a7ff6624"
 dependencies = [
  "quote",
  "syn 2.0.72",
@@ -4282,7 +4282,7 @@ dependencies = [
 [[package]]
 name = "near-lake-framework"
 version = "0.8.0-beta.3"
-source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40#49307cffc5b1d444f94d25b144f25bd2db28ce7d"
+source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40-and-async-run#b6fef9886f874ed83006d7ed09eecf22a7ff6624"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4305,7 +4305,7 @@ dependencies = [
 [[package]]
 name = "near-lake-primitives"
 version = "0.8.0-beta.3"
-source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40#49307cffc5b1d444f94d25b144f25bd2db28ce7d"
+source = "git+https://github.com/near/near-lake-framework-rs?branch=node/1.40-and-async-run#b6fef9886f874ed83006d7ed09eecf22a7ff6624"
 dependencies = [
  "anyhow",
  "near-crypto 0.23.0",
