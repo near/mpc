@@ -16,27 +16,27 @@ module "gce-container" {
 
     env = concat(var.static_env, [
       {
-        name  = "MPC_RECOVERY_NODE_ID"
+        name  = "MPC_NODE_ID"
         value = "${count.index}"
       },
       {
-        name  = "MPC_RECOVERY_ACCOUNT_ID"
+        name  = "MPC_ACCOUNT_ID"
         value = var.node_configs["${count.index}"].account
       },
       {
-        name  = "MPC_RECOVERY_CIPHER_PK"
+        name  = "MPC_CIPHER_PK"
         value = var.node_configs["${count.index}"].cipher_pk
       },
       {
-        name  = "MPC_RECOVERY_ACCOUNT_SK"
+        name  = "MPC_ACCOUNT_SK"
         value = data.google_secret_manager_secret_version.account_sk_secret_id[count.index].secret_data
       },
       {
-        name  = "MPC_RECOVERY_CIPHER_SK"
+        name  = "MPC_CIPHER_SK"
         value = data.google_secret_manager_secret_version.cipher_sk_secret_id[count.index].secret_data
       },
       {
-        name  = "MPC_RECOVERY_SIGN_SK"
+        name  = "MPC_SIGN_SK"
         value = data.google_secret_manager_secret_version.sign_sk_secret_id[count.index] != null ? data.google_secret_manager_secret_version.sign_sk_secret_id[count.index].secret_data : data.google_secret_manager_secret_version.account_sk_secret_id[count.index].secret_data
       },
       {
@@ -48,15 +48,15 @@ module "gce-container" {
         value = data.google_secret_manager_secret_version.aws_secret_key_secret_id.secret_data
       },
       {
-        name  = "MPC_RECOVERY_LOCAL_ADDRESS"
+        name  = "MPC_LOCAL_ADDRESS"
         value = "https://${var.node_configs[count.index].domain}"
       },
       {
-        name = "MPC_RECOVERY_SK_SHARE_SECRET_ID"
+        name = "MPC_SK_SHARE_SECRET_ID"
         value = var.node_configs["${count.index}"].sk_share_secret_id
       },
       {
-        name = "MPC_RECOVERY_ENV",
+        name = "MPC_ENV",
         value = var.env
       }
     ])
