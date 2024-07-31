@@ -135,7 +135,7 @@ impl VersionedMpcContract {
         }
         // Check deposit
         let deposit = env::attached_deposit();
-        let required_deposit = self.signature_deposit();
+        let required_deposit = self.experimantal_signature_deposit();
         if deposit.as_yoctonear() < required_deposit {
             return Err(InvalidParameters::InsufficientDeposit.message(format!(
                 "Attached {}, Required {}",
@@ -207,6 +207,23 @@ impl VersionedMpcContract {
     /// Currently only 0 is a valid key version
     pub const fn latest_key_version(&self) -> u32 {
         0
+    }
+
+    /// This experimantal function calculates the fee for a signature request.
+    /// The fee is volatile and depends on the number of pending requests.
+    /// If used on a client side, it can give outdate results.
+    pub fn experimantal_signature_deposit(&self) -> u128 {
+        const CHEAP_REQUESTS: u32 = 3;
+        let pending_requests = match self {
+            Self::V0(mpc_contract) => mpc_contract.request_counter,
+        };
+        match pending_requests {
+            0..=CHEAP_REQUESTS => 1,
+            _ => {
+                (pending_requests - CHEAP_REQUESTS) as u128
+                    * NearToken::from_millinear(50).as_yoctonear()
+            }
+        }
     }
 }
 
@@ -766,20 +783,6 @@ impl VersionedMpcContract {
     fn request_already_exists(&self, request: &SignatureRequest) -> bool {
         match self {
             Self::V0(mpc_contract) => mpc_contract.pending_requests.contains_key(request),
-        }
-    }
-
-    fn signature_deposit(&self) -> u128 {
-        const CHEAP_REQUESTS: u32 = 3;
-        let pending_requests = match self {
-            Self::V0(mpc_contract) => mpc_contract.request_counter,
-        };
-        match pending_requests {
-            0..=CHEAP_REQUESTS => 1,
-            _ => {
-                (pending_requests - CHEAP_REQUESTS) as u128
-                    * NearToken::from_millinear(50).as_yoctonear()
-            }
         }
     }
 
