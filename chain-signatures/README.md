@@ -56,6 +56,6 @@ For more details check `User contract API` impl block in the [chain-signatures/c
 Currently, we have 3 environments:
 1. Mainnet: `v1.signer`
 2. Testnet: `v1.sigenr-prod.testnet`
-3. Dev: `v1.signer-dev.testnet`
+3. Dev (unstable): `v1.signer-dev.testnet`
 
 Contracts can be changed from v1 to v2, etc. Older contracts should continue functioning.
