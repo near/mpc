@@ -45,6 +45,14 @@ pub struct Options {
         default_value = "145964826"
     )]
     pub start_block_height: u64,
+
+    /// The amount of time before we should that our indexer is behind.
+    #[clap(long, env("MPC_INDEXER_BEHIND_THRESHOLD"), default_value = "60")]
+    pub behind_threshold: u64,
+
+    /// The threshold in seconds to check if the indexer needs to be restarted due to it stalling.
+    #[clap(long, env("MPC_INDEXER_RUNNING_THRESHOLD"), default_value = "300")]
+    pub running_threshold: u64,
 }
 
 impl Options {
@@ -56,6 +64,10 @@ impl Options {
             self.s3_region,
             "--start-block-height".to_string(),
             self.start_block_height.to_string(),
+            "--behind-threshold".to_string(),
+            self.behind_threshold.to_string(),
+            "--running-threshold".to_string(),
+            self.running_threshold.to_string(),
         ];
 
         if let Some(s3_url) = self.s3_url {
@@ -91,13 +103,12 @@ pub struct ContractSignRequest {
 pub struct Indexer {
     latest_block_height: Arc<RwLock<LatestBlockHeight>>,
     last_updated_timestamp: Arc<RwLock<Instant>>,
+    running_threshold: Duration,
+    behind_threshold: Duration,
 }
 
 impl Indexer {
-    const BEHIND_THRESHOLD: Duration = Duration::from_secs(60);
-    const RUNNING_THRESHOLD: Duration = Duration::from_secs(5 * 60);
-
-    fn new(latest_block_height: LatestBlockHeight) -> Self {
+    fn new(latest_block_height: LatestBlockHeight, options: &Options) -> Self {
         Self {
             latest_block_height: Arc::new(RwLock::new(latest_block_height)),
             last_updated_timestamp: Arc::new(RwLock::new(Instant::now())),
@@ -111,17 +122,17 @@ impl Indexer {
 
     /// Check whether the indexer is on track with the latest block height from the chain.
     pub async fn is_on_track(&self) -> bool {
-        self.last_updated_timestamp.read().await.elapsed() <= Self::BEHIND_THRESHOLD
+        self.last_updated_timestamp.read().await.elapsed() <= self.behind_threshold
     }
 
     /// Check whether the indexer is on track with the latest block height from the chain.
     pub async fn is_running(&self) -> bool {
-        self.last_updated_timestamp.read().await.elapsed() <= Self::RUNNING_THRESHOLD
+        self.last_updated_timestamp.read().await.elapsed() <= self.running_threshold
     }
 
     /// Check whether the indexer is behind with the latest block height from the chain.
     pub async fn is_behind(&self) -> bool {
-        self.last_updated_timestamp.read().await.elapsed() > Self::BEHIND_THRESHOLD
+        self.last_updated_timestamp.read().await.elapsed() > self.behind_threshold
     }
 
     async fn update_block_height(
@@ -283,7 +294,7 @@ pub fn run(
         }
     });
 
-    let indexer = Indexer::new(latest_block_height);
+    let indexer = Indexer::new(latest_block_height, options);
     let context = Context {
         mpc_contract_id: mpc_contract_id.clone(),
         node_account_id: node_account_id.clone(),
