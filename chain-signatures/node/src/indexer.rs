@@ -330,6 +330,7 @@ pub fn run(
                 rt.spawn(async move { lake.run_with_context_async(handle_block, &context).await })
             };
             let outcome = rt.block_on(async {
+                tokio::time::sleep(Duration::from_secs(10)).await;
                 // while on track, we will keep the task spinning, and check every so often if
                 // the indexer has errored out.
                 while context.indexer.is_on_track().await {
