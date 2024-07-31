@@ -43,8 +43,8 @@ impl Default for ProtocolConfig {
 impl Default for TripleConfig {
     fn default() -> Self {
         Self {
-            min_triples: 1024,
-            max_triples: 1024 * MAX_EXPECTED_PARTICIPANTS * NETWORK_MULTIPLIER,
+            min_triples: 40,
+            max_triples: 40 * MAX_EXPECTED_PARTICIPANTS * NETWORK_MULTIPLIER,
             generation_timeout: min_to_ms(10),
 
             other: Default::default(),
@@ -55,8 +55,8 @@ impl Default for TripleConfig {
 impl Default for PresignatureConfig {
     fn default() -> Self {
         Self {
-            min_presignatures: 512,
-            max_presignatures: 512 * MAX_EXPECTED_PARTICIPANTS * NETWORK_MULTIPLIER,
+            min_presignatures: 20,
+            max_presignatures: 20 * MAX_EXPECTED_PARTICIPANTS * NETWORK_MULTIPLIER,
             generation_timeout: secs_to_ms(45),
 
             other: Default::default(),
