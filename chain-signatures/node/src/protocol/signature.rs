@@ -426,20 +426,23 @@ impl SignatureManager {
                 let presignature = match presignature_manager.take(presignature_id) {
                     Ok(presignature) => presignature,
                     Err(err @ GenerationError::PresignatureIsGenerating(_)) => {
-                        tracing::warn!(me = ?self.me, presignature_id, "presignature is generating, can't join signature generation protocol");
+                        tracing::warn!(me = ?self.me, presignature_id, %receipt_id, "presignature is generating, can't join signature generation protocol");
                         return Err(err);
                     }
                     Err(err @ GenerationError::PresignatureIsMissing(_)) => {
-                        tracing::warn!(me = ?self.me, presignature_id, "presignature is missing, can't join signature generation protocol");
+                        tracing::warn!(me = ?self.me, presignature_id, %receipt_id, "presignature is missing, can't join signature generation protocol");
                         return Err(err);
                     }
                     Err(err @ GenerationError::PresignatureIsGarbageCollected(_)) => {
-                        tracing::warn!(me = ?self.me, presignature_id, "presignature is garbage collected, can't join signature generation protocol");
+                        tracing::warn!(me = ?self.me, presignature_id, %receipt_id, "presignature is garbage collected, can't join signature generation protocol");
                         return Err(err);
                     }
-                    Err(err) => return Err(err),
+                    Err(err) => {
+                        tracing::warn!(me = ?self.me, presignature_id, %receipt_id, "other errors, can't join signature generation protocol");
+                        return Err(err);
+                    }
                 };
-                tracing::info!(me = ?self.me, presignature_id, "found presignature: ready to start signature generation");
+                tracing::info!(me = ?self.me, presignature_id, %receipt_id, "found presignature: ready to start signature generation");
                 let generator = match Self::generate_internal(
                     participants,
                     self.me,
@@ -464,7 +467,10 @@ impl SignatureManager {
                 let generator = entry.insert(generator);
                 Ok(&mut generator.protocol)
             }
-            Entry::Occupied(entry) => Ok(&mut entry.into_mut().protocol),
+            Entry::Occupied(entry) => {
+                tracing::debug!(%receipt_id, presignature_id, "signature: the generator entry already occupied");
+                Ok(&mut entry.into_mut().protocol)
+            }
         }
     }
 
