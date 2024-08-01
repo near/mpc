@@ -271,6 +271,7 @@ impl MpcSignProtocol {
                     tracing::warn!("could not fetch contract's config: {err:?}");
                 }
                 last_config_update = Instant::now();
+                tracing::debug!("latest signature config: {:?}", self.ctx.cfg.protocol.signature);
             }
 
             if last_pinged.elapsed() > Duration::from_millis(300) {
