@@ -366,6 +366,7 @@ impl MessageHandler for RunningState {
         let mut signature_manager = self.signature_manager.write().await;
         let signature_messages = queue.signature_bins.entry(self.epoch).or_default();
         signature_messages.retain(|receipt_id, queue| {
+            tracing::debug!("signature: looking at whether they expired already with receipt_id = {receipt_id}");
             // Skip message if it already timed out
             if queue.is_empty()
                 || queue.iter().any(|msg| {
@@ -375,12 +376,14 @@ impl MessageHandler for RunningState {
                     )
                 })
             {
+                tracing::warn!("signature: expired already with receipt_id = {receipt_id}");
                 return false;
             }
 
             !signature_manager.refresh_gc(receipt_id)
         });
         for (receipt_id, queue) in signature_messages {
+            tracing::debug!("signature: starting on signature messages of receipt_id = {receipt_id}");
             // SAFETY: this unwrap() is safe since we have already checked that the queue is not empty.
             let SignatureMessage {
                 proposer,
@@ -414,6 +417,7 @@ impl MessageHandler for RunningState {
             //     continue;
             // };
             // TODO: Validate that the message matches our sign_queue
+            tracing::debug!("signature: processing receipt_id = {receipt_id}");
             let protocol = match signature_manager.get_or_generate(
                 participants,
                 *receipt_id,
