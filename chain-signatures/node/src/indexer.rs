@@ -47,7 +47,7 @@ pub struct Options {
     pub start_block_height: u64,
 
     /// The amount of time before we should that our indexer is behind.
-    #[clap(long, env("MPC_INDEXER_BEHIND_THRESHOLD"), default_value = "60")]
+    #[clap(long, env("MPC_INDEXER_BEHIND_THRESHOLD"), default_value = "180")]
     pub behind_threshold: u64,
 
     /// The threshold in seconds to check if the indexer needs to be restarted due to it stalling.
@@ -112,6 +112,8 @@ impl Indexer {
         Self {
             latest_block_height: Arc::new(RwLock::new(latest_block_height)),
             last_updated_timestamp: Arc::new(RwLock::new(Instant::now())),
+            running_threshold: Duration::from_secs(options.running_threshold),
+            behind_threshold: Duration::from_secs(options.behind_threshold),
         }
     }
 

@@ -71,6 +71,8 @@ impl<'a> Node<'a> {
             s3_region: ctx.localstack.s3_region.clone(),
             s3_url: Some(ctx.localstack.s3_host_address.clone()),
             start_block_height: 0,
+            running_threshold: 120,
+            behind_threshold: 120,
         };
         let args = mpc_node::cli::Cli::Start {
             near_rpc: rpc_address_proxied.clone(),
@@ -156,6 +158,8 @@ impl<'a> Node<'a> {
             s3_region: ctx.localstack.s3_region.clone(),
             s3_url: Some(ctx.localstack.s3_host_address.clone()),
             start_block_height: 0,
+            running_threshold: 120,
+            behind_threshold: 120,
         };
         let sign_sk =
             near_crypto::SecretKey::from_seed(near_crypto::KeyType::ED25519, "integration-test");
