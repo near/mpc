@@ -219,11 +219,11 @@ impl MpcSignProtocol {
                 let msg_result = self.receiver.try_recv();
                 match msg_result {
                     Ok(msg) => {
-                        tracing::trace!("received a new message");
+                        tracing::debug!("received a new message");
                         queue.push(msg);
                     }
                     Err(TryRecvError::Empty) => {
-                        tracing::trace!("no new messages received");
+                        tracing::debug!("no new messages received");
                         break;
                     }
                     Err(TryRecvError::Disconnected) => {
@@ -326,11 +326,13 @@ impl MpcSignProtocol {
                 .observe(consensus_time.elapsed().as_secs_f64());
 
             let message_time = Instant::now();
+
             if let Err(err) = state.handle(&self, &mut queue).await {
                 tracing::info!("protocol unable to handle messages: {err:?}");
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 continue;
             }
+
             crate::metrics::PROTOCOL_LATENCY_ITER_MESSAGE
                 .with_label_values(&[my_account_id.as_str()])
                 .observe(message_time.elapsed().as_secs_f64());

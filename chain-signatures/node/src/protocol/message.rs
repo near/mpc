@@ -398,6 +398,9 @@ impl MessageHandler for RunningState {
                 // Check that all messages in the queue have the same triple0 and triple1, otherwise this is an
                 // invalid message, so we should just bin the whole entire protocol and its message for this presignature id.
                 queue.clear();
+                let front_presig = queue.front().unwrap().presignature_id;
+                let back_presig = queue.back().unwrap().presignature_id;
+                tracing::warn!("signature: removing all messages for receipt_id = {receipt_id}, front presignature_id = {front_presig}, back presig id = {back_presig}");
                 continue;
             }
 
