@@ -12,6 +12,7 @@ use near_lake_primitives::receipts::ExecutionStatus;
 
 use near_primitives::types::BlockHeight;
 use serde::{Deserialize, Serialize};
+use std::ops::Mul;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -308,6 +309,9 @@ pub fn run(
 
             let Ok(lake) = rt.block_on(async {
                 let latest = context.indexer.latest_block_height().await;
+                if i > 0 {
+                    tracing::info!("indexer latest height {latest}, restart count={i}");
+                }
                 let mut lake_builder = LakeBuilder::default()
                     .s3_bucket_name(&options.s3_bucket)
                     .s3_region_name(&options.s3_region)
@@ -324,7 +328,7 @@ pub fn run(
                 anyhow::Ok(lake)
             }) else {
                 tracing::error!(?options, "indexer failed to build");
-                backoff(i);
+                backoff(i, 1, 120);
                 continue;
             };
 
@@ -336,6 +340,10 @@ pub fn run(
                 rt.spawn(async move { lake.run_with_context_async(handle_block, &context).await })
             };
             let outcome = rt.block_on(async {
+                if i > 0 {
+                    // give it some time to catch up
+                    backoff(i, 10, 300);
+                }
                 // while running, we will keep the task spinning, and check every so often if
                 // the indexer has errored out.
                 while context.indexer.is_running().await {
@@ -366,7 +374,7 @@ pub fn run(
                 }
             }
 
-            backoff(i)
+            backoff(i, 1, 120)
         }
         Ok(())
     });
@@ -374,13 +382,14 @@ pub fn run(
     Ok((join_handle, indexer))
 }
 
-fn backoff(i: u32) {
-    // Exponential backoff with max delay of 2 minutes
-    let delay = if i <= 7 {
-        2u64.pow(i)
+fn backoff(i: u32, multiplier: u32, max: u64) {
+    let mut delay: u64 = 1;
+    // Exponential backoff with max delay of max seconds
+    delay = if delay < max {
+        2u64.pow(i).mul(multiplier as u64)
     } else {
-        // Max out at 2 minutes
-        120
+        // Max out at max seconds
+        max
     };
     std::thread::sleep(std::time::Duration::from_secs(delay));
 }
