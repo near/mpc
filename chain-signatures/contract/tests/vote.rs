@@ -90,7 +90,7 @@ async fn test_vote_join() -> anyhow::Result<()> {
         .await?;
     assert!(execution.is_success());
     let vote_pass: bool = execution.json().unwrap();
-    assert_eq!(vote_pass, false);
+    assert!(!vote_pass);
 
     // vote by candidate itself should fail
     let execution = alice
@@ -127,7 +127,7 @@ async fn test_vote_join() -> anyhow::Result<()> {
         .await?;
     assert!(execution.is_success());
     let vote_pass: bool = execution.json().unwrap();
-    assert_eq!(vote_pass, true);
+    assert!(vote_pass);
 
     Ok(())
 }
@@ -182,7 +182,7 @@ async fn test_vote_leave() -> anyhow::Result<()> {
         .await?;
     assert!(execution.is_success());
     let vote_pass: bool = execution.json().unwrap();
-    assert_eq!(vote_pass, false);
+    assert!(!vote_pass);
 
     let execution = accounts[2]
         .call(contract.id(), "vote_leave")
@@ -193,7 +193,7 @@ async fn test_vote_leave() -> anyhow::Result<()> {
         .await?;
     assert!(execution.is_success());
     let vote_pass: bool = execution.json().unwrap();
-    assert_eq!(vote_pass, true);
+    assert!(vote_pass);
 
     let state: mpc_contract::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
@@ -287,7 +287,7 @@ async fn test_vote_reshare() -> anyhow::Result<()> {
         .await?;
     assert!(execution.is_success());
     let vote_pass: bool = execution.json().unwrap();
-    assert_eq!(vote_pass, false);
+    assert!(!vote_pass);
     let execution = accounts[1]
         .call(contract.id(), "vote_join")
         .args_json(json!({
@@ -297,7 +297,7 @@ async fn test_vote_reshare() -> anyhow::Result<()> {
         .await?;
     assert!(execution.is_success());
     let vote_pass: bool = execution.json().unwrap();
-    assert_eq!(vote_pass, true);
+    assert!(vote_pass);
     let state: mpc_contract::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
     match state {
@@ -317,7 +317,7 @@ async fn test_vote_reshare() -> anyhow::Result<()> {
         .await?;
     assert!(execution.is_success());
     let vote_pass: bool = execution.json().unwrap();
-    assert_eq!(vote_pass, false);
+    assert!(!vote_pass);
 
     // not participant cannot vote
     let bob = worker.dev_create_account().await?;
@@ -349,7 +349,7 @@ async fn test_vote_reshare() -> anyhow::Result<()> {
         .await?;
     assert!(execution.is_success());
     let vote_pass: bool = execution.json().unwrap();
-    assert_eq!(vote_pass, true);
+    assert!(vote_pass);
 
     let state: mpc_contract::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
