@@ -1,5 +1,7 @@
 use integration_tests_chain_signatures::MultichainConfig;
-use mpc_contract::config::{ProtocolConfig, TripleConfig};
+use mpc_contract::config::ProtocolConfig;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use test_log::test;
 
 use crate::actions::{self, wait_for};
@@ -11,41 +13,36 @@ async fn test_nightly_signature_production() -> anyhow::Result<()> {
     const SIGNATURE_AMOUNT: usize = 1000;
     const NODES: usize = 8;
     const THRESHOLD: usize = 4;
-    const MIN_TRIPLES: u32 = 10;
-    const MAX_TRIPLES: u32 = 2 * NODES as u32 * MIN_TRIPLES;
 
     let config = MultichainConfig {
         nodes: NODES,
         threshold: THRESHOLD,
-        protocol: ProtocolConfig {
-            triple: TripleConfig {
-                min_triples: MIN_TRIPLES,
-                max_triples: MAX_TRIPLES,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
+        protocol: ProtocolConfig::default(),
     };
 
     with_multichain_nodes(config, |ctx| {
         Box::pin(async move {
             let state_0 = wait_for::running_mpc(&ctx, Some(0)).await?;
             assert_eq!(state_0.participants.len(), NODES);
+            let mut rng = StdRng::from_seed([0; 32]);
 
             for i in 0..SIGNATURE_AMOUNT {
-                if let Err(err) = wait_for::has_at_least_mine_triples(&ctx, 4).await {
-                    tracing::error!(?err, "Failed to wait for triples");
-                    continue;
-                }
+                let random_secs: u32 = rng.gen_range(1, 40);
+                tokio::time::sleep(std::time::Duration::from_secs(random_secs as u64)).await;
+                let (_account, signer) = actions::new_account(&ctx).await.unwrap();
 
-                if let Err(err) = wait_for::has_at_least_mine_presignatures(&ctx, 2).await {
-                    tracing::error!(?err, "Failed to wait for presignatures");
-                    continue;
-                }
+                let sig_amount = rng.gen_range(1, 3);
+                tracing::info!(i, sig_amount, "Producing signature");
 
-                tracing::info!(at_signature = i, "Producing signature...");
-                if let Err(err) = actions::single_signature_production(&ctx, &state_0).await {
-                    tracing::error!(?err, "Failed to produce signature");
+                let (_payload_hashes, tx_hashes): (Vec<_>, Vec<_>) =
+                    actions::request_sign_multiple(&ctx, &signer, sig_amount)
+                        .await?
+                        .into_iter()
+                        .unzip();
+
+                match wait_for::signatures_responded(&ctx, &tx_hashes).await {
+                    Ok(_signatures) => tracing::info!(?tx_hashes, "got signatures"),
+                    Err(err) => tracing::error!("unable to produce signatures in time: {err:?}"),
                 }
             }
 

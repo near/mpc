@@ -358,12 +358,6 @@ impl CryptographicProtocol for RunningState {
     ) -> Result<NodeState, CryptographicError> {
         let protocol_cfg = &ctx.cfg().protocol;
         let active = ctx.mesh().active_participants();
-        tracing::debug!(
-            "RunningState.progress active participants: {:?} potential participants: {:?} me: {:?}",
-            active.keys_vec(),
-            ctx.mesh().potential_participants().await.keys_vec(),
-            ctx.me().await
-        );
         if active.len() < self.threshold {
             tracing::info!(
                 active = ?active.keys_vec(),

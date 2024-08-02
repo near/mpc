@@ -311,6 +311,61 @@ pub async fn signature_responded(
     }
 }
 
+pub async fn signatures_responded(
+    ctx: &MultichainTestContext<'_>,
+    tx_hashs: &[CryptoHash],
+) -> Result<Vec<FullSignature<Secp256k1>>, WaitForError> {
+    let is_tx_ready = |tx_hash: CryptoHash| async move {
+        let outcome_view = match ctx
+            .jsonrpc_client
+            .call(RpcTransactionStatusRequest {
+                transaction_info: TransactionInfo::TransactionId {
+                    tx_hash,
+                    sender_account_id: ctx.nodes.ctx().mpc_contract.id().clone(),
+                },
+                wait_until: near_primitives::views::TxExecutionStatus::Final,
+            })
+            .await
+        {
+            Err(error) => return Err(WaitForError::JsonRpc(format!("{error:?}"))),
+            Ok(outcome_view) => outcome_view,
+        };
+
+        let Some(outcome) = outcome_view.final_execution_outcome else {
+            return Err(WaitForError::Signature(SignatureError::NotYetAvailable));
+        };
+
+        let outcome = outcome.into_outcome();
+
+        let FinalExecutionStatus::SuccessValue(payload) = outcome.status else {
+            return Ok(Outcome::Failed(format!("{:?}", outcome.status)));
+        };
+
+        let result: SignatureResponse = match serde_json::from_slice(&payload) {
+            Err(error) => return Err(WaitForError::SerdeJson(format!("{error:?}"))),
+            Ok(response) => response,
+        };
+        Ok(Outcome::Signature(cait_sith::FullSignature::<Secp256k1> {
+            big_r: result.big_r.affine_point,
+            s: result.s.scalar,
+        }))
+    };
+    let mut result = Vec::new();
+    for _ in 0..8 {
+        for hash in tx_hashs {
+            match is_tx_ready(*hash).await {
+                Ok(Outcome::Signature(signature)) => result.push(signature),
+                Ok(Outcome::Failed(err)) => {
+                    return Err(WaitForError::Signature(SignatureError::Failed(err)))
+                }
+                Err(_) => continue,
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(20)).await;
+    }
+    Ok(result)
+}
+
 pub async fn signature_payload_responded(
     ctx: &MultichainTestContext<'_>,
     account: Account,

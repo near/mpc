@@ -38,19 +38,27 @@ use k256::{
 };
 use serde_json::json;
 
-pub async fn request_sign(
+pub async fn new_account(
     ctx: &MultichainTestContext<'_>,
-) -> anyhow::Result<([u8; 32], [u8; 32], Account, CryptoHash)> {
+) -> anyhow::Result<(Account, InMemorySigner)> {
     let worker = &ctx.nodes.ctx().worker;
     let account = worker.dev_create_account().await?;
-    let payload: [u8; 32] = rand::thread_rng().gen();
-    let payload_hashed = web3::signing::keccak256(&payload);
-
     let signer = InMemorySigner {
         account_id: account.id().clone(),
         public_key: account.secret_key().public_key().to_string().parse()?,
         secret_key: account.secret_key().to_string().parse()?,
     };
+
+    Ok((account, signer))
+}
+
+pub async fn request_sign(
+    ctx: &MultichainTestContext<'_>,
+    signer: &InMemorySigner,
+) -> anyhow::Result<([u8; 32], [u8; 32], CryptoHash)> {
+    let payload: [u8; 32] = rand::thread_rng().gen();
+    let payload_hashed = web3::signing::keccak256(&payload);
+
     let (nonce, block_hash, _) = ctx
         .rpc_client
         .fetch_nonce(&signer.account_id, &signer.public_key)
@@ -79,11 +87,24 @@ pub async fn request_sign(
                     deposit: 1,
                 }))],
             }
-            .sign(&signer),
+            .sign(signer),
         })
         .await?;
     tokio::time::sleep(Duration::from_secs(1)).await;
-    Ok((payload, payload_hashed, account, tx_hash))
+    Ok((payload, payload_hashed, tx_hash))
+}
+
+pub async fn request_sign_multiple(
+    ctx: &MultichainTestContext<'_>,
+    signer: &InMemorySigner,
+    amount: usize,
+) -> anyhow::Result<Vec<([u8; 32], CryptoHash)>> {
+    let mut results = Vec::with_capacity(amount);
+    for _ in 0..amount {
+        let (_payload, payload_hashed, tx_hash) = request_sign(ctx, signer).await?;
+        results.push((payload_hashed, tx_hash));
+    }
+    Ok(results)
 }
 
 pub async fn assert_signature(
@@ -104,7 +125,8 @@ pub async fn single_signature_rogue_responder(
     ctx: &MultichainTestContext<'_>,
     state: &RunningContractState,
 ) -> anyhow::Result<()> {
-    let (_, payload_hash, account, tx_hash) = request_sign(ctx).await?;
+    let (account, signer) = new_account(ctx).await?;
+    let (_, payload_hash, tx_hash) = request_sign(ctx, &signer).await?;
 
     // We have to use seperate transactions because one could fail.
     // This leads to a potential race condition where this transaction could get sent after the signature completes, but I think that's unlikely
@@ -135,7 +157,8 @@ pub async fn single_signature_production(
     ctx: &MultichainTestContext<'_>,
     state: &RunningContractState,
 ) -> anyhow::Result<()> {
-    let (_, payload_hash, account, tx_hash) = request_sign(ctx).await?;
+    let (account, signer) = new_account(ctx).await?;
+    let (_, payload_hash, tx_hash) = request_sign(ctx, &signer).await?;
     let signature = wait_for::signature_responded(ctx, tx_hash).await?;
 
     let mut mpc_pk_bytes = vec![0x04];
@@ -276,7 +299,8 @@ pub async fn single_payload_signature_production(
     ctx: &MultichainTestContext<'_>,
     state: &RunningContractState,
 ) -> anyhow::Result<()> {
-    let (payload, payload_hash, account, tx_hash) = request_sign(ctx).await?;
+    let (account, signer) = new_account(ctx).await?;
+    let (payload, payload_hash, tx_hash) = request_sign(ctx, &signer).await?;
     let first_tx_result = wait_for::signature_responded(ctx, tx_hash).await;
     let signature = match first_tx_result {
         Ok(sig) => sig,

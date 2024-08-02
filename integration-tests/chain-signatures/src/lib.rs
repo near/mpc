@@ -12,7 +12,7 @@ use crate::containers::LocalStack;
 use anyhow::Context as _;
 use bollard::exec::{CreateExecOptions, StartExecResults};
 use futures::StreamExt;
-use mpc_contract::config::{PresignatureConfig, ProtocolConfig, TripleConfig};
+use mpc_contract::config::ProtocolConfig;
 use mpc_contract::primitives::CandidateInfo;
 use mpc_node::gcp::GcpService;
 use mpc_node::storage;
@@ -38,19 +38,7 @@ impl Default for MultichainConfig {
         Self {
             nodes: 3,
             threshold: 2,
-            protocol: ProtocolConfig {
-                triple: TripleConfig {
-                    min_triples: 8,
-                    max_triples: 80,
-                    ..Default::default()
-                },
-                presignature: PresignatureConfig {
-                    min_presignatures: 2,
-                    max_presignatures: 20,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
+            protocol: Default::default(),
         }
     }
 }

@@ -127,18 +127,10 @@ impl Pool {
                     .await;
             }
         }
-        tracing::debug!(
-            "Pool.establish_participants set participants to {:?}",
-            self.connections.read().await.clone().keys_vec()
-        );
     }
 
     async fn set_participants(&self, participants: &Participants) {
         *self.connections.write().await = participants.clone();
-        tracing::debug!(
-            "Pool set participants to {:?}",
-            self.connections.read().await.keys_vec()
-        );
     }
 
     async fn set_potential_participants(&self, participants: &Participants) {
