@@ -135,7 +135,7 @@ impl VersionedMpcContract {
         }
         // Check deposit
         let deposit = env::attached_deposit();
-        let required_deposit = self.experimantal_signature_deposit();
+        let required_deposit = self.experimental_signature_deposit();
         if deposit.as_yoctonear() < required_deposit {
             return Err(InvalidParameters::InsufficientDeposit.message(format!(
                 "Attached {}, Required {}",
@@ -215,10 +215,10 @@ impl VersionedMpcContract {
         0
     }
 
-    /// This experimantal function calculates the fee for a signature request.
+    /// This experimental function calculates the fee for a signature request.
     /// The fee is volatile and depends on the number of pending requests.
     /// If used on a client side, it can give outdate results.
-    pub fn experimantal_signature_deposit(&self) -> u128 {
+    pub fn experimental_signature_deposit(&self) -> u128 {
         const CHEAP_REQUESTS: u32 = 3;
         let pending_requests = match self {
             Self::V0(mpc_contract) => mpc_contract.request_counter,
