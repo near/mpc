@@ -351,7 +351,7 @@ impl GcpService {
                     .enable_http2()
                     .build(),
             );
-            // Assuming custom GCP URL points to an emulator, so the token does not matter
+            // Assuming custom GCP URL points to an emulator, so the token does not matter 
             let authenticator = AccessTokenAuthenticator::builder("TOKEN".to_string())
                 .build()
                 .await?;
@@ -370,6 +370,7 @@ impl GcpService {
                     .enable_http2()
                     .build(),
             );
+            
             let opts = ApplicationDefaultCredentialsFlowOpts::default();
             let authenticator = match ApplicationDefaultCredentialsAuthenticator::builder(opts)
                 .await
