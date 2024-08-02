@@ -14,6 +14,15 @@ pub(crate) static NODE_RUNNING: Lazy<IntGaugeVec> = Lazy::new(|| {
     .unwrap()
 });
 
+pub(crate) static IS_MAINNET_CONTRACT_RIGHT: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "multichain_mainnet_contract_is_right",
+        "whether the multichain node is pointing to v1.signer",
+        &["node_account_id"],
+    )
+    .unwrap()
+});
+
 pub(crate) static NUM_SIGN_REQUESTS: Lazy<IntGaugeVec> = Lazy::new(|| {
     try_create_int_gauge_vec(
         "multichain_sign_requests_count",

@@ -197,6 +197,15 @@ impl MpcSignProtocol {
         crate::metrics::NODE_VERSION
             .with_label_values(&[my_account_id.as_str()])
             .set(node_version());
+        if self.ctx.mpc_contract_id == "v1.signer" {
+            crate::metrics::IS_MAINNET_CONTRACT_RIGHT
+            .with_label_values(&[my_account_id.as_str()])
+            .set(1);
+        } else {
+            crate::metrics::IS_MAINNET_CONTRACT_RIGHT
+            .with_label_values(&[my_account_id.as_str()])
+            .set(0);
+        }
         let mut queue = MpcMessageQueue::default();
         let mut last_state_update = Instant::now();
         let mut last_config_update = Instant::now();
