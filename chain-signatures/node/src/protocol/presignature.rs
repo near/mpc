@@ -62,7 +62,9 @@ impl PresignatureGenerator {
 
     pub fn poke(&mut self) -> Result<Action<PresignOutput<Secp256k1>>, ProtocolError> {
         if self.timestamp.elapsed() > self.timeout {
-            tracing::info!(
+            let id = hash_as_id(self.triple0, self.triple1);
+            tracing::warn!(
+                presignature_id = id,
                 self.triple0,
                 self.triple1,
                 self.mine,
@@ -392,8 +394,8 @@ impl PresignatureManager {
     }
 
     pub fn take_mine(&mut self) -> Option<Presignature> {
-        tracing::info!(mine = ?self.mine, "my presignatures");
         let my_presignature_id = self.mine.pop_front()?;
+        tracing::debug!(my_presignature_id, "take presignature of mine");
         // SAFETY: This unwrap is safe because taking mine will always succeed since it is only
         // present when generation completes where the determination of ownership is made.
         Some(self.take(my_presignature_id).unwrap())

@@ -284,15 +284,13 @@ impl MpcSignProtocol {
             };
 
             let crypto_time = Instant::now();
-            tracing::debug!("State progress. Node state: {}", state);
             let mut state = match state.progress(&mut self).await {
                 Ok(state) => {
-                    tracing::debug!("Progress ok. New state: {}", state);
+                    tracing::debug!("progress ok: {state}");
                     state
                 }
                 Err(err) => {
-                    tracing::debug!("Progress error. State not changed");
-                    tracing::info!("protocol unable to progress: {err:?}");
+                    tracing::warn!("protocol unable to progress: {err:?}");
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
@@ -303,19 +301,14 @@ impl MpcSignProtocol {
 
             let consensus_time = Instant::now();
             if let Some(contract_state) = contract_state {
-                tracing::debug!(
-                    "State advance. Node state: {}, contract state: {:?}",
-                    state,
-                    contract_state
-                );
+                let from_state = format!("{state}");
                 state = match state.advance(&mut self, contract_state).await {
                     Ok(state) => {
-                        tracing::debug!("Advance ok. New node state: {}", state);
+                        tracing::debug!("advance ok: {from_state} => {state}");
                         state
                     }
                     Err(err) => {
-                        tracing::debug!("Advance error. State not changed");
-                        tracing::info!("protocol unable to advance: {err:?}");
+                        tracing::warn!("protocol unable to advance: {err:?}");
                         tokio::time::sleep(Duration::from_millis(100)).await;
                         continue;
                     }
@@ -327,9 +320,7 @@ impl MpcSignProtocol {
 
             let message_time = Instant::now();
             if let Err(err) = state.handle(&self, &mut queue).await {
-                tracing::info!("protocol unable to handle messages: {err:?}");
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                continue;
+                tracing::warn!("protocol unable to handle messages: {err:?}");
             }
             crate::metrics::PROTOCOL_LATENCY_ITER_MESSAGE
                 .with_label_values(&[my_account_id.as_str()])
