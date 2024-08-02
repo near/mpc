@@ -228,7 +228,7 @@ impl MpcSignProtocol {
                 let msg_result = self.receiver.try_recv();
                 match msg_result {
                     Ok(msg) => {
-                        tracing::trace!("received a new message");
+                        tracing::debug!("received a new message");
                         queue.push(msg);
                     }
                     Err(TryRecvError::Empty) => {
