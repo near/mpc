@@ -1,6 +1,5 @@
 use crate::gcp::error::DatastoreStorageError;
 use crate::gcp::GcpService;
-use crate::kdf;
 use crate::protocol::{SignQueue, SignRequest};
 use crate::types::LatestBlockHeight;
 use crypto_shared::{derive_epsilon, ScalarExt};
@@ -213,7 +212,6 @@ async fn handle_block(
                     continue;
                 };
                 let epsilon = derive_epsilon(&action.predecessor_id(), &arguments.request.path);
-                let delta = kdf::derive_delta(receipt_id, entropy);
                 tracing::info!(
                     receipt_id = %receipt_id,
                     caller_id = receipt.predecessor_id().to_string(),
@@ -232,7 +230,6 @@ async fn handle_block(
                     receipt_id,
                     request,
                     epsilon,
-                    delta,
                     entropy,
                     // TODO: use indexer timestamp instead.
                     time_added: Instant::now(),

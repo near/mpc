@@ -2,9 +2,10 @@ use super::contract::primitives::Participants;
 use super::message::SignatureMessage;
 use super::presignature::{GenerationError, Presignature, PresignatureId, PresignatureManager};
 use crate::indexer::ContractSignRequest;
-use crate::kdf::into_eth_sig;
+use crate::kdf::{derive_delta, into_eth_sig};
 use crate::types::SignatureProtocol;
 use crate::util::AffinePointExt;
+use near_primitives::hash::CryptoHash;
 
 use cait_sith::protocol::{Action, InitializationError, Participant, ProtocolError};
 use cait_sith::{FullSignature, PresignOutput};
@@ -30,7 +31,6 @@ pub struct SignRequest {
     pub receipt_id: ReceiptId,
     pub request: ContractSignRequest,
     pub epsilon: Scalar,
-    pub delta: Scalar,
     pub entropy: [u8; 32],
     pub time_added: Instant,
 }
@@ -162,7 +162,8 @@ pub struct SignatureGenerator {
     pub presignature_id: PresignatureId,
     pub request: ContractSignRequest,
     pub epsilon: Scalar,
-    pub delta: Scalar,
+    pub receipt_id: CryptoHash,
+    pub entropy: [u8; 32],
     pub sign_request_timestamp: Instant,
     pub generator_timestamp: Instant,
     pub timeout: Duration,
@@ -178,7 +179,8 @@ impl SignatureGenerator {
         presignature_id: PresignatureId,
         request: ContractSignRequest,
         epsilon: Scalar,
-        delta: Scalar,
+        receipt_id: CryptoHash,
+        entropy: [u8; 32],
         sign_request_timestamp: Instant,
         cfg: &ProtocolConfig,
     ) -> Self {
@@ -189,7 +191,8 @@ impl SignatureGenerator {
             presignature_id,
             request,
             epsilon,
-            delta,
+            receipt_id,
+            entropy,
             sign_request_timestamp,
             generator_timestamp: Instant::now(),
             timeout: Duration::from_millis(cfg.signature.generation_timeout),
@@ -221,7 +224,8 @@ pub struct GenerationRequest {
     pub proposer: Participant,
     pub request: ContractSignRequest,
     pub epsilon: Scalar,
-    pub delta: Scalar,
+    pub receipt_id: CryptoHash,
+    pub entropy: [u8; 32],
     pub sign_request_timestamp: Instant,
 }
 
@@ -302,10 +306,12 @@ impl SignatureManager {
             proposer,
             request,
             epsilon,
-            delta,
+            receipt_id,
+            entropy,
             sign_request_timestamp,
         } = req;
         let PresignOutput { big_r, k, sigma } = presignature.output;
+        let delta = derive_delta(receipt_id, entropy, big_r);
         // TODO: Check whether it is okay to use invert_vartime instead
         let output: PresignOutput<Secp256k1> = PresignOutput {
             big_r: (big_r * delta).to_affine(),
@@ -330,7 +336,8 @@ impl SignatureManager {
             presignature_id,
             request,
             epsilon,
-            delta,
+            receipt_id,
+            entropy,
             sign_request_timestamp,
             cfg,
         ))
@@ -368,7 +375,7 @@ impl SignatureManager {
         presignature: Presignature,
         request: ContractSignRequest,
         epsilon: Scalar,
-        delta: Scalar,
+        entropy: [u8; 32],
         sign_request_timestamp: Instant,
         cfg: &ProtocolConfig,
     ) -> Result<(), (Presignature, InitializationError)> {
@@ -388,7 +395,8 @@ impl SignatureManager {
                 proposer: self.me,
                 request,
                 epsilon,
-                delta,
+                receipt_id,
+                entropy,
                 sign_request_timestamp,
             },
             cfg,
@@ -412,7 +420,7 @@ impl SignatureManager {
         presignature_id: PresignatureId,
         request: &ContractSignRequest,
         epsilon: Scalar,
-        delta: Scalar,
+        entropy: [u8; 32],
         presignature_manager: &mut PresignatureManager,
         cfg: &ProtocolConfig,
     ) -> Result<&mut SignatureProtocol, GenerationError> {
@@ -449,7 +457,8 @@ impl SignatureManager {
                         proposer,
                         request: request.clone(),
                         epsilon,
-                        delta,
+                        entropy,
+                        receipt_id,
                         sign_request_timestamp: Instant::now(),
                     },
                     cfg,
@@ -490,7 +499,8 @@ impl SignatureManager {
                                         proposer: generator.proposer,
                                         request: generator.request.clone(),
                                         epsilon: generator.epsilon,
-                                        delta: generator.delta,
+                                        receipt_id: generator.receipt_id,
+                                        entropy: generator.entropy,
                                         sign_request_timestamp: generator.sign_request_timestamp
                                     },
                                 ));
@@ -518,7 +528,7 @@ impl SignatureManager {
                                     presignature_id: generator.presignature_id,
                                     request: generator.request.clone(),
                                     epsilon: generator.epsilon,
-                                    delta: generator.delta,
+                                    entropy: generator.entropy,
                                     epoch: self.epoch,
                                     from: self.me,
                                     data: data.clone(),
@@ -535,7 +545,7 @@ impl SignatureManager {
                             presignature_id: generator.presignature_id,
                             request: generator.request.clone(),
                             epsilon: generator.epsilon,
-                            delta: generator.delta,
+                            entropy: generator.entropy,
                             epoch: self.epoch,
                             from: self.me,
                             data,
@@ -641,7 +651,7 @@ impl SignatureManager {
                 presignature,
                 my_request.request,
                 my_request.epsilon,
-                my_request.delta,
+                my_request.entropy,
                 my_request.time_added,
                 cfg,
             ) {

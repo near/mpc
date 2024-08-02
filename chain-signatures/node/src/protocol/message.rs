@@ -68,7 +68,7 @@ pub struct SignatureMessage {
     pub presignature_id: PresignatureId,
     pub request: ContractSignRequest,
     pub epsilon: Scalar,
-    pub delta: Scalar,
+    pub entropy: [u8; 32],
     pub epoch: u64,
     pub from: Participant,
     pub data: MessageData,
@@ -387,7 +387,7 @@ impl MessageHandler for RunningState {
                 presignature_id,
                 request,
                 epsilon,
-                delta,
+                entropy,
                 ..
             } = queue.front().unwrap();
 
@@ -418,7 +418,7 @@ impl MessageHandler for RunningState {
                 *presignature_id,
                 request,
                 *epsilon,
-                *delta,
+                *entropy,
                 &mut presignature_manager,
                 protocol_cfg,
             ) {
