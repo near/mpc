@@ -49,7 +49,10 @@ impl SecretManagerService {
             // placeholder for empty secrets.
             Some(SecretPayload {
                 data: Some(data), ..
-            }) if data.len() > 1 => Ok(None),
+            }) if data.len() > 1 => {
+                tracing::info!("loaded old key but presuming it is missing");
+                Ok(None)
+            }
             _ => {
                 tracing::info!("failed to load existing key share, presuming it is missing");
                 Ok(None)
