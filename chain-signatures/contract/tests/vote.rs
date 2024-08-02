@@ -12,12 +12,10 @@ async fn test_join() -> anyhow::Result<()> {
     let execution = alice
         .call(contract.id(), "join")
         .args_json(json!({
-                    "url": "127.0.0.1",
-                    "cipher_pk": vec![1u8; 32],
-                    "sign_pk":
-        "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-
-                }))
+            "url": "127.0.0.1",
+            "cipher_pk": vec![1u8; 32],
+            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
+        }))
         .transact()
         .await?;
 
@@ -36,12 +34,10 @@ async fn test_join() -> anyhow::Result<()> {
     let execution = alice
         .call(contract.id(), "join")
         .args_json(json!({
-                    "url": "127.0.0.1",
-                    "cipher_pk": vec![1u8; 32],
-                    "sign_pk":
-        "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-
-                }))
+            "url": "127.0.0.1",
+            "cipher_pk": vec![1u8; 32],
+            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
+        }))
         .transact()
         .await?;
     assert!(execution.is_success());
@@ -50,12 +46,10 @@ async fn test_join() -> anyhow::Result<()> {
     let execution = accounts[0]
         .call(contract.id(), "join")
         .args_json(json!({
-                    "url": "127.0.0.1",
-                    "cipher_pk": vec![1u8; 32],
-                    "sign_pk":
-        "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-
-                }))
+            "url": "127.0.0.1",
+            "cipher_pk": vec![1u8; 32],
+            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
+        }))
         .transact()
         .await?;
     assert!(execution.is_failure());
@@ -70,12 +64,10 @@ async fn test_vote_join() -> anyhow::Result<()> {
     let execution = alice
         .call(contract.id(), "join")
         .args_json(json!({
-                    "url": "127.0.0.1",
-                    "cipher_pk": vec![1u8; 32],
-                    "sign_pk":
-        "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-
-                }))
+            "url": "127.0.0.1",
+            "cipher_pk": vec![1u8; 32],
+            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
+        }))
         .transact()
         .await?;
     assert!(execution.is_success());
@@ -102,21 +94,6 @@ async fn test_vote_join() -> anyhow::Result<()> {
         .await?;
     assert!(execution.is_failure());
 
-    // another try to join should fail, because it's in Resharing state now
-    let bob = worker.dev_create_account().await?;
-    let execution = bob
-        .call(contract.id(), "join")
-        .args_json(json!({
-                    "url": "127.0.0.1",
-                    "cipher_pk": vec![1u8; 32],
-                    "sign_pk":
-        "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-
-                }))
-        .transact()
-        .await?;
-    assert!(execution.is_failure());
-
     // vote by second candidate should success, and vote pass threshold
     let execution = accounts[1]
         .call(contract.id(), "vote_join")
@@ -128,6 +105,19 @@ async fn test_vote_join() -> anyhow::Result<()> {
     assert!(execution.is_success());
     let vote_pass: bool = execution.json().unwrap();
     assert!(vote_pass);
+
+    // another try to join should fail, because it's in Resharing state now
+    let bob = worker.dev_create_account().await?;
+    let execution = bob
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "url": "127.0.0.1",
+            "cipher_pk": vec![1u8; 32],
+            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
+        }))
+        .transact()
+        .await?;
+    assert!(execution.is_failure());
 
     Ok(())
 }
@@ -141,12 +131,10 @@ async fn test_vote_leave() -> anyhow::Result<()> {
     let execution = alice
         .call(contract.id(), "join")
         .args_json(json!({
-                    "url": "127.0.0.1",
-                    "cipher_pk": vec![1u8; 32],
-                    "sign_pk":
-        "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-
-                }))
+            "url": "127.0.0.1",
+            "cipher_pk": vec![1u8; 32],
+            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
+        }))
         .transact()
         .await?;
     assert!(execution.is_success());
@@ -267,12 +255,10 @@ async fn test_vote_reshare() -> anyhow::Result<()> {
     let execution = alice
         .call(contract.id(), "join")
         .args_json(json!({
-                    "url": "127.0.0.1",
-                    "cipher_pk": vec![1u8; 32],
-                    "sign_pk":
-        "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-
-                }))
+            "url": "127.0.0.1",
+            "cipher_pk": vec![1u8; 32],
+            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
+        }))
         .transact()
         .await?;
     assert!(execution.is_success());
