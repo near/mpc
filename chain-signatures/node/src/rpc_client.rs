@@ -12,6 +12,7 @@ pub async fn fetch_mpc_contract_state(
 ) -> anyhow::Result<ProtocolState> {
     let protocol_state: mpc_contract::ProtocolContractState =
         rpc_client.view(mpc_contract_id, "state").await?.json()?;
+    tracing::debug!(?protocol_state, "fetched protocol state");
     protocol_state
         .try_into()
         .map_err(|_| anyhow::anyhow!("protocol state has not been initialized yet"))
@@ -24,6 +25,7 @@ pub async fn fetch_mpc_config(
 ) -> anyhow::Result<Config> {
     let contract_config: ContractConfig =
         rpc_client.view(mpc_contract_id, "config").await?.json()?;
+    tracing::debug!(?contract_config, "fetched contract config");
     Config::try_from_contract(contract_config, original)
         .ok_or_else(|| anyhow::anyhow!("failed to parse contract config"))
 }
@@ -34,7 +36,7 @@ pub async fn vote_for_public_key(
     mpc_contract_id: &AccountId,
     public_key: &near_crypto::PublicKey,
 ) -> anyhow::Result<bool> {
-    tracing::info!(%public_key, "voting for public key");
+    tracing::info!(%public_key, %signer.account_id, "voting for public key");
     let result = rpc_client
         .call(signer, mpc_contract_id, "vote_pk")
         .args_json(json!({
@@ -55,6 +57,7 @@ pub async fn vote_reshared(
     mpc_contract_id: &AccountId,
     epoch: u64,
 ) -> anyhow::Result<bool> {
+    tracing::info!(%epoch, %signer.account_id, "voting for reshared");
     let result = rpc_client
         .call(signer, mpc_contract_id, "vote_reshared")
         .args_json(json!({

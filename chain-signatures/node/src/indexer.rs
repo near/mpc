@@ -165,6 +165,7 @@ async fn handle_block(
     mut block: near_lake_primitives::block::Block,
     ctx: &Context,
 ) -> anyhow::Result<()> {
+    tracing::debug!(block_height = block.block_height(), "handle_block");
     let mut pending_requests = Vec::new();
     for action in block.actions().cloned().collect::<Vec<_>>() {
         if action.receiver_id() == ctx.mpc_contract_id {
@@ -205,10 +206,13 @@ async fn handle_block(
                     continue;
                 };
 
-                let Ok(entropy) = serde_json::from_str::<'_, [u8; 32]>(&receipt.logs()[1]) else {
+                let entropy_log_index = 1;
+                let Ok(entropy) =
+                    serde_json::from_str::<'_, [u8; 32]>(&receipt.logs()[entropy_log_index])
+                else {
                     tracing::warn!(
                         "`sign` did not produce entropy correctly: {:?}",
-                        receipt.logs()[0]
+                        receipt.logs()[entropy_log_index]
                     );
                     continue;
                 };
@@ -260,9 +264,6 @@ async fn handle_block(
     }
     drop(queue);
 
-    if block.block_height() % 1000 == 0 {
-        tracing::info!(block_height = block.block_height(), "indexed block");
-    }
     Ok(())
 }
 

@@ -35,6 +35,7 @@ impl Pool {
             }
         }
 
+        tracing::debug!("pinging participants");
         let connections = self.connections.read().await;
 
         let mut status = self.status.write().await;
@@ -74,6 +75,10 @@ impl Pool {
 
         let mut active = self.current_active.write().await;
         *active = Some((participants.clone(), Instant::now()));
+        tracing::debug!(
+            "active participant account id's {:?}",
+            participants.account_ids()
+        );
         participants
     }
 
@@ -83,6 +88,8 @@ impl Pool {
                 return active.clone();
             }
         }
+
+        tracing::debug!("pinging potential participants");
 
         let connections = self.potential_connections.read().await;
 
@@ -108,6 +115,10 @@ impl Pool {
 
         let mut potential_active = self.potential_active.write().await;
         *potential_active = Some((participants.clone(), Instant::now()));
+        tracing::debug!(
+            "potential participant account id's {:?}",
+            participants.account_ids()
+        );
         participants
     }
 
@@ -143,6 +154,10 @@ impl Pool {
 
     async fn set_potential_participants(&self, participants: &Participants) {
         *self.potential_connections.write().await = participants.clone();
+        tracing::debug!(
+            "Pool set potential participants to {:?}",
+            self.potential_connections.read().await.keys_vec()
+        );
     }
 
     pub async fn potential_participants(&self) -> Participants {
