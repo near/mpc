@@ -420,6 +420,7 @@ impl SignatureManager {
             tracing::warn!(%receipt_id, presignature_id, "presignature has already been used to generate a signature");
             return Err(GenerationError::AlreadyGenerated);
         }
+        
         match self.generators.entry(receipt_id) {
             Entry::Vacant(entry) => {
                 tracing::info!(%receipt_id, me = ?self.me, presignature_id, "joining protocol to generate a new signature");
