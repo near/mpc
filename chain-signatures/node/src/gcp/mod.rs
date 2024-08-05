@@ -51,7 +51,7 @@ impl SecretManagerService {
                 data: Some(data), ..
             }) if data.len() > 1 => Ok(Some(data)),
             _ => {
-                tracing::info!("failed to load existing key share, presuming it is missing");
+                tracing::error!("failed to load existing key share, presuming it is missing");
                 Ok(None)
             }
         }
@@ -70,7 +70,11 @@ impl SecretManagerService {
                 &format!("projects/{}/secrets/{}", self.project_id, name.as_ref()),
             )
             .doit()
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!(%e, "failed to store secret");
+                e
+            })?;
         Ok(())
     }
 }
@@ -122,7 +126,11 @@ impl DatastoreService {
             .projects()
             .lookup(request, &self.project_id)
             .doit()
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!(%e, "failed to lookup entity in data store");
+                e
+            })?;
         match response
             .found
             .and_then(|mut results| results.pop())
@@ -166,7 +174,11 @@ impl DatastoreService {
             .projects()
             .commit(request, &self.project_id)
             .doit()
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!(%e, "failed to insert entity to data store");
+                e
+            })?;
         Ok(())
     }
 
@@ -203,7 +215,11 @@ impl DatastoreService {
             .projects()
             .commit(request, &self.project_id)
             .doit()
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!(%e, "failed to update entity in data store");
+                e
+            })?;
 
         Ok(())
     }
@@ -241,7 +257,11 @@ impl DatastoreService {
             .projects()
             .commit(request, &self.project_id)
             .doit()
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!(%e, "failed to upsert entity in data store");
+                e
+            })?;
 
         Ok(())
     }
@@ -273,7 +293,11 @@ impl DatastoreService {
             .projects()
             .run_query(req, &self.project_id)
             .doit()
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!(%e, "failed to fetch entities from data store");
+                e
+            })?;
         let batch = query_resp.batch.ok_or_else(|| {
             DatastoreStorageError::FetchEntitiesError(
                 "Could not retrieve batch while fetching entities".to_string(),
@@ -322,7 +346,11 @@ impl DatastoreService {
             .projects()
             .commit(request, &self.project_id)
             .doit()
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!(%e, "failed to delete entities in data store");
+                e
+            })?;
         Ok(())
     }
 }

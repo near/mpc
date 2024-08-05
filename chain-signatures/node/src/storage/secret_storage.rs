@@ -51,7 +51,7 @@ impl SecretManagerNodeStorage {
 #[async_trait]
 impl SecretNodeStorage for SecretManagerNodeStorage {
     async fn store(&mut self, data: &PersistentNodeData) -> SecretResult<()> {
-        tracing::debug!("storing PersistentNodeData using SecretNodeStorage");
+        tracing::info!("storing PersistentNodeData using SecretNodeStorage");
         self.secret_manager
             .store_secret(&serde_json::to_vec(data)?, &self.sk_share_secret_id)
             .await?;
@@ -59,7 +59,7 @@ impl SecretNodeStorage for SecretManagerNodeStorage {
     }
 
     async fn load(&self) -> SecretResult<Option<PersistentNodeData>> {
-        tracing::debug!("loading PersistentNodeData using SecretNodeStorage");
+        tracing::info!("loading PersistentNodeData using SecretNodeStorage");
         let raw_data = self
             .secret_manager
             .load_secret(&self.sk_share_secret_id)
