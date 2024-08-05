@@ -151,6 +151,10 @@ impl Pool {
 
     async fn set_potential_participants(&self, participants: &Participants) {
         *self.potential_connections.write().await = participants.clone();
+        tracing::debug!(
+            "Pool set potential participants to {:?}",
+            self.potential_connections.read().await.keys_vec()
+        );
     }
 
     pub async fn potential_participants(&self) -> Participants {

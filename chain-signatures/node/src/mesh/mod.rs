@@ -57,6 +57,7 @@ impl Mesh {
                 stable.insert(participant, info.clone());
             }
         }
+        tracing::info!(?stable, "stable participants");
         stable
     }
 
