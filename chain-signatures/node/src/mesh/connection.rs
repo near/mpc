@@ -35,7 +35,6 @@ impl Pool {
             }
         }
 
-        tracing::debug!("pinging participants");
         let connections = self.connections.read().await;
 
         let mut status = self.status.write().await;
@@ -88,8 +87,6 @@ impl Pool {
                 return active.clone();
             }
         }
-
-        tracing::debug!("pinging potential participants");
 
         let connections = self.potential_connections.read().await;
 
@@ -154,10 +151,6 @@ impl Pool {
 
     async fn set_potential_participants(&self, participants: &Participants) {
         *self.potential_connections.write().await = participants.clone();
-        tracing::debug!(
-            "Pool set potential participants to {:?}",
-            self.potential_connections.read().await.keys_vec()
-        );
     }
 
     pub async fn potential_participants(&self) -> Participants {

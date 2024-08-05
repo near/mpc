@@ -265,6 +265,15 @@ async fn handle_block(
     }
     drop(queue);
 
+    let log_indexing_interval = 1000;
+    if block.block_height() % log_indexing_interval == 0 {
+        tracing::info!(
+            "indexed another {} blocks, latest: {}",
+            log_indexing_interval,
+            block.block_height()
+        );
+    }
+
     Ok(())
 }
 
