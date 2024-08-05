@@ -66,6 +66,12 @@ impl Mesh {
             .establish_participants(contract_state)
             .await;
         self.ping().await;
+
+        tracing::debug!(
+            active = ?self.active_participants.keys_vec(),
+            active_potential = ?self.active_potential_participants.keys_vec(),
+            "mesh pinging",
+        );
     }
 
     /// Ping the active participants such that we can see who is alive.
