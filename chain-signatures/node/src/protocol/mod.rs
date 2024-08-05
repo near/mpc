@@ -166,9 +166,22 @@ impl MpcSignProtocol {
         triple_storage: LockTripleNodeStorageBox,
         cfg: Config,
     ) -> (Self, Arc<RwLock<NodeState>>) {
+        let my_address = my_address.into_url().unwrap();
+        let rpc_url = rpc_client.rpc_addr();
+        let signer_account_id: AccountId = signer.clone().account_id;
+        tracing::info!(
+            "initializing protocol with parameters:
+            my_address: {my_address},
+            mpc_contract_id: {mpc_contract_id},
+            account_id: {account_id},
+            rpc_client_url: {rpc_url},
+            signer_account_id: {signer_account_id},
+            cfg: {:?}",
+            cfg
+        );
         let state = Arc::new(RwLock::new(NodeState::Starting));
         let ctx = Ctx {
-            my_address: my_address.into_url().unwrap(),
+            my_address,
             account_id,
             mpc_contract_id,
             rpc_client,
@@ -209,7 +222,7 @@ impl MpcSignProtocol {
             .fetch_inplace(&self.ctx.rpc_client, &self.ctx.mpc_contract_id)
             .await
         {
-            tracing::warn!("could not fetch contract's config on startup: {err:?}");
+            tracing::error!("could not fetch contract's config on startup: {err:?}");
         }
 
         loop {

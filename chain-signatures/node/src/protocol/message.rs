@@ -218,6 +218,7 @@ impl MessageHandler for ResharingState {
         let q = queue.resharing_bins.entry(self.old_epoch).or_default();
         let mut protocol = self.protocol.write().await;
         while let Some(msg) = q.pop_front() {
+            tracing::trace!("handling new resharing message");
             protocol.message(msg.from, msg.data);
         }
         Ok(())
@@ -525,7 +526,10 @@ where
         let msg = serde_json::to_vec(&msg)?;
         let ciphered = cipher_pk
             .encrypt(&msg, SignedMessage::<T>::ASSOCIATED_DATA)
-            .map_err(|e| CryptographicError::Encryption(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = ?e, "failed to encrypt message");
+                CryptographicError::Encryption(e.to_string())
+            })?;
         Ok(ciphered)
     }
 }
@@ -541,7 +545,10 @@ where
     ) -> Result<T, CryptographicError> {
         let message = cipher_sk
             .decrypt(&encrypted, SignedMessage::<T>::ASSOCIATED_DATA)
-            .map_err(|err| CryptographicError::Encryption(err.to_string()))?;
+            .map_err(|err| {
+                tracing::error!(error = ?err, "failed to decrypt message");
+                CryptographicError::Encryption(err.to_string())
+            })?;
         let SignedMessage::<Vec<u8>> { msg, sig, from } = serde_json::from_slice(&message)?;
         if !sig.verify(
             &msg,
