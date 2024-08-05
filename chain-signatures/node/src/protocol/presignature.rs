@@ -160,7 +160,7 @@ impl PresignatureManager {
             .retain(|_, instant| instant.elapsed() < Duration::from_millis(cfg.garbage_timeout));
         let removed = before.checked_sub(self.gc.len()).unwrap_or(0);
         if removed > 0 {
-            tracing::debug!("garbage collected {} presignatures", removed);
+            tracing::warn!("garbage collected {} presignatures", removed);
         }
     }
 
