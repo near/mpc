@@ -110,6 +110,10 @@ pub struct Indexer {
 
 impl Indexer {
     fn new(latest_block_height: LatestBlockHeight, options: &Options) -> Self {
+        tracing::info!(
+            "creating new indexer, latest block height: {}",
+            latest_block_height.block_height
+        );
         Self {
             latest_block_height: Arc::new(RwLock::new(latest_block_height)),
             last_updated_timestamp: Arc::new(RwLock::new(Instant::now())),
@@ -143,6 +147,7 @@ impl Indexer {
         block_height: BlockHeight,
         gcp: &GcpService,
     ) -> Result<(), DatastoreStorageError> {
+        tracing::trace!(block_height, "update_block_height");
         *self.last_updated_timestamp.write().await = Instant::now();
         self.latest_block_height
             .write()
@@ -166,10 +171,11 @@ async fn handle_block(
     mut block: near_lake_primitives::block::Block,
     ctx: &Context,
 ) -> anyhow::Result<()> {
-    tracing::debug!(block_height = block.block_height(), "handle_block");
+    tracing::trace!(block_height = block.block_height(), "handle_block");
     let mut pending_requests = Vec::new();
     for action in block.actions().cloned().collect::<Vec<_>>() {
         if action.receiver_id() == ctx.mpc_contract_id {
+            tracing::trace!("got action targeting {}", ctx.mpc_contract_id);
             let Some(receipt) = block.receipt_by_id(&action.receipt_id()) else {
                 let err = format!(
                     "indexer unable to find block for receipt_id={}",
@@ -185,6 +191,7 @@ async fn handle_block(
                 continue;
             };
             if function_call.method_name() == "sign" {
+                tracing::trace!("found `sign` function call");
                 let arguments =
                     match serde_json::from_slice::<'_, SignArguments>(function_call.args()) {
                         Ok(arguments) => arguments,
@@ -326,14 +333,14 @@ pub fn run(
         let mut i = 0;
         loop {
             if i > 0 {
-                tracing::info!("restarting indexer after failure: restart count={i}");
+                tracing::warn!("restarting indexer after failure: restart count={i}");
             }
             i += 1;
 
             let Ok(lake) = rt.block_on(async {
                 let latest = context.indexer.latest_block_height().await;
                 if i > 0 {
-                    tracing::info!("indexer latest height {latest}, restart count={i}");
+                    tracing::warn!("indexer latest height {latest}, restart count={i}");
                 }
                 let mut lake_builder = LakeBuilder::default()
                     .s3_bucket_name(&options.s3_bucket)
@@ -365,6 +372,7 @@ pub fn run(
             let outcome = rt.block_on(async {
                 if i > 0 {
                     // give it some time to catch up
+                    tracing::trace!("giving indexer some time to catch up");
                     backoff(i, 10, 300);
                 }
                 // while running, we will keep the task spinning, and check every so often if
@@ -378,6 +386,7 @@ pub fn run(
 
                 // Abort the indexer task if it's still running.
                 if !join_handle.is_finished() {
+                    tracing::trace!("aborting indexer task");
                     join_handle.abort();
                 }
 

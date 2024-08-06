@@ -254,13 +254,11 @@ impl MpcSignProtocol {
                 .await
                 {
                     Ok(contract_state) => contract_state,
-                    Err(e) => {
-                        tracing::error!("could not fetch contract's state: {e}");
+                    Err(_) => {
                         tokio::time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
                 };
-                tracing::debug!(?contract_state);
 
                 // Establish the participants for this current iteration of the protocol loop. This will
                 // set which participants are currently active in the protocol and determines who will be
