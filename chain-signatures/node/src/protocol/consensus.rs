@@ -492,7 +492,7 @@ impl ConsensusProtocol for RunningState {
                 }
                 Ordering::Less => Err(ConsensusError::EpochRollback),
                 Ordering::Equal => {
-                    tracing::debug!("running(running): continuing to run as normal");
+                    tracing::trace!("running(running): continuing to run as normal");
                     if contract_state.participants != self.participants {
                         return Err(ConsensusError::MismatchedParticipants);
                     }

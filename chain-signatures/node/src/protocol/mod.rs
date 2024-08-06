@@ -227,7 +227,7 @@ impl MpcSignProtocol {
 
         loop {
             let protocol_time = Instant::now();
-            tracing::debug!("trying to advance chain signatures protocol");
+            tracing::trace!("trying to advance chain signatures protocol");
             loop {
                 let msg_result = self.receiver.try_recv();
                 match msg_result {
@@ -297,7 +297,7 @@ impl MpcSignProtocol {
             let crypto_time = Instant::now();
             let mut state = match state.progress(&mut self).await {
                 Ok(state) => {
-                    tracing::debug!("progress ok: {state}");
+                    tracing::trace!("progress ok: {state}");
                     state
                 }
                 Err(err) => {
@@ -315,7 +315,7 @@ impl MpcSignProtocol {
                 let from_state = format!("{state}");
                 state = match state.advance(&mut self, contract_state).await {
                     Ok(state) => {
-                        tracing::debug!("advance ok: {from_state} => {state}");
+                        tracing::trace!("advance ok: {from_state} => {state}");
                         state
                     }
                     Err(err) => {
