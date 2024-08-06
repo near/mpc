@@ -742,7 +742,7 @@ impl SignatureManager {
         self.completed.retain(|_, timestamp| {
             timestamp.elapsed() < Duration::from_millis(cfg.signature.garbage_timeout)
         });
-        let garbage_collected = before.checked_sub(self.completed.len()).unwrap_or(0);
+        let garbage_collected = before.saturating_sub(self.completed.len());
         if garbage_collected > 0 {
             tracing::warn!(
                 "garbage collected {} completed signatures",

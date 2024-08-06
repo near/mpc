@@ -20,7 +20,7 @@ pub async fn fetch_mpc_contract_state(
         .json()?;
 
     let protocol_state: ProtocolState = contract_state.try_into().map_err(|_| {
-        let msg = format!("failed to parse protocol state, has it been initialized?");
+        let msg = "failed to parse protocol state, has it been initialized?".to_string();
         tracing::error!(msg);
         anyhow::anyhow!(msg)
     })?;

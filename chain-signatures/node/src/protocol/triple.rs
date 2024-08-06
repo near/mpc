@@ -194,7 +194,7 @@ impl TripleManager {
         self.gc.retain(|_, timestamp| {
             timestamp.elapsed() < Duration::from_millis(cfg.garbage_timeout)
         });
-        let garbage_collected = before.checked_sub(self.gc.len()).unwrap_or(0);
+        let garbage_collected = before.saturating_sub(self.gc.len());
         if garbage_collected > 0 {
             tracing::warn!("garbage collected {} triples", garbage_collected);
         }
