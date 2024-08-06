@@ -118,18 +118,21 @@ impl SignQueue {
             let subset = stable.keys().choose_multiple(&mut rng, threshold);
             let proposer = **subset.choose(&mut rng).unwrap();
             if subset.contains(&&me) {
+                let is_mine = proposer == me;
                 tracing::info!(
                     receipt_id = %request.receipt_id,
-                    ?me,
+                    ?is_mine,
                     ?subset,
                     ?proposer,
                     "saving sign request: node is in the signer subset"
                 );
                 let proposer_requests = self.requests.entry(proposer).or_default();
                 proposer_requests.insert(request.receipt_id, request);
-                crate::metrics::NUM_SIGN_REQUESTS_MINE
-                    .with_label_values(&[my_account_id.as_str()])
-                    .inc();
+                if is_mine {
+                    crate::metrics::NUM_SIGN_REQUESTS_MINE
+                        .with_label_values(&[my_account_id.as_str()])
+                        .inc();
+                }
             } else {
                 tracing::info!(
                     receipt_id = %request.receipt_id,
