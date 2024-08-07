@@ -31,6 +31,7 @@ use url::Url;
 use near_account_id::AccountId;
 use near_crypto::InMemorySigner;
 
+#[async_trait::async_trait]
 pub trait ConsensusCtx {
     fn my_account_id(&self) -> &AccountId;
     fn http_client(&self) -> &reqwest::Client;
@@ -41,7 +42,7 @@ pub trait ConsensusCtx {
     fn sign_queue(&self) -> Arc<RwLock<SignQueue>>;
     fn secret_storage(&self) -> &SecretNodeStorageBox;
     fn triple_storage(&self) -> LockTripleNodeStorageBox;
-    fn cfg(&self) -> &Config;
+    async fn cfg(&self) -> Config;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -668,12 +669,13 @@ impl ConsensusProtocol for JoiningState {
                         tracing::info!(
                             "joining(running): sending a transaction to join the participant set"
                         );
+                        let cfg = ctx.cfg().await;
                         ctx.rpc_client()
                             .call(ctx.signer(), ctx.mpc_contract_id(), "join")
                             .args_json(json!({
                                 "url": ctx.my_address(),
-                                "cipher_pk": ctx.cfg().local.network.cipher_pk.to_bytes(),
-                                "sign_pk": ctx.cfg().local.network.sign_sk.public_key(),
+                                "cipher_pk": cfg.local.network.cipher_pk.to_bytes(),
+                                "sign_pk": cfg.local.network.sign_sk.public_key(),
                             }))
                             .max_gas()
                             .retry_exponential(10, 3)

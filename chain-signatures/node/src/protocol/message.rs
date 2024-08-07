@@ -23,7 +23,7 @@ use tokio::sync::RwLock;
 pub trait MessageCtx {
     async fn me(&self) -> Participant;
     fn mesh(&self) -> &Mesh;
-    fn cfg(&self) -> &crate::config::Config;
+    async fn cfg(&self) -> crate::config::Config;
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -231,7 +231,7 @@ impl MessageHandler for RunningState {
         ctx: C,
         queue: &mut MpcMessageQueue,
     ) -> Result<(), MessageHandleError> {
-        let protocol_cfg = &ctx.cfg().protocol;
+        let protocol_cfg = &ctx.cfg().await.protocol;
         let participants = ctx.mesh().active_participants();
         let mut triple_manager = self.triple_manager.write().await;
 

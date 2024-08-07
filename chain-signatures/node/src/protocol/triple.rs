@@ -346,8 +346,7 @@ impl TripleManager {
         let id1 = self.mine.pop_front()?;
         tracing::info!(id0, id1, me = ?self.me, "trying to take two triples");
 
-        let take_two_result = self.take_two(id0, id1).await;
-        match take_two_result {
+        match self.take_two(id0, id1).await {
             Err(error)
                 if matches!(
                     error,
@@ -375,6 +374,17 @@ impl TripleManager {
             }
             Ok(val) => Some(val),
         }
+    }
+
+    pub fn peek_two_mine(&self) -> Option<(&Triple, &Triple)> {
+        if self.mine.len() < 2 {
+            return None;
+        }
+        let id0 = self.mine.front()?;
+        let id1 = self.mine.get(1)?;
+        let triple0 = self.triples.get(id0)?;
+        let triple1 = self.triples.get(id1)?;
+        Some((triple0, triple1))
     }
 
     pub async fn insert_mine(&mut self, triple: Triple) {
@@ -590,6 +600,14 @@ impl TripleManager {
             let retry_strategy = std::iter::repeat_with(|| Duration::from_millis(500)).take(3);
             let _ = tokio_retry::Retry::spawn(retry_strategy, action).await;
         }
+    }
+
+    pub fn preview(&self, triples: &HashSet<TripleId>) -> HashSet<TripleId> {
+        triples
+            .iter()
+            .filter(|id| self.triples.contains_key(id))
+            .cloned()
+            .collect()
     }
 }
 

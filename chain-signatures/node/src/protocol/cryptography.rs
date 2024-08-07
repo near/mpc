@@ -23,7 +23,7 @@ pub trait CryptographicCtx {
     fn signer(&self) -> &InMemorySigner;
     fn mpc_contract_id(&self) -> &AccountId;
     fn secret_storage(&mut self) -> &mut SecretNodeStorageBox;
-    fn cfg(&self) -> &Config;
+    async fn cfg(&self) -> Config;
 
     /// Active participants is the active participants at the beginning of each protocol loop.
     fn mesh(&self) -> &Mesh;
@@ -74,6 +74,7 @@ impl CryptographicProtocol for GeneratingState {
         mut self,
         mut ctx: C,
     ) -> Result<NodeState, CryptographicError> {
+        let cfg = ctx.cfg().await;
         tracing::info!(active = ?ctx.mesh().active_participants().keys_vec(), "generating: progressing key generation");
         let mut protocol = self.protocol.write().await;
         loop {
@@ -97,10 +98,10 @@ impl CryptographicProtocol for GeneratingState {
                         .await
                         .send_encrypted(
                             ctx.me().await,
-                            &ctx.cfg().local.network.sign_sk,
+                            &cfg.local.network.sign_sk,
                             ctx.http_client(),
                             ctx.mesh().active_participants(),
-                            &ctx.cfg().protocol,
+                            &cfg.protocol,
                         )
                         .await;
                     if !failures.is_empty() {
@@ -159,10 +160,10 @@ impl CryptographicProtocol for GeneratingState {
                         .await
                         .send_encrypted(
                             ctx.me().await,
-                            &ctx.cfg().local.network.sign_sk,
+                            &cfg.local.network.sign_sk,
                             ctx.http_client(),
                             ctx.mesh().active_participants(),
-                            &ctx.cfg().protocol,
+                            &cfg.protocol,
                         )
                         .await;
                     if !failures.is_empty() {
@@ -191,16 +192,17 @@ impl CryptographicProtocol for WaitingForConsensusState {
         mut self,
         ctx: C,
     ) -> Result<NodeState, CryptographicError> {
+        let cfg = ctx.cfg().await;
         let failures = self
             .messages
             .write()
             .await
             .send_encrypted(
                 ctx.me().await,
-                &ctx.cfg().local.network.sign_sk,
+                &cfg.local.network.sign_sk,
                 ctx.http_client(),
                 ctx.mesh().active_participants(),
-                &ctx.cfg().protocol,
+                &cfg.protocol,
             )
             .await;
         if !failures.is_empty() {
@@ -221,6 +223,8 @@ impl CryptographicProtocol for ResharingState {
         mut self,
         mut ctx: C,
     ) -> Result<NodeState, CryptographicError> {
+        let cfg = ctx.cfg().await;
+
         // TODO: we are not using active potential participants here, but we should in the future.
         // Currently resharing protocol does not timeout and restart with new set of participants.
         // So if it picks up a participant that is not active, it will never be able to send a message to it.
@@ -253,10 +257,10 @@ impl CryptographicProtocol for ResharingState {
                         .await
                         .send_encrypted(
                             ctx.me().await,
-                            &ctx.cfg().local.network.sign_sk,
+                            &cfg.local.network.sign_sk,
                             ctx.http_client(),
                             &active,
-                            &ctx.cfg().protocol,
+                            &cfg.protocol,
                         )
                         .await;
                     if !failures.is_empty() {
@@ -321,10 +325,10 @@ impl CryptographicProtocol for ResharingState {
                         .await
                         .send_encrypted(
                             ctx.me().await,
-                            &ctx.cfg().local.network.sign_sk,
+                            &cfg.local.network.sign_sk,
                             ctx.http_client(),
                             &active,
-                            &ctx.cfg().protocol,
+                            &cfg.protocol,
                         )
                         .await;
                     if !failures.is_empty() {
@@ -356,10 +360,12 @@ impl CryptographicProtocol for RunningState {
         mut self,
         ctx: C,
     ) -> Result<NodeState, CryptographicError> {
-        let protocol_cfg = &ctx.cfg().protocol;
+        let cfg = ctx.cfg().await;
+        let protocol_cfg = &cfg.protocol;
         let active = ctx.mesh().active_participants();
+        let state_views = ctx.mesh().state_views().await;
         if active.len() < self.threshold {
-            tracing::info!(
+            tracing::warn!(
                 active = ?active.keys_vec(),
                 "running: not enough participants to progress"
             );
@@ -397,6 +403,7 @@ impl CryptographicProtocol for RunningState {
         if let Err(err) = presignature_manager
             .stockpile(
                 active,
+                &state_views,
                 &self.public_key,
                 &self.private_share,
                 &mut triple_manager,
@@ -444,6 +451,7 @@ impl CryptographicProtocol for RunningState {
         signature_manager.handle_requests(
             self.threshold,
             &stable,
+            &state_views,
             my_requests,
             &mut presignature_manager,
             protocol_cfg,
@@ -467,7 +475,7 @@ impl CryptographicProtocol for RunningState {
         let failures = messages
             .send_encrypted(
                 ctx.me().await,
-                &ctx.cfg().local.network.sign_sk,
+                &cfg.local.network.sign_sk,
                 ctx.http_client(),
                 active,
                 protocol_cfg,
