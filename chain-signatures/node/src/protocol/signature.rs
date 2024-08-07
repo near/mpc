@@ -202,9 +202,10 @@ impl SignatureGenerator {
 
     pub fn poke(&mut self) -> Result<Action<FullSignature<Secp256k1>>, ProtocolError> {
         if self.sign_request_timestamp.elapsed() > self.timeout_total {
-            tracing::warn!("signature protocol timed out completely");
+            let msg = "signature protocol timed out completely";
+            tracing::warn!(msg);
             return Err(ProtocolError::Other(
-                anyhow::anyhow!("signature protocol timed out completely").into(),
+                anyhow::anyhow!(msg).into(),
             ));
         }
 

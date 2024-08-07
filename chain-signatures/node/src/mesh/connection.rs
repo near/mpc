@@ -74,10 +74,6 @@ impl Pool {
 
         let mut active = self.current_active.write().await;
         *active = Some((participants.clone(), Instant::now()));
-        tracing::debug!(
-            "active participant account id's {:?}",
-            participants.account_ids()
-        );
         participants
     }
 
@@ -112,10 +108,6 @@ impl Pool {
 
         let mut potential_active = self.potential_active.write().await;
         *potential_active = Some((participants.clone(), Instant::now()));
-        tracing::debug!(
-            "potential participant account id's {:?}",
-            participants.account_ids()
-        );
         participants
     }
 

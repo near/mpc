@@ -57,7 +57,6 @@ impl Mesh {
                 stable.insert(participant, info.clone());
             }
         }
-        tracing::info!(?stable, "stable participants");
         stable
     }
 
@@ -68,8 +67,8 @@ impl Mesh {
         self.ping().await;
 
         tracing::debug!(
-            active = ?self.active_participants.keys_vec(),
-            active_potential = ?self.active_potential_participants.keys_vec(),
+            active = ?self.active_participants.account_ids(),
+            active_potential = ?self.active_potential_participants.account_ids(),
             "mesh pinging",
         );
     }

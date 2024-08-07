@@ -215,10 +215,10 @@ impl MessageHandler for ResharingState {
         _ctx: C,
         queue: &mut MpcMessageQueue,
     ) -> Result<(), MessageHandleError> {
+        tracing::debug!("handling {} resharing messages", queue.resharing_bins.len());
         let q = queue.resharing_bins.entry(self.old_epoch).or_default();
         let mut protocol = self.protocol.write().await;
         while let Some(msg) = q.pop_front() {
-            tracing::trace!("handling new resharing message");
             protocol.message(msg.from, msg.data);
         }
         Ok(())

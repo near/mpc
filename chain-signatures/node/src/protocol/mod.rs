@@ -170,14 +170,13 @@ impl MpcSignProtocol {
         let rpc_url = rpc_client.rpc_addr();
         let signer_account_id: AccountId = signer.clone().account_id;
         tracing::info!(
-            "initializing protocol with parameters:
-            my_address: {my_address},
-            mpc_contract_id: {mpc_contract_id},
-            account_id: {account_id},
-            rpc_client_url: {rpc_url},
-            signer_account_id: {signer_account_id},
-            cfg: {:?}",
-            cfg
+            ?my_address,
+            ?mpc_contract_id,
+            ?account_id,
+            ?rpc_url,
+            ?signer_account_id,
+            ?cfg,
+            "initializing protocol with parameters"
         );
         let state = Arc::new(RwLock::new(NodeState::Starting));
         let ctx = Ctx {
@@ -315,7 +314,7 @@ impl MpcSignProtocol {
                 let from_state = format!("{state}");
                 state = match state.advance(&mut self, contract_state).await {
                     Ok(state) => {
-                        tracing::trace!("advance ok: {from_state} => {state}");
+                        tracing::debug!("advance ok: {from_state} => {state}");
                         state
                     }
                     Err(err) => {
