@@ -204,9 +204,7 @@ impl SignatureGenerator {
         if self.sign_request_timestamp.elapsed() > self.timeout_total {
             let msg = "signature protocol timed out completely";
             tracing::warn!(msg);
-            return Err(ProtocolError::Other(
-                anyhow::anyhow!(msg).into(),
-            ));
+            return Err(ProtocolError::Other(anyhow::anyhow!(msg).into()));
         }
 
         if self.generator_timestamp.elapsed() > self.timeout {
