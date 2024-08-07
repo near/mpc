@@ -196,7 +196,7 @@ impl TripleManager {
         });
         let garbage_collected = before.saturating_sub(self.gc.len());
         if garbage_collected > 0 {
-            tracing::warn!("garbage collected {} triples", garbage_collected);
+            tracing::debug!("garbage collected {} triples", garbage_collected);
         }
     }
 

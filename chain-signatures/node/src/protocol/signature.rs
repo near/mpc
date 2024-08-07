@@ -746,7 +746,7 @@ impl SignatureManager {
         });
         let garbage_collected = before.saturating_sub(self.completed.len());
         if garbage_collected > 0 {
-            tracing::warn!(
+            tracing::debug!(
                 "garbage collected {} completed signatures",
                 garbage_collected
             );
