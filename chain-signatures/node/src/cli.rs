@@ -145,22 +145,17 @@ fn is_running_on_gcp() -> bool {
 
 pub fn run(cmd: Cli) -> anyhow::Result<()> {
     // Install global collector configured based on RUST_LOG env var.
-    let stackdriver = stackdriver_layer().with_writer(std::io::stderr);
-
     let mut fmt_layer = tracing_subscriber::fmt::layer().with_thread_ids(true);
-
+    let mut subscriber = Registry::default()
+        .with(EnvFilter::from_default_env());
     if is_running_on_gcp() {
+        subscriber = subscriber.with(stackdriver_layer()
+            .with_writer(std::io::stderr));
         // Disable colored logging as it messes up GCP's log formatting
         fmt_layer = fmt_layer.with_ansi(false);
     }
-
-    let subscriber = Registry::default()
-        .with(EnvFilter::from_default_env())
-        .with(fmt_layer)
-        .with(stackdriver);
-
+    let subscriber = subscriber.with(fmt_layer);
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
-
     let _span = tracing::trace_span!("cli").entered();
 
     match cmd {
