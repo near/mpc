@@ -1,6 +1,7 @@
 mod actions;
 mod cases;
 
+use mpc_contract::update::{UpdateId, ProposeUpdateArgs};
 use crate::actions::wait_for;
 
 use anyhow::anyhow;
@@ -8,13 +9,17 @@ use futures::future::BoxFuture;
 use integration_tests_chain_signatures::containers::DockerClient;
 use integration_tests_chain_signatures::utils::{vote_join, vote_leave};
 use integration_tests_chain_signatures::{run, utils, MultichainConfig, Nodes};
-use near_jsonrpc_client::JsonRpcClient;
 
-use near_workspaces::types::SecretKey;
+use near_jsonrpc_client::JsonRpcClient;
+use near_workspaces::types::{NearToken, SecretKey};
 use near_workspaces::{Account, AccountId};
 
 use integration_tests_chain_signatures::local::NodeConfig;
 use std::str::FromStr;
+
+const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(9000);
+const CURRENT_CONTRACT_FILE_PATH: &str =
+    "../../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
 
 pub struct MultichainTestContext<'a> {
     nodes: Nodes<'a>,
@@ -143,6 +148,55 @@ impl MultichainTestContext<'_> {
         );
 
         Ok(self.nodes.kill_node(leaving_account_id).await.unwrap())
+    }
+
+    pub async fn propose_update(&self, args: ProposeUpdateArgs) -> mpc_contract::update::UpdateId {
+        let accounts = self.nodes.near_accounts();
+        accounts[0].call(
+            self.nodes.ctx().mpc_contract.id(),
+            "propose_update",
+        )
+        .args_borsh((args,))
+        .max_gas()
+        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .transact()
+        .await
+        .unwrap()
+        .json()
+        .unwrap()
+    }
+
+    pub async fn propose_update_contract_default(&self) -> UpdateId {
+        let same_contract_bytes = std::fs::read(CURRENT_CONTRACT_FILE_PATH).unwrap();
+        self.propose_update(
+            ProposeUpdateArgs {
+                code: Some(same_contract_bytes),
+                config: None,
+            }
+        ).await
+    }
+
+    pub async fn vote_update(&self, id: UpdateId) {
+        let participants = self.participant_accounts().await.unwrap();
+
+        let mut success = 0;
+        for account in participants.iter() {
+            let execution = account
+                .call(self.nodes.ctx().mpc_contract.id(), "vote_update")
+                .args_json((id,))
+                .max_gas()
+                .transact()
+                .await
+                .unwrap()
+                .into_result();
+
+            match execution {
+                Ok(_) => success += 1,
+                Err(e) => tracing::warn!(?id, ?e, "Failed to vote for update"),
+            }
+        }
+
+        assert!(success >= self.cfg.threshold, "did not successfully vote for update");
     }
 }
 
