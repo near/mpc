@@ -1,8 +1,8 @@
 mod actions;
 mod cases;
 
-use mpc_contract::update::{UpdateId, ProposeUpdateArgs};
 use crate::actions::wait_for;
+use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 
 use anyhow::anyhow;
 use futures::future::BoxFuture;
@@ -152,28 +152,25 @@ impl MultichainTestContext<'_> {
 
     pub async fn propose_update(&self, args: ProposeUpdateArgs) -> mpc_contract::update::UpdateId {
         let accounts = self.nodes.near_accounts();
-        accounts[0].call(
-            self.nodes.ctx().mpc_contract.id(),
-            "propose_update",
-        )
-        .args_borsh((args,))
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap()
-        .json()
-        .unwrap()
+        accounts[0]
+            .call(self.nodes.ctx().mpc_contract.id(), "propose_update")
+            .args_borsh((args,))
+            .max_gas()
+            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+            .transact()
+            .await
+            .unwrap()
+            .json()
+            .unwrap()
     }
 
     pub async fn propose_update_contract_default(&self) -> UpdateId {
         let same_contract_bytes = std::fs::read(CURRENT_CONTRACT_FILE_PATH).unwrap();
-        self.propose_update(
-            ProposeUpdateArgs {
-                code: Some(same_contract_bytes),
-                config: None,
-            }
-        ).await
+        self.propose_update(ProposeUpdateArgs {
+            code: Some(same_contract_bytes),
+            config: None,
+        })
+        .await
     }
 
     pub async fn vote_update(&self, id: UpdateId) {
@@ -196,7 +193,10 @@ impl MultichainTestContext<'_> {
             }
         }
 
-        assert!(success >= self.cfg.threshold, "did not successfully vote for update");
+        assert!(
+            success >= self.cfg.threshold,
+            "did not successfully vote for update"
+        );
     }
 }
 

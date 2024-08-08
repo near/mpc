@@ -7,12 +7,12 @@ use crypto_shared::{self, derive_epsilon, derive_key, x_coordinate, ScalarExt};
 use integration_tests_chain_signatures::containers::{self, DockerClient};
 use integration_tests_chain_signatures::MultichainConfig;
 use k256::elliptic_curve::point::AffineCoordinates;
+use mpc_contract::config::Config;
+use mpc_contract::update::ProposeUpdateArgs;
 use mpc_node::kdf::into_eth_sig;
 use mpc_node::test_utils;
 use mpc_node::types::LatestBlockHeight;
 use mpc_node::util::NearPublicKeyExt;
-use mpc_contract::update::ProposeUpdateArgs;
-use mpc_contract::config::Config;
 use test_log::test;
 
 pub mod nightly;
@@ -376,10 +376,12 @@ async fn test_multichain_update_contract() -> anyhow::Result<()> {
             actions::single_payload_signature_production(&ctx, &state).await?;
 
             // Now do a config update and see if that also updates the same:
-            let id = ctx.propose_update(ProposeUpdateArgs {
-                code: None,
-                config: Some(Config::default()),
-            }).await;
+            let id = ctx
+                .propose_update(ProposeUpdateArgs {
+                    code: None,
+                    config: Some(Config::default()),
+                })
+                .await;
             ctx.vote_update(id).await;
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             wait_for::has_at_least_mine_presignatures(&ctx, 1).await?;
