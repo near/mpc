@@ -123,14 +123,13 @@ impl VersionedMpcContract {
             path,
             key_version,
         } = request;
-        let latest_key_version: u32 = self.latest_key_version();
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
         let payload = Scalar::from_bytes(payload).ok_or(
             InvalidParameters::MalformedPayload
                 .message("Payload hash cannot be convereted to Scalar"),
         )?;
-        if key_version > latest_key_version {
+        if key_version > self.latest_key_version() {
             return Err(SignError::UnsupportedKeyVersion.into());
         }
         // Check deposit
@@ -143,7 +142,7 @@ impl VersionedMpcContract {
                 required_deposit,
             )));
         }
-        // Make sure sign call will not run out of gas doing recursive calls because the payload will never be removed
+        // Make sure sign call will not run out of gas doing yield/resume logic
         if env::prepaid_gas() < GAS_FOR_SIGN_CALL {
             return Err(InvalidParameters::InsufficientGas.message(format!(
                 "Provided: {}, required: {}",
@@ -373,7 +372,7 @@ impl VersionedMpcContract {
                     Ok(false)
                 }
             }
-            _ => Err(InvalidState::UnexpectedProtocolState.message("running")),
+            _ => Err(InvalidState::UnexpectedProtocolState.message(protocol_state.name())),
         }
     }
 
@@ -384,6 +383,7 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             kick
         );
+        let voter = self.voter()?;
         let protocol_state = self.mutable_state();
         match protocol_state {
             ProtocolContractState::Running(RunningContractState {
@@ -394,10 +394,6 @@ impl VersionedMpcContract {
                 leave_votes,
                 ..
             }) => {
-                let signer_account_id = env::signer_account_id();
-                if !participants.contains_key(&signer_account_id) {
-                    return Err(VoteError::VoterNotParticipant.into());
-                }
                 if !participants.contains_key(&kick) {
                     return Err(VoteError::KickNotParticipant.into());
                 }
@@ -405,7 +401,7 @@ impl VersionedMpcContract {
                     return Err(VoteError::ParticipantsBelowThreshold.into());
                 }
                 let voted = leave_votes.entry(kick.clone());
-                voted.insert(signer_account_id);
+                voted.insert(voter);
                 if voted.len() >= *threshold {
                     let mut new_participants = participants.clone();
                     new_participants.remove(&kick);
@@ -422,7 +418,7 @@ impl VersionedMpcContract {
                     Ok(false)
                 }
             }
-            _ => Err(InvalidState::UnexpectedProtocolState.message("running")),
+            _ => Err(InvalidState::UnexpectedProtocolState.message(protocol_state.name())),
         }
     }
 
@@ -460,8 +456,7 @@ impl VersionedMpcContract {
             }
             ProtocolContractState::Running(state) if state.public_key == public_key => Ok(true),
             ProtocolContractState::Resharing(state) if state.public_key == public_key => Ok(true),
-            _ => Err(InvalidState::UnexpectedProtocolState
-                .message("initializing or running/resharing with the same public key")),
+            _ => Err(InvalidState::UnexpectedProtocolState.message(protocol_state.name())),
         }
     }
 
@@ -509,12 +504,7 @@ impl VersionedMpcContract {
                     Err(InvalidState::UnexpectedProtocolState.message("Running: invalid epoch"))
                 }
             }
-            ProtocolContractState::NotInitialized => {
-                Err(InvalidState::UnexpectedProtocolState.message("NotInitialized"))
-            }
-            ProtocolContractState::Initializing(_) => {
-                Err(InvalidState::UnexpectedProtocolState.message("Initializing"))
-            }
+            _ => Err(InvalidState::UnexpectedProtocolState.message(protocol_state.name())),
         }
     }
 
@@ -597,10 +587,11 @@ impl VersionedMpcContract {
         config: Option<Config>,
     ) -> Result<Self, Error> {
         log!(
-            "init: signer={}, threshold={}, candidates={}",
+            "init: signer={}, threshold={}, candidates={}, config={:?}",
             env::signer_account_id(),
             threshold,
-            serde_json::to_string(&candidates).unwrap()
+            serde_json::to_string(&candidates).unwrap(),
+            config,
         );
 
         if threshold > candidates.len() {
@@ -612,7 +603,7 @@ impl VersionedMpcContract {
 
     // This function can be used to transfer the MPC network to a new contract.
     #[private]
-    #[init(ignore_state)]
+    #[init]
     #[handle_result]
     pub fn init_running(
         epoch: u64,
@@ -622,12 +613,13 @@ impl VersionedMpcContract {
         config: Option<Config>,
     ) -> Result<Self, Error> {
         log!(
-            "init_running: signer={}, epoch={}, participants={}, threshold={}, public_key={:?}",
+            "init_running: signer={}, epoch={}, participants={}, threshold={}, public_key={:?}, config={:?}",
             env::signer_account_id(),
             epoch,
             serde_json::to_string(&participants).unwrap(),
             threshold,
-            public_key
+            public_key,
+            config,
         );
 
         if threshold > participants.len() {
@@ -798,22 +790,6 @@ impl VersionedMpcContract {
         }
     }
 
-    #[private]
-    #[init(ignore_state)]
-    pub fn clean(keys: Vec<near_sdk::json_types::Base64VecU8>) -> Self {
-        log!("clean: keys={:?}", keys);
-        for key in keys.iter() {
-            env::storage_remove(&key.0);
-        }
-        Self::V0(MpcContract {
-            protocol_state: ProtocolContractState::NotInitialized,
-            pending_requests: LookupMap::new(StorageKey::PendingRequests),
-            request_counter: 0,
-            proposed_updates: ProposedUpdates::default(),
-            config: Config::default(),
-        })
-    }
-
     fn mutable_state(&mut self) -> &mut ProtocolContractState {
         match self {
             Self::V0(ref mut mpc_contract) => &mut mpc_contract.protocol_state,
@@ -833,7 +809,8 @@ impl VersionedMpcContract {
                 ProtocolContractState::Running(state) => Ok(state.threshold),
                 ProtocolContractState::Resharing(state) => Ok(state.threshold),
                 ProtocolContractState::NotInitialized => {
-                    Err(InvalidState::UnexpectedProtocolState.message("NotInitialized"))
+                    Err(InvalidState::UnexpectedProtocolState
+                        .message(contract.protocol_state.name()))
                 }
             },
         }
@@ -867,7 +844,8 @@ impl VersionedMpcContract {
                     }
                 }
                 ProtocolContractState::NotInitialized => {
-                    return Err(InvalidState::UnexpectedProtocolState.message("NotInitialized"))
+                    return Err(InvalidState::UnexpectedProtocolState
+                        .message(contract.protocol_state.name()));
                 }
             },
         }
