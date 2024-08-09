@@ -38,8 +38,8 @@ near-crypto = "0.23.0"
 near-fetch = "0.5.0"
 near-jsonrpc-client = "0.10.1"
 near-primitives = "0.23.0"
-near-lake-framework = { git = "https://github.com/near/near-lake-framework-rs", branch = "node/1.40" }
-near-lake-primitives = { git = "https://github.com/near/near-lake-framework-rs", branch = "node/1.40" }
+near-lake-framework = { git = "https://github.com/near/near-lake-framework-rs", branch = "node/1.40-and-async-run" }
+near-lake-primitives = { git = "https://github.com/near/near-lake-framework-rs", branch = "node/1.40-and-async-run" }
 near-workspaces = { git = "https://github.com/near/near-workspaces-rs", branch = "node/1.40" }
 
 # local chain-signatures depencencies

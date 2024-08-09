@@ -268,7 +268,7 @@ impl MessageHandler for RunningState {
 
             if let Some(protocol) = protocol {
                 while let Some(message) = queue.pop_front() {
-                    protocol.message(message.from, message.data);
+                    protocol.message(message.from, message.data).await?;
                 }
             }
         }

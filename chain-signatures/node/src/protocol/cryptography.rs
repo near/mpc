@@ -375,7 +375,7 @@ impl CryptographicProtocol for RunningState {
         if let Err(err) = triple_manager.stockpile(active, protocol_cfg) {
             tracing::warn!(?err, "running: failed to stockpile triples");
         }
-        for (p, msg) in triple_manager.poke(protocol_cfg).await {
+        for (p, msg) in triple_manager.poke().await {
             let info = self.fetch_participant(&p)?;
             messages.push(info.clone(), MpcMessage::Triple(msg));
         }

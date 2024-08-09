@@ -85,7 +85,7 @@ impl TestTripleManagers {
 
     async fn poke(&mut self, index: usize) -> Result<bool, ProtocolError> {
         let mut quiet = true;
-        let messages = self.managers[index].poke(&self.config.protocol).await;
+        let messages = self.managers[index].poke().await;
         for (
             participant,
             ref tm @ TripleMessage {
@@ -101,7 +101,7 @@ impl TestTripleManagers {
                 .get_or_generate(id, &self.participants, &self.config.protocol)
                 .unwrap()
             {
-                protocol.message(from, data.to_vec());
+                protocol.message(from, data.to_vec()).await.unwrap();
             } else {
                 println!("Tried to write to completed mailbox {:?}", tm);
             }
