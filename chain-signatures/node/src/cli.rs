@@ -153,11 +153,9 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
         let stackdriver = stackdriver_layer().with_writer(std::io::stderr);
 
         // Disable colored logging as it messes up GCP's log formatting
-        base_subscriber
-            .with(fmt_layer.with_ansi(false))
-            .with(Some(stackdriver))
+        base_subscriber.with(None).with(Some(stackdriver))
     } else {
-        base_subscriber.with(fmt_layer).with(None)
+        base_subscriber.with(Some(fmt_layer)).with(None)
     };
 
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
