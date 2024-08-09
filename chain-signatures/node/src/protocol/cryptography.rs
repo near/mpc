@@ -457,12 +457,7 @@ impl CryptographicProtocol for RunningState {
             messages.push(info.clone(), MpcMessage::Signature(msg));
         }
         signature_manager
-            .publish(
-                ctx.rpc_client(),
-                ctx.signer(),
-                ctx.mpc_contract_id(),
-                &my_account_id,
-            )
+            .publish(ctx.rpc_client(), ctx.signer(), ctx.mpc_contract_id())
             .await;
         drop(signature_manager);
         let failures = messages

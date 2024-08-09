@@ -473,6 +473,9 @@ impl TripleManager {
                     Ok(action) => action,
                     Err(e) => {
                         errors.push(e);
+                        crate::metrics::TRIPLE_GENERATOR_FAILURES
+                            .with_label_values(&[self.my_account_id.as_str()])
+                            .inc();
                         self.gc.insert(*id, Instant::now());
                         self.ongoing.remove(id);
                         self.introduced.remove(id);

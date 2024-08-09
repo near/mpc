@@ -167,6 +167,7 @@ impl ConsensusProtocol for StartedState {
                                                 me,
                                                 contract_state.public_key,
                                                 epoch,
+                                                ctx.my_account_id(),
                                             ),
                                         )),
                                         messages: Default::default(),
@@ -391,6 +392,7 @@ impl ConsensusProtocol for WaitingForConsensusState {
                             me,
                             self.public_key,
                             self.epoch,
+                            ctx.my_account_id(),
                         ))),
                         messages: self.messages,
                     }))

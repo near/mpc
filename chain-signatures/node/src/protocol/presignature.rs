@@ -450,6 +450,9 @@ impl PresignatureManager {
                 let action = match generator.poke() {
                     Ok(action) => action,
                     Err(e) => {
+                        crate::metrics::PRESIGNATURE_GENERATOR_FAILURES
+                            .with_label_values(&[self.my_account_id.as_str()])
+                            .inc();
                         self.gc.insert(*id, Instant::now());
                         self.introduced.remove(id);
                         errors.push(e);
