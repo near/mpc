@@ -40,7 +40,7 @@ const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(250);
 const DATA_ID_REGISTER: u64 = 0;
 
 // Prepaid gas for a `clear_state_on_finish` call
-const CLEAR_STATE_ON_FINISH_CALL_GAS: Gas = Gas::from_tgas(5);
+const CLEAR_STATE_ON_FINISH_CALL_GAS: Gas = Gas::from_tgas(10);
 
 // Prepaid gas for a `return_signature_on_finish` call
 const RETURN_SIGNATURE_ON_FINISH_CALL_GAS: Gas = Gas::from_tgas(5);
