@@ -76,7 +76,7 @@ async fn test_vote_join() -> anyhow::Result<()> {
     let execution = accounts[0]
         .call(contract.id(), "vote_join")
         .args_json(json!({
-            "candidate_account_id": alice.id()
+            "candidate": alice.id()
         }))
         .transact()
         .await?;
@@ -88,7 +88,7 @@ async fn test_vote_join() -> anyhow::Result<()> {
     let execution = alice
         .call(contract.id(), "vote_join")
         .args_json(json!({
-            "candidate_account_id": alice.id()
+            "candidate": alice.id()
         }))
         .transact()
         .await?;
@@ -98,7 +98,7 @@ async fn test_vote_join() -> anyhow::Result<()> {
     let execution = accounts[1]
         .call(contract.id(), "vote_join")
         .args_json(json!({
-            "candidate_account_id": alice.id()
+            "candidate": alice.id()
         }))
         .transact()
         .await?;
@@ -267,7 +267,7 @@ async fn test_vote_reshare() -> anyhow::Result<()> {
     let execution = accounts[0]
         .call(contract.id(), "vote_join")
         .args_json(json!({
-            "candidate_account_id": alice.id()
+            "candidate": alice.id()
         }))
         .transact()
         .await?;
@@ -277,7 +277,7 @@ async fn test_vote_reshare() -> anyhow::Result<()> {
     let execution = accounts[1]
         .call(contract.id(), "vote_join")
         .args_json(json!({
-            "candidate_account_id": alice.id()
+            "candidate": alice.id()
         }))
         .transact()
         .await?;

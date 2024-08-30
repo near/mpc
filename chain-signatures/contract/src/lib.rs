@@ -334,11 +334,11 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn vote_join(&mut self, candidate_account_id: AccountId) -> Result<bool, Error> {
+    pub fn vote_join(&mut self, candidate: AccountId) -> Result<bool, Error> {
         log!(
-            "vote_join: signer={}, candidate_account_id={}",
+            "vote_join: signer={}, candidate={}",
             env::signer_account_id(),
-            candidate_account_id
+            candidate
         );
         let voter = self.voter()?;
         let protocol_state = self.mutable_state();
@@ -353,14 +353,13 @@ impl VersionedMpcContract {
                 ..
             }) => {
                 let candidate_info = candidates
-                    .get(&candidate_account_id)
+                    .get(&candidate)
                     .ok_or(VoteError::JoinNotCandidate)?;
-                let voted = join_votes.entry(candidate_account_id.clone());
+                let voted = join_votes.entry(candidate.clone());
                 voted.insert(voter);
                 if voted.len() >= *threshold {
                     let mut new_participants = participants.clone();
-                    new_participants
-                        .insert(candidate_account_id.clone(), candidate_info.clone().into());
+                    new_participants.insert(candidate, candidate_info.clone().into());
                     *protocol_state = ProtocolContractState::Resharing(ResharingContractState {
                         old_epoch: *epoch,
                         old_participants: participants.clone(),

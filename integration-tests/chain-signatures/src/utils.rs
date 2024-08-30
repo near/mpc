@@ -20,7 +20,7 @@ pub async fn vote_join(
             account
                 .call(mpc_contract, "vote_join")
                 .args_json(serde_json::json!({
-                    "candidate_account_id": account_id
+                    "candidate": account_id
                 }))
                 .transact()
         })
