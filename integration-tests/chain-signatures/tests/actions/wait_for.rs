@@ -250,8 +250,6 @@ pub enum WaitForError {
     SerdeJson(String),
     #[error("Parsing error")]
     Parsing,
-    #[error("Near fetch: {0}")]
-    Fetch(String),
 }
 
 /// Used locally for testing to circumvent retrying on all errors. This will avoid retrying
