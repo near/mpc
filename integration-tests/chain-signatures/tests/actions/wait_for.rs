@@ -379,3 +379,45 @@ pub async fn rogue_message_responded(
 
     Ok(signature.clone())
 }
+
+pub async fn are_nodes_stable<'a>(
+    ctx: &MultichainTestContext<'a>,
+) -> anyhow::Result<Vec<StateView>> {
+    let is_node_stable = |id| {
+        move || async move {
+            let state_view: StateView = ctx
+                .http_client
+                .get(
+                    Url::parse(ctx.nodes.url(id))
+                        .unwrap()
+                        .join("/state")
+                        .unwrap(),
+                )
+                .send()
+                .await?
+                .json()
+                .await?;
+
+            match state_view {
+                StateView::Running {
+                    is_stable,
+                    ..
+                } if is_stable => Ok(state_view),
+                StateView::Running { .. } => {
+                    anyhow::bail!("node block height has not caught up yet")
+                }
+                state => anyhow::bail!("node is not running {state:?}"),
+            }
+        }
+    };
+
+    let mut state_views = Vec::new();
+    for id in 0..ctx.nodes.len() {
+        let state_view = is_node_stable(id)
+            .retry(&ExponentialBuilder::default().with_max_times(2))
+            .await
+            .with_context(|| format!("mpc node '{id}' has not caught up on block height before deadline"))?;
+        state_views.push(state_view);
+    }
+    Ok(state_views)
+}

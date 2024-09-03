@@ -293,6 +293,33 @@ async fn test_signature_offline_node_back_online() -> anyhow::Result<()> {
 }
 
 #[test(tokio::test)]
+async fn test_node_offline_blocks_behind() -> anyhow::Result<()> {
+    with_multichain_nodes(MultichainConfig::default(), |mut ctx| {
+        Box::pin(async move {
+            let state_0 = wait_for::running_mpc(&ctx, Some(0)).await?;
+            assert_eq!(state_0.participants.len(), 3);
+
+            // Kill node 2
+            let account_id = near_workspaces::types::AccountId::from_str(
+                state_0.participants.keys().last().unwrap().clone().as_ref(),
+            )
+            .unwrap();
+            let killed_node_config = ctx.nodes.kill_node(&account_id).await?;
+
+            tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+
+            // Start the killed node again
+            ctx.nodes.restart_node(killed_node_config).await?;
+
+            wait_for::are_nodes_stable(&ctx).await?;
+
+            Ok(())
+        })
+    })
+    .await
+}
+
+#[test(tokio::test)]
 async fn test_lake_congestion() -> anyhow::Result<()> {
     with_multichain_nodes(MultichainConfig::default(), |ctx| {
         Box::pin(async move {

@@ -367,11 +367,11 @@ pub fn run(
                 rt.spawn(async move { lake.run_with_context_async(handle_block, &context).await })
             };
             let outcome = rt.block_on(async {
-                if i > 0 {
-                    // give it some time to catch up
-                    tracing::trace!("giving indexer some time to catch up");
-                    backoff(i, 10, 300);
-                }
+                // if i > 0 {
+                //     // give it some time to catch up
+                //     tracing::trace!("giving indexer some time to catch up");
+                //     backoff(i, 10, 300);
+                // }
                 // while running, we will keep the task spinning, and check every so often if
                 // the indexer has errored out.
                 while context.indexer.is_running().await {
