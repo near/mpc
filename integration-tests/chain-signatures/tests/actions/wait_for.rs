@@ -399,10 +399,7 @@ pub async fn are_nodes_stable<'a>(
                 .await?;
 
             match state_view {
-                StateView::Running {
-                    is_stable,
-                    ..
-                } if is_stable => Ok(state_view),
+                StateView::Running { is_stable, .. } if is_stable => Ok(state_view),
                 StateView::Running { .. } => {
                     anyhow::bail!("node block height has not caught up yet")
                 }
@@ -416,7 +413,9 @@ pub async fn are_nodes_stable<'a>(
         let state_view = is_node_stable(id)
             .retry(&ExponentialBuilder::default().with_max_times(2))
             .await
-            .with_context(|| format!("mpc node '{id}' has not caught up on block height before deadline"))?;
+            .with_context(|| {
+                format!("mpc node '{id}' has not caught up on block height before deadline")
+            })?;
         state_views.push(state_view);
     }
     Ok(state_views)

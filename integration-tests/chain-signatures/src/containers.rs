@@ -64,7 +64,8 @@ impl<'a> Node<'a> {
             account_id,
             rpc_address_proxied
         );
-        LakeIndexer::populate_proxy(&proxy_name, true, &rpc_address_proxied, &near_rpc).await?;
+        let _proxy_params =
+            LakeIndexer::populate_proxy(&proxy_name, true, &rpc_address_proxied, &near_rpc).await?;
 
         let indexer_options = mpc_node::indexer::Options {
             s3_bucket: ctx.localstack.s3_bucket.clone(),
@@ -316,6 +317,15 @@ pub struct LakeIndexer<'a> {
     pub toxi_server_process: Child,
     // Container toxi server is used for proxy container to container
     pub toxi_server_container: Container<'a, GenericImage>,
+    pub proxy_params: ToxiProxyParams,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToxiProxyParams {
+    pub name: String,
+    pub listen: String,
+    pub upstream: String,
+    pub enabled: bool,
 }
 
 impl<'a> LakeIndexer<'a> {
@@ -380,7 +390,7 @@ impl<'a> LakeIndexer<'a> {
         host: bool,
         listen: &str,
         upstream: &str,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<ToxiProxyParams> {
         let toxiproxy_client = reqwest::Client::default();
         let listen = Self::remove_protocol(listen);
         let upstream = Self::remove_protocol(upstream);
@@ -403,7 +413,12 @@ impl<'a> LakeIndexer<'a> {
             .body(proxies_json)
             .send()
             .await?;
-        Ok(())
+        Ok(ToxiProxyParams {
+            name: name.to_string(),
+            listen: listen.to_string(),
+            upstream: upstream.to_string(),
+            enabled: true,
+        })
     }
 
     pub async fn run(
@@ -430,7 +445,8 @@ impl<'a> LakeIndexer<'a> {
             s3_address_proxied,
             "Proxy S3 access from Lake Indexer"
         );
-        Self::populate_proxy("lake-s3", false, &s3_address_proxied, s3_address).await?;
+        let proxy_params =
+            Self::populate_proxy("lake-s3", false, &s3_address_proxied, s3_address).await?;
 
         tracing::info!(
             network,
@@ -483,6 +499,7 @@ impl<'a> LakeIndexer<'a> {
             rpc_host_address,
             toxi_server_process,
             toxi_server_container,
+            proxy_params,
         })
     }
 }

@@ -1,6 +1,6 @@
 use crate::{execute, utils, MultichainConfig};
 
-use crate::containers::LakeIndexer;
+use crate::containers::{LakeIndexer, ToxiProxyParams};
 use async_process::Child;
 use mpc_keys::hpke;
 use mpc_node::config::OverrideConfig;
@@ -65,7 +65,8 @@ impl Node {
             address,
             rpc_address_proxied
         );
-        LakeIndexer::populate_proxy(&proxy_name, true, &rpc_address_proxied, &near_rpc).await?;
+        let _proxy_params =
+            LakeIndexer::populate_proxy(&proxy_name, true, &rpc_address_proxied, &near_rpc).await?;
 
         let mpc_contract_id = ctx.mpc_contract.id().clone();
         let cli = mpc_node::cli::Cli::Start {

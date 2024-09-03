@@ -11,6 +11,7 @@ use crate::containers::LocalStack;
 
 use anyhow::Context as _;
 use bollard::exec::{CreateExecOptions, StartExecResults};
+use containers::ToxiProxyParams;
 use futures::StreamExt;
 use mpc_contract::config::{PresignatureConfig, ProtocolConfig, TripleConfig};
 use mpc_contract::primitives::CandidateInfo;
@@ -238,6 +239,10 @@ impl Nodes<'_> {
     pub fn proxy_name_for_node(&self, id: usize) -> String {
         let account_id = self.near_accounts();
         format!("rpc_from_node_{}", account_id[id].id())
+    }
+
+    pub fn lake_proxy_params(&self) -> ToxiProxyParams {
+        self.ctx().lake_indexer.proxy_params.clone()
     }
 }
 

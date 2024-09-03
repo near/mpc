@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::actions::{self, add_latency, wait_for};
+use crate::actions::{self, add_latency, enable_proxy, shutdown_proxy, wait_for};
 use crate::with_multichain_nodes;
 
 use crypto_shared::{self, derive_epsilon, derive_key, x_coordinate, ScalarExt};
@@ -293,23 +293,19 @@ async fn test_signature_offline_node_back_online() -> anyhow::Result<()> {
 }
 
 #[test(tokio::test)]
-async fn test_node_offline_blocks_behind() -> anyhow::Result<()> {
-    with_multichain_nodes(MultichainConfig::default(), |mut ctx| {
+async fn test_lake_stuck() -> anyhow::Result<()> {
+    with_multichain_nodes(MultichainConfig::default(), |ctx| {
         Box::pin(async move {
             let state_0 = wait_for::running_mpc(&ctx, Some(0)).await?;
             assert_eq!(state_0.participants.len(), 3);
+            let lake_proxy_params = &ctx.nodes.lake_proxy_params();
+            shutdown_proxy(lake_proxy_params.clone(), false).await?;
 
-            // Kill node 2
-            let account_id = near_workspaces::types::AccountId::from_str(
-                state_0.participants.keys().last().unwrap().clone().as_ref(),
-            )
-            .unwrap();
-            let killed_node_config = ctx.nodes.kill_node(&account_id).await?;
+            let stable_res = wait_for::are_nodes_stable(&ctx).await;
+            assert!(stable_res.is_err());
 
-            tokio::time::sleep(std::time::Duration::from_secs(20)).await;
-
-            // Start the killed node again
-            ctx.nodes.restart_node(killed_node_config).await?;
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            enable_proxy(lake_proxy_params.clone(), false).await?;
 
             wait_for::are_nodes_stable(&ctx).await?;
 

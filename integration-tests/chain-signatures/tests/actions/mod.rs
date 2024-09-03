@@ -7,6 +7,7 @@ use crypto_shared::ScalarExt;
 use crypto_shared::SerializableAffinePoint;
 use crypto_shared::{derive_epsilon, derive_key, SerializableScalar, SignatureResponse};
 use elliptic_curve::sec1::ToEncodedPoint;
+use integration_tests_chain_signatures::containers::ToxiProxyParams;
 use k256::ecdsa::VerifyingKey;
 use k256::elliptic_curve::ops::{Invert, Reduce};
 use k256::elliptic_curve::point::AffineCoordinates;
@@ -28,6 +29,8 @@ use secp256k1::XOnlyPublicKey;
 use wait_for::WaitForError;
 
 use std::time::Duration;
+
+use std::collections::HashMap;
 
 const CHAIN_ID_ETH: u64 = 31337;
 
@@ -312,6 +315,56 @@ pub async fn add_toxic(proxy: &str, host: bool, toxic: serde_json::Value) -> any
         .post(format!("{}/proxies/{}/toxics", toxi_server_address, proxy))
         .header("Content-Type", "application/json")
         .body(toxic.to_string())
+        .send()
+        .await?;
+    Ok(())
+}
+
+pub async fn shutdown_proxy(proxy_params: ToxiProxyParams, host: bool) -> anyhow::Result<()> {
+    let toxi_server_address = if host {
+        LakeIndexer::TOXI_SERVER_PROCESS_ADDRESS
+    } else {
+        LakeIndexer::TOXI_SERVER_EXPOSE_ADDRESS
+    };
+    let toxiproxy_client = reqwest::Client::default();
+    let proxy_value = json!({
+        "name": proxy_params.name,
+        "listen": proxy_params.listen,
+        "upstream": proxy_params.upstream,
+        "enabled": false
+    });
+    toxiproxy_client
+        .patch(format!(
+            "{}/proxies/{}",
+            toxi_server_address, proxy_params.name
+        ))
+        .header("Content-Type", "application/json")
+        .body(proxy_value.to_string())
+        .send()
+        .await?;
+    Ok(())
+}
+
+pub async fn enable_proxy(proxy_params: ToxiProxyParams, host: bool) -> anyhow::Result<()> {
+    let toxi_server_address = if host {
+        LakeIndexer::TOXI_SERVER_PROCESS_ADDRESS
+    } else {
+        LakeIndexer::TOXI_SERVER_EXPOSE_ADDRESS
+    };
+    let toxiproxy_client = reqwest::Client::default();
+    let proxy_value = json!({
+        "name": proxy_params.name,
+        "listen": proxy_params.listen,
+        "upstream": proxy_params.upstream,
+        "enabled": true
+    });
+    toxiproxy_client
+        .patch(format!(
+            "{}/proxies/{}",
+            toxi_server_address, proxy_params.name
+        ))
+        .header("Content-Type", "application/json")
+        .body(proxy_value.to_string())
         .send()
         .await?;
     Ok(())
