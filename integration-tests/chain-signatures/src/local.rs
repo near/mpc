@@ -1,6 +1,6 @@
 use crate::{execute, utils, MultichainConfig};
 
-use crate::containers::{LakeIndexer, ToxiProxyParams};
+use crate::containers::LakeIndexer;
 use async_process::Child;
 use mpc_keys::hpke;
 use mpc_node::config::OverrideConfig;
