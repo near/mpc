@@ -19,7 +19,7 @@ use mpc_contract::primitives::SignatureRequest;
 use mpc_contract::RunningContractState;
 use mpc_node::kdf::into_eth_sig;
 use near_crypto::InMemorySigner;
-use near_lake_primitives::CryptoHash;
+use near_fetch::ops::AsyncTransactionStatus;
 use near_workspaces::types::NearToken;
 use near_workspaces::Account;
 use rand::Rng;
@@ -39,7 +39,7 @@ use serde_json::json;
 
 pub async fn request_sign(
     ctx: &MultichainTestContext<'_>,
-) -> anyhow::Result<([u8; 32], [u8; 32], Account, CryptoHash)> {
+) -> anyhow::Result<([u8; 32], [u8; 32], Account, AsyncTransactionStatus)> {
     let worker = &ctx.nodes.ctx().worker;
     let account = worker.dev_create_account().await?;
     let payload: [u8; 32] = rand::thread_rng().gen();
@@ -56,7 +56,7 @@ pub async fn request_sign(
         path: "test".to_string(),
         key_version: 0,
     };
-    let tx_hash = *ctx
+    let status = ctx
         .rpc_client
         .call(&signer, ctx.nodes.ctx().mpc_contract.id(), "sign")
         .args_json(serde_json::json!({
@@ -65,10 +65,9 @@ pub async fn request_sign(
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
         .transact_async()
-        .await?
-        .hash();
+        .await?;
     tokio::time::sleep(Duration::from_secs(1)).await;
-    Ok((payload, payload_hashed, account, tx_hash))
+    Ok((payload, payload_hashed, account, status))
 }
 
 pub async fn assert_signature(
@@ -89,16 +88,15 @@ pub async fn single_signature_rogue_responder(
     ctx: &MultichainTestContext<'_>,
     state: &RunningContractState,
 ) -> anyhow::Result<()> {
-    let (_, payload_hash, account, tx_hash) = request_sign(ctx).await?;
+    let (_, payload_hash, account, status) = request_sign(ctx).await?;
 
     // We have to use seperate transactions because one could fail.
     // This leads to a potential race condition where this transaction could get sent after the signature completes, but I think that's unlikely
-    let rogue_hash = rogue_respond(ctx, payload_hash, account.id(), "test").await?;
-
-    let err = wait_for::rogue_message_responded(ctx, rogue_hash).await?;
+    let rogue_status = rogue_respond(ctx, payload_hash, account.id(), "test").await?;
+    let err = wait_for::rogue_message_responded(rogue_status).await?;
 
     assert!(err.contains(&errors::RespondError::InvalidSignature.to_string()));
-    let signature = wait_for::signature_responded(ctx, tx_hash).await?;
+    let signature = wait_for::signature_responded(status).await?;
 
     let mut mpc_pk_bytes = vec![0x04];
     mpc_pk_bytes.extend_from_slice(&state.public_key.as_bytes()[1..]);
@@ -120,8 +118,8 @@ pub async fn single_signature_production(
     ctx: &MultichainTestContext<'_>,
     state: &RunningContractState,
 ) -> anyhow::Result<()> {
-    let (_, payload_hash, account, tx_hash) = request_sign(ctx).await?;
-    let signature = wait_for::signature_responded(ctx, tx_hash).await?;
+    let (_, payload_hash, account, status) = request_sign(ctx).await?;
+    let signature = wait_for::signature_responded(status).await?;
 
     let mut mpc_pk_bytes = vec![0x04];
     mpc_pk_bytes.extend_from_slice(&state.public_key.as_bytes()[1..]);
@@ -135,7 +133,7 @@ pub async fn rogue_respond(
     payload_hash: [u8; 32],
     predecessor: &near_workspaces::AccountId,
     path: &str,
-) -> anyhow::Result<CryptoHash> {
+) -> anyhow::Result<AsyncTransactionStatus> {
     let worker = &ctx.nodes.ctx().worker;
     let account = worker.dev_create_account().await?;
 
@@ -166,7 +164,7 @@ pub async fn rogue_respond(
         recovery_id: 0,
     };
 
-    let hash = *ctx
+    let status = ctx
         .rpc_client
         .call(&signer, ctx.nodes.ctx().mpc_contract.id(), "respond")
         .args_json(serde_json::json!({
@@ -175,11 +173,10 @@ pub async fn rogue_respond(
         }))
         .max_gas()
         .transact_async()
-        .await?
-        .hash();
+        .await?;
 
     tokio::time::sleep(Duration::from_secs(1)).await;
-    Ok(hash)
+    Ok(status)
 }
 
 pub async fn request_sign_non_random(
@@ -187,7 +184,7 @@ pub async fn request_sign_non_random(
     account: Account,
     payload: [u8; 32],
     payload_hashed: [u8; 32],
-) -> Result<([u8; 32], [u8; 32], Account, CryptoHash), WaitForError> {
+) -> Result<([u8; 32], [u8; 32], Account, AsyncTransactionStatus), WaitForError> {
     let signer = InMemorySigner {
         account_id: account.id().clone(),
         public_key: account
@@ -209,7 +206,7 @@ pub async fn request_sign_non_random(
         key_version: 0,
     };
 
-    let tx_hash = *ctx
+    let status = ctx
         .rpc_client
         .call(&signer, ctx.nodes.ctx().mpc_contract.id(), "sign")
         .args_json(serde_json::json!({
@@ -219,18 +216,17 @@ pub async fn request_sign_non_random(
         .deposit(NearToken::from_yoctonear(1))
         .transact_async()
         .await
-        .map_err(|error| WaitForError::JsonRpc(format!("{error:?}")))?
-        .hash();
+        .map_err(|error| WaitForError::JsonRpc(format!("{error:?}")))?;
     tokio::time::sleep(Duration::from_secs(1)).await;
-    Ok((payload, payload_hashed, account, tx_hash))
+    Ok((payload, payload_hashed, account, status))
 }
 
 pub async fn single_payload_signature_production(
     ctx: &MultichainTestContext<'_>,
     state: &RunningContractState,
 ) -> anyhow::Result<()> {
-    let (payload, payload_hash, account, tx_hash) = request_sign(ctx).await?;
-    let first_tx_result = wait_for::signature_responded(ctx, tx_hash).await;
+    let (payload, payload_hash, account, status) = request_sign(ctx).await?;
+    let first_tx_result = wait_for::signature_responded(status).await;
     let signature = match first_tx_result {
         Ok(sig) => sig,
         Err(error) => {

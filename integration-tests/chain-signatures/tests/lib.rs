@@ -10,7 +10,6 @@ use integration_tests_chain_signatures::containers::DockerClient;
 use integration_tests_chain_signatures::utils::{vote_join, vote_leave};
 use integration_tests_chain_signatures::{run, utils, MultichainConfig, Nodes};
 
-use near_jsonrpc_client::JsonRpcClient;
 use near_workspaces::types::{NearToken, SecretKey};
 use near_workspaces::{Account, AccountId};
 
@@ -24,7 +23,6 @@ const CURRENT_CONTRACT_FILE_PATH: &str =
 pub struct MultichainTestContext<'a> {
     nodes: Nodes<'a>,
     rpc_client: near_fetch::Client,
-    jsonrpc_client: JsonRpcClient,
     http_client: reqwest::Client,
     cfg: MultichainConfig,
 }
@@ -209,13 +207,12 @@ where
 
     let sk_local_path = nodes.ctx().storage_options.sk_share_local_path.clone();
 
-    let connector = JsonRpcClient::new_client();
+    let connector = near_jsonrpc_client::JsonRpcClient::new_client();
     let jsonrpc_client = connector.connect(&nodes.ctx().lake_indexer.rpc_host_address);
-    let rpc_client = near_fetch::Client::from_client(jsonrpc_client.clone());
+    let rpc_client = near_fetch::Client::from_client(jsonrpc_client);
     let result = f(MultichainTestContext {
         nodes,
         rpc_client,
-        jsonrpc_client,
         http_client: reqwest::Client::default(),
         cfg,
     })
