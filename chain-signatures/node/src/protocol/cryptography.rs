@@ -427,6 +427,8 @@ impl CryptographicProtocol for RunningState {
         // block height is up to date, such that they too can process signature requests. If they cannot
         // then they are considered unstable and should not be a part of signature generation this round.
         let stable = ctx.mesh().stable_participants().await;
+        tracing::trace!(?stable, "stable participants");
+
         let mut sign_queue = self.sign_queue.write().await;
         crate::metrics::SIGN_QUEUE_SIZE
             .with_label_values(&[my_account_id.as_str()])

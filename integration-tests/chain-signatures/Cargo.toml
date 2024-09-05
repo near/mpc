@@ -35,7 +35,7 @@ k256 = { version = "0.13.1", features = ["sha256", "ecdsa", "serde"] }
 # near dependencies
 near-account-id = "1"
 near-crypto = "0.23.0"
-near-fetch = "0.5.0"
+near-fetch = "0.5.1"
 near-jsonrpc-client = "0.10.1"
 near-primitives = "0.23.0"
 near-lake-framework = { git = "https://github.com/near/near-lake-framework-rs", branch = "node/1.40" }
