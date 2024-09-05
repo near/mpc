@@ -58,7 +58,7 @@ pub async fn request_sign(
     };
     let status = ctx
         .rpc_client
-        .call(&signer, ctx.nodes.ctx().mpc_contract.id(), "sign")
+        .call(&signer, ctx.contract().id(), "sign")
         .args_json(serde_json::json!({
             "request": request,
         }))
@@ -166,7 +166,7 @@ pub async fn rogue_respond(
 
     let status = ctx
         .rpc_client
-        .call(&signer, ctx.nodes.ctx().mpc_contract.id(), "respond")
+        .call(&signer, ctx.contract().id(), "respond")
         .args_json(serde_json::json!({
             "request": request,
             "response": response,
@@ -208,7 +208,7 @@ pub async fn request_sign_non_random(
 
     let status = ctx
         .rpc_client
-        .call(&signer, ctx.nodes.ctx().mpc_contract.id(), "sign")
+        .call(&signer, ctx.contract().id(), "sign")
         .args_json(serde_json::json!({
             "request": request,
         }))

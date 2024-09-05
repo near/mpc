@@ -4,17 +4,16 @@ mod cases;
 use crate::actions::wait_for;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 
-use anyhow::anyhow;
 use futures::future::BoxFuture;
 use integration_tests_chain_signatures::containers::DockerClient;
 use integration_tests_chain_signatures::utils::{vote_join, vote_leave};
 use integration_tests_chain_signatures::{run, utils, MultichainConfig, Nodes};
 
-use near_workspaces::types::{NearToken, SecretKey};
-use near_workspaces::{Account, AccountId};
+use near_workspaces::types::NearToken;
+use near_workspaces::{Account, AccountId, Contract};
 
 use integration_tests_chain_signatures::local::NodeConfig;
-use std::str::FromStr;
+use std::collections::HashSet;
 
 const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(9000);
 const CURRENT_CONTRACT_FILE_PATH: &str =
@@ -28,22 +27,16 @@ pub struct MultichainTestContext<'a> {
 }
 
 impl MultichainTestContext<'_> {
-    pub async fn participant_accounts(&self) -> anyhow::Result<Vec<Account>> {
-        let node_accounts: Vec<Account> = self.nodes.near_accounts();
+    pub fn contract(&self) -> &Contract {
+        self.nodes.contract()
+    }
+
+    pub async fn participant_accounts(&self) -> anyhow::Result<Vec<&Account>> {
         let state = wait_for::running_mpc(self, None).await?;
-        let participant_ids = state.participants.keys().collect::<Vec<_>>();
-        let participant_accounts: Vec<Account> = participant_ids
-            .iter()
-            .map(|id| near_workspaces::types::AccountId::from_str(id.as_ref()).unwrap())
-            .map(|id| {
-                node_accounts
-                    .iter()
-                    .find(|a| a.id() == &id)
-                    .unwrap()
-                    .clone()
-            })
-            .collect();
-        Ok(participant_accounts)
+        let participant_ids = state.participants.keys().collect::<HashSet<_>>();
+        let mut node_accounts = self.nodes.near_accounts();
+        node_accounts.retain(|a| participant_ids.contains(a.id()));
+        Ok(node_accounts)
     }
 
     pub async fn add_participant(
@@ -51,25 +44,24 @@ impl MultichainTestContext<'_> {
         existing_node: Option<NodeConfig>,
     ) -> anyhow::Result<()> {
         let state = wait_for::running_mpc(self, None).await?;
-        let account_id: AccountId;
-        let sk: SecretKey;
-        let new_node_account: Account;
+        let node_account = match existing_node {
+            Some(node) => {
+                tracing::info!(
+                    node_account_id = %node.account.id(),
+                    "adding pre-existing participant"
+                );
+                node.account
+            }
+            None => {
+                let account = self.nodes.ctx().worker.dev_create_account().await?;
+                tracing::info!(node_account_id = %account.id(), "adding new participant");
+                account
+            }
+        };
 
-        if let Some(node_cfg) = existing_node {
-            account_id = node_cfg.account_id;
-            sk = node_cfg.account_sk;
-            tracing::info!("Adding an existing participant: {}", account_id);
-        } else {
-            new_node_account = self.nodes.ctx().worker.dev_create_account().await?;
-            account_id = new_node_account.id().clone();
-            sk = new_node_account.secret_key().clone();
-            tracing::info!("Adding a new participant: {}", account_id);
-        }
-
-        self.nodes.start_node(&account_id, &sk, &self.cfg).await?;
-
+        self.nodes.start_node(&self.cfg, &node_account).await?;
         // Wait for new node to add itself as a candidate
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 
         // T number of participants should vote
         let participants = self.participant_accounts().await?;
@@ -79,9 +71,9 @@ impl MultichainTestContext<'_> {
             .cloned()
             .collect::<Vec<_>>();
         assert!(vote_join(
-            voting_participants,
-            self.nodes.ctx().mpc_contract.id(),
-            &account_id,
+            &voting_participants,
+            self.contract().id(),
+            node_account.id(),
         )
         .await
         .is_ok());
@@ -98,35 +90,29 @@ impl MultichainTestContext<'_> {
 
     pub async fn remove_participant(
         &mut self,
-        leaving_account_id: Option<&AccountId>,
+        kick: Option<&AccountId>,
     ) -> anyhow::Result<NodeConfig> {
         let state = wait_for::running_mpc(self, None).await?;
         let participant_accounts = self.participant_accounts().await?;
-        let leaving_account_id =
-            leaving_account_id.unwrap_or_else(|| participant_accounts.last().unwrap().id());
-        tracing::info!("Removing participant: {}", leaving_account_id);
-
+        let kick = kick
+            .unwrap_or_else(|| participant_accounts.last().unwrap().id())
+            .clone();
         let voting_accounts = participant_accounts
             .iter()
-            .filter(|account| account.id() != leaving_account_id)
+            .filter(|account| account.id() != &kick)
             .take(state.threshold)
             .cloned()
-            .collect::<Vec<Account>>();
+            .collect::<Vec<_>>();
 
-        tracing::info!("Removing vote from: {:?}", voting_accounts);
-        let results = vote_leave(
-            voting_accounts.clone(),
-            self.nodes.ctx().mpc_contract.id(),
-            leaving_account_id,
-        )
-        .await;
+        tracing::info!(?voting_accounts, %kick, "kicking participant");
+        let results = vote_leave(&voting_accounts, self.contract().id(), &kick).await;
         // Check if any result has failures, and return early with an error if so
         if results
             .iter()
             .any(|result| !result.as_ref().unwrap().failures().is_empty())
         {
-            tracing::error!("Failed vote from: {:?}", voting_accounts);
-            return Err(anyhow!("Failed to vote_leave"));
+            tracing::error!(?voting_accounts, "failed to vote");
+            anyhow::bail!("failed to vote_leave");
         }
 
         let new_state = wait_for::running_mpc(self, Some(state.epoch + 1)).await?;
@@ -145,13 +131,13 @@ impl MultichainTestContext<'_> {
             "public key must stay the same"
         );
 
-        Ok(self.nodes.kill_node(leaving_account_id).await.unwrap())
+        Ok(self.nodes.kill_node(&kick).await)
     }
 
     pub async fn propose_update(&self, args: ProposeUpdateArgs) -> mpc_contract::update::UpdateId {
         let accounts = self.nodes.near_accounts();
         accounts[0]
-            .call(self.nodes.ctx().mpc_contract.id(), "propose_update")
+            .call(self.contract().id(), "propose_update")
             .args_borsh((args,))
             .max_gas()
             .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
@@ -177,7 +163,7 @@ impl MultichainTestContext<'_> {
         let mut success = 0;
         for account in participants.iter() {
             let execution = account
-                .call(self.nodes.ctx().mpc_contract.id(), "vote_update")
+                .call(self.contract().id(), "vote_update")
                 .args_json((id,))
                 .max_gas()
                 .transact()

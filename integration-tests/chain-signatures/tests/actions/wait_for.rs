@@ -26,7 +26,7 @@ pub async fn running_mpc<'a>(
     let is_running = || async {
         let state: ProtocolContractState = ctx
             .rpc_client
-            .view(ctx.nodes.ctx().mpc_contract.id(), "state")
+            .view(ctx.contract().id(), "state")
             .await
             .map_err(|err| anyhow::anyhow!("could not view state {err:?}"))?
             .json()?;

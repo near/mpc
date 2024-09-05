@@ -5,7 +5,7 @@ use near_workspaces::{Account, AccountId};
 use std::fs;
 
 pub async fn vote_join(
-    accounts: Vec<Account>,
+    accounts: &[&Account],
     mpc_contract: &AccountId,
     account_id: &AccountId,
 ) -> anyhow::Result<()> {
@@ -37,7 +37,7 @@ pub async fn vote_join(
 }
 
 pub async fn vote_leave(
-    accounts: Vec<Account>,
+    accounts: &[&Account],
     mpc_contract: &AccountId,
     account_id: &AccountId,
 ) -> Vec<Result<ExecutionFinalResult, near_workspaces::error::Error>> {

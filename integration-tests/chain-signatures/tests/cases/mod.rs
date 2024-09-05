@@ -116,7 +116,7 @@ async fn test_signature_offline_node() -> anyhow::Result<()> {
                 state_0.participants.keys().last().unwrap().clone().as_ref(),
             )
             .unwrap();
-            ctx.nodes.kill_node(&account_id).await?;
+            ctx.nodes.kill_node(&account_id).await;
 
             // This could potentially fail and timeout the first time if the participant set picked up is the
             // one with the offline node. This is expected behavior for now if a user submits a request in between
@@ -272,7 +272,7 @@ async fn test_signature_offline_node_back_online() -> anyhow::Result<()> {
                 state_0.participants.keys().last().unwrap().clone().as_ref(),
             )
             .unwrap();
-            let killed_node_config = ctx.nodes.kill_node(&account_id).await?;
+            let killed_node_config = ctx.nodes.kill_node(&account_id).await;
 
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
