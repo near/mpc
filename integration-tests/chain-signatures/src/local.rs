@@ -33,7 +33,7 @@ pub struct NodeConfig {
 }
 
 impl Node {
-    pub async fn spawn(
+    pub async fn run(
         ctx: &super::Context<'_>,
         cfg: &MultichainConfig,
         account: &Account,
@@ -56,7 +56,7 @@ impl Node {
         );
         LakeIndexer::populate_proxy(&proxy_name, true, &rpc_address_proxied, &near_rpc).await?;
 
-        Self::run(
+        Self::spawn(
             ctx,
             NodeConfig {
                 web_port,
@@ -71,7 +71,7 @@ impl Node {
         .await
     }
 
-    pub async fn run(ctx: &super::Context<'_>, config: NodeConfig) -> anyhow::Result<Self> {
+    pub async fn spawn(ctx: &super::Context<'_>, config: NodeConfig) -> anyhow::Result<Self> {
         let web_port = config.web_port;
         let indexer_options = mpc_node::indexer::Options {
             s3_bucket: ctx.localstack.s3_bucket.clone(),

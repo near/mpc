@@ -106,7 +106,7 @@ impl Nodes<'_> {
         tracing::info!(id = %new_account.id(), "adding one more node");
         match self {
             Nodes::Local { ctx, nodes } => {
-                nodes.push(local::Node::spawn(ctx, cfg, new_account).await?)
+                nodes.push(local::Node::run(ctx, cfg, new_account).await?)
             }
             Nodes::Docker { ctx, nodes } => {
                 nodes.push(containers::Node::run(ctx, cfg, new_account).await?)
@@ -140,13 +140,11 @@ impl Nodes<'_> {
         killed_node_config
     }
 
-    pub async fn restart_node(&mut self, node_config: NodeConfig) -> anyhow::Result<()> {
-        tracing::info!(node_account_id = %node_config.account.id(), "restarting node");
+    pub async fn restart_node(&mut self, config: NodeConfig) -> anyhow::Result<()> {
+        tracing::info!(node_account_id = %config.account.id(), "restarting node");
         match self {
-            Nodes::Local { ctx, nodes } => nodes.push(local::Node::run(ctx, node_config).await?),
-            Nodes::Docker { ctx, nodes } => {
-                nodes.push(containers::Node::restart(ctx, node_config).await?)
-            }
+            Nodes::Local { ctx, nodes } => nodes.push(local::Node::spawn(ctx, config).await?),
+            Nodes::Docker { ctx, nodes } => nodes.push(containers::Node::spawn(ctx, config).await?),
         }
         // wait for the node to be added to the network
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -310,7 +308,7 @@ pub async fn host(cfg: MultichainConfig, docker_client: &DockerClient) -> anyhow
             .collect::<Result<Vec<_>, _>>()?;
     let mut node_futures = Vec::with_capacity(cfg.nodes);
     for account in &accounts {
-        node_futures.push(local::Node::spawn(&ctx, &cfg, account));
+        node_futures.push(local::Node::run(&ctx, &cfg, account));
     }
     let nodes = futures::future::join_all(node_futures)
         .await

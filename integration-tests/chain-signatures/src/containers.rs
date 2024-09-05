@@ -44,7 +44,7 @@ impl<'a> Node<'a> {
         ctx: &super::Context<'a>,
         cfg: &MultichainConfig,
         account: &Account,
-    ) -> anyhow::Result<Node<'a>> {
+    ) -> anyhow::Result<Self> {
         tracing::info!(id = %account.id(), "running node container");
         let (cipher_sk, cipher_pk) = hpke::generate();
         let sign_sk =
@@ -63,68 +63,19 @@ impl<'a> Node<'a> {
         );
         LakeIndexer::populate_proxy(&proxy_name, true, &rpc_address_proxied, &near_rpc).await?;
 
-        let indexer_options = mpc_node::indexer::Options {
-            s3_bucket: ctx.localstack.s3_bucket.clone(),
-            s3_region: ctx.localstack.s3_region.clone(),
-            s3_url: Some(ctx.localstack.s3_host_address.clone()),
-            start_block_height: 0,
-            running_threshold: 120,
-            behind_threshold: 120,
-        };
-        let args = mpc_node::cli::Cli::Start {
-            near_rpc: rpc_address_proxied.clone(),
-            mpc_contract_id: ctx.mpc_contract.id().clone(),
-            account_id: account.id().clone(),
-            account_sk: account.secret_key().to_string().parse()?,
-            web_port: Self::CONTAINER_PORT,
-            cipher_pk: hex::encode(cipher_pk.to_bytes()),
-            cipher_sk: hex::encode(cipher_sk.to_bytes()),
-            sign_sk: Some(sign_sk.clone()),
-            indexer_options: indexer_options.clone(),
-            my_address: None,
-            storage_options: ctx.storage_options.clone(),
-            override_config: Some(OverrideConfig::new(serde_json::to_value(
-                cfg.protocol.clone(),
-            )?)),
-            client_header_referer: None,
-        }
-        .into_str_args();
-        let image: GenericImage = GenericImage::new("near/mpc-node", "latest")
-            .with_wait_for(WaitFor::Nothing)
-            .with_exposed_port(Self::CONTAINER_PORT)
-            .with_env_var("RUST_LOG", "mpc_node=DEBUG")
-            .with_env_var("RUST_BACKTRACE", "1");
-        let image: RunnableImage<GenericImage> = (image, args).into();
-        let image = image.with_network(&ctx.docker_network);
-        let container = ctx.docker_client.cli.run(image);
-        let ip_address = ctx
-            .docker_client
-            .get_network_ip_address(&container, &ctx.docker_network)
-            .await?;
-        let host_port = container.get_host_port_ipv4(Self::CONTAINER_PORT);
-
-        container.exec(ExecCommand {
-            cmd: format!("bash -c 'while [[ \"$(curl -s -o /dev/null -w ''%{{http_code}}'' localhost:{})\" != \"200\" ]]; do sleep 1; done'", Self::CONTAINER_PORT),
-            ready_conditions: vec![WaitFor::message_on_stdout("node is ready to accept connections")]
-        });
-
-        let full_address = format!("http://{ip_address}:{}", Self::CONTAINER_PORT);
-        tracing::info!(
-            full_address,
-            "node container is running, account_id={}",
-            account.id()
-        );
-        Ok(Node {
-            container,
-            address: full_address,
-            account: account.clone(),
-            local_address: format!("http://localhost:{host_port}"),
-            cipher_pk,
-            cipher_sk,
-            sign_sk,
-            cfg: cfg.clone(),
-            near_rpc: rpc_address_proxied,
-        })
+        Self::spawn(
+            ctx,
+            NodeConfig {
+                web_port: Self::CONTAINER_PORT,
+                account: account.clone(),
+                cipher_pk,
+                cipher_sk,
+                sign_sk,
+                cfg: cfg.clone(),
+                near_rpc: rpc_address_proxied,
+            },
+        )
+        .await
     }
 
     pub fn kill(self) -> NodeConfig {
@@ -140,11 +91,7 @@ impl<'a> Node<'a> {
         }
     }
 
-    pub async fn restart(ctx: &super::Context<'a>, config: NodeConfig) -> anyhow::Result<Self> {
-        let cipher_pk = config.cipher_pk;
-        let cipher_sk = config.cipher_sk;
-        let cfg = config.cfg;
-        let near_rpc = config.near_rpc;
+    pub async fn spawn(ctx: &super::Context<'a>, config: NodeConfig) -> anyhow::Result<Self> {
         let indexer_options = mpc_node::indexer::Options {
             s3_bucket: ctx.localstack.s3_bucket.clone(),
             s3_region: ctx.localstack.s3_region.clone(),
@@ -155,19 +102,19 @@ impl<'a> Node<'a> {
         };
 
         let args = mpc_node::cli::Cli::Start {
-            near_rpc: near_rpc.clone(),
+            near_rpc: config.near_rpc.clone(),
             mpc_contract_id: ctx.mpc_contract.id().clone(),
             account_id: config.account.id().clone(),
             account_sk: config.account.secret_key().to_string().parse()?,
             web_port: Self::CONTAINER_PORT,
-            cipher_pk: hex::encode(cipher_pk.to_bytes()),
-            cipher_sk: hex::encode(cipher_sk.to_bytes()),
+            cipher_pk: hex::encode(config.cipher_pk.to_bytes()),
+            cipher_sk: hex::encode(config.cipher_sk.to_bytes()),
             indexer_options: indexer_options.clone(),
             my_address: None,
             storage_options: ctx.storage_options.clone(),
             sign_sk: Some(config.sign_sk.clone()),
             override_config: Some(OverrideConfig::new(serde_json::to_value(
-                cfg.protocol.clone(),
+                config.cfg.protocol.clone(),
             )?)),
             client_header_referer: None,
         }
@@ -202,11 +149,11 @@ impl<'a> Node<'a> {
             address: full_address,
             account: config.account,
             local_address: format!("http://localhost:{host_port}"),
-            cipher_pk,
-            cipher_sk,
+            cipher_pk: config.cipher_pk,
+            cipher_sk: config.cipher_sk,
             sign_sk: config.sign_sk,
-            cfg: cfg.clone(),
-            near_rpc,
+            cfg: config.cfg,
+            near_rpc: config.near_rpc,
         })
     }
 }
