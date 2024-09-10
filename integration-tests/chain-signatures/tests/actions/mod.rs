@@ -20,6 +20,7 @@ use mpc_contract::RunningContractState;
 use mpc_node::kdf::into_eth_sig;
 use near_crypto::InMemorySigner;
 use near_fetch::ops::AsyncTransactionStatus;
+use near_workspaces::types::Gas;
 use near_workspaces::types::NearToken;
 use near_workspaces::Account;
 use rand::Rng;
@@ -62,7 +63,7 @@ pub async fn request_sign(
         .args_json(serde_json::json!({
             "request": request,
         }))
-        .max_gas()
+        .gas(Gas::from_tgas(50))
         .deposit(NearToken::from_yoctonear(1))
         .transact_async()
         .await?;
@@ -212,7 +213,7 @@ pub async fn request_sign_non_random(
         .args_json(serde_json::json!({
             "request": request,
         }))
-        .max_gas()
+        .gas(Gas::from_tgas(50))
         .deposit(NearToken::from_yoctonear(1))
         .transact_async()
         .await

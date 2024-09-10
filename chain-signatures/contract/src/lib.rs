@@ -35,7 +35,7 @@ pub use state::{
     InitializingContractState, ProtocolContractState, ResharingContractState, RunningContractState,
 };
 
-const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(250);
+const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(50);
 
 // Register used to receive data id from `promise_await_data`.
 const DATA_ID_REGISTER: u64 = 0;
