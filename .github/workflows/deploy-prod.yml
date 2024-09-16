@@ -22,6 +22,7 @@ env:
 jobs:
   build-mpc-recovery:
     runs-on: ubuntu-latest
+    environment: prod
     steps:
       - uses: actions/checkout@v3
         name: "Checkout mpc-recovery"
