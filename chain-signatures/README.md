@@ -13,9 +13,10 @@ pub struct SignRequest {
     pub key_version: u32,
 }
 
-pub struct SignResult {
-    pub big_r: String,
-    pub s: String,
+pub struct SignatureResponse {
+    pub big_r: SerializableAffinePoint,
+    pub s: SerializableScalar,
+    pub recovery_id: u8,
 }
 ```
 - `key_version` must be less than or equal to the value at `latest_key_version`.
