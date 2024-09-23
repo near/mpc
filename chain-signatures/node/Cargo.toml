@@ -1,6 +1,6 @@
 [package]
 name = "mpc-node"
-version = "1.0.0-rc.3"
+version = "1.0.0-rc.4"
 edition = "2021"
 
 [[bin]]
@@ -41,11 +41,12 @@ tokio = { version = "1.28", features = ["full"] }
 tokio-retry = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-stackdriver = "0.10.0"
 url = { version = "2.4.0", features = ["serde"] }
 
 near-account-id = "1.0.0"
 near-crypto = "0.23.0"
-near-fetch = "0.5.0"
+near-fetch = "0.5.1"
 near-lake-framework = { git = "https://github.com/near/near-lake-framework-rs", branch = "node/1.40-and-async-run" }
 near-lake-primitives = { git = "https://github.com/near/near-lake-framework-rs", branch = "node/1.40-and-async-run" }
 near-primitives = "0.23.0"

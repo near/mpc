@@ -166,9 +166,21 @@ impl MpcSignProtocol {
         triple_storage: LockTripleNodeStorageBox,
         cfg: Config,
     ) -> (Self, Arc<RwLock<NodeState>>) {
+        let my_address = my_address.into_url().unwrap();
+        let rpc_url = rpc_client.rpc_addr();
+        let signer_account_id: AccountId = signer.clone().account_id;
+        tracing::info!(
+            ?my_address,
+            ?mpc_contract_id,
+            ?account_id,
+            ?rpc_url,
+            ?signer_account_id,
+            ?cfg,
+            "initializing protocol with parameters"
+        );
         let state = Arc::new(RwLock::new(NodeState::Starting));
         let ctx = Ctx {
-            my_address: my_address.into_url().unwrap(),
+            my_address,
             account_id,
             mpc_contract_id,
             rpc_client,
@@ -209,12 +221,12 @@ impl MpcSignProtocol {
             .fetch_inplace(&self.ctx.rpc_client, &self.ctx.mpc_contract_id)
             .await
         {
-            tracing::warn!("could not fetch contract's config on startup: {err:?}");
+            tracing::error!("could not fetch contract's config on startup: {err:?}");
         }
 
         loop {
             let protocol_time = Instant::now();
-            tracing::debug!("trying to advance chain signatures protocol");
+            tracing::trace!("trying to advance chain signatures protocol");
             loop {
                 let msg_result = self.receiver.try_recv();
                 match msg_result {
@@ -241,13 +253,11 @@ impl MpcSignProtocol {
                 .await
                 {
                     Ok(contract_state) => contract_state,
-                    Err(e) => {
-                        tracing::error!("could not fetch contract's state: {e}");
+                    Err(_) => {
                         tokio::time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
                 };
-                tracing::debug!(?contract_state);
 
                 // Establish the participants for this current iteration of the protocol loop. This will
                 // set which participants are currently active in the protocol and determines who will be
@@ -284,15 +294,13 @@ impl MpcSignProtocol {
             };
 
             let crypto_time = Instant::now();
-            tracing::debug!("State progress. Node state: {}", state);
             let mut state = match state.progress(&mut self).await {
                 Ok(state) => {
-                    tracing::debug!("Progress ok. New state: {}", state);
+                    tracing::trace!("progress ok: {state}");
                     state
                 }
                 Err(err) => {
-                    tracing::debug!("Progress error. State not changed");
-                    tracing::info!("protocol unable to progress: {err:?}");
+                    tracing::warn!("protocol unable to progress: {err:?}");
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
@@ -303,19 +311,14 @@ impl MpcSignProtocol {
 
             let consensus_time = Instant::now();
             if let Some(contract_state) = contract_state {
-                tracing::debug!(
-                    "State advance. Node state: {}, contract state: {:?}",
-                    state,
-                    contract_state
-                );
+                let from_state = format!("{state}");
                 state = match state.advance(&mut self, contract_state).await {
                     Ok(state) => {
-                        tracing::debug!("Advance ok. New node state: {}", state);
+                        tracing::debug!("advance ok: {from_state} => {state}");
                         state
                     }
                     Err(err) => {
-                        tracing::debug!("Advance error. State not changed");
-                        tracing::info!("protocol unable to advance: {err:?}");
+                        tracing::warn!("protocol unable to advance: {err:?}");
                         tokio::time::sleep(Duration::from_millis(100)).await;
                         continue;
                     }
@@ -327,9 +330,7 @@ impl MpcSignProtocol {
 
             let message_time = Instant::now();
             if let Err(err) = state.handle(&self, &mut queue).await {
-                tracing::info!("protocol unable to handle messages: {err:?}");
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                continue;
+                tracing::warn!("protocol unable to handle messages: {err:?}");
             }
             crate::metrics::PROTOCOL_LATENCY_ITER_MESSAGE
                 .with_label_values(&[my_account_id.as_str()])

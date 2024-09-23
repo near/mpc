@@ -335,6 +335,51 @@ pub(crate) static FAILED_SEND_ENCRYPTED_LATENCY: Lazy<HistogramVec> = Lazy::new(
     .unwrap()
 });
 
+pub(crate) static NUM_TOTAL_HISTORICAL_SIGNATURE_GENERATORS: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "multichain_num_total_historical_signature_generators",
+        "number of all signature generators historically on the node",
+        &["node_account_id"],
+    )
+    .unwrap()
+});
+
+pub(crate) static TRIPLE_GENERATOR_FAILURES: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "multichain_triple_generator_failures",
+        "total triple generator failures",
+        &["node_account_id"],
+    )
+    .unwrap()
+});
+
+pub(crate) static SIGNATURE_GENERATOR_FAILURES: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "multichain_signature_generator_failures",
+        "total signature generator failures",
+        &["node_account_id"],
+    )
+    .unwrap()
+});
+
+pub(crate) static PRESIGNATURE_GENERATOR_FAILURES: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "multichain_presignature_generator_failures",
+        "total presignature generator failures",
+        &["node_account_id"],
+    )
+    .unwrap()
+});
+
+pub(crate) static SIGNATURE_FAILURES: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "multichain_signature_failures",
+        "total signature failures",
+        &["node_account_id"],
+    )
+    .unwrap()
+});
+
 pub fn try_create_int_gauge_vec(name: &str, help: &str, labels: &[&str]) -> Result<IntGaugeVec> {
     check_metric_multichain_prefix(name)?;
     let opts = Opts::new(name, help);

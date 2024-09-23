@@ -1,3 +1,4 @@
+use std::task::Poll;
 use std::time::Duration;
 
 use crate::actions;
@@ -12,9 +13,7 @@ use k256::Secp256k1;
 use mpc_contract::ProtocolContractState;
 use mpc_contract::RunningContractState;
 use mpc_node::web::StateView;
-use near_jsonrpc_client::methods::tx::RpcTransactionStatusRequest;
-use near_jsonrpc_client::methods::tx::TransactionInfo;
-use near_lake_primitives::CryptoHash;
+use near_fetch::ops::AsyncTransactionStatus;
 use near_primitives::errors::ActionErrorKind;
 use near_primitives::views::FinalExecutionStatus;
 use near_workspaces::Account;
@@ -27,7 +26,7 @@ pub async fn running_mpc<'a>(
     let is_running = || async {
         let state: ProtocolContractState = ctx
             .rpc_client
-            .view(ctx.nodes.ctx().mpc_contract.id(), "state")
+            .view(ctx.contract().id(), "state")
             .await
             .map_err(|err| anyhow::anyhow!("could not view state {err:?}"))?
             .json()?;
@@ -250,8 +249,6 @@ pub enum WaitForError {
     SerdeJson(String),
     #[error("Parsing error")]
     Parsing,
-    #[error("Near fetch: {0}")]
-    Fetch(String),
 }
 
 /// Used locally for testing to circumvent retrying on all errors. This will avoid retrying
@@ -262,39 +259,24 @@ enum Outcome {
 }
 
 pub async fn signature_responded(
-    ctx: &MultichainTestContext<'_>,
-    tx_hash: CryptoHash,
+    status: AsyncTransactionStatus,
 ) -> Result<FullSignature<Secp256k1>, WaitForError> {
     let is_tx_ready = || async {
-        let outcome_view = match ctx
-            .jsonrpc_client
-            .call(RpcTransactionStatusRequest {
-                transaction_info: TransactionInfo::TransactionId {
-                    tx_hash,
-                    sender_account_id: ctx.nodes.ctx().mpc_contract.id().clone(),
-                },
-                wait_until: near_primitives::views::TxExecutionStatus::Final,
-            })
+        let Poll::Ready(outcome) = status
+            .status()
             .await
-        {
-            Err(error) => return Err(WaitForError::JsonRpc(format!("{error:?}"))),
-            Ok(outcome_view) => outcome_view,
-        };
-
-        let Some(outcome) = outcome_view.final_execution_outcome else {
+            .map_err(|err| WaitForError::JsonRpc(format!("{err:?}")))?
+        else {
             return Err(WaitForError::Signature(SignatureError::NotYetAvailable));
         };
 
-        let outcome = outcome.into_outcome();
+        if outcome.is_failure() {
+            return Ok(Outcome::Failed(format!("{:?}", outcome.status())));
+        }
 
-        let FinalExecutionStatus::SuccessValue(payload) = outcome.status else {
-            return Ok(Outcome::Failed(format!("{:?}", outcome.status)));
-        };
-
-        let result: SignatureResponse = match serde_json::from_slice(&payload) {
-            Err(error) => return Err(WaitForError::SerdeJson(format!("{error:?}"))),
-            Ok(response) => response,
-        };
+        let result: SignatureResponse = outcome
+            .json()
+            .map_err(|err| WaitForError::SerdeJson(format!("{err:?}")))?;
         Ok(Outcome::Signature(cait_sith::FullSignature::<Secp256k1> {
             big_r: result.big_r.affine_point,
             s: result.s.scalar,
@@ -318,9 +300,9 @@ pub async fn signature_payload_responded(
     payload_hashed: [u8; 32],
 ) -> Result<FullSignature<Secp256k1>, WaitForError> {
     let is_signature_ready = || async {
-        let (_, _, _, tx_hash) =
+        let (_, _, _, status) =
             actions::request_sign_non_random(ctx, account.clone(), payload, payload_hashed).await?;
-        let result = signature_responded(ctx, tx_hash).await;
+        let result = signature_responded(status).await;
         if let Err(err) = &result {
             println!("failed to produce signature: {err:?}");
         }
@@ -332,48 +314,53 @@ pub async fn signature_payload_responded(
 }
 
 // Check that the rogue message failed
-pub async fn rogue_message_responded(
-    ctx: &MultichainTestContext<'_>,
-    tx_hash: CryptoHash,
-) -> anyhow::Result<String> {
+pub async fn rogue_message_responded(status: AsyncTransactionStatus) -> anyhow::Result<String> {
     let is_tx_ready = || async {
-        let outcome_view = ctx
-            .jsonrpc_client
-            .call(RpcTransactionStatusRequest {
-                transaction_info: TransactionInfo::TransactionId {
-                    tx_hash,
-                    sender_account_id: ctx.nodes.ctx().mpc_contract.id().clone(),
-                },
-                wait_until: near_primitives::views::TxExecutionStatus::Final,
-            })
-            .await?;
-
-        let Some(outcome) = outcome_view.final_execution_outcome else {
-            anyhow::bail!("final execution outcome not available");
+        let Poll::Ready(outcome) = status
+            .status()
+            .await
+            .map_err(|err| WaitForError::JsonRpc(format!("{err:?}")))?
+        else {
+            return Err(WaitForError::Signature(SignatureError::NotYetAvailable));
         };
-        let outcome = outcome.into_outcome();
 
-        let FinalExecutionStatus::Failure(ref failure) = outcome.status else {
-            anyhow::bail!("tx finished successfully: {:?}", outcome.status);
+        let FinalExecutionStatus::Failure(failure) = outcome.status() else {
+            return Err(WaitForError::JsonRpc(format!(
+                "rogue: unexpected success {:?}",
+                outcome.status()
+            )));
         };
 
         use near_primitives::errors::TxExecutionError;
         let TxExecutionError::ActionError(action_err) = failure else {
-            anyhow::bail!("invalid transaction: {:?}", outcome.status);
+            return Err(WaitForError::JsonRpc(format!(
+                "rogue: invalid transaction {:?}",
+                outcome.status(),
+            )));
         };
 
         let ActionErrorKind::FunctionCallError(ref err) = action_err.kind else {
-            anyhow::bail!("Not a function call error {:?}", outcome.status);
+            return Err(WaitForError::JsonRpc(format!(
+                "rogue: not a function call error {:?}",
+                outcome.status(),
+            )));
         };
         use near_primitives::errors::FunctionCallError;
         let FunctionCallError::ExecutionError(err_msg) = err else {
-            anyhow::bail!("Wrong error type: {:?}", err);
+            return Err(WaitForError::JsonRpc(format!(
+                "rogue: wrong execution error {:?}",
+                outcome.status(),
+            )));
         };
         Ok(err_msg.clone())
     };
 
+    let strategy = ConstantBuilder::default()
+        .with_delay(Duration::from_secs(20))
+        .with_max_times(5);
+
     let signature = is_tx_ready
-        .retry(&ExponentialBuilder::default().with_max_times(6))
+        .retry(&strategy)
         .await
         .with_context(|| "failed to wait for rogue message response")?;
 

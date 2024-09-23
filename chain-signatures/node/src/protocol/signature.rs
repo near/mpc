@@ -2,9 +2,10 @@ use super::contract::primitives::Participants;
 use super::message::SignatureMessage;
 use super::presignature::{GenerationError, Presignature, PresignatureId, PresignatureManager};
 use crate::indexer::ContractSignRequest;
-use crate::kdf::into_eth_sig;
+use crate::kdf::{derive_delta, into_eth_sig};
 use crate::types::SignatureProtocol;
 use crate::util::AffinePointExt;
+use near_primitives::hash::CryptoHash;
 
 use cait_sith::protocol::{Action, InitializationError, Participant, ProtocolError};
 use cait_sith::{FullSignature, PresignOutput};
@@ -30,7 +31,6 @@ pub struct SignRequest {
     pub receipt_id: ReceiptId,
     pub request: ContractSignRequest,
     pub epsilon: Scalar,
-    pub delta: Scalar,
     pub entropy: [u8; 32],
     pub time_added: Instant,
 }
@@ -105,7 +105,7 @@ impl SignQueue {
         my_account_id: &AccountId,
     ) {
         if stable.len() < threshold {
-            tracing::info!(
+            tracing::warn!(
                 "Require at least {} stable participants to organize, got {}: {:?}",
                 threshold,
                 stable.len(),
@@ -118,18 +118,21 @@ impl SignQueue {
             let subset = stable.keys().choose_multiple(&mut rng, threshold);
             let proposer = **subset.choose(&mut rng).unwrap();
             if subset.contains(&&me) {
+                let is_mine = proposer == me;
                 tracing::info!(
                     receipt_id = %request.receipt_id,
-                    ?me,
+                    ?is_mine,
                     ?subset,
                     ?proposer,
                     "saving sign request: node is in the signer subset"
                 );
                 let proposer_requests = self.requests.entry(proposer).or_default();
                 proposer_requests.insert(request.receipt_id, request);
-                crate::metrics::NUM_SIGN_REQUESTS_MINE
-                    .with_label_values(&[my_account_id.as_str()])
-                    .inc();
+                if is_mine {
+                    crate::metrics::NUM_SIGN_REQUESTS_MINE
+                        .with_label_values(&[my_account_id.as_str()])
+                        .inc();
+                }
             } else {
                 tracing::info!(
                     receipt_id = %request.receipt_id,
@@ -162,7 +165,8 @@ pub struct SignatureGenerator {
     pub presignature_id: PresignatureId,
     pub request: ContractSignRequest,
     pub epsilon: Scalar,
-    pub delta: Scalar,
+    pub receipt_id: CryptoHash,
+    pub entropy: [u8; 32],
     pub sign_request_timestamp: Instant,
     pub generator_timestamp: Instant,
     pub timeout: Duration,
@@ -178,7 +182,8 @@ impl SignatureGenerator {
         presignature_id: PresignatureId,
         request: ContractSignRequest,
         epsilon: Scalar,
-        delta: Scalar,
+        receipt_id: CryptoHash,
+        entropy: [u8; 32],
         sign_request_timestamp: Instant,
         cfg: &ProtocolConfig,
     ) -> Self {
@@ -189,7 +194,8 @@ impl SignatureGenerator {
             presignature_id,
             request,
             epsilon,
-            delta,
+            receipt_id,
+            entropy,
             sign_request_timestamp,
             generator_timestamp: Instant::now(),
             timeout: Duration::from_millis(cfg.signature.generation_timeout),
@@ -199,9 +205,9 @@ impl SignatureGenerator {
 
     pub fn poke(&mut self) -> Result<Action<FullSignature<Secp256k1>>, ProtocolError> {
         if self.sign_request_timestamp.elapsed() > self.timeout_total {
-            return Err(ProtocolError::Other(
-                anyhow::anyhow!("signature protocol timeout completely").into(),
-            ));
+            let msg = "signature protocol timed out completely";
+            tracing::warn!(msg);
+            return Err(ProtocolError::Other(anyhow::anyhow!(msg).into()));
         }
 
         if self.generator_timestamp.elapsed() > self.timeout {
@@ -221,7 +227,8 @@ pub struct GenerationRequest {
     pub proposer: Participant,
     pub request: ContractSignRequest,
     pub epsilon: Scalar,
-    pub delta: Scalar,
+    pub receipt_id: CryptoHash,
+    pub entropy: [u8; 32],
     pub sign_request_timestamp: Instant,
 }
 
@@ -238,6 +245,7 @@ pub struct SignatureManager {
     me: Participant,
     public_key: PublicKey,
     epoch: u64,
+    my_account_id: AccountId,
 }
 
 pub const MAX_RETRY: u8 = 10;
@@ -267,7 +275,12 @@ impl ToPublish {
 }
 
 impl SignatureManager {
-    pub fn new(me: Participant, public_key: PublicKey, epoch: u64) -> Self {
+    pub fn new(
+        me: Participant,
+        public_key: PublicKey,
+        epoch: u64,
+        my_account_id: &AccountId,
+    ) -> Self {
         Self {
             generators: HashMap::new(),
             failed: VecDeque::new(),
@@ -276,6 +289,7 @@ impl SignatureManager {
             me,
             public_key,
             epoch,
+            my_account_id: my_account_id.clone(),
         }
     }
 
@@ -302,10 +316,12 @@ impl SignatureManager {
             proposer,
             request,
             epsilon,
-            delta,
+            receipt_id,
+            entropy,
             sign_request_timestamp,
         } = req;
         let PresignOutput { big_r, k, sigma } = presignature.output;
+        let delta = derive_delta(receipt_id, entropy, big_r);
         // TODO: Check whether it is okay to use invert_vartime instead
         let output: PresignOutput<Secp256k1> = PresignOutput {
             big_r: (big_r * delta).to_affine(),
@@ -330,7 +346,8 @@ impl SignatureManager {
             presignature_id,
             request,
             epsilon,
-            delta,
+            receipt_id,
+            entropy,
             sign_request_timestamp,
             cfg,
         ))
@@ -354,6 +371,9 @@ impl SignatureManager {
             req,
             cfg,
         )?;
+        crate::metrics::NUM_TOTAL_HISTORICAL_SIGNATURE_GENERATORS
+            .with_label_values(&[self.my_account_id.as_str()])
+            .inc();
         self.generators.insert(receipt_id, generator);
         Ok(())
     }
@@ -368,7 +388,7 @@ impl SignatureManager {
         presignature: Presignature,
         request: ContractSignRequest,
         epsilon: Scalar,
-        delta: Scalar,
+        entropy: [u8; 32],
         sign_request_timestamp: Instant,
         cfg: &ProtocolConfig,
     ) -> Result<(), (Presignature, InitializationError)> {
@@ -388,11 +408,15 @@ impl SignatureManager {
                 proposer: self.me,
                 request,
                 epsilon,
-                delta,
+                receipt_id,
+                entropy,
                 sign_request_timestamp,
             },
             cfg,
         )?;
+        crate::metrics::NUM_TOTAL_HISTORICAL_SIGNATURE_GENERATORS
+            .with_label_values(&[self.my_account_id.as_str()])
+            .inc();
         self.generators.insert(receipt_id, generator);
         Ok(())
     }
@@ -412,7 +436,7 @@ impl SignatureManager {
         presignature_id: PresignatureId,
         request: &ContractSignRequest,
         epsilon: Scalar,
-        delta: Scalar,
+        entropy: [u8; 32],
         presignature_manager: &mut PresignatureManager,
         cfg: &ProtocolConfig,
     ) -> Result<&mut SignatureProtocol, GenerationError> {
@@ -449,7 +473,8 @@ impl SignatureManager {
                         proposer,
                         request: request.clone(),
                         epsilon,
-                        delta,
+                        entropy,
+                        receipt_id,
                         sign_request_timestamp: Instant::now(),
                     },
                     cfg,
@@ -462,6 +487,9 @@ impl SignatureManager {
                     }
                 };
                 let generator = entry.insert(generator);
+                crate::metrics::NUM_TOTAL_HISTORICAL_SIGNATURE_GENERATORS
+                    .with_label_values(&[self.my_account_id.as_str()])
+                    .inc();
                 Ok(&mut generator.protocol)
             }
             Entry::Occupied(entry) => Ok(&mut entry.into_mut().protocol),
@@ -482,6 +510,9 @@ impl SignatureManager {
                         if generator.proposer == self.me {
                             if generator.sign_request_timestamp.elapsed() < generator.timeout_total {
                                 tracing::warn!(?err, "signature failed to be produced; pushing request back into failed queue");
+                                crate::metrics::SIGNATURE_GENERATOR_FAILURES
+                                    .with_label_values(&[self.my_account_id.as_str()])
+                                    .inc();
                                 // only retry the signature generation if it was initially proposed by us. We do not
                                 // want any nodes to be proposing the same signature multiple times.
                                 self.failed.push_back((
@@ -490,12 +521,16 @@ impl SignatureManager {
                                         proposer: generator.proposer,
                                         request: generator.request.clone(),
                                         epsilon: generator.epsilon,
-                                        delta: generator.delta,
+                                        receipt_id: generator.receipt_id,
+                                        entropy: generator.entropy,
                                         sign_request_timestamp: generator.sign_request_timestamp
                                     },
                                 ));
                             } else {
                                 self.completed.insert(*receipt_id, Instant::now());
+                                crate::metrics::SIGNATURE_FAILURES
+                                    .with_label_values(&[self.my_account_id.as_str()])
+                                    .inc();
                                 tracing::warn!(?err, "signature failed to be produced; trashing request");
                             }
                         }
@@ -518,7 +553,7 @@ impl SignatureManager {
                                     presignature_id: generator.presignature_id,
                                     request: generator.request.clone(),
                                     epsilon: generator.epsilon,
-                                    delta: generator.delta,
+                                    entropy: generator.entropy,
                                     epoch: self.epoch,
                                     from: self.me,
                                     data: data.clone(),
@@ -535,7 +570,7 @@ impl SignatureManager {
                             presignature_id: generator.presignature_id,
                             request: generator.request.clone(),
                             epsilon: generator.epsilon,
-                            delta: generator.delta,
+                            entropy: generator.entropy,
                             epoch: self.epoch,
                             from: self.me,
                             data,
@@ -578,7 +613,7 @@ impl SignatureManager {
         cfg: &ProtocolConfig,
     ) {
         if stable.len() < threshold {
-            tracing::info!(
+            tracing::warn!(
                 "Require at least {} stable participants to handle_requests, got {}: {:?}",
                 threshold,
                 stable.len(),
@@ -596,9 +631,9 @@ impl SignatureManager {
         } {
             let sig_participants = stable.intersection(&[&presignature.participants]);
             if sig_participants.len() < threshold {
-                tracing::debug!(
+                tracing::warn!(
                     participants = ?sig_participants.keys_vec(),
-                    "we do not have enough participants to generate a signature"
+                    "intersection of stable participants and presignature participants is less than threshold"
                 );
                 failed_presigs.push(presignature);
                 continue;
@@ -641,7 +676,7 @@ impl SignatureManager {
                 presignature,
                 my_request.request,
                 my_request.epsilon,
-                my_request.delta,
+                my_request.entropy,
                 my_request.time_added,
                 cfg,
             ) {
@@ -663,7 +698,6 @@ impl SignatureManager {
         rpc_client: &near_fetch::Client,
         signer: &T,
         mpc_contract_id: &AccountId,
-        my_account_id: &AccountId,
     ) {
         let mut to_retry: Vec<ToPublish> = Vec::new();
 
@@ -699,7 +733,7 @@ impl SignatureManager {
             {
                 Ok(response) => response,
                 Err(err) => {
-                    tracing::error!(%receipt_id, error = ?err, "Failed to publish transaction");
+                    tracing::error!(%receipt_id, error = ?err, "Failed to publish the signature");
                     // Push the response to the back of the queue if it hasn't been retried the max number of times
                     if to_publish.retry_count < MAX_RETRY {
                         to_publish.retry_count += 1;
@@ -720,14 +754,14 @@ impl SignatureManager {
             };
 
             crate::metrics::NUM_SIGN_SUCCESS
-                .with_label_values(&[my_account_id.as_str()])
+                .with_label_values(&[self.my_account_id.as_str()])
                 .inc();
             crate::metrics::SIGN_LATENCY
-                .with_label_values(&[my_account_id.as_str()])
+                .with_label_values(&[self.my_account_id.as_str()])
                 .observe(time_added.elapsed().as_secs_f64());
             if time_added.elapsed().as_secs() <= 30 {
                 crate::metrics::NUM_SIGN_SUCCESS_30S
-                    .with_label_values(&[my_account_id.as_str()])
+                    .with_label_values(&[self.my_account_id.as_str()])
                     .inc();
             }
         }
@@ -737,9 +771,17 @@ impl SignatureManager {
 
     /// Garbage collect all the completed signatures.
     pub fn garbage_collect(&mut self, cfg: &ProtocolConfig) {
+        let before = self.completed.len();
         self.completed.retain(|_, timestamp| {
             timestamp.elapsed() < Duration::from_millis(cfg.signature.garbage_timeout)
         });
+        let garbage_collected = before.saturating_sub(self.completed.len());
+        if garbage_collected > 0 {
+            tracing::debug!(
+                "garbage collected {} completed signatures",
+                garbage_collected
+            );
+        }
     }
 
     pub fn refresh_gc(&mut self, id: &ReceiptId) -> bool {

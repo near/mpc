@@ -24,8 +24,8 @@ impl ScalarExt for Scalar {
     /// Use cases are things that we know have been hashed
     fn from_non_biased(hash: [u8; 32]) -> Self {
         // This should never happen.
-        // The space of inputs is 2^256, the space of the field is ~2^256 - 2^32.
-        // This mean that you'd have to run 2^224 hashes to find a value that causes this to fail.
+        // The space of inputs is 2^256, the space of the field is ~2^256 - 2^129.
+        // This mean that you'd have to run 2^127 hashes to find a value that causes this to fail.
         Scalar::from_bytes(hash).expect("Derived epsilon value falls outside of the field")
     }
 }
@@ -36,7 +36,9 @@ fn scalar_fails_as_expected() {
     assert!(Scalar::from_bytes(too_high).is_none());
 
     let mut not_too_high = [0xFF; 32];
-    not_too_high[27] = 0xFD;
+    // Order is of k256 is FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+    //                                                  [15]
+    not_too_high[15] = 0xFD;
     assert!(Scalar::from_bytes(not_too_high).is_some());
 }
 

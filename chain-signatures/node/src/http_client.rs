@@ -59,7 +59,7 @@ async fn send_encrypted<U: IntoUrl>(
         if status.is_success() {
             Ok(())
         } else {
-            tracing::error!(
+            tracing::warn!(
                 "failed to send a message to {} with code {}: {}",
                 url,
                 status,
@@ -186,6 +186,9 @@ impl MessageQueue {
 
         // Add back the failed attempts for next time.
         self.deque = failed;
+        if !errors.is_empty() {
+            tracing::warn!("got errors when sending encrypted messages: {errors:?}");
+        }
         errors
     }
 }

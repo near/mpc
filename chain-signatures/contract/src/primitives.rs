@@ -271,12 +271,6 @@ pub struct SignRequest {
     pub key_version: u32,
 }
 
-#[derive(Serialize, Deserialize, BorshDeserialize, BorshSerialize, Debug)]
-pub struct SignResult {
-    pub big_r: String,
-    pub s: String,
-}
-
 #[derive(Serialize, Deserialize, BorshDeserialize, BorshSerialize, Clone, Debug)]
 pub enum SignatureResult<T, E> {
     Ok(T),

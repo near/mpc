@@ -19,9 +19,9 @@ use mpc_contract::primitives::SignatureRequest;
 use mpc_contract::RunningContractState;
 use mpc_node::kdf::into_eth_sig;
 use near_crypto::InMemorySigner;
-use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest;
-use near_lake_primitives::CryptoHash;
-use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
+use near_fetch::ops::AsyncTransactionStatus;
+use near_workspaces::types::Gas;
+use near_workspaces::types::NearToken;
 use near_workspaces::Account;
 use rand::Rng;
 use secp256k1::XOnlyPublicKey;
@@ -40,7 +40,7 @@ use serde_json::json;
 
 pub async fn request_sign(
     ctx: &MultichainTestContext<'_>,
-) -> anyhow::Result<([u8; 32], [u8; 32], Account, CryptoHash)> {
+) -> anyhow::Result<([u8; 32], [u8; 32], Account, AsyncTransactionStatus)> {
     let worker = &ctx.nodes.ctx().worker;
     let account = worker.dev_create_account().await?;
     let payload: [u8; 32] = rand::thread_rng().gen();
@@ -51,39 +51,24 @@ pub async fn request_sign(
         public_key: account.secret_key().public_key().to_string().parse()?,
         secret_key: account.secret_key().to_string().parse()?,
     };
-    let (nonce, block_hash, _) = ctx
-        .rpc_client
-        .fetch_nonce(&signer.account_id, &signer.public_key)
-        .await?;
 
     let request = SignRequest {
         payload: payload_hashed,
         path: "test".to_string(),
         key_version: 0,
     };
-    let tx_hash = ctx
-        .jsonrpc_client
-        .call(&RpcBroadcastTxAsyncRequest {
-            signed_transaction: Transaction {
-                nonce,
-                block_hash,
-                signer_id: signer.account_id.clone(),
-                public_key: signer.public_key.clone(),
-                receiver_id: ctx.nodes.ctx().mpc_contract.id().clone(),
-                actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
-                    method_name: "sign".to_string(),
-                    args: serde_json::to_vec(&serde_json::json!({
-                        "request": request,
-                    }))?,
-                    gas: 300_000_000_000_000,
-                    deposit: 1,
-                }))],
-            }
-            .sign(&signer),
-        })
+    let status = ctx
+        .rpc_client
+        .call(&signer, ctx.contract().id(), "sign")
+        .args_json(serde_json::json!({
+            "request": request,
+        }))
+        .gas(Gas::from_tgas(50))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact_async()
         .await?;
     tokio::time::sleep(Duration::from_secs(1)).await;
-    Ok((payload, payload_hashed, account, tx_hash))
+    Ok((payload, payload_hashed, account, status))
 }
 
 pub async fn assert_signature(
@@ -104,16 +89,15 @@ pub async fn single_signature_rogue_responder(
     ctx: &MultichainTestContext<'_>,
     state: &RunningContractState,
 ) -> anyhow::Result<()> {
-    let (_, payload_hash, account, tx_hash) = request_sign(ctx).await?;
+    let (_, payload_hash, account, status) = request_sign(ctx).await?;
 
     // We have to use seperate transactions because one could fail.
     // This leads to a potential race condition where this transaction could get sent after the signature completes, but I think that's unlikely
-    let rogue_hash = rogue_respond(ctx, payload_hash, account.id(), "test").await?;
-
-    let err = wait_for::rogue_message_responded(ctx, rogue_hash).await?;
+    let rogue_status = rogue_respond(ctx, payload_hash, account.id(), "test").await?;
+    let err = wait_for::rogue_message_responded(rogue_status).await?;
 
     assert!(err.contains(&errors::RespondError::InvalidSignature.to_string()));
-    let signature = wait_for::signature_responded(ctx, tx_hash).await?;
+    let signature = wait_for::signature_responded(status).await?;
 
     let mut mpc_pk_bytes = vec![0x04];
     mpc_pk_bytes.extend_from_slice(&state.public_key.as_bytes()[1..]);
@@ -135,8 +119,8 @@ pub async fn single_signature_production(
     ctx: &MultichainTestContext<'_>,
     state: &RunningContractState,
 ) -> anyhow::Result<()> {
-    let (_, payload_hash, account, tx_hash) = request_sign(ctx).await?;
-    let signature = wait_for::signature_responded(ctx, tx_hash).await?;
+    let (_, payload_hash, account, status) = request_sign(ctx).await?;
+    let signature = wait_for::signature_responded(status).await?;
 
     let mut mpc_pk_bytes = vec![0x04];
     mpc_pk_bytes.extend_from_slice(&state.public_key.as_bytes()[1..]);
@@ -150,7 +134,7 @@ pub async fn rogue_respond(
     payload_hash: [u8; 32],
     predecessor: &near_workspaces::AccountId,
     path: &str,
-) -> anyhow::Result<CryptoHash> {
+) -> anyhow::Result<AsyncTransactionStatus> {
     let worker = &ctx.nodes.ctx().worker;
     let account = worker.dev_create_account().await?;
 
@@ -159,10 +143,6 @@ pub async fn rogue_respond(
         public_key: account.secret_key().public_key().clone().into(),
         secret_key: account.secret_key().to_string().parse()?,
     };
-    let (nonce, block_hash, _) = ctx
-        .rpc_client
-        .fetch_nonce(&signer.account_id, &signer.public_key)
-        .await?;
     let epsilon = derive_epsilon(predecessor, path);
 
     let request = SignatureRequest {
@@ -185,32 +165,19 @@ pub async fn rogue_respond(
         recovery_id: 0,
     };
 
-    let json = &serde_json::json!({
-        "request": request,
-        "response": response,
-    });
-    let hash = ctx
-        .jsonrpc_client
-        .call(&RpcBroadcastTxAsyncRequest {
-            signed_transaction: Transaction {
-                nonce,
-                block_hash,
-                signer_id: signer.account_id.clone(),
-                public_key: signer.public_key.clone(),
-                receiver_id: ctx.nodes.ctx().mpc_contract.id().clone(),
-                actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
-                    method_name: "respond".to_string(),
-                    args: serde_json::to_vec(json)?,
-                    gas: 300_000_000_000_000,
-                    deposit: 0,
-                }))],
-            }
-            .sign(&signer),
-        })
+    let status = ctx
+        .rpc_client
+        .call(&signer, ctx.contract().id(), "respond")
+        .args_json(serde_json::json!({
+            "request": request,
+            "response": response,
+        }))
+        .max_gas()
+        .transact_async()
         .await?;
 
     tokio::time::sleep(Duration::from_secs(1)).await;
-    Ok(hash)
+    Ok(status)
 }
 
 pub async fn request_sign_non_random(
@@ -218,7 +185,7 @@ pub async fn request_sign_non_random(
     account: Account,
     payload: [u8; 32],
     payload_hashed: [u8; 32],
-) -> Result<([u8; 32], [u8; 32], Account, CryptoHash), WaitForError> {
+) -> Result<([u8; 32], [u8; 32], Account, AsyncTransactionStatus), WaitForError> {
     let signer = InMemorySigner {
         account_id: account.id().clone(),
         public_key: account
@@ -233,11 +200,6 @@ pub async fn request_sign_non_random(
             .parse()
             .map_err(|_| WaitForError::Parsing)?,
     };
-    let (nonce, block_hash, _) = ctx
-        .rpc_client
-        .fetch_nonce(&signer.account_id, &signer.public_key)
-        .await
-        .map_err(|error| WaitForError::Fetch(format!("{error:?}")))?;
 
     let request = SignRequest {
         payload: payload_hashed,
@@ -245,39 +207,27 @@ pub async fn request_sign_non_random(
         key_version: 0,
     };
 
-    let tx_hash = ctx
-        .jsonrpc_client
-        .call(&RpcBroadcastTxAsyncRequest {
-            signed_transaction: Transaction {
-                nonce,
-                block_hash,
-                signer_id: signer.account_id.clone(),
-                public_key: signer.public_key.clone(),
-                receiver_id: ctx.nodes.ctx().mpc_contract.id().clone(),
-                actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
-                    method_name: "sign".to_string(),
-                    args: serde_json::to_vec(&serde_json::json!({
-                        "request": request,
-                    }))
-                    .map_err(|error| WaitForError::SerdeJson(format!("{error:?}")))?,
-                    gas: 300_000_000_000_000,
-                    deposit: 1,
-                }))],
-            }
-            .sign(&signer),
-        })
+    let status = ctx
+        .rpc_client
+        .call(&signer, ctx.contract().id(), "sign")
+        .args_json(serde_json::json!({
+            "request": request,
+        }))
+        .gas(Gas::from_tgas(50))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact_async()
         .await
         .map_err(|error| WaitForError::JsonRpc(format!("{error:?}")))?;
     tokio::time::sleep(Duration::from_secs(1)).await;
-    Ok((payload, payload_hashed, account, tx_hash))
+    Ok((payload, payload_hashed, account, status))
 }
 
 pub async fn single_payload_signature_production(
     ctx: &MultichainTestContext<'_>,
     state: &RunningContractState,
 ) -> anyhow::Result<()> {
-    let (payload, payload_hash, account, tx_hash) = request_sign(ctx).await?;
-    let first_tx_result = wait_for::signature_responded(ctx, tx_hash).await;
+    let (payload, payload_hash, account, status) = request_sign(ctx).await?;
+    let first_tx_result = wait_for::signature_responded(status).await;
     let signature = match first_tx_result {
         Ok(sig) => sig,
         Err(error) => {

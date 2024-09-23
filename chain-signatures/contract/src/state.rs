@@ -28,7 +28,6 @@ pub struct RunningContractState {
 pub struct ResharingContractState {
     pub old_epoch: u64,
     pub old_participants: Participants,
-    // TODO: only store diff to save on storage
     pub new_participants: Participants,
     pub threshold: usize,
     pub public_key: PublicKey,
@@ -41,4 +40,15 @@ pub enum ProtocolContractState {
     Initializing(InitializingContractState),
     Running(RunningContractState),
     Resharing(ResharingContractState),
+}
+
+impl ProtocolContractState {
+    pub fn name(&self) -> &'static str {
+        match self {
+            ProtocolContractState::NotInitialized => "NotInitialized",
+            ProtocolContractState::Initializing(_) => "Initializing",
+            ProtocolContractState::Running(_) => "Running",
+            ProtocolContractState::Resharing(_) => "Resharing",
+        }
+    }
 }

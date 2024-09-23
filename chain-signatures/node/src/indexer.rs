@@ -1,6 +1,5 @@
 use crate::gcp::error::DatastoreStorageError;
 use crate::gcp::GcpService;
-use crate::kdf;
 use crate::protocol::{SignQueue, SignRequest};
 use crate::types::LatestBlockHeight;
 use crypto_shared::{derive_epsilon, ScalarExt};
@@ -12,6 +11,7 @@ use near_lake_primitives::receipts::ExecutionStatus;
 
 use near_primitives::types::BlockHeight;
 use serde::{Deserialize, Serialize};
+use std::ops::Mul;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -109,6 +109,10 @@ pub struct Indexer {
 
 impl Indexer {
     fn new(latest_block_height: LatestBlockHeight, options: &Options) -> Self {
+        tracing::info!(
+            "creating new indexer, latest block height: {}",
+            latest_block_height.block_height
+        );
         Self {
             latest_block_height: Arc::new(RwLock::new(latest_block_height)),
             last_updated_timestamp: Arc::new(RwLock::new(Instant::now())),
@@ -142,6 +146,7 @@ impl Indexer {
         block_height: BlockHeight,
         gcp: &GcpService,
     ) -> Result<(), DatastoreStorageError> {
+        tracing::trace!(block_height, "update_block_height");
         *self.last_updated_timestamp.write().await = Instant::now();
         self.latest_block_height
             .write()
@@ -165,9 +170,11 @@ async fn handle_block(
     mut block: near_lake_primitives::block::Block,
     ctx: &Context,
 ) -> anyhow::Result<()> {
+    tracing::trace!(block_height = block.block_height(), "handle_block");
     let mut pending_requests = Vec::new();
     for action in block.actions().cloned().collect::<Vec<_>>() {
         if action.receiver_id() == ctx.mpc_contract_id {
+            tracing::trace!("got action targeting {}", ctx.mpc_contract_id);
             let Some(receipt) = block.receipt_by_id(&action.receipt_id()) else {
                 let err = format!(
                     "indexer unable to find block for receipt_id={}",
@@ -183,6 +190,7 @@ async fn handle_block(
                 continue;
             };
             if function_call.method_name() == "sign" {
+                tracing::trace!("found `sign` function call");
                 let arguments =
                     match serde_json::from_slice::<'_, SignArguments>(function_call.args()) {
                         Ok(arguments) => arguments,
@@ -205,15 +213,17 @@ async fn handle_block(
                     continue;
                 };
 
-                let Ok(entropy) = serde_json::from_str::<'_, [u8; 32]>(&receipt.logs()[1]) else {
+                let entropy_log_index = 1;
+                let Ok(entropy) =
+                    serde_json::from_str::<'_, [u8; 32]>(&receipt.logs()[entropy_log_index])
+                else {
                     tracing::warn!(
                         "`sign` did not produce entropy correctly: {:?}",
-                        receipt.logs()[0]
+                        receipt.logs()[entropy_log_index]
                     );
                     continue;
                 };
                 let epsilon = derive_epsilon(&action.predecessor_id(), &arguments.request.path);
-                let delta = kdf::derive_delta(receipt_id, entropy);
                 tracing::info!(
                     receipt_id = %receipt_id,
                     caller_id = receipt.predecessor_id().to_string(),
@@ -232,7 +242,6 @@ async fn handle_block(
                     receipt_id,
                     request,
                     epsilon,
-                    delta,
                     entropy,
                     // TODO: use indexer timestamp instead.
                     time_added: Instant::now(),
@@ -260,9 +269,15 @@ async fn handle_block(
     }
     drop(queue);
 
-    if block.block_height() % 1000 == 0 {
-        tracing::info!(block_height = block.block_height(), "indexed block");
+    let log_indexing_interval = 1000;
+    if block.block_height() % log_indexing_interval == 0 {
+        tracing::info!(
+            "indexed another {} blocks, latest: {}",
+            log_indexing_interval,
+            block.block_height()
+        );
     }
+
     Ok(())
 }
 
@@ -315,12 +330,15 @@ pub fn run(
         let mut i = 0;
         loop {
             if i > 0 {
-                tracing::info!("restarting indexer after failure: restart count={i}");
+                tracing::warn!("restarting indexer after failure: restart count={i}");
             }
             i += 1;
 
             let Ok(lake) = rt.block_on(async {
                 let latest = context.indexer.latest_block_height().await;
+                if i > 0 {
+                    tracing::warn!("indexer latest height {latest}, restart count={i}");
+                }
                 let mut lake_builder = LakeBuilder::default()
                     .s3_bucket_name(&options.s3_bucket)
                     .s3_region_name(&options.s3_region)
@@ -337,7 +355,7 @@ pub fn run(
                 anyhow::Ok(lake)
             }) else {
                 tracing::error!(?options, "indexer failed to build");
-                backoff(i);
+                backoff(i, 1, 120);
                 continue;
             };
 
@@ -349,6 +367,11 @@ pub fn run(
                 rt.spawn(async move { lake.run_with_context_async(handle_block, &context).await })
             };
             let outcome = rt.block_on(async {
+                if i > 0 {
+                    // give it some time to catch up
+                    tracing::trace!("giving indexer some time to catch up");
+                    backoff(i, 10, 300);
+                }
                 // while running, we will keep the task spinning, and check every so often if
                 // the indexer has errored out.
                 while context.indexer.is_running().await {
@@ -360,6 +383,7 @@ pub fn run(
 
                 // Abort the indexer task if it's still running.
                 if !join_handle.is_finished() {
+                    tracing::trace!("aborting indexer task");
                     join_handle.abort();
                 }
 
@@ -379,7 +403,7 @@ pub fn run(
                 }
             }
 
-            backoff(i)
+            backoff(i, 1, 120)
         }
         Ok(())
     });
@@ -387,13 +411,8 @@ pub fn run(
     Ok((join_handle, indexer))
 }
 
-fn backoff(i: u32) {
-    // Exponential backoff with max delay of 2 minutes
-    let delay = if i <= 7 {
-        2u64.pow(i)
-    } else {
-        // Max out at 2 minutes
-        120
-    };
+fn backoff(i: u32, multiplier: u32, max: u64) {
+    // Exponential backoff with max delay of max seconds
+    let delay: u64 = std::cmp::min(2u64.pow(i).mul(multiplier as u64), max);
     std::thread::sleep(std::time::Duration::from_secs(delay));
 }

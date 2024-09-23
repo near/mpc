@@ -309,14 +309,20 @@ pub type LockTripleNodeStorageBox = Arc<RwLock<TripleNodeStorageBox>>;
 
 pub fn init(gcp_service: Option<&GcpService>, account_id: &AccountId) -> TripleNodeStorageBox {
     match gcp_service {
-        Some(gcp) => Box::new(DataStoreTripleNodeStorage::new(
-            gcp.datastore.clone(),
-            account_id,
-        )) as TripleNodeStorageBox,
-        _ => Box::new(MemoryTripleNodeStorage {
-            triples: HashMap::new(),
-            mine: HashSet::new(),
-            account_id: account_id.clone(),
-        }) as TripleNodeStorageBox,
+        Some(gcp) => {
+            tracing::info!("using DataStoreTripleNodeStorage");
+            Box::new(DataStoreTripleNodeStorage::new(
+                gcp.datastore.clone(),
+                account_id,
+            )) as TripleNodeStorageBox
+        }
+        _ => {
+            tracing::info!("using MemoryTripleNodeStorage");
+            Box::new(MemoryTripleNodeStorage {
+                triples: HashMap::new(),
+                mine: HashSet::new(),
+                account_id: account_id.clone(),
+            }) as TripleNodeStorageBox
+        }
     }
 }

@@ -1,18 +1,27 @@
 use anyhow::Context;
 use crypto_shared::{kdf::recover, x_coordinate, ScalarExt, SignatureResponse};
 use hkdf::Hkdf;
-use k256::{ecdsa::RecoveryId, elliptic_curve::sec1::ToEncodedPoint, Scalar};
+use k256::{ecdsa::RecoveryId, elliptic_curve::sec1::ToEncodedPoint, AffinePoint, Scalar};
 use near_primitives::hash::CryptoHash;
 use sha3::Sha3_256;
 
 // In case there are multiple requests in the same block (hence same entropy), we need to ensure
 // that we generate different random scalars as delta tweaks.
 // Receipt ID should be unique inside of a block, so it serves us as the request identifier.
-pub fn derive_delta(receipt_id: CryptoHash, entropy: [u8; 32]) -> Scalar {
+pub fn derive_delta(
+    receipt_id: CryptoHash,
+    entropy: [u8; 32],
+    presignature_big_r: AffinePoint,
+) -> Scalar {
     let hk = Hkdf::<Sha3_256>::new(None, &entropy);
     let info = format!("{DELTA_DERIVATION_PREFIX}:{}", receipt_id);
     let mut okm = [0u8; 32];
     hk.expand(info.as_bytes(), &mut okm).unwrap();
+    hk.expand(
+        presignature_big_r.to_encoded_point(true).as_bytes(),
+        &mut okm,
+    )
+    .unwrap();
     Scalar::from_non_biased(okm)
 }
 
@@ -31,7 +40,7 @@ pub fn into_eth_sig(
     let signature = k256::ecdsa::Signature::from_scalars(x_coordinate(big_r), s)
         .context("cannot create signature from cait_sith signature")?;
     let pk0 = recover(
-        &msg_hash.to_bytes(),
+        &msg_hash.to_bytes()[..],
         &signature,
         RecoveryId::try_from(0).context("cannot create recovery_id=0")?,
     )
@@ -42,7 +51,7 @@ pub fn into_eth_sig(
     }
 
     let pk1 = recover(
-        &msg_hash.to_bytes(),
+        &msg_hash.to_bytes()[..],
         &signature,
         RecoveryId::try_from(1).context("cannot create recovery_id=1")?,
     )

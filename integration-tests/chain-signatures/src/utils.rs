@@ -5,7 +5,7 @@ use near_workspaces::{Account, AccountId};
 use std::fs;
 
 pub async fn vote_join(
-    accounts: Vec<Account>,
+    accounts: &[&Account],
     mpc_contract: &AccountId,
     account_id: &AccountId,
 ) -> anyhow::Result<()> {
@@ -20,7 +20,7 @@ pub async fn vote_join(
             account
                 .call(mpc_contract, "vote_join")
                 .args_json(serde_json::json!({
-                    "candidate_account_id": account_id
+                    "candidate": account_id
                 }))
                 .transact()
         })
@@ -37,7 +37,7 @@ pub async fn vote_join(
 }
 
 pub async fn vote_leave(
-    accounts: Vec<Account>,
+    accounts: &[&Account],
     mpc_contract: &AccountId,
     account_id: &AccountId,
 ) -> Vec<Result<ExecutionFinalResult, near_workspaces::error::Error>> {

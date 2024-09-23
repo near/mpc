@@ -62,7 +62,7 @@ impl TripleGenerator {
     pub fn poke(&mut self) -> Result<Action<TripleGenerationOutput<Secp256k1>>, ProtocolError> {
         let timestamp = self.timestamp.get_or_insert_with(Instant::now);
         if timestamp.elapsed() > self.timeout {
-            tracing::info!(
+            tracing::warn!(
                 id = self.id,
                 elapsed = ?timestamp.elapsed(),
                 "triple protocol timed out"
@@ -190,9 +190,14 @@ impl TripleManager {
 
     /// Clears an entry from failed triples if that triple protocol was created more than 2 hrs ago
     pub fn garbage_collect(&mut self, cfg: &ProtocolConfig) {
+        let before = self.gc.len();
         self.gc.retain(|_, timestamp| {
             timestamp.elapsed() < Duration::from_millis(cfg.garbage_timeout)
         });
+        let garbage_collected = before.saturating_sub(self.gc.len());
+        if garbage_collected > 0 {
+            tracing::debug!("garbage collected {} triples", garbage_collected);
+        }
     }
 
     /// Refresh item in the garbage collection. If it is present, return true and update internally
@@ -215,6 +220,7 @@ impl TripleManager {
             || self.triples.contains_key(&id)
             || self.gc.contains_key(&id)
         {
+            tracing::warn!(id, "triple id collision");
             return Err(InitializationError::BadParameters(format!(
                 "id collision: triple_id={id}"
             )));
@@ -261,6 +267,7 @@ impl TripleManager {
         };
 
         if not_enough_triples {
+            tracing::trace!("not enough triples, genertion");
             self.generate(participants, cfg.triple.generation_timeout)?;
         }
         Ok(())
@@ -277,18 +284,24 @@ impl TripleManager {
     ) -> Result<(Triple, Triple), GenerationError> {
         if !self.triples.contains_key(&id0) {
             if self.generators.contains_key(&id0) {
+                tracing::warn!(id0, "triple is generating");
                 Err(GenerationError::TripleIsGenerating(id0))
             } else if self.gc.contains_key(&id0) {
+                tracing::warn!(id0, "triple is garbage collected");
                 Err(GenerationError::TripleIsGarbageCollected(id0))
             } else {
+                tracing::warn!(id0, "triple is missing");
                 Err(GenerationError::TripleIsMissing(id0))
             }
         } else if !self.triples.contains_key(&id1) {
             if self.generators.contains_key(&id1) {
+                tracing::warn!(id1, "triple is generating");
                 Err(GenerationError::TripleIsGenerating(id1))
             } else if self.gc.contains_key(&id1) {
+                tracing::warn!(id1, "triple is garbage collected");
                 Err(GenerationError::TripleIsGarbageCollected(id1))
             } else {
+                tracing::warn!(id1, "triple is missing");
                 Err(GenerationError::TripleIsMissing(id1))
             }
         } else {
@@ -344,7 +357,7 @@ impl TripleManager {
         }
         let id0 = self.mine.pop_front()?;
         let id1 = self.mine.pop_front()?;
-        tracing::info!(id0, id1, me = ?self.me, "trying to take two triples");
+        tracing::info!(id0, id1, me = ?self.me, "trying to take two mine triples");
 
         let take_two_result = self.take_two(id0, id1).await;
         match take_two_result {
@@ -378,6 +391,7 @@ impl TripleManager {
     }
 
     pub async fn insert_mine(&mut self, triple: Triple) {
+        tracing::trace!(id = triple.id, "inserting mine triple");
         self.mine.push_back(triple.id);
         self.triples.insert(triple.id, triple.clone());
         self.gc.remove(&triple.id);
@@ -459,10 +473,13 @@ impl TripleManager {
                     Ok(action) => action,
                     Err(e) => {
                         errors.push(e);
+                        crate::metrics::TRIPLE_GENERATOR_FAILURES
+                            .with_label_values(&[self.my_account_id.as_str()])
+                            .inc();
                         self.gc.insert(*id, Instant::now());
                         self.ongoing.remove(id);
                         self.introduced.remove(id);
-                        tracing::info!(
+                        tracing::warn!(
                             elapsed = ?generator.timestamp.unwrap().elapsed(),
                             "added {id} to failed triples"
                         );

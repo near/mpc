@@ -358,12 +358,6 @@ impl CryptographicProtocol for RunningState {
     ) -> Result<NodeState, CryptographicError> {
         let protocol_cfg = &ctx.cfg().protocol;
         let active = ctx.mesh().active_participants();
-        tracing::debug!(
-            "RunningState.progress active participants: {:?} potential participants: {:?} me: {:?}",
-            active.keys_vec(),
-            ctx.mesh().potential_participants().await.keys_vec(),
-            ctx.me().await
-        );
         if active.len() < self.threshold {
             tracing::info!(
                 active = ?active.keys_vec(),
@@ -433,6 +427,7 @@ impl CryptographicProtocol for RunningState {
         // block height is up to date, such that they too can process signature requests. If they cannot
         // then they are considered unstable and should not be a part of signature generation this round.
         let stable = ctx.mesh().stable_participants().await;
+        tracing::trace!(?stable, "stable participants");
 
         let mut sign_queue = self.sign_queue.write().await;
         crate::metrics::SIGN_QUEUE_SIZE
@@ -462,12 +457,7 @@ impl CryptographicProtocol for RunningState {
             messages.push(info.clone(), MpcMessage::Signature(msg));
         }
         signature_manager
-            .publish(
-                ctx.rpc_client(),
-                ctx.signer(),
-                ctx.mpc_contract_id(),
-                &my_account_id,
-            )
+            .publish(ctx.rpc_client(), ctx.signer(), ctx.mpc_contract_id())
             .await;
         drop(signature_manager);
         let failures = messages

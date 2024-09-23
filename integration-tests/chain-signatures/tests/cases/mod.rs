@@ -7,6 +7,8 @@ use crypto_shared::{self, derive_epsilon, derive_key, x_coordinate, ScalarExt};
 use integration_tests_chain_signatures::containers::{self, DockerClient};
 use integration_tests_chain_signatures::MultichainConfig;
 use k256::elliptic_curve::point::AffineCoordinates;
+use mpc_contract::config::Config;
+use mpc_contract::update::ProposeUpdateArgs;
 use mpc_node::kdf::into_eth_sig;
 use mpc_node::test_utils;
 use mpc_node::types::LatestBlockHeight;
@@ -114,7 +116,7 @@ async fn test_signature_offline_node() -> anyhow::Result<()> {
                 state_0.participants.keys().last().unwrap().clone().as_ref(),
             )
             .unwrap();
-            ctx.nodes.kill_node(&account_id).await?;
+            ctx.nodes.kill_node(&account_id).await;
 
             // This could potentially fail and timeout the first time if the participant set picked up is the
             // one with the offline node. This is expected behavior for now if a user submits a request in between
@@ -147,8 +149,8 @@ async fn test_key_derivation() -> anyhow::Result<()> {
 
             for _ in 0..3 {
                 let mpc_pk: k256::AffinePoint = state_0.public_key.clone().into_affine_point();
-                let (_, payload_hashed, account, tx_hash) = actions::request_sign(&ctx).await?;
-                let sig = wait_for::signature_responded(&ctx, tx_hash).await?;
+                let (_, payload_hashed, account, status) = actions::request_sign(&ctx).await?;
+                let sig = wait_for::signature_responded(status).await?;
 
                 let hd_path = "test";
                 let derivation_epsilon = derive_epsilon(account.id(), hd_path);
@@ -270,7 +272,7 @@ async fn test_signature_offline_node_back_online() -> anyhow::Result<()> {
                 state_0.participants.keys().last().unwrap().clone().as_ref(),
             )
             .unwrap();
-            let killed_node_config = ctx.nodes.kill_node(&account_id).await?;
+            let killed_node_config = ctx.nodes.kill_node(&account_id).await;
 
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
@@ -349,6 +351,43 @@ async fn test_multichain_reshare_with_lake_congestion() -> anyhow::Result<()> {
             wait_for::has_at_least_triples(&ctx, 2).await?;
             wait_for::has_at_least_presignatures(&ctx, 2).await?;
             actions::single_payload_signature_production(&ctx, &new_state).await
+        })
+    })
+    .await
+}
+
+#[test(tokio::test)]
+async fn test_multichain_update_contract() -> anyhow::Result<()> {
+    let config = MultichainConfig::default();
+    with_multichain_nodes(config.clone(), |ctx| {
+        Box::pin(async move {
+            // Get into running state and produce a singular signature.
+            let state = wait_for::running_mpc(&ctx, Some(0)).await?;
+            wait_for::has_at_least_mine_triples(&ctx, 2).await?;
+            wait_for::has_at_least_mine_presignatures(&ctx, 1).await?;
+            actions::single_payload_signature_production(&ctx, &state).await?;
+
+            // Perform update to the contract and see that the nodes are still properly running and picking
+            // up the new contract by first upgrading the contract, then trying to generate a new signature.
+            let id = ctx.propose_update_contract_default().await;
+            ctx.vote_update(id).await;
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            wait_for::has_at_least_mine_presignatures(&ctx, 1).await?;
+            actions::single_payload_signature_production(&ctx, &state).await?;
+
+            // Now do a config update and see if that also updates the same:
+            let id = ctx
+                .propose_update(ProposeUpdateArgs {
+                    code: None,
+                    config: Some(Config::default()),
+                })
+                .await;
+            ctx.vote_update(id).await;
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            wait_for::has_at_least_mine_presignatures(&ctx, 1).await?;
+            actions::single_payload_signature_production(&ctx, &state).await?;
+
+            Ok(())
         })
     })
     .await

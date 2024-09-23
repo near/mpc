@@ -40,7 +40,6 @@ async fn main() -> anyhow::Result<()> {
             let nodes = run(config.clone(), &docker_client).await?;
             let ctx = nodes.ctx();
             let urls: Vec<_> = (0..config.nodes).map(|i| nodes.url(i)).collect();
-            let near_acc_sks = nodes.near_acc_sk();
             let near_accounts = nodes.near_accounts();
             let sk_local_path = nodes.ctx().storage_options.sk_share_local_path.clone();
 
@@ -58,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("    Url: {}", urls[i]);
                 let account_id = near_accounts[i].id();
                 println!("    Account: {}", account_id);
-                let sk = near_acc_sks.get(account_id).unwrap();
+                let sk = near_accounts[i].secret_key();
                 println!("    Secret Key: {}", sk);
                 let pk = sk.public_key();
                 println!("    Public Key: {}", pk);

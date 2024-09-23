@@ -23,13 +23,13 @@ struct MemoryNodeStorage {
 #[async_trait]
 impl SecretNodeStorage for MemoryNodeStorage {
     async fn store(&mut self, data: &PersistentNodeData) -> SecretResult<()> {
-        tracing::info!("storing PersistentNodeData using memory");
+        tracing::info!("storing PersistentNodeData using MemoryNodeStorage");
         self.node_data = Some(data.clone());
         Ok(())
     }
 
     async fn load(&self) -> SecretResult<Option<PersistentNodeData>> {
-        tracing::info!("loading PersistentNodeData using memory");
+        tracing::info!("loading PersistentNodeData using MemoryNodeStorage");
         Ok(self.node_data.clone())
     }
 }
@@ -51,7 +51,7 @@ impl SecretManagerNodeStorage {
 #[async_trait]
 impl SecretNodeStorage for SecretManagerNodeStorage {
     async fn store(&mut self, data: &PersistentNodeData) -> SecretResult<()> {
-        tracing::debug!("storing PersistentNodeData using SecretNodeStorage");
+        tracing::info!("storing PersistentNodeData using SecretManagerNodeStorage");
         self.secret_manager
             .store_secret(&serde_json::to_vec(data)?, &self.sk_share_secret_id)
             .await?;
@@ -59,7 +59,7 @@ impl SecretNodeStorage for SecretManagerNodeStorage {
     }
 
     async fn load(&self) -> SecretResult<Option<PersistentNodeData>> {
-        tracing::debug!("loading PersistentNodeData using SecretNodeStorage");
+        tracing::info!("loading PersistentNodeData using SecretManagerNodeStorage");
         let raw_data = self
             .secret_manager
             .load_secret(&self.sk_share_secret_id)
@@ -68,12 +68,12 @@ impl SecretNodeStorage for SecretManagerNodeStorage {
             Some(data) if data.len() > 1 => match serde_json::from_slice(&data) {
                 Ok(persistent_node_data) => Ok(Some(persistent_node_data)),
                 Err(err) => {
-                    tracing::warn!(%err, data_len = data.len(), "failed to convert stored data to key share, presuming it is missing");
+                    tracing::error!(%err, data_len = data.len(), "failed to convert stored data to key share, presuming it is missing");
                     Ok(None)
                 }
             },
             _ => {
-                tracing::warn!("failed to load existing key share, presuming it is missing");
+                tracing::error!("failed to load existing key share, presuming it is missing");
                 Ok(None)
             }
         }
@@ -136,15 +136,20 @@ pub fn init(
     account_id: &AccountId,
 ) -> SecretNodeStorageBox {
     match gcp_service {
-        Some(gcp) if opts.sk_share_secret_id.is_some() => Box::new(SecretManagerNodeStorage::new(
-            &gcp.secret_manager.clone(),
-            opts.clone().sk_share_secret_id.unwrap().clone(),
-        )) as SecretNodeStorageBox,
+        Some(gcp) if opts.sk_share_secret_id.is_some() => {
+            tracing::info!("using SecretManagerNodeStorage");
+            Box::new(SecretManagerNodeStorage::new(
+                &gcp.secret_manager.clone(),
+                opts.clone().sk_share_secret_id.unwrap().clone(),
+            )) as SecretNodeStorageBox
+        }
         _ => {
             if let Some(sk_share_local_path) = &opts.sk_share_local_path {
                 let path = format!("{sk_share_local_path}-{account_id}");
+                tracing::info!("using DiskNodeStorage with path: {}", path);
                 Box::new(DiskNodeStorage::new(&path)) as SecretNodeStorageBox
             } else {
+                tracing::info!("using MemoryNodeStorage");
                 Box::<MemoryNodeStorage>::default() as SecretNodeStorageBox
             }
         }
