@@ -14,9 +14,9 @@ pub(crate) static NODE_RUNNING: Lazy<IntGaugeVec> = Lazy::new(|| {
     .unwrap()
 });
 
-pub(crate) static NUM_SIGN_REQUESTS_MINE: Lazy<CounterVec> = Lazy::new(|| {
+pub(crate) static NUM_SIGN_REQUESTS: Lazy<CounterVec> = Lazy::new(|| {
     try_create_counter_vec(
-        "multichain_sign_requests_count_mine",
+        "multichain_sign_requests_count",
         "number of multichain sign requests, marked by sign requests indexed",
         &["node_account_id"],
     )
