@@ -734,6 +734,9 @@ impl SignatureManager {
                 Ok(response) => response,
                 Err(err) => {
                     tracing::error!(%receipt_id, error = ?err, "Failed to publish the signature");
+                    crate::metrics::SIGNATURE_PUBLISH_FAILURES
+                        .with_label_values(&[self.my_account_id.as_str()])
+                        .inc();
                     // Push the response to the back of the queue if it hasn't been retried the max number of times
                     if to_publish.retry_count < MAX_RETRY {
                         to_publish.retry_count += 1;
@@ -749,6 +752,9 @@ impl SignatureManager {
                 }
                 Err(err) => {
                     tracing::error!(%receipt_id, bi_r = signature.big_r.affine_point.to_base58(), s = ?signature.s, error = ?err, "smart contract threw error");
+                    crate::metrics::SIGNATURE_PUBLISH_RESPONSE_ERRORS
+                        .with_label_values(&[self.my_account_id.as_str()])
+                        .inc();
                     continue;
                 }
             };
