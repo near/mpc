@@ -380,8 +380,8 @@ pub(crate) static SIGNATURE_FAILURES: Lazy<CounterVec> = Lazy::new(|| {
     .unwrap()
 });
 
-pub(crate) static SIGNATURE_PUBLISH_FAILURES: Lazy<IntGaugeVec> = Lazy::new(|| {
-    try_create_int_gauge_vec(
+pub(crate) static SIGNATURE_PUBLISH_FAILURES: Lazy<CounterVec> = Lazy::new(|| {
+    try_create_counter_vec(
         "multichain_signature_publish_failures",
         "number of failed signature publish",
         &["node_account_id"],
@@ -389,8 +389,8 @@ pub(crate) static SIGNATURE_PUBLISH_FAILURES: Lazy<IntGaugeVec> = Lazy::new(|| {
     .unwrap()
 });
 
-pub(crate) static SIGNATURE_PUBLISH_RESPONSE_ERRORS: Lazy<IntGaugeVec> = Lazy::new(|| {
-    try_create_int_gauge_vec(
+pub(crate) static SIGNATURE_PUBLISH_RESPONSE_ERRORS: Lazy<CounterVec> = Lazy::new(|| {
+    try_create_counter_vec(
         "multichain_signature_publish_response_errors",
         "number of respond calls with response that cannot be converted to json",
         &["node_account_id"],
