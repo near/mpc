@@ -10,10 +10,6 @@ on:
         description: mainnet or testnet network
         default: testnet
         required: true
-      image:
-        description: Full Artifact Registry image with tag (e.g. us-east1-docker.pkg.dev/pagoda-discovery-platform-prod/multichain-public/multichain-< testnet | mainnet >)
-        required: true
-        default: us-east1-docker.pkg.dev/pagoda-discovery-platform-prod/multichain-public/multichain-testnet
 
 
 jobs:
@@ -28,10 +24,11 @@ jobs:
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS_PROD }}
       
+        # Since the Mainnet and Testnet nodes are polling this image repository, only the image needs to be updated in order to trigger a deployment
       - name: Build Docker image and deploy partner nodes
         id: docker-push-tagged-partner
         uses: docker/build-push-action@v4
         with:
           push: true
           file: ./Dockerfile.multichain
-          tags: "${{ github.event.inputs.image }}:latest"
+          tags: "us-east1-docker.pkg.dev/pagoda-discovery-platform-prod/multichain-public/multichain-${{ github.event.inputs.network }}:latest"

@@ -83,7 +83,7 @@ module "mig_template" {
     scopes = ["cloud-platform"]
   }
   name_prefix          = "multichain-${count.index}"
-  source_image_family  = "cos-stable"
+  source_image_family  = "cos-113-lts"
   source_image_project = "cos-cloud"
   machine_type         = "n2-standard-2"
 

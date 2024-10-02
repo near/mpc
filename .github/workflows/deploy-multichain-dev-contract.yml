@@ -1,5 +1,6 @@
 name: Deploy Dev Smart Contract
 on:
+  workflow_dispatch:
   pull_request:
     types: [closed]
     branches:
