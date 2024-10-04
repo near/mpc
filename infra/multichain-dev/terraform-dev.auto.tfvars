@@ -90,4 +90,22 @@ node_configs = [
     sk_share_secret_id   = "multichain-sk-share-dev-9"
     ip_address           = "10.100.0.126"
   },
+  {
+    account              = "multichain-node-dev-10.testnet"
+    cipher_pk            = "b8775fef8efff687f6dfef4377b619d78fd328302516a46162c6690b97bcaf2a"
+    account_sk_secret_id = "multichain-account-sk-dev-10"
+    cipher_sk_secret_id  = "multichain-cipher-sk-dev-10"
+    sign_sk_secret_id    = "multichain-sign-sk-dev-10"
+    sk_share_secret_id   = "multichain-sk-share-dev-10"
+    ip_address           = "10.100.0.127"
+  },
+  {
+    account              = "multichain-node-dev-11.testnet"
+    cipher_pk            = "cfa7a48082f1aa74858dcc8136f8e393c0b93d451ee3dc96203bfe025381a12e"
+    account_sk_secret_id = "multichain-account-sk-dev-11"
+    cipher_sk_secret_id  = "multichain-cipher-sk-dev-11"
+    sign_sk_secret_id    = "multichain-sign-sk-dev-11"
+    sk_share_secret_id   = "multichain-sk-share-dev-11"
+    ip_address           = "10.100.0.128"
+  },
 ]

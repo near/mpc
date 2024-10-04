@@ -62,3 +62,5 @@ jobs:
           gcloud compute instances update-container multichain-dev-7 --zone us-central1-a --container-image=${{ env.IMAGE }}:${{ env.TAG }} & \
           gcloud compute instances update-container multichain-dev-8 --zone us-central1-a --container-image=${{ env.IMAGE }}:${{ env.TAG }} & \
           gcloud compute instances update-container multichain-dev-9 --zone us-central1-a --container-image=${{ env.IMAGE }}:${{ env.TAG }} & \
+          gcloud compute instances update-container multichain-dev-10 --zone us-central1-a --container-image=${{ env.IMAGE }}:${{ env.TAG }} & \
+          gcloud compute instances update-container multichain-dev-11 --zone us-central1-a --container-image=${{ env.IMAGE }}:${{ env.TAG }} & \
