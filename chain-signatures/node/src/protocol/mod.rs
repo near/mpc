@@ -267,6 +267,7 @@ impl MpcSignProtocol {
                 last_state_update = Instant::now();
                 Some(contract_state)
             } else {
+                tracing::debug!("no contract state update");
                 None
             };
 
