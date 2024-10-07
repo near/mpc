@@ -226,20 +226,20 @@ impl MpcSignProtocol {
 
         loop {
             let protocol_time = Instant::now();
-            tracing::trace!("trying to advance chain signatures protocol");
+            tracing::debug!("trying to advance chain signatures protocol");
             loop {
                 let msg_result = self.receiver.try_recv();
                 match msg_result {
                     Ok(msg) => {
-                        tracing::trace!("received a new message");
+                        tracing::debug!("received a new message");
                         queue.push(msg);
                     }
                     Err(TryRecvError::Empty) => {
-                        tracing::trace!("no new messages received");
+                        tracing::debug!("no new messages received");
                         break;
                     }
                     Err(TryRecvError::Disconnected) => {
-                        tracing::debug!("communication was disconnected, no more messages will be received, spinning down");
+                        tracing::warn!("communication was disconnected, no more messages will be received, spinning down");
                         return Ok(());
                     }
                 }
@@ -296,7 +296,7 @@ impl MpcSignProtocol {
             let crypto_time = Instant::now();
             let mut state = match state.progress(&mut self).await {
                 Ok(state) => {
-                    tracing::trace!("progress ok: {state}");
+                    tracing::debug!("progress ok: {state}");
                     state
                 }
                 Err(err) => {
