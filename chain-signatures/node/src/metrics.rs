@@ -389,6 +389,56 @@ pub(crate) static SIGNATURE_PUBLISH_FAILURES: Lazy<CounterVec> = Lazy::new(|| {
     .unwrap()
 });
 
+// CPU Usage Percentage Metric
+pub(crate) static CPU_USAGE_PERCENTAGE: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "multichain_cpu_usage_percentage",
+        "CPU Usage Percentage",
+        &["node_account_id"],
+    )
+    .unwrap()
+});
+
+// Total Memory Metric
+pub(crate) static TOTAL_MEMORY_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "multichain_total_memory_bytes",
+        "Total Memory in Bytes",
+        &["node_account_id"],
+    )
+    .unwrap()
+});
+
+// Available Memory Metric
+pub(crate) static AVAILABLE_MEMORY_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
+  try_create_int_gauge_vec(
+      "multichain_available_memory_bytes",
+      "Available Memory in Bytes",
+      &["node_account_id"],
+  )
+  .unwrap()
+});
+
+// Used Memory Metric
+pub(crate) static USED_MEMORY_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "multichain_used_memory_bytes",
+        "Used Memory in Bytes",
+        &["node_account_id"],
+    )
+    .unwrap()
+});
+
+// Disk Space Metric
+pub(crate) static DISK_SPACE_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "multichain_disk_space_bytes",
+        "Available Disk Space in Bytes",
+        &["node_account_id"],
+    )
+    .unwrap()
+});
+
 pub(crate) static SIGNATURE_PUBLISH_RESPONSE_ERRORS: Lazy<CounterVec> = Lazy::new(|| {
     try_create_counter_vec(
         "multichain_signature_publish_response_errors",

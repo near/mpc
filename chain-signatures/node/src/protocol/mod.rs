@@ -17,6 +17,7 @@ pub use message::MpcMessage;
 pub use signature::SignQueue;
 pub use signature::SignRequest;
 pub use state::NodeState;
+pub use sysinfo::{System, Components, Disks};
 
 use self::consensus::ConsensusCtx;
 use self::cryptography::CryptographicCtx;
@@ -227,6 +228,9 @@ impl MpcSignProtocol {
         loop {
             let protocol_time = Instant::now();
             tracing::trace!("trying to advance chain signatures protocol");
+            // Hardware metric refresh
+            update_system_metrics();
+
             loop {
                 let msg_result = self.receiver.try_recv();
                 match msg_result {
@@ -380,4 +384,45 @@ fn node_version() -> i64 {
         0
     };
     (rc_num + version.patch * 1000 + version.minor * 1000000 + version.major * 1000000000) as i64
+}
+
+
+fn update_system_metrics() {
+    let mut system = System::new_all();
+
+    // Refresh only the necessary components
+    system.refresh_all();
+
+    // Update CPU usage metric
+    let cpu_usage = system.global_cpu_usage() as i64;
+    crate::metrics::CPU_USAGE_PERCENTAGE
+        .with_label_values(&["global"])
+        .set(cpu_usage);
+
+    // Update total memory metric
+    let total_memory = system.total_memory() as i64;
+    crate::metrics::TOTAL_MEMORY_BYTES
+        .with_label_values(&["total"])
+        .set(total_memory);
+
+    // Update available memory metric
+    let available_memory = system.available_memory() as i64;
+    crate::metrics::AVAILABLE_MEMORY_BYTES
+        .with_label_values(&["available"])
+        .set(available_memory);
+
+    // Update used memory metric
+    let used_memory = system.used_memory() as i64;
+    crate::metrics::USED_MEMORY_BYTES
+        .with_label_values(&["used"])
+        .set(used_memory);
+
+    // Update disk space metric
+    let available_disk_space = Disks::new_with_refreshed_list()
+        .iter()
+        .map(|d| d.available_space())
+        .sum::<u64>() as i64;
+    crate::metrics::DISK_SPACE_BYTES
+        .with_label_values(&["available"])
+        .set(available_disk_space);
 }
