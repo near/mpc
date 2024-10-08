@@ -1,4 +1,7 @@
-# MPC Account Recovery (WIP)
+## FastAuth (aka mpc-recovery)
+
+FastAuth allows a user to store their login details for their NEAR wallet in a set amount of MPC nodes. Each node contains a share of the user's credentials. Note, this will likely change in the future as we resdesign the system to utilize chain signatures instead of having to purely rely on a standalone MPC service for NEAR accounts.
+
 The aim of this project is to offer NEAR users the opportunity to create and restore their accounts by utilizing OIDC protocol. By linking their NEAR account to `near.org` or other authentication provider, they can then add a new Full Access key, which will be managed by the trusted network of servers. Should they lose all the keys they possess, they can reauthorize themselves, create a new key, and add it into their NEAR account using a transaction that will be signed by MPC servers through their recovery key. All the transaction cost will be covered by a relayer server and metatransactions.
 
 ## How the MPC system will work

@@ -1,15 +1,5 @@
 # Architecture
 
-This doc outlines the architecture for NEAR's Multi-Party Computation (MPC) related services which powers FastAuth and Chain Signatures.
-
-## FastAuth (aka mpc-recovery)
-
-FastAuth allows a user to store their login details for their NEAR wallet in a set amount of MPC nodes. Each node contains a share of the user's credentials. Note, this will likely change in the future as we resdesign the system to utilize chain signatures instead of having to purely rely on a standalone MPC service for NEAR accounts.
-
-## Chain Signatures
-
-Chain signature is an MPC service that facilitates the ability to sign arbitrary payloads by calling into a smart contract and eventually getting back a signature. This signature can be used for various purposes such as deriving new public keys associated to foreign chains.
-
 There are several components that make up chain-signatures. This includes but is not limited to the following:
 
 - NEAR Smart Contract
