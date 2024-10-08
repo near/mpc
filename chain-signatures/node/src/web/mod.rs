@@ -32,7 +32,7 @@ pub async fn run(
     protocol_state: Arc<RwLock<NodeState>>,
     indexer: Indexer,
 ) -> anyhow::Result<()> {
-    tracing::debug!("running a node");
+    tracing::info!("running a node");
     let axum_state = AxumState {
         sender,
         protocol_state,
@@ -129,7 +129,7 @@ pub enum StateView {
 
 #[tracing::instrument(level = "debug", skip_all)]
 async fn state(Extension(state): Extension<Arc<AxumState>>) -> Result<Json<StateView>> {
-    tracing::trace!("fetching state");
+    tracing::debug!("fetching state");
     let latest_block_height = state.indexer.latest_block_height().await;
     let is_stable = state.indexer.is_on_track().await;
     let protocol_state = state.protocol_state.read().await;

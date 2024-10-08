@@ -234,7 +234,7 @@ impl PresignatureManager {
             )));
         }
 
-        tracing::debug!(id, "starting protocol to generate a new presignature");
+        tracing::info!(id, "starting protocol to generate a new presignature");
         let generator = Self::generate_internal(
             participants,
             self.me,
@@ -279,7 +279,7 @@ impl PresignatureManager {
         };
 
         if not_enough_presignatures {
-            tracing::trace!("not enough presignatures, generating");
+            tracing::debug!("not enough presignatures, generating");
             // To ensure there is no contention between different nodes we are only using triples
             // that we proposed. This way in a non-BFT environment we are guaranteed to never try
             // to use the same triple as any other node.
@@ -287,7 +287,7 @@ impl PresignatureManager {
                 let presig_participants = active
                     .intersection(&[&triple0.public.participants, &triple1.public.participants]);
                 if presig_participants.len() < self.threshold {
-                    tracing::debug!(
+                    tracing::warn!(
                         participants = ?presig_participants.keys_vec(),
                         "running: the intersection of participants is less than the threshold"
                     );
@@ -307,7 +307,7 @@ impl PresignatureManager {
                     )?;
                 }
             } else {
-                tracing::debug!("running: we don't have enough triples to generate a presignature");
+                tracing::warn!("running: we don't have enough triples to generate a presignature");
             }
         }
 
@@ -333,10 +333,10 @@ impl PresignatureManager {
         cfg: &ProtocolConfig,
     ) -> Result<&mut PresignatureProtocol, GenerationError> {
         if self.presignatures.contains_key(&id) {
-            tracing::debug!(id, "presignature already generated");
+            tracing::warn!(id, "presignature already generated");
             Err(GenerationError::AlreadyGenerated)
         } else if self.gc.contains_key(&id) {
-            tracing::debug!(id, "presignature was garbage collected");
+            tracing::warn!(id, "presignature was garbage collected");
             Err(GenerationError::PresignatureIsGarbageCollected(id))
         } else {
             match self.generators.entry(id) {
@@ -405,7 +405,7 @@ impl PresignatureManager {
 
     pub fn take_mine(&mut self) -> Option<Presignature> {
         let my_presignature_id = self.mine.pop_front()?;
-        tracing::debug!(my_presignature_id, "take presignature of mine");
+        tracing::info!(my_presignature_id, "take presignature of mine");
         // SAFETY: This unwrap is safe because taking mine will always succeed since it is only
         // present when generation completes where the determination of ownership is made.
         Some(self.take(my_presignature_id).unwrap())
@@ -414,7 +414,7 @@ impl PresignatureManager {
     pub fn take(&mut self, id: PresignatureId) -> Result<Presignature, GenerationError> {
         if let Some(presignature) = self.presignatures.remove(&id) {
             self.gc.insert(id, Instant::now());
-            tracing::trace!(id, "took presignature");
+            tracing::info!(id, "took presignature");
             return Ok(presignature);
         }
 
@@ -431,7 +431,7 @@ impl PresignatureManager {
     }
 
     pub fn insert_mine(&mut self, presig: Presignature) {
-        tracing::trace!(id = ?presig.id, "inserting presignature");
+        tracing::debug!(id = ?presig.id, "inserting presignature");
         // Remove from taken list if it was there
         self.gc.remove(&presig.id);
         self.mine.push_back(presig.id);
@@ -461,7 +461,7 @@ impl PresignatureManager {
                 };
                 match action {
                     Action::Wait => {
-                        tracing::trace!("waiting");
+                        tracing::debug!("waiting");
                         // Retain protocol until we are finished
                         return true;
                     }

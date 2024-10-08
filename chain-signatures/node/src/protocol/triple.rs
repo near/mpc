@@ -226,7 +226,7 @@ impl TripleManager {
             )));
         }
 
-        tracing::debug!(id, "starting protocol to generate a new triple");
+        tracing::info!(id, "starting protocol to generate a new triple");
         let participants: Vec<_> = participants.keys().cloned().collect();
         let protocol: TripleProtocol = Box::new(cait_sith::triples::generate_triple::<Secp256k1>(
             &participants,
@@ -267,7 +267,7 @@ impl TripleManager {
         };
 
         if not_enough_triples {
-            tracing::trace!("not enough triples, genertion");
+            tracing::debug!("not enough triples, generating");
             self.generate(participants, cfg.triple.generation_timeout)?;
         }
         Ok(())
@@ -391,7 +391,7 @@ impl TripleManager {
     }
 
     pub async fn insert_mine(&mut self, triple: Triple) {
-        tracing::trace!(id = triple.id, "inserting mine triple");
+        tracing::debug!(id = triple.id, "inserting mine triple");
         self.mine.push_back(triple.id);
         self.triples.insert(triple.id, triple.clone());
         self.gc.remove(&triple.id);
@@ -421,7 +421,7 @@ impl TripleManager {
                         return Ok(None);
                     }
 
-                    tracing::debug!(id, "joining protocol to generate a new triple");
+                    tracing::info!(id, "joining protocol to generate a new triple");
                     let participants = participants.keys_vec();
                     let protocol = Box::new(cait_sith::triples::generate_triple::<Secp256k1>(
                         &participants,
@@ -489,7 +489,7 @@ impl TripleManager {
 
                 match action {
                     Action::Wait => {
-                        tracing::trace!("waiting");
+                        tracing::debug!("waiting");
                         // Retain protocol until we are finished
                         break true;
                     }

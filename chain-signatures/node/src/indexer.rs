@@ -146,7 +146,7 @@ impl Indexer {
         block_height: BlockHeight,
         gcp: &GcpService,
     ) -> Result<(), DatastoreStorageError> {
-        tracing::trace!(block_height, "update_block_height");
+        tracing::debug!(block_height, "update_block_height");
         *self.last_updated_timestamp.write().await = Instant::now();
         self.latest_block_height
             .write()
@@ -170,11 +170,11 @@ async fn handle_block(
     mut block: near_lake_primitives::block::Block,
     ctx: &Context,
 ) -> anyhow::Result<()> {
-    tracing::trace!(block_height = block.block_height(), "handle_block");
+    tracing::debug!(block_height = block.block_height(), "handle_block");
     let mut pending_requests = Vec::new();
     for action in block.actions().cloned().collect::<Vec<_>>() {
         if action.receiver_id() == ctx.mpc_contract_id {
-            tracing::trace!("got action targeting {}", ctx.mpc_contract_id);
+            tracing::debug!("got action targeting {}", ctx.mpc_contract_id);
             let Some(receipt) = block.receipt_by_id(&action.receipt_id()) else {
                 let err = format!(
                     "indexer unable to find block for receipt_id={}",
@@ -190,7 +190,7 @@ async fn handle_block(
                 continue;
             };
             if function_call.method_name() == "sign" {
-                tracing::trace!("found `sign` function call");
+                tracing::debug!("found `sign` function call");
                 let arguments =
                     match serde_json::from_slice::<'_, SignArguments>(function_call.args()) {
                         Ok(arguments) => arguments,
@@ -369,7 +369,7 @@ pub fn run(
             let outcome = rt.block_on(async {
                 if i > 0 {
                     // give it some time to catch up
-                    tracing::trace!("giving indexer some time to catch up");
+                    tracing::debug!("giving indexer some time to catch up");
                     backoff(i, 10, 300);
                 }
                 // while running, we will keep the task spinning, and check every so often if
@@ -383,7 +383,7 @@ pub fn run(
 
                 // Abort the indexer task if it's still running.
                 if !join_handle.is_finished() {
-                    tracing::trace!("aborting indexer task");
+                    tracing::debug!("aborting indexer task");
                     join_handle.abort();
                 }
 

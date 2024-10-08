@@ -333,7 +333,7 @@ impl MessageHandler for RunningState {
                 ) => {
                     // This triple has already been generated or removed from the triple manager, so we will have to bin
                     // the entirety of the messages we received for this presignature id, and have the other nodes timeout
-                    tracing::debug!(id, ?err, "presignature cannot be generated");
+                    tracing::warn!(id, ?err, "presignature cannot be generated");
                     queue.clear();
                     continue;
                 }
@@ -437,7 +437,7 @@ impl MessageHandler for RunningState {
                     // and have the other nodes timeout in the following cases:
                     // - If a presignature is in GC, then it was used already or failed to be produced.
                     // - If a presignature is missing, that means our system cannot process this signature.
-                    tracing::debug!(%receipt_id, ?err, "signature cannot be generated");
+                    tracing::warn!(%receipt_id, ?err, "signature cannot be generated");
                     queue.clear();
                     continue;
                 }

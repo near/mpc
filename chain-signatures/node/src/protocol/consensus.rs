@@ -255,7 +255,7 @@ impl ConsensusProtocol for GeneratingState {
     ) -> Result<NodeState, ConsensusError> {
         match contract_state {
             ProtocolState::Initializing(_) => {
-                tracing::debug!("generating(initializing): continuing generation, contract state has not been finalized yet");
+                tracing::info!("generating(initializing): continuing generation, contract state has not been finalized yet");
                 Ok(NodeState::Generating(self))
             }
             ProtocolState::Running(contract_state) => {
@@ -305,7 +305,7 @@ impl ConsensusProtocol for WaitingForConsensusState {
     ) -> Result<NodeState, ConsensusError> {
         match contract_state {
             ProtocolState::Initializing(contract_state) => {
-                tracing::debug!("waiting(initializing): waiting for consensus, contract state has not been finalized yet");
+                tracing::info!("waiting(initializing): waiting for consensus, contract state has not been finalized yet");
                 let public_key = self.public_key.into_near_public_key();
                 let has_voted = contract_state
                     .pk_votes
@@ -427,7 +427,7 @@ impl ConsensusProtocol for WaitingForConsensusState {
                     }
                     Ordering::Less => Err(ConsensusError::EpochRollback),
                     Ordering::Equal => {
-                        tracing::debug!(
+                        tracing::info!(
                             "waiting(resharing): waiting for resharing consensus, contract state has not been finalized yet"
                         );
                         let has_voted = contract_state.finished_votes.contains(ctx.my_account_id());
@@ -494,7 +494,7 @@ impl ConsensusProtocol for RunningState {
                 }
                 Ordering::Less => Err(ConsensusError::EpochRollback),
                 Ordering::Equal => {
-                    tracing::trace!("running(running): continuing to run as normal");
+                    tracing::debug!("running(running): continuing to run as normal");
                     if contract_state.participants != self.participants {
                         return Err(ConsensusError::MismatchedParticipants);
                     }
@@ -599,7 +599,7 @@ impl ConsensusProtocol for ResharingState {
                     }
                     Ordering::Less => Err(ConsensusError::EpochRollback),
                     Ordering::Equal => {
-                        tracing::debug!("resharing(resharing): continue to reshare as normal");
+                        tracing::info!("resharing(resharing): continue to reshare as normal");
                         if contract_state.old_participants != self.old_participants {
                             return Err(ConsensusError::MismatchedParticipants);
                         }
@@ -685,7 +685,7 @@ impl ConsensusProtocol for JoiningState {
                     tracing::info!("joining(resharing): joining as a new participant");
                     start_resharing(None, ctx, contract_state).await
                 } else {
-                    tracing::debug!("joining(resharing): network is resharing without us, waiting for them to finish");
+                    tracing::info!("joining(resharing): network is resharing without us, waiting for them to finish");
                     Ok(NodeState::Joining(self))
                 }
             }

@@ -95,7 +95,7 @@ impl DiskNodeStorage {
 #[async_trait]
 impl SecretNodeStorage for DiskNodeStorage {
     async fn store(&mut self, data: &PersistentNodeData) -> SecretResult<()> {
-        tracing::debug!("storing PersistentNodeData using DiskNodeStorage");
+        tracing::info!("storing PersistentNodeData using DiskNodeStorage");
         let mut file = File::create(self.path.as_os_str()).await?;
         // Serialize the person object to JSON and convert directly to bytes
         let json_bytes = serde_json::to_vec(data)?;
@@ -114,10 +114,10 @@ impl SecretNodeStorage for DiskNodeStorage {
             Ok(mut file) => {
                 let mut contents = Vec::new();
                 // Read the contents of the file into the vector
-                tracing::debug!("loading PersistentNodeData using DiskNodeStorage: reading");
+                tracing::info!("loading PersistentNodeData using DiskNodeStorage: reading");
                 file.read_to_end(&mut contents).await?;
 
-                tracing::debug!("loading PersistentNodeData using DiskNodeStorage: read done");
+                tracing::info!("loading PersistentNodeData using DiskNodeStorage: read done");
                 // Deserialize the JSON content to a PersistentNodeData object
                 let data: PersistentNodeData = serde_json::from_slice(&contents)?;
 

@@ -539,7 +539,7 @@ impl SignatureManager {
                 };
                 match action {
                     Action::Wait => {
-                        tracing::trace!("waiting");
+                        tracing::debug!("waiting");
                         // Retain protocol until we are finished
                         return true;
                     }

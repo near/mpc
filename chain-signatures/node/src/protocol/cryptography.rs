@@ -90,7 +90,7 @@ impl CryptographicProtocol for GeneratingState {
             match action {
                 Action::Wait => {
                     drop(protocol);
-                    tracing::trace!("generating: waiting");
+                    tracing::debug!("generating: waiting");
                     let failures = self
                         .messages
                         .write()
@@ -246,7 +246,7 @@ impl CryptographicProtocol for ResharingState {
             match action {
                 Action::Wait => {
                     drop(protocol);
-                    tracing::trace!("resharing: waiting");
+                    tracing::debug!("resharing: waiting");
                     let failures = self
                         .messages
                         .write()
@@ -359,7 +359,7 @@ impl CryptographicProtocol for RunningState {
         let protocol_cfg = &ctx.cfg().protocol;
         let active = ctx.mesh().active_participants();
         if active.len() < self.threshold {
-            tracing::info!(
+            tracing::warn!(
                 active = ?active.keys_vec(),
                 "running: not enough participants to progress"
             );
@@ -427,7 +427,7 @@ impl CryptographicProtocol for RunningState {
         // block height is up to date, such that they too can process signature requests. If they cannot
         // then they are considered unstable and should not be a part of signature generation this round.
         let stable = ctx.mesh().stable_participants().await;
-        tracing::trace!(?stable, "stable participants");
+        tracing::debug!(?stable, "stable participants");
 
         let mut sign_queue = self.sign_queue.write().await;
         crate::metrics::SIGN_QUEUE_SIZE
