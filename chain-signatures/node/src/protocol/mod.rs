@@ -213,6 +213,7 @@ impl MpcSignProtocol {
         let mut queue = MpcMessageQueue::default();
         let mut last_state_update = Instant::now();
         let mut last_config_update = Instant::now();
+        let mut last_hardware_pull = Instant::now();
         let mut last_pinged = Instant::now();
 
         // Sets the latest configurations from the contract:
@@ -229,7 +230,9 @@ impl MpcSignProtocol {
             let protocol_time = Instant::now();
             tracing::trace!("trying to advance chain signatures protocol");
             // Hardware metric refresh
-            update_system_metrics(&my_account_id);
+            if last_hardware_pull.elapsed() > Duration::from_secs(5) {
+              update_system_metrics(&my_account_id);
+            }
 
             loop {
                 let msg_result = self.receiver.try_recv();
@@ -417,7 +420,7 @@ fn update_system_metrics(node_id: &str) {
         .with_label_values(&["used", node_id])
         .set(used_memory);
 
-    // Update disk space metric
+    // Update available disk space metric
     let available_disk_space = Disks::new_with_refreshed_list()
         .iter()
         .map(|d| d.available_space())
@@ -425,4 +428,13 @@ fn update_system_metrics(node_id: &str) {
     crate::metrics::DISK_SPACE_BYTES
         .with_label_values(&["available_disk", node_id])
         .set(available_disk_space);
+
+    // Update total disk space metric
+    let total_disk_space = Disks::new_with_refreshed_list()
+        .iter()
+        .map(|d| d.total_space())
+        .sum::<u64>() as i64;
+    crate::metrics::TOTAL_DISK_SPACE_BYTES
+        .with_label_values(&["total_disk", node_id])
+        .set(total_disk_space);
 }

@@ -439,6 +439,16 @@ pub(crate) static DISK_SPACE_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
     .unwrap()
 });
 
+// Total Disk Space Metric
+pub(crate) static TOTAL_DISK_SPACE_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
+  try_create_int_gauge_vec(
+      "multichain_total_disk_space_bytes",
+      "Total Disk Space in Bytes",
+      &["node_account_id"],
+  )
+  .unwrap()
+});
+
 pub(crate) static SIGNATURE_PUBLISH_RESPONSE_ERRORS: Lazy<CounterVec> = Lazy::new(|| {
     try_create_counter_vec(
         "multichain_signature_publish_response_errors",
