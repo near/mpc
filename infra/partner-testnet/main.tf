@@ -4,6 +4,11 @@ provider "google" {
 provider "google-beta" {
   project = var.project_id
 }
+
+resource "google_compute_project_metadata_item" "project_logging" {
+  key = "google-logging-enabled"
+  value = "true"
+}
 module "gce-container" {
   count   = length(var.node_configs)
   source  = "terraform-google-modules/container-vm/google"

@@ -231,6 +231,7 @@ impl MpcSignProtocol {
             tracing::trace!("trying to advance chain signatures protocol");
             // Hardware metric refresh
             if last_hardware_pull.elapsed() > Duration::from_secs(5) {
+              tracing::debug!("Update hardware metrics if statement works");
               update_system_metrics(&my_account_id);
             }
 
