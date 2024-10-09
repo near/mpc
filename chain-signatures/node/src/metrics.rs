@@ -394,7 +394,7 @@ pub(crate) static CPU_USAGE_PERCENTAGE: Lazy<IntGaugeVec> = Lazy::new(|| {
     try_create_int_gauge_vec(
         "multichain_cpu_usage_percentage",
         "CPU Usage Percentage",
-        &["node_account_id"],
+        &[ "global", "node_account_id" ],
     )
     .unwrap()
 });
@@ -404,7 +404,7 @@ pub(crate) static TOTAL_MEMORY_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
     try_create_int_gauge_vec(
         "multichain_total_memory_bytes",
         "Total Memory in Bytes",
-        &["node_account_id"],
+        &[ "total", "node_account_id" ],
     )
     .unwrap()
 });
@@ -414,7 +414,7 @@ pub(crate) static AVAILABLE_MEMORY_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
   try_create_int_gauge_vec(
       "multichain_available_memory_bytes",
       "Available Memory in Bytes",
-      &["node_account_id"],
+      &[ "available_mem", "node_account_id"],
   )
   .unwrap()
 });
@@ -424,7 +424,7 @@ pub(crate) static USED_MEMORY_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
     try_create_int_gauge_vec(
         "multichain_used_memory_bytes",
         "Used Memory in Bytes",
-        &["node_account_id"],
+        &[ "used", "node_account_id" ],
     )
     .unwrap()
 });
@@ -434,7 +434,7 @@ pub(crate) static DISK_SPACE_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
     try_create_int_gauge_vec(
         "multichain_disk_space_bytes",
         "Available Disk Space in Bytes",
-        &["node_account_id"],
+        &[ "available_disk", "node_account_id" ],
     )
     .unwrap()
 });
@@ -444,7 +444,7 @@ pub(crate) static TOTAL_DISK_SPACE_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
   try_create_int_gauge_vec(
       "multichain_total_disk_space_bytes",
       "Total Disk Space in Bytes",
-      &["node_account_id"],
+      &[ "total_disk", "node_account_id" ],
   )
   .unwrap()
 });
