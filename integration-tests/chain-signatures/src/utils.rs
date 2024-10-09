@@ -7,31 +7,39 @@ use std::fs;
 pub async fn vote_join(
     accounts: &[&Account],
     mpc_contract: &AccountId,
-    account_id: &AccountId,
+    candidate: &AccountId,
+    threshold: usize,
 ) -> anyhow::Result<()> {
     let vote_futures = accounts
         .iter()
         .map(|account| {
-            tracing::info!(
-                "{} voting for new participant: {}",
-                account.id(),
-                account_id
-            );
+            tracing::info!("{} voting for new participant: {}", account.id(), candidate);
             account
                 .call(mpc_contract, "vote_join")
                 .args_json(serde_json::json!({
-                    "candidate": account_id
+                    "candidate": candidate
                 }))
                 .transact()
         })
         .collect::<Vec<_>>();
 
-    futures::future::join_all(vote_futures)
+    let successes = futures::future::join_all(vote_futures)
         .await
         .iter()
-        .for_each(|result| {
-            assert!(result.as_ref().unwrap().failures().is_empty());
+        .fold(0, |acc, next| {
+            let outcome = next.as_ref().unwrap();
+            if outcome.is_failure() {
+                tracing::error!("voting failed: {:?}", outcome);
+            }
+
+            let val = outcome.is_success() as usize;
+            acc + val
         });
+    assert!(
+        successes >= threshold,
+        "Voting did not pass the threshold={} for new participant to join",
+        threshold
+    );
 
     Ok(())
 }

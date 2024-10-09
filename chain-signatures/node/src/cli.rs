@@ -216,6 +216,14 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
                 client_headers.insert(http::header::REFERER, referer_param.parse().unwrap());
             }
 
+            let config = Arc::new(RwLock::new(Config::new(LocalConfig {
+                over: override_config.unwrap_or_else(Default::default),
+                network: NetworkConfig {
+                    cipher_pk: hpke::PublicKey::try_from_bytes(&hex::decode(cipher_pk)?)?,
+                    sign_sk,
+                },
+            })));
+
             tracing::debug!(rpc_addr = rpc_client.rpc_addr(), "rpc client initialized");
             let signer = InMemorySigner::from_secret_key(account_id.clone(), account_sk);
             let (protocol, protocol_state) = MpcSignProtocol::init(
@@ -228,13 +236,7 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
                 sign_queue,
                 key_storage,
                 triple_storage,
-                Config::new(LocalConfig {
-                    over: override_config.unwrap_or_else(Default::default),
-                    network: NetworkConfig {
-                        cipher_pk: hpke::PublicKey::try_from_bytes(&hex::decode(cipher_pk)?)?,
-                        sign_sk,
-                    },
-                }),
+                config.clone(),
             );
 
             rt.block_on(async {
@@ -243,7 +245,7 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
                 tracing::debug!("protocol thread spawned");
                 let cipher_sk = hpke::SecretKey::try_from_bytes(&hex::decode(cipher_sk)?)?;
                 let web_handle = tokio::spawn(async move {
-                    web::run(web_port, sender, cipher_sk, protocol_state, indexer).await
+                    web::run(web_port, sender, cipher_sk, protocol_state, indexer, config).await
                 });
                 tracing::debug!("protocol http server spawned");
 

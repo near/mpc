@@ -1,8 +1,11 @@
 mod error;
 
 use self::error::Error;
+use crate::config::Config;
 use crate::indexer::Indexer;
 use crate::protocol::message::SignedMessage;
+use crate::protocol::presignature::PresignatureId;
+use crate::protocol::triple::TripleId;
 use crate::protocol::{MpcMessage, NodeState};
 use crate::web::error::Result;
 use anyhow::Context;
@@ -15,6 +18,7 @@ use mpc_keys::hpke::{self, Ciphered};
 use near_primitives::types::BlockHeight;
 use prometheus::{Encoder, TextEncoder};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{mpsc::Sender, RwLock};
 
@@ -23,6 +27,7 @@ struct AxumState {
     protocol_state: Arc<RwLock<NodeState>>,
     cipher_sk: hpke::SecretKey,
     indexer: Indexer,
+    config: Arc<RwLock<Config>>,
 }
 
 pub async fn run(
@@ -31,6 +36,7 @@ pub async fn run(
     cipher_sk: hpke::SecretKey,
     protocol_state: Arc<RwLock<NodeState>>,
     indexer: Indexer,
+    config: Arc<RwLock<Config>>,
 ) -> anyhow::Result<()> {
     tracing::debug!("running a node");
     let axum_state = AxumState {
@@ -38,6 +44,7 @@ pub async fn run(
         protocol_state,
         cipher_sk,
         indexer,
+        config,
     };
 
     let app = Router::new()
@@ -99,6 +106,14 @@ async fn msg(
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct StateParams {
+    #[serde(default)]
+    pub triple_preview: Vec<TripleId>,
+    #[serde(default)]
+    pub presignature_preview: Vec<PresignatureId>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
@@ -108,9 +123,13 @@ pub enum StateView {
         triple_count: usize,
         triple_mine_count: usize,
         triple_potential_count: usize,
+        #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+        triple_postview: HashSet<TripleId>,
         presignature_count: usize,
         presignature_mine_count: usize,
         presignature_potential_count: usize,
+        #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+        presignature_postview: HashSet<PresignatureId>,
         latest_block_height: BlockHeight,
         is_stable: bool,
     },
@@ -128,10 +147,14 @@ pub enum StateView {
 }
 
 #[tracing::instrument(level = "debug", skip_all)]
-async fn state(Extension(state): Extension<Arc<AxumState>>) -> Result<Json<StateView>> {
+async fn state(
+    Extension(state): Extension<Arc<AxumState>>,
+    params: Option<Json<StateParams>>,
+) -> Result<Json<StateView>> {
     tracing::trace!("fetching state");
     let latest_block_height = state.indexer.latest_block_height().await;
     let is_stable = state.indexer.is_on_track().await;
+    let config = state.config.read().await;
     let protocol_state = state.protocol_state.read().await;
 
     match &*protocol_state {
@@ -146,14 +169,38 @@ async fn state(Extension(state): Extension<Arc<AxumState>>) -> Result<Json<State
             let presignature_potential_count = presignature_read.potential_len();
             let participants = state.participants.keys_vec();
 
+            let (triple_postview, presignature_postview) = if let Some(params) = params {
+                let triple_preview = params
+                    .triple_preview
+                    .iter()
+                    .take(config.protocol.triple.preview_limit as usize)
+                    .cloned()
+                    .collect();
+                let triple_manager = state.triple_manager.read().await;
+                let triple_postview = triple_manager.preview(&triple_preview);
+                let presignature_preview = params
+                    .presignature_preview
+                    .iter()
+                    .take(config.protocol.presignature.preview_limit as usize)
+                    .cloned()
+                    .collect();
+                let presignature_manager = state.presignature_manager.read().await;
+                let presignature_postview = presignature_manager.preview(&presignature_preview);
+                (triple_postview, presignature_postview)
+            } else {
+                (HashSet::new(), HashSet::new())
+            };
+
             Ok(Json(StateView::Running {
                 participants,
                 triple_count,
                 triple_mine_count,
                 triple_potential_count,
+                triple_postview,
                 presignature_count,
                 presignature_mine_count,
                 presignature_potential_count,
+                presignature_postview,
                 latest_block_height,
                 is_stable,
             }))

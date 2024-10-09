@@ -50,10 +50,11 @@ struct Ctx {
     sign_queue: Arc<RwLock<SignQueue>>,
     secret_storage: SecretNodeStorageBox,
     triple_storage: LockTripleNodeStorageBox,
-    cfg: Config,
+    cfg: Arc<RwLock<Config>>,
     mesh: Mesh,
 }
 
+#[async_trait::async_trait]
 impl ConsensusCtx for &mut MpcSignProtocol {
     fn my_account_id(&self) -> &AccountId {
         &self.ctx.account_id
@@ -87,8 +88,8 @@ impl ConsensusCtx for &mut MpcSignProtocol {
         &self.ctx.secret_storage
     }
 
-    fn cfg(&self) -> &Config {
-        &self.ctx.cfg
+    async fn cfg(&self) -> Config {
+        self.ctx.cfg.read().await.clone()
     }
 
     fn triple_storage(&self) -> LockTripleNodeStorageBox {
@@ -122,8 +123,8 @@ impl CryptographicCtx for &mut MpcSignProtocol {
         &mut self.ctx.secret_storage
     }
 
-    fn cfg(&self) -> &Config {
-        &self.ctx.cfg
+    async fn cfg(&self) -> Config {
+        self.ctx.cfg.read().await.clone()
     }
 
     fn mesh(&self) -> &Mesh {
@@ -141,8 +142,8 @@ impl MessageCtx for &MpcSignProtocol {
         &self.ctx.mesh
     }
 
-    fn cfg(&self) -> &Config {
-        &self.ctx.cfg
+    async fn cfg(&self) -> Config {
+        self.ctx.cfg.read().await.clone()
     }
 }
 
@@ -164,7 +165,7 @@ impl MpcSignProtocol {
         sign_queue: Arc<RwLock<SignQueue>>,
         secret_storage: SecretNodeStorageBox,
         triple_storage: LockTripleNodeStorageBox,
-        cfg: Config,
+        cfg: Arc<RwLock<Config>>,
     ) -> (Self, Arc<RwLock<NodeState>>) {
         let my_address = my_address.into_url().unwrap();
         let rpc_url = rpc_client.rpc_addr();
@@ -213,15 +214,17 @@ impl MpcSignProtocol {
         let mut last_state_update = Instant::now();
         let mut last_config_update = Instant::now();
         let mut last_pinged = Instant::now();
+        let mut require_ping = false;
 
         // Sets the latest configurations from the contract:
-        if let Err(err) = self
-            .ctx
-            .cfg
-            .fetch_inplace(&self.ctx.rpc_client, &self.ctx.mpc_contract_id)
-            .await
         {
-            tracing::error!("could not fetch contract's config on startup: {err:?}");
+            let mut cfg = self.ctx.cfg.write().await;
+            if let Err(err) = cfg
+                .fetch_inplace(&self.ctx.rpc_client, &self.ctx.mpc_contract_id)
+                .await
+            {
+                tracing::error!("could not fetch contract's config on startup: {err:?}");
+            }
         }
 
         loop {
@@ -263,6 +266,7 @@ impl MpcSignProtocol {
                 // set which participants are currently active in the protocol and determines who will be
                 // receiving messages.
                 self.ctx.mesh.establish_participants(&contract_state).await;
+                require_ping = true;
 
                 last_state_update = Instant::now();
                 Some(contract_state)
@@ -272,9 +276,8 @@ impl MpcSignProtocol {
 
             if last_config_update.elapsed() > Duration::from_secs(5 * 60) {
                 // Sets the latest configurations from the contract:
-                if let Err(err) = self
-                    .ctx
-                    .cfg
+                let mut cfg = self.ctx.cfg.write().await;
+                if let Err(err) = cfg
                     .fetch_inplace(&self.ctx.rpc_client, &self.ctx.mpc_contract_id)
                     .await
                 {
@@ -283,15 +286,18 @@ impl MpcSignProtocol {
                 last_config_update = Instant::now();
             }
 
-            if last_pinged.elapsed() > Duration::from_millis(300) {
-                self.ctx.mesh.ping().await;
-                last_pinged = Instant::now();
-            }
-
             let state = {
                 let guard = self.state.read().await;
                 guard.clone()
             };
+
+            if require_ping || last_pinged.elapsed() > Duration::from_millis(300) {
+                let protocol_cfg = &self.ctx.cfg.read().await.protocol;
+                let planned_previews = state.plan_preview(protocol_cfg).await;
+                self.ctx.mesh.ping(planned_previews).await;
+                last_pinged = Instant::now();
+                require_ping = false;
+            }
 
             let crypto_time = Instant::now();
             let mut state = match state.progress(&mut self).await {

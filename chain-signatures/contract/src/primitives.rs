@@ -205,8 +205,8 @@ impl Candidates {
         self.candidates.insert(account_id, candidate);
     }
 
-    pub fn remove(&mut self, account_id: &AccountId) {
-        self.candidates.remove(account_id);
+    pub fn remove(&mut self, account_id: &AccountId) -> Option<CandidateInfo> {
+        self.candidates.remove(account_id)
     }
 
     pub fn get(&self, account_id: &AccountId) -> Option<&CandidateInfo> {

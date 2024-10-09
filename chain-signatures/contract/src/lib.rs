@@ -352,6 +352,7 @@ impl VersionedMpcContract {
                 join_votes,
                 ..
             }) => {
+                log!("voting for {candidate:?} in {candidates:?}");
                 let candidate_info = candidates
                     .get(&candidate)
                     .ok_or(VoteError::JoinNotCandidate)?;

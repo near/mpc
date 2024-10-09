@@ -336,9 +336,8 @@ pub fn run(
 
             let Ok(lake) = rt.block_on(async {
                 let latest = context.indexer.latest_block_height().await;
-                if i > 0 {
-                    tracing::warn!("indexer latest height {latest}, restart count={i}");
-                }
+                tracing::info!("indexer latest height {latest}");
+
                 let mut lake_builder = LakeBuilder::default()
                     .s3_bucket_name(&options.s3_bucket)
                     .s3_region_name(&options.s3_region)

@@ -1,5 +1,12 @@
+use std::collections::{HashMap, HashSet};
+
+use cait_sith::protocol::Participant;
+
 use crate::protocol::contract::primitives::Participants;
+use crate::protocol::presignature::PresignatureId;
+use crate::protocol::triple::TripleId;
 use crate::protocol::ProtocolState;
+use crate::web::StateView;
 
 pub mod connection;
 
@@ -64,7 +71,12 @@ impl Mesh {
         self.connections
             .establish_participants(contract_state)
             .await;
-        self.ping().await;
+    }
+
+    /// Ping the active participants such that we can see who is alive.
+    pub async fn ping(&mut self, previews: Option<(HashSet<TripleId>, HashSet<PresignatureId>)>) {
+        self.active_participants = self.connections.ping(previews.clone()).await;
+        self.active_potential_participants = self.connections.ping_potential(previews).await;
 
         tracing::debug!(
             active = ?self.active_participants.account_ids(),
@@ -73,9 +85,7 @@ impl Mesh {
         );
     }
 
-    /// Ping the active participants such that we can see who is alive.
-    pub async fn ping(&mut self) {
-        self.active_participants = self.connections.ping().await;
-        self.active_potential_participants = self.connections.ping_potential().await;
+    pub async fn state_views(&self) -> HashMap<Participant, StateView> {
+        self.connections.status.read().await.clone()
     }
 }

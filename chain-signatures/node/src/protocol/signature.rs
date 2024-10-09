@@ -5,7 +5,7 @@ use crate::indexer::ContractSignRequest;
 use crate::kdf::{derive_delta, into_eth_sig};
 use crate::types::SignatureProtocol;
 use crate::util::AffinePointExt;
-use near_primitives::hash::CryptoHash;
+use crate::web::StateView;
 
 use cait_sith::protocol::{Action, InitializationError, Participant, ProtocolError};
 use cait_sith::{FullSignature, PresignOutput};
@@ -105,12 +105,6 @@ impl SignQueue {
         my_account_id: &AccountId,
     ) {
         if stable.len() < threshold {
-            tracing::warn!(
-                "Require at least {} stable participants to organize, got {}: {:?}",
-                threshold,
-                stable.len(),
-                stable.keys_vec()
-            );
             return;
         }
         for request in self.unorganized_requests.drain(..) {
@@ -165,7 +159,7 @@ pub struct SignatureGenerator {
     pub presignature_id: PresignatureId,
     pub request: ContractSignRequest,
     pub epsilon: Scalar,
-    pub receipt_id: CryptoHash,
+    pub receipt_id: ReceiptId,
     pub entropy: [u8; 32],
     pub sign_request_timestamp: Instant,
     pub generator_timestamp: Instant,
@@ -182,7 +176,7 @@ impl SignatureGenerator {
         presignature_id: PresignatureId,
         request: ContractSignRequest,
         epsilon: Scalar,
-        receipt_id: CryptoHash,
+        receipt_id: ReceiptId,
         entropy: [u8; 32],
         sign_request_timestamp: Instant,
         cfg: &ProtocolConfig,
@@ -227,7 +221,7 @@ pub struct GenerationRequest {
     pub proposer: Participant,
     pub request: ContractSignRequest,
     pub epsilon: Scalar,
-    pub receipt_id: CryptoHash,
+    pub receipt_id: ReceiptId,
     pub entropy: [u8; 32],
     pub sign_request_timestamp: Instant,
 }
@@ -304,14 +298,13 @@ impl SignatureManager {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::result_large_err)]
     fn generate_internal(
-        participants: &Participants,
+        participants: &[Participant],
         me: Participant,
         public_key: PublicKey,
         presignature: Presignature,
         req: GenerationRequest,
         cfg: &ProtocolConfig,
     ) -> Result<SignatureGenerator, (Presignature, InitializationError)> {
-        let participants = participants.keys_vec();
         let GenerationRequest {
             proposer,
             request,
@@ -331,7 +324,7 @@ impl SignatureManager {
         let presignature_id = presignature.id;
         let protocol = Box::new(
             cait_sith::sign(
-                &participants,
+                participants,
                 me,
                 derive_key(public_key, epsilon),
                 output,
@@ -341,7 +334,7 @@ impl SignatureManager {
         );
         Ok(SignatureGenerator::new(
             protocol,
-            participants,
+            participants.into(),
             proposer,
             presignature_id,
             request,
@@ -359,10 +352,10 @@ impl SignatureManager {
         receipt_id: ReceiptId,
         req: GenerationRequest,
         presignature: Presignature,
-        participants: &Participants,
+        participants: &[Participant],
         cfg: &ProtocolConfig,
     ) -> Result<(), (Presignature, InitializationError)> {
-        tracing::info!(receipt_id = %receipt_id, participants = ?participants.keys_vec(), "restarting failed protocol to generate signature");
+        tracing::info!(%receipt_id, ?participants, "restarting failed protocol to generate signature");
         let generator = Self::generate_internal(
             participants,
             self.me,
@@ -383,7 +376,7 @@ impl SignatureManager {
     #[allow(clippy::result_large_err)]
     pub fn generate(
         &mut self,
-        participants: &Participants,
+        participants: &[Participant],
         receipt_id: ReceiptId,
         presignature: Presignature,
         request: ContractSignRequest,
@@ -396,7 +389,7 @@ impl SignatureManager {
             %receipt_id,
             me = ?self.me,
             presignature_id = presignature.id,
-            participants = ?participants.keys_vec(),
+            ?participants,
             "starting protocol to generate a new signature",
         );
         let generator = Self::generate_internal(
@@ -465,7 +458,7 @@ impl SignatureManager {
                 };
                 tracing::info!(me = ?self.me, presignature_id, "found presignature: ready to start signature generation");
                 let generator = match Self::generate_internal(
-                    participants,
+                    &participants.keys_vec(),
                     self.me,
                     self.public_key,
                     presignature,
@@ -608,13 +601,14 @@ impl SignatureManager {
         &mut self,
         threshold: usize,
         stable: &Participants,
+        state_views: &HashMap<Participant, StateView>,
         my_requests: &mut ParticipantRequests,
         presignature_manager: &mut PresignatureManager,
         cfg: &ProtocolConfig,
     ) {
         if stable.len() < threshold {
             tracing::warn!(
-                "Require at least {} stable participants to handle_requests, got {}: {:?}",
+                "require at least {} stable participants to handle_requests, got {}: {:?}",
                 threshold,
                 stable.len(),
                 stable.keys_vec()
@@ -622,67 +616,113 @@ impl SignatureManager {
             return;
         }
         let mut failed_presigs = Vec::new();
-        while let Some(mut presignature) = {
+        let mut alternate = false;
+        while let Some(presignature) = {
             if self.failed.is_empty() && my_requests.is_empty() {
                 None
             } else {
                 presignature_manager.take_mine()
             }
         } {
+            let id = presignature.id;
             let sig_participants = stable.intersection(&[&presignature.participants]);
             if sig_participants.len() < threshold {
                 tracing::warn!(
+                    id,
+                    threshold,
+                    stable = ?stable.keys_vec(),
                     participants = ?sig_participants.keys_vec(),
-                    "intersection of stable participants and presignature participants is less than threshold"
+                    "intersection of stable and presignature participants is less than threshold"
                 );
                 failed_presigs.push(presignature);
                 continue;
             }
-            let presig_id = presignature.id;
+
+            // Filter out the active participants with the state views that have the triples we want to use.
+            let stable_filtered = sig_participants
+                .iter()
+                .filter_map(|(p, _)| Some((*p, state_views.get(p)?)))
+                .filter(|(_, state_view)| {
+                    if let StateView::Running {
+                        presignature_postview,
+                        ..
+                    } = state_view
+                    {
+                        presignature_postview.contains(&presignature.id)
+                    } else {
+                        false
+                    }
+                })
+                .map(|(p, _)| p)
+                .collect::<Vec<_>>();
+
+            if stable_filtered.len() < threshold {
+                tracing::warn!(
+                    id,
+                    threshold,
+                    stable = ?stable.keys_vec(),
+                    participants = ?presignature.participants,
+                    ?state_views,
+                    "unable to use presignature for signature generation",
+                );
+                failed_presigs.push(presignature);
+                continue;
+            }
 
             // NOTE: this prioritizes old requests first then tries to do new ones if there's enough presignatures.
             // TODO: we need to decide how to prioritize certain requests over others such as with gas or time of
             // when the request made it into the NEAR network.
             // issue: https://github.com/near/mpc-recovery/issues/596
-            if let Some((receipt_id, failed_req)) = self.failed.pop_front() {
+
+            alternate = !alternate;
+            if alternate && !self.failed.is_empty() {
+                let Some((receipt_id, failed_req)) = self.failed.pop_front() else {
+                    failed_presigs.push(presignature);
+                    continue;
+                };
+
                 if let Err((presignature, InitializationError::BadParameters(err))) = self
                     .retry_failed_generation(
                         receipt_id,
                         failed_req,
                         presignature,
-                        &sig_participants,
+                        &stable_filtered,
                         cfg,
                     )
                 {
-                    tracing::warn!(%receipt_id, presig_id, ?err, "failed to retry signature generation: trashing presignature");
+                    failed_presigs.push(presignature);
+                    tracing::warn!(
+                        %receipt_id,
+                        id,
+                        ?stable_filtered,
+                        ?err,
+                        "failed to retry signature generation: trashing presignature",
+                    );
+                }
+            } else {
+                let Some((receipt_id, my_request)) = my_requests.pop_front() else {
                     failed_presigs.push(presignature);
                     continue;
+                };
+                if let Err((presignature, InitializationError::BadParameters(err))) = self.generate(
+                    &stable_filtered,
+                    receipt_id,
+                    presignature,
+                    my_request.request,
+                    my_request.epsilon,
+                    my_request.entropy,
+                    my_request.time_added,
+                    cfg,
+                ) {
+                    failed_presigs.push(presignature);
+                    tracing::warn!(
+                        %receipt_id,
+                        id,
+                        ?stable_filtered,
+                        ?err,
+                        "failed to start signature generation: trashing presignature",
+                    );
                 }
-
-                if let Some(another_presignature) = presignature_manager.take_mine() {
-                    presignature = another_presignature;
-                } else {
-                    break;
-                }
-            }
-
-            let Some((receipt_id, my_request)) = my_requests.pop_front() else {
-                failed_presigs.push(presignature);
-                continue;
-            };
-            if let Err((presignature, InitializationError::BadParameters(err))) = self.generate(
-                &sig_participants,
-                receipt_id,
-                presignature,
-                my_request.request,
-                my_request.epsilon,
-                my_request.entropy,
-                my_request.time_added,
-                cfg,
-            ) {
-                failed_presigs.push(presignature);
-                tracing::warn!(%receipt_id, presig_id, ?err, "failed to start signature generation: trashing presignature");
-                continue;
             }
         }
 

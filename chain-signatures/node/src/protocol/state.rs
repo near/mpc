@@ -1,9 +1,9 @@
 use super::contract::primitives::{ParticipantInfo, Participants};
 use super::cryptography::CryptographicError;
 use super::monitor::StuckMonitor;
-use super::presignature::PresignatureManager;
+use super::presignature::{PresignatureId, PresignatureManager};
 use super::signature::SignatureManager;
-use super::triple::TripleManager;
+use super::triple::{TripleId, TripleManager};
 use super::SignQueue;
 use crate::http_client::MessageQueue;
 use crate::storage::triple_storage::TripleData;
@@ -11,8 +11,10 @@ use crate::types::{KeygenProtocol, ReshareProtocol, SecretKeyShare};
 
 use cait_sith::protocol::Participant;
 use crypto_shared::PublicKey;
+use mpc_contract::config::ProtocolConfig;
 use near_account_id::AccountId;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
@@ -203,6 +205,34 @@ impl NodeState {
                 .find_participant_info(account_id)
                 .or_else(|| state.old_participants.find_participant_info(account_id)),
             NodeState::Joining(state) => state.participants.find_participant_info(account_id),
+        }
+    }
+
+    pub async fn plan_preview(
+        &self,
+        cfg: &ProtocolConfig,
+    ) -> Option<(HashSet<TripleId>, HashSet<PresignatureId>)> {
+        match self {
+            NodeState::Running(state) => {
+                let triple_manager = state.triple_manager.read().await;
+                let triple_preview = triple_manager
+                    .mine
+                    .iter()
+                    .take(cfg.triple.preview_limit as usize)
+                    .cloned()
+                    .collect();
+
+                let presignature_manager = state.presignature_manager.read().await;
+                let presignature_preview = presignature_manager
+                    .mine
+                    .iter()
+                    .take(cfg.presignature.preview_limit as usize)
+                    .cloned()
+                    .collect();
+
+                Some((triple_preview, presignature_preview))
+            }
+            _ => None,
         }
     }
 }
