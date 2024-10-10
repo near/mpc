@@ -413,12 +413,6 @@ fn update_system_metrics(node_account_id: &str) {
           .with_label_values(&["global", node_account_id])
           .set(cpu_usage);
 
-      // Update total memory metric
-      let total_memory = system.total_memory() as i64;
-      crate::metrics::TOTAL_MEMORY_BYTES
-          .with_label_values(&["total", node_account_id])
-          .set(total_memory);
-
       // Update available memory metric
       let available_memory = system.available_memory() as i64;
       crate::metrics::AVAILABLE_MEMORY_BYTES

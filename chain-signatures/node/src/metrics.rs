@@ -399,16 +399,6 @@ pub(crate) static CPU_USAGE_PERCENTAGE: Lazy<IntGaugeVec> = Lazy::new(|| {
     .unwrap()
 });
 
-// Total Memory Metric
-pub(crate) static TOTAL_MEMORY_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
-    try_create_int_gauge_vec(
-        "multichain_total_memory_bytes",
-        "Total Memory in Bytes",
-        &[ "total", "node_account_id" ],
-    )
-    .unwrap()
-});
-
 // Available Memory Metric
 pub(crate) static AVAILABLE_MEMORY_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
   try_create_int_gauge_vec(
