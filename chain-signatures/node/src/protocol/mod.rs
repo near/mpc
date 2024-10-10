@@ -235,7 +235,6 @@ impl MpcSignProtocol {
                 update_system_metrics(&my_account_id);
             }
 
-            tracing::debug!("trying to advance chain signatures protocol");
             crate::metrics::PROTOCOL_ITER_CNT
                 .with_label_values(&[my_account_id.as_str()])
                 .inc();
