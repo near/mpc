@@ -420,9 +420,9 @@ pub(crate) static USED_MEMORY_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
 });
 
 // Disk Space Metric
-pub(crate) static DISK_SPACE_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
+pub(crate) static AVAILABLE_DISK_SPACE_BYTES: Lazy<IntGaugeVec> = Lazy::new(|| {
     try_create_int_gauge_vec(
-        "multichain_disk_space_bytes",
+        "multichain_available_disk_space_bytes",
         "Available Disk Space in Bytes",
         &[ "available_disk", "node_account_id" ],
     )

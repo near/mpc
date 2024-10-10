@@ -432,7 +432,7 @@ fn update_system_metrics(node_account_id: &str) {
           .find(|d| d.mount_point() == root_mount_point)
           .expect("No disk found mounted at '/'")
           .available_space() as i64;
-      crate::metrics::DISK_SPACE_BYTES
+      crate::metrics::AVAILABLE_DISK_SPACE_BYTES
           .with_label_values(&["available_disk", node_account_id])
           .set(available_disk_space);
 
