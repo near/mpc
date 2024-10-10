@@ -214,7 +214,7 @@ impl MpcSignProtocol {
         let mut queue = MpcMessageQueue::default();
         let mut last_state_update = Instant::now();
         let mut last_config_update = Instant::now();
-        let mut last_hardware_pull = Instant::now();
+        let last_hardware_pull = Instant::now();
         let mut last_pinged = Instant::now();
 
         // Sets the latest configurations from the contract:
