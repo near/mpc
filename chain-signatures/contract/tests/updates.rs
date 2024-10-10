@@ -1,12 +1,13 @@
 pub mod common;
 use common::{init_env, vote_update_till_completion, CONTRACT_FILE_PATH, INVALID_CONTRACT};
-use mpc_contract::errors;
 
 use std::collections::HashMap;
 
 use mpc_contract::config::{Config, ProtocolConfig};
+use mpc_contract::errors;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
-use near_sdk::NearToken;
+
+use near_workspaces::types::NearToken;
 
 pub fn dummy_contract() -> ProposeUpdateArgs {
     ProposeUpdateArgs {

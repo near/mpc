@@ -489,7 +489,7 @@ impl TripleManager {
 
                 match action {
                     Action::Wait => {
-                        tracing::debug!("waiting");
+                        tracing::debug!("triple: waiting");
                         // Retain protocol until we are finished
                         break true;
                     }

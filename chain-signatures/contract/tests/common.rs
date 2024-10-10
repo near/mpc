@@ -16,9 +16,8 @@ use mpc_contract::primitives::{
     CandidateInfo, ParticipantInfo, Participants, SignRequest, SignatureRequest,
 };
 use mpc_contract::update::UpdateId;
-use near_sdk::NearToken;
 use near_workspaces::network::Sandbox;
-use near_workspaces::types::AccountId;
+use near_workspaces::types::{AccountId, NearToken};
 use near_workspaces::{Account, Contract, Worker};
 use signature::DigestSigner;
 
