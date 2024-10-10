@@ -461,7 +461,7 @@ impl PresignatureManager {
                 };
                 match action {
                     Action::Wait => {
-                        tracing::debug!("waiting");
+                        tracing::debug!("presignature: waiting");
                         // Retain protocol until we are finished
                         return true;
                     }

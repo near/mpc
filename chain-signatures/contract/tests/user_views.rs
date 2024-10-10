@@ -3,7 +3,8 @@ use common::{create_response, init_env};
 
 use mpc_contract::primitives::SignRequest;
 
-use near_sdk::{CurveType, NearToken, PublicKey};
+use near_sdk::{CurveType, PublicKey};
+use near_workspaces::types::NearToken;
 use serde_json::json;
 use std::str::FromStr;
 #[tokio::test]
