@@ -8,6 +8,7 @@ use local_ip_address::local_ip;
 use near_account_id::AccountId;
 use near_crypto::{InMemorySigner, SecretKey};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use tracing_stackdriver::layer as stackdriver_layer;
 use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
@@ -135,6 +136,7 @@ fn is_running_on_gcp() -> bool {
     let resp = reqwest::blocking::Client::new()
         .get("http://metadata.google.internal/computeMetadata/v1/instance/id")
         .header("Metadata-Flavor", "Google")
+        .timeout(Duration::from_secs(1))
         .send();
 
     match resp {

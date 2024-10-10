@@ -54,9 +54,5 @@ pub fn experimantal_signature_deposit(&self) -> u128
 For more details check `User contract API` impl block in the [chain-signatures/contracts/src/lib.rs](./chain-signatures/contracts/src/lib.rs) file.
 
 # Environments
-Currently, we have 3 environments:
 1. Mainnet: `v1.signer`
 2. Testnet: `v1.sigenr-prod.testnet`
-3. Dev (unstable): `v1.signer-dev.testnet`
-
-Contracts can be changed from v1 to v2, etc. Older contracts should continue functioning.

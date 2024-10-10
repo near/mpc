@@ -448,6 +448,15 @@ pub(crate) static SIGNATURE_PUBLISH_RESPONSE_ERRORS: Lazy<CounterVec> = Lazy::ne
     .unwrap()
 });
 
+pub(crate) static PROTOCOL_ITER_CNT: Lazy<CounterVec> = Lazy::new(|| {
+    try_create_counter_vec(
+        "multichain_protocol_iter_count",
+        "Count of multichain protocol iter",
+        &["node_account_id"],
+    )
+    .unwrap()
+});
+
 pub fn try_create_int_gauge_vec(name: &str, help: &str, labels: &[&str]) -> Result<IntGaugeVec> {
     check_metric_multichain_prefix(name)?;
     let opts = Opts::new(name, help);
