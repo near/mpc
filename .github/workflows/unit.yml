@@ -8,7 +8,9 @@ on:
     paths:
       - ".github/workflows/unit.yml"
       - "chain-signatures/**/*.rs"
+      - "chain-signatures/Cargo.*"
       - "mpc-recovery/**/*.rs"
+      - "mpc-recovery/Cargo.*"
       - "load-tests/**/*.rs"
       - "test-oidc-provider/**/*.rs"
       - "integration-tests/**/*.rs"
