@@ -70,7 +70,6 @@ impl Pool {
         let mut status = self.status.write().await;
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
-<<<<<<< HEAD
             match self.fetch_participant_state(info).await {
                 Ok(state) => {
                     status.insert(*participant, state);
@@ -80,43 +79,6 @@ impl Pool {
                     tracing::warn!("Fetch state for participant {participant:?} with url {} has failed with error {e}.", info.url);
                 }
             }
-=======
-            let Ok(Ok(url)) = Url::parse(&info.url).map(|url| url.join("/state")) else {
-                tracing::error!(
-                    "Pool.ping url is invalid participant {:?} url {} /state",
-                    participant,
-                    info.url
-                );
-                continue;
-            };
-
-            let Ok(resp) = self
-                .http
-                .get(url.clone())
-                .timeout(Duration::from_millis(400))
-                .send()
-                .await
-            else {
-                tracing::warn!(
-                    "Pool.ping resp err participant {:?} url {}",
-                    participant,
-                    url
-                );
-                continue;
-            };
-
-            let Ok(state): Result<StateView, _> = resp.json().await else {
-                tracing::warn!(
-                    "Pool.ping state view err participant {:?} url {}",
-                    participant,
-                    url
-                );
-                continue;
-            };
-
-            status.insert(*participant, state);
-            participants.insert(participant, info.clone());
->>>>>>> b340f1a0 (increase timeout)
         }
         drop(status);
 

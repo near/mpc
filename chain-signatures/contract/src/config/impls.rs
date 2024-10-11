@@ -57,7 +57,7 @@ impl Default for PresignatureConfig {
         Self {
             min_presignatures: 512,
             max_presignatures: 512 * MAX_EXPECTED_PARTICIPANTS * NETWORK_MULTIPLIER,
-            generation_timeout: secs_to_ms(45),
+            generation_timeout: secs_to_ms(90),
 
             other: Default::default(),
         }
