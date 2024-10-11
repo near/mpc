@@ -31,7 +31,7 @@ jobs:
         with:
           push: true
           file: ./Dockerfile.multichain
-          tags: "${{ env.IMAGE }}:${{ env.TAG }}"
+          tags: "${{ env.IMAGE }}:${{ env.TAG }},${{ env.IMAGE }}:latest"
 
   deploy:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'

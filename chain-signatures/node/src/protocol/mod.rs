@@ -214,7 +214,7 @@ impl MpcSignProtocol {
         let mut queue = MpcMessageQueue::default();
         let mut last_state_update = Instant::now();
         let mut last_config_update = Instant::now();
-        let last_hardware_pull = Instant::now();
+        let mut last_hardware_pull = Instant::now();
         let mut last_pinged = Instant::now();
 
         // Sets the latest configurations from the contract:
@@ -233,6 +233,7 @@ impl MpcSignProtocol {
             // Hardware metric refresh
             if last_hardware_pull.elapsed() > Duration::from_secs(5) {
                 update_system_metrics(&my_account_id);
+                last_hardware_pull = Instant::now();
             }
 
             crate::metrics::PROTOCOL_ITER_CNT
