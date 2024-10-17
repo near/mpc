@@ -19,9 +19,22 @@ RUN sed -i 's#target-dir = "../target"#target-dir = "target"#' .cargo/config.tom
 RUN cargo build --release --package mpc-node
 
 FROM debian:stable-slim as runtime
-RUN apt-get update && apt-get install --assume-yes libssl-dev ca-certificates curl
-RUN update-ca-certificates
+RUN apt-get update && apt-get install --assume-yes libssl-dev ca-certificates curl redis-server
+
+RUN update-ca-certificates \
+    chown redis:redis /data
+
 COPY --from=builder /usr/src/app/target/release/mpc-node /usr/local/bin/mpc-node
+COPY chain-signatures/node/redis.conf /etc/redis/redis.conf
+
+# Create a script to start both Redis and the Rust app
+RUN echo "#!/bin/bash\nservice redis-server start &\nexec mpc-node start" > /start.sh \
+    && chmod +x /start.sh
+
 WORKDIR /usr/local/bin
 
-ENTRYPOINT [ "mpc-node" ]
+# Expose Redis port (6379) and mpc node's port
+EXPOSE 6379 8080
+
+# Start Redis and the Rust application
+ENTRYPOINT [ "/start.sh" ]
