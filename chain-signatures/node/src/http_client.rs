@@ -44,7 +44,7 @@ pub enum SendError {
     ParticipantNotAlive(String),
 }
 
-async fn send_encrypted<U: IntoUrl>(
+pub async fn send_encrypted<U: IntoUrl>(
     from: Participant,
     client: &Client,
     url: U,
