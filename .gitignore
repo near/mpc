@@ -10,3 +10,5 @@ tmp
 # Artifacts that may be left over
 **/*-secret-manager-*
 integration-tests/chain-signatures/.project
+
+node_modules/
