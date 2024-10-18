@@ -173,6 +173,7 @@ impl ConsensusProtocol for StartedState {
                                             ),
                                         )),
                                         messages: Arc::new(RwLock::new(MessageQueue::new(
+                                            ctx.my_account_id(),
                                             ctx.message_options().clone(),
                                         ))),
                                     }))
@@ -229,6 +230,7 @@ impl ConsensusProtocol for StartedState {
                                 threshold: contract_state.threshold,
                                 protocol,
                                 messages: Arc::new(RwLock::new(MessageQueue::new(
+                                    ctx.my_account_id(),
                                     ctx.message_options().clone(),
                                 ))),
                             }))
@@ -767,6 +769,7 @@ async fn start_resharing<C: ConsensusCtx>(
         public_key: contract_state.public_key,
         protocol,
         messages: Arc::new(RwLock::new(MessageQueue::new(
+            ctx.my_account_id(),
             ctx.message_options().clone(),
         ))),
     }))
