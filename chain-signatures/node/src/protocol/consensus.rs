@@ -13,6 +13,7 @@ use crate::protocol::presignature::PresignatureManager;
 use crate::protocol::signature::SignatureManager;
 use crate::protocol::state::{GeneratingState, ResharingState};
 use crate::protocol::triple::TripleManager;
+use crate::storage::presignature_storage::LockRedisPresignatureStorage;
 use crate::storage::secret_storage::SecretNodeStorageBox;
 use crate::storage::triple_storage::LockTripleNodeStorageBox;
 use crate::storage::triple_storage::TripleData;
@@ -42,6 +43,7 @@ pub trait ConsensusCtx {
     fn sign_queue(&self) -> Arc<RwLock<SignQueue>>;
     fn secret_storage(&self) -> &SecretNodeStorageBox;
     fn triple_storage(&self) -> LockTripleNodeStorageBox;
+    fn presignature_storage(&self) -> LockRedisPresignatureStorage;
     fn cfg(&self) -> &Config;
     fn message_options(&self) -> http_client::Options;
 }
@@ -134,12 +136,6 @@ impl ConsensusProtocol for StartedState {
                                     tracing::info!(
                                         "started: contract state is running and we are already a participant"
                                     );
-                                    let presignature_manager = PresignatureManager::new(
-                                        me,
-                                        contract_state.threshold,
-                                        epoch,
-                                        ctx.my_account_id(),
-                                    );
                                     let triple_manager = Arc::new(RwLock::new(TripleManager::new(
                                         me,
                                         contract_state.threshold,
@@ -148,6 +144,24 @@ impl ConsensusProtocol for StartedState {
                                         ctx.triple_storage(),
                                         ctx.my_account_id(),
                                     )));
+
+                                    let presignature_manager =
+                                        Arc::new(RwLock::new(PresignatureManager::new(
+                                            me,
+                                            contract_state.threshold,
+                                            epoch,
+                                            ctx.my_account_id(),
+                                            ctx.presignature_storage(),
+                                        )));
+
+                                    let signature_manager =
+                                        Arc::new(RwLock::new(SignatureManager::new(
+                                            me,
+                                            public_key,
+                                            epoch,
+                                            ctx.my_account_id(),
+                                        )));
+
                                     let stuck_monitor = Arc::new(RwLock::new(
                                         StuckMonitor::new(&triple_manager).await,
                                     ));
@@ -161,17 +175,8 @@ impl ConsensusProtocol for StartedState {
                                         sign_queue,
                                         stuck_monitor,
                                         triple_manager,
-                                        presignature_manager: Arc::new(RwLock::new(
-                                            presignature_manager,
-                                        )),
-                                        signature_manager: Arc::new(RwLock::new(
-                                            SignatureManager::new(
-                                                me,
-                                                contract_state.public_key,
-                                                epoch,
-                                                ctx.my_account_id(),
-                                            ),
-                                        )),
+                                        presignature_manager,
+                                        signature_manager,
                                         messages: Arc::new(RwLock::new(MessageQueue::new(
                                             ctx.message_options().clone(),
                                         ))),
@@ -376,6 +381,22 @@ impl ConsensusProtocol for WaitingForConsensusState {
                         ctx.triple_storage(),
                         ctx.my_account_id(),
                     )));
+
+                    let presignature_manager = Arc::new(RwLock::new(PresignatureManager::new(
+                        me,
+                        self.threshold,
+                        self.epoch,
+                        ctx.my_account_id(),
+                        ctx.presignature_storage(),
+                    )));
+
+                    let signature_manager = Arc::new(RwLock::new(SignatureManager::new(
+                        me,
+                        self.public_key,
+                        self.epoch,
+                        ctx.my_account_id(),
+                    )));
+
                     let stuck_monitor =
                         Arc::new(RwLock::new(StuckMonitor::new(&triple_manager).await));
 
@@ -388,18 +409,8 @@ impl ConsensusProtocol for WaitingForConsensusState {
                         sign_queue: ctx.sign_queue(),
                         stuck_monitor,
                         triple_manager,
-                        presignature_manager: Arc::new(RwLock::new(PresignatureManager::new(
-                            me,
-                            self.threshold,
-                            self.epoch,
-                            ctx.my_account_id(),
-                        ))),
-                        signature_manager: Arc::new(RwLock::new(SignatureManager::new(
-                            me,
-                            self.public_key,
-                            self.epoch,
-                            ctx.my_account_id(),
-                        ))),
+                        presignature_manager,
+                        signature_manager,
                         messages: self.messages,
                     }))
                 }

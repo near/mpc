@@ -7,6 +7,7 @@ Running integration tests requires you to have relayer and sandbox docker images
 ```BASH
 docker pull ghcr.io/near/os-relayer
 docker pull ghcr.io/near/sandbox
+docker pull redis:7.0.15
 ```
 
 For M1 you may want to pull the following image instead:

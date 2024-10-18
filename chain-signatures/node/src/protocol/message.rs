@@ -309,7 +309,7 @@ impl MessageHandler for RunningState {
             }
 
             let protocol = match presignature_manager
-                .get_or_generate(
+                .get_or_start_generation(
                     participants,
                     *id,
                     *triple0,
@@ -412,17 +412,20 @@ impl MessageHandler for RunningState {
             //     continue;
             // };
             // TODO: Validate that the message matches our sign_queue
-            let protocol = match signature_manager.get_or_generate(
-                participants,
-                *receipt_id,
-                *proposer,
-                *presignature_id,
-                request,
-                *epsilon,
-                *entropy,
-                &mut presignature_manager,
-                protocol_cfg,
-            ) {
+            let protocol = match signature_manager
+                .get_or_start_protocol(
+                    participants,
+                    *receipt_id,
+                    *proposer,
+                    *presignature_id,
+                    request,
+                    *epsilon,
+                    *entropy,
+                    &mut presignature_manager,
+                    protocol_cfg,
+                )
+                .await
+            {
                 Ok(protocol) => protocol,
                 Err(GenerationError::PresignatureIsGenerating(_)) => {
                     // We will revisit this this signature request later when the presignature has been generated.

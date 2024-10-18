@@ -428,7 +428,7 @@ impl SignatureManager {
     /// 4) Depends on triples (`triple0`/`triple1`) that are unknown to the node
     // TODO: What if the presignature completed generation and is already spent?
     #[allow(clippy::too_many_arguments)]
-    pub fn get_or_generate(
+    pub async fn get_or_start_protocol(
         &mut self,
         participants: &Participants,
         receipt_id: ReceiptId,
@@ -447,7 +447,7 @@ impl SignatureManager {
         match self.generators.entry(receipt_id) {
             Entry::Vacant(entry) => {
                 tracing::info!(%receipt_id, me = ?self.me, presignature_id, "joining protocol to generate a new signature");
-                let presignature = match presignature_manager.take(presignature_id) {
+                let presignature = match presignature_manager.take(presignature_id).await {
                     Ok(presignature) => presignature,
                     Err(err @ GenerationError::PresignatureIsGenerating(_)) => {
                         tracing::warn!(me = ?self.me, presignature_id, "presignature is generating, can't join signature generation protocol");
@@ -481,7 +481,7 @@ impl SignatureManager {
                 ) {
                     Ok(generator) => generator,
                     Err((presignature, err @ InitializationError::BadParameters(_))) => {
-                        presignature_manager.insert_mine(presignature);
+                        presignature_manager.insert_mine(presignature).await;
                         tracing::warn!(%receipt_id, presignature_id, ?err, "failed to start signature generation");
                         return Err(GenerationError::CaitSithInitializationError(err));
                     }
@@ -604,7 +604,7 @@ impl SignatureManager {
         messages
     }
 
-    pub fn handle_requests(
+    pub async fn handle_requests(
         &mut self,
         threshold: usize,
         stable: &Participants,
@@ -626,7 +626,7 @@ impl SignatureManager {
             if self.failed.is_empty() && my_requests.is_empty() {
                 None
             } else {
-                presignature_manager.take_mine()
+                presignature_manager.take_mine().await
             }
         } {
             let sig_participants = stable.intersection(&[&presignature.participants]);
@@ -659,7 +659,7 @@ impl SignatureManager {
                     continue;
                 }
 
-                if let Some(another_presignature) = presignature_manager.take_mine() {
+                if let Some(another_presignature) = presignature_manager.take_mine().await {
                     presignature = another_presignature;
                 } else {
                     break;
@@ -689,7 +689,7 @@ impl SignatureManager {
         // add back the failed presignatures that were incompatible to be made into
         // signatures due to failures or lack of participants.
         for presignature in failed_presigs {
-            presignature_manager.insert_mine(presignature);
+            presignature_manager.insert_mine(presignature).await;
         }
     }
 

@@ -164,28 +164,28 @@ impl TripleManager {
     }
 
     /// Returns the number of unspent triples available in the manager.
-    pub fn len(&self) -> usize {
+    pub fn count(&self) -> usize {
         self.triples.len()
     }
 
     /// Returns if there's any unspent triple in the manager.
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.count() == 0
     }
 
     /// Returns the number of unspent triples assigned to this node.
-    pub fn my_len(&self) -> usize {
+    pub fn count_mine(&self) -> usize {
         self.mine.len()
     }
 
     /// Returns the number of unspent triples we will have in the manager once
     /// all ongoing generation protocols complete.
-    pub fn potential_len(&self) -> usize {
-        self.len() + self.generators.len()
+    pub fn count_potential(&self) -> usize {
+        self.count() + self.generators.len()
     }
 
     pub fn has_min_triples(&self, cfg: &ProtocolConfig) -> bool {
-        self.my_len() >= cfg.triple.min_triples as usize
+        self.count_mine() >= cfg.triple.min_triples as usize
     }
 
     /// Clears an entry from failed triples if that triple protocol was created more than 2 hrs ago
@@ -256,11 +256,11 @@ impl TripleManager {
             // Stopgap to prevent too many triples in the system. This should be around min_triple*nodes*2
             // for good measure so that we have enough triples to do presig generation while also maintain
             // the minimum number of triples where a single node can't flood the system.
-            if self.potential_len() >= cfg.triple.max_triples as usize {
+            if self.count_potential() >= cfg.triple.max_triples as usize {
                 false
             } else {
                 // We will always try to generate a new triple if we have less than the minimum
-                self.my_len() < cfg.triple.min_triples as usize
+                self.count_mine() < cfg.triple.min_triples as usize
                     && self.introduced.len() < cfg.max_concurrent_introduction as usize
                     && self.generators.len() < cfg.max_concurrent_generation as usize
             }
@@ -412,7 +412,7 @@ impl TripleManager {
         if self.triples.contains_key(&id) || self.gc.contains_key(&id) {
             Ok(None)
         } else {
-            let potential_len = self.potential_len();
+            let potential_len = self.count_potential();
             match self.generators.entry(id) {
                 Entry::Vacant(e) => {
                     if potential_len >= cfg.triple.max_triples as usize {

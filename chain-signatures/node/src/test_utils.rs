@@ -41,6 +41,7 @@ impl TestTripleManagers {
                     gcp_datastore_url: Some(url.clone()),
                     env: "triple-test".to_string(),
                     sk_share_local_path: None,
+                    redis_url: "redis://localhost".to_string(), // not used
                 };
                 Some(
                     GcpService::init(&account_id, &storage_options)
@@ -186,8 +187,8 @@ pub async fn test_triple_generation(datastore_url: Option<String>) {
 
     let inputs = tm.managers.into_iter().map(|m| {
         (
-            m.my_len(),
-            m.len(),
+            m.count_mine(),
+            m.count(),
             m.generators,
             m.triples,
             m.triple_storage,

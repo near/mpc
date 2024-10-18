@@ -236,6 +236,9 @@ pub async fn setup(docker_client: &DockerClient) -> anyhow::Result<Context<'_>> 
     let datastore =
         crate::containers::Datastore::run(docker_client, docker_network, gcp_project_id).await?;
 
+    let redis_container = crate::containers::Redis::run(docker_client, docker_network).await?;
+    let redis_url = redis_container.full_address.clone();
+
     let sk_share_local_path = "multichain-integration-secret-manager".to_string();
     let storage_options = mpc_node::storage::Options {
         env: "local-test".to_string(),
@@ -243,6 +246,7 @@ pub async fn setup(docker_client: &DockerClient) -> anyhow::Result<Context<'_>> 
         sk_share_secret_id: None,
         gcp_datastore_url: Some(datastore.local_address.clone()),
         sk_share_local_path: Some(sk_share_local_path),
+        redis_url,
     };
 
     let mesh_options = mpc_node::mesh::Options {

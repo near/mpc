@@ -39,11 +39,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull Relayer & Sandbox Docker Images
+      - name: Pull Relayer, Sandbox, Redis Docker Images
         run: |
-          docker pull ghcr.io/near/os-relayer:12ba6e35690df3979fce0b36a41d0ca0db9c0ab4
           docker pull ghcr.io/near/near-lake-indexer:node-2.3.0
           docker pull localstack/localstack:3.5.0
+          docker pull redis:7.0.15
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1

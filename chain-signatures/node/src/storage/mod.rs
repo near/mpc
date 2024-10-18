@@ -1,3 +1,4 @@
+pub mod presignature_storage;
 pub mod secret_storage;
 pub mod triple_storage;
 
@@ -20,6 +21,8 @@ pub struct Options {
     pub gcp_datastore_url: Option<String>,
     #[arg(long, env("MPC_SK_SHARE_LOCAL_PATH"))]
     pub sk_share_local_path: Option<String>,
+    #[arg(long, env("MPC_REDIS_URL"))]
+    pub redis_url: String,
 }
 
 impl Options {

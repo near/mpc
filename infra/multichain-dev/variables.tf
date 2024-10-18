@@ -79,6 +79,11 @@ variable "env" {
   default = "dev"
 }
 
+variable "redis_url" {
+  type = string
+  default = "redis://127.0.0.1:6379"
+}
+
 variable "static_env" {
   type = list(object({
     name  = string
@@ -99,7 +104,7 @@ variable "static_env" {
     },
     {
       name  = "MPC_INDEXER_START_BLOCK_HEIGHT"
-      value = 175970237
+      value = 177069137
     },
     {
       name  = "AWS_DEFAULT_REGION"

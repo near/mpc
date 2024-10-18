@@ -407,20 +407,23 @@ impl CryptographicProtocol for RunningState {
             tracing::warn!(?err, "running: failed to stockpile presignatures");
         }
         drop(triple_manager);
-        for (p, msg) in presignature_manager.poke() {
+        for (p, msg) in presignature_manager.poke().await {
             let info = self.fetch_participant(&p)?;
             messages.push(info.clone(), MpcMessage::Presignature(msg));
         }
 
         crate::metrics::NUM_PRESIGNATURES_MINE
             .with_label_values(&[my_account_id.as_str()])
-            .set(presignature_manager.my_len() as i64);
+            .set(presignature_manager.count_mine().await as i64);
         crate::metrics::NUM_PRESIGNATURES_TOTAL
             .with_label_values(&[my_account_id.as_str()])
-            .set(presignature_manager.len() as i64);
+            .set(presignature_manager.count_all().await as i64);
         crate::metrics::NUM_PRESIGNATURE_GENERATORS_TOTAL
             .with_label_values(&[my_account_id.as_str()])
-            .set(presignature_manager.potential_len() as i64 - presignature_manager.len() as i64);
+            .set(
+                presignature_manager.count_potential().await as i64
+                    - presignature_manager.count_all().await as i64,
+            );
 
         // NOTE: signatures should only use stable and not active participants. The difference here is that
         // stable participants utilizes more than the online status of a node, such as whether or not their
@@ -442,13 +445,15 @@ impl CryptographicProtocol for RunningState {
             .set(my_requests.len() as i64);
 
         let mut signature_manager = self.signature_manager.write().await;
-        signature_manager.handle_requests(
-            self.threshold,
-            &stable,
-            my_requests,
-            &mut presignature_manager,
-            protocol_cfg,
-        );
+        signature_manager
+            .handle_requests(
+                self.threshold,
+                &stable,
+                my_requests,
+                &mut presignature_manager,
+                protocol_cfg,
+            )
+            .await;
         drop(sign_queue);
         drop(presignature_manager);
 
