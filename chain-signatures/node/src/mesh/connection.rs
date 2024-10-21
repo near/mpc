@@ -72,7 +72,7 @@ impl Pool {
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
             match self.fetch_participant_state(info).await {
-                Ok(state) => match self.test_empty_msg(participant, info).await {
+                Ok(state) => match self.send_empty_msg(participant, info).await {
                     Ok(()) => {
                         status.insert(*participant, state);
                         participants.insert(participant, info.clone());
@@ -106,7 +106,7 @@ impl Pool {
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
             match self.fetch_participant_state(info).await {
-                Ok(state) => match self.test_empty_msg(participant, info).await {
+                Ok(state) => match self.send_empty_msg(participant, info).await {
                     Ok(()) => {
                         status.insert(*participant, state);
                         participants.insert(participant, info.clone());
@@ -198,7 +198,7 @@ impl Pool {
         }
     }
 
-    async fn test_empty_msg(
+    async fn send_empty_msg(
         &self,
         participant: &Participant,
         participant_info: &ParticipantInfo,
