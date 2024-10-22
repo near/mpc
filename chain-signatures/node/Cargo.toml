@@ -50,7 +50,7 @@ near-fetch = "0.6.0"
 near-lake-framework = { git = "https://github.com/near/near-lake-framework-rs", branch = "node/2.3.0" }
 near-lake-primitives = { git = "https://github.com/near/near-lake-framework-rs", branch = "node/2.3.0" }
 near-primitives = "0.26.0"
-near-sdk = { version = "5.2.1", features = ["legacy", "unit-testing"] }
+near-sdk = { version = "5.5.0", features = ["legacy", "unit-testing"] }
 
 mpc-contract = { path = "../contract" }
 mpc-keys = { path = "../keys" }
