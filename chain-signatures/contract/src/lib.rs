@@ -853,3 +853,44 @@ impl VersionedMpcContract {
         Ok(voter)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::config::Config;
+
+    #[test]
+    fn test_load_config2() {
+        let config_macro = serde_json::json!({
+            "protocol": {
+                "message_timeout": 10000,
+                "garbage_timeout": 20000,
+                "max_concurrent_introduction": 10,
+                "max_concurrent_generation": 10,
+                "triple": {
+                    "min_triples": 10,
+                    "max_triples": 100,
+                    "generation_timeout": 10000
+                },
+                "presignature": {
+                    "min_presignatures": 10,
+                    "max_presignatures": 100,
+                    "generation_timeout": 10000
+                },
+                "signature": {
+                    "generation_timeout": 10000,
+                    "generation_timeout_total": 1000000,
+                    "garbage_timeout": 10000000
+                },
+                "string": "value",
+                "integer": 1000
+            },
+            "string": "value2",
+            "integer": 20
+        });
+
+        let config: Config = serde_json::from_value(config_macro).unwrap();
+        assert_eq!(config.protocol.message_timeout, 10000);
+        assert_eq!(config.get("integer").unwrap(), serde_json::json!(20));
+        assert_eq!(config.get("string").unwrap(), serde_json::json!("value2"));
+    }
+}

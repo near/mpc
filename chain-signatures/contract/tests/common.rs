@@ -69,7 +69,9 @@ pub async fn accounts(
 pub async fn init() -> (Worker<Sandbox>, Contract) {
     let worker = near_workspaces::sandbox().await.unwrap();
     let wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
-    let contract = worker.dev_deploy(&wasm).await.unwrap();
+    let contract = worker.dev_deploy(&wasm).await;
+    println!("{:?}", contract);
+    let contract = contract.unwrap();
     (worker, contract)
 }
 
