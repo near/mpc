@@ -9,6 +9,7 @@ use crate::protocol::contract::primitives::Participants;
 use crate::protocol::ParticipantInfo;
 use crate::protocol::ProtocolState;
 use crate::web::StateView;
+use mpc_keys::hpke::Ciphered;
 
 // TODO: this is a basic connection pool and does not do most of the work yet. This is
 //       mostly here just to facilitate offline node handling for now.
@@ -71,10 +72,15 @@ impl Pool {
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
             match self.fetch_participant_state(info).await {
-                Ok(state) => {
-                    status.insert(*participant, state);
-                    participants.insert(participant, info.clone());
-                }
+                Ok(state) => match self.send_empty_msg(participant, info).await {
+                    Ok(()) => {
+                        status.insert(*participant, state);
+                        participants.insert(participant, info.clone());
+                    }
+                    Err(e) => {
+                        tracing::warn!("Send empty msg for participant {participant:?} with url {} has failed with error {e}.", info.url);
+                    }
+                },
                 Err(e) => {
                     tracing::warn!("Fetch state for participant {participant:?} with url {} has failed with error {e}.", info.url);
                 }
@@ -100,10 +106,15 @@ impl Pool {
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
             match self.fetch_participant_state(info).await {
-                Ok(state) => {
-                    status.insert(*participant, state);
-                    participants.insert(participant, info.clone());
-                }
+                Ok(state) => match self.send_empty_msg(participant, info).await {
+                    Ok(()) => {
+                        status.insert(*participant, state);
+                        participants.insert(participant, info.clone());
+                    }
+                    Err(e) => {
+                        tracing::warn!("Send empty msg for participant {participant:?} with url {} has failed with error {e}.", info.url);
+                    }
+                },
                 Err(e) => {
                     tracing::warn!("Fetch state for participant {participant:?} with url {} has failed with error {e}.", info.url);
                 }
@@ -185,5 +196,21 @@ impl Pool {
             Ok(Err(e)) => Err(FetchParticipantError::NetworkError(e.to_string())),
             Err(_) => Err(FetchParticipantError::Timeout),
         }
+    }
+
+    async fn send_empty_msg(
+        &self,
+        participant: &Participant,
+        participant_info: &ParticipantInfo,
+    ) -> Result<(), crate::http_client::SendError> {
+        let empty_msg: Vec<Ciphered> = Vec::new();
+        crate::http_client::send_encrypted(
+            *participant,
+            &self.http,
+            participant_info.url.clone(),
+            empty_msg,
+            self.fetch_participant_timeout,
+        )
+        .await
     }
 }
