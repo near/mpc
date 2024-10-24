@@ -61,8 +61,6 @@ jobs:
           ( cd test-oidc-provider ; cargo fmt -- --check )
           ( cd integration-tests/chain-signatures ; cargo fmt -- --check )
           ( cd integration-tests/fastauth ; cargo fmt -- --check )
-      - name: Unit tests
-        run: ( cd mpc-recovery && cargo test )
       - name: Test clippy
         run: |
           ( cd chain-signatures ; cargo clippy --tests -- -Dclippy::all )
@@ -71,6 +69,12 @@ jobs:
           ( cd test-oidc-provider ; cargo clippy --tests -- -Dclippy::all )
           ( cd integration-tests/chain-signatures ; cargo clippy --tests -- -Dclippy::all )
           ( cd integration-tests/fastauth ; cargo clippy --tests -- -Dclippy::all )
+      - name: Unit tests (FastAuth)
+        working-directory: mpc-recovery
+        run: cargo test
+      - name: Unit tests (Chain Signatures)
+        working-directory: chain-signatures
+        run: cargo test
 
   audit:
     name: Audit

@@ -29,4 +29,4 @@ digest = "0.10.7"
 
 # near dependencies
 near-crypto = "0.26.0"
-near-workspaces = { git = "https://github.com/near/near-workspaces-rs", branch = "phuong/tmp-node-2.3.0" }
+near-workspaces = "0.14.1"
