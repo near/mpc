@@ -372,7 +372,7 @@ impl CryptographicProtocol for RunningState {
         crate::metrics::MESSAGE_QUEUE_SIZE
             .with_label_values(&[my_account_id.as_str()])
             .set(messages.len() as i64);
-        if let Err(err) = triple_manager.stockpile(active, protocol_cfg) {
+        if let Err(err) = triple_manager.stockpile(active, protocol_cfg).await {
             tracing::warn!(?err, "running: failed to stockpile triples");
         }
         for (p, msg) in triple_manager.poke(protocol_cfg).await {
@@ -382,10 +382,10 @@ impl CryptographicProtocol for RunningState {
 
         crate::metrics::NUM_TRIPLES_MINE
             .with_label_values(&[my_account_id.as_str()])
-            .set(triple_manager.mine.len() as i64);
+            .set(triple_manager.count_mine().await as i64);
         crate::metrics::NUM_TRIPLES_TOTAL
             .with_label_values(&[my_account_id.as_str()])
-            .set(triple_manager.triples.len() as i64);
+            .set(triple_manager.count_all().await as i64);
         crate::metrics::NUM_TRIPLE_GENERATORS_INTRODUCED
             .with_label_values(&[my_account_id.as_str()])
             .set(triple_manager.introduced.len() as i64);
@@ -407,20 +407,23 @@ impl CryptographicProtocol for RunningState {
             tracing::warn!(?err, "running: failed to stockpile presignatures");
         }
         drop(triple_manager);
-        for (p, msg) in presignature_manager.poke() {
+        for (p, msg) in presignature_manager.poke().await {
             let info = self.fetch_participant(&p)?;
             messages.push(info.clone(), MpcMessage::Presignature(msg));
         }
 
         crate::metrics::NUM_PRESIGNATURES_MINE
             .with_label_values(&[my_account_id.as_str()])
-            .set(presignature_manager.my_len() as i64);
+            .set(presignature_manager.count_mine().await as i64);
         crate::metrics::NUM_PRESIGNATURES_TOTAL
             .with_label_values(&[my_account_id.as_str()])
-            .set(presignature_manager.len() as i64);
+            .set(presignature_manager.count_all().await as i64);
         crate::metrics::NUM_PRESIGNATURE_GENERATORS_TOTAL
             .with_label_values(&[my_account_id.as_str()])
-            .set(presignature_manager.potential_len() as i64 - presignature_manager.len() as i64);
+            .set(
+                presignature_manager.count_potential().await as i64
+                    - presignature_manager.count_all().await as i64,
+            );
 
         // NOTE: signatures should only use stable and not active participants. The difference here is that
         // stable participants utilizes more than the online status of a node, such as whether or not their
@@ -442,13 +445,15 @@ impl CryptographicProtocol for RunningState {
             .set(my_requests.len() as i64);
 
         let mut signature_manager = self.signature_manager.write().await;
-        signature_manager.handle_requests(
-            self.threshold,
-            &stable,
-            my_requests,
-            &mut presignature_manager,
-            protocol_cfg,
-        );
+        signature_manager
+            .handle_requests(
+                self.threshold,
+                &stable,
+                my_requests,
+                &mut presignature_manager,
+                protocol_cfg,
+            )
+            .await;
         drop(sign_queue);
         drop(presignature_manager);
 
@@ -477,7 +482,6 @@ impl CryptographicProtocol for RunningState {
         }
         drop(messages);
 
-        self.stuck_monitor.write().await.check(protocol_cfg).await;
         Ok(NodeState::Running(self))
     }
 }

@@ -8,14 +8,13 @@ use crate::gcp::error::DatastoreStorageError;
 use crate::gcp::error::SecretStorageError;
 use crate::http_client::MessageQueue;
 use crate::protocol::contract::primitives::Participants;
-use crate::protocol::monitor::StuckMonitor;
 use crate::protocol::presignature::PresignatureManager;
 use crate::protocol::signature::SignatureManager;
 use crate::protocol::state::{GeneratingState, ResharingState};
 use crate::protocol::triple::TripleManager;
+use crate::storage::presignature_storage::LockPresignatureRedisStorage;
 use crate::storage::secret_storage::SecretNodeStorageBox;
-use crate::storage::triple_storage::LockTripleNodeStorageBox;
-use crate::storage::triple_storage::TripleData;
+use crate::storage::triple_storage::LockTripleRedisStorage;
 use crate::types::{KeygenProtocol, ReshareProtocol, SecretKeyShare};
 use crate::util::AffinePointExt;
 use crate::{http_client, rpc_client};
@@ -41,7 +40,8 @@ pub trait ConsensusCtx {
     fn my_address(&self) -> &Url;
     fn sign_queue(&self) -> Arc<RwLock<SignQueue>>;
     fn secret_storage(&self) -> &SecretNodeStorageBox;
-    fn triple_storage(&self) -> LockTripleNodeStorageBox;
+    fn triple_storage(&self) -> LockTripleRedisStorage;
+    fn presignature_storage(&self) -> LockPresignatureRedisStorage;
     fn cfg(&self) -> &Config;
     fn message_options(&self) -> http_client::Options;
 }
@@ -134,23 +134,30 @@ impl ConsensusProtocol for StartedState {
                                     tracing::info!(
                                         "started: contract state is running and we are already a participant"
                                     );
-                                    let presignature_manager = PresignatureManager::new(
-                                        me,
-                                        contract_state.threshold,
-                                        epoch,
-                                        ctx.my_account_id(),
-                                    );
                                     let triple_manager = Arc::new(RwLock::new(TripleManager::new(
                                         me,
                                         contract_state.threshold,
                                         epoch,
-                                        self.triple_data,
-                                        ctx.triple_storage(),
                                         ctx.my_account_id(),
+                                        ctx.triple_storage(),
                                     )));
-                                    let stuck_monitor = Arc::new(RwLock::new(
-                                        StuckMonitor::new(&triple_manager).await,
-                                    ));
+
+                                    let presignature_manager =
+                                        Arc::new(RwLock::new(PresignatureManager::new(
+                                            me,
+                                            contract_state.threshold,
+                                            epoch,
+                                            ctx.my_account_id(),
+                                            ctx.presignature_storage(),
+                                        )));
+
+                                    let signature_manager =
+                                        Arc::new(RwLock::new(SignatureManager::new(
+                                            me,
+                                            public_key,
+                                            epoch,
+                                            ctx.my_account_id(),
+                                        )));
 
                                     Ok(NodeState::Running(RunningState {
                                         epoch,
@@ -159,19 +166,9 @@ impl ConsensusProtocol for StartedState {
                                         private_share,
                                         public_key,
                                         sign_queue,
-                                        stuck_monitor,
                                         triple_manager,
-                                        presignature_manager: Arc::new(RwLock::new(
-                                            presignature_manager,
-                                        )),
-                                        signature_manager: Arc::new(RwLock::new(
-                                            SignatureManager::new(
-                                                me,
-                                                contract_state.public_key,
-                                                epoch,
-                                                ctx.my_account_id(),
-                                            ),
-                                        )),
+                                        presignature_manager,
+                                        signature_manager,
                                         messages: Arc::new(RwLock::new(MessageQueue::new(
                                             ctx.message_options().clone(),
                                         ))),
@@ -364,20 +361,42 @@ impl ConsensusProtocol for WaitingForConsensusState {
 
                     // Clear triples from storage before starting the new epoch. This is necessary if the node has accumulated
                     // triples from previous epochs. If it was not able to clear the previous triples, we'll leave them as-is
-                    if let Err(err) = ctx.triple_storage().write().await.clear().await {
-                        tracing::warn!(?err, "failed to clear triples from storage");
+                    if let Err(err) = ctx.triple_storage().write().await.clear() {
+                        tracing::error!(
+                            ?err,
+                            "failed to clear triples from storage on new epoch start"
+                        );
+                    }
+
+                    if let Err(err) = ctx.presignature_storage().write().await.clear() {
+                        tracing::error!(
+                            ?err,
+                            "failed to clear presignatures from storage on new epoch start"
+                        );
                     }
 
                     let triple_manager = Arc::new(RwLock::new(TripleManager::new(
                         me,
                         self.threshold,
                         self.epoch,
-                        vec![],
+                        ctx.my_account_id(),
                         ctx.triple_storage(),
+                    )));
+
+                    let presignature_manager = Arc::new(RwLock::new(PresignatureManager::new(
+                        me,
+                        self.threshold,
+                        self.epoch,
+                        ctx.my_account_id(),
+                        ctx.presignature_storage(),
+                    )));
+
+                    let signature_manager = Arc::new(RwLock::new(SignatureManager::new(
+                        me,
+                        self.public_key,
+                        self.epoch,
                         ctx.my_account_id(),
                     )));
-                    let stuck_monitor =
-                        Arc::new(RwLock::new(StuckMonitor::new(&triple_manager).await));
 
                     Ok(NodeState::Running(RunningState {
                         epoch: self.epoch,
@@ -386,20 +405,9 @@ impl ConsensusProtocol for WaitingForConsensusState {
                         private_share: self.private_share,
                         public_key: self.public_key,
                         sign_queue: ctx.sign_queue(),
-                        stuck_monitor,
                         triple_manager,
-                        presignature_manager: Arc::new(RwLock::new(PresignatureManager::new(
-                            me,
-                            self.threshold,
-                            self.epoch,
-                            ctx.my_account_id(),
-                        ))),
-                        signature_manager: Arc::new(RwLock::new(SignatureManager::new(
-                            me,
-                            self.public_key,
-                            self.epoch,
-                            ctx.my_account_id(),
-                        ))),
+                        presignature_manager,
+                        signature_manager,
                         messages: self.messages,
                     }))
                 }
@@ -709,10 +717,8 @@ impl ConsensusProtocol for NodeState {
         match self {
             NodeState::Starting => {
                 let persistent_node_data = ctx.secret_storage().load().await?;
-                let triple_data = load_triples(ctx).await?;
                 Ok(NodeState::Started(StartedState {
                     persistent_node_data,
-                    triple_data,
                 }))
             }
             NodeState::Started(state) => state.advance(ctx, contract_state).await,
@@ -723,30 +729,6 @@ impl ConsensusProtocol for NodeState {
             NodeState::Joining(state) => state.advance(ctx, contract_state).await,
         }
     }
-}
-
-async fn load_triples<C: ConsensusCtx + Send + Sync>(
-    ctx: C,
-) -> Result<Vec<TripleData>, ConsensusError> {
-    let triple_storage = ctx.triple_storage();
-    let mut retries = 3;
-    let mut error = None;
-    while retries > 0 {
-        match triple_storage.read().await.load().await {
-            Err(DatastoreStorageError::FetchEntitiesError(_)) => {
-                tracing::info!("There are no triples persisted.");
-                return Ok(vec![]);
-            }
-            Err(e) => {
-                retries -= 1;
-                tracing::warn!(?e, "triple load failed.");
-                error = Some(e);
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
-            Ok(loaded_triples) => return Ok(loaded_triples),
-        }
-    }
-    Err(ConsensusError::DatastoreStorageError(error.unwrap()))
 }
 
 async fn start_resharing<C: ConsensusCtx>(

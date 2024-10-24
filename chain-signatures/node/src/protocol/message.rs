@@ -256,7 +256,10 @@ impl MessageHandler for RunningState {
             !triple_manager.refresh_gc(id)
         });
         for (id, queue) in triple_messages {
-            let protocol = match triple_manager.get_or_generate(*id, participants, protocol_cfg) {
+            let protocol = match triple_manager
+                .get_or_start_generation(*id, participants, protocol_cfg)
+                .await
+            {
                 Ok(protocol) => protocol,
                 Err(err) => {
                     // ignore the message since the generation had bad parameters. Also have the other node who
@@ -309,7 +312,7 @@ impl MessageHandler for RunningState {
             }
 
             let protocol = match presignature_manager
-                .get_or_generate(
+                .get_or_start_generation(
                     participants,
                     *id,
                     *triple0,
@@ -412,17 +415,20 @@ impl MessageHandler for RunningState {
             //     continue;
             // };
             // TODO: Validate that the message matches our sign_queue
-            let protocol = match signature_manager.get_or_generate(
-                participants,
-                *receipt_id,
-                *proposer,
-                *presignature_id,
-                request,
-                *epsilon,
-                *entropy,
-                &mut presignature_manager,
-                protocol_cfg,
-            ) {
+            let protocol = match signature_manager
+                .get_or_start_protocol(
+                    participants,
+                    *receipt_id,
+                    *proposer,
+                    *presignature_id,
+                    request,
+                    *epsilon,
+                    *entropy,
+                    &mut presignature_manager,
+                    protocol_cfg,
+                )
+                .await
+            {
                 Ok(protocol) => protocol,
                 Err(GenerationError::PresignatureIsGenerating(_)) => {
                     // We will revisit this this signature request later when the presignature has been generated.

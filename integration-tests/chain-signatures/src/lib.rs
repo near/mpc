@@ -18,13 +18,14 @@ use mpc_node::gcp::GcpService;
 use mpc_node::http_client;
 use mpc_node::mesh;
 use mpc_node::storage;
-use mpc_node::storage::triple_storage::TripleNodeStorageBox;
+use mpc_node::storage::triple_storage::TripleRedisStorage;
 use near_crypto::KeyFile;
 use near_workspaces::network::{Sandbox, ValidatorKey};
 use near_workspaces::types::{KeyType, SecretKey};
 use near_workspaces::{Account, AccountId, Contract, Worker};
 use serde_json::json;
 use testcontainers::{Container, GenericImage};
+use url::Url;
 
 const NETWORK: &str = "mpc_it_network";
 
@@ -157,13 +158,10 @@ impl Nodes<'_> {
 
     pub async fn triple_storage(
         &self,
+        redis_url: Url,
         account_id: &AccountId,
-    ) -> anyhow::Result<TripleNodeStorageBox> {
-        let gcp_service = GcpService::init(account_id, &self.ctx().storage_options).await?;
-        Ok(storage::triple_storage::init(
-            Some(&gcp_service),
-            account_id,
-        ))
+    ) -> TripleRedisStorage {
+        storage::triple_storage::init(redis_url, account_id)
     }
 
     pub async fn gcp_services(&self) -> anyhow::Result<Vec<GcpService>> {
@@ -207,6 +205,7 @@ pub struct Context<'a> {
     pub worker: Worker<Sandbox>,
     pub mpc_contract: Contract,
     pub datastore: crate::containers::Datastore<'a>,
+    pub redis: crate::containers::Redis<'a>,
     pub storage_options: storage::Options,
     pub mesh_options: mesh::Options,
     pub message_options: http_client::Options,
@@ -236,6 +235,9 @@ pub async fn setup(docker_client: &DockerClient) -> anyhow::Result<Context<'_>> 
     let datastore =
         crate::containers::Datastore::run(docker_client, docker_network, gcp_project_id).await?;
 
+    let redis = crate::containers::Redis::run(docker_client, docker_network).await?;
+    let redis_url = redis.internal_address.clone();
+
     let sk_share_local_path = "multichain-integration-secret-manager".to_string();
     let storage_options = mpc_node::storage::Options {
         env: "local-test".to_string(),
@@ -243,6 +245,7 @@ pub async fn setup(docker_client: &DockerClient) -> anyhow::Result<Context<'_>> 
         sk_share_secret_id: None,
         gcp_datastore_url: Some(datastore.local_address.clone()),
         sk_share_local_path: Some(sk_share_local_path),
+        redis_url,
     };
 
     let mesh_options = mpc_node::mesh::Options {
@@ -261,6 +264,7 @@ pub async fn setup(docker_client: &DockerClient) -> anyhow::Result<Context<'_>> 
         worker,
         mpc_contract,
         datastore,
+        redis,
         storage_options,
         mesh_options,
         message_options,

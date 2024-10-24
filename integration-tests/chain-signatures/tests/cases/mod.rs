@@ -1,19 +1,31 @@
 use std::str::FromStr;
+use std::sync::Arc;
 
 use crate::actions::{self, add_latency, wait_for};
 use crate::with_multichain_nodes;
 
+use cait_sith::protocol::Participant;
+use cait_sith::triples::{TriplePub, TripleShare};
+use cait_sith::PresignOutput;
 use crypto_shared::{self, derive_epsilon, derive_key, x_coordinate, ScalarExt};
+use elliptic_curve::CurveArithmetic;
 use integration_tests_chain_signatures::containers::{self, DockerClient};
 use integration_tests_chain_signatures::MultichainConfig;
 use k256::elliptic_curve::point::AffineCoordinates;
+use k256::Secp256k1;
 use mpc_contract::config::Config;
 use mpc_contract::update::ProposeUpdateArgs;
 use mpc_node::kdf::into_eth_sig;
-use mpc_node::test_utils;
+use mpc_node::protocol::presignature::{Presignature, PresignatureId, PresignatureManager};
+use mpc_node::protocol::triple::{Triple, TripleManager};
+use mpc_node::storage;
+use mpc_node::storage::presignature_storage::LockPresignatureRedisStorage;
 use mpc_node::types::LatestBlockHeight;
 use mpc_node::util::NearPublicKeyExt;
+use near_account_id::AccountId;
 use test_log::test;
+use tokio::sync::RwLock;
+use url::Url;
 
 pub mod nightly;
 
@@ -199,31 +211,189 @@ async fn test_key_derivation() -> anyhow::Result<()> {
 }
 
 #[test(tokio::test)]
-async fn test_triples_persistence_for_generation() -> anyhow::Result<()> {
+async fn test_triple_persistence() -> anyhow::Result<()> {
     let docker_client = DockerClient::default();
-    let gcp_project_id = "test-triple-persistence";
     let docker_network = "test-triple-persistence";
     docker_client.create_network(docker_network).await?;
-    let datastore =
-        containers::Datastore::run(&docker_client, docker_network, gcp_project_id).await?;
-    let datastore_url = datastore.local_address.clone();
-    // verifies that @triple generation, the datastore triples are in sync with local generated triples
-    test_utils::test_triple_generation(Some(datastore_url.clone())).await;
+    let redis = containers::Redis::run(&docker_client, docker_network).await?;
+    let redis_url = Url::parse(redis.internal_address.as_str())?;
+    let triple_storage: storage::triple_storage::LockTripleRedisStorage = Arc::new(RwLock::new(
+        storage::triple_storage::init(redis_url, &AccountId::from_str("test.near").unwrap()),
+    ));
+
+    let mut triple_manager = TripleManager::new(
+        Participant::from(0),
+        5,
+        123,
+        &AccountId::from_str("test.near").unwrap(),
+        triple_storage,
+    );
+
+    let triple_id_1: u64 = 1;
+    let triple_1 = dummy_triple(triple_id_1);
+    let triple_id_2: u64 = 2;
+    let triple_2 = dummy_triple(triple_id_2);
+
+    // Check that the storage is empty at the start
+    assert!(!triple_manager.contains(&triple_id_1).await);
+    assert!(!triple_manager.contains_mine(&triple_id_1).await);
+    assert_eq!(triple_manager.count_all().await, 0);
+    assert_eq!(triple_manager.count_mine().await, 0);
+    assert!(triple_manager.is_empty().await);
+    assert_eq!(triple_manager.count_potential().await, 0);
+
+    triple_manager.insert(triple_1).await;
+    triple_manager.insert(triple_2).await;
+
+    // Check that the storage contains the foreign triple
+    assert!(triple_manager.contains(&triple_id_1).await);
+    assert!(triple_manager.contains(&triple_id_2).await);
+    assert!(!triple_manager.contains_mine(&triple_id_1).await);
+    assert!(!triple_manager.contains_mine(&triple_id_2).await);
+    assert_eq!(triple_manager.count_all().await, 2);
+    assert_eq!(triple_manager.count_mine().await, 0);
+    assert_eq!(triple_manager.count_potential().await, 2);
+
+    // Take triple and check that it is removed from the storage
+    triple_manager
+        .take_two(triple_id_1, triple_id_2)
+        .await
+        .unwrap();
+    assert!(!triple_manager.contains(&triple_id_1).await);
+    assert!(!triple_manager.contains(&triple_id_2).await);
+    assert!(!triple_manager.contains_mine(&triple_id_1).await);
+    assert!(!triple_manager.contains_mine(&triple_id_2).await);
+    assert_eq!(triple_manager.count_all().await, 0);
+    assert_eq!(triple_manager.count_mine().await, 0);
+    assert_eq!(triple_manager.count_potential().await, 0);
+
+    let mine_id_1: u64 = 3;
+    let mine_triple_1 = dummy_triple(mine_id_1);
+    let mine_id_2: u64 = 4;
+    let mine_triple_2 = dummy_triple(mine_id_2);
+
+    // Add mine triple and check that it is in the storage
+    triple_manager.insert_mine(mine_triple_1).await;
+    triple_manager.insert_mine(mine_triple_2).await;
+    assert!(triple_manager.contains(&mine_id_1).await);
+    assert!(triple_manager.contains(&mine_id_2).await);
+    assert!(triple_manager.contains_mine(&mine_id_1).await);
+    assert!(triple_manager.contains_mine(&mine_id_2).await);
+    assert_eq!(triple_manager.count_all().await, 2);
+    assert_eq!(triple_manager.count_mine().await, 2);
+    assert_eq!(triple_manager.count_potential().await, 2);
+
+    // Take mine triple and check that it is removed from the storage
+    triple_manager.take_two_mine().await.unwrap();
+    assert!(!triple_manager.contains(&mine_id_1).await);
+    assert!(!triple_manager.contains(&mine_id_2).await);
+    assert!(!triple_manager.contains_mine(&mine_id_1).await);
+    assert!(!triple_manager.contains_mine(&mine_id_2).await);
+    assert_eq!(triple_manager.count_all().await, 0);
+    assert_eq!(triple_manager.count_mine().await, 0);
+    assert!(triple_manager.is_empty().await);
+    assert_eq!(triple_manager.count_potential().await, 0);
+
     Ok(())
 }
 
 #[test(tokio::test)]
-async fn test_triples_persistence_for_deletion() -> anyhow::Result<()> {
+async fn test_presignature_persistence() -> anyhow::Result<()> {
     let docker_client = DockerClient::default();
-    let gcp_project_id = "test-triple-persistence";
-    let docker_network = "test-triple-persistence";
+    let docker_network = "test-presignature-persistence";
     docker_client.create_network(docker_network).await?;
-    let datastore =
-        containers::Datastore::run(&docker_client, docker_network, gcp_project_id).await?;
-    let datastore_url = datastore.local_address.clone();
-    // verifies that @triple deletion, the datastore is working as expected
-    test_utils::test_triple_deletion(Some(datastore_url)).await;
+    let redis = containers::Redis::run(&docker_client, docker_network).await?;
+    let redis_url = Url::parse(redis.internal_address.as_str())?;
+    let presignature_storage: LockPresignatureRedisStorage = Arc::new(RwLock::new(
+        storage::presignature_storage::init(redis_url, &AccountId::from_str("test.near").unwrap()),
+    ));
+    let mut presignature_manager = PresignatureManager::new(
+        Participant::from(0),
+        5,
+        123,
+        &AccountId::from_str("test.near").unwrap(),
+        presignature_storage,
+    );
+
+    let presignature = dummy_presignature();
+    let presignature_id: PresignatureId = presignature.id;
+
+    // Check that the storage is empty at the start
+    assert!(!presignature_manager.contains(&presignature_id).await);
+    assert!(!presignature_manager.contains_mine(&presignature_id).await);
+    assert_eq!(presignature_manager.count_all().await, 0);
+    assert_eq!(presignature_manager.count_mine().await, 0);
+    assert!(presignature_manager.is_empty().await);
+    assert_eq!(presignature_manager.count_potential().await, 0);
+
+    presignature_manager.insert(presignature).await;
+
+    // Check that the storage contains the foreign presignature
+    assert!(presignature_manager.contains(&presignature_id).await);
+    assert!(!presignature_manager.contains_mine(&presignature_id).await);
+    assert_eq!(presignature_manager.count_all().await, 1);
+    assert_eq!(presignature_manager.count_mine().await, 0);
+    assert_eq!(presignature_manager.count_potential().await, 1);
+
+    // Take presignature and check that it is removed from the storage
+    presignature_manager.take(presignature_id).await.unwrap();
+    assert!(!presignature_manager.contains(&presignature_id).await);
+    assert!(!presignature_manager.contains_mine(&presignature_id).await);
+    assert_eq!(presignature_manager.count_all().await, 0);
+    assert_eq!(presignature_manager.count_mine().await, 0);
+    assert_eq!(presignature_manager.count_potential().await, 0);
+
+    let mine_presignature = dummy_presignature();
+    let mine_presig_id: PresignatureId = mine_presignature.id;
+
+    // Add mine presignature and check that it is in the storage
+    presignature_manager.insert_mine(mine_presignature).await;
+    assert!(presignature_manager.contains(&mine_presig_id).await);
+    assert!(presignature_manager.contains_mine(&mine_presig_id).await);
+    assert_eq!(presignature_manager.count_all().await, 1);
+    assert_eq!(presignature_manager.count_mine().await, 1);
+    assert_eq!(presignature_manager.count_potential().await, 1);
+
+    // Take mine presignature and check that it is removed from the storage
+    presignature_manager.take_mine().await.unwrap();
+    assert!(!presignature_manager.contains(&mine_presig_id).await);
+    assert!(!presignature_manager.contains_mine(&mine_presig_id).await);
+    assert_eq!(presignature_manager.count_all().await, 0);
+    assert_eq!(presignature_manager.count_mine().await, 0);
+    assert!(presignature_manager.is_empty().await);
+    assert_eq!(presignature_manager.count_potential().await, 0);
+
     Ok(())
+}
+
+fn dummy_presignature() -> Presignature {
+    Presignature {
+        id: 1,
+        output: PresignOutput {
+            big_r: <Secp256k1 as CurveArithmetic>::AffinePoint::default(),
+            k: <Secp256k1 as CurveArithmetic>::Scalar::ZERO,
+            sigma: <Secp256k1 as CurveArithmetic>::Scalar::ONE,
+        },
+        participants: vec![Participant::from(1), Participant::from(2)],
+    }
+}
+
+fn dummy_triple(id: u64) -> Triple {
+    Triple {
+        id,
+        share: TripleShare {
+            a: <Secp256k1 as CurveArithmetic>::Scalar::ZERO,
+            b: <Secp256k1 as CurveArithmetic>::Scalar::ZERO,
+            c: <Secp256k1 as CurveArithmetic>::Scalar::ZERO,
+        },
+        public: TriplePub {
+            big_a: <k256::Secp256k1 as CurveArithmetic>::AffinePoint::default(),
+            big_b: <k256::Secp256k1 as CurveArithmetic>::AffinePoint::default(),
+            big_c: <k256::Secp256k1 as CurveArithmetic>::AffinePoint::default(),
+            participants: vec![Participant::from(1), Participant::from(2)],
+            threshold: 5,
+        },
+    }
 }
 
 #[test(tokio::test)]

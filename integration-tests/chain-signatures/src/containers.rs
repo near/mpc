@@ -622,3 +622,43 @@ impl<'a> Datastore<'a> {
         })
     }
 }
+
+pub struct Redis<'a> {
+    pub container: Container<'a, GenericImage>,
+    pub internal_address: String,
+    pub external_address: String,
+}
+
+impl<'a> Redis<'a> {
+    const DEFAULT_REDIS_PORT: u16 = 6379;
+
+    pub async fn run(docker_client: &'a DockerClient, network: &str) -> anyhow::Result<Redis<'a>> {
+        tracing::info!("Running Redis container...");
+        let image = GenericImage::new("redis", "7.0.15")
+            .with_exposed_port(Self::DEFAULT_REDIS_PORT)
+            .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"));
+        let image: RunnableImage<GenericImage> = image.into();
+        let image = image.with_network(network);
+        let container = docker_client.cli.run(image);
+        let network_ip = docker_client
+            .get_network_ip_address(&container, network)
+            .await?;
+
+        let external_address = format!("redis://{}:{}", network_ip, Self::DEFAULT_REDIS_PORT);
+
+        let host_port = container.get_host_port_ipv4(Self::DEFAULT_REDIS_PORT);
+        let internal_address = format!("redis://127.0.0.1:{host_port}");
+
+        tracing::info!(
+            "Redis container is running. External address: {}. Internal address: {}",
+            external_address,
+            internal_address
+        );
+
+        Ok(Redis {
+            container,
+            internal_address,
+            external_address,
+        })
+    }
+}

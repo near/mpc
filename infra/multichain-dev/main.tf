@@ -11,8 +11,15 @@ module "gce-container" {
 
   container = {
     image = "us-east1-docker.pkg.dev/pagoda-discovery-platform-dev/multichain-public/multichain-dev:latest"
-    args  = ["start"]
     port  = "3000"
+
+    volumeMounts = [
+      {
+        mountPath = "/data"
+        name = "host-path"
+        readOnly = false
+      }
+    ]
 
     env = concat(var.static_env, [
       {
@@ -58,9 +65,22 @@ module "gce-container" {
       {
         name  = "MPC_ENV",
         value = var.env
+      },
+      {
+        name = "MPC_REDIS_URL",
+        value = var.redis_url
       }
     ])
   }
+
+  volumes = [
+      {
+        name = "host-path"
+        hostPath = {
+          path = "/var/redis"
+        }
+      }
+    ]
 }
 
 resource "google_compute_address" "internal_ips" {
