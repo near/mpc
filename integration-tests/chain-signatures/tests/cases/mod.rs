@@ -110,7 +110,7 @@ async fn test_signature_offline_node() -> anyhow::Result<()> {
             wait_for::has_at_least_triples(&ctx, 6).await?;
             wait_for::has_at_least_mine_triples(&ctx, 2).await?;
 
-            // Kill the node then have presignature and signature generation only use the active set of nodes
+            // Kill the node then have presignatures and signature generation only use the active set of nodes
             // to start generating presignatures and signatures.
             let account_id = near_workspaces::types::AccountId::from_str(
                 state_0.participants.keys().last().unwrap().clone().as_ref(),

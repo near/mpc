@@ -1,9 +1,34 @@
+use std::time::Duration;
+
 use crate::protocol::contract::primitives::Participants;
 use crate::protocol::ProtocolState;
 
 pub mod connection;
 
-#[derive(Default)]
+#[derive(Debug, Clone, clap::Parser)]
+#[group(id = "mesh_options")]
+pub struct Options {
+    #[clap(
+        long,
+        env("MPC_MESH_FETCH_PARTICIPANT_TIMEOUT"),
+        default_value = "1000"
+    )]
+    pub fetch_participant_timeout: u64,
+    #[clap(long, env("MPC_MESH_REFRESH_ACTIVE_TIMEOUT"), default_value = "1000")]
+    pub refresh_active_timeout: u64,
+}
+
+impl Options {
+    pub fn into_str_args(self) -> Vec<String> {
+        vec![
+            "--fetch-participant-timeout".to_string(),
+            self.fetch_participant_timeout.to_string(),
+            "--refresh-active-timeout".to_string(),
+            self.refresh_active_timeout.to_string(),
+        ]
+    }
+}
+
 pub struct Mesh {
     /// Pool of connections to participants. Used to check who is alive in the network.
     pub connections: connection::Pool,
@@ -17,6 +42,17 @@ pub struct Mesh {
 }
 
 impl Mesh {
+    pub fn new(options: Options) -> Self {
+        Self {
+            connections: connection::Pool::new(
+                Duration::from_millis(options.fetch_participant_timeout),
+                Duration::from_millis(options.refresh_active_timeout),
+            ),
+            active_participants: Participants::default(),
+            active_potential_participants: Participants::default(),
+        }
+    }
+
     /// Participants that are active at the beginning of each protocol loop.
     pub fn active_participants(&self) -> &Participants {
         &self.active_participants

@@ -118,6 +118,8 @@ impl<'a> Node<'a> {
                 config.cfg.protocol.clone(),
             )?)),
             client_header_referer: None,
+            mesh_options: ctx.mesh_options.clone(),
+            message_options: ctx.message_options.clone(),
         }
         .into_str_args();
         let image: GenericImage = GenericImage::new("near/mpc-node", "latest")

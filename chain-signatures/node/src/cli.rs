@@ -2,7 +2,7 @@ use crate::config::{Config, LocalConfig, NetworkConfig, OverrideConfig};
 use crate::gcp::GcpService;
 use crate::protocol::{MpcSignProtocol, SignQueue};
 use crate::storage::triple_storage::LockTripleNodeStorageBox;
-use crate::{indexer, storage, web};
+use crate::{http_client, indexer, mesh, storage, web};
 use clap::Parser;
 use local_ip_address::local_ip;
 use near_account_id::AccountId;
@@ -63,6 +63,10 @@ pub enum Cli {
         /// referer header for mainnet whitelist
         #[arg(long, env("MPC_CLIENT_HEADER_REFERER"), default_value(None))]
         client_header_referer: Option<String>,
+        #[clap(flatten)]
+        mesh_options: mesh::Options,
+        #[clap(flatten)]
+        message_options: http_client::Options,
     },
 }
 
@@ -83,6 +87,8 @@ impl Cli {
                 storage_options,
                 override_config,
                 client_header_referer,
+                mesh_options,
+                message_options,
             } => {
                 let mut args = vec![
                     "start".to_string(),
@@ -120,6 +126,8 @@ impl Cli {
 
                 args.extend(indexer_options.into_str_args());
                 args.extend(storage_options.into_str_args());
+                args.extend(mesh_options.into_str_args());
+                args.extend(message_options.into_str_args());
                 args
             }
         }
@@ -176,6 +184,8 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
             storage_options,
             override_config,
             client_header_referer,
+            mesh_options,
+            message_options,
         } => {
             let sign_queue = Arc::new(RwLock::new(SignQueue::new()));
             let rt = tokio::runtime::Builder::new_multi_thread()
@@ -240,6 +250,8 @@ pub fn run(cmd: Cli) -> anyhow::Result<()> {
                         sign_sk,
                     },
                 }),
+                mesh_options,
+                message_options,
             );
 
             rt.block_on(async {

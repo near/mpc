@@ -6,10 +6,9 @@ use tokio::sync::RwLock;
 use url::Url;
 
 use crate::protocol::contract::primitives::Participants;
+use crate::protocol::ParticipantInfo;
 use crate::protocol::ProtocolState;
 use crate::web::StateView;
-
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(1);
 
 // TODO: this is a basic connection pool and does not do most of the work yet. This is
 //       mostly here just to facilitate offline node handling for now.
@@ -25,12 +24,43 @@ pub struct Pool {
     current_active: RwLock<Option<(Participants, Instant)>>,
     // Potentially active participants that we can use to establish a connection in the next epoch.
     potential_active: RwLock<Option<(Participants, Instant)>>,
+    fetch_participant_timeout: Duration,
+    refresh_active_timeout: Duration,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FetchParticipantError {
+    #[error("request timed out")]
+    Timeout,
+    #[error("Response cannot be converted to JSON")]
+    JsonConversion,
+    #[error("Invalid URL")]
+    InvalidUrl,
+    #[error("Network error: {0}")]
+    NetworkError(String),
 }
 
 impl Pool {
+    pub fn new(fetch_participant_timeout: Duration, refresh_active_timeout: Duration) -> Self {
+        tracing::info!(
+            ?fetch_participant_timeout,
+            ?refresh_active_timeout,
+            "creating a new pool"
+        );
+        Self {
+            http: reqwest::Client::new(),
+            connections: RwLock::new(Participants::default()),
+            potential_connections: RwLock::new(Participants::default()),
+            status: RwLock::new(HashMap::default()),
+            current_active: RwLock::new(Option::default()),
+            potential_active: RwLock::new(Option::default()),
+            fetch_participant_timeout,
+            refresh_active_timeout,
+        }
+    }
     pub async fn ping(&self) -> Participants {
         if let Some((ref active, timestamp)) = *self.current_active.read().await {
-            if timestamp.elapsed() < DEFAULT_TIMEOUT {
+            if timestamp.elapsed() < self.refresh_active_timeout {
                 return active.clone();
             }
         }
@@ -40,35 +70,15 @@ impl Pool {
         let mut status = self.status.write().await;
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
-            let Ok(Ok(url)) = Url::parse(&info.url).map(|url| url.join("/state")) else {
-                tracing::error!(
-                    "Pool.ping url is invalid participant {:?} url {} /state",
-                    participant,
-                    info.url
-                );
-                continue;
-            };
-
-            let Ok(resp) = self.http.get(url.clone()).send().await else {
-                tracing::warn!(
-                    "Pool.ping resp err participant {:?} url {}",
-                    participant,
-                    url
-                );
-                continue;
-            };
-
-            let Ok(state): Result<StateView, _> = resp.json().await else {
-                tracing::warn!(
-                    "Pool.ping state view err participant {:?} url {}",
-                    participant,
-                    url
-                );
-                continue;
-            };
-
-            status.insert(*participant, state);
-            participants.insert(participant, info.clone());
+            match self.fetch_participant_state(info).await {
+                Ok(state) => {
+                    status.insert(*participant, state);
+                    participants.insert(participant, info.clone());
+                }
+                Err(e) => {
+                    tracing::warn!("Fetch state for participant {participant:?} with url {} has failed with error {e}.", info.url);
+                }
+            }
         }
         drop(status);
 
@@ -79,7 +89,7 @@ impl Pool {
 
     pub async fn ping_potential(&self) -> Participants {
         if let Some((ref active, timestamp)) = *self.potential_active.read().await {
-            if timestamp.elapsed() < DEFAULT_TIMEOUT {
+            if timestamp.elapsed() < self.refresh_active_timeout {
                 return active.clone();
             }
         }
@@ -89,20 +99,15 @@ impl Pool {
         let mut status = self.status.write().await;
         let mut participants = Participants::default();
         for (participant, info) in connections.iter() {
-            let Ok(Ok(url)) = Url::parse(&info.url).map(|url| url.join("/state")) else {
-                continue;
-            };
-
-            let Ok(resp) = self.http.get(url).send().await else {
-                continue;
-            };
-
-            let Ok(state): Result<StateView, _> = resp.json().await else {
-                continue;
-            };
-
-            status.insert(*participant, state);
-            participants.insert(participant, info.clone());
+            match self.fetch_participant_state(info).await {
+                Ok(state) => {
+                    status.insert(*participant, state);
+                    participants.insert(participant, info.clone());
+                }
+                Err(e) => {
+                    tracing::warn!("Fetch state for participant {participant:?} with url {} has failed with error {e}.", info.url);
+                }
+            }
         }
         drop(status);
 
@@ -158,5 +163,27 @@ impl Pool {
                 StateView::Running { is_stable, .. } => *is_stable,
                 _ => false,
             })
+    }
+
+    async fn fetch_participant_state(
+        &self,
+        participant_info: &ParticipantInfo,
+    ) -> Result<StateView, FetchParticipantError> {
+        let Ok(Ok(url)) = Url::parse(&participant_info.url).map(|url| url.join("/state")) else {
+            return Err(FetchParticipantError::InvalidUrl);
+        };
+        match tokio::time::timeout(
+            self.fetch_participant_timeout,
+            self.http.get(url.clone()).send(),
+        )
+        .await
+        {
+            Ok(Ok(resp)) => match resp.json::<StateView>().await {
+                Ok(state) => Ok(state),
+                Err(_) => Err(FetchParticipantError::JsonConversion),
+            },
+            Ok(Err(e)) => Err(FetchParticipantError::NetworkError(e.to_string())),
+            Err(_) => Err(FetchParticipantError::Timeout),
+        }
     }
 }

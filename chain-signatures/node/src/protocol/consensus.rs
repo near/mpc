@@ -6,18 +6,19 @@ use super::state::{
 use super::{Config, SignQueue};
 use crate::gcp::error::DatastoreStorageError;
 use crate::gcp::error::SecretStorageError;
+use crate::http_client::MessageQueue;
 use crate::protocol::contract::primitives::Participants;
 use crate::protocol::monitor::StuckMonitor;
 use crate::protocol::presignature::PresignatureManager;
 use crate::protocol::signature::SignatureManager;
 use crate::protocol::state::{GeneratingState, ResharingState};
 use crate::protocol::triple::TripleManager;
-use crate::rpc_client;
 use crate::storage::secret_storage::SecretNodeStorageBox;
 use crate::storage::triple_storage::LockTripleNodeStorageBox;
 use crate::storage::triple_storage::TripleData;
 use crate::types::{KeygenProtocol, ReshareProtocol, SecretKeyShare};
 use crate::util::AffinePointExt;
+use crate::{http_client, rpc_client};
 
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -42,6 +43,7 @@ pub trait ConsensusCtx {
     fn secret_storage(&self) -> &SecretNodeStorageBox;
     fn triple_storage(&self) -> LockTripleNodeStorageBox;
     fn cfg(&self) -> &Config;
+    fn message_options(&self) -> http_client::Options;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -170,7 +172,9 @@ impl ConsensusProtocol for StartedState {
                                                 ctx.my_account_id(),
                                             ),
                                         )),
-                                        messages: Default::default(),
+                                        messages: Arc::new(RwLock::new(MessageQueue::new(
+                                            ctx.message_options().clone(),
+                                        ))),
                                     }))
                                 }
                                 None => Ok(NodeState::Joining(JoiningState {
@@ -224,7 +228,9 @@ impl ConsensusProtocol for StartedState {
                                 participants,
                                 threshold: contract_state.threshold,
                                 protocol,
-                                messages: Default::default(),
+                                messages: Arc::new(RwLock::new(MessageQueue::new(
+                                    ctx.message_options().clone(),
+                                ))),
                             }))
                         }
                         None => {
@@ -760,6 +766,8 @@ async fn start_resharing<C: ConsensusCtx>(
         threshold: contract_state.threshold,
         public_key: contract_state.public_key,
         protocol,
-        messages: Default::default(),
+        messages: Arc::new(RwLock::new(MessageQueue::new(
+            ctx.message_options().clone(),
+        ))),
     }))
 }

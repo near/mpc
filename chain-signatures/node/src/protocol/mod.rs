@@ -23,6 +23,8 @@ use self::consensus::ConsensusCtx;
 use self::cryptography::CryptographicCtx;
 use self::message::MessageCtx;
 use crate::config::Config;
+use crate::http_client;
+use crate::mesh;
 use crate::mesh::Mesh;
 use crate::protocol::consensus::ConsensusProtocol;
 use crate::protocol::cryptography::CryptographicProtocol;
@@ -54,6 +56,7 @@ struct Ctx {
     triple_storage: LockTripleNodeStorageBox,
     cfg: Config,
     mesh: Mesh,
+    message_options: http_client::Options,
 }
 
 impl ConsensusCtx for &mut MpcSignProtocol {
@@ -95,6 +98,10 @@ impl ConsensusCtx for &mut MpcSignProtocol {
 
     fn triple_storage(&self) -> LockTripleNodeStorageBox {
         self.ctx.triple_storage.clone()
+    }
+
+    fn message_options(&self) -> http_client::Options {
+        self.ctx.message_options.clone()
     }
 }
 
@@ -167,6 +174,8 @@ impl MpcSignProtocol {
         secret_storage: SecretNodeStorageBox,
         triple_storage: LockTripleNodeStorageBox,
         cfg: Config,
+        mesh_options: mesh::Options,
+        message_options: http_client::Options,
     ) -> (Self, Arc<RwLock<NodeState>>) {
         let my_address = my_address.into_url().unwrap();
         let rpc_url = rpc_client.rpc_addr();
@@ -192,7 +201,8 @@ impl MpcSignProtocol {
             secret_storage,
             triple_storage,
             cfg,
-            mesh: Mesh::default(),
+            mesh: Mesh::new(mesh_options),
+            message_options,
         };
         let protocol = MpcSignProtocol {
             ctx,

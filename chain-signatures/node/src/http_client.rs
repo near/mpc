@@ -11,6 +11,19 @@ use std::time::{Duration, Instant};
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
+#[derive(Debug, Clone, clap::Parser)]
+#[group(id = "message_options")]
+pub struct Options {
+    #[clap(long, env("MPC_MESSAGE_TIMEOUT"), default_value = "1000")]
+    pub timeout: u64,
+}
+
+impl Options {
+    pub fn into_str_args(self) -> Vec<String> {
+        vec!["--timeout".to_string(), self.timeout.to_string()]
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SendError {
     #[error("http request was unsuccessful: {0}")]
@@ -36,19 +49,25 @@ async fn send_encrypted<U: IntoUrl>(
     client: &Client,
     url: U,
     message: Vec<Ciphered>,
+    request_timeout: Duration,
 ) -> Result<(), SendError> {
     let _span = tracing::info_span!("message_request");
     let mut url = url.into_url()?;
     url.set_path("msg");
     tracing::debug!(?from, to = %url, "making http request: sending encrypted message");
     let action = || async {
-        let response = client
-            .post(url.clone())
-            .header("content-type", "application/json")
-            .json(&message)
-            .send()
-            .await
-            .map_err(SendError::ReqwestClientError)?;
+        let response = tokio::time::timeout(
+            request_timeout,
+            client
+                .post(url.clone())
+                .header("content-type", "application/json")
+                .json(&message)
+                .send(),
+        )
+        .await
+        .map_err(|_| SendError::Timeout(format!("send encrypted from {from:?} to {url}")))?
+        .map_err(SendError::ReqwestClientError)?;
+
         let status = response.status();
         let response_bytes = response
             .bytes()
@@ -75,13 +94,21 @@ async fn send_encrypted<U: IntoUrl>(
 
 // TODO: add in retry logic either in struct or at call site.
 // TODO: add check for participant list to see if the messages to be sent are still valid.
-#[derive(Default)]
 pub struct MessageQueue {
     deque: VecDeque<(ParticipantInfo, MpcMessage, Instant)>,
     seen_counts: HashSet<String>,
+    message_options: Options,
 }
 
 impl MessageQueue {
+    pub fn new(options: Options) -> Self {
+        Self {
+            deque: VecDeque::default(),
+            seen_counts: HashSet::default(),
+            message_options: options,
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.deque.len()
     }
@@ -147,7 +174,14 @@ impl MessageQueue {
                 crate::metrics::NUM_SEND_ENCRYPTED_TOTAL
                     .with_label_values(&[account_id.as_str()])
                     .inc();
-                if let Err(err) = send_encrypted(from, client, &info.url, encrypted_partition).await
+                if let Err(err) = send_encrypted(
+                    from,
+                    client,
+                    &info.url,
+                    encrypted_partition,
+                    Duration::from_millis(self.message_options.timeout),
+                )
+                .await
                 {
                     crate::metrics::NUM_SEND_ENCRYPTED_FAILURE
                         .with_label_values(&[account_id.as_str()])

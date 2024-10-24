@@ -75,6 +75,8 @@ impl Node {
                 cfg.protocol.clone(),
             )?)),
             client_header_referer: None,
+            mesh_options: ctx.mesh_options.clone(),
+            message_options: ctx.message_options.clone(),
         };
 
         let cmd = executable(ctx.release, crate::execute::PACKAGE_MULTICHAIN)
@@ -167,6 +169,8 @@ impl Node {
                 config.cfg.protocol.clone(),
             )?)),
             client_header_referer: None,
+            mesh_options: ctx.mesh_options.clone(),
+            message_options: ctx.message_options.clone(),
         };
 
         let mpc_node_id = format!("multichain/{}", config.account.id());
