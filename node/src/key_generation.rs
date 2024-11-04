@@ -14,10 +14,10 @@ pub async fn run_key_generation(
 ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
     let cs_participants = participants
         .iter()
-        .map(|id| Participant::from(id.0))
+        .copied()
+        .map(Participant::from)
         .collect::<Vec<_>>();
-    let cs_me = Participant::from(me.0);
-    let mut protocol = cait_sith::keygen::<Secp256k1>(&cs_participants, cs_me, threshold)?;
+    let mut protocol = cait_sith::keygen::<Secp256k1>(&cs_participants, me.into(), threshold)?;
     let key = 'outer: loop {
         loop {
             match protocol.poke()? {
@@ -31,9 +31,7 @@ pub async fn run_key_generation(
                     }
                 }
                 Action::SendPrivate(participant, vec) => {
-                    channel
-                        .send(ParticipantId(participant.into()), vec.clone())
-                        .await?;
+                    channel.send(ParticipantId(participant.into()), vec).await?;
                 }
                 Action::Return(result) => break 'outer result,
             }
