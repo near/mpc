@@ -7,8 +7,10 @@ edition = "2021"
 anyhow = "1.0.92"
 async-trait = "0.1.83"
 borsh = { version = "1.5.1", features = ["derive"] }
+cait-sith = { git = "https://github.com/LIT-Protocol/cait-sith.git", features = ["k256"], rev = "8ad2316" }
 futures = "0.3.31"
 futures-util = "0.3.31"
 hex = "0.4.3"
+k256 = "0.13.4"
 tokio = { version = "1.41.0", features = ["macros", "rt-multi-thread", "sync"] }
 tokio-util = "0.7.12"
