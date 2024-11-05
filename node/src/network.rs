@@ -51,7 +51,8 @@ impl MeshNetworkClient {
     /// way the MPC task IDs are assigned ensures that no two participants would initiate
     /// tasks with the same MPC task ID.
     pub fn new_channel_for_task(&self, task_id: MpcTaskId) -> anyhow::Result<NetworkTaskChannel> {
-        println!(
+        tracing::debug!(
+            target: "network",
             "[{}] Creating new channel for task {:?}",
             self.my_participant_id(),
             task_id
@@ -88,12 +89,10 @@ impl MeshNetworkClient {
                 entry.insert(sender.clone());
                 drop(senders_for_tasks); // release lock
 
-                let (drop_sender, drop_receiver) = tokio::sync::oneshot::channel();
                 let senders_for_tasks = self.senders_for_tasks.clone();
-                tokio::spawn(async move {
-                    drop_receiver.await.ok();
+                let drop_fn = move || {
                     senders_for_tasks.lock().unwrap().remove(&task_id);
-                });
+                };
 
                 let transport_sender = self.transport_sender.clone();
                 let send_fn: SendFnForTaskChannel = Box::new(move |recipient_id, message| {
@@ -120,7 +119,7 @@ impl MeshNetworkClient {
                         my_participant_id: self.my_participant_id(),
                         sender: send_fn,
                         receiver,
-                        drop: Some(drop_sender),
+                        drop: Some(Box::new(drop_fn)),
                     },
                 }
             }
@@ -155,7 +154,8 @@ async fn run_receive_messages_loop(
             }
             SenderOrNewChannel::NewChannel { channel, sender } => {
                 sender.send(message).await?;
-                println!(
+                tracing::debug!(
+                    target: "network",
                     "[{}] [Task {:?}] Passively created new channel for task",
                     client.my_participant_id(),
                     task_id
@@ -196,8 +196,7 @@ pub struct NetworkTaskChannel {
     my_participant_id: ParticipantId, // for debugging
     sender: SendFnForTaskChannel,
     receiver: tokio::sync::mpsc::Receiver<MpcPeerMessage>,
-    /// Indirectly causes the given MPC task to be removed from the hashmap of MPC tasks.
-    drop: Option<tokio::sync::oneshot::Sender<()>>,
+    drop: Option<Box<dyn FnOnce() + Send + Sync>>,
 }
 
 type SendFnForTaskChannel =
@@ -205,7 +204,9 @@ type SendFnForTaskChannel =
 
 impl Drop for NetworkTaskChannel {
     fn drop(&mut self) {
-        let _ = self.drop.take().unwrap().send(());
+        if let Some(drop) = self.drop.take() {
+            drop();
+        }
     }
 }
 
@@ -220,7 +221,8 @@ impl NetworkTaskChannel {
     /// reliable message passing, and should instead have an appropriate timeout or retry mechanism
     /// at the application layer.
     pub async fn send(&self, recipient_id: ParticipantId, message: Vec<u8>) -> anyhow::Result<()> {
-        println!(
+        tracing::debug!(
+            target: "network",
             "[{}] [Task {:?}] Sending message to {:?}: {}",
             self.my_participant_id,
             self.task_id,
@@ -247,7 +249,8 @@ impl NetworkTaskChannel {
             .recv()
             .await
             .ok_or_else(|| anyhow::anyhow!("Channel closed"));
-        println!(
+        tracing::debug!(
+            target: "network",
             "[{}] [Task {:?}] Received message: {:?}",
             self.my_participant_id, self.task_id, result
         );
@@ -259,12 +262,13 @@ impl NetworkTaskChannel {
 pub mod testing {
     use super::MeshNetworkTransportSender;
     use crate::primitives::{MpcPeerMessage, ParticipantId};
+    use crate::tracking;
     use std::collections::HashMap;
     use std::sync::Arc;
 
     pub struct TestMeshTransport {
         participant_ids: Vec<ParticipantId>,
-        senders: HashMap<ParticipantId, tokio::sync::mpsc::Sender<MpcPeerMessage>>,
+        senders: HashMap<ParticipantId, tokio::sync::mpsc::UnboundedSender<MpcPeerMessage>>,
     }
 
     pub struct TestMeshTransportSender {
@@ -273,7 +277,7 @@ pub mod testing {
     }
 
     pub struct TestMeshTransportReceiver {
-        receiver: tokio::sync::mpsc::Receiver<MpcPeerMessage>,
+        receiver: tokio::sync::mpsc::UnboundedReceiver<MpcPeerMessage>,
     }
 
     #[async_trait::async_trait]
@@ -307,8 +311,7 @@ pub mod testing {
                 .send(MpcPeerMessage {
                     from: self.my_participant_id,
                     message,
-                })
-                .await?;
+                })?;
             Ok(())
         }
     }
@@ -330,7 +333,7 @@ pub mod testing {
         let mut senders = Vec::new();
         let mut receivers = Vec::new();
         for participant_id in &participants {
-            let (sender, receiver) = tokio::sync::mpsc::channel(100);
+            let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
             sender_by_participant_id.insert(*participant_id, sender.clone());
             senders.push(sender);
             receivers.push(receiver);
@@ -373,9 +376,13 @@ pub mod testing {
         let transports = new_test_transports(participants.clone());
         let join_handles = transports
             .into_iter()
-            .map(|(sender, receiver)| {
+            .enumerate()
+            .map(|(i, (sender, receiver))| {
                 let (client, new_channel_receiver) = super::run_network_client(sender, receiver);
-                tokio::spawn(client_runner(client, new_channel_receiver))
+                tracking::spawn(
+                    &format!("client {}", i),
+                    client_runner(client, new_channel_receiver),
+                )
             })
             .collect::<Vec<_>>();
         futures::future::join_all(join_handles)
@@ -391,6 +398,7 @@ mod tests {
     use super::{MeshNetworkClient, NetworkTaskChannel};
     use crate::network::testing::run_test_clients;
     use crate::primitives::{MpcTaskId, ParticipantId};
+    use crate::tracking;
     use borsh::{BorshDeserialize, BorshSerialize};
     use std::collections::HashSet;
     use std::sync::Arc;
@@ -405,12 +413,15 @@ mod tests {
         client: Arc<MeshNetworkClient>,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
     ) -> anyhow::Result<()> {
-        tokio::spawn(async move {
+        tracking::spawn("monitor passive channels", async move {
             loop {
                 let Some(channel) = channel_receiver.recv().await else {
                     break;
                 };
-                tokio::spawn(task_follower(channel));
+                tracking::spawn(
+                    &format!("passive task {:?}", channel.task_id),
+                    task_follower(channel),
+                );
             }
         });
 
@@ -422,13 +433,12 @@ mod tests {
         for seed in 0..5 {
             let channel = client
                 .new_channel_for_task(MpcTaskId::Triple(100 * participant_id.0 as u64 + seed))?;
-            handles.push(tokio::spawn(task_leader(
-                channel,
-                other_participant_ids.clone(),
-                seed,
-            )));
+            handles.push(tracking::spawn(
+                &format!("task {}", seed),
+                task_leader(channel, other_participant_ids.clone(), seed),
+            ));
 
-            let expected_total = other_participant_ids
+            let expected_total: u64 = other_participant_ids
                 .iter()
                 .map(|id| {
                     let input = id.0 as u64 + seed;

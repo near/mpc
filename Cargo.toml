@@ -3,3 +3,7 @@ members = [
     "node",
 ]
 resolver = "2"
+
+[profile.dev-release]
+inherits = "release"
+debug = true
