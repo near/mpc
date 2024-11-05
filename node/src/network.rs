@@ -14,6 +14,8 @@ use tokio::sync::mpsc;
 pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     /// Returns the participant ID of the current node.
     fn my_participant_id(&self) -> ParticipantId;
+    /// Returns the participant IDs of all nodes in the network, including the current node.
+    fn all_participant_ids(&self) -> Vec<ParticipantId>;
     /// Returns the participant IDs of all other nodes in the network,
     /// excluding the current node.
     fn other_participant_ids(&self) -> Vec<ParticipantId>;
@@ -49,6 +51,11 @@ impl MeshNetworkClient {
     /// way the MPC task IDs are assigned ensures that no two participants would initiate
     /// tasks with the same MPC task ID.
     pub fn new_channel_for_task(&self, task_id: MpcTaskId) -> anyhow::Result<NetworkTaskChannel> {
+        println!(
+            "[{}] Creating new channel for task {:?}",
+            self.my_participant_id(),
+            task_id
+        );
         match self.sender_for(task_id) {
             SenderOrNewChannel::Existing(_) => anyhow::bail!("Channel already exists"),
             SenderOrNewChannel::NewChannel { channel, .. } => Ok(channel),
@@ -57,6 +64,10 @@ impl MeshNetworkClient {
 
     pub fn my_participant_id(&self) -> ParticipantId {
         self.transport_sender.my_participant_id()
+    }
+
+    pub fn all_participant_ids(&self) -> Vec<ParticipantId> {
+        self.transport_sender.all_participant_ids()
     }
 
     pub fn other_participant_ids(&self) -> Vec<ParticipantId> {
@@ -106,6 +117,7 @@ impl MeshNetworkClient {
                     sender,
                     channel: NetworkTaskChannel {
                         task_id,
+                        my_participant_id: self.my_participant_id(),
                         sender: send_fn,
                         receiver,
                         drop: Some(drop_sender),
@@ -143,6 +155,11 @@ async fn run_receive_messages_loop(
             }
             SenderOrNewChannel::NewChannel { channel, sender } => {
                 sender.send(message).await?;
+                println!(
+                    "[{}] [Task {:?}] Passively created new channel for task",
+                    client.my_participant_id(),
+                    task_id
+                );
                 new_channel_sender.send(channel).await?;
             }
         }
@@ -176,6 +193,7 @@ pub fn run_network_client(
 /// proper cleanup of the associated resources.
 pub struct NetworkTaskChannel {
     pub task_id: MpcTaskId,
+    my_participant_id: ParticipantId, // for debugging
     sender: SendFnForTaskChannel,
     receiver: tokio::sync::mpsc::Receiver<MpcPeerMessage>,
     /// Indirectly causes the given MPC task to be removed from the hashmap of MPC tasks.
@@ -203,7 +221,8 @@ impl NetworkTaskChannel {
     /// at the application layer.
     pub async fn send(&self, recipient_id: ParticipantId, message: Vec<u8>) -> anyhow::Result<()> {
         println!(
-            "[Task {:?}] Sending message to {:?}: {}",
+            "[{}] [Task {:?}] Sending message to {:?}: {}",
+            self.my_participant_id,
             self.task_id,
             recipient_id,
             hex::encode(&message)
@@ -228,19 +247,23 @@ impl NetworkTaskChannel {
             .recv()
             .await
             .ok_or_else(|| anyhow::anyhow!("Channel closed"));
-        println!("[Task {:?}] Received message: {:?}", self.task_id, result);
+        println!(
+            "[{}] [Task {:?}] Received message: {:?}",
+            self.my_participant_id, self.task_id, result
+        );
         result
     }
 }
 
 #[cfg(test)]
-mod testing {
+pub mod testing {
     use super::MeshNetworkTransportSender;
     use crate::primitives::{MpcPeerMessage, ParticipantId};
     use std::collections::HashMap;
     use std::sync::Arc;
 
     pub struct TestMeshTransport {
+        participant_ids: Vec<ParticipantId>,
         senders: HashMap<ParticipantId, tokio::sync::mpsc::Sender<MpcPeerMessage>>,
     }
 
@@ -259,12 +282,16 @@ mod testing {
             self.my_participant_id
         }
 
+        fn all_participant_ids(&self) -> Vec<ParticipantId> {
+            self.transport.participant_ids.clone()
+        }
+
         fn other_participant_ids(&self) -> Vec<ParticipantId> {
             self.transport
-                .senders
-                .keys()
-                .filter(|id| **id != self.my_participant_id)
+                .participant_ids
+                .iter()
                 .copied()
+                .filter(|id| *id != self.my_participant_id)
                 .collect()
         }
 
@@ -310,6 +337,7 @@ mod testing {
         }
 
         let transport = Arc::new(TestMeshTransport {
+            participant_ids: participants.clone(),
             senders: sender_by_participant_id,
         });
 
@@ -327,13 +355,41 @@ mod testing {
 
         transports
     }
+
+    pub async fn run_test_clients<T: 'static + Send, F, FR>(
+        num_participants: usize,
+        client_runner: F,
+    ) -> anyhow::Result<Vec<T>>
+    where
+        F: Fn(
+            Arc<super::MeshNetworkClient>,
+            tokio::sync::mpsc::Receiver<super::NetworkTaskChannel>,
+        ) -> FR,
+        FR: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
+    {
+        let participants = (0..num_participants)
+            .map(|id| ParticipantId(id as u32))
+            .collect::<Vec<_>>();
+        let transports = new_test_transports(participants.clone());
+        let join_handles = transports
+            .into_iter()
+            .map(|(sender, receiver)| {
+                let (client, new_channel_receiver) = super::run_network_client(sender, receiver);
+                tokio::spawn(client_runner(client, new_channel_receiver))
+            })
+            .collect::<Vec<_>>();
+        futures::future::join_all(join_handles)
+            .await
+            .into_iter()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::network::run_network_client;
-    use crate::network::testing::new_test_transports;
+    use crate::network::testing::run_test_clients;
     use crate::primitives::{MpcTaskId, ParticipantId};
     use borsh::{BorshDeserialize, BorshSerialize};
     use std::collections::HashSet;
@@ -342,24 +398,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_network_basic() {
-        let participants = vec![
-            ParticipantId(0),
-            ParticipantId(1),
-            ParticipantId(2),
-            ParticipantId(3),
-        ];
-        let transports = new_test_transports(participants.clone());
-        let network_clients = transports
-            .into_iter()
-            .map(|(sender, receiver)| {
-                let (client, new_channel_receiver) = run_network_client(sender, receiver);
-                tokio::spawn(run_test_client(client, new_channel_receiver))
-            })
-            .collect::<Vec<_>>();
-        let results = futures::future::join_all(network_clients).await;
-        for result in results {
-            result.unwrap().unwrap();
-        }
+        run_test_clients(4, run_test_client).await.unwrap();
     }
 
     async fn run_test_client(
