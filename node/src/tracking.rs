@@ -5,6 +5,55 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 use tokio::task_local;
 
+/// Spawns a new task that is a child of the current tokio task.
+/// Must be called from a tracked tokio task.
+pub fn spawn<F, R>(description: &str, f: F) -> tokio::task::JoinHandle<R>
+where
+    F: Future<Output = R> + Send + 'static,
+    R: Send + 'static,
+{
+    let current_task = CURRENT_TASK.get();
+    let handle = current_task.0.new_child(description);
+    tokio::spawn(CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), f))
+}
+
+/// Reports the progress of the current tokio task.
+/// Must be called from a tracked tokio task.
+pub fn set_progress(progress: &str) {
+    CURRENT_TASK.with(|task| task.0.set_progress(progress));
+}
+
+/// Starts a root task. This is the entry point for tracking tasks.
+/// All other futures must be spawned with `tracking::spawn`, rather than
+/// `tokio::spawn`.
+pub fn start_root_task<F, R>(f: F) -> (impl Future<Output = R>, Arc<TaskHandle>)
+where
+    F: Future<Output = R> + Send + 'static,
+    R: Send + 'static,
+{
+    let handle = Arc::new(TaskHandle {
+        _parent: None,
+        children: Mutex::new(WeakCollection::new()),
+        description: "root".to_string(),
+        start_time: Instant::now(),
+        progress: Mutex::new("".to_string()),
+        finished: AtomicBool::new(false),
+    });
+    (
+        CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle.clone())), f),
+        handle,
+    )
+}
+
+/// Returns the name of the current task.
+/// Must be called from a tracked tokio task.
+pub fn current_task_name() -> String {
+    CURRENT_TASK.get().0.description.clone()
+}
+
+/// Simple self-garbage-collecting ordered collection of weak references.
+/// Used to keep track of children tasks that may have finished.
+/// It works by checking 2 references for every push, making it O(1).
 struct WeakCollection<T> {
     buffers: [VecDeque<Weak<T>>; 2],
     current: usize,
@@ -20,10 +69,10 @@ impl<T> WeakCollection<T> {
 
     fn push(&mut self, item: Weak<T>) {
         self.buffers[self.current].push_back(item);
-        self.refresh();
+        self.remove_some_expired_references();
     }
 
-    fn refresh(&mut self) {
+    fn remove_some_expired_references(&mut self) {
         for _ in 0..2 {
             match self.buffers[self.current].pop_front() {
                 Some(item) => {
@@ -47,6 +96,14 @@ impl<T> WeakCollection<T> {
     }
 }
 
+/// Tracks the execution progress of a future. It is referenced in three ways:
+///  - As a parent of other tasks that this task spawned. While these tasks are
+///    alive, we keep the parent around for information.
+///  - By a future's task-local variable. This reference goes away when the
+///    future drops the task-local (i.e. when it's finished), which is also
+///    when we mark this task as finished.
+///  - Weakly, by its parent's children collection. This is used to locate all
+///    the currently running tasks for debugging purposes.
 pub struct TaskHandle {
     _parent: Option<Arc<TaskHandle>>, // This is needed to keep the parent alive
     children: Mutex<WeakCollection<TaskHandle>>,
@@ -56,6 +113,7 @@ pub struct TaskHandle {
     finished: AtomicBool,
 }
 
+/// A task handle, but marks the task handle as finished when it is dropped.
 struct TaskHandleScoped(Arc<TaskHandle>);
 
 impl Drop for TaskHandleScoped {
@@ -67,6 +125,7 @@ impl Drop for TaskHandleScoped {
 }
 
 task_local! {
+    // This is used by a future to query the current TaskHandle.
     static CURRENT_TASK: Arc<TaskHandleScoped>;
 }
 
@@ -107,43 +166,6 @@ impl TaskHandle {
     }
 }
 
-pub fn spawn<F, R>(description: &str, f: F) -> tokio::task::JoinHandle<R>
-where
-    F: Future<Output = R> + Send + 'static,
-    R: Send + 'static,
-{
-    let current_task = CURRENT_TASK.get();
-    let handle = current_task.0.new_child(description);
-    tokio::spawn(CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), f))
-}
-
-pub fn set_progress(progress: &str) {
-    CURRENT_TASK.with(|task| task.0.set_progress(progress));
-}
-
-pub fn start_root_task<F, R>(f: F) -> (impl Future<Output = R>, Arc<TaskHandle>)
-where
-    F: Future<Output = R> + Send + 'static,
-    R: Send + 'static,
-{
-    let handle = Arc::new(TaskHandle {
-        _parent: None,
-        children: Mutex::new(WeakCollection::new()),
-        description: "root".to_string(),
-        start_time: Instant::now(),
-        progress: Mutex::new("".to_string()),
-        finished: AtomicBool::new(false),
-    });
-    (
-        CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle.clone())), f),
-        handle,
-    )
-}
-
-pub fn current_task_name() -> String {
-    CURRENT_TASK.get().0.description.clone()
-}
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TaskStatusReport {
     description: String,
@@ -155,6 +177,8 @@ pub struct TaskStatusReport {
 
 #[cfg(test)]
 pub mod testing {
+    /// Runs the top-most-level future with tracking, and prints a report of
+    /// running tasks every 5 seconds.
     pub fn start_root_task_with_periodic_dump<F, R>(f: F) -> impl std::future::Future<Output = R>
     where
         F: std::future::Future<Output = R> + Send + 'static,

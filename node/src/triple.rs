@@ -7,6 +7,7 @@ use k256::Secp256k1;
 use crate::tracking::{self};
 use crate::{network::NetworkTaskChannel, primitives::ParticipantId};
 
+/// Generates a cait-sith triple.
 pub async fn run_triple_generation(
     mut channel: NetworkTaskChannel,
     participants: Vec<ParticipantId>,
@@ -57,6 +58,14 @@ pub async fn run_triple_generation(
     Ok(triple)
 }
 
+/// Generates a random ID to identify a triple. It has no meaning beyond being
+/// an identifier. It is generated in a way such that each participant will
+/// generate different IDs. This is useful to ensure that IDs from different
+/// participants will not collide.
+///
+/// There is, however, a chance that the same participant generates an ID that
+/// already existed before, so the existence of a triple of such an ID must be
+/// checked before using it.
 pub fn generate_triple_id(me: ParticipantId) -> u64 {
     rand::random::<u64>() << 12 | me.0 as u64
 }
@@ -76,11 +85,18 @@ mod tests {
     use super::{generate_triple_id, run_triple_generation};
     use crate::tracking;
 
-    #[tokio::test]
+    const NUM_PARTICIPANTS: usize = 4;
+    const THRESHOLD: usize = 3;
+    const PARALLELISM_PER_CLIENT: usize = 4;
+    const TRIPLES_TO_GENERATE_PER_CLIENT: usize = 10;
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_triple_generation() {
         init_logging();
         tracking::testing::start_root_task_with_periodic_dump(async {
-            let results = run_test_clients(4, run_triple_gen_client).await.unwrap();
+            let results = run_test_clients(NUM_PARTICIPANTS, run_triple_gen_client)
+                .await
+                .unwrap();
             println!("{:?}", results);
         })
         .await;
@@ -103,14 +119,14 @@ mod tests {
                             channel,
                             all_participant_ids.clone(),
                             participant_id,
-                            3,
+                            THRESHOLD,
                         ),
                     );
                 }
             });
         }
 
-        let triples = stream::iter(0..10)
+        let triples = stream::iter(0..TRIPLES_TO_GENERATE_PER_CLIENT)
             .map(move |_| {
                 let client = client.clone();
                 async move {
@@ -123,14 +139,14 @@ mod tests {
                             client.new_channel_for_task(task_id)?,
                             all_participant_ids.clone(),
                             participant_id,
-                            3,
+                            THRESHOLD,
                         ),
                     )
                     .await??;
                     anyhow::Ok(result)
                 }
             })
-            .buffered(4)
+            .buffered(PARALLELISM_PER_CLIENT)
             .try_collect::<Vec<_>>()
             .await?;
 
