@@ -1,8 +1,20 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::protocol::Participant;
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+)]
 pub struct ParticipantId(pub u32);
 
 impl From<Participant> for ParticipantId {
@@ -37,6 +49,6 @@ pub struct MpcPeerMessage {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum MpcTaskId {
-    Generating,
+    KeyGeneration,
     Triple(u64),
 }

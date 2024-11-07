@@ -1,21 +1,28 @@
 [package]
-name = "node"
+name = "mpc-node"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+actix-web = "4.9.0"
 anyhow = "1.0.92"
 async-trait = "0.1.83"
 borsh = { version = "1.5.1", features = ["derive"] }
 cait-sith = { git = "https://github.com/LIT-Protocol/cait-sith.git", features = ["k256"], rev = "8ad2316" }
+clap = { version = "4.5.20", features = ["derive", "env"] }
 futures = "0.3.31"
 futures-util = "0.3.31"
-hex = "0.4.3"
+hex = { version = "0.4.3", features = ["serde"] }
 k256 = "0.13.4"
+quinn = "0.11.5"
 rand = "0.8.5"
+rcgen = "0.13.1"
+rustls = { version = "0.23.16", default-features = false, features = ["ring"] }
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
+serde_yaml = "0.9.34"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-util = "0.7.12"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+x509-parser = "0.16.0"
