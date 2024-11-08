@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::future::Future;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, Weak};
@@ -45,10 +46,10 @@ where
     )
 }
 
-/// Returns the name of the current task.
+/// Returns the handle to the current task.
 /// Must be called from a tracked tokio task.
-pub fn current_task_name() -> String {
-    CURRENT_TASK.get().0.description.clone()
+pub fn current_task() -> Arc<TaskHandle> {
+    CURRENT_TASK.get().0.clone()
 }
 
 /// Simple self-garbage-collecting ordered collection of weak references.
@@ -166,13 +167,47 @@ impl TaskHandle {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct TaskStatusReport {
     description: String,
     progress: String,
     elapsed: std::time::Duration,
     finished: bool,
     children: Vec<TaskStatusReport>,
+}
+
+impl Debug for TaskStatusReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn format_duration(duration: std::time::Duration) -> String {
+            if duration.as_secs() > 60 {
+                format!("{}m", duration.as_secs() / 60)
+            } else if duration.as_secs() >= 1 {
+                format!("{}s", duration.as_secs())
+            } else {
+                "<1s".to_string()
+            }
+        }
+        fn fmt_inner(
+            report: &TaskStatusReport,
+            f: &mut std::fmt::Formatter<'_>,
+            indent: usize,
+        ) -> std::fmt::Result {
+            writeln!(
+                f,
+                "{}[{}] {:>3} {}: {}",
+                " ".repeat(indent),
+                if report.finished { "✔" } else { " " },
+                format_duration(report.elapsed),
+                report.description,
+                report.progress
+            )?;
+            for child in &report.children {
+                fmt_inner(child, f, indent + 2)?;
+            }
+            Ok(())
+        }
+        fmt_inner(self, f, 0)
+    }
 }
 
 #[cfg(test)]
@@ -189,38 +224,10 @@ pub mod testing {
         tokio::spawn(async move {
             loop {
                 let report = handle_clone.report();
-                pretty_print_report(report);
+                eprintln!("{:?}", report);
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         });
         future
-    }
-
-    fn pretty_print_report(report: super::TaskStatusReport) {
-        fn pretty_print_report_inner(report: super::TaskStatusReport, indent: usize) {
-            println!(
-                "{}[{}] {:>3} {}: {}",
-                " ".repeat(indent),
-                if report.finished { "✔" } else { " " },
-                format_duration(report.elapsed),
-                report.description,
-                report.progress
-            );
-            for child in report.children {
-                pretty_print_report_inner(child, indent + 2);
-            }
-        }
-        println!("Current tasks:");
-        pretty_print_report_inner(report, 2);
-    }
-
-    fn format_duration(duration: std::time::Duration) -> String {
-        if duration.as_secs() > 60 {
-            format!("{}m", duration.as_secs() / 60)
-        } else if duration.as_secs() >= 1 {
-            format!("{}s", duration.as_secs())
-        } else {
-            "<1s".to_string()
-        }
     }
 }

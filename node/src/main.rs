@@ -1,13 +1,21 @@
+use clap::Parser;
 use tracing::init_logging;
 
+mod cli;
+pub mod config;
 pub mod key_generation;
+mod mpc_client;
 pub mod network;
+pub mod p2p;
 pub mod primitives;
 mod tracing;
 pub mod tracking;
 pub mod triple;
+mod web;
 
-fn main() {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     init_logging();
-    println!("Hello, world!");
+    let cli = cli::Cli::parse();
+    cli.run().await
 }

@@ -1,4 +1,5 @@
 use crate::primitives::{MpcMessage, MpcPeerMessage, MpcTaskId, ParticipantId};
+use crate::tracking;
 use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
 use std::collections::hash_map::Entry;
@@ -178,11 +179,10 @@ pub fn run_network_client(
         senders_for_tasks: Arc::new(Mutex::new(HashMap::new())),
     });
     let (new_channel_sender, new_channel_receiver) = mpsc::channel(100);
-    tokio::spawn(run_receive_messages_loop(
-        client.clone(),
-        transport_receiver,
-        new_channel_sender,
-    ));
+    tracking::spawn(
+        "Network receive message loop",
+        run_receive_messages_loop(client.clone(), transport_receiver, new_channel_sender),
+    );
     (client, new_channel_receiver)
 }
 
@@ -487,7 +487,7 @@ mod tests {
     async fn task_follower(mut channel: NetworkTaskChannel) -> anyhow::Result<()> {
         println!("Task follower started: task id: {:?}", channel.task_id);
         match channel.task_id {
-            MpcTaskId::Generating => {
+            MpcTaskId::KeyGeneration => {
                 unreachable!()
             }
             MpcTaskId::Triple(id) => {

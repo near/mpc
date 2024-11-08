@@ -70,7 +70,7 @@ mod tests {
 
         // We'll have the first participant be the leader.
         let channel = if participant_id == all_participant_ids[0] {
-            client.new_channel_for_task(MpcTaskId::Generating)?
+            client.new_channel_for_task(MpcTaskId::KeyGeneration)?
         } else {
             channel_receiver
                 .recv()
