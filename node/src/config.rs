@@ -7,6 +7,12 @@ use std::path::Path;
 pub struct Config {
     pub mpc: MpcConfig,
     pub web_ui: WebUIConfig,
+    pub triple: TripleConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TripleConfig {
+    pub concurrency: usize,
 }
 
 #[derive(Debug)]
@@ -35,6 +41,7 @@ pub struct ConfigFile {
     /// Private key used for the P2P communication's TLS.
     pub p2p_private_key_file: String,
     pub web_ui: WebUIConfig,
+    pub triple: TripleConfig,
 }
 
 impl ConfigFile {
@@ -89,6 +96,7 @@ pub fn load_config(home_dir: &Path) -> anyhow::Result<Config> {
     let config = Config {
         mpc: mpc_config,
         web_ui: web_config,
+        triple: file_config.triple,
     };
     Ok(config)
 }

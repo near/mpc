@@ -28,3 +28,5 @@ p2p_private_key_file: p2p.pem
 web_ui:
   host: 127.0.0.1
   port: 20002
+triple:
+  concurrency: 4
