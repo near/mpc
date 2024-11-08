@@ -1,4 +1,4 @@
-use crate::config::MpcConfig;
+use crate::config::{MpcConfig, TripleConfig};
 use crate::key_generation::run_key_generation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
@@ -14,11 +14,12 @@ use tokio::time::timeout;
 /// multiparty computation.
 pub async fn run_mpc_client(
     config: Arc<MpcConfig>,
+    triple_config: Arc<TripleConfig>,
     client: Arc<MeshNetworkClient>,
     mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
 ) -> anyhow::Result<()> {
     // TODO: make it into a config for each kind of task.
-    const TASK_TIMEOUT: Duration = Duration::from_secs(5);
+    const TASK_TIMEOUT: Duration = Duration::from_secs(60);
     {
         let client = client.clone();
         let config = config.clone();
@@ -74,7 +75,7 @@ pub async fn run_mpc_client(
     // Generate 4 triples at once.
     let triples_generated = Arc::new(AtomicUsize::new(0));
     let mut handles = Vec::new();
-    for i in 0..4 {
+    for i in 0..triple_config.concurrency {
         let client = client.clone();
         let config = config.clone();
         let triples_generated = triples_generated.clone();

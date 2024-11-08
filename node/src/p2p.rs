@@ -85,9 +85,10 @@ impl ClientCertVerifier for DummyClientCertVerifier {
 
 /// A retrying connection that will automatically reconnect if the QUIC
 /// connection is broken.
+#[derive(Clone)]
 struct PersistentConnection {
     endpoint: Endpoint,
-    target: SocketAddr,
+    target_address: String,
     target_participant_id: ParticipantId,
     participant_identities: Arc<ParticipantIdentities>,
     current: Arc<Mutex<Option<Arc<quinn::Connection>>>>,
@@ -105,7 +106,8 @@ impl PersistentConnection {
             let mut current = self.current.lock().await;
             if current.is_none() {
                 // Reconnect, if we never connected, or the previous connection was closed.
-                let new_conn = self.endpoint.connect(self.target, "dummy")?.await?;
+                let socket_addr = self.target_address.to_socket_addrs()?.next().unwrap();
+                let new_conn = self.endpoint.connect(socket_addr, "dummy")?.await?;
                 let participant_id = verify_peer_identity(&new_conn, &self.participant_identities)?;
                 if participant_id != self.target_participant_id {
                     anyhow::bail!("Unexpected peer identity");
@@ -248,10 +250,7 @@ pub async fn new_quic_mesh_network(
             participant.id,
             PersistentConnection {
                 endpoint: client.clone(),
-                target: format!("{}:{}", participant.address, participant.port)
-                    .to_socket_addrs()?
-                    .next()
-                    .ok_or_else(|| anyhow!("Could not resolve address"))?,
+                target_address: format!("{}:{}", participant.address, participant.port),
                 target_participant_id: participant.id,
                 participant_identities: participant_identities.clone(),
                 current: Arc::new(Mutex::new(None)),
@@ -260,7 +259,7 @@ pub async fn new_quic_mesh_network(
     }
 
     // TODO: what should the channel size be? What's our flow control strategy in general?
-    let (message_sender, message_receiver) = mpsc::channel(1000);
+    let (message_sender, message_receiver) = mpsc::channel(100000);
     let endpoint_for_listener = server.clone();
 
     tracking::spawn("Handle incoming connections", async move {
@@ -395,6 +394,33 @@ impl MeshNetworkTransportSender for QuicMeshSender {
         stream.write_all(&msg).await?;
         stream.finish()?;
 
+        Ok(())
+    }
+
+    async fn wait_for_ready(&self) -> anyhow::Result<()> {
+        let handles = self.connections.iter().map(|(participant_id, conn)| {
+            let participant_id = *participant_id;
+            let conn = conn.clone();
+            tracking::spawn(
+                &format!("Wait for connection to {}", participant_id),
+                async move {
+                    loop {
+                        match conn.new_stream().await {
+                            Ok(_) => break,
+                            Err(e) => {
+                                tracing::info!(
+                                    "Waiting for connection to {}: {}",
+                                    participant_id,
+                                    e
+                                );
+                            }
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    }
+                },
+            )
+        });
+        futures::future::join_all(handles).await;
         Ok(())
     }
 }

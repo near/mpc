@@ -27,6 +27,8 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     /// message is sent doesn't guarantee that the recipient will receive it; that is up to
     /// the user of the networking layer to deal with.
     async fn send(&self, recipient_id: ParticipantId, message: MpcMessage) -> anyhow::Result<()>;
+    /// Waits until all nodes in the network have been connected to initially.
+    async fn wait_for_ready(&self) -> anyhow::Result<()>;
 }
 
 /// The receiving side of the networking layer. It is expected that the node will run
@@ -86,7 +88,7 @@ impl MeshNetworkClient {
         match senders_for_tasks.entry(task_id) {
             Entry::Occupied(entry) => SenderOrNewChannel::Existing(entry.get().clone()),
             Entry::Vacant(entry) => {
-                let (sender, receiver) = mpsc::channel(100);
+                let (sender, receiver) = mpsc::channel(1000);
                 entry.insert(sender.clone());
                 drop(senders_for_tasks); // release lock
 
@@ -178,7 +180,7 @@ pub fn run_network_client(
         transport_sender,
         senders_for_tasks: Arc::new(Mutex::new(HashMap::new())),
     });
-    let (new_channel_sender, new_channel_receiver) = mpsc::channel(100);
+    let (new_channel_sender, new_channel_receiver) = mpsc::channel(1000);
     tracking::spawn(
         "Network receive message loop",
         run_receive_messages_loop(client.clone(), transport_receiver, new_channel_sender),
@@ -312,6 +314,10 @@ pub mod testing {
                     from: self.my_participant_id,
                     message,
                 })?;
+            Ok(())
+        }
+
+        async fn wait_for_ready(&self) -> anyhow::Result<()> {
             Ok(())
         }
     }

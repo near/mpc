@@ -1,6 +1,6 @@
-use crate::config::{load_config, ConfigFile, WebUIConfig};
+use crate::config::{load_config, ConfigFile, TripleConfig, WebUIConfig};
 use crate::mpc_client::run_mpc_client;
-use crate::network::run_network_client;
+use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_quic_mesh_network};
 use crate::tracking;
 use crate::web::run_web_server;
@@ -38,9 +38,16 @@ impl Cli {
                         run_web_server(root_task_handle, config.web_ui),
                     );
                     let (sender, receiver) = new_quic_mesh_network(&config.mpc).await?;
+                    sender.wait_for_ready().await?;
                     let (network_client, channel_receiver) =
                         run_network_client(Arc::new(sender), Box::new(receiver));
-                    run_mpc_client(config.mpc.into(), network_client, channel_receiver).await?;
+                    run_mpc_client(
+                        config.mpc.into(),
+                        config.triple.into(),
+                        network_client,
+                        channel_receiver,
+                    )
+                    .await?;
                     anyhow::Ok(())
                 });
                 root_task.await?;
@@ -63,6 +70,7 @@ impl Cli {
                             host: "127.0.0.1".to_owned(),
                             port: 20000 + i as u16,
                         },
+                        triple: TripleConfig { concurrency: 4 },
                     };
                     std::fs::write(
                         format!("{}/p2p.pem", subdir),
