@@ -51,4 +51,19 @@ pub struct MpcPeerMessage {
 pub enum MpcTaskId {
     KeyGeneration,
     Triple(u64),
+    ManyTriples {
+        start: u64,
+        end: u64,
+    },
+    Presignature {
+        id: u64,
+        triple0_id: u64,
+        triple1_id: u64,
+    },
+    Signature {
+        id: u64,
+        presignature_id: u64,
+        // TODO: this is definitely not good; we need a proof.
+        msg_hash: [u8; 32],
+    },
 }

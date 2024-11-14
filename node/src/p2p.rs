@@ -266,7 +266,7 @@ pub async fn new_quic_mesh_network(
         while let Some(conn) = endpoint_for_listener.accept().await {
             let message_sender = message_sender.clone();
             let participant_identities = participant_identities.clone();
-            tracking::spawn("Handle connection", async move {
+            tracking::spawn_checked("Handle connection", async move {
                 if let Ok(connection) = conn.await {
                     let verified_participant_id =
                         verify_peer_identity(&connection, &participant_identities)?;
@@ -276,19 +276,9 @@ pub async fn new_quic_mesh_network(
                         let stream = connection.accept_uni().await?;
                         tracing::debug!("Accepted stream from {}", verified_participant_id);
                         let message_sender = message_sender.clone();
-                        tracking::spawn(
+                        tracking::spawn_checked(
                             &format!("Handle stream from {}", verified_participant_id),
-                            async move {
-                                if let Err(e) = handle_incoming_stream(
-                                    verified_participant_id,
-                                    stream,
-                                    message_sender,
-                                )
-                                .await
-                                {
-                                    eprintln!("Error handling incoming stream: {}", e);
-                                }
-                            },
+                            handle_incoming_stream(verified_participant_id, stream, message_sender),
                         );
                     }
                 }
@@ -369,14 +359,6 @@ impl MeshNetworkTransportSender for QuicMeshSender {
 
     fn all_participant_ids(&self) -> Vec<ParticipantId> {
         self.participants.clone()
-    }
-
-    fn other_participant_ids(&self) -> Vec<ParticipantId> {
-        self.participants
-            .iter()
-            .filter(|id| **id != self.my_id)
-            .cloned()
-            .collect()
     }
 
     async fn send(&self, recipient_id: ParticipantId, message: MpcMessage) -> Result<()> {

@@ -18,6 +18,26 @@ where
     tokio::spawn(CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), f))
 }
 
+/// Like `spawn`, but if the task resolves to an error result, logs the result.
+pub fn spawn_checked<F, R>(description: &str, f: F) -> tokio::task::JoinHandle<anyhow::Result<R>>
+where
+    F: Future<Output = anyhow::Result<R>> + Send + 'static,
+    R: Send + 'static,
+{
+    let current_task = CURRENT_TASK.get();
+    let handle = current_task.0.new_child(description);
+    let description_clone = description.to_string();
+    tokio::spawn(
+        CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), async move {
+            let result = f.await;
+            if let Err(err) = &result {
+                tracing::error!("Task failed: {}: {}", description_clone, err);
+            }
+            result
+        }),
+    )
+}
+
 /// Reports the progress of the current tokio task.
 /// Must be called from a tracked tokio task.
 pub fn set_progress(progress: &str) {
@@ -149,6 +169,18 @@ impl TaskHandle {
         });
         self.children.lock().unwrap().push(Arc::downgrade(&handle));
         handle
+    }
+
+    /// Forces the future to run in the scope of the given task handle.
+    /// Useful when there's a tracking gap due to a third party library
+    /// (such as actix_web) spawning futures with tokio::spawn.
+    pub fn scope<F, R>(self: &Arc<TaskHandle>, description: &str, f: F) -> impl Future<Output = R>
+    where
+        F: Future<Output = R> + Send + 'static,
+        R: Send + 'static,
+    {
+        let child = self.new_child(description);
+        CURRENT_TASK.scope(Arc::new(TaskHandleScoped(child)), f)
     }
 
     pub fn report(&self) -> TaskStatusReport {

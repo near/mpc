@@ -17,9 +17,6 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     fn my_participant_id(&self) -> ParticipantId;
     /// Returns the participant IDs of all nodes in the network, including the current node.
     fn all_participant_ids(&self) -> Vec<ParticipantId>;
-    /// Returns the participant IDs of all other nodes in the network,
-    /// excluding the current node.
-    fn other_participant_ids(&self) -> Vec<ParticipantId>;
     /// Sends a message to the specified recipient.
     /// It is not expected to really block. It's only async because messages may be congested.
     /// Returns an error if something serious goes wrong so that the task that expects the
@@ -72,10 +69,6 @@ impl MeshNetworkClient {
 
     pub fn all_participant_ids(&self) -> Vec<ParticipantId> {
         self.transport_sender.all_participant_ids()
-    }
-
-    pub fn other_participant_ids(&self) -> Vec<ParticipantId> {
-        self.transport_sender.other_participant_ids()
     }
 
     /// Internal function shared between new_channel_for_task and MeshNetworkClientDriver::run.
@@ -181,7 +174,7 @@ pub fn run_network_client(
         senders_for_tasks: Arc::new(Mutex::new(HashMap::new())),
     });
     let (new_channel_sender, new_channel_receiver) = mpsc::channel(1000);
-    tracking::spawn(
+    tracking::spawn_checked(
         "Network receive message loop",
         run_receive_messages_loop(client.clone(), transport_receiver, new_channel_sender),
     );
@@ -292,15 +285,6 @@ pub mod testing {
             self.transport.participant_ids.clone()
         }
 
-        fn other_participant_ids(&self) -> Vec<ParticipantId> {
-            self.transport
-                .participant_ids
-                .iter()
-                .copied()
-                .filter(|id| *id != self.my_participant_id)
-                .collect()
-        }
-
         async fn send(
             &self,
             recipient_id: ParticipantId,
@@ -405,6 +389,7 @@ mod tests {
     use crate::network::testing::run_test_clients;
     use crate::primitives::{MpcTaskId, ParticipantId};
     use crate::tracking;
+    use crate::tracking::testing::start_root_task_with_periodic_dump;
     use borsh::{BorshDeserialize, BorshSerialize};
     use std::collections::HashSet;
     use std::sync::Arc;
@@ -412,7 +397,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_network_basic() {
-        run_test_clients(4, run_test_client).await.unwrap();
+        start_root_task_with_periodic_dump(async move {
+            run_test_clients(4, run_test_client).await.unwrap();
+        })
+        .await;
     }
 
     async fn run_test_client(
@@ -424,7 +412,7 @@ mod tests {
                 let Some(channel) = channel_receiver.recv().await else {
                     break;
                 };
-                tracking::spawn(
+                tracking::spawn_checked(
                     &format!("passive task {:?}", channel.task_id),
                     task_follower(channel),
                 );
@@ -432,14 +420,18 @@ mod tests {
         });
 
         let participant_id = client.my_participant_id();
-        let other_participant_ids = client.other_participant_ids();
+        let other_participant_ids = client
+            .all_participant_ids()
+            .into_iter()
+            .filter(|id| id != &participant_id)
+            .collect::<Vec<_>>();
 
         let mut handles = Vec::new();
         let mut expected_results = Vec::new();
         for seed in 0..5 {
             let channel = client
                 .new_channel_for_task(MpcTaskId::Triple(100 * participant_id.0 as u64 + seed))?;
-            handles.push(tracking::spawn(
+            handles.push(tracking::spawn_checked(
                 &format!("task {}", seed),
                 task_leader(channel, other_participant_ids.clone(), seed),
             ));
@@ -493,9 +485,6 @@ mod tests {
     async fn task_follower(mut channel: NetworkTaskChannel) -> anyhow::Result<()> {
         println!("Task follower started: task id: {:?}", channel.task_id);
         match channel.task_id {
-            MpcTaskId::KeyGeneration => {
-                unreachable!()
-            }
             MpcTaskId::Triple(id) => {
                 let message = channel.receive().await?;
                 assert_eq!(message.message.task_id, MpcTaskId::Triple(id));
@@ -513,6 +502,7 @@ mod tests {
 
                 Ok(())
             }
+            _ => unreachable!(),
         }
     }
 

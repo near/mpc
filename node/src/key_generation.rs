@@ -1,13 +1,14 @@
 use crate::network::NetworkTaskChannel;
 use crate::primitives::ParticipantId;
-use cait_sith::protocol::{Action, Participant, Protocol};
+use crate::protocol::run_protocol;
+use cait_sith::protocol::Participant;
 use cait_sith::KeygenOutput;
 use k256::Secp256k1;
 
 /// Runs the key generation protocol, returning the key generated.
 /// This protocol is identical for the leader and the followers.
 pub async fn run_key_generation(
-    mut channel: NetworkTaskChannel,
+    channel: NetworkTaskChannel,
     participants: Vec<ParticipantId>,
     me: ParticipantId,
     threshold: usize,
@@ -17,31 +18,8 @@ pub async fn run_key_generation(
         .copied()
         .map(Participant::from)
         .collect::<Vec<_>>();
-    let mut protocol = cait_sith::keygen::<Secp256k1>(&cs_participants, me.into(), threshold)?;
-    let key = 'outer: loop {
-        loop {
-            match protocol.poke()? {
-                Action::Wait => break,
-                Action::SendMany(vec) => {
-                    for participant in &participants {
-                        if participant == &me {
-                            continue;
-                        }
-                        channel.send(*participant, vec.clone()).await?;
-                    }
-                }
-                Action::SendPrivate(participant, vec) => {
-                    channel.send(ParticipantId(participant.into()), vec).await?;
-                }
-                Action::Return(result) => break 'outer result,
-            }
-        }
-
-        let msg = channel.receive().await?;
-        protocol.message(msg.from.into(), msg.message.data);
-    };
-
-    Ok(key)
+    let protocol = cait_sith::keygen::<Secp256k1>(&cs_participants, me.into(), threshold)?;
+    run_protocol("key generation", channel, participants, me, protocol).await
 }
 
 #[cfg(test)]
@@ -50,6 +28,7 @@ mod tests {
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::MpcTaskId;
+    use crate::tracking::testing::start_root_task_with_periodic_dump;
     use cait_sith::KeygenOutput;
     use k256::Secp256k1;
     use std::sync::Arc;
@@ -57,8 +36,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_key_generation() {
-        let results = run_test_clients(4, run_keygen_client).await.unwrap();
-        println!("{:?}", results);
+        start_root_task_with_periodic_dump(async move {
+            let results = run_test_clients(4, run_keygen_client).await.unwrap();
+            println!("{:?}", results);
+        })
+        .await;
     }
 
     async fn run_keygen_client(

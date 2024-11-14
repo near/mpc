@@ -30,3 +30,4 @@ web_ui:
   port: 20003
 triple:
   concurrency: 4
+  desired_triples_to_buffer: 65536
