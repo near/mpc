@@ -3,6 +3,8 @@ use crate::primitives::ParticipantId;
 use crate::tracking;
 use cait_sith::protocol::{Action, Protocol};
 
+/// Runs any cait-sith protocol, returning the result. Exports tracking progress
+/// describing how many messages are sent and received to each participant.
 pub async fn run_protocol<T>(
     name: &'static str,
     mut channel: NetworkTaskChannel,

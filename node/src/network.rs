@@ -11,6 +11,8 @@ use tokio::sync::mpsc;
 /// For a running node, there should be only one such instance that handles all
 /// p2p network communication. This is thread safe; it's expected that there would be
 /// many references to this object via Arc.
+///
+/// TODO(#15): Is this the best API?
 #[async_trait::async_trait]
 pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     /// Returns the participant ID of the current node.
@@ -211,10 +213,16 @@ impl NetworkTaskChannel {
     /// that there's no meaningful way for the MPC task to proceed.
     ///
     /// This does not guarantee that the message will be received by the recipient. Although the
-    /// communication layer uses TCP, there can be disconnects, node restarts, etc. and there is
-    /// no acknowledgment or retry mechanism. The MPC task's implementation shall not assume
-    /// reliable message passing, and should instead have an appropriate timeout or retry mechanism
-    /// at the application layer.
+    /// communication layer uses a persistent QUIC connection, there can be disconnects, node
+    /// restarts, etc. and there API does not provide an application-layer acknowledgment or retry
+    /// mechanism. The MPC task's implementation shall not assume reliable message passing, and
+    /// should instead have an appropriate timeout or retry mechanism.
+    ///
+    /// Even multiple messages sent to the same recipient may be received in a different order.
+    /// However, the messages will be received in whole, i.e. they will never be split or combined.
+    ///
+    /// The implementation of this function will guarantee that all messages sent are encrypted,
+    /// i.e. can only be decrypted by the recipient.
     pub async fn send(&self, recipient_id: ParticipantId, message: Vec<u8>) -> anyhow::Result<()> {
         tracing::debug!(
             target: "network",
@@ -229,9 +237,9 @@ impl NetworkTaskChannel {
 
     /// Receives a message from another participant in the MPC task.
     ///
-    /// If there are multiple messages available, it is guaranteed that messages from the same
-    /// participant are received in the order they were sent, but messages from different
-    /// participants are ordered arbitrarily.
+    /// If there are multiple messages available, they may be received in arbitrary order, even if
+    /// they were sent from the same participant. However, any message that is received will always
+    /// be received in whole, exactly as they were sent, never split or combined.
     ///
     /// Returns an error if the networking client is dropped (during node shutdown).
     ///

@@ -79,7 +79,7 @@ impl Cli {
                         },
                         triple: TripleConfig {
                             concurrency: 4,
-                            desired_triples_to_buffer: 512,
+                            desired_triples_to_buffer: 65536,
                         },
                     };
                     std::fs::write(

@@ -3,7 +3,6 @@ use tracing::init_logging;
 
 mod cli;
 mod config;
-mod hash;
 mod key_generation;
 mod metrics;
 mod mpc_client;

@@ -63,7 +63,7 @@ pub enum MpcTaskId {
     Signature {
         id: u64,
         presignature_id: u64,
-        // TODO: this is definitely not good; we need a proof.
+        // TODO(#9): We need a proof for any signature requests
         msg_hash: [u8; 32],
     },
 }

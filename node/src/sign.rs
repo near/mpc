@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::sync::oneshot;
 
+/// Performs an MPC presignature operation. This is the same for the initiator
+/// and for passive participants.
 pub async fn pre_sign(
     channel: NetworkTaskChannel,
     participants: Vec<ParticipantId>,
@@ -41,6 +43,8 @@ pub async fn pre_sign(
     Ok(presignature)
 }
 
+/// Performs an MPC signature operation. This is the same for the initiator
+/// and for passive participants.
 pub async fn sign(
     channel: NetworkTaskChannel,
     participants: Vec<ParticipantId>,
@@ -66,14 +70,18 @@ pub async fn sign(
     Ok(signature)
 }
 
+/// TODO(#10): is this a good way to generate IDs?
 pub fn generate_presignature_id(me: ParticipantId) -> u64 {
     (rand::random::<u64>() >> 12) | ((me.0 as u64) << 52)
 }
 
+/// TODO(#10): is this a good way to generate IDs?
 pub fn generate_signature_id(me: ParticipantId) -> u64 {
     (rand::random::<u64>() >> 12) | ((me.0 as u64) << 52)
 }
 
+/// Keeps track of presignatures that have been generated.
+/// TODO(#12): Probably need to make this like the triple store.
 pub struct SimplePresignatureStore {
     others_presignatures: Mutex<HashMap<u64, oneshot::Receiver<PresignOutput<Secp256k1>>>>,
 }
@@ -85,6 +93,9 @@ impl SimplePresignatureStore {
         }
     }
 
+    /// Removes a presignature we have helped someone else generate. This will asynchronously
+    /// block if we know the result will be available but it is not yet. It will return error
+    /// if we know we won't have the result.
     pub async fn take_their_presignature(
         &self,
         id: u64,
@@ -98,6 +109,9 @@ impl SimplePresignatureStore {
         Ok(receiver.await?)
     }
 
+    /// This is not a one-shot operation. It declares the ID as "will be available", and the
+    /// caller should send the output when it's available using the returned sender.
+    /// See #8 for details.
     pub fn add_their_presignature(&self, id: u64) -> oneshot::Sender<PresignOutput<Secp256k1>> {
         let (sender, receiver) = oneshot::channel();
         self.others_presignatures

@@ -446,7 +446,7 @@ pub fn generate_test_p2p_configs(
     let (issuer_private_key, _) = generate_keypair()?;
 
     let mut configs = Vec::new();
-    for i in 0..parties {
+    for (i, keypair) in keypairs.into_iter().enumerate() {
         let participants = ParticipantsConfig {
             threshold: threshold as u32,
             dummy_issuer_private_key: issuer_private_key.clone(),
@@ -456,7 +456,7 @@ pub fn generate_test_p2p_configs(
         let config = MpcConfig {
             my_participant_id: ParticipantId(i as u32),
             secrets: SecretsConfig {
-                p2p_private_key: keypairs[i].0.clone(),
+                p2p_private_key: keypair.0,
             },
             participants,
         };
