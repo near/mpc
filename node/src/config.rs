@@ -1,5 +1,6 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -8,6 +9,7 @@ pub struct Config {
     pub mpc: MpcConfig,
     pub web_ui: WebUIConfig,
     pub triple: TripleConfig,
+    pub indexer: Option<IndexerConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +31,69 @@ pub struct WebUIConfig {
     pub port: u16,
 }
 
+/// Config for the near indexer.
+#[derive(Clone, Debug, Parser, Serialize, Deserialize)]
+pub struct IndexerConfig {
+    /// Force streaming while node is syncing
+    #[clap(long)]
+    pub stream_while_syncing: bool,
+    /// Tells whether to validate the genesis file before starting
+    #[clap(long)]
+    pub validate_genesis: bool,
+    /// Sets the concurrency for processing blocks
+    #[clap(long, default_value = "1")]
+    pub concurrency: std::num::NonZeroU16,
+    /// Sets the starting point for indexing
+    #[clap(subcommand)]
+    pub sync_mode: SyncModeSubCommand,
+}
+
+impl IndexerConfig {
+    pub(crate) fn to_indexer_config(
+        &self,
+        home_dir: std::path::PathBuf,
+    ) -> near_indexer::IndexerConfig {
+        near_indexer::IndexerConfig {
+            home_dir,
+            sync_mode: self.sync_mode.clone().into(),
+            await_for_node_synced: if self.stream_while_syncing {
+                near_indexer::AwaitForNodeSyncedEnum::StreamWhileSyncing
+            } else {
+                near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync
+            },
+            validate_genesis: self.validate_genesis,
+        }
+    }
+}
+
+#[allow(clippy::enum_variant_names)] // we want commands to be more explicit
+#[derive(Parser, Debug, Clone, Serialize, Deserialize)]
+pub enum SyncModeSubCommand {
+    /// continue from the block Indexer was interrupted
+    SyncFromInterruption,
+    /// start from the newest block after node finishes syncing
+    SyncFromLatest,
+    /// start from specified block height
+    SyncFromBlock(BlockArgs),
+}
+
+#[derive(Parser, Debug, Clone, Serialize, Deserialize)]
+pub struct BlockArgs {
+    /// block height for block sync mode
+    #[clap(long)]
+    pub height: u64,
+}
+
+impl From<SyncModeSubCommand> for near_indexer::SyncModeEnum {
+    fn from(sync_mode: SyncModeSubCommand) -> Self {
+        match sync_mode {
+            SyncModeSubCommand::SyncFromInterruption => Self::FromInterruption,
+            SyncModeSubCommand::SyncFromLatest => Self::LatestSynced,
+            SyncModeSubCommand::SyncFromBlock(args) => Self::BlockHeight(args.height),
+        }
+    }
+}
+
 /// The contents of the main config.yaml file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigFile {
@@ -42,6 +107,7 @@ pub struct ConfigFile {
     pub p2p_private_key_file: String,
     pub web_ui: WebUIConfig,
     pub triple: TripleConfig,
+    pub indexer: Option<IndexerConfig>,
 }
 
 impl ConfigFile {
@@ -97,6 +163,7 @@ pub fn load_config(home_dir: &Path) -> anyhow::Result<Config> {
         mpc: mpc_config,
         web_ui: web_config,
         triple: file_config.triple,
+        indexer: file_config.indexer,
     };
     Ok(config)
 }

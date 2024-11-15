@@ -1,4 +1,5 @@
 use crate::config::{load_config, ConfigFile, TripleConfig, WebUIConfig};
+use crate::indexer::{indexer_logger, listen_blocks, IndexerStats};
 use crate::mpc_client::run_mpc_client;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_quic_mesh_network};
@@ -7,6 +8,7 @@ use crate::web::run_web_server;
 use clap::Parser;
 use std::path::Path;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Parser, Debug)]
 pub enum Cli {
@@ -31,6 +33,8 @@ impl Cli {
         match self {
             Cli::Start { home_dir } => {
                 let config = load_config(Path::new(&home_dir))?;
+
+                // Start the mpc client
                 let (root_task, _) = tracking::start_root_task(async move {
                     let root_task_handle = tracking::current_task();
                     tracking::spawn(
@@ -51,6 +55,30 @@ impl Cli {
                     anyhow::Ok(())
                 });
                 root_task.await?;
+
+                // Start the near indexer
+                if let Some(indexer_config) = config.indexer {
+                    let system = actix::System::new();
+                    system.block_on(async move {
+                        let indexer = near_indexer::Indexer::new(
+                            indexer_config.to_indexer_config(home_dir.into()),
+                        )
+                        .expect("Failed to initialize the Indexer");
+                        let stream = indexer.streamer();
+                        let view_client = indexer.client_actors().0;
+
+                        let stats: Arc<Mutex<IndexerStats>> =
+                            Arc::new(Mutex::new(IndexerStats::new()));
+
+                        actix::spawn(indexer_logger(Arc::clone(&stats), view_client));
+
+                        listen_blocks(stream, indexer_config.concurrency, Arc::clone(&stats)).await;
+
+                        actix::System::current().stop();
+                    });
+                    system.run().unwrap();
+                }
+
                 Ok(())
             }
             Cli::GenerateTestConfigs {
@@ -71,6 +99,7 @@ impl Cli {
                             port: 20000 + i as u16,
                         },
                         triple: TripleConfig { concurrency: 4 },
+                        indexer: None,
                     };
                     std::fs::write(
                         format!("{}/p2p.pem", subdir),
