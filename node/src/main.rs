@@ -3,6 +3,7 @@ use tracing::init_logging;
 
 mod cli;
 pub mod config;
+mod indexer;
 pub mod key_generation;
 mod mpc_client;
 pub mod network;
