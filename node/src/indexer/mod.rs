@@ -4,6 +4,8 @@ use near_o11y::WithSpanContextExt;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+pub mod configs;
+
 #[derive(Debug, Clone)]
 pub(crate) struct IndexerStats {
     pub block_heights_processing: std::collections::BTreeSet<u64>,

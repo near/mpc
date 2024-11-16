@@ -1,4 +1,5 @@
 use crate::config::{load_config, ConfigFile, TripleConfig, WebUIConfig};
+use crate::indexer::configs::InitConfigArgs;
 use crate::indexer::{indexer_logger, listen_blocks, IndexerStats};
 use crate::mpc_client::run_mpc_client;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
@@ -26,6 +27,7 @@ pub enum Cli {
         #[arg(long)]
         threshold: usize,
     },
+    GenerateIndexerConfigs(InitConfigArgs),
 }
 
 impl Cli {
@@ -64,6 +66,7 @@ impl Cli {
                             indexer_config.to_indexer_config(home_dir.into()),
                         )
                         .expect("Failed to initialize the Indexer");
+
                         let stream = indexer.streamer();
                         let view_client = indexer.client_actors().0;
 
@@ -76,7 +79,7 @@ impl Cli {
 
                         actix::System::current().stop();
                     });
-                    system.run().unwrap();
+                    system.run()?;
                 }
 
                 Ok(())
@@ -110,6 +113,10 @@ impl Cli {
                         serde_yaml::to_string(&file_config)?,
                     )?;
                 }
+                Ok(())
+            }
+            Cli::GenerateIndexerConfigs(config) => {
+                near_indexer::indexer_init_configs(&config.home_dir.clone().into(), config.into())?;
                 Ok(())
             }
         }
