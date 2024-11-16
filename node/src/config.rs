@@ -30,7 +30,7 @@ pub struct WebUIConfig {
     pub port: u16,
 }
 
-/// Config for the near indexer.
+/// Configures behavior of the near indexer.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexerConfig {
     /// Force streaming while node is syncing
@@ -40,7 +40,7 @@ pub struct IndexerConfig {
     /// Sets the concurrency for processing blocks
     pub concurrency: std::num::NonZeroU16,
     /// Sets the starting point for indexing
-    pub sync_mode: SyncModeSubCommand,
+    pub sync_mode: SyncMode,
 }
 
 impl IndexerConfig {
@@ -63,7 +63,7 @@ impl IndexerConfig {
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SyncModeSubCommand {
+pub enum SyncMode {
     /// continue from the block Indexer was interrupted
     SyncFromInterruption,
     /// start from the newest block after node finishes syncing
@@ -78,12 +78,12 @@ pub struct BlockArgs {
     pub height: u64,
 }
 
-impl From<SyncModeSubCommand> for near_indexer::SyncModeEnum {
-    fn from(sync_mode: SyncModeSubCommand) -> Self {
+impl From<SyncMode> for near_indexer::SyncModeEnum {
+    fn from(sync_mode: SyncMode) -> Self {
         match sync_mode {
-            SyncModeSubCommand::SyncFromInterruption => Self::FromInterruption,
-            SyncModeSubCommand::SyncFromLatest => Self::LatestSynced,
-            SyncModeSubCommand::SyncFromBlock(args) => Self::BlockHeight(args.height),
+            SyncMode::SyncFromInterruption => Self::FromInterruption,
+            SyncMode::SyncFromLatest => Self::LatestSynced,
+            SyncMode::SyncFromBlock(args) => Self::BlockHeight(args.height),
         }
     }
 }

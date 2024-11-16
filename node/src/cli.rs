@@ -1,5 +1,6 @@
-use crate::config::{load_config, ConfigFile, TripleConfig, WebUIConfig};
+use crate::config::{load_config, ConfigFile, TripleConfig, WebUIConfig, IndexerConfig, SyncMode};
 use crate::indexer::configs::InitConfigArgs;
+use std::num::NonZero;
 use crate::indexer::{indexer_logger, listen_blocks, IndexerStats};
 use crate::mpc_client::run_mpc_client;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
@@ -102,7 +103,12 @@ impl Cli {
                             port: 20000 + i as u16,
                         },
                         triple: TripleConfig { concurrency: 4 },
-                        indexer: None,
+                        indexer: Some(IndexerConfig {
+                            stream_while_syncing: false,
+                            validate_genesis: true,
+                            concurrency: NonZero::new(1).unwrap(),
+                            sync_mode: SyncMode::SyncFromInterruption,
+                        }),
                     };
                     std::fs::write(
                         format!("{}/p2p.pem", subdir),
