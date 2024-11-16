@@ -1,13 +1,14 @@
-use crate::config::{load_config, ConfigFile, TripleConfig, WebUIConfig, IndexerConfig, SyncMode};
+use crate::config::{load_config, ConfigFile, IndexerConfig, SyncMode, TripleConfig, WebUIConfig};
 use crate::indexer::configs::InitConfigArgs;
-use std::num::NonZero;
-use crate::indexer::{indexer_logger, listen_blocks, IndexerStats};
+use crate::indexer::handler::listen_blocks;
+use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::mpc_client::run_mpc_client;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_quic_mesh_network};
 use crate::tracking;
 use crate::web::run_web_server;
 use clap::Parser;
+use std::num::NonZero;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -45,16 +46,14 @@ impl Cli {
                                 indexer_config.to_indexer_config(home_dir.into()),
                             )
                             .expect("Failed to initialize the Indexer");
-
                             let stream = indexer.streamer();
                             let view_client = indexer.client_actors().0;
-
                             let stats: Arc<Mutex<IndexerStats>> =
                                 Arc::new(Mutex::new(IndexerStats::new()));
 
                             actix::spawn(indexer_logger(Arc::clone(&stats), view_client));
-
-                            listen_blocks(stream, indexer_config.concurrency, Arc::clone(&stats)).await;
+                            listen_blocks(stream, indexer_config.concurrency, Arc::clone(&stats))
+                                .await;
                         });
                     }))
                 } else {
