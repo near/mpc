@@ -105,17 +105,16 @@ async fn handle_message(
     stats_lock.block_heights_processing.insert(block_height);
     drop(stats_lock);
 
-    // Block
-    let block_json = serde_json::to_value(streamer_message.block)
-        .expect("Failed to serializer BlockView to JSON");
-    tracing::debug!(target: "indexer", "{}", block_json);
-
-    // Shards
-    for shard in streamer_message.shards.iter() {
-        let shard_json =
-            serde_json::to_value(shard).expect("Failed to serialize IndexerShard to JSON");
-        tracing::debug!(target: "indexer", "{}", shard_json);
-    }
+    tracing::info!(
+        target: "indexer_example",
+        "#{} {} Shards: {}, Transactions: {}, Receipts: {}, ExecutionOutcomes: {}",
+        streamer_message.block.header.height,
+        streamer_message.block.header.hash,
+        streamer_message.shards.len(),
+        streamer_message.shards.iter().map(|shard| if let Some(chunk) = &shard.chunk { chunk.transactions.len() } else { 0usize }).sum::<usize>(),
+        streamer_message.shards.iter().map(|shard| if let Some(chunk) = &shard.chunk { chunk.receipts.len() } else { 0usize }).sum::<usize>(),
+        streamer_message.shards.iter().map(|shard| shard.receipt_execution_outcomes.len()).sum::<usize>(),
+    );
 
     let mut stats_lock = stats.lock().await;
     stats_lock.block_heights_processing.remove(&block_height);

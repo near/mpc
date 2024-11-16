@@ -1,6 +1,5 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
-use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -32,19 +31,15 @@ pub struct WebUIConfig {
 }
 
 /// Config for the near indexer.
-#[derive(Clone, Debug, Parser, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexerConfig {
     /// Force streaming while node is syncing
-    #[clap(long)]
     pub stream_while_syncing: bool,
     /// Tells whether to validate the genesis file before starting
-    #[clap(long)]
     pub validate_genesis: bool,
     /// Sets the concurrency for processing blocks
-    #[clap(long, default_value = "1")]
     pub concurrency: std::num::NonZeroU16,
     /// Sets the starting point for indexing
-    #[clap(subcommand)]
     pub sync_mode: SyncModeSubCommand,
 }
 
@@ -66,8 +61,8 @@ impl IndexerConfig {
     }
 }
 
-#[allow(clippy::enum_variant_names)] // we want commands to be more explicit
-#[derive(Parser, Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncModeSubCommand {
     /// continue from the block Indexer was interrupted
     SyncFromInterruption,
@@ -77,10 +72,9 @@ pub enum SyncModeSubCommand {
     SyncFromBlock(BlockArgs),
 }
 
-#[derive(Parser, Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockArgs {
     /// block height for block sync mode
-    #[clap(long)]
     pub height: u64,
 }
 
