@@ -37,6 +37,30 @@ impl Cli {
             Cli::Start { home_dir } => {
                 let config = load_config(Path::new(&home_dir))?;
 
+                // Start the near indexer
+                let indexer_handle = if let Some(indexer_config) = config.indexer {
+                    Some(std::thread::spawn(move || {
+                        actix::System::new().block_on(async {
+                            let indexer = near_indexer::Indexer::new(
+                                indexer_config.to_indexer_config(home_dir.into()),
+                            )
+                            .expect("Failed to initialize the Indexer");
+
+                            let stream = indexer.streamer();
+                            let view_client = indexer.client_actors().0;
+
+                            let stats: Arc<Mutex<IndexerStats>> =
+                                Arc::new(Mutex::new(IndexerStats::new()));
+
+                            actix::spawn(indexer_logger(Arc::clone(&stats), view_client));
+
+                            listen_blocks(stream, indexer_config.concurrency, Arc::clone(&stats)).await;
+                        });
+                    }))
+                } else {
+                    None
+                };
+
                 // Start the mpc client
                 let (root_task, _) = tracking::start_root_task(async move {
                     let root_task_handle = tracking::current_task();
@@ -57,31 +81,9 @@ impl Cli {
                     .await?;
                     anyhow::Ok(())
                 });
+
                 root_task.await?;
-
-                // Start the near indexer
-                if let Some(indexer_config) = config.indexer {
-                    let system = actix::System::new();
-                    system.block_on(async move {
-                        let indexer = near_indexer::Indexer::new(
-                            indexer_config.to_indexer_config(home_dir.into()),
-                        )
-                        .expect("Failed to initialize the Indexer");
-
-                        let stream = indexer.streamer();
-                        let view_client = indexer.client_actors().0;
-
-                        let stats: Arc<Mutex<IndexerStats>> =
-                            Arc::new(Mutex::new(IndexerStats::new()));
-
-                        actix::spawn(indexer_logger(Arc::clone(&stats), view_client));
-
-                        listen_blocks(stream, indexer_config.concurrency, Arc::clone(&stats)).await;
-
-                        actix::System::current().stop();
-                    });
-                    system.run()?;
-                }
+                indexer_handle.map(|h| h.join().unwrap());
 
                 Ok(())
             }
