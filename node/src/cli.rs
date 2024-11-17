@@ -1,5 +1,6 @@
-use crate::config::{load_config, ConfigFile, IndexerConfig, SyncMode, TripleConfig, WebUIConfig};
+use crate::config::{load_config, ConfigFile, IndexerConfig, TripleConfig, WebUIConfig};
 use crate::indexer::configs::InitConfigArgs;
+use crate::indexer::configs::SyncMode;
 use crate::indexer::handler::listen_blocks;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::mpc_client::run_mpc_client;
@@ -107,8 +108,8 @@ impl Cli {
                         indexer: Some(IndexerConfig {
                             stream_while_syncing: false,
                             validate_genesis: true,
-                            concurrency: NonZero::new(1).unwrap(),
                             sync_mode: SyncMode::SyncFromInterruption,
+                            concurrency: NonZero::new(1).unwrap(),
                         }),
                     };
                     std::fs::write(

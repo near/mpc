@@ -1,4 +1,51 @@
+use crate::config::IndexerConfig;
 use near_indexer::near_primitives::types::Gas;
+use serde::{Deserialize, Serialize};
+
+impl IndexerConfig {
+    pub(crate) fn to_near_indexer_config(
+        &self,
+        home_dir: std::path::PathBuf,
+    ) -> near_indexer::IndexerConfig {
+        near_indexer::IndexerConfig {
+            home_dir,
+            sync_mode: self.sync_mode.clone().into(),
+            await_for_node_synced: if self.stream_while_syncing {
+                near_indexer::AwaitForNodeSyncedEnum::StreamWhileSyncing
+            } else {
+                near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync
+            },
+            validate_genesis: self.validate_genesis,
+        }
+    }
+}
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SyncMode {
+    /// continue from the block Indexer was interrupted
+    SyncFromInterruption,
+    /// start from the newest block after node finishes syncing
+    SyncFromLatest,
+    /// start from specified block height
+    SyncFromBlock(BlockArgs),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockArgs {
+    /// block height for block sync mode
+    pub height: u64,
+}
+
+impl From<SyncMode> for near_indexer::SyncModeEnum {
+    fn from(sync_mode: SyncMode) -> Self {
+        match sync_mode {
+            SyncMode::SyncFromInterruption => Self::FromInterruption,
+            SyncMode::SyncFromLatest => Self::LatestSynced,
+            SyncMode::SyncFromBlock(args) => Self::BlockHeight(args.height),
+        }
+    }
+}
 
 #[derive(clap::Parser, Debug)]
 pub(crate) struct InitConfigArgs {
