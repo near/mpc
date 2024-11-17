@@ -29,3 +29,5 @@ tokio-util = "0.7.12"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 x509-parser = "0.16.0"
+near-time = { git = "https://github.com/near/nearcore.git", rev = "2.3.1", features = ["clock"] }
+near-async = { git = "https://github.com/near/nearcore.git", rev = "2.3.1" }

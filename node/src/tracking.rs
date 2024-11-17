@@ -1,3 +1,6 @@
+use futures::future::BoxFuture;
+use futures::FutureExt;
+use near_async::test_loop::pending_events_sender::PendingEventsSender;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::future::Future;
@@ -6,20 +9,92 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 use tokio::task_local;
 
+mod testloop_patch {
+    use futures::future::BoxFuture;
+    use futures::task::{waker_ref, ArcWake};
+    use futures::FutureExt;
+    use near_async::test_loop::data::TestLoopData;
+    use near_async::test_loop::pending_events_sender::PendingEventsSender;
+    use std::sync::{Arc, Mutex};
+    use std::task::Context;
+
+    pub(super) fn spawn(
+        spawner: &PendingEventsSender,
+        description: &str,
+        f: impl futures::Future<Output = ()> + Send + 'static,
+    ) {
+        let task = Arc::new(FutureTask {
+            future: Mutex::new(Some(f.boxed())),
+            sender: spawner.clone(),
+            description: description.to_string(),
+        });
+        let callback = move |_: &mut TestLoopData| {
+            drive_futures(&task);
+        };
+        spawner.send(format!("FutureSpawn({})", description), Box::new(callback));
+    }
+    struct FutureTask {
+        future: Mutex<Option<BoxFuture<'static, ()>>>,
+        sender: PendingEventsSender,
+        description: String,
+    }
+
+    impl ArcWake for FutureTask {
+        fn wake_by_ref(arc_self: &Arc<Self>) {
+            let clone = arc_self.clone();
+            arc_self.sender.send(
+                format!("FutureTask({})", arc_self.description),
+                Box::new(move |_: &mut TestLoopData| drive_futures(&clone)),
+            );
+        }
+    }
+
+    fn drive_futures(task: &Arc<FutureTask>) {
+        // The following is copied from the Rust async book.
+        // Take the future, and if it has not yet completed (is still Some),
+        // poll it in an attempt to complete it.
+        let mut future_slot = task.future.lock().unwrap();
+        if let Some(mut future) = future_slot.take() {
+            let waker = waker_ref(&task);
+            let context = &mut Context::from_waker(&*waker);
+            if future.as_mut().poll(context).is_pending() {
+                // We're still not done processing the future, so put it
+                // back in its task to be run again in the future.
+                *future_slot = Some(future);
+            }
+        }
+    }
+}
+
 /// Spawns a new task that is a child of the current tokio task.
 /// Must be called from a tracked tokio task.
-pub fn spawn<F, R>(description: &str, f: F) -> tokio::task::JoinHandle<R>
+pub fn spawn<F, R>(description: &str, f: F) -> impl Future<Output = anyhow::Result<R>>
 where
     F: Future<Output = R> + Send + 'static,
     R: Send + 'static,
 {
     let current_task = CURRENT_TASK.get();
     let handle = current_task.0.new_child(description);
-    tokio::spawn(CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), f))
+    if let Some(test_loop) = &current_task.0.test_loop {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        testloop_patch::spawn(
+            test_loop,
+            description,
+            CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), async move {
+                let result = f.await;
+                sender.send(result).ok();
+            }),
+        );
+        receiver.map(|res| anyhow::Ok(res?)).boxed()
+    } else {
+        tokio::spawn(CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), f))
+            .map(|res| anyhow::Ok(res?))
+            .boxed()
+    }
 }
 
 /// Like `spawn`, but if the task resolves to an error result, logs the result.
-pub fn spawn_checked<F, R>(description: &str, f: F) -> tokio::task::JoinHandle<anyhow::Result<R>>
+pub fn spawn_checked<F, R>(description: &str, f: F) -> BoxFuture<'static, anyhow::Result<R>>
 where
     F: Future<Output = anyhow::Result<R>> + Send + 'static,
     R: Send + 'static,
@@ -27,15 +102,30 @@ where
     let current_task = CURRENT_TASK.get();
     let handle = current_task.0.new_child(description);
     let description_clone = description.to_string();
-    tokio::spawn(
-        CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), async move {
-            let result = f.await;
-            if let Err(err) = &result {
-                tracing::error!("Task failed: {}: {}", description_clone, err);
-            }
-            result
-        }),
-    )
+    if let Some(test_loop) = &current_task.0.test_loop {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        testloop_patch::spawn(
+            test_loop,
+            description,
+            CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), async move {
+                let result = f.await;
+                sender.send(result).ok();
+            }),
+        );
+        receiver.map(|res| anyhow::Ok(res??)).boxed()
+    } else {
+        tokio::spawn(
+            CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), async move {
+                let result = f.await;
+                if let Err(err) = &result {
+                    tracing::error!("Task failed: {}: {}", description_clone, err);
+                }
+                result
+            }),
+        )
+        .map(|res| anyhow::Ok(res??))
+        .boxed()
+    }
 }
 
 /// Reports the progress of the current tokio task.
@@ -59,6 +149,7 @@ where
         start_time: Instant::now(),
         progress: Mutex::new("".to_string()),
         finished: AtomicBool::new(false),
+        test_loop: None,
     });
     (
         CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle.clone())), f),
@@ -132,6 +223,7 @@ pub struct TaskHandle {
     start_time: Instant,
     progress: Mutex<String>,
     finished: AtomicBool,
+    test_loop: Option<PendingEventsSender>,
 }
 
 /// A task handle, but marks the task handle as finished when it is dropped.
@@ -166,6 +258,7 @@ impl TaskHandle {
             start_time: Instant::now(),
             progress,
             finished: AtomicBool::new(false),
+            test_loop: self.test_loop.clone(),
         });
         self.children.lock().unwrap().push(Arc::downgrade(&handle));
         handle
@@ -244,6 +337,13 @@ impl Debug for TaskStatusReport {
 
 #[cfg(test)]
 pub mod testing {
+    use super::{TaskHandle, TaskHandleScoped, WeakCollection, CURRENT_TASK};
+    use near_async::futures::FutureSpawnerExt;
+    use near_async::test_loop::pending_events_sender::PendingEventsSender;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
+    use std::time::Instant;
+
     /// Runs the top-most-level future with tracking, and prints a report of
     /// running tasks every 5 seconds.
     pub fn start_root_task_with_periodic_dump<F, R>(f: F) -> impl std::future::Future<Output = R>
@@ -261,5 +361,25 @@ pub mod testing {
             }
         });
         future
+    }
+
+    pub fn start_root_task_in_test_loop<F>(f: F, sender: PendingEventsSender)
+    where
+        F: std::future::Future + Send + 'static,
+    {
+        let handle = Arc::new(TaskHandle {
+            _parent: None,
+            children: Mutex::new(WeakCollection::new()),
+            description: "root".to_string(),
+            start_time: Instant::now(),
+            progress: Mutex::new("".to_string()), // TODO: should use clock
+            finished: AtomicBool::new(false),
+            test_loop: Some(sender.clone()),
+        });
+        sender.spawn("root", async move {
+            CURRENT_TASK
+                .scope(Arc::new(TaskHandleScoped(handle.clone())), f)
+                .await;
+        });
     }
 }

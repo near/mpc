@@ -115,7 +115,7 @@ impl PersistentConnection {
                 let new_conn = Arc::new(new_conn);
                 *current = Some(new_conn.clone());
 
-                tracking::spawn(
+                let _ = tracking::spawn(
                     &format!(
                         "Delete connection if closed for participant {}",
                         participant_id
@@ -262,11 +262,11 @@ pub async fn new_quic_mesh_network(
     let (message_sender, message_receiver) = mpsc::channel(100000);
     let endpoint_for_listener = server.clone();
 
-    tracking::spawn("Handle incoming connections", async move {
+    let _ = tracking::spawn("Handle incoming connections", async move {
         while let Some(conn) = endpoint_for_listener.accept().await {
             let message_sender = message_sender.clone();
             let participant_identities = participant_identities.clone();
-            tracking::spawn_checked("Handle connection", async move {
+            let _ = tracking::spawn_checked("Handle connection", async move {
                 if let Ok(connection) = conn.await {
                     let verified_participant_id =
                         verify_peer_identity(&connection, &participant_identities)?;
@@ -276,7 +276,7 @@ pub async fn new_quic_mesh_network(
                         let stream = connection.accept_uni().await?;
                         tracing::debug!("Accepted stream from {}", verified_participant_id);
                         let message_sender = message_sender.clone();
-                        tracking::spawn_checked(
+                        let _ = tracking::spawn_checked(
                             &format!("Handle stream from {}", verified_participant_id),
                             handle_incoming_stream(verified_participant_id, stream, message_sender),
                         );

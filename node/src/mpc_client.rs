@@ -64,7 +64,7 @@ impl MpcClient {
             let triple_store = self.triple_store.clone();
             let presignature_store = self.presignature_store.clone();
             let keygen_out = self.keygen_out.clone();
-            tracking::spawn("monitor passive channels", async move {
+            let _ = tracking::spawn("monitor passive channels", async move {
                 loop {
                     let channel = channel_receiver.recv().await.unwrap();
                     let client = client.clone();
@@ -73,7 +73,7 @@ impl MpcClient {
                     let triple_store = triple_store.clone();
                     let presignature_store = presignature_store.clone();
                     let keygen_out = keygen_out.clone();
-                    tracking::spawn_checked(
+                    let _ = tracking::spawn_checked(
                         &format!("passive task {:?}", channel.task_id),
                         async move {
                             match channel.task_id {

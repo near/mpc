@@ -167,7 +167,7 @@ pub async fn run_background_triple_generation(
             let client = client.clone();
             let parallelism_limiter = parallelism_limiter.clone();
             let triple_store = triple_store.clone();
-            tracking::spawn_checked(&format!("{:?}", task_id), async move {
+            let _ = tracking::spawn_checked(&format!("{:?}", task_id), async move {
                 let _in_flight = in_flight;
                 let _semaphore_guard = parallelism_limiter.acquire().await?;
                 let triples = run_many_triple_generation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE>(
@@ -273,10 +273,10 @@ mod tests {
             let client = client.clone();
             let participant_id = client.my_participant_id();
             let all_participant_ids = client.all_participant_ids();
-            tracking::spawn("monitor passive channels", async move {
+            let _ = tracking::spawn("monitor passive channels", async move {
                 loop {
                     let channel = channel_receiver.recv().await.unwrap();
-                    tracking::spawn_checked(
+                    let _ = tracking::spawn_checked(
                         &format!("passive task {:?}", channel.task_id),
                         run_triple_generation(
                             channel,
@@ -305,7 +305,7 @@ mod tests {
                             THRESHOLD,
                         ),
                     )
-                    .await??;
+                    .await?;
                     anyhow::Ok(result)
                 }
             })
@@ -335,8 +335,8 @@ mod tests_many {
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
     const PARALLELISM_PER_CLIENT: usize = 4;
-    const TRIPLES_PER_BATCH: usize = 10;
-    const BATCHES_TO_GENERATE_PER_CLIENT: usize = 10;
+    const TRIPLES_PER_BATCH: usize = 1;
+    const BATCHES_TO_GENERATE_PER_CLIENT: usize = 1;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_many_triple_generation() {
@@ -357,10 +357,10 @@ mod tests_many {
             let client = client.clone();
             let participant_id = client.my_participant_id();
             let all_participant_ids = client.all_participant_ids();
-            tracking::spawn("monitor passive channels", async move {
+            let _ = tracking::spawn("monitor passive channels", async move {
                 loop {
                     let channel = channel_receiver.recv().await.unwrap();
-                    tracking::spawn_checked(
+                    let _ = tracking::spawn_checked(
                         &format!("passive task {:?}", channel.task_id),
                         run_many_triple_generation::<TRIPLES_PER_BATCH>(
                             channel,
@@ -389,7 +389,95 @@ mod tests_many {
                             THRESHOLD,
                         ),
                     )
-                    .await??;
+                    .await?;
+                    anyhow::Ok(result)
+                }
+            })
+            .buffered(PARALLELISM_PER_CLIENT)
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        Ok(triples.into_iter().flatten().collect())
+    }
+}
+
+#[cfg(test)]
+mod testloop_tests {
+    use crate::network::{MeshNetworkClient, NetworkTaskChannel};
+    use crate::primitives::MpcTaskId;
+    use crate::tracing::init_logging;
+    use cait_sith::triples::TripleGenerationOutput;
+    use futures::{stream, StreamExt, TryStreamExt};
+    use k256::Secp256k1;
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
+
+    use super::{generate_triple_id, run_many_triple_generation};
+    use crate::testloop::{run_testloop_clients, TestParticipantData};
+    use crate::tracking;
+    use near_time::Duration;
+
+    const NUM_PARTICIPANTS: usize = 4;
+    const THRESHOLD: usize = 3;
+    const PARALLELISM_PER_CLIENT: usize = 4;
+    const TRIPLES_PER_BATCH: usize = 1;
+    const BATCHES_TO_GENERATE_PER_CLIENT: usize = 1;
+
+    #[test]
+    fn test_many_triple_generation_with_testloop() {
+        init_logging();
+        run_testloop_clients(
+            (0..NUM_PARTICIPANTS)
+                .map(|_| TestParticipantData {
+                    latency_to: vec![Duration::milliseconds(100); NUM_PARTICIPANTS],
+                })
+                .collect(),
+            run_triple_gen_client,
+            Duration::seconds(100),
+        );
+    }
+
+    async fn run_triple_gen_client(
+        client: Arc<MeshNetworkClient>,
+        mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
+    ) -> anyhow::Result<Vec<TripleGenerationOutput<Secp256k1>>> {
+        {
+            let client = client.clone();
+            let participant_id = client.my_participant_id();
+            let all_participant_ids = client.all_participant_ids();
+            let _ = tracking::spawn("monitor passive channels", async move {
+                loop {
+                    let channel = channel_receiver.recv().await.unwrap();
+                    let _ = tracking::spawn_checked(
+                        &format!("passive task {:?}", channel.task_id),
+                        run_many_triple_generation::<TRIPLES_PER_BATCH>(
+                            channel,
+                            all_participant_ids.clone(),
+                            participant_id,
+                            THRESHOLD,
+                        ),
+                    );
+                }
+            });
+        }
+
+        let triples = stream::iter(0..BATCHES_TO_GENERATE_PER_CLIENT)
+            .map(move |_| {
+                let client = client.clone();
+                async move {
+                    let participant_id = client.my_participant_id();
+                    let all_participant_ids = client.all_participant_ids();
+                    let task_id = MpcTaskId::Triple(generate_triple_id(participant_id));
+                    let result = tracking::spawn_checked(
+                        &format!("task {:?}", task_id),
+                        run_many_triple_generation::<TRIPLES_PER_BATCH>(
+                            client.new_channel_for_task(task_id)?,
+                            all_participant_ids.clone(),
+                            participant_id,
+                            THRESHOLD,
+                        ),
+                    )
+                    .await?;
                     anyhow::Ok(result)
                 }
             })

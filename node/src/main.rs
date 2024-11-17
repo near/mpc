@@ -11,6 +11,8 @@ mod p2p;
 mod primitives;
 mod protocol;
 mod sign;
+#[cfg(test)]
+mod testloop;
 mod tracing;
 mod tracking;
 mod triple;

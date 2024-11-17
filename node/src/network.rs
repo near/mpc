@@ -93,7 +93,7 @@ impl MeshNetworkClient {
                 };
 
                 let transport_sender = self.transport_sender.clone();
-                let send_fn: SendFnForTaskChannel = Box::new(move |recipient_id, message| {
+                let send_fn: SendFnForTaskChannel = Arc::new(move |recipient_id, message| {
                     let transport_sender = transport_sender.clone();
                     async move {
                         transport_sender
@@ -176,7 +176,7 @@ pub fn run_network_client(
         senders_for_tasks: Arc::new(Mutex::new(HashMap::new())),
     });
     let (new_channel_sender, new_channel_receiver) = mpsc::channel(1000);
-    tracking::spawn_checked(
+    let _ = tracking::spawn_checked(
         "Network receive message loop",
         run_receive_messages_loop(client.clone(), transport_receiver, new_channel_sender),
     );
@@ -196,8 +196,8 @@ pub struct NetworkTaskChannel {
     drop: Option<Box<dyn FnOnce() + Send + Sync>>,
 }
 
-type SendFnForTaskChannel =
-    Box<dyn Fn(ParticipantId, Vec<u8>) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync>;
+pub type SendFnForTaskChannel =
+    Arc<dyn Fn(ParticipantId, Vec<u8>) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync>;
 
 impl Drop for NetworkTaskChannel {
     fn drop(&mut self) {
@@ -415,12 +415,12 @@ mod tests {
         client: Arc<MeshNetworkClient>,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
     ) -> anyhow::Result<()> {
-        tracking::spawn("monitor passive channels", async move {
+        let _ = tracking::spawn("monitor passive channels", async move {
             loop {
                 let Some(channel) = channel_receiver.recv().await else {
                     break;
                 };
-                tracking::spawn_checked(
+                let _ = tracking::spawn_checked(
                     &format!("passive task {:?}", channel.task_id),
                     task_follower(channel),
                 );
@@ -455,7 +455,7 @@ mod tests {
         }
         let mut results = Vec::new();
         for handle in handles {
-            results.push(handle.await??);
+            results.push(handle.await?);
         }
         println!("Results: {:?}", results);
         assert_eq!(results, expected_results);

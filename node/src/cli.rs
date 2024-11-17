@@ -50,7 +50,7 @@ impl Cli {
                         Arc::new(tokio::sync::OnceCell::new()),
                     );
 
-                    tracking::spawn_checked(
+                    let _ = tracking::spawn_checked(
                         "web server",
                         run_web_server(root_task_handle, config.web_ui, mpc_client.clone()),
                     );
