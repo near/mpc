@@ -43,7 +43,7 @@ impl Cli {
                     Some(std::thread::spawn(move || {
                         actix::System::new().block_on(async {
                             let indexer = near_indexer::Indexer::new(
-                                indexer_config.to_indexer_config(home_dir.into()),
+                                indexer_config.to_near_indexer_config(home_dir.into()),
                             )
                             .expect("Failed to initialize the Indexer");
                             let stream = indexer.streamer();
@@ -123,6 +123,8 @@ impl Cli {
                 Ok(())
             }
             Cli::GenerateIndexerConfigs(config) => {
+                // TODO: some serialization issue here is causing configs to be written with
+                // e.g. '40.0 MB' instead of 40000000
                 near_indexer::indexer_init_configs(&config.home_dir.clone().into(), config.into())?;
                 Ok(())
             }

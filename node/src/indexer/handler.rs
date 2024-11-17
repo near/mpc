@@ -24,8 +24,9 @@ async fn handle_message(
     stats_lock.block_heights_processing.insert(block_height);
     drop(stats_lock);
 
-    tracing::info!(
-        target: "indexer_example",
+    // TODO: filter for requests from the chain sig contract and pass them to the mpc node
+    tracing::debug!(
+        target: "indexer",
         "#{} {} Shards: {}, Transactions: {}, Receipts: {}, ExecutionOutcomes: {}",
         streamer_message.block.header.height,
         streamer_message.block.header.hash,

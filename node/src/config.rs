@@ -44,7 +44,7 @@ pub struct IndexerConfig {
 }
 
 impl IndexerConfig {
-    pub(crate) fn to_indexer_config(
+    pub(crate) fn to_near_indexer_config(
         &self,
         home_dir: std::path::PathBuf,
     ) -> near_indexer::IndexerConfig {
