@@ -14,6 +14,7 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripleConfig {
     pub concurrency: usize,
+    pub desired_triples_to_buffer: usize,
 }
 
 #[derive(Debug)]

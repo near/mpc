@@ -11,11 +11,14 @@ async-trait = "0.1.83"
 borsh = { version = "1.5.1", features = ["derive"] }
 cait-sith = { git = "https://github.com/LIT-Protocol/cait-sith.git", features = ["k256"], rev = "8ad2316" }
 clap = { version = "4.5.20", features = ["derive", "env"] }
+flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"
 hex = { version = "0.4.3", features = ["serde"] }
 humantime = "2.1.0"
 k256 = "0.13.4"
+lazy_static = "1.5.0"
+prometheus = "0.13.4"
 quinn = "0.11.5"
 rand = "0.8.5"
 rcgen = "0.13.1"

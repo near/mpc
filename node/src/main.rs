@@ -2,16 +2,19 @@ use clap::Parser;
 use tracing::init_logging;
 
 mod cli;
-pub mod config;
+mod config;
 mod indexer;
-pub mod key_generation;
+mod key_generation;
+mod metrics;
 mod mpc_client;
-pub mod network;
-pub mod p2p;
-pub mod primitives;
+mod network;
+mod p2p;
+mod primitives;
+mod protocol;
+mod sign;
 mod tracing;
-pub mod tracking;
-pub mod triple;
+mod tracking;
+mod triple;
 mod web;
 
 #[tokio::main]
