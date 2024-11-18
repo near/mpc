@@ -35,10 +35,13 @@ impl Display for ParticipantId {
     }
 }
 
+/// A batched list of multiple cait-sith protocol messages.
+pub type BatchedMessages = Vec<Vec<u8>>;
+
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct MpcMessage {
     pub task_id: MpcTaskId,
-    pub data: Vec<u8>,
+    pub data: BatchedMessages,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -50,7 +53,6 @@ pub struct MpcPeerMessage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum MpcTaskId {
     KeyGeneration,
-    Triple(u64),
     ManyTriples {
         start: u64,
         end: u64,

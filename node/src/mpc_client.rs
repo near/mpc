@@ -1,4 +1,4 @@
-use crate::config::{MpcConfig, TripleConfig};
+use crate::config::Config;
 use crate::key_generation::run_key_generation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
@@ -7,8 +7,8 @@ use crate::sign::{
 };
 use crate::tracking;
 use crate::triple::{
-    run_background_triple_generation, run_many_triple_generation, run_triple_generation,
-    SimpleTripleStore, SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
+    run_background_triple_generation, run_many_triple_generation, SimpleTripleStore,
+    SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
 };
 use anyhow::Context;
 use cait_sith::{FullSignature, KeygenOutput};
@@ -21,8 +21,7 @@ use tokio::time::timeout;
 
 #[derive(Clone)]
 pub struct MpcClient {
-    config: Arc<MpcConfig>,
-    triple_config: Arc<TripleConfig>,
+    config: Arc<Config>,
     client: Arc<MeshNetworkClient>,
     triple_store: Arc<SimpleTripleStore>,
     presignature_store: Arc<SimplePresignatureStore>,
@@ -31,8 +30,7 @@ pub struct MpcClient {
 
 impl MpcClient {
     pub fn new(
-        config: Arc<MpcConfig>,
-        triple_config: Arc<TripleConfig>,
+        config: Arc<Config>,
         client: Arc<MeshNetworkClient>,
         triple_store: Arc<SimpleTripleStore>,
         presignature_store: Arc<SimplePresignatureStore>,
@@ -40,7 +38,6 @@ impl MpcClient {
     ) -> Self {
         Self {
             config,
-            triple_config,
             client,
             triple_store,
             presignature_store,
@@ -54,9 +51,6 @@ impl MpcClient {
         self,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
     ) -> anyhow::Result<()> {
-        // TODO: make it into a config for each kind of task.
-        const TASK_TIMEOUT: Duration = Duration::from_secs(60);
-
         let (generated_key_sender, generated_key_receiver) = mpsc::channel(1);
         {
             let client = self.client.clone();
@@ -79,12 +73,12 @@ impl MpcClient {
                             match channel.task_id {
                                 MpcTaskId::KeyGeneration => {
                                     let key = timeout(
-                                        TASK_TIMEOUT,
+                                        Duration::from_secs(config.key_generation.timeout_sec),
                                         run_key_generation(
                                             channel,
                                             client.all_participant_ids(),
                                             client.my_participant_id(),
-                                            config.participants.threshold as usize,
+                                            config.mpc.participants.threshold as usize,
                                         ),
                                     )
                                     .await??;
@@ -92,18 +86,6 @@ impl MpcClient {
                                         .send(key)
                                         .await
                                         .context("Key generated twice")?;
-                                }
-                                MpcTaskId::Triple(_) => {
-                                    timeout(
-                                        TASK_TIMEOUT,
-                                        run_triple_generation(
-                                            channel,
-                                            client.all_participant_ids(),
-                                            client.my_participant_id(),
-                                            config.participants.threshold as usize,
-                                        ),
-                                    )
-                                    .await??;
                                 }
                                 MpcTaskId::ManyTriples { start, end } => {
                                     if end.checked_sub(start)
@@ -117,14 +99,14 @@ impl MpcClient {
                                         ));
                                     }
                                     let triples = timeout(
-                                        TASK_TIMEOUT,
+                                        Duration::from_secs(config.triple.timeout_sec),
                                         run_many_triple_generation::<
                                             SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
                                         >(
                                             channel,
                                             client.all_participant_ids(),
                                             client.my_participant_id(),
-                                            config.participants.threshold as usize,
+                                            config.mpc.participants.threshold as usize,
                                         ),
                                     )
                                     .await??;
@@ -139,12 +121,12 @@ impl MpcClient {
                                 } => {
                                     let sender = presignature_store.add_their_presignature(id);
                                     let presignature = timeout(
-                                        TASK_TIMEOUT,
+                                        Duration::from_secs(config.presignature.timeout_sec),
                                         pre_sign(
                                             channel,
                                             client.all_participant_ids(),
                                             client.my_participant_id(),
-                                            config.participants.threshold as usize,
+                                            config.mpc.participants.threshold as usize,
                                             triple_store.take_their_triple(triple0_id)?,
                                             triple_store.take_their_triple(triple1_id)?,
                                             keygen_out
@@ -172,7 +154,7 @@ impl MpcClient {
                                                 )
                                             })?;
                                     timeout(
-                                        TASK_TIMEOUT,
+                                        Duration::from_secs(config.signature.timeout_sec),
                                         sign(
                                             channel,
                                             client.all_participant_ids(),
@@ -206,7 +188,7 @@ impl MpcClient {
                         self.client.new_channel_for_task(MpcTaskId::KeyGeneration)?,
                         self.client.all_participant_ids(),
                         self.client.my_participant_id(),
-                        self.config.participants.threshold as usize,
+                        self.config.mpc.participants.threshold as usize,
                     )
                     .await?
                 } else {
@@ -223,8 +205,8 @@ impl MpcClient {
 
         run_background_triple_generation(
             self.client.clone(),
-            self.config.participants.threshold as usize,
-            self.triple_config.clone(),
+            self.config.mpc.participants.threshold as usize,
+            self.config.triple.clone().into(),
             self.triple_store.clone(),
         )
         .await?;
@@ -252,7 +234,7 @@ impl MpcClient {
             })?,
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
-            self.config.participants.threshold as usize,
+            self.config.mpc.participants.threshold as usize,
             triple0,
             triple1,
             key.clone(),

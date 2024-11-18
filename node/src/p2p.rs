@@ -259,7 +259,7 @@ pub async fn new_quic_mesh_network(
     }
 
     // TODO: what should the channel size be? What's our flow control strategy in general?
-    let (message_sender, message_receiver) = mpsc::channel(100000);
+    let (message_sender, message_receiver) = mpsc::channel(1000000);
     let endpoint_for_listener = server.clone();
 
     tracking::spawn("Handle incoming connections", async move {
@@ -276,10 +276,12 @@ pub async fn new_quic_mesh_network(
                         let stream = connection.accept_uni().await?;
                         tracing::debug!("Accepted stream from {}", verified_participant_id);
                         let message_sender = message_sender.clone();
-                        tracking::spawn_checked(
-                            &format!("Handle stream from {}", verified_participant_id),
-                            handle_incoming_stream(verified_participant_id, stream, message_sender),
-                        );
+                        // Don't track this, or else it is too spammy.
+                        tokio::spawn(handle_incoming_stream(
+                            verified_participant_id,
+                            stream,
+                            message_sender,
+                        ));
                     }
                 }
                 anyhow::Ok(())
@@ -487,7 +489,7 @@ mod tests {
                     .send(
                         ParticipantId(1),
                         MpcMessage {
-                            data: vec![1, 2, 3],
+                            data: vec![vec![1, 2, 3]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
                         },
                     )
@@ -495,13 +497,13 @@ mod tests {
                     .unwrap();
                 let msg = receiver1.receive().await.unwrap();
                 assert_eq!(msg.from, ParticipantId(0));
-                assert_eq!(msg.message.data, vec![1, 2, 3]);
+                assert_eq!(msg.message.data, vec![vec![1, 2, 3]]);
 
                 sender1
                     .send(
                         ParticipantId(0),
                         MpcMessage {
-                            data: vec![4, 5, 6],
+                            data: vec![vec![4, 5, 6]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
                         },
                     )
@@ -510,7 +512,7 @@ mod tests {
 
                 let msg = receiver0.receive().await.unwrap();
                 assert_eq!(msg.from, ParticipantId(1));
-                assert_eq!(msg.message.data, vec![4, 5, 6]);
+                assert_eq!(msg.message.data, vec![vec![4, 5, 6]]);
             }
         })
         .await;
