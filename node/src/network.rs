@@ -5,6 +5,7 @@ use futures_util::FutureExt;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 /// Abstraction of the networking layer, from the view of one client, the sender side.
@@ -29,6 +30,10 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     async fn send(&self, recipient_id: ParticipantId, message: MpcMessage) -> anyhow::Result<()>;
     /// Waits until all nodes in the network have been connected to initially.
     async fn wait_for_ready(&self) -> anyhow::Result<()>;
+
+    fn run_check_connections(&self, period: Duration);
+
+    fn all_alive_participant_ids(&self) -> Vec<ParticipantId>;
 }
 
 /// The receiving side of the networking layer. It is expected that the node will run
@@ -72,6 +77,10 @@ impl MeshNetworkClient {
 
     pub fn all_participant_ids(&self) -> Vec<ParticipantId> {
         self.transport_sender.all_participant_ids()
+    }
+
+    pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
+        self.transport_sender.all_alive_participant_ids()
     }
 
     pub fn other_participant_ids(&self) -> Vec<ParticipantId> {
@@ -176,6 +185,8 @@ pub fn run_network_client(
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
     transport_receiver: Box<dyn MeshNetworkTransportReceiver>,
 ) -> (Arc<MeshNetworkClient>, mpsc::Receiver<NetworkTaskChannel>) {
+    // TODO: read duration from config
+    transport_sender.run_check_connections(Duration::from_secs(10));
     let client = Arc::new(MeshNetworkClient {
         transport_sender,
         senders_for_tasks: Arc::new(Mutex::new(HashMap::new())),
@@ -267,6 +278,7 @@ pub mod testing {
     use crate::tracking;
     use std::collections::HashMap;
     use std::sync::Arc;
+    use std::time::Duration;
 
     pub struct TestMeshTransport {
         participant_ids: Vec<ParticipantId>,
@@ -319,6 +331,12 @@ pub mod testing {
 
         async fn wait_for_ready(&self) -> anyhow::Result<()> {
             Ok(())
+        }
+
+        fn run_check_connections(&self, period: Duration) {}
+
+        fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
+            return self.all_participant_ids();
         }
     }
 
@@ -409,10 +427,14 @@ mod tests {
     use std::collections::HashSet;
     use std::sync::Arc;
     use tokio::sync::mpsc;
+    use crate::tracing::init_logging;
 
     #[tokio::test]
     async fn test_network_basic() {
-        run_test_clients(4, run_test_client).await.unwrap();
+        init_logging();
+        tracking::testing::start_root_task_with_periodic_dump(async {
+            run_test_clients(4, run_test_client).await.unwrap();
+        }).await;
     }
 
     async fn run_test_client(

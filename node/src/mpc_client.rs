@@ -10,6 +10,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
+
 /// Main entry point for the MPC node. Runs all the business logic for doing
 /// multiparty computation.
 pub async fn run_mpc_client(
@@ -64,7 +65,7 @@ pub async fn run_mpc_client(
     if client.my_participant_id() == client.all_participant_ids()[0] {
         run_key_generation(
             client.new_channel_for_task(MpcTaskId::KeyGeneration)?,
-            client.all_participant_ids(),
+            client.all_alive_participant_ids(),
             client.my_participant_id(),
             config.participants.threshold as usize,
         )
