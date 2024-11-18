@@ -117,14 +117,6 @@ impl PersistentConnection {
         Ok(stream)
     }
 
-    // async fn reestablish_connection(&self) -> anyhow::Result<()> {
-    //     let mut current = self.current.lock().await;
-    //     if current.is_none() {
-    //         self.reestablish_locked_connection(&mut *current).await?;
-    //     }
-    //     Ok(())
-    // }
-
     async fn reestablish_locked_connection(&self, current: &mut Option<Arc<quinn::Connection>>) -> anyhow::Result<()> {
         let current_clone = self.current.clone();
         let socket_addr = self.target_address.to_socket_addrs()?.next().unwrap();
