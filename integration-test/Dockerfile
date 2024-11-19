@@ -1,4 +1,5 @@
-FROM lukemathwalker/cargo-chef:latest as chef
+FROM lukemathwalker/cargo-chef:latest AS chef
+RUN apt-get update -y && apt-get install -y --no-install-recommends clang  # needed for rocksdb
 WORKDIR /app
 
 FROM chef AS planner

@@ -1,3 +1,4 @@
+use crate::assets::UniqueId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::protocol::Participant;
 use serde::{Deserialize, Serialize};
@@ -54,13 +55,13 @@ pub struct MpcPeerMessage {
 pub enum MpcTaskId {
     KeyGeneration,
     ManyTriples {
-        start: u64,
-        end: u64,
+        start: UniqueId,
+        count: u32,
     },
     Presignature {
         id: u64,
-        triple0_id: u64,
-        triple1_id: u64,
+        triple0_id: UniqueId,
+        triple1_id: UniqueId,
     },
     Signature {
         id: u64,
