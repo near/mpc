@@ -7,6 +7,7 @@ use std::path::Path;
 pub struct Config {
     pub mpc: MpcConfig,
     pub web_ui: WebUIConfig,
+    pub indexer: Option<IndexerConfig>,
     pub key_generation: KeyGenerationConfig,
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
@@ -52,6 +53,35 @@ pub struct WebUIConfig {
     pub port: u16,
 }
 
+/// Configures behavior of the near indexer.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IndexerConfig {
+    /// Force streaming while node is syncing
+    pub stream_while_syncing: bool,
+    /// Tells whether to validate the genesis file before starting
+    pub validate_genesis: bool,
+    /// Sets the starting point for indexing
+    pub sync_mode: SyncMode,
+    /// Sets the concurrency for indexing
+    pub concurrency: std::num::NonZeroU16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SyncMode {
+    /// continue from the block Indexer was interrupted
+    SyncFromInterruption,
+    /// start from the newest block after node finishes syncing
+    SyncFromLatest,
+    /// start from specified block height
+    SyncFromBlock(BlockArgs),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockArgs {
+    /// block height for block sync mode
+    pub height: u64,
+}
+
 /// The contents of the main config.yaml file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigFile {
@@ -64,6 +94,7 @@ pub struct ConfigFile {
     /// Private key used for the P2P communication's TLS.
     pub p2p_private_key_file: String,
     pub web_ui: WebUIConfig,
+    pub indexer: Option<IndexerConfig>,
     pub key_generation: KeyGenerationConfig,
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
@@ -122,6 +153,7 @@ pub fn load_config(home_dir: &Path) -> anyhow::Result<Config> {
     let config = Config {
         mpc: mpc_config,
         web_ui: web_config,
+        indexer: file_config.indexer,
         key_generation: file_config.key_generation,
         triple: file_config.triple,
         presignature: file_config.presignature,

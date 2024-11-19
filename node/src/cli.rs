@@ -1,7 +1,10 @@
 use crate::config::{
-    load_config, ConfigFile, KeyGenerationConfig, PresignatureConfig, SignatureConfig,
-    TripleConfig, WebUIConfig,
+    load_config, ConfigFile, IndexerConfig, KeyGenerationConfig, PresignatureConfig,
+    SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
 };
+use crate::indexer::configs::InitConfigArgs;
+use crate::indexer::handler::listen_blocks;
+use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_quic_mesh_network};
@@ -10,8 +13,10 @@ use crate::tracking;
 use crate::triple::SimpleTripleStore;
 use crate::web::run_web_server;
 use clap::Parser;
+use std::num::NonZero;
 use std::path::Path;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Parser, Debug)]
 pub enum Cli {
@@ -29,6 +34,7 @@ pub enum Cli {
         #[arg(long)]
         threshold: usize,
     },
+    GenerateIndexerConfigs(InitConfigArgs),
 }
 
 impl Cli {
@@ -36,6 +42,30 @@ impl Cli {
         match self {
             Cli::Start { home_dir } => {
                 let config = load_config(Path::new(&home_dir))?;
+
+                // Start the near indexer
+                let indexer_handle = if let Some(indexer_config) = config.indexer.clone() {
+                    Some(std::thread::spawn(move || {
+                        actix::System::new().block_on(async {
+                            let indexer = near_indexer::Indexer::new(
+                                indexer_config.to_near_indexer_config(home_dir.into()),
+                            )
+                            .expect("Failed to initialize the Indexer");
+                            let stream = indexer.streamer();
+                            let view_client = indexer.client_actors().0;
+                            let stats: Arc<Mutex<IndexerStats>> =
+                                Arc::new(Mutex::new(IndexerStats::new()));
+
+                            actix::spawn(indexer_logger(Arc::clone(&stats), view_client));
+                            listen_blocks(stream, indexer_config.concurrency, Arc::clone(&stats))
+                                .await;
+                        });
+                    }))
+                } else {
+                    None
+                };
+
+                // Start the mpc client
                 let (root_task, _) = tracking::start_root_task(async move {
                     let root_task_handle = tracking::current_task();
 
@@ -60,7 +90,10 @@ impl Cli {
                     mpc_client.clone().run(channel_receiver).await?;
                     anyhow::Ok(())
                 });
+
                 root_task.await?;
+                indexer_handle.map(|h| h.join().unwrap());
+
                 Ok(())
             }
             Cli::GenerateTestConfigs {
@@ -80,6 +113,12 @@ impl Cli {
                             host: "127.0.0.1".to_owned(),
                             port: 20000 + i as u16,
                         },
+                        indexer: Some(IndexerConfig {
+                            stream_while_syncing: false,
+                            validate_genesis: true,
+                            sync_mode: SyncMode::SyncFromInterruption,
+                            concurrency: NonZero::new(1).unwrap(),
+                        }),
                         key_generation: KeyGenerationConfig { timeout_sec: 60 },
                         triple: TripleConfig {
                             concurrency: 4,
@@ -99,6 +138,13 @@ impl Cli {
                         serde_yaml::to_string(&file_config)?,
                     )?;
                 }
+                Ok(())
+            }
+            Cli::GenerateIndexerConfigs(config) => {
+                // TODO: there is some weird serialization issue which causes configs to be written
+                // with human-readable ByteSizes (e.g. '40.0 MB' instead of 40000000), which neard
+                // cannot parse.
+                near_indexer::indexer_init_configs(&config.home_dir.clone().into(), config.into())?;
                 Ok(())
             }
         }
