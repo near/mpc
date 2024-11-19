@@ -1,8 +1,13 @@
-use crate::config::{load_config, ConfigFile, TripleConfig, WebUIConfig};
-use crate::mpc_client::run_mpc_client;
+use crate::config::{
+    load_config, ConfigFile, KeyGenerationConfig, PresignatureConfig, SignatureConfig,
+    TripleConfig, WebUIConfig,
+};
+use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_quic_mesh_network};
+use crate::sign::SimplePresignatureStore;
 use crate::tracking;
+use crate::triple::SimpleTripleStore;
 use crate::web::run_web_server;
 use clap::Parser;
 use std::path::Path;
@@ -33,21 +38,26 @@ impl Cli {
                 let config = load_config(Path::new(&home_dir))?;
                 let (root_task, _) = tracking::start_root_task(async move {
                     let root_task_handle = tracking::current_task();
-                    tracking::spawn(
-                        "web server",
-                        run_web_server(root_task_handle, config.web_ui),
-                    );
+
                     let (sender, receiver) = new_quic_mesh_network(&config.mpc).await?;
                     sender.wait_for_ready().await?;
                     let (network_client, channel_receiver) =
                         run_network_client(Arc::new(sender), Box::new(receiver));
-                    run_mpc_client(
-                        config.mpc.into(),
-                        config.triple.into(),
+
+                    let config = Arc::new(config);
+                    let mpc_client = MpcClient::new(
+                        config.clone(),
                         network_client,
-                        channel_receiver,
-                    )
-                    .await?;
+                        Arc::new(SimpleTripleStore::new()),
+                        Arc::new(SimplePresignatureStore::new()),
+                        Arc::new(tokio::sync::OnceCell::new()),
+                    );
+
+                    tracking::spawn_checked(
+                        "web server",
+                        run_web_server(root_task_handle, config.web_ui.clone(), mpc_client.clone()),
+                    );
+                    mpc_client.clone().run(channel_receiver).await?;
                     anyhow::Ok(())
                 });
                 root_task.await?;
@@ -70,7 +80,15 @@ impl Cli {
                             host: "127.0.0.1".to_owned(),
                             port: 20000 + i as u16,
                         },
-                        triple: TripleConfig { concurrency: 4 },
+                        key_generation: KeyGenerationConfig { timeout_sec: 60 },
+                        triple: TripleConfig {
+                            concurrency: 4,
+                            desired_triples_to_buffer: 65536,
+                            timeout_sec: 60,
+                            parallel_triple_generation_stagger_time_sec: 1,
+                        },
+                        presignature: PresignatureConfig { timeout_sec: 60 },
+                        signature: SignatureConfig { timeout_sec: 60 },
                     };
                     std::fs::write(
                         format!("{}/p2p.pem", subdir),

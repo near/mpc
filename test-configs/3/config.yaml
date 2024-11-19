@@ -28,5 +28,14 @@ p2p_private_key_file: p2p.pem
 web_ui:
   host: 127.0.0.1
   port: 20003
+key_generation:
+  timeout_sec: 60
 triple:
   concurrency: 4
+  desired_triples_to_buffer: 65536
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
