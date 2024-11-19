@@ -7,13 +7,35 @@ use std::path::Path;
 pub struct Config {
     pub mpc: MpcConfig,
     pub web_ui: WebUIConfig,
+    pub key_generation: KeyGenerationConfig,
     pub triple: TripleConfig,
+    pub presignature: PresignatureConfig,
+    pub signature: SignatureConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyGenerationConfig {
+    pub timeout_sec: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripleConfig {
     pub concurrency: usize,
     pub desired_triples_to_buffer: usize,
+    pub timeout_sec: u64,
+    /// If we issued a triple generation, wait at least this number of seconds
+    /// before issuing another one. This is to avoid thundering herd situations.
+    pub parallel_triple_generation_stagger_time_sec: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PresignatureConfig {
+    pub timeout_sec: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignatureConfig {
+    pub timeout_sec: u64,
 }
 
 #[derive(Debug)]
@@ -42,7 +64,10 @@ pub struct ConfigFile {
     /// Private key used for the P2P communication's TLS.
     pub p2p_private_key_file: String,
     pub web_ui: WebUIConfig,
+    pub key_generation: KeyGenerationConfig,
     pub triple: TripleConfig,
+    pub presignature: PresignatureConfig,
+    pub signature: SignatureConfig,
 }
 
 impl ConfigFile {
@@ -97,7 +122,10 @@ pub fn load_config(home_dir: &Path) -> anyhow::Result<Config> {
     let config = Config {
         mpc: mpc_config,
         web_ui: web_config,
+        key_generation: file_config.key_generation,
         triple: file_config.triple,
+        presignature: file_config.presignature,
+        signature: file_config.signature,
     };
     Ok(config)
 }
