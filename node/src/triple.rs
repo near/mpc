@@ -10,38 +10,8 @@ use anyhow::Context;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
-
-/// Generates a cait-sith triple.
-pub async fn run_triple_generation(
-    channel: NetworkTaskChannel,
-    participants: Vec<ParticipantId>,
-    me: ParticipantId,
-    threshold: usize,
-) -> anyhow::Result<TripleGenerationOutput<Secp256k1>> {
-    let cs_participants = participants
-        .iter()
-        .copied()
-        .map(Participant::from)
-        .collect::<Vec<_>>();
-    let protocol =
-        cait_sith::triples::generate_triple::<Secp256k1>(&cs_participants, me.into(), threshold)?;
-    run_protocol("triple gen", channel, participants, me, protocol).await
-}
-
-/// Generates a random ID to identify a triple. It has no meaning beyond being
-/// an identifier. It is generated in a way such that each participant will
-/// generate different IDs. This is useful to ensure that IDs from different
-/// participants will not collide.
-///
-/// There is, however, a chance that the same participant generates an ID that
-/// already existed before, so the existence of a triple of such an ID must be
-/// checked before using it.
-///
-/// TODO(#10): is this a good way to generate IDs?
-#[cfg(test)]
-pub fn generate_triple_id(me: ParticipantId) -> u64 {
-    (rand::random::<u64>() >> 12) | ((me.0 as u64) << 52)
-}
+use std::time::Duration;
+use tokio::time::timeout;
 
 /// Generates many cait-sith triples at once. This can significantly save the
 /// *number* of network messages.
@@ -167,22 +137,34 @@ pub async fn run_background_triple_generation(
             let client = client.clone();
             let parallelism_limiter = parallelism_limiter.clone();
             let triple_store = triple_store.clone();
+            let config_clone = config.clone();
             tracking::spawn_checked(&format!("{:?}", task_id), async move {
                 let _in_flight = in_flight;
                 let _semaphore_guard = parallelism_limiter.acquire().await?;
-                let triples = run_many_triple_generation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE>(
-                    channel,
-                    client.all_participant_ids(),
-                    client.my_participant_id(),
-                    threshold,
+                let triples = timeout(
+                    Duration::from_secs(config_clone.timeout_sec),
+                    run_many_triple_generation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE>(
+                        channel,
+                        client.all_participant_ids(),
+                        client.my_participant_id(),
+                        threshold,
+                    ),
                 )
-                .await?;
+                .await??;
                 for (i, triple) in triples.into_iter().enumerate() {
                     triple_store.add_my_triple(id_start + i as u64, triple);
                 }
 
                 anyhow::Ok(())
             });
+            // Before issuing another one, wait a bit. This can dramatically
+            // improve throughput by avoiding thundering herd situations.
+            // Further optimization can be done to avoid thundering herd
+            // situations in the first place.
+            tokio::time::sleep(std::time::Duration::from_secs(
+                config.parallel_triple_generation_stagger_time_sec,
+            ))
+            .await;
         } else {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
@@ -235,89 +217,6 @@ impl Drop for InFlightGenerations {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::network::testing::run_test_clients;
-    use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::primitives::MpcTaskId;
-    use crate::tracing::init_logging;
-    use cait_sith::triples::TripleGenerationOutput;
-    use futures::{stream, StreamExt, TryStreamExt};
-    use k256::Secp256k1;
-    use std::sync::Arc;
-    use tokio::sync::mpsc;
-
-    use super::{generate_triple_id, run_triple_generation};
-    use crate::tracking;
-
-    const NUM_PARTICIPANTS: usize = 4;
-    const THRESHOLD: usize = 3;
-    const PARALLELISM_PER_CLIENT: usize = 4;
-    const TRIPLES_TO_GENERATE_PER_CLIENT: usize = 10;
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_triple_generation() {
-        init_logging();
-        tracking::testing::start_root_task_with_periodic_dump(async {
-            run_test_clients(NUM_PARTICIPANTS, run_triple_gen_client)
-                .await
-                .unwrap();
-        })
-        .await;
-    }
-
-    async fn run_triple_gen_client(
-        client: Arc<MeshNetworkClient>,
-        mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
-    ) -> anyhow::Result<Vec<TripleGenerationOutput<Secp256k1>>> {
-        {
-            let client = client.clone();
-            let participant_id = client.my_participant_id();
-            let all_participant_ids = client.all_participant_ids();
-            tracking::spawn("monitor passive channels", async move {
-                loop {
-                    let channel = channel_receiver.recv().await.unwrap();
-                    tracking::spawn_checked(
-                        &format!("passive task {:?}", channel.task_id),
-                        run_triple_generation(
-                            channel,
-                            all_participant_ids.clone(),
-                            participant_id,
-                            THRESHOLD,
-                        ),
-                    );
-                }
-            });
-        }
-
-        let triples = stream::iter(0..TRIPLES_TO_GENERATE_PER_CLIENT)
-            .map(move |_| {
-                let client = client.clone();
-                async move {
-                    let participant_id = client.my_participant_id();
-                    let all_participant_ids = client.all_participant_ids();
-                    let task_id = MpcTaskId::Triple(generate_triple_id(participant_id));
-                    let result = tracking::spawn_checked(
-                        &format!("task {:?}", task_id),
-                        run_triple_generation(
-                            client.new_channel_for_task(task_id)?,
-                            all_participant_ids.clone(),
-                            participant_id,
-                            THRESHOLD,
-                        ),
-                    )
-                    .await??;
-                    anyhow::Ok(result)
-                }
-            })
-            .buffered(PARALLELISM_PER_CLIENT)
-            .try_collect::<Vec<_>>()
-            .await?;
-
-        Ok(triples)
-    }
-}
-
-#[cfg(test)]
 mod tests_many {
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -329,7 +228,7 @@ mod tests_many {
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
-    use super::{generate_triple_id, run_many_triple_generation};
+    use super::run_many_triple_generation;
     use crate::tracking;
 
     const NUM_PARTICIPANTS: usize = 4;
@@ -374,12 +273,18 @@ mod tests_many {
         }
 
         let triples = stream::iter(0..BATCHES_TO_GENERATE_PER_CLIENT)
-            .map(move |_| {
+            .map(move |i| {
                 let client = client.clone();
                 async move {
                     let participant_id = client.my_participant_id();
                     let all_participant_ids = client.all_participant_ids();
-                    let task_id = MpcTaskId::Triple(generate_triple_id(participant_id));
+                    let start_triple_id = (i as u64 * TRIPLES_PER_BATCH as u64)
+                        * NUM_PARTICIPANTS as u64
+                        + client.my_participant_id().0 as u64;
+                    let task_id = MpcTaskId::ManyTriples {
+                        start: start_triple_id,
+                        end: start_triple_id + TRIPLES_PER_BATCH as u64,
+                    };
                     let result = tracking::spawn_checked(
                         &format!("task {:?}", task_id),
                         run_many_triple_generation::<TRIPLES_PER_BATCH>(
@@ -398,5 +303,235 @@ mod tests_many {
             .await?;
 
         Ok(triples.into_iter().flatten().collect())
+    }
+}
+
+#[cfg(test)]
+mod network_research {
+    use cait_sith::protocol::{Participant, Protocol};
+    use k256::Secp256k1;
+    use serde::Serialize;
+    use std::collections::VecDeque;
+
+    const NUM_PARTICIPANTS: usize = 10;
+    const THRESHOLD: usize = 7;
+
+    /// Simulates a network of participants doing a single triple generation,
+    /// and writes out a file for the network communication statistics for each
+    /// round of communication, which can be visualized in a tool.
+    ///
+    /// The difference between the best case and worst case is:
+    /// - In the best case, in each round we have each participant receive as
+    ///   many messages as possible before proceeding. This gives the minimum
+    ///   possible number of rounds of communication that is absolutely
+    ///   necessary.
+    /// - In the worst case, in each round we have each participant receive only
+    ///   as many messages as needed to make any progress. This gives some kind
+    ///   of worst-case estimate, even though it's not the absolute worst (which
+    ///   is kind of hard to define). It can result in many more rounds of
+    ///   communication.
+    #[test]
+    fn triple_network_research_best_case() {
+        let mut protocols = Vec::new();
+        let participants = (0..NUM_PARTICIPANTS)
+            .map(|i| Participant::from(i as u32))
+            .collect::<Vec<_>>();
+        for i in 0..NUM_PARTICIPANTS {
+            protocols.push(
+                cait_sith::triples::generate_triple_many::<Secp256k1, 4>(
+                    &participants,
+                    participants[i],
+                    THRESHOLD,
+                )
+                .unwrap(),
+            );
+        }
+
+        let mut steps = Vec::<NetworkStep>::new();
+        let mut completed = [false; NUM_PARTICIPANTS];
+        loop {
+            if completed.iter().all(|&b| b) {
+                break;
+            }
+            let mut p2p_messages_to_send =
+                vec![vec![Vec::<Vec<u8>>::new(); NUM_PARTICIPANTS]; NUM_PARTICIPANTS];
+            for i in 0..NUM_PARTICIPANTS {
+                if completed[i] {
+                    continue;
+                }
+                loop {
+                    match protocols[i].poke().unwrap() {
+                        cait_sith::protocol::Action::Wait => break,
+                        cait_sith::protocol::Action::SendMany(vec) => {
+                            for j in 0..NUM_PARTICIPANTS {
+                                if i == j {
+                                    continue;
+                                }
+                                p2p_messages_to_send[i][j].push(vec.clone());
+                            }
+                        }
+                        cait_sith::protocol::Action::SendPrivate(participant, vec) => {
+                            p2p_messages_to_send[i][u32::from(participant) as usize].push(vec);
+                        }
+                        cait_sith::protocol::Action::Return(_) => {
+                            completed[i] = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            let mut step = NetworkStep {
+                peer_to_peer: Vec::new(),
+            };
+            for (i, messages) in p2p_messages_to_send.into_iter().enumerate() {
+                let mut peer_messages = Vec::new();
+                for (j, messages) in messages.into_iter().enumerate() {
+                    for message in &messages {
+                        protocols[j].message(Participant::from(i as u32), message.clone());
+                    }
+                    let num_messages = messages.len();
+                    let total_bytes = messages.iter().map(|v| v.len()).sum();
+                    peer_messages.push(PeerToPeerMessageStats {
+                        num_messages,
+                        total_bytes,
+                    });
+                }
+                step.peer_to_peer.push(peer_messages);
+            }
+            steps.push(step);
+        }
+        let report = NetworkResearchReport {
+            num_participants: NUM_PARTICIPANTS,
+            steps,
+        };
+        std::fs::write(
+            "triple_network_report_best_case.json",
+            serde_json::to_string_pretty(&report).unwrap(),
+        )
+        .unwrap();
+        eprintln!(
+            "Report written to {}/triple_network_report_best_case.json",
+            std::env::current_dir().unwrap().to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn triple_network_research_worst_case() {
+        let mut protocols = Vec::new();
+        let participants = (0..NUM_PARTICIPANTS)
+            .map(|i| Participant::from(i as u32))
+            .collect::<Vec<_>>();
+        for i in 0..NUM_PARTICIPANTS {
+            protocols.push(
+                cait_sith::triples::generate_triple_many::<Secp256k1, 4>(
+                    &participants,
+                    participants[i],
+                    THRESHOLD,
+                )
+                .unwrap(),
+            );
+        }
+
+        let mut steps = Vec::<NetworkStep>::new();
+        let mut completed = [false; NUM_PARTICIPANTS];
+        let mut p2p_messages_to_receive =
+            vec![VecDeque::<(usize, Vec<u8>)>::new(); NUM_PARTICIPANTS];
+        loop {
+            if completed.iter().all(|&b| b) {
+                break;
+            }
+            let mut p2p_messages_to_send =
+                vec![vec![Vec::<Vec<u8>>::new(); NUM_PARTICIPANTS]; NUM_PARTICIPANTS];
+            for i in 0..NUM_PARTICIPANTS {
+                if completed[i] {
+                    continue;
+                }
+                loop {
+                    let mut made_progress = false;
+                    loop {
+                        match protocols[i].poke().unwrap() {
+                            cait_sith::protocol::Action::Wait => break,
+                            cait_sith::protocol::Action::SendMany(vec) => {
+                                for j in 0..NUM_PARTICIPANTS {
+                                    if i == j {
+                                        continue;
+                                    }
+                                    p2p_messages_to_send[i][j].push(vec.clone());
+                                    made_progress = true;
+                                }
+                            }
+                            cait_sith::protocol::Action::SendPrivate(participant, vec) => {
+                                p2p_messages_to_send[i][u32::from(participant) as usize].push(vec);
+                                made_progress = true;
+                            }
+                            cait_sith::protocol::Action::Return(_) => {
+                                completed[i] = true;
+                                made_progress = true;
+                                break;
+                            }
+                        }
+                    }
+                    if made_progress {
+                        break;
+                    }
+                    if let Some((from, message)) = p2p_messages_to_receive[i].pop_front() {
+                        protocols[i].message(Participant::from(from as u32), message);
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            let mut step = NetworkStep {
+                peer_to_peer: Vec::new(),
+            };
+            for (i, messages) in p2p_messages_to_send.into_iter().enumerate() {
+                let mut peer_messages = Vec::new();
+                for (j, messages) in messages.into_iter().enumerate() {
+                    for message in &messages {
+                        p2p_messages_to_receive[j].push_back((i, message.clone()));
+                    }
+                    let num_messages = messages.len();
+                    let total_bytes = messages.iter().map(|v| v.len()).sum();
+                    peer_messages.push(PeerToPeerMessageStats {
+                        num_messages,
+                        total_bytes,
+                    });
+                }
+                step.peer_to_peer.push(peer_messages);
+            }
+            steps.push(step);
+        }
+        let report = NetworkResearchReport {
+            num_participants: NUM_PARTICIPANTS,
+            steps,
+        };
+        std::fs::write(
+            "triple_network_report_worst_case.json",
+            serde_json::to_string_pretty(&report).unwrap(),
+        )
+        .unwrap();
+        eprintln!(
+            "Report written to {}/triple_network_report_worst_case.json",
+            std::env::current_dir().unwrap().to_string_lossy()
+        );
+    }
+
+    #[derive(Debug, Serialize)]
+    struct NetworkResearchReport {
+        num_participants: usize,
+        steps: Vec<NetworkStep>,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct NetworkStep {
+        peer_to_peer: Vec<Vec<PeerToPeerMessageStats>>,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct PeerToPeerMessageStats {
+        num_messages: usize,
+        total_bytes: usize,
     }
 }

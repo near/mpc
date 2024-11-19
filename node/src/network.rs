@@ -1,4 +1,4 @@
-use crate::primitives::{MpcMessage, MpcPeerMessage, MpcTaskId, ParticipantId};
+use crate::primitives::{BatchedMessages, MpcMessage, MpcPeerMessage, MpcTaskId, ParticipantId};
 use crate::tracking;
 use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
@@ -83,7 +83,7 @@ impl MeshNetworkClient {
         match senders_for_tasks.entry(task_id) {
             Entry::Occupied(entry) => SenderOrNewChannel::Existing(entry.get().clone()),
             Entry::Vacant(entry) => {
-                let (sender, receiver) = mpsc::channel(1000);
+                let (sender, receiver) = mpsc::channel(10000);
                 entry.insert(sender.clone());
                 drop(senders_for_tasks); // release lock
 
@@ -93,7 +93,7 @@ impl MeshNetworkClient {
                 };
 
                 let transport_sender = self.transport_sender.clone();
-                let send_fn: SendFnForTaskChannel = Box::new(move |recipient_id, message| {
+                let send_fn: SendFnForTaskChannel = Arc::new(move |recipient_id, message| {
                     let transport_sender = transport_sender.clone();
                     async move {
                         transport_sender
@@ -196,8 +196,9 @@ pub struct NetworkTaskChannel {
     drop: Option<Box<dyn FnOnce() + Send + Sync>>,
 }
 
-type SendFnForTaskChannel =
-    Box<dyn Fn(ParticipantId, Vec<u8>) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync>;
+type SendFnForTaskChannel = Arc<
+    dyn Fn(ParticipantId, BatchedMessages) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync,
+>;
 
 impl Drop for NetworkTaskChannel {
     fn drop(&mut self) {
@@ -208,6 +209,10 @@ impl Drop for NetworkTaskChannel {
 }
 
 impl NetworkTaskChannel {
+    /// Returns a sender to be used to send a message to another participant in the MPC task.
+    ///
+    /// Documentation for the sender function returned:
+    ///
     /// Sends a message to another participant in the MPC task.
     /// Returns an error only if there is something seriously wrong with the networking layer so
     /// that there's no meaningful way for the MPC task to proceed.
@@ -223,16 +228,8 @@ impl NetworkTaskChannel {
     ///
     /// The implementation of this function will guarantee that all messages sent are encrypted,
     /// i.e. can only be decrypted by the recipient.
-    pub async fn send(&self, recipient_id: ParticipantId, message: Vec<u8>) -> anyhow::Result<()> {
-        tracing::debug!(
-            target: "network",
-            "[{}] [Task {:?}] Sending message to {:?}: {}",
-            self.my_participant_id,
-            self.task_id,
-            recipient_id,
-            hex::encode(&message)
-        );
-        (self.sender)(recipient_id, message).await
+    pub fn sender(&self) -> SendFnForTaskChannel {
+        self.sender.clone()
     }
 
     /// Receives a message from another participant in the MPC task.
@@ -437,8 +434,10 @@ mod tests {
         let mut handles = Vec::new();
         let mut expected_results = Vec::new();
         for seed in 0..5 {
-            let channel = client
-                .new_channel_for_task(MpcTaskId::Triple(100 * participant_id.0 as u64 + seed))?;
+            let channel = client.new_channel_for_task(MpcTaskId::ManyTriples {
+                start: 100 * participant_id.0 as u64 + seed,
+                end: 0, // not used
+            })?;
             handles.push(tracking::spawn_checked(
                 &format!("task {}", seed),
                 task_leader(channel, other_participant_ids.clone(), seed),
@@ -469,22 +468,21 @@ mod tests {
         seed: u64,
     ) -> anyhow::Result<u64> {
         for other_participant_id in &participants {
-            channel
-                .send(
-                    *other_participant_id,
-                    borsh::to_vec(&TestTripleMessage {
-                        data: other_participant_id.0 as u64 + seed,
-                    })
-                    .unwrap(),
-                )
-                .await?;
+            channel.sender()(
+                *other_participant_id,
+                vec![borsh::to_vec(&TestTripleMessage {
+                    data: other_participant_id.0 as u64 + seed,
+                })
+                .unwrap()],
+            )
+            .await?;
         }
         let mut total = 0;
         let mut heard_from = HashSet::new();
         for _ in 0..participants.len() {
             let msg = channel.receive().await?;
             assert!(heard_from.insert(msg.from));
-            let inner: TestTripleMessage = borsh::from_slice(&msg.message.data)?;
+            let inner: TestTripleMessage = borsh::from_slice(&msg.message.data[0])?;
             total += inner.data;
         }
         Ok(total)
@@ -493,20 +491,19 @@ mod tests {
     async fn task_follower(mut channel: NetworkTaskChannel) -> anyhow::Result<()> {
         println!("Task follower started: task id: {:?}", channel.task_id);
         match channel.task_id {
-            MpcTaskId::Triple(id) => {
+            id @ MpcTaskId::ManyTriples { .. } => {
                 let message = channel.receive().await?;
-                assert_eq!(message.message.task_id, MpcTaskId::Triple(id));
+                assert_eq!(message.message.task_id, id);
 
-                let inner: TestTripleMessage = borsh::from_slice(&message.message.data)?;
-                channel
-                    .send(
-                        message.from,
-                        borsh::to_vec(&TestTripleMessage {
-                            data: inner.data * inner.data,
-                        })
-                        .unwrap(),
-                    )
-                    .await?;
+                let inner: TestTripleMessage = borsh::from_slice(&message.message.data[0])?;
+                channel.sender()(
+                    message.from,
+                    vec![borsh::to_vec(&TestTripleMessage {
+                        data: inner.data * inner.data,
+                    })
+                    .unwrap()],
+                )
+                .await?;
 
                 Ok(())
             }

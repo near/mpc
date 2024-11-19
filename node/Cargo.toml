@@ -9,7 +9,7 @@ actix-web = "4.9.0"
 anyhow = "1.0.92"
 async-trait = "0.1.83"
 borsh = { version = "1.5.1", features = ["derive"] }
-cait-sith = { git = "https://github.com/LIT-Protocol/cait-sith.git", features = ["k256"], rev = "8ad2316" }
+cait-sith = { git = "https://github.com/Near-One/cait-sith.git", features = ["k256"], rev = "b82c3546c4ace84f771b311b4cd5e40fed9bc3d5" }
 clap = { version = "4.5.20", features = ["derive", "env"] }
 flume = "0.11.1"
 futures = "0.3.31"

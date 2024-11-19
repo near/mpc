@@ -57,7 +57,7 @@ where
         children: Mutex::new(WeakCollection::new()),
         description: "root".to_string(),
         start_time: Instant::now(),
-        progress: Mutex::new("".to_string()),
+        progress: Mutex::new(("".to_string(), Instant::now())),
         finished: AtomicBool::new(false),
     });
     (
@@ -130,7 +130,7 @@ pub struct TaskHandle {
     children: Mutex<WeakCollection<TaskHandle>>,
     description: String,
     start_time: Instant,
-    progress: Mutex<String>,
+    progress: Mutex<(String, Instant)>,
     finished: AtomicBool,
 }
 
@@ -153,12 +153,12 @@ task_local! {
 impl TaskHandle {
     pub fn set_progress(&self, progress: &str) {
         let mut progress_lock = self.progress.lock().unwrap();
-        *progress_lock = progress.to_string();
+        *progress_lock = (progress.to_string(), Instant::now());
     }
 
     fn new_child(self: &Arc<TaskHandle>, description: &str) -> Arc<TaskHandle> {
         let description = description.to_string();
-        let progress = Mutex::new("".to_string());
+        let progress = Mutex::new(("".to_string(), Instant::now()));
         let handle = Arc::new(TaskHandle {
             _parent: Some(self.clone()),
             children: Mutex::new(WeakCollection::new()),
@@ -189,9 +189,14 @@ impl TaskHandle {
             .into_iter()
             .map(|child| child.report())
             .collect();
+        let progress = self.progress.lock().unwrap();
+        let progress_string = progress.0.clone();
+        let progress_elapsed = progress.1.elapsed();
+        drop(progress);
         TaskStatusReport {
             description: self.description.clone(),
-            progress: self.progress.lock().unwrap().clone(),
+            progress: progress_string,
+            progress_elapsed,
             elapsed: self.start_time.elapsed(),
             finished: self.finished.load(std::sync::atomic::Ordering::Relaxed),
             children: children_reports,
@@ -203,6 +208,7 @@ impl TaskHandle {
 pub struct TaskStatusReport {
     description: String,
     progress: String,
+    progress_elapsed: std::time::Duration,
     elapsed: std::time::Duration,
     finished: bool,
     children: Vec<TaskStatusReport>,
@@ -219,6 +225,15 @@ impl Debug for TaskStatusReport {
                 "<1s".to_string()
             }
         }
+        fn format_short_duration(duration: std::time::Duration) -> String {
+            if duration.as_secs() > 60 {
+                format!("{}m", duration.as_secs() / 60)
+            } else if duration.as_secs() >= 1 {
+                format!("{}s", duration.as_secs())
+            } else {
+                format!("{}ms", duration.as_millis())
+            }
+        }
         fn fmt_inner(
             report: &TaskStatusReport,
             f: &mut std::fmt::Formatter<'_>,
@@ -226,12 +241,13 @@ impl Debug for TaskStatusReport {
         ) -> std::fmt::Result {
             writeln!(
                 f,
-                "{}[{}] {:>3} {}: {}",
+                "{}[{}] {:>3} {}: {} (for {})",
                 " ".repeat(indent),
                 if report.finished { "✔" } else { " " },
                 format_duration(report.elapsed),
                 report.description,
-                report.progress
+                report.progress,
+                format_short_duration(report.progress_elapsed),
             )?;
             for child in &report.children {
                 fmt_inner(child, f, indent + 2)?;

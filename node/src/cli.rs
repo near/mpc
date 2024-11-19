@@ -1,4 +1,7 @@
-use crate::config::{load_config, ConfigFile, IndexerConfig, SyncMode, TripleConfig, WebUIConfig};
+use crate::config::{
+    load_config, ConfigFile, IndexerConfig, KeyGenerationConfig, PresignatureConfig,
+    SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
+};
 use crate::indexer::configs::InitConfigArgs;
 use crate::indexer::handler::listen_blocks;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
@@ -41,7 +44,7 @@ impl Cli {
                 let config = load_config(Path::new(&home_dir))?;
 
                 // Start the near indexer
-                let indexer_handle = if let Some(indexer_config) = config.indexer {
+                let indexer_handle = if let Some(indexer_config) = config.indexer.clone() {
                     Some(std::thread::spawn(move || {
                         actix::System::new().block_on(async {
                             let indexer = near_indexer::Indexer::new(
@@ -71,9 +74,9 @@ impl Cli {
                     let (network_client, channel_receiver) =
                         run_network_client(Arc::new(sender), Box::new(receiver));
 
+                    let config = Arc::new(config);
                     let mpc_client = MpcClient::new(
-                        config.mpc.into(),
-                        config.triple.into(),
+                        config.clone(),
                         network_client,
                         Arc::new(SimpleTripleStore::new()),
                         Arc::new(SimplePresignatureStore::new()),
@@ -82,7 +85,7 @@ impl Cli {
 
                     tracking::spawn_checked(
                         "web server",
-                        run_web_server(root_task_handle, config.web_ui, mpc_client.clone()),
+                        run_web_server(root_task_handle, config.web_ui.clone(), mpc_client.clone()),
                     );
                     mpc_client.clone().run(channel_receiver).await?;
                     anyhow::Ok(())
@@ -110,16 +113,21 @@ impl Cli {
                             host: "127.0.0.1".to_owned(),
                             port: 20000 + i as u16,
                         },
-                        triple: TripleConfig {
-                            concurrency: 4,
-                            desired_triples_to_buffer: 65536,
-                        },
                         indexer: Some(IndexerConfig {
                             stream_while_syncing: false,
                             validate_genesis: true,
                             sync_mode: SyncMode::SyncFromInterruption,
                             concurrency: NonZero::new(1).unwrap(),
                         }),
+                        key_generation: KeyGenerationConfig { timeout_sec: 60 },
+                        triple: TripleConfig {
+                            concurrency: 4,
+                            desired_triples_to_buffer: 65536,
+                            timeout_sec: 60,
+                            parallel_triple_generation_stagger_time_sec: 1,
+                        },
+                        presignature: PresignatureConfig { timeout_sec: 60 },
+                        signature: SignatureConfig { timeout_sec: 60 },
                     };
                     std::fs::write(
                         format!("{}/p2p.pem", subdir),
