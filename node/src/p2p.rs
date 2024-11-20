@@ -439,7 +439,7 @@ pub fn generate_test_p2p_configs(
         let (p2p_private_key, p2p_public_key) = generate_keypair()?;
         participants.push(ParticipantInfo {
             id: ParticipantId(i as u32),
-            address: "localhost".to_string(),
+            address: "127.0.0.1".to_string(),
             port: 10000 + i as u16,
             p2p_public_key: p2p_public_key.clone(),
         });
