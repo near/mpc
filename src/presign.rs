@@ -10,12 +10,13 @@ use crate::{
     participants::ParticipantList,
     protocol::{Participant, ProtocolError},
 };
+use serde::{Deserialize, Serialize};
 
 /// The output of the presigning protocol.
 ///
 /// This output is basically all the parts of the signature that we can perform
 /// without knowing the message.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresignOutput<C: CSCurve> {
     /// The public nonce commitment.
     pub big_r: C::AffinePoint,
