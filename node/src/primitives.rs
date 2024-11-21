@@ -3,6 +3,11 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::protocol::Participant;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+use cait_sith::triples::TripleGenerationOutput;
+use k256::Secp256k1;
+use rand::prelude::IteratorRandom;
+use rand::rngs::OsRng;
+use std::cell::RefCell;
 
 #[derive(
     Clone,
@@ -43,6 +48,7 @@ pub type BatchedMessages = Vec<Vec<u8>>;
 pub struct MpcMessage {
     pub task_id: MpcTaskId,
     pub data: BatchedMessages,
+    pub participants: Vec<ParticipantId>
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -70,3 +76,30 @@ pub enum MpcTaskId {
         msg_hash: [u8; 32],
     },
 }
+
+thread_local! {
+    static THREAD_OS_RNG: RefCell<OsRng> = RefCell::new(OsRng);
+}
+
+pub fn choose_random_participants(participants: Vec<ParticipantId>, me: ParticipantId, threshold: usize) -> Vec<ParticipantId> {
+    THREAD_OS_RNG.with(
+        |rng| {
+            let mut res: Vec<_> = participants
+                .into_iter()
+                .filter(|p| p != &me)
+                .choose_multiple(&mut *rng.borrow_mut(), threshold - 1);
+            res.push(me);
+            return res;
+        }
+    )
+}
+
+pub fn participants_from_triples(triple0: &TripleGenerationOutput<Secp256k1>, triple1: &TripleGenerationOutput<Secp256k1>) -> Vec<ParticipantId> {
+    triple0.1.participants
+        .iter()
+        .cloned()
+        .filter(|p| triple1.1.participants.contains(p))
+        .map(|p| From::from(p))
+        .collect()
+}
+

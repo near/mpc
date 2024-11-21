@@ -543,6 +543,7 @@ mod tests {
                         MpcMessage {
                             data: vec![vec![1, 2, 3]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
+                            participants: vec![]
                         },
                     )
                     .await
@@ -557,6 +558,7 @@ mod tests {
                         MpcMessage {
                             data: vec![vec![4, 5, 6]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
+                            participants: vec![]
                         },
                     )
                     .await
