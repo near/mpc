@@ -191,6 +191,7 @@ where
     /// The returned ID represents a range that starts from that ID and ending at
     /// that ID .add_to_counter(count - 1).
     pub fn generate_and_reserve_id_range(&self, count: u32) -> UniqueId {
+        assert!(count > 0);
         let mut last_id = self.last_id.lock().unwrap();
         let start = match *last_id {
             Some(last_id) => last_id.pick_new_after(),
@@ -222,7 +223,6 @@ where
 
     /// Adds an owned asset to the storage.
     pub fn add_owned(&self, id: UniqueId, value: T) {
-        self.last_id.lock().unwrap().replace(id);
         let key = borsh::to_vec(&id).unwrap();
         let value_ser = serde_json::to_vec(&value).unwrap();
         let mut update = self.db.update();
@@ -398,6 +398,66 @@ mod tests {
         // Sanity check that generated IDs are monotonically increasing.
         let id4 = store.generate_and_reserve_id();
         assert!(id4 > id3);
+    }
+
+    #[test]
+    fn test_distributed_store_add_owned_different_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let store = super::DistributedAssetStorage::<u32>::new(
+            db.clone(),
+            crate::db::DBCol::Triple,
+            ParticipantId(42),
+        )
+        .unwrap();
+
+        // Adding assets in a different order from when the IDs are generated
+        // is fine. They are dequeued in the order that they are queued.
+        let id1 = store.generate_and_reserve_id_range(3);
+        let id2 = id1.add_to_counter(1).unwrap();
+        let id3 = id1.add_to_counter(2).unwrap();
+
+        let asset1_fut = store.take_owned();
+        let MaybeDone::Future(asset1_fut) = maybe_done(asset1_fut) else {
+            panic!("nothing should not be ready");
+        };
+        let asset2_fut = store.take_owned();
+        let MaybeDone::Future(asset2_fut) = maybe_done(asset2_fut) else {
+            panic!("nothing should not be ready");
+        };
+
+        store.add_owned(id3, 3);
+        store.add_owned(id2, 2);
+
+        assert_eq!(asset1_fut.now_or_never().unwrap(), (id3, 3));
+        assert_eq!(asset2_fut.now_or_never().unwrap(), (id2, 2));
+
+        store.add_owned(id1, 1);
+        assert_eq!(store.take_owned().now_or_never().unwrap(), (id1, 1));
+
+        // Make sure that ID generation does not depend on the order of adding
+        // them.
+        let id4 = store.generate_and_reserve_id();
+        assert!(id4 > id3);
+
+        let id5 = store.generate_and_reserve_id();
+        let id6 = store.generate_and_reserve_id();
+
+        store.add_owned(id6, 6);
+        store.add_owned(id5, 5);
+
+        // If we reload the store from the db, then the order of the queue would
+        // be based on the key. It doesn't have to be this way, but we test it
+        // here just to clarify the current behavior.
+        drop(store);
+        let store = super::DistributedAssetStorage::<u32>::new(
+            db,
+            crate::db::DBCol::Triple,
+            ParticipantId(42),
+        )
+        .unwrap();
+        assert_eq!(store.take_owned().now_or_never().unwrap(), (id5, 5));
+        assert_eq!(store.take_owned().now_or_never().unwrap(), (id6, 6));
     }
 
     #[test]

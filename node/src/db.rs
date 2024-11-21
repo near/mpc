@@ -42,7 +42,8 @@ fn encrypt(cipher: &Aes128Gcm, plaintext: &[u8]) -> Vec<u8> {
 
 /// Decrypts a single value with AES-GCM.
 fn decrypt(cipher: &Aes128Gcm, ciphertext: &[u8]) -> anyhow::Result<Vec<u8>> {
-    if ciphertext.len() < 12 {
+    const NONCE_LEN: usize = 12; // dictated by the aes-gcm library.
+    if ciphertext.len() < NONCE_LEN {
         return Err(anyhow::anyhow!("ciphertext is too short"));
     }
     let nonce = &ciphertext[..12];
