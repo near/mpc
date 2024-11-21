@@ -410,6 +410,7 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::{MeshNetworkClient, NetworkTaskChannel};
+    use crate::assets::UniqueId;
     use crate::network::testing::run_test_clients;
     use crate::primitives::{MpcTaskId, ParticipantId};
     use crate::tracking;
@@ -455,8 +456,8 @@ mod tests {
         let mut expected_results = Vec::new();
         for seed in 0..5 {
             let channel = client.new_channel_for_task(MpcTaskId::ManyTriples {
-                start: 100 * participant_id.0 as u64 + seed,
-                end: 0, // not used
+                start: UniqueId::new(participant_id, seed, 0),
+                count: 1,
             })?;
             handles.push(tracking::spawn_checked(
                 &format!("task {}", seed),

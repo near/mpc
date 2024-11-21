@@ -1,23 +1,34 @@
 use crate::config::{
-    load_config, ConfigFile, KeyGenerationConfig, PresignatureConfig, SignatureConfig,
-    TripleConfig, WebUIConfig,
+    load_config, ConfigFile, IndexerConfig, KeyGenerationConfig, PresignatureConfig,
+    SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
 };
+use crate::db::{DBCol, SecretDB};
+use crate::indexer::configs::InitConfigArgs;
+use crate::indexer::handler::listen_blocks;
+use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_quic_mesh_network};
 use crate::sign::SimplePresignatureStore;
 use crate::tracking;
-use crate::triple::SimpleTripleStore;
+use crate::triple::TripleStorage;
 use crate::web::run_web_server;
+use anyhow::Context;
 use clap::Parser;
+use std::num::NonZero;
 use std::path::Path;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Parser, Debug)]
 pub enum Cli {
     Start {
         #[arg(long, env("MPC_HOME_DIR"))]
         home_dir: String,
+        /// Hex-encoded 16 byte AES key for local storage encryption.
+        /// TODO: What's the right way to pass in secrets?
+        #[arg(env("MPC_SECRET_STORE_KEY"))]
+        secret_store_key_hex: String,
     },
     /// Generates a set of test configurations suitable for running MPC in
     /// an integration test.
@@ -29,13 +40,53 @@ pub enum Cli {
         #[arg(long)]
         threshold: usize,
     },
+    GenerateIndexerConfigs(InitConfigArgs),
 }
 
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self {
-            Cli::Start { home_dir } => {
-                let config = load_config(Path::new(&home_dir))?;
+            Cli::Start {
+                home_dir,
+                secret_store_key_hex,
+            } => {
+                let secret_store_key =
+                    hex::decode(&secret_store_key_hex).context("Secret store key invalid")?;
+                let secret_store_key: &[u8; 16] = secret_store_key
+                    .as_slice()
+                    .try_into()
+                    .context("Secret store key must be 16 bytes (32 bytes hex)")?;
+
+                let config = load_config(Path::new(&home_dir), *secret_store_key)?;
+
+                // Start the near indexer
+                let indexer_handle = if let Some(indexer_config) = config.indexer.clone() {
+                    Some(std::thread::spawn(move || {
+                        actix::System::new().block_on(async {
+                            let indexer = near_indexer::Indexer::new(
+                                indexer_config.to_near_indexer_config(home_dir.into()),
+                            )
+                            .expect("Failed to initialize the Indexer");
+                            let stream = indexer.streamer();
+                            let view_client = indexer.client_actors().0;
+                            let stats: Arc<Mutex<IndexerStats>> =
+                                Arc::new(Mutex::new(IndexerStats::new()));
+
+                            actix::spawn(indexer_logger(Arc::clone(&stats), view_client));
+                            listen_blocks(stream, indexer_config.concurrency, Arc::clone(&stats))
+                                .await;
+                        });
+                    }))
+                } else {
+                    None
+                };
+
+                // Start the mpc client
+                let secret_db = SecretDB::new(
+                    &config.secret_storage.data_dir,
+                    config.secret_storage.aes_key,
+                )?;
+
                 let (root_task, _) = tracking::start_root_task(async move {
                     let root_task_handle = tracking::current_task();
 
@@ -44,11 +95,17 @@ impl Cli {
                     let (network_client, channel_receiver) =
                         run_network_client(Arc::new(sender), Box::new(receiver));
 
+                    let triple_store = Arc::new(TripleStorage::new(
+                        secret_db.clone(),
+                        DBCol::Triple,
+                        network_client.my_participant_id(),
+                    )?);
+
                     let config = Arc::new(config);
                     let mpc_client = MpcClient::new(
                         config.clone(),
                         network_client,
-                        Arc::new(SimpleTripleStore::new()),
+                        triple_store,
                         Arc::new(SimplePresignatureStore::new()),
                         Arc::new(tokio::sync::OnceCell::new()),
                     );
@@ -60,7 +117,10 @@ impl Cli {
                     mpc_client.clone().run(channel_receiver).await?;
                     anyhow::Ok(())
                 });
+
                 root_task.await?;
+                indexer_handle.map(|h| h.join().unwrap());
+
                 Ok(())
             }
             Cli::GenerateTestConfigs {
@@ -80,6 +140,12 @@ impl Cli {
                             host: "127.0.0.1".to_owned(),
                             port: 20000 + i as u16,
                         },
+                        indexer: Some(IndexerConfig {
+                            stream_while_syncing: false,
+                            validate_genesis: true,
+                            sync_mode: SyncMode::SyncFromInterruption,
+                            concurrency: NonZero::new(1).unwrap(),
+                        }),
                         key_generation: KeyGenerationConfig { timeout_sec: 60 },
                         triple: TripleConfig {
                             concurrency: 4,
@@ -99,6 +165,13 @@ impl Cli {
                         serde_yaml::to_string(&file_config)?,
                     )?;
                 }
+                Ok(())
+            }
+            Cli::GenerateIndexerConfigs(config) => {
+                // TODO: there is some weird serialization issue which causes configs to be written
+                // with human-readable ByteSizes (e.g. '40.0 MB' instead of 40000000), which neard
+                // cannot parse.
+                near_indexer::indexer_init_configs(&config.home_dir.clone().into(), config.into())?;
                 Ok(())
             }
         }

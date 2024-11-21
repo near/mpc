@@ -1,8 +1,11 @@
 use clap::Parser;
 use tracing::init_logging;
 
+mod assets;
 mod cli;
 mod config;
+mod db;
+mod indexer;
 mod key_generation;
 mod metrics;
 mod mpc_client;

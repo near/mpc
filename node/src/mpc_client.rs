@@ -3,11 +3,12 @@ use crate::key_generation::run_key_generation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::sign::{
-    generate_presignature_id, generate_signature_id, pre_sign, sign, SimplePresignatureStore,
+    generate_presignature_id, generate_signature_id, pre_sign, pre_sign_unowned, sign,
+    SimplePresignatureStore,
 };
 use crate::tracking;
 use crate::triple::{
-    run_background_triple_generation, run_many_triple_generation, SimpleTripleStore,
+    run_background_triple_generation, run_many_triple_generation, TripleStorage,
     SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
 };
 use anyhow::Context;
@@ -24,7 +25,7 @@ use tokio::time::timeout;
 pub struct MpcClient {
     config: Arc<Config>,
     client: Arc<MeshNetworkClient>,
-    triple_store: Arc<SimpleTripleStore>,
+    triple_store: Arc<TripleStorage>,
     presignature_store: Arc<SimplePresignatureStore>,
     keygen_out: Arc<tokio::sync::OnceCell<KeygenOutput<Secp256k1>>>,
 }
@@ -33,7 +34,7 @@ impl MpcClient {
     pub fn new(
         config: Arc<Config>,
         client: Arc<MeshNetworkClient>,
-        triple_store: Arc<SimpleTripleStore>,
+        triple_store: Arc<TripleStorage>,
         presignature_store: Arc<SimplePresignatureStore>,
         keygen_out: Arc<tokio::sync::OnceCell<KeygenOutput<Secp256k1>>>,
     ) -> Self {
@@ -88,17 +89,20 @@ impl MpcClient {
                                         .await
                                         .context("Key generated twice")?;
                                 }
-                                MpcTaskId::ManyTriples { start, end } => {
-                                    if end.checked_sub(start)
-                                        != Some(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u64)
-                                    {
-                                        tracing::error!(
-                                            "Unsupported batch size for triple generation"
-                                        );
+                                MpcTaskId::ManyTriples { start, count } => {
+                                    if count as usize != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
                                         return Err(anyhow::anyhow!(
                                             "Unsupported batch size for triple generation"
                                         ));
                                     }
+                                    let pending_triples = (0..count)
+                                        .map(|i| {
+                                            anyhow::Ok(
+                                                triple_store
+                                                    .prepare_unowned(start.add_to_counter(i)?),
+                                            )
+                                        })
+                                        .collect::<anyhow::Result<Vec<_>>>()?;
                                     let triples = timeout(
                                         Duration::from_secs(config.triple.timeout_sec),
                                         run_many_triple_generation::<
@@ -111,8 +115,10 @@ impl MpcClient {
                                         ),
                                     )
                                     .await??;
-                                    for (i, triple) in triples.into_iter().enumerate() {
-                                        triple_store.add_their_triple(start + i as u64, triple);
+                                    for (pending_triple, triple) in
+                                        pending_triples.into_iter().zip(triples.into_iter())
+                                    {
+                                        pending_triple.commit(triple);
                                     }
                                 }
                                 MpcTaskId::Presignature {
@@ -123,19 +129,20 @@ impl MpcClient {
                                     let sender = presignature_store.add_their_presignature(id);
                                     let presignature = timeout(
                                         Duration::from_secs(config.presignature.timeout_sec),
-                                        pre_sign(
+                                        pre_sign_unowned(
                                             channel,
                                             client.all_participant_ids(),
                                             client.my_participant_id(),
                                             config.mpc.participants.threshold as usize,
-                                            triple_store.take_their_triple(triple0_id)?,
-                                            triple_store.take_their_triple(triple1_id)?,
                                             keygen_out
                                                 .get()
                                                 .ok_or_else(|| {
                                                     anyhow::anyhow!("Key not generated")
                                                 })?
                                                 .clone(),
+                                            triple_store.clone(),
+                                            triple0_id,
+                                            triple1_id,
                                         ),
                                     )
                                     .await??;
@@ -219,8 +226,8 @@ impl MpcClient {
         self,
         msg_hash: Scalar,
     ) -> anyhow::Result<FullSignature<Secp256k1>> {
-        let (triple0_id, triple0) = self.triple_store.take_my_triple().await?;
-        let (triple1_id, triple1) = self.triple_store.take_my_triple().await?;
+        let (triple0_id, triple0) = self.triple_store.take_owned().await;
+        let (triple1_id, triple1) = self.triple_store.take_owned().await;
         let presignature_id = generate_presignature_id(self.client.my_participant_id());
         let key = self
             .keygen_out
