@@ -1,16 +1,18 @@
+use crate::assets::UniqueId;
 use crate::metrics;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
+use crate::triple::TripleStorage;
 use cait_sith::protocol::Participant;
 use cait_sith::triples::TripleGenerationOutput;
 use cait_sith::{FullSignature, KeygenOutput, PresignArguments, PresignOutput};
 use k256::{Scalar, Secp256k1};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
-/// Performs an MPC presignature operation. This is the same for the initiator
+/// Performs an MPC presignature operation. This is shared for the initiator
 /// and for passive participants.
 pub async fn pre_sign(
     channel: NetworkTaskChannel,
@@ -41,6 +43,33 @@ pub async fn pre_sign(
     let presignature = run_protocol("presign", channel, participants, me, protocol).await?;
     metrics::MPC_NUM_PRESIGNATURES_GENERATED.inc();
     Ok(presignature)
+}
+
+/// Performs an MPC presignature operation. This is a helper function for the unowned
+/// code path that also includes awaiting for the triples to be available.
+#[allow(clippy::too_many_arguments)]
+pub async fn pre_sign_unowned(
+    channel: NetworkTaskChannel,
+    participants: Vec<ParticipantId>,
+    me: ParticipantId,
+    threshold: usize,
+    keygen_out: KeygenOutput<Secp256k1>,
+    triple_store: Arc<TripleStorage>,
+    triple0_id: UniqueId,
+    triple1_id: UniqueId,
+) -> anyhow::Result<PresignOutput<Secp256k1>> {
+    let triple0 = triple_store.take_unowned(triple0_id).await?;
+    let triple1 = triple_store.take_unowned(triple1_id).await?;
+    pre_sign(
+        channel,
+        participants,
+        me,
+        threshold,
+        triple0,
+        triple1,
+        keygen_out,
+    )
+    .await
 }
 
 /// Performs an MPC signature operation. This is the same for the initiator

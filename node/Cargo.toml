@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 actix = "0.13.0"
 actix-web = "4.9.0"
+aes-gcm = "0.10.3"
 anyhow = "1.0.92"
 async-trait = "0.1.83"
 borsh = { version = "1.5.1", features = ["derive"] }
@@ -22,10 +23,12 @@ prometheus = "0.13.4"
 quinn = "0.11.5"
 rand = "0.8.5"
 rcgen = "0.13.1"
+rocksdb = "0.21.0"
 rustls = { version = "0.23.16", default-features = false, features = ["ring"] }
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
 serde_yaml = "0.9.34"
+tempfile = "3.14.0"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-util = "0.7.12"
 tokio-stream = { version = "0.1" }

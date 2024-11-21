@@ -2,6 +2,7 @@ use crate::config::{
     load_config, ConfigFile, IndexerConfig, KeyGenerationConfig, PresignatureConfig,
     SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
 };
+use crate::db::{DBCol, SecretDB};
 use crate::indexer::configs::InitConfigArgs;
 use crate::indexer::handler::listen_blocks;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
@@ -10,8 +11,9 @@ use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_quic_mesh_network};
 use crate::sign::SimplePresignatureStore;
 use crate::tracking;
-use crate::triple::SimpleTripleStore;
+use crate::triple::TripleStorage;
 use crate::web::run_web_server;
+use anyhow::Context;
 use clap::Parser;
 use std::num::NonZero;
 use std::path::Path;
@@ -23,6 +25,10 @@ pub enum Cli {
     Start {
         #[arg(long, env("MPC_HOME_DIR"))]
         home_dir: String,
+        /// Hex-encoded 16 byte AES key for local storage encryption.
+        /// TODO: What's the right way to pass in secrets?
+        #[arg(env("MPC_SECRET_STORE_KEY"))]
+        secret_store_key_hex: String,
     },
     /// Generates a set of test configurations suitable for running MPC in
     /// an integration test.
@@ -40,8 +46,18 @@ pub enum Cli {
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self {
-            Cli::Start { home_dir } => {
-                let config = load_config(Path::new(&home_dir))?;
+            Cli::Start {
+                home_dir,
+                secret_store_key_hex,
+            } => {
+                let secret_store_key =
+                    hex::decode(&secret_store_key_hex).context("Secret store key invalid")?;
+                let secret_store_key: &[u8; 16] = secret_store_key
+                    .as_slice()
+                    .try_into()
+                    .context("Secret store key must be 16 bytes (32 bytes hex)")?;
+
+                let config = load_config(Path::new(&home_dir), *secret_store_key)?;
 
                 // Start the near indexer
                 let indexer_handle = if let Some(indexer_config) = config.indexer.clone() {
@@ -66,6 +82,11 @@ impl Cli {
                 };
 
                 // Start the mpc client
+                let secret_db = SecretDB::new(
+                    &config.secret_storage.data_dir,
+                    config.secret_storage.aes_key,
+                )?;
+
                 let (root_task, _) = tracking::start_root_task(async move {
                     let root_task_handle = tracking::current_task();
 
@@ -74,11 +95,17 @@ impl Cli {
                     let (network_client, channel_receiver) =
                         run_network_client(Arc::new(sender), Box::new(receiver));
 
+                    let triple_store = Arc::new(TripleStorage::new(
+                        secret_db.clone(),
+                        DBCol::Triple,
+                        network_client.my_participant_id(),
+                    )?);
+
                     let config = Arc::new(config);
                     let mpc_client = MpcClient::new(
                         config.clone(),
                         network_client,
-                        Arc::new(SimpleTripleStore::new()),
+                        triple_store,
                         Arc::new(SimplePresignatureStore::new()),
                         Arc::new(tokio::sync::OnceCell::new()),
                     );

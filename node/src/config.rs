@@ -1,7 +1,7 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct Config {
@@ -12,6 +12,13 @@ pub struct Config {
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
     pub signature: SignatureConfig,
+    pub secret_storage: SecretStorageConfig,
+}
+
+#[derive(Debug)]
+pub struct SecretStorageConfig {
+    pub data_dir: PathBuf,
+    pub aes_key: [u8; 16],
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,7 +143,7 @@ pub struct SecretsConfig {
     pub p2p_private_key: String,
 }
 
-pub fn load_config(home_dir: &Path) -> anyhow::Result<Config> {
+pub fn load_config(home_dir: &Path, secret_key: [u8; 16]) -> anyhow::Result<Config> {
     let config_path = home_dir.join("config.yaml");
     let file_config = ConfigFile::from_file(&config_path).context("Load config.yaml")?;
     let mpc_config = MpcConfig {
@@ -158,6 +165,10 @@ pub fn load_config(home_dir: &Path) -> anyhow::Result<Config> {
         triple: file_config.triple,
         presignature: file_config.presignature,
         signature: file_config.signature,
+        secret_storage: SecretStorageConfig {
+            data_dir: home_dir.join("data"),
+            aes_key: secret_key,
+        },
     };
     Ok(config)
 }
