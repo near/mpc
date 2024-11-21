@@ -63,12 +63,12 @@ pub enum MpcTaskId {
         count: u32,
     },
     Presignature {
-        id: u64,
+        id: UniqueId,
         paired_triple_id: UniqueId,
     },
     Signature {
-        id: u64,
-        presignature_id: u64,
+        id: UniqueId,
+        presignature_id: UniqueId,
         // TODO(#9): We need a proof for any signature requests
         msg_hash: [u8; 32],
     },

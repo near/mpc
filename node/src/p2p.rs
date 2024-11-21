@@ -13,8 +13,8 @@ use rustls::quic::Suite;
 use rustls::server::danger::ClientCertVerifier;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use x509_parser::prelude::{FromDer, X509Certificate};
@@ -117,7 +117,10 @@ impl PersistentConnection {
         Ok(stream)
     }
 
-    async fn reestablish_locked_connection(&self, current: &mut Option<Arc<quinn::Connection>>) -> anyhow::Result<()> {
+    async fn reestablish_locked_connection(
+        &self,
+        current: &mut Option<Arc<quinn::Connection>>,
+    ) -> anyhow::Result<()> {
         let current_clone = self.current.clone();
         let socket_addr = self.target_address.to_socket_addrs()?.next().unwrap();
         let new_conn = self.endpoint.connect(socket_addr, "dummy")?.await?;
@@ -276,7 +279,6 @@ pub async fn new_quic_mesh_network(
             let message_sender = message_sender.clone();
             let participant_identities = participant_identities.clone();
             tracking::spawn_checked("Handle connection", async move {
-
                 if let Ok(connection) = conn.await {
                     let verified_participant_id =
                         verify_peer_identity(&connection, &participant_identities)?;
@@ -420,15 +422,10 @@ impl MeshNetworkTransportSender for QuicMeshSender {
         Ok(())
     }
 
-
     fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
-        self
-            .connections
+        self.connections
             .iter()
-            .filter(
-                |(_, conn)|
-                conn.is_alive.load(Ordering::SeqCst)
-            )
+            .filter(|(_, conn)| conn.is_alive.load(Ordering::SeqCst))
             .map(|(p, _)| p.clone())
             .chain(vec![self.my_id])
             .collect()
@@ -450,7 +447,10 @@ impl QuicMeshSender {
                         tokio::time::sleep(period).await;
                         let mut current = connection.current.lock().await;
                         if current.is_none() {
-                            match connection.reestablish_locked_connection(&mut *current).await {
+                            match connection
+                                .reestablish_locked_connection(&mut *current)
+                                .await
+                            {
                                 Ok(_) => {
                                     connection.is_alive.store(true, Ordering::SeqCst);
                                 }
@@ -461,7 +461,7 @@ impl QuicMeshSender {
                             }
                         }
                     }
-                }
+                },
             );
         }
     }
@@ -549,7 +549,7 @@ mod tests {
                         MpcMessage {
                             data: vec![vec![1, 2, 3]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
-                            participants: vec![]
+                            participants: vec![],
                         },
                     )
                     .await
@@ -564,7 +564,7 @@ mod tests {
                         MpcMessage {
                             data: vec![vec![4, 5, 6]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
-                            participants: vec![]
+                            participants: vec![],
                         },
                     )
                     .await

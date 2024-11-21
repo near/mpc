@@ -2,6 +2,7 @@ use clap::Parser;
 use tracing::init_logging;
 
 mod assets;
+mod background;
 mod cli;
 mod config;
 mod db;
@@ -14,6 +15,8 @@ mod p2p;
 mod primitives;
 mod protocol;
 mod sign;
+#[cfg(test)]
+mod tests;
 mod tracing;
 mod tracking;
 mod triple;

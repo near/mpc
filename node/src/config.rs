@@ -38,6 +38,8 @@ pub struct TripleConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresignatureConfig {
+    pub concurrency: usize,
+    pub desired_presignatures_to_buffer: usize,
     pub timeout_sec: u64,
 }
 

@@ -1,6 +1,7 @@
 use aes_gcm::aead::generic_array::GenericArray;
 use aes_gcm::aead::Aead;
 use aes_gcm::{AeadCore, Aes128Gcm, AesGcm, KeyInit};
+use std::fmt::Display;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -30,6 +31,12 @@ impl DBCol {
 
     fn all() -> [DBCol; 3] {
         [DBCol::GeneratedKey, DBCol::Triple, DBCol::Presignature]
+    }
+}
+
+impl Display for DBCol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -78,8 +85,7 @@ impl SecretDB {
     /// Returns the undecrypted ciphertext, for testing.
     #[cfg(test)]
     pub fn get_ciphertext(&self, col: DBCol, key: &[u8]) -> anyhow::Result<Option<Vec<u8>>> {
-        let value = self.db.get_cf(&self.cf_handle(col), key)?;
-        value.map(|v| Ok(v)).transpose()
+        Ok(self.db.get_cf(&self.cf_handle(col), key)?)
     }
 
     /// Returns an iterator for all values in the given range.

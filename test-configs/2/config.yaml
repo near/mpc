@@ -36,6 +36,8 @@ triple:
   timeout_sec: 60
   parallel_triple_generation_stagger_time_sec: 1
 presignature:
+  concurrency: 16
+  desired_presignatures_to_buffer: 8192
   timeout_sec: 60
 signature:
   timeout_sec: 60
