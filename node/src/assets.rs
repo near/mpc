@@ -134,8 +134,8 @@ where
     db: Arc<SecretDB>,
     col: DBCol,
     my_participant_id: ParticipantId,
-    owned_sender: flume::Sender<((UniqueId, T), (UniqueId, T))>,
-    owned_receiver: flume::Receiver<((UniqueId, T), (UniqueId, T))>,
+    owned_sender: flume::Sender<(UniqueId, T)>,
+    owned_receiver: flume::Receiver<(UniqueId, T)>,
     last_id: Mutex<Option<UniqueId>>,
     pending_unowned_assets: Arc<Mutex<HashMap<UniqueId, oneshot::Receiver<()>>>>,
 }
@@ -144,16 +144,6 @@ impl<T> DistributedAssetStorage<T>
 where
     T: Serialize + DeserializeOwned + Send + 'static,
 {
-
-    pub fn extract_id_value(key_value: Option<anyhow::Result<(Box<[u8]>, Vec<u8>)>>) -> anyhow::Result<Option<(UniqueId, T)>> {
-        let Some(key_value) = key_value else {
-            return Ok(None);
-        };
-        let (key, value) = key_value?;
-        let id = UniqueId::try_from_slice(&key)?;
-        let value = serde_json::from_slice(&value)?;
-        Ok(Some((id, value)))
-    }
     pub fn new(
         db: Arc<SecretDB>,
         col: DBCol,
@@ -165,32 +155,17 @@ where
         // but it's the simplest way to implement a multi-consumer, multi-producer queue that
         // supports asynchronous blocking when an asset isn't available.
         let mut last_id = None;
-        let mut iter = db.iter_range(
+        for item in db.iter_range(
             col,
             &UniqueId::prefix_for_participant_id(my_participant_id),
             &UniqueId::prefix_for_participant_id(ParticipantId(my_participant_id.0 + 1)),
-        );
-
-        loop  {
-            let (id0, value0) = {
-                let res = DistributedAssetStorage::extract_id_value(iter.next())?;
-                if res.is_none() {
-                    break;
-                }
-                res.unwrap()
-            };
-            last_id = Some(id0);
-            let (id1, value1) = {
-                let res = DistributedAssetStorage::extract_id_value(iter.next())?;
-                if res.is_none() {
-                    break;
-                }
-                res.unwrap()
-            };
-            last_id = Some(id1);
-            owned_sender.send(((id0, value0), (id1, value1))).unwrap();
+        ) {
+            let (key, value) = item?;
+            let id = UniqueId::try_from_slice(&key)?;
+            let value = serde_json::from_slice(&value)?;
+            owned_sender.send((id, value)).unwrap();
+            last_id = Some(id);
         }
-        drop(iter);
         Ok(Self {
             db,
             col,
@@ -229,38 +204,34 @@ where
 
     /// Returns the current number of owned assets in the database.
     pub fn num_owned(&self) -> usize {
-        self.owned_receiver.len() * 2
+        self.owned_receiver.len()
     }
 
     /// Removes an asset from the storage and returns it, blocking if the
     /// available assets have been exhausted, waiting for a new owned asset to
     /// arrive.
-    pub async fn take_owned(&self) -> ((UniqueId, T), (UniqueId, T)) {
+    pub async fn take_owned(&self) -> (UniqueId, T) {
         // Can't fail, because we keep a sender alive.
-        let ((id0, asset0), (id1, asset1)) = self.owned_receiver.recv_async().await.unwrap();
+        let (id, asset) = self.owned_receiver.recv_async().await.unwrap();
         let mut update = self.db.update();
-        update.delete(self.col, &borsh::to_vec(&id0).unwrap());
-        update.delete(self.col, &borsh::to_vec(&id1).unwrap());
+        update.delete(self.col, &borsh::to_vec(&id).unwrap());
         update
             .commit()
             .expect("Unrecoverable error writing to database");
-        ((id0, asset0), (id1, asset1))
+        (id, asset)
     }
 
     /// Adds an owned asset to the storage.
-    pub fn add_owned(&self, owned_value: ((UniqueId, T), (UniqueId, T))) {
-        let key0 = borsh::to_vec(&owned_value.0.0).unwrap();
-        let value_ser0 = serde_json::to_vec(&owned_value.0.1).unwrap();
-        let key1 = borsh::to_vec(&owned_value.1.0).unwrap();
-        let value_ser1 = serde_json::to_vec(&owned_value.1.1).unwrap();
+    pub fn add_owned(&self, id: UniqueId, value: T) {
+        let key = borsh::to_vec(&id).unwrap();
+        let value_ser = serde_json::to_vec(&value).unwrap();
         let mut update = self.db.update();
-        update.put(self.col, &key0, &value_ser0);
-        update.put(self.col, &key1, &value_ser1);
+        update.put(self.col, &key, &value_ser);
         update
             .commit()
             .expect("Unrecoverable error writing to database");
         // Can't fail, because we keep a receiver alive.
-        self.owned_sender.send(owned_value).unwrap();
+        self.owned_sender.send((id, value)).unwrap();
     }
 
     /// For unowned assets, this should be called first before participating
@@ -400,14 +371,18 @@ mod tests {
 
         // Put in two assets, then dequeue them.
         let id1 = store.generate_and_reserve_id();
-        let id2 = store.generate_and_reserve_id_range(3);
+        let id2 = store.generate_and_reserve_id_range(2);
         assert!(id2 > id1);
-        store.add_owned(((id1, 123), (id2, 456)));
+        store.add_owned(id1, 123);
+        assert_eq!(store.num_owned(), 1);
+        store.add_owned(id2, 456);
         assert_eq!(store.num_owned(), 2);
         let asset1 = store.take_owned().now_or_never().unwrap();
-        assert_eq!(asset1, ((id1, 123), (id2, 456)));
+        assert_eq!(asset1, (id1, 123));
+        assert_eq!(store.num_owned(), 1);
+        let asset2 = store.take_owned().now_or_never().unwrap();
+        assert_eq!(asset2, (id2, 456));
         assert_eq!(store.num_owned(), 0);
-
 
         // Dequeuing an asset before it's available will block.
         let asset3_fut = store.take_owned();
@@ -416,14 +391,13 @@ mod tests {
         };
 
         let id3 = id2.add_to_counter(1).unwrap();
-        let id4 = id2.add_to_counter(1).unwrap();
-        store.add_owned(((id3, 789), (id4, 101112)));
+        store.add_owned(id3, 789);
         let asset3 = asset3_fut.now_or_never().unwrap();
-        assert_eq!(asset3, ((id3, 789), (id4, 101112)));
+        assert_eq!(asset3, (id3, 789));
 
         // Sanity check that generated IDs are monotonically increasing.
-        let id5 = store.generate_and_reserve_id();
-        assert!(id5 > id4);
+        let id4 = store.generate_and_reserve_id();
+        assert!(id4 > id3);
     }
 
     #[test]
@@ -439,12 +413,9 @@ mod tests {
 
         // Adding assets in a different order from when the IDs are generated
         // is fine. They are dequeued in the order that they are queued.
-        let id1 = store.generate_and_reserve_id_range(6);
+        let id1 = store.generate_and_reserve_id_range(3);
         let id2 = id1.add_to_counter(1).unwrap();
         let id3 = id1.add_to_counter(2).unwrap();
-        let id4 = id1.add_to_counter(3).unwrap();
-        let id5 = id1.add_to_counter(4).unwrap();
-        let id6 = id1.add_to_counter(5).unwrap();
 
         let asset1_fut = store.take_owned();
         let MaybeDone::Future(asset1_fut) = maybe_done(asset1_fut) else {
@@ -455,28 +426,25 @@ mod tests {
             panic!("nothing should not be ready");
         };
 
-        store.add_owned(((id5, 3), (id6, 3)));
-        store.add_owned(((id3, 2), (id4, 2)));
+        store.add_owned(id3, 3);
+        store.add_owned(id2, 2);
 
-        assert_eq!(asset1_fut.now_or_never().unwrap(), ((id5, 3), (id6, 3)));
-        assert_eq!(asset2_fut.now_or_never().unwrap(), ((id3, 2), (id4, 2)));
+        assert_eq!(asset1_fut.now_or_never().unwrap(), (id3, 3));
+        assert_eq!(asset2_fut.now_or_never().unwrap(), (id2, 2));
 
-        store.add_owned(((id1, 1), (id2, 1)));
-        assert_eq!(store.take_owned().now_or_never().unwrap(), ((id1, 1), (id2, 1)));
+        store.add_owned(id1, 1);
+        assert_eq!(store.take_owned().now_or_never().unwrap(), (id1, 1));
 
         // Make sure that ID generation does not depend on the order of adding
         // them.
-        let id7 = store.generate_and_reserve_id();
-        assert!(id7 > id6);
-        let _id8 = store.generate_and_reserve_id();
+        let id4 = store.generate_and_reserve_id();
+        assert!(id4 > id3);
 
-        let id9 = store.generate_and_reserve_id();
-        let id10 = store.generate_and_reserve_id();
-        let id11 = store.generate_and_reserve_id();
-        let id12 = store.generate_and_reserve_id();
+        let id5 = store.generate_and_reserve_id();
+        let id6 = store.generate_and_reserve_id();
 
-        store.add_owned(((id12, 12), (id11, 11)));
-        store.add_owned(((id9, 9), (id10, 10)));
+        store.add_owned(id6, 6);
+        store.add_owned(id5, 5);
 
         // If we reload the store from the db, then the order of the queue would
         // be based on the key. It doesn't have to be this way, but we test it
@@ -488,8 +456,8 @@ mod tests {
             ParticipantId(42),
         )
         .unwrap();
-        assert_eq!(store.take_owned().now_or_never().unwrap(), ((id9, 9), (id10, 10)));
-        assert_eq!(store.take_owned().now_or_never().unwrap(), ((id11, 11), (id12, 12)));
+        assert_eq!(store.take_owned().now_or_never().unwrap(), (id5, 5));
+        assert_eq!(store.take_owned().now_or_never().unwrap(), (id6, 6));
     }
 
     #[test]
@@ -551,11 +519,11 @@ mod tests {
         )
         .unwrap();
 
-        let id1 = store.generate_and_reserve_id_range(8);
-        store.add_owned(((id1, 1), (id1.add_to_counter(1).unwrap(), 2)));
-        store.add_owned(((id1.add_to_counter(2).unwrap(), 3), (id1.add_to_counter(3).unwrap(), 4)));
-        store.add_owned(((id1.add_to_counter(4).unwrap(), 5), (id1.add_to_counter(5).unwrap(), 6)));
-        store.add_owned(((id1.add_to_counter(6).unwrap(), 7), (id1.add_to_counter(7).unwrap(), 8)));
+        let id1 = store.generate_and_reserve_id_range(4);
+        store.add_owned(id1, 1);
+        store.add_owned(id1.add_to_counter(1).unwrap(), 2);
+        store.add_owned(id1.add_to_counter(2).unwrap(), 3);
+        store.add_owned(id1.add_to_counter(3).unwrap(), 4);
 
         let other = ParticipantId(43);
         store.prepare_unowned(UniqueId::new(other, 1, 0)).commit(5);
@@ -570,19 +538,19 @@ mod tests {
             ParticipantId(42),
         )
         .unwrap();
-        assert_eq!(store.num_owned(), 8);
-        assert_eq!(store.take_owned().now_or_never().unwrap(), ((id1, 1), (id1.add_to_counter(1).unwrap(), 2)));
+        assert_eq!(store.num_owned(), 4);
+        assert_eq!(store.take_owned().now_or_never().unwrap(), (id1, 1));
         assert_eq!(
             store.take_owned().now_or_never().unwrap(),
-            ((id1.add_to_counter(2).unwrap(), 3), (id1.add_to_counter(3).unwrap(), 4))
+            (id1.add_to_counter(1).unwrap(), 2)
         );
         assert_eq!(
             store.take_owned().now_or_never().unwrap(),
-            ((id1.add_to_counter(4).unwrap(), 5), (id1.add_to_counter(5).unwrap(), 6))
+            (id1.add_to_counter(2).unwrap(), 3)
         );
         assert_eq!(
             store.take_owned().now_or_never().unwrap(),
-            ((id1.add_to_counter(6).unwrap(), 7), (id1.add_to_counter(7).unwrap(), 8))
+            (id1.add_to_counter(3).unwrap(), 4)
         );
 
         assert_eq!(
