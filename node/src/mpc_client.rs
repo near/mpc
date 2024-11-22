@@ -7,10 +7,7 @@ use crate::sign::{
     SimplePresignatureStore,
 };
 use crate::tracking;
-use crate::triple::{
-    run_background_triple_generation, run_many_triple_generation, TripleStorage,
-    SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
-};
+use crate::triple::{run_background_triple_generation, run_many_triple_generation, TripleStorage, SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE};
 use anyhow::Context;
 use cait_sith::{FullSignature, KeygenOutput};
 use k256::elliptic_curve::PrimeField;
@@ -19,7 +16,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
-
 
 #[derive(Clone)]
 pub struct MpcClient {
@@ -94,7 +90,7 @@ impl MpcClient {
                                             "Unsupported batch size for triple generation"
                                         ));
                                     }
-                                    let pending_triples = (0..count)
+                                    let pending_paired_triples = (0..count / 2)
                                         .map(|i| {
                                             anyhow::Ok(
                                                 triple_store
@@ -113,16 +109,15 @@ impl MpcClient {
                                         ),
                                     )
                                     .await??;
-                                    for (pending_triple, triple) in
-                                        pending_triples.into_iter().zip(triples.into_iter())
+                                    for (pending_triple, paired_triple) in
+                                        pending_paired_triples.into_iter().zip(triples.into_iter())
                                     {
-                                        pending_triple.commit(triple);
+                                        pending_triple.commit(paired_triple);
                                     }
                                 }
                                 MpcTaskId::Presignature {
                                     id,
-                                    triple0_id,
-                                    triple1_id,
+                                    paired_triple_id
                                 } => {
                                     let sender = presignature_store.add_their_presignature(id);
                                     let presignature = timeout(
@@ -138,8 +133,7 @@ impl MpcClient {
                                                 })?
                                                 .clone(),
                                             triple_store.clone(),
-                                            triple0_id,
-                                            triple1_id,
+                                            paired_triple_id,
                                         ),
                                     )
                                     .await??;
@@ -221,11 +215,9 @@ impl MpcClient {
         self,
         msg_hash: Scalar,
     ) -> anyhow::Result<FullSignature<Secp256k1>> {
-        let (
-            (triple0_id, triple0),
-            (triple1_id, triple1)
-        )
-            = self.triple_store.take_owned().await;
+        let paired_triple= self.triple_store.take_owned().await;
+        let paired_triple_id = paired_triple.0;
+        let (triple0, triple1) = paired_triple.1;
         let participants = participants_from_triples(&triple0, &triple1);
         let presignature_id = generate_presignature_id(self.client.my_participant_id());
         let key = self
@@ -237,8 +229,7 @@ impl MpcClient {
         let presignature = pre_sign(
             self.client.new_channel_for_task(MpcTaskId::Presignature {
                 id: presignature_id,
-                triple0_id,
-                triple1_id,
+                paired_triple_id
             }, participants.clone())?,
             self.client.my_participant_id(),
             self.config.mpc.participants.threshold as usize,

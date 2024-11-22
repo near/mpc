@@ -66,8 +66,7 @@ pub enum MpcTaskId {
     },
     Presignature {
         id: u64,
-        triple0_id: UniqueId,
-        triple1_id: UniqueId,
+        paired_triple_id: UniqueId,
     },
     Signature {
         id: u64,

@@ -55,11 +55,9 @@ pub async fn pre_sign_unowned(
     threshold: usize,
     keygen_out: KeygenOutput<Secp256k1>,
     triple_store: Arc<TripleStorage>,
-    triple0_id: UniqueId,
-    triple1_id: UniqueId,
+    paired_triple_id: UniqueId,
 ) -> anyhow::Result<PresignOutput<Secp256k1>> {
-    let triple0 = triple_store.take_unowned(triple0_id).await?;
-    let triple1 = triple_store.take_unowned(triple1_id).await?;
+    let (triple0, triple1) = triple_store.take_unowned(paired_triple_id).await?;
     pre_sign(
         channel,
         me,

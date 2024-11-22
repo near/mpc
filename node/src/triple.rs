@@ -1,7 +1,7 @@
 use cait_sith::{protocol::Participant, triples::TripleGenerationOutput};
 use k256::Secp256k1;
 
-use crate::assets::DistributedAssetStorage;
+use crate::assets::{DistributedAssetStorage, PendingUnownedAsset, UniqueId};
 use crate::config::TripleConfig;
 use crate::network::MeshNetworkClient;
 use crate::protocol::run_protocol;
@@ -11,6 +11,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
+use crate::db::{DBCol, SecretDB};
 use crate::primitives::choose_random_participants;
 
 /// Generates many cait-sith triples at once. This can significantly save the
@@ -19,7 +20,7 @@ pub async fn run_many_triple_generation<const N: usize>(
     channel: NetworkTaskChannel,
     me: ParticipantId,
     threshold: usize,
-) -> anyhow::Result<Vec<TripleGenerationOutput<Secp256k1>>> {
+) -> anyhow::Result<Vec<PairedTriple>> {
     assert_eq!(N % 2, 0, "Expected to generate even number of triples in a batch");
     let cs_participants = channel
         .participants
@@ -34,10 +35,69 @@ pub async fn run_many_triple_generation<const N: usize>(
     )?;
     let triples = run_protocol("many triple gen", channel, me, protocol).await?;
     metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);
-    Ok(triples)
+    assert_eq!(N, triples.len(), "Unexpected triples len: expected {}, got {}", N, triples.len());
+    let iter = triples.into_iter();
+    let pairs = iter.clone().step_by(2).zip(iter.skip(1).step_by(2));
+    Ok(pairs.collect())
 }
 
-pub type TripleStorage = DistributedAssetStorage<TripleGenerationOutput<Secp256k1>>;
+// pub type TripleStorage = DistributedAssetStorage<TripleGenerationOutput<Secp256k1>>;
+pub type PairedTriple = (TripleGenerationOutput<Secp256k1>, TripleGenerationOutput<Secp256k1>);
+
+pub(crate) struct TripleStorage {
+    storage: DistributedAssetStorage<PairedTriple>,
+    last_active_participant_ids: Vec<ParticipantId>
+}
+
+impl TripleStorage {
+    pub fn new(
+        db: Arc<SecretDB>,
+        col: DBCol,
+        my_participant_id: ParticipantId,
+        all_participant_ids: Vec<ParticipantId>
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            storage: DistributedAssetStorage::<PairedTriple>::new(db, col, my_participant_id)?,
+            last_active_participant_ids: all_participant_ids,
+        })
+    }
+
+
+    #[allow(dead_code)]
+    pub fn refresh_active_participants_ids(&mut self, participants: &Vec<ParticipantId>) -> anyhow::Result<()> {
+        if participants == &self.last_active_participant_ids {
+            return Ok(());
+        }
+        self.last_active_participant_ids = participants.clone();
+        Ok(())
+    }
+
+    pub fn generate_and_reserve_id_range(&self, count: u32) -> UniqueId {
+        self.storage.generate_and_reserve_id_range(count)
+    }
+
+    pub fn num_owned(&self) -> usize {
+        self.storage.num_owned() * 2
+    }
+
+    pub async fn take_owned(&self) -> (UniqueId, PairedTriple) {
+        self.storage.take_owned().await
+    }
+
+    /// Adds an owned asset to the storage.
+    pub fn add_owned(&self, id: UniqueId, value: PairedTriple) {
+        self.storage.add_owned(id, value)
+    }
+
+    pub fn prepare_unowned(&self, id: UniqueId) -> PendingUnownedAsset<PairedTriple> {
+        self.storage.prepare_unowned(id)
+    }
+
+    pub async fn take_unowned(&self, id: UniqueId) -> anyhow::Result<PairedTriple> {
+        self.storage.take_unowned(id).await
+    }
+}
+
 
 pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
 
@@ -88,12 +148,8 @@ pub async fn run_background_triple_generation(
                 )
                 .await??;
 
-                let iter = triples.into_iter();
-                let pairs = iter.clone().step_by(2).zip(iter.skip(1).step_by(2));
-                for (i, (triple0, triple1)) in pairs.enumerate() {
-                    let triple0_with_id = (id_start.add_to_counter((i * 2) as u32)?, triple0);
-                    let triple1_with_id = (id_start.add_to_counter((i * 2 + 1) as u32)?, triple1);
-                    triple_store.add_owned((triple0_with_id, triple1_with_id));
+                for (i, paired_triple) in triples.into_iter().enumerate() {
+                    triple_store.add_owned(id_start.add_to_counter(i as u32)?, paired_triple);
                 }
 
                 anyhow::Ok(())
@@ -163,13 +219,11 @@ mod tests_many {
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::{choose_random_participants, MpcTaskId};
     use crate::tracing::init_logging;
-    use cait_sith::triples::TripleGenerationOutput;
     use futures::{stream, StreamExt, TryStreamExt};
-    use k256::Secp256k1;
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
-    use super::run_many_triple_generation;
+    use super::{PairedTriple, run_many_triple_generation};
     use crate::assets::UniqueId;
     use crate::tracking;
 
@@ -193,7 +247,7 @@ mod tests_many {
     async fn run_triple_gen_client(
         client: Arc<MeshNetworkClient>,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
-    ) -> anyhow::Result<Vec<TripleGenerationOutput<Secp256k1>>> {
+    ) -> anyhow::Result<Vec<PairedTriple>> {
         {
             let client = client.clone();
             let participant_id = client.my_participant_id();
