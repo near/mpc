@@ -16,7 +16,7 @@ use tokio::sync::oneshot;
 /// Performs an MPC presignature operation. This is shared for the initiator
 /// and for passive participants.
 pub async fn pre_sign(
-    mut channel: NetworkTaskChannel,
+    channel: NetworkTaskChannel,
     me: ParticipantId,
     threshold: usize,
     triple0: TripleGenerationOutput<Secp256k1>,
@@ -24,8 +24,7 @@ pub async fn pre_sign(
     keygen_out: KeygenOutput<Secp256k1>,
 ) -> anyhow::Result<PresignOutput<Secp256k1>> {
     let cs_participants = channel
-        .get_participants()
-        .await?
+        .participants
         .iter()
         .copied()
         .map(Participant::from)
@@ -73,15 +72,14 @@ pub async fn pre_sign_unowned(
 /// Performs an MPC signature operation. This is the same for the initiator
 /// and for passive participants.
 pub async fn sign(
-    mut channel: NetworkTaskChannel,
+    channel: NetworkTaskChannel,
     me: ParticipantId,
     keygen_out: KeygenOutput<Secp256k1>,
     presign_out: PresignOutput<Secp256k1>,
     msg_hash: Scalar,
 ) -> anyhow::Result<FullSignature<Secp256k1>> {
     let cs_participants = channel
-        .get_participants()
-        .await?
+        .participants
         .iter()
         .copied()
         .map(Participant::from)

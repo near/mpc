@@ -8,13 +8,12 @@ use k256::Secp256k1;
 /// Runs the key generation protocol, returning the key generated.
 /// This protocol is identical for the leader and the followers.
 pub async fn run_key_generation(
-    mut channel: NetworkTaskChannel,
+    channel: NetworkTaskChannel,
     me: ParticipantId,
     threshold: usize,
 ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
     let cs_participants = channel
-        .get_participants()
-        .await?
+        .participants
         .iter()
         .copied()
         .map(Participant::from)

@@ -3,7 +3,7 @@ use k256::Secp256k1;
 
 use crate::assets::{DistributedAssetStorage, PendingUnownedAsset, UniqueId};
 use crate::config::TripleConfig;
-use crate::network::{MeshNetworkClient, MessageData};
+use crate::network::MeshNetworkClient;
 use crate::protocol::run_protocol;
 use crate::{metrics, tracking};
 use crate::{network::NetworkTaskChannel, primitives::ParticipantId};
@@ -17,14 +17,13 @@ use crate::primitives::choose_random_participants;
 /// Generates many cait-sith triples at once. This can significantly save the
 /// *number* of network messages.
 pub async fn run_many_triple_generation<const N: usize>(
-    mut channel: NetworkTaskChannel,
+    channel: NetworkTaskChannel,
     me: ParticipantId,
     threshold: usize,
 ) -> anyhow::Result<Vec<PairedTriple>> {
     assert_eq!(N % 2, 0, "Expected to generate even number of triples in a batch");
     let cs_participants = channel
-        .get_participants()
-        .await?
+        .participants
         .iter()
         .copied()
         .map(Participant::from)
@@ -40,22 +39,6 @@ pub async fn run_many_triple_generation<const N: usize>(
     let iter = triples.into_iter();
     let pairs = iter.clone().step_by(2).zip(iter.skip(1).step_by(2));
     Ok(pairs.collect())
-}
-
-pub async fn run_many_owned_triple_generation<const N: usize>(
-    mut channel: NetworkTaskChannel,
-    me: ParticipantId,
-    threshold: usize) -> anyhow::Result<Vec<PairedTriple>> {
-    let participants = channel.get_participants().await?.clone();
-    for p in &participants {
-        if p == &me {
-            continue;
-        }
-        channel
-            .sender()(*p, MessageData::Participants(participants.clone()))
-            .await?;
-    };
-    run_many_triple_generation::<N>(channel, me, threshold).await
 }
 
 // pub type TripleStorage = DistributedAssetStorage<TripleGenerationOutput<Secp256k1>>;
@@ -157,11 +140,11 @@ pub async fn run_background_triple_generation(
                 let _semaphore_guard = parallelism_limiter.acquire().await?;
                 let triples = timeout(
                     Duration::from_secs(config_clone.timeout_sec),
-                    run_many_owned_triple_generation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE>(
+                    run_many_triple_generation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE>(
                         channel,
                         client.my_participant_id(),
                         threshold,
-                    )
+                    ),
                 )
                 .await??;
 
@@ -240,7 +223,7 @@ mod tests_many {
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
-    use super::{PairedTriple, run_many_owned_triple_generation, run_many_triple_generation};
+    use super::{PairedTriple, run_many_triple_generation};
     use crate::assets::UniqueId;
     use crate::tracking;
 
@@ -297,7 +280,7 @@ mod tests_many {
                     let participants = choose_random_participants(all_participant_ids, participant_id, THRESHOLD);
                     let result = tracking::spawn_checked(
                         &format!("task {:?}", task_id),
-                        run_many_owned_triple_generation::<TRIPLES_PER_BATCH>(
+                        run_many_triple_generation::<TRIPLES_PER_BATCH>(
                             client.new_channel_for_task(task_id, participants)?,
                             participant_id,
                             THRESHOLD,

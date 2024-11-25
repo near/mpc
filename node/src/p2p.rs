@@ -1,6 +1,6 @@
 use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-use crate::primitives::{MpcAction, MpcPeerMessage, ParticipantId};
+use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
 use crate::tracking;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -358,7 +358,7 @@ async fn handle_incoming_stream(
 
     let peer_message = MpcPeerMessage {
         from: peer_id,
-        action: MpcAction::try_from_slice(&msg_buf)?,
+        message: MpcMessage::try_from_slice(&msg_buf)?,
     };
 
     message_sender.send(peer_message).await?;
@@ -375,7 +375,7 @@ impl MeshNetworkTransportSender for QuicMeshSender {
         self.participants.clone()
     }
 
-    async fn send(&self, recipient_id: ParticipantId, action: MpcAction) -> Result<()> {
+    async fn send(&self, recipient_id: ParticipantId, message: MpcMessage) -> Result<()> {
         // For now, every message opens a new stream. This is totally fine
         // for performance, but it does mean messages may not arrive in order.
         let mut stream = self
@@ -385,7 +385,7 @@ impl MeshNetworkTransportSender for QuicMeshSender {
             .new_stream()
             .await?;
 
-        let msg = borsh::to_vec(&action)?;
+        let msg = borsh::to_vec(&message)?;
         stream.write_all(&(msg.len() as u32).to_be_bytes()).await?;
         stream.write_all(&msg).await?;
         stream.finish()?;
@@ -529,7 +529,7 @@ pub fn generate_test_p2p_configs(
 #[cfg(test)]
 mod tests {
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-    use crate::primitives::{MpcAction, MpcMessage, ParticipantId};
+    use crate::primitives::{MpcMessage, ParticipantId};
     use crate::tracing::init_logging;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
 
@@ -546,47 +546,33 @@ mod tests {
                 sender0
                     .send(
                         ParticipantId(1),
-                        MpcAction::PassMessage(
-                            MpcMessage {
-                                data: vec![vec![1, 2, 3]],
-                                task_id: crate::primitives::MpcTaskId::KeyGeneration,
-                            }
-                        ),
+                        MpcMessage {
+                            data: vec![vec![1, 2, 3]],
+                            task_id: crate::primitives::MpcTaskId::KeyGeneration,
+                            participants: vec![]
+                        },
                     )
                     .await
                     .unwrap();
                 let msg = receiver1.receive().await.unwrap();
                 assert_eq!(msg.from, ParticipantId(0));
-                match msg.action {
-                    MpcAction::PassMessage(message) => {
-                        assert_eq!(message.data, vec![vec![1, 2, 3]]);
-                    }
-                    _ => panic!(),
-                }
-
+                assert_eq!(msg.message.data, vec![vec![1, 2, 3]]);
 
                 sender1
                     .send(
                         ParticipantId(0),
-                        MpcAction::PassMessage(
-                            MpcMessage {
-                                data: vec![vec![4, 5, 6]],
-                                task_id: crate::primitives::MpcTaskId::KeyGeneration,
-                            }
-                        ),
+                        MpcMessage {
+                            data: vec![vec![4, 5, 6]],
+                            task_id: crate::primitives::MpcTaskId::KeyGeneration,
+                            participants: vec![]
+                        },
                     )
                     .await
                     .unwrap();
 
                 let msg = receiver0.receive().await.unwrap();
                 assert_eq!(msg.from, ParticipantId(1));
-                match msg.action {
-                    MpcAction::PassMessage(message) => {
-                        assert_eq!(message.data, vec![vec![4, 5, 6]]);
-                    },
-                    _ => panic!()
-                }
-
+                assert_eq!(msg.message.data, vec![vec![4, 5, 6]]);
             }
         })
         .await;
