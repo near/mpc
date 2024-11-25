@@ -1,6 +1,6 @@
 use crate::config::Config;
-use crate::key_generation::run_key_generation;
-use crate::network::{MeshNetworkClient, NetworkTaskChannel};
+use crate::key_generation::{initiate_key_generation, run_key_generation};
+use crate::network::{MeshNetworkClient, MessageData, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, participants_from_triples};
 use crate::sign::{
     generate_presignature_id, generate_signature_id, pre_sign, pre_sign_unowned, sign,
@@ -182,7 +182,7 @@ impl MpcClient {
         self.keygen_out
             .set(
                 if self.client.my_participant_id() == self.client.all_participant_ids()[0] {
-                    run_key_generation(
+                    initiate_key_generation(
                         self.client.new_channel_for_task(MpcTaskId::KeyGeneration, self.client.all_participant_ids())?,
                         self.client.my_participant_id(),
                         self.config.mpc.participants.threshold as usize,
@@ -215,42 +215,72 @@ impl MpcClient {
         self,
         msg_hash: Scalar,
     ) -> anyhow::Result<FullSignature<Secp256k1>> {
-        let paired_triple= self.triple_store.take_owned().await;
-        let paired_triple_id = paired_triple.0;
-        let (triple0, triple1) = paired_triple.1;
-        let participants = participants_from_triples(&triple0, &triple1);
-        let presignature_id = generate_presignature_id(self.client.my_participant_id());
         let key = self
             .keygen_out
             .get()
             .ok_or_else(|| anyhow::anyhow!("Key not generated"))?
             .clone();
+        let (presignature, participants, presignature_id) = {
+            let paired_triple = self.triple_store.take_owned().await;
+            let paired_triple_id = paired_triple.0;
+            let (triple0, triple1) = paired_triple.1;
+            let participants = participants_from_triples(&triple0, &triple1);
+            let presignature_id = generate_presignature_id(self.client.my_participant_id());
 
-        let presignature = pre_sign(
-            self.client.new_channel_for_task(MpcTaskId::Presignature {
+            let channel = self.client.new_channel_for_task(MpcTaskId::Presignature {
                 id: presignature_id,
                 paired_triple_id
-            }, participants.clone())?,
-            self.client.my_participant_id(),
-            self.config.mpc.participants.threshold as usize,
-            triple0,
-            triple1,
-            key.clone(),
-        )
-        .await?;
-        let signature = sign(
-            self.client.new_channel_for_task(MpcTaskId::Signature {
+            }, participants.clone())?;
+
+            for p in &participants {
+                if p == &self.client.my_participant_id() {
+                    continue;
+                }
+                channel
+                    .sender()(*p, MessageData::Participants(participants.clone()))
+                    .await?;
+            }
+
+            (
+                pre_sign(
+                    channel,
+                    self.client.my_participant_id(),
+                    self.config.mpc.participants.threshold as usize,
+                    triple0,
+                    triple1,
+                    key.clone(),
+                ).await?,
+                participants,
+                presignature_id
+            )
+        };
+
+        {
+            let channel = self.client.new_channel_for_task(MpcTaskId::Signature {
                 id: generate_signature_id(self.client.my_participant_id()),
                 presignature_id,
                 msg_hash: msg_hash.to_repr().into(),
-            }, participants)?,
-            self.client.my_participant_id(),
-            key,
-            presignature,
-            msg_hash,
-        )
-        .await?;
+            }, participants.clone())?;
 
-        Ok(signature)
+            for p in &participants {
+                if p == &self.client.my_participant_id() {
+                    continue;
+                }
+                channel
+                    .sender()(*p, MessageData::Participants(participants.clone()))
+                    .await?;
+            }
+
+            let signature = sign(
+                channel,
+                self.client.my_participant_id(),
+                key,
+                presignature,
+                msg_hash,
+            )
+                .await?;
+
+            Ok(signature)
+        }
     }
 }

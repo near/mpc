@@ -232,8 +232,6 @@ async fn run_receive_messages_loop(
         match original_message.action {
             MpcAction::PassMessage(ref message) => {
                 let task_id = message.task_id;
-                let participants = None;
-
                 let channel = client.sender_for(task_id, None);
                 match channel {
                     SenderOrNewChannel::Existing(sender) => {
