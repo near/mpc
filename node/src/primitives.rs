@@ -6,8 +6,6 @@ use std::fmt::Display;
 use cait_sith::triples::TripleGenerationOutput;
 use k256::Secp256k1;
 use rand::prelude::IteratorRandom;
-use rand::rngs::OsRng;
-use std::cell::RefCell;
 
 #[derive(
     Clone,
@@ -76,21 +74,14 @@ pub enum MpcTaskId {
     },
 }
 
-thread_local! {
-    static THREAD_OS_RNG: RefCell<OsRng> = RefCell::new(OsRng);
-}
-
 pub fn choose_random_participants(participants: Vec<ParticipantId>, me: ParticipantId, threshold: usize) -> Vec<ParticipantId> {
-    THREAD_OS_RNG.with(
-        |rng| {
-            let mut res: Vec<_> = participants
-                .into_iter()
-                .filter(|p| p != &me)
-                .choose_multiple(&mut *rng.borrow_mut(), threshold - 1);
-            res.push(me);
-            return res;
-        }
-    )
+    assert!(participants.len() >= threshold);
+    let mut res: Vec<_> = participants
+        .into_iter()
+        .filter(|p| p != &me)
+        .choose_multiple(&mut rand::thread_rng(), threshold - 1);
+    res.push(me);
+    return res;
 }
 
 pub fn participants_from_triples(triple0: &TripleGenerationOutput<Secp256k1>, triple1: &TripleGenerationOutput<Secp256k1>) -> Vec<ParticipantId> {
