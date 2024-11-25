@@ -1,4 +1,4 @@
-use crate::primitives::{BatchedMessages, MpcMessage, MpcPeerMessage, MpcTaskId, ParticipantId};
+use crate::primitives::{BatchedMessages, MpcAction, MpcMessage, MpcPeerMessage, MpcProtocolInitializer, MpcTaskId, ParticipantId};
 use crate::tracking;
 use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
@@ -6,6 +6,8 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use futures::channel::oneshot;
+use std::option::Option;
 use tokio::sync::mpsc;
 
 /// Abstraction of the networking layer, from the view of one client, the sender side.
@@ -26,7 +28,7 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     /// message to be sent has no meaningful way to proceed. Otherwise, just because the
     /// message is sent doesn't guarantee that the recipient will receive it; that is up to
     /// the user of the networking layer to deal with.
-    async fn send(&self, recipient_id: ParticipantId, message: MpcMessage) -> anyhow::Result<()>;
+    async fn send(&self, recipient_id: ParticipantId, message: MpcAction) -> anyhow::Result<()>;
     /// Waits until all nodes in the network have been connected to initially.
     async fn wait_for_ready(&self) -> anyhow::Result<()>;
 
@@ -43,6 +45,37 @@ pub trait MeshNetworkTransportReceiver: Send + 'static {
     async fn receive(&mut self) -> anyhow::Result<MpcPeerMessage>;
 }
 
+
+struct ParticipantsSender {
+    participants: Option<Vec<ParticipantId>>,
+    sender: Option<oneshot::Sender<Vec<ParticipantId>>>,
+}
+
+impl ParticipantsSender {
+
+    /// pass_sender and pass_participants returns true in case if data was sent, false otherwise
+    fn pass_sender(&mut self, sender: oneshot::Sender<Vec<ParticipantId>>) -> bool {
+        assert!(self.sender.is_none());
+        if self.participants.is_some() {
+            sender.send(std::mem::replace(&mut self.participants, None).unwrap()).expect("failed to send participants");
+            return true;
+        }
+        self.sender = Some(sender);
+        return false;
+    }
+
+    fn pass_participants(&mut self, participants: Vec<ParticipantId>) -> bool {
+        assert!(self.participants.is_none());
+        if self.sender.is_some() {
+            std::mem::replace(&mut self.sender, None).unwrap().send(participants).expect("failed to send participants");
+            return true;
+        }
+        self.participants = Some(participants);
+        return false;
+    }
+
+}
+
 /// Concrete logic for a client based on the networking layer.
 /// Manages a collection of MPC tasks so that they can be multiplexed onto the
 /// networking layer underneath.
@@ -50,6 +83,7 @@ pub trait MeshNetworkTransportReceiver: Send + 'static {
 pub struct MeshNetworkClient {
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
     senders_for_tasks: Arc<Mutex<HashMap<MpcTaskId, mpsc::Sender<MpcPeerMessage>>>>,
+    participants_senders: Arc<Mutex<HashMap<MpcTaskId, ParticipantsSender>>>,
 }
 
 impl MeshNetworkClient {
@@ -64,7 +98,7 @@ impl MeshNetworkClient {
             self.my_participant_id(),
             task_id
         );
-        match self.sender_for(task_id, participants) {
+        match self.sender_for(task_id, Some(participants)) {
             SenderOrNewChannel::Existing(_) => anyhow::bail!("Channel already exists"),
             SenderOrNewChannel::NewChannel { channel, .. } => Ok(channel),
         }
@@ -82,13 +116,47 @@ impl MeshNetworkClient {
         self.transport_sender.all_alive_participant_ids()
     }
 
+    pub fn initialize_protocol(&self, initializer: MpcProtocolInitializer) {
+        let mut participants_senders = self.participants_senders.lock().unwrap();
+        match participants_senders.entry(initializer.task_id) {
+            Entry::Occupied(mut entry) => {
+                let participants_sender: &mut ParticipantsSender = entry.get_mut();
+
+                // if entry already exists, then we have already passed participants
+                assert!(participants_sender.pass_participants(initializer.participants));
+                entry.remove();
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(ParticipantsSender{sender: None, participants: Some(initializer.participants)});
+            }
+        }
+    }
+
+    fn get_participants_receiver_for(&self, task_id: MpcTaskId) -> oneshot::Receiver<Vec<ParticipantId>> {
+        let mut participants_senders = self.participants_senders.lock().unwrap();
+        let (sender, receiver) = oneshot::channel();
+        match participants_senders.entry(task_id) {
+            Entry::Occupied(mut entry) => {
+                let participants_sender = entry.get_mut();
+
+                // if entry already, then means we have already passed sender
+                assert!(participants_sender.pass_sender(sender));
+                receiver
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(ParticipantsSender { sender: Some(sender), participants: None });
+                receiver
+            }
+        }
+    }
+
 
     /// Internal function shared between new_channel_for_task and MeshNetworkClientDriver::run.
     /// Returns an existing sender for the MPC task, or creates a new one if it doesn't exist.
     /// This is used to determine whether an incoming network message belongs to an existing
     /// MPC task, or if it should trigger the creation of a new MPC task that this node passively
     /// participates in.
-    fn sender_for(&self, task_id: MpcTaskId, participants: Vec<ParticipantId>) -> SenderOrNewChannel {
+    fn sender_for(&self, task_id: MpcTaskId, participants: Option<Vec<ParticipantId>>) -> SenderOrNewChannel {
         let mut senders_for_tasks = self.senders_for_tasks.lock().unwrap();
         match senders_for_tasks.entry(task_id) {
             Entry::Occupied(entry) => SenderOrNewChannel::Existing(entry.get().clone()),
@@ -103,23 +171,28 @@ impl MeshNetworkClient {
                 };
 
                 let transport_sender = self.transport_sender.clone();
-                let send_fn: SendFnForTaskChannel = Arc::new(move |recipient_id, message, participants: Vec<ParticipantId>| {
+                let send_fn: SendFnForTaskChannel = Arc::new(move |recipient_id, data| {
                     let transport_sender = transport_sender.clone();
+                    let action = match data {
+                        MessageData::Batch(data) => MpcAction::PassMessage(MpcMessage{task_id, data}),
+                        MessageData::Participants(participants) => MpcAction::InitializeProtocol(MpcProtocolInitializer {task_id, participants}),
+                    };
                     async move {
                         transport_sender
                             .send(
                                 recipient_id,
-                                MpcMessage {
-                                    task_id,
-                                    data: message,
-                                    participants
-                                },
+                                action,
                             )
                             .await?;
                         Ok(())
                     }
                     .boxed()
                 });
+
+                let participants_receiver = match &participants {
+                    Some(_) => None,
+                    None => Some(self.get_participants_receiver_for(task_id))
+                };
 
                 SenderOrNewChannel::NewChannel {
                     sender,
@@ -130,6 +203,7 @@ impl MeshNetworkClient {
                         receiver,
                         drop: Some(Box::new(drop_fn)),
                         participants,
+                        participants_receiver,
                     },
                 }
             }
@@ -154,23 +228,32 @@ async fn run_receive_messages_loop(
     new_channel_sender: mpsc::Sender<NetworkTaskChannel>,
 ) -> anyhow::Result<()> {
     loop {
-        let message = receiver.receive().await?;
-        let task_id = message.message.task_id;
-        let channel = client.sender_for(task_id, message.message.participants.clone());
-        match channel {
-            SenderOrNewChannel::Existing(sender) => {
-                // Should we try_send in case the channel is full?
-                sender.send(message).await?;
-            }
-            SenderOrNewChannel::NewChannel { channel, sender } => {
-                sender.send(message).await?;
-                tracing::debug!(
+        let original_message = receiver.receive().await?;
+        match original_message.action {
+            MpcAction::PassMessage(ref message) => {
+                let task_id = message.task_id;
+                let participants = None;
+
+                let channel = client.sender_for(task_id, None);
+                match channel {
+                    SenderOrNewChannel::Existing(sender) => {
+                        // Should we try_send in case the channel is full?
+                        sender.send(original_message).await?;
+                    }
+                    SenderOrNewChannel::NewChannel { channel, sender } => {
+                        sender.send(original_message).await?;
+                        tracing::debug!(
                     target: "network",
                     "[{}] [Task {:?}] Passively created new channel for task",
                     client.my_participant_id(),
                     task_id
                 );
-                new_channel_sender.send(channel).await?;
+                        new_channel_sender.send(channel).await?;
+                    }
+                }
+            }
+            MpcAction::InitializeProtocol(initializer) => {
+                client.initialize_protocol(initializer);
             }
         }
     }
@@ -188,6 +271,7 @@ pub fn run_network_client(
     let client = Arc::new(MeshNetworkClient {
         transport_sender,
         senders_for_tasks: Arc::new(Mutex::new(HashMap::new())),
+        participants_senders: Arc::new(Mutex::new(Default::default())),
     });
     let (new_channel_sender, new_channel_receiver) = mpsc::channel(1000);
     tracking::spawn_checked(
@@ -205,14 +289,20 @@ pub fn run_network_client(
 pub struct NetworkTaskChannel {
     pub task_id: MpcTaskId,
     my_participant_id: ParticipantId, // for debugging
-    pub participants: Vec<ParticipantId>,
+    participants: Option<Vec<ParticipantId>>,
+    participants_receiver: Option<oneshot::Receiver<Vec<ParticipantId>>>,
     sender: SendFnForTaskChannel,
     receiver: tokio::sync::mpsc::Receiver<MpcPeerMessage>,
     drop: Option<Box<dyn FnOnce() + Send + Sync>>,
 }
 
+pub enum MessageData {
+    Batch(BatchedMessages),
+    Participants(Vec<ParticipantId>)
+}
+
 type SendFnForTaskChannel = Arc<
-    dyn Fn(ParticipantId, BatchedMessages, Vec<ParticipantId>) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync,
+    dyn Fn(ParticipantId, MessageData) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync,
 >;
 
 impl Drop for NetworkTaskChannel {
@@ -271,6 +361,17 @@ impl NetworkTaskChannel {
         );
         result
     }
+
+    pub async fn get_participants(&mut self) -> anyhow::Result<&Vec<ParticipantId>> {
+        if self.participants.is_none() {
+            assert!(self.participants_receiver.is_some());
+            let receiver = std::mem::replace(&mut self.participants_receiver, None);
+            let participants = receiver.unwrap().await?;
+            self.participants = Some(participants);
+        }
+        Ok(self.participants.as_mut().unwrap())
+    }
+
 }
 
 #[cfg(test)]
@@ -309,7 +410,7 @@ pub mod testing {
         async fn send(
             &self,
             recipient_id: ParticipantId,
-            message: crate::primitives::MpcMessage,
+            action: crate::primitives::MpcAction,
         ) -> anyhow::Result<()> {
             self.transport
                 .senders
@@ -317,7 +418,7 @@ pub mod testing {
                 .ok_or_else(|| anyhow::anyhow!("Unknown recipient"))?
                 .send(MpcPeerMessage {
                     from: self.my_participant_id,
-                    message,
+                    action,
                 })?;
             Ok(())
         }
@@ -412,10 +513,10 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::{MeshNetworkClient, NetworkTaskChannel};
+    use super::{MeshNetworkClient, MessageData, NetworkTaskChannel};
     use crate::assets::UniqueId;
     use crate::network::testing::run_test_clients;
-    use crate::primitives::{MpcTaskId, ParticipantId};
+    use crate::primitives::{MpcAction, MpcTaskId, ParticipantId};
     use crate::tracking;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use borsh::{BorshDeserialize, BorshSerialize};
@@ -495,11 +596,10 @@ mod tests {
         for other_participant_id in &participants {
             channel.sender()(
                 *other_participant_id,
-                vec![borsh::to_vec(&TestTripleMessage {
+                MessageData::Batch(vec![borsh::to_vec(&TestTripleMessage {
                     data: other_participant_id.0 as u64 + seed,
                 })
-                .unwrap()],
-                channel.participants.clone()
+                .unwrap()]),
             )
             .await?;
         }
@@ -507,9 +607,14 @@ mod tests {
         let mut heard_from = HashSet::new();
         for _ in 0..participants.len() {
             let msg = channel.receive().await?;
-            assert!(heard_from.insert(msg.from));
-            let inner: TestTripleMessage = borsh::from_slice(&msg.message.data[0])?;
-            total += inner.data;
+            match msg.action {
+                MpcAction::PassMessage(message) => {
+                    assert!(heard_from.insert(msg.from));
+                    let inner: TestTripleMessage = borsh::from_slice(&message.data[0])?;
+                    total += inner.data;
+                }
+                _ => panic!(),
+            }
         }
         Ok(total)
     }
@@ -519,20 +624,25 @@ mod tests {
         match channel.task_id {
             id @ MpcTaskId::ManyTriples { .. } => {
                 let message = channel.receive().await?;
-                assert_eq!(message.message.task_id, id);
+                match message.action {
+                    MpcAction::PassMessage(pass_message) => {
+                        assert_eq!(pass_message.task_id, id);
 
-                let inner: TestTripleMessage = borsh::from_slice(&message.message.data[0])?;
-                channel.sender()(
-                    message.from,
-                    vec![borsh::to_vec(&TestTripleMessage {
-                        data: inner.data * inner.data,
-                    })
-                    .unwrap()],
-                    channel.participants.clone()
-                )
-                .await?;
+                        let inner: TestTripleMessage = borsh::from_slice(&pass_message.data[0])?;
+                        channel.sender()(
+                            message.from,
+                            MessageData::Batch(
+                                vec![borsh::to_vec(&TestTripleMessage {
+                                    data: inner.data * inner.data,
+                                }).unwrap()]
+                            )
+                        )
+                            .await?;
 
-                Ok(())
+                        Ok(())
+                    }
+                    _ => {panic!()}
+                }
             }
             _ => unreachable!(),
         }

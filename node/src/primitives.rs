@@ -48,14 +48,28 @@ pub type BatchedMessages = Vec<Vec<u8>>;
 pub struct MpcMessage {
     pub task_id: MpcTaskId,
     pub data: BatchedMessages,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+
+pub struct MpcProtocolInitializer {
+    pub task_id: MpcTaskId,
     pub participants: Vec<ParticipantId>
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub enum MpcAction {
+    PassMessage(MpcMessage),
+    InitializeProtocol(MpcProtocolInitializer)
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct MpcPeerMessage {
     pub from: ParticipantId,
-    pub message: MpcMessage,
+    pub action: MpcAction,
 }
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum MpcTaskId {

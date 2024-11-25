@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::sync::{atomic::AtomicUsize, Arc};
-use crate::primitives::{BatchedMessages, ParticipantId};
+use crate::primitives::{BatchedMessages, MpcAction, ParticipantId};
 use crate::tracking;
 use crate::{network::NetworkTaskChannel, tracking::TaskHandle};
 use cait_sith::protocol::{Action, Protocol};
 use futures::TryFutureExt;
 use tokio::sync::mpsc;
+use crate::network::MessageData;
 
 /// Runs any cait-sith protocol, returning the result. Exports tracking progress
 /// describing how many messages are sent and received to each participant.
@@ -15,11 +16,11 @@ pub async fn run_protocol<T>(
     me: ParticipantId,
     mut protocol: impl Protocol<Output = T>,
 ) -> anyhow::Result<T> {
-    let counters = Arc::new(MessageCounters::new(name.to_string(), &channel.participants));
+    let counters = Arc::new(MessageCounters::new(name.to_string(), channel.get_participants().await?));
     let mut queue_senders: HashMap<ParticipantId, mpsc::UnboundedSender<BatchedMessages>> = HashMap::new();
     let mut queue_receivers: HashMap<ParticipantId, mpsc::UnboundedReceiver<BatchedMessages>> = HashMap::new();
 
-    for p in &channel.participants {
+    for p in channel.get_participants().await? {
         let (send, recv) = mpsc::unbounded_channel();
         queue_senders.insert(*p, send);
         queue_receivers.insert(*p, recv);
@@ -43,7 +44,6 @@ pub async fn run_protocol<T>(
     let sending_handle = {
         let counters = counters.clone();
         let sender = channel.sender();
-        let participants = channel.participants.clone();
         tracking::spawn_checked("send messages", async move {
             // One future for each recipient. For the same recipient it is OK to send messages
             // serially, but for multiple recipients we want them to not block each other.
@@ -53,11 +53,10 @@ pub async fn run_protocol<T>(
                 .map(move |(participant_id, mut receiver)| {
                     let sender = sender.clone();
                     let counters = counters.clone();
-                    let participants = participants.clone();
                     async move {
                         while let Some(messages) = receiver.recv().await {
                             let num_messages = messages.len();
-                            sender(participant_id, messages, participants.clone()).await?;
+                            sender(participant_id, MessageData::Batch(messages)).await?;
                             counters.sent(participant_id, num_messages);
                         }
                         anyhow::Ok(())
@@ -69,7 +68,7 @@ pub async fn run_protocol<T>(
         .map_err(anyhow::Error::from)
     };
 
-    let participants = channel.participants.clone();
+    let participants = channel.get_participants().await?.clone();
     let computation_handle = async move {
         loop {
             let mut messages_to_send : HashMap<ParticipantId, _> = HashMap::new();
@@ -114,10 +113,17 @@ pub async fn run_protocol<T>(
             counters.set_receiving();
 
             let msg = channel.receive().await?;
-            counters.received(msg.from, msg.message.data.len());
+            match msg.action {
+                MpcAction::PassMessage(message) => {
+                    counters.received(msg.from, message.data.len());
 
-            for one_msg in msg.message.data {
-                protocol.message(msg.from.into(), one_msg);
+                    for one_msg in message.data {
+                        protocol.message(msg.from.into(), one_msg);
+                    }
+                }
+                _ => {
+                    panic!("unexpected mpc message in run protocol")
+                }
             }
         }
     };
