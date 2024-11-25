@@ -262,7 +262,7 @@ pub async fn new_quic_mesh_network(
                 target_participant_id: participant.id,
                 participant_identities: participant_identities.clone(),
                 current: Arc::new(Mutex::new(None)),
-                is_alive: Arc::new(AtomicBool::new(false)),
+                is_alive: Arc::new(AtomicBool::new(true)),
             }),
         );
     }
@@ -276,6 +276,7 @@ pub async fn new_quic_mesh_network(
             let message_sender = message_sender.clone();
             let participant_identities = participant_identities.clone();
             tracking::spawn_checked("Handle connection", async move {
+
                 if let Ok(connection) = conn.await {
                     let verified_participant_id =
                         verify_peer_identity(&connection, &participant_identities)?;
@@ -303,6 +304,8 @@ pub async fn new_quic_mesh_network(
         participants: participant_ids,
         connections,
     };
+
+    sender.run_check_connections(Duration::from_secs(10));
 
     let receiver = QuicMeshReceiver {
         receiver: message_receiver,
@@ -417,6 +420,22 @@ impl MeshNetworkTransportSender for QuicMeshSender {
         Ok(())
     }
 
+
+    fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
+        self
+            .connections
+            .iter()
+            .filter(
+                |(_, conn)|
+                conn.is_alive.load(Ordering::SeqCst)
+            )
+            .map(|(p, _)| p.clone())
+            .chain(vec![self.my_id])
+            .collect()
+    }
+}
+
+impl QuicMeshSender {
     fn run_check_connections(&self, period: Duration) {
         for (id, connection) in &self.connections {
             if id == &self.my_id {
@@ -445,19 +464,6 @@ impl MeshNetworkTransportSender for QuicMeshSender {
                 }
             );
         }
-    }
-
-    fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
-        self
-            .connections
-            .iter()
-            .filter(
-                |(_, conn)|
-                conn.is_alive.load(Ordering::SeqCst)
-            )
-            .map(|(p, _)| p.clone())
-            .chain(vec![self.my_id])
-            .collect()
     }
 }
 

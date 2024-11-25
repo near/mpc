@@ -5,7 +5,6 @@ use futures_util::FutureExt;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use futures::channel::oneshot;
 use std::option::Option;
 use tokio::sync::mpsc;
@@ -31,8 +30,6 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     async fn send(&self, recipient_id: ParticipantId, message: MpcAction) -> anyhow::Result<()>;
     /// Waits until all nodes in the network have been connected to initially.
     async fn wait_for_ready(&self) -> anyhow::Result<()>;
-
-    fn run_check_connections(&self, period: Duration);
 
     fn all_alive_participant_ids(&self) -> Vec<ParticipantId>;
 }
@@ -265,7 +262,6 @@ pub fn run_network_client(
     transport_receiver: Box<dyn MeshNetworkTransportReceiver>,
 ) -> (Arc<MeshNetworkClient>, mpsc::Receiver<NetworkTaskChannel>) {
     // TODO: read duration from config
-    transport_sender.run_check_connections(Duration::from_secs(10));
     let client = Arc::new(MeshNetworkClient {
         transport_sender,
         senders_for_tasks: Arc::new(Mutex::new(HashMap::new())),
@@ -424,8 +420,6 @@ pub mod testing {
         async fn wait_for_ready(&self) -> anyhow::Result<()> {
             Ok(())
         }
-
-        fn run_check_connections(&self, _period: Duration) {}
 
         fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
             return self.all_participant_ids();
