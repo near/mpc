@@ -15,8 +15,10 @@ use crate::triple::TripleStorage;
 use crate::web::run_web_server;
 use anyhow::Context;
 use clap::Parser;
+use near_indexer_primitives::types::AccountId;
 use std::num::NonZero;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -73,8 +75,13 @@ impl Cli {
                                 Arc::new(Mutex::new(IndexerStats::new()));
 
                             actix::spawn(indexer_logger(Arc::clone(&stats), view_client));
-                            listen_blocks(stream, indexer_config.concurrency, Arc::clone(&stats))
-                                .await;
+                            listen_blocks(
+                                stream,
+                                indexer_config.concurrency,
+                                Arc::clone(&stats),
+                                indexer_config.mpc_contract_id,
+                            )
+                            .await;
                         });
                     }))
                 } else {
@@ -145,6 +152,7 @@ impl Cli {
                             validate_genesis: true,
                             sync_mode: SyncMode::SyncFromInterruption,
                             concurrency: NonZero::new(1).unwrap(),
+                            mpc_contract_id: AccountId::from_str("mpc.node0").unwrap(),
                         }),
                         key_generation: KeyGenerationConfig { timeout_sec: 60 },
                         triple: TripleConfig {
