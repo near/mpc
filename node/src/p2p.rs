@@ -120,6 +120,8 @@ impl Drop for PersistentConnection {
 }
 
 impl PersistentConnection {
+    const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+
     /// Returns a new QUIC stream, establishing a new connection if necessary.
     /// The stream itself can still fail after returning if the connection
     /// drops while the stream is used; but if the connection is already known
@@ -182,7 +184,9 @@ impl PersistentConnection {
                                 target_participant_id,
                                 e
                             );
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            // Don't immediately retry, to avoid spamming the network with
+                            // connection attempts.
+                            tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
                             continue;
                         }
                     };
@@ -464,23 +468,27 @@ impl MeshNetworkTransportSender for QuicMeshSender {
     }
 
     async fn wait_for_ready(&self, threshold: usize) -> anyhow::Result<()> {
-        let semaphore = tokio::sync::Semaphore::new(self.connections.len());
-        let handles = self.connections.iter().map(|(participant_id, conn)| {
+        assert!(threshold - 1 <= self.connections.len());
+        let mut join_set = JoinSet::new();
+        for (participant_id, conn) in &self.connections {
             let participant_id = *participant_id;
             let conn = conn.clone();
-            let permit = semaphore.acquire().now_or_never().unwrap();
-            async move {
-                let _permit = permit;
-                while !conn.is_alive.load(Ordering::Relaxed) {
+            join_set.spawn(async move {
+                let mut receiver = conn.current.clone();
+                while receiver
+                    .borrow()
+                    .clone()
+                    .is_none_or(|weak| weak.upgrade().is_none())
+                {
                     tracing::info!("Waiting for connection to {}", participant_id);
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    receiver.changed().await?;
                 }
-            }
-        });
-        let all_ready = futures::future::join_all(handles);
-        tokio::select! {
-            _ = all_ready => {}
-            _ = semaphore.acquire_many(threshold as u32 - 1) => {}
+                tracing::info!("Connected to {}", participant_id);
+                anyhow::Ok(())
+            });
+        }
+        for _ in 1..threshold {
+            join_set.join_next().await.unwrap()??;
         }
         Ok(())
     }
