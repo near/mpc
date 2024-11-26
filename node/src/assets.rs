@@ -451,11 +451,44 @@ impl<T> ProtocolsStorage<T>
 
 #[cfg(test)]
 mod tests {
-    use super::UniqueId;
+    use super::{DoubleQueue, UniqueId};
     use crate::primitives::ParticipantId;
     use borsh::BorshDeserialize;
     use futures::future::{maybe_done, MaybeDone};
     use futures::FutureExt;
+
+    #[test]
+    fn test_double_queue() {
+        let queue = DoubleQueue::<i32>::new();
+        let common_id = UniqueId::new(ParticipantId(42), 123, 456);
+        queue.add_owned(common_id, 0);
+        queue.add_owned(common_id, 1);
+        queue.add_owned(common_id, 2);
+        let Err(_) = queue.take_owned_conditioned(|_, _| false) else {
+            panic!("should not be able to take value with false condition");
+        };
+        let Ok((id, value)) = queue.take_owned_conditioned(|_, value| value == &1) else {
+            panic!("should be able to take presented value");
+        };
+        assert_eq!(id, common_id);
+        assert_eq!(value, 1);
+
+        let (id, value) = queue.take_owned_conditioned(|_, _| true).unwrap();
+        assert_eq!(id, common_id);
+        assert_eq!(value, 2);
+
+        let Err(_) = queue.take_owned_conditioned(|_, _| false) else {
+            panic!("should not be able to take value with false condition");
+        };
+
+        let (id, value) = queue.take_owned_conditioned(|_, _| true).unwrap();
+        assert_eq!(id, common_id);
+        assert_eq!(value, 0);
+
+        let Err(_) = queue.take_owned_conditioned(|_, _| true) else {
+            panic!("should not be able to take value from empty queue");
+        };
+    }
 
     #[test]
     fn test_unique_id() {
