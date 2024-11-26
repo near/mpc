@@ -338,7 +338,7 @@ pub mod testing {
         }
 
         fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
-            return self.all_participant_ids();
+            self.all_participant_ids()
         }
     }
 

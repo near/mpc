@@ -108,7 +108,7 @@ impl PersistentConnection {
             let mut current = self.current.lock().await;
             if current.is_none() {
                 // Reconnect, if we never connected, or the previous connection was closed.
-                self.reestablish_locked_connection(&mut *current).await?;
+                self.reestablish_locked_connection(&mut current).await?;
             }
             let conn = current.as_mut().unwrap().clone();
             conn
@@ -426,7 +426,7 @@ impl MeshNetworkTransportSender for QuicMeshSender {
         self.connections
             .iter()
             .filter(|(_, conn)| conn.is_alive.load(Ordering::SeqCst))
-            .map(|(p, _)| p.clone())
+            .map(|(p, _)| *p)
             .chain(vec![self.my_id])
             .collect()
     }
@@ -439,7 +439,7 @@ impl QuicMeshSender {
                 continue;
             }
             let connection = connection.clone();
-            let id = id.clone();
+            let id = *id;
             tracking::spawn(
                 format!("checking connection for participant {}", id).as_str(),
                 async move {
@@ -448,7 +448,7 @@ impl QuicMeshSender {
                         let mut current = connection.current.lock().await;
                         if current.is_none() {
                             match connection
-                                .reestablish_locked_connection(&mut *current)
+                                .reestablish_locked_connection(&mut current)
                                 .await
                             {
                                 Ok(_) => {

@@ -114,7 +114,7 @@ pub fn choose_random_participants(
         .filter(|p| p != &me)
         .choose_multiple(&mut rand::thread_rng(), threshold - 1);
     res.push(me);
-    return res;
+    res
 }
 
 pub fn participants_from_triples(
@@ -127,6 +127,6 @@ pub fn participants_from_triples(
         .iter()
         .cloned()
         .filter(|p| triple1.1.participants.contains(p))
-        .map(|p| From::from(p))
+        .map(From::from)
         .collect()
 }
