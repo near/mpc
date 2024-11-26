@@ -3,7 +3,9 @@ use crypto_shared::{derive_epsilon, ScalarExt};
 use k256::Scalar;
 use near_indexer::IndexerExecutionOutcomeWithReceipt;
 use near_indexer_primitives::types::AccountId;
-use near_indexer_primitives::views::{ActionView, ExecutionStatusView, ReceiptEnumView};
+use near_indexer_primitives::views::{
+    ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
+};
 
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -33,7 +35,7 @@ pub struct SignArgs {
 }
 
 // TODO: currently we never read these fields
-#[allow(dead_code)] 
+#[allow(dead_code)]
 pub struct SignatureRequest {
     pub request_id: [u8; 32],
     pub request: SignArgs,
@@ -70,94 +72,17 @@ async fn handle_message(
     stats_lock.block_heights_processing.insert(block_height);
     drop(stats_lock);
 
-    let extract_validated_request = |IndexerExecutionOutcomeWithReceipt {
-                                         execution_outcome,
-                                         receipt,
-                                     }| {
-        let outcome = execution_outcome.outcome;
-        let ExecutionStatusView::SuccessReceiptId(receipt_id) = outcome.status else {
-            return None;
-        };
-        let ReceiptEnumView::Action { actions, .. } = receipt.receipt else {
-            return None;
-        };
-        if actions.len() != 1 {
-            return None;
-        }
-        let ActionView::FunctionCall {
-            ref method_name,
-            ref args,
-            ..
-        } = actions[0]
-        else {
-            return None;
-        };
-        if method_name != "sign" {
-            return None;
-        }
-        tracing::debug!(target: "mpc", "found `sign` function call");
-
-        if outcome.logs.is_empty() {
-            tracing::warn!(target: "mpc", "`sign` did not produce entropy");
-            return None;
-        }
-        let sign_args = match serde_json::from_slice::<'_, UnvalidatedSignArgs>(&args) {
-            Ok(parsed) => parsed,
-            Err(err) => {
-                tracing::warn!(target: "mpc", %err, "failed to parse `sign` arguments");
-                return None;
-            }
-        };
-        let Some(payload) = Scalar::from_bytes(sign_args.request.payload) else {
-            tracing::warn!(
-            target: "mpc",
-                "`sign` did not produce payload correctly: {:?}",
-                sign_args.request.payload,
-            );
-            return None;
-        };
-        let Ok(entropy) = serde_json::from_str::<'_, [u8; 32]>(&outcome.logs[ENTROPY_LOG_INDEX])
-        else {
-            tracing::warn!(
-            target: "mpc",
-                "`sign` did not produce entropy correctly: {:?}",
-                outcome.logs[ENTROPY_LOG_INDEX]
-            );
-            return None;
-        };
-        let epsilon = derive_epsilon(&receipt.predecessor_id, &sign_args.request.path);
-
-        tracing::info!(
-            target: "mpc",
-            receipt_id = %receipt_id,
-            caller_id = receipt.predecessor_id.to_string(),
-            payload = hex::encode(sign_args.request.payload),
-            key_version = sign_args.request.key_version,
-            entropy = hex::encode(entropy),
-            "indexed new `sign` function call"
-        );
-        let request = SignArgs {
-            payload,
-            path: sign_args.request.path,
-            key_version: sign_args.request.key_version,
-        };
-        Some(SignatureRequest {
-            request_id: receipt_id.0,
-            request,
-            epsilon,
-            entropy,
-            // TODO: use on-chain timestamp instead
-            time_added: Instant::now(),
-        })
-    };
-
     for shard in streamer_message.shards {
         for outcome in shard.receipt_execution_outcomes {
-            if outcome.execution_outcome.outcome.executor_id != *mpc_contract_id {
+            let IndexerExecutionOutcomeWithReceipt {
+                execution_outcome,
+                receipt,
+            } = outcome;
+            if execution_outcome.outcome.executor_id != *mpc_contract_id {
                 continue;
             }
             tracing::info!(target: "mpc", "got execution outcome targeting {}", mpc_contract_id);
-            if let Some(_request) = extract_validated_request(outcome) {
+            if let Some(_request) = maybe_get_signature_request(execution_outcome, receipt) {
                 // Pass the request to mpc
             }
         }
@@ -169,4 +94,84 @@ async fn handle_message(
     stats_lock.last_processed_block_height = block_height;
     drop(stats_lock);
     Ok(())
+}
+
+fn maybe_get_signature_request(
+    execution_outcome: ExecutionOutcomeWithIdView,
+    receipt: ReceiptView,
+) -> Option<SignatureRequest> {
+    let outcome = execution_outcome.outcome;
+    let ExecutionStatusView::SuccessReceiptId(receipt_id) = outcome.status else {
+        return None;
+    };
+    let ReceiptEnumView::Action { actions, .. } = receipt.receipt else {
+        return None;
+    };
+    if actions.len() != 1 {
+        return None;
+    }
+    let ActionView::FunctionCall {
+        ref method_name,
+        ref args,
+        ..
+    } = actions[0]
+    else {
+        return None;
+    };
+    if method_name != "sign" {
+        return None;
+    }
+    tracing::debug!(target: "mpc", "found `sign` function call");
+
+    if outcome.logs.is_empty() {
+        tracing::warn!(target: "mpc", "`sign` did not produce entropy");
+        return None;
+    }
+    let sign_args = match serde_json::from_slice::<'_, UnvalidatedSignArgs>(&args) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            tracing::warn!(target: "mpc", %err, "failed to parse `sign` arguments");
+            return None;
+        }
+    };
+    let Some(payload) = Scalar::from_bytes(sign_args.request.payload) else {
+        tracing::warn!(
+            target: "mpc",
+            "`sign` did not produce payload correctly: {:?}",
+            sign_args.request.payload,
+        );
+        return None;
+    };
+    let Ok(entropy) = serde_json::from_str::<'_, [u8; 32]>(&outcome.logs[ENTROPY_LOG_INDEX]) else {
+        tracing::warn!(
+            target: "mpc",
+            "`sign` did not produce entropy correctly: {:?}",
+            outcome.logs[ENTROPY_LOG_INDEX]
+        );
+        return None;
+    };
+    let epsilon = derive_epsilon(&receipt.predecessor_id, &sign_args.request.path);
+
+    tracing::info!(
+        target: "mpc",
+        receipt_id = %receipt_id,
+        caller_id = receipt.predecessor_id.to_string(),
+        payload = hex::encode(sign_args.request.payload),
+        key_version = sign_args.request.key_version,
+        entropy = hex::encode(entropy),
+        "indexed new `sign` function call"
+    );
+    let request = SignArgs {
+        payload,
+        path: sign_args.request.path,
+        key_version: sign_args.request.key_version,
+    };
+    Some(SignatureRequest {
+        request_id: receipt_id.0,
+        request,
+        epsilon,
+        entropy,
+        // TODO: use on-chain timestamp instead
+        time_added: Instant::now(),
+    })
 }
