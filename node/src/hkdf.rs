@@ -65,7 +65,7 @@ pub fn derive_randomness(
 
     let mut delta: Scalar = Scalar::ZERO;
     // If the randomness created is 0 then we want to generate a new randomness
-    while !bool::from(delta.is_zero()){
+    while bool::from(delta.is_zero()){
         // Generate randomization out of HKDF(entropy, pk, msg_hash, big_r, participants, cnt)
         // where entropy is a public but unpredictable random string
         let mut okm = [0u8; 32];
@@ -106,136 +106,155 @@ pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Scalar {
 
 // Test with a couple of different input values the randomness are also different.
 #[cfg(test)]
-fn test_different_randomness() {
-    use rand::{rngs::OsRng, Rng, thread_rng};
-    use std::collections::HashSet;
-
-    let sk: Scalar = Scalar::generate_vartime(&mut OsRng);
-    let pk: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR*sk);
-    let r: Scalar = Scalar::generate_vartime(&mut OsRng);
-    let big_r: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR*r);
-    let msg_hash: Scalar = Scalar::generate_vartime(&mut OsRng);
-    // Generate unique ten ParticipantId values
-    let num_participants = 10;
-    let mut rng = thread_rng();
-    let mut participants_set = HashSet::new();
-    while participants_set.len() < num_participants {
-        participants_set.insert(ParticipantId(rng.gen()));
-    }
-    let participants: Vec<ParticipantId> = participants_set.into_iter().collect();
-    let entropy: [u8; 32] = rng.gen();
-
-    let delta = derive_randomness(
-        pk,
-        msg_hash,
-        big_r,
-        participants.clone(),
-        entropy,
-    );
-
-    // different msg_hash
-    let msg_hash_prime: Scalar = Scalar::generate_vartime(&mut OsRng);
-    let delta_prime = derive_randomness(
-        pk,
-        msg_hash_prime,
-        big_r,
-        participants.clone(),
-        entropy,
-    );
-
-    assert!(delta != delta_prime);
-
-    // different big_r
-    let r_prime: Scalar = Scalar::generate_vartime(&mut OsRng);
-    let big_r_prime: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR*r_prime);
-    let delta_prime = derive_randomness(
-        pk,
-        msg_hash,
-        big_r_prime,
-        participants.clone(),
-        entropy,
-    );
-    assert!(delta != delta_prime);
-
-    // different pk
-    let sk_prime: Scalar = Scalar::generate_vartime(&mut OsRng);
-    let pk_prime: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR*sk_prime);
-    let delta_prime = derive_randomness(
-        pk_prime,
-        msg_hash,
-        big_r,
-        participants.clone(),
-        entropy,
-    );
-    assert!(delta != delta_prime);
-
-    // different participants set
-    let mut participants_set_prime = HashSet::new();
-    while participants_set_prime.len() < num_participants {
-        participants_set_prime.insert(ParticipantId(rng.gen()));
-    }
-    let participants_prime: Vec<ParticipantId> = participants_set_prime.into_iter().collect();
-    let entropy: [u8; 32] = rng.gen();
-    let delta_prime = derive_randomness(
-        pk_prime,
-        msg_hash,
-        big_r,
-        participants_prime.clone(),
-        entropy,
-    );
-    assert!(delta != delta_prime);
-
-    // different entropy
-    let entropy_prime: [u8; 32] = rng.gen();
-    let delta_prime = derive_randomness(
-        pk,
-        msg_hash,
-        big_r,
-        participants.clone(),
-        entropy_prime,
-    );
-    assert!(delta != delta_prime);
-
-}
-
-// Test that with different order of participants, the randomness is the same.
-#[cfg(test)]
-fn test_same_randomness() {
+mod derive_tests {
+    use super::*;
     use rand::{rngs::OsRng, Rng, thread_rng, seq::SliceRandom};
     use std::collections::HashSet;
 
-    let sk: Scalar = Scalar::generate_vartime(&mut OsRng);
-    let pk: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR*sk);
-    let r: Scalar = Scalar::generate_vartime(&mut OsRng);
-    let big_r: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR*r);
-    let msg_hash: Scalar = Scalar::generate_vartime(&mut OsRng);
-    // Generate unique ten ParticipantId values
-    let num_participants = 10;
-    let mut rng = thread_rng();
-    let mut participants_set = HashSet::new();
-    while participants_set.len() < num_participants {
-        participants_set.insert(ParticipantId(rng.gen()));
+    fn compute_random_outputs(num_participants: usize) ->
+        (AffinePoint, AffinePoint, Scalar, Vec<ParticipantId> , [u8; 32], Scalar)
+    {
+        let sk: Scalar = Scalar::generate_vartime(&mut OsRng);
+        let pk: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR*sk);
+        let r: Scalar = Scalar::generate_vartime(&mut OsRng);
+        let big_r: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR*r);
+        let msg_hash: Scalar = Scalar::generate_vartime(&mut OsRng);
+        // Generate unique ten ParticipantId values
+        let mut rng = thread_rng();
+        let mut participants_set = HashSet::new();
+        while participants_set.len() < num_participants {
+            participants_set.insert(ParticipantId(rng.gen()));
+        }
+        let participants: Vec<ParticipantId> = participants_set.into_iter().collect();
+        let entropy: [u8; 32] = rng.gen();
+
+        let delta = derive_randomness(
+            pk,
+            msg_hash,
+            big_r,
+            participants.clone(),
+            entropy,
+        );
+
+        (pk, big_r, msg_hash, participants, entropy, delta)
     }
-    let mut participants: Vec<ParticipantId> = participants_set.into_iter().collect();
-    let entropy: [u8; 32] = rng.gen();
 
-    let delta = derive_randomness(
-        pk,
-        msg_hash,
-        big_r,
-        participants.clone(),
-        entropy,
-    );
 
-    participants.shuffle(&mut rng);
-    let msg_hash_prime: Scalar = Scalar::generate_vartime(&mut OsRng);
-    let delta_prime = derive_randomness(
-        pk,
-        msg_hash_prime,
-        big_r,
-        participants,
-        entropy,
-    );
+    #[test]
+    fn test_different_msg_hash() {
+        let num_participants = 10;
+        let (pk, big_r, _, participants, entropy, delta) =
+                compute_random_outputs(num_participants);
 
-    assert!(delta == delta_prime);
+        // different msg_hash
+        let msg_hash_prime: Scalar = Scalar::generate_vartime(&mut OsRng);
+        let delta_prime = derive_randomness(
+            pk,
+            msg_hash_prime,
+            big_r,
+            participants.clone(),
+            entropy,
+        );
+
+        assert!(delta != delta_prime);
+    }
+
+    #[test]
+    fn test_different_big_r() {
+        let num_participants = 10;
+        let (pk, _, msg_hash, participants, entropy, delta) =
+                compute_random_outputs(num_participants);
+        // different big_r
+        let r_prime: Scalar = Scalar::generate_vartime(&mut OsRng);
+        let big_r_prime: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR*r_prime);
+        let delta_prime = derive_randomness(
+            pk,
+            msg_hash,
+            big_r_prime,
+            participants.clone(),
+            entropy,
+        );
+        assert!(delta != delta_prime);
+    }
+
+    #[test]
+    fn test_different_pk() {
+        let num_participants = 10;
+        let (_, big_r, msg_hash, participants, entropy, delta) =
+                compute_random_outputs(num_participants);
+        // different pk
+        let sk_prime: Scalar = Scalar::generate_vartime(&mut OsRng);
+        let pk_prime: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR*sk_prime);
+        let delta_prime = derive_randomness(
+            pk_prime,
+            msg_hash,
+            big_r,
+            participants.clone(),
+            entropy,
+        );
+        assert!(delta != delta_prime);
+    }
+
+    #[test]
+    fn test_different_participants() {
+        let num_participants = 10;
+        let (pk, big_r, msg_hash, _, entropy, delta) =
+                compute_random_outputs(num_participants);
+        // different participants set
+        let mut rng = thread_rng();
+        let mut participants_set_prime = HashSet::new();
+        while participants_set_prime.len() < num_participants {
+            participants_set_prime.insert(ParticipantId(rng.gen()));
+        }
+        let participants_prime: Vec<ParticipantId> = participants_set_prime.into_iter().collect();
+        let delta_prime = derive_randomness(
+            pk,
+            msg_hash,
+            big_r,
+            participants_prime.clone(),
+            entropy,
+        );
+        assert!(delta != delta_prime);
+    }
+
+    #[test]
+    fn test_different_entropy() {
+        let num_participants = 10;
+        let (pk, big_r, msg_hash, participants, _, delta) =
+                compute_random_outputs(num_participants);
+
+        // different entropy
+        let mut rng = thread_rng();
+        let entropy_prime: [u8; 32] = rng.gen();
+        let delta_prime = derive_randomness(
+            pk,
+            msg_hash,
+            big_r,
+            participants.clone(),
+            entropy_prime,
+        );
+        print!("{:?}",delta);
+        print!("{:?}",delta_prime);
+        assert!(delta != delta_prime);
+    }
+
+
+    // Test that with different order of participants, the randomness is the same.
+    #[test]
+    fn test_same_randomness() {
+        let num_participants = 10;
+        let (pk, big_r, msg_hash, mut participants, entropy, delta) =
+                compute_random_outputs(num_participants);
+
+        let mut rng = thread_rng();
+        participants.shuffle(&mut rng);
+        let delta_prime = derive_randomness(
+            pk,
+            msg_hash,
+            big_r,
+            participants,
+            entropy,
+        );
+        assert!(delta == delta_prime);
+    }
 }
