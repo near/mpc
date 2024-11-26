@@ -1,4 +1,4 @@
-my_participant_id: 1
+my_participant_id: 874570413
 participants:
   threshold: 3
   dummy_issuer_private_key: |
@@ -8,19 +8,19 @@ participants:
     Olwk91pXchOVPAiVd7uqOjxaAl8k5yIyT7Bn5Ye+hWT88kdWUIkDCLEn
     -----END PRIVATE KEY-----
   participants:
-  - id: 0
+  - id: 2455124061
     address: 127.0.0.1
     port: 10000
     p2p_public_key: 04750cd78cf89ef8769f7d006a4272ecaf09047575a6d0732a104d5f1dcbe3d1445f3b54cad5798eb7fa70a8f679fdbe7f6f540192a4c132eefe52b30e9fabb422
-  - id: 1
+  - id: 874570413
     address: 127.0.0.1
     port: 10001
     p2p_public_key: 046ca2b7db8e64af82ba8724eb6cf670732948a4751be343930dfb0ce6010b1f5ba6c61c2ca2326fcb9c7a0ed78763bad6b1aca3bde69968aeafcbd84531fcddcd
-  - id: 2
+  - id: 323023767
     address: 127.0.0.1
     port: 10002
     p2p_public_key: 0481db60f21e6f6be03a202b322ea047c3c20c7406cdfd465c09dc647b68581c1d7541d5156dbd8afe65ac0351117604e3ad1e9d7f2c05f38a892987a4b74b0b14
-  - id: 3
+  - id: 484079850
     address: 127.0.0.1
     port: 10003
     p2p_public_key: 04a2b2694a3ce08bb9a3a3525ac75eecf4b117b49b6e5778e8fdd804ce9473e322c95a09ee10b805ae0f1534b4c9a31ed956ef4cea84e21827c9ccb336fd9c8bd4
@@ -28,6 +28,11 @@ p2p_private_key_file: p2p.pem
 web_ui:
   host: 127.0.0.1
   port: 20001
+indexer:
+  stream_while_syncing: false
+  validate_genesis: true
+  sync_mode: SyncFromInterruption
+  concurrency: 1
 key_generation:
   timeout_sec: 60
 triple:

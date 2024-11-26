@@ -401,7 +401,7 @@ pub mod testing {
         FR: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
     {
         let participants = (0..num_participants)
-            .map(|id| ParticipantId(id as u32))
+            .map(|_| ParticipantId::from_raw(rand::random::<u32>()))
             .collect::<Vec<_>>();
         let transports = new_test_transports(participants.clone());
         let join_handles = transports
@@ -485,7 +485,7 @@ mod tests {
             let expected_total: u64 = other_participant_ids
                 .iter()
                 .map(|id| {
-                    let input = id.0 as u64 + seed;
+                    let input = id.raw() as u64 + seed;
                     input * input
                 })
                 .sum();
@@ -510,7 +510,7 @@ mod tests {
             channel.sender()(
                 *other_participant_id,
                 vec![borsh::to_vec(&TestTripleMessage {
-                    data: other_participant_id.0 as u64 + seed,
+                    data: other_participant_id.raw() as u64 + seed,
                 })
                 .unwrap()],
                 channel.participants.clone(),
