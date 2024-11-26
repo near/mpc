@@ -6,10 +6,11 @@ use crate::db::{DBCol, SecretDB};
 use crate::indexer::configs::InitConfigArgs;
 use crate::indexer::handler::listen_blocks;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
+use crate::key_generation::KeygenStorage;
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_quic_mesh_network};
-use crate::sign::SimplePresignatureStore;
+use crate::sign::PresignatureStorage;
 use crate::tracking;
 use crate::triple::TripleStorage;
 use crate::web::run_web_server;
@@ -95,6 +96,7 @@ impl Cli {
                     let (network_client, channel_receiver) =
                         run_network_client(Arc::new(sender), Box::new(receiver));
 
+                    let (keygen_store, keygen_needed) = KeygenStorage::new(secret_db.clone())?;
                     let triple_store = Arc::new(TripleStorage::new(
                         secret_db.clone(),
                         DBCol::Triple,
@@ -102,20 +104,29 @@ impl Cli {
                         network_client.all_participant_ids()
                     )?);
 
+                    let presignature_store = Arc::new(PresignatureStorage::new(
+                        secret_db.clone(),
+                        DBCol::Presignature,
+                        network_client.my_participant_id(),
+                    )?);
+
                     let config = Arc::new(config);
                     let mpc_client = MpcClient::new(
                         config.clone(),
                         network_client,
                         triple_store,
-                        Arc::new(SimplePresignatureStore::new()),
-                        Arc::new(tokio::sync::OnceCell::new()),
+                        presignature_store,
+                        keygen_store,
                     );
 
                     tracking::spawn_checked(
                         "web server",
                         run_web_server(root_task_handle, config.web_ui.clone(), mpc_client.clone()),
                     );
-                    mpc_client.clone().run(channel_receiver).await?;
+                    mpc_client
+                        .clone()
+                        .run(keygen_needed, channel_receiver)
+                        .await?;
                     anyhow::Ok(())
                 });
 
@@ -154,7 +165,11 @@ impl Cli {
                             timeout_sec: 60,
                             parallel_triple_generation_stagger_time_sec: 1,
                         },
-                        presignature: PresignatureConfig { timeout_sec: 60 },
+                        presignature: PresignatureConfig {
+                            concurrency: 16,
+                            desired_presignatures_to_buffer: 8192,
+                            timeout_sec: 60,
+                        },
                         signature: SignatureConfig { timeout_sec: 60 },
                     };
                     std::fs::write(

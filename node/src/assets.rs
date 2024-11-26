@@ -268,7 +268,9 @@ where
             pending.await.ok();
         }
         let key = borsh::to_vec(&id).unwrap();
-        let value_ser = self.db.get(self.col, &key)?.context("Asset not found")?;
+        let value_ser = self.db.get(self.col, &key)?.ok_or_else(|| {
+            anyhow::anyhow!("Unowned {} not found in the database: {:?}", self.col, id)
+        })?;
         let mut update = self.db.update();
         update.delete(self.col, &key);
         update
