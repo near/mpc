@@ -32,7 +32,8 @@ impl ScalarExt for Scalar {
 const SALT: [u8; 32] =
     hex!("328a47c2b8794445255c1647608df5db85c68bb0e7170abec534df2764a45831");
 
-/// Derives a random string from a
+/// Derives a random string from the public key, message hash, presignature R,
+/// set of participants and the entropy
 pub fn derive_randomness(
     pk: AffinePoint,
     msg_hash: Scalar,
