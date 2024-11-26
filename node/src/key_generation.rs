@@ -142,8 +142,7 @@ mod tests {
                 .await
                 .ok_or_else(|| anyhow::anyhow!("No channel"))?
         };
-        let key =
-            run_key_generation(channel, participant_id, 3).await?;
+        let key = run_key_generation(channel, participant_id, 3).await?;
 
         Ok(key)
     }

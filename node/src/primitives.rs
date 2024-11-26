@@ -1,11 +1,11 @@
 use crate::assets::UniqueId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::protocol::Participant;
-use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 use cait_sith::triples::TripleGenerationOutput;
 use k256::Secp256k1;
 use rand::prelude::IteratorRandom;
+use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 #[derive(
     Clone,
@@ -13,6 +13,8 @@ use rand::prelude::IteratorRandom;
     Copy,
     PartialEq,
     Eq,
+    PartialOrd,
+    Ord,
     Hash,
     BorshSerialize,
     BorshDeserialize,
@@ -46,7 +48,7 @@ pub type BatchedMessages = Vec<Vec<u8>>;
 pub struct MpcMessage {
     pub task_id: MpcTaskId,
     pub data: BatchedMessages,
-    pub participants: Vec<ParticipantId>
+    pub participants: Vec<ParticipantId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -74,22 +76,30 @@ pub enum MpcTaskId {
     },
 }
 
-pub fn choose_random_participants(participants: Vec<ParticipantId>, me: ParticipantId, threshold: usize) -> Vec<ParticipantId> {
+pub fn choose_random_participants(
+    participants: Vec<ParticipantId>,
+    me: ParticipantId,
+    threshold: usize,
+) -> Vec<ParticipantId> {
     assert!(participants.len() >= threshold);
-    let mut res: Vec<_> = participants
+    let mut res = participants
         .into_iter()
         .filter(|p| p != &me)
         .choose_multiple(&mut rand::thread_rng(), threshold - 1);
     res.push(me);
-    return res;
+    res
 }
 
-pub fn participants_from_triples(triple0: &TripleGenerationOutput<Secp256k1>, triple1: &TripleGenerationOutput<Secp256k1>) -> Vec<ParticipantId> {
-    triple0.1.participants
+pub fn participants_from_triples(
+    triple0: &TripleGenerationOutput<Secp256k1>,
+    triple1: &TripleGenerationOutput<Secp256k1>,
+) -> Vec<ParticipantId> {
+    triple0
+        .1
+        .participants
         .iter()
-        .cloned()
+        .copied()
         .filter(|p| triple1.1.participants.contains(p))
-        .map(|p| From::from(p))
+        .map(|p| p.into())
         .collect()
 }
-

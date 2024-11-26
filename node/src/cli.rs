@@ -92,7 +92,10 @@ impl Cli {
                     let root_task_handle = tracking::current_task();
 
                     let (sender, receiver) = new_quic_mesh_network(&config.mpc).await?;
-                    sender.wait_for_ready().await?;
+                    // TODO(#44): Don't need to wait for all; wait for threshold?
+                    sender
+                        .wait_for_ready(config.mpc.participants.participants.len())
+                        .await?;
                     let (network_client, channel_receiver) =
                         run_network_client(Arc::new(sender), Box::new(receiver));
 
@@ -101,7 +104,7 @@ impl Cli {
                         secret_db.clone(),
                         DBCol::Triple,
                         network_client.my_participant_id(),
-                        network_client.all_participant_ids()
+                        network_client.all_participant_ids(),
                     )?);
 
                     let presignature_store = Arc::new(PresignatureStorage::new(
