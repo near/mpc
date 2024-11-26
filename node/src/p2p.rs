@@ -536,7 +536,7 @@ pub fn generate_test_p2p_configs(
     for i in 0..parties {
         let (p2p_private_key, p2p_public_key) = generate_keypair()?;
         participants.push(ParticipantInfo {
-            id: ParticipantId(i as u32),
+            id: ParticipantId::from_raw(rand::random()),
             address: "127.0.0.1".to_string(),
             port: 10000 + i as u16,
             p2p_public_key: p2p_public_key.clone(),
@@ -554,7 +554,7 @@ pub fn generate_test_p2p_configs(
         };
 
         let config = MpcConfig {
-            my_participant_id: ParticipantId(i as u32),
+            my_participant_id: participants.participants[i].id,
             secrets: SecretsConfig {
                 p2p_private_key: keypair.0,
             },
@@ -581,6 +581,9 @@ mod tests {
     async fn test_basic_quic_mesh_network() {
         init_logging();
         let configs = super::generate_test_p2p_configs(2, 2).unwrap();
+        let participant0 = configs[0].my_participant_id;
+        let participant1 = configs[1].my_participant_id;
+
         start_root_task_with_periodic_dump(async move {
             let (sender0, mut receiver0) = super::new_quic_mesh_network(&configs[0]).await.unwrap();
             let (sender1, mut receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
@@ -591,7 +594,7 @@ mod tests {
             for _ in 0..100 {
                 sender0
                     .send(
-                        ParticipantId(1),
+                        participant1,
                         MpcMessage {
                             data: vec![vec![1, 2, 3]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
@@ -601,12 +604,12 @@ mod tests {
                     .await
                     .unwrap();
                 let msg = receiver1.receive().await.unwrap();
-                assert_eq!(msg.from, ParticipantId(0));
+                assert_eq!(msg.from, participant0);
                 assert_eq!(msg.message.data, vec![vec![1, 2, 3]]);
 
                 sender1
                     .send(
-                        ParticipantId(0),
+                        participant0,
                         MpcMessage {
                             data: vec![vec![4, 5, 6]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
@@ -617,7 +620,7 @@ mod tests {
                     .unwrap();
 
                 let msg = receiver0.receive().await.unwrap();
-                assert_eq!(msg.from, ParticipantId(1));
+                assert_eq!(msg.from, participant1);
                 assert_eq!(msg.message.data, vec![vec![4, 5, 6]]);
             }
         })
@@ -656,12 +659,12 @@ mod tests {
                 .iter()
                 .map(|p| p.id)
                 .collect();
-            assert_eq!(sender0.all_alive_participant_ids(), ids);
-            assert_eq!(sender1.all_alive_participant_ids(), ids);
-            assert_eq!(sender2.all_alive_participant_ids(), ids);
+            assert_eq!(sender0.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(sender1.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(sender2.all_alive_participant_ids(), sorted(&ids));
             assert_eq!(
                 sender3.all_alive_participant_ids(),
-                vec![ids[1], ids[2], ids[3]],
+                sorted(&[ids[1], ids[2], ids[3]]),
             );
 
             // Disconnect node 1. Other nodes should notice the change.
@@ -669,26 +672,35 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(1)).await;
             assert_eq!(
                 sender0.all_alive_participant_ids(),
-                vec![ids[0], ids[2], ids[3]]
+                sorted(&[ids[0], ids[2], ids[3]])
             );
             assert_eq!(
                 sender2.all_alive_participant_ids(),
-                vec![ids[0], ids[2], ids[3]]
+                sorted(&[ids[0], ids[2], ids[3]])
             );
-            assert_eq!(sender3.all_alive_participant_ids(), vec![ids[2], ids[3]]);
+            assert_eq!(
+                sender3.all_alive_participant_ids(),
+                sorted(&[ids[2], ids[3]])
+            );
 
             // Reconnect node 1. Other nodes should re-establish the connections.
             let (sender1, _receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
             sender1.wait_for_ready(4).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
-            assert_eq!(sender0.all_alive_participant_ids(), ids);
-            assert_eq!(sender1.all_alive_participant_ids(), ids);
-            assert_eq!(sender2.all_alive_participant_ids(), ids);
+            assert_eq!(sender0.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(sender1.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(sender2.all_alive_participant_ids(), sorted(&ids));
             assert_eq!(
                 sender3.all_alive_participant_ids(),
-                vec![ids[1], ids[2], ids[3]],
+                sorted(&[ids[1], ids[2], ids[3]]),
             );
         })
         .await;
+    }
+
+    fn sorted(ids: &[ParticipantId]) -> Vec<ParticipantId> {
+        let mut ids = ids.to_vec();
+        ids.sort();
+        ids
     }
 }

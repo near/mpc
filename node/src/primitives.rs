@@ -21,7 +21,7 @@ use std::fmt::Display;
     Serialize,
     Deserialize,
 )]
-pub struct ParticipantId(pub u32);
+pub struct ParticipantId(u32);
 
 impl From<Participant> for ParticipantId {
     fn from(participant: Participant) -> Self {
@@ -32,6 +32,16 @@ impl From<Participant> for ParticipantId {
 impl From<ParticipantId> for Participant {
     fn from(participant_id: ParticipantId) -> Self {
         Participant::from(participant_id.0)
+    }
+}
+
+impl ParticipantId {
+    pub fn raw(self) -> u32 {
+        self.0
+    }
+
+    pub fn from_raw(raw: u32) -> Self {
+        ParticipantId(raw)
     }
 }
 
