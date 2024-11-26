@@ -5,6 +5,7 @@ use futures_util::FutureExt;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::option::Option;
 use tokio::sync::mpsc;
 
 /// Abstraction of the networking layer, from the view of one client, the sender side.
@@ -28,6 +29,8 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     async fn send(&self, recipient_id: ParticipantId, message: MpcMessage) -> anyhow::Result<()>;
     /// Waits until all nodes in the network have been connected to initially.
     async fn wait_for_ready(&self) -> anyhow::Result<()>;
+
+    fn all_alive_participant_ids(&self) -> Vec<ParticipantId>;
 }
 
 /// The receiving side of the networking layer. It is expected that the node will run
@@ -52,14 +55,14 @@ impl MeshNetworkClient {
     /// new MPC task. It is expected that the caller is the leader of this MPC task, and that the
     /// way the MPC task IDs are assigned ensures that no two participants would initiate
     /// tasks with the same MPC task ID.
-    pub fn new_channel_for_task(&self, task_id: MpcTaskId) -> anyhow::Result<NetworkTaskChannel> {
+    pub fn new_channel_for_task(&self, task_id: MpcTaskId, participants: Vec<ParticipantId>) -> anyhow::Result<NetworkTaskChannel> {
         tracing::debug!(
             target: "network",
             "[{}] Creating new channel for task {:?}",
             self.my_participant_id(),
             task_id
         );
-        match self.sender_for(task_id) {
+        match self.sender_for(task_id, participants) {
             SenderOrNewChannel::Existing(_) => anyhow::bail!("Channel already exists"),
             SenderOrNewChannel::NewChannel { channel, .. } => Ok(channel),
         }
@@ -73,12 +76,17 @@ impl MeshNetworkClient {
         self.transport_sender.all_participant_ids()
     }
 
+    pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
+        self.transport_sender.all_alive_participant_ids()
+    }
+
+
     /// Internal function shared between new_channel_for_task and MeshNetworkClientDriver::run.
     /// Returns an existing sender for the MPC task, or creates a new one if it doesn't exist.
     /// This is used to determine whether an incoming network message belongs to an existing
     /// MPC task, or if it should trigger the creation of a new MPC task that this node passively
     /// participates in.
-    fn sender_for(&self, task_id: MpcTaskId) -> SenderOrNewChannel {
+    fn sender_for(&self, task_id: MpcTaskId, participants: Vec<ParticipantId>) -> SenderOrNewChannel {
         let mut senders_for_tasks = self.senders_for_tasks.lock().unwrap();
         match senders_for_tasks.entry(task_id) {
             Entry::Occupied(entry) => SenderOrNewChannel::Existing(entry.get().clone()),
@@ -93,7 +101,7 @@ impl MeshNetworkClient {
                 };
 
                 let transport_sender = self.transport_sender.clone();
-                let send_fn: SendFnForTaskChannel = Arc::new(move |recipient_id, message| {
+                let send_fn: SendFnForTaskChannel = Arc::new(move |recipient_id, message, participants: Vec<ParticipantId>| {
                     let transport_sender = transport_sender.clone();
                     async move {
                         transport_sender
@@ -102,6 +110,7 @@ impl MeshNetworkClient {
                                 MpcMessage {
                                     task_id,
                                     data: message,
+                                    participants
                                 },
                             )
                             .await?;
@@ -118,6 +127,7 @@ impl MeshNetworkClient {
                         sender: send_fn,
                         receiver,
                         drop: Some(Box::new(drop_fn)),
+                        participants,
                     },
                 }
             }
@@ -144,7 +154,7 @@ async fn run_receive_messages_loop(
     loop {
         let message = receiver.receive().await?;
         let task_id = message.message.task_id;
-        let channel = client.sender_for(task_id);
+        let channel = client.sender_for(task_id, message.message.participants.clone());
         match channel {
             SenderOrNewChannel::Existing(sender) => {
                 // Should we try_send in case the channel is full?
@@ -171,6 +181,7 @@ pub fn run_network_client(
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
     transport_receiver: Box<dyn MeshNetworkTransportReceiver>,
 ) -> (Arc<MeshNetworkClient>, mpsc::Receiver<NetworkTaskChannel>) {
+    // TODO: read duration from config
     let client = Arc::new(MeshNetworkClient {
         transport_sender,
         senders_for_tasks: Arc::new(Mutex::new(HashMap::new())),
@@ -191,13 +202,14 @@ pub fn run_network_client(
 pub struct NetworkTaskChannel {
     pub task_id: MpcTaskId,
     my_participant_id: ParticipantId, // for debugging
+    pub participants: Vec<ParticipantId>,
     sender: SendFnForTaskChannel,
     receiver: tokio::sync::mpsc::Receiver<MpcPeerMessage>,
     drop: Option<Box<dyn FnOnce() + Send + Sync>>,
 }
 
 type SendFnForTaskChannel = Arc<
-    dyn Fn(ParticipantId, BatchedMessages) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync,
+    dyn Fn(ParticipantId, BatchedMessages, Vec<ParticipantId>) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync,
 >;
 
 impl Drop for NetworkTaskChannel {
@@ -308,6 +320,10 @@ pub mod testing {
 
         async fn wait_for_ready(&self) -> anyhow::Result<()> {
             Ok(())
+        }
+
+        fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
+            return self.all_participant_ids();
         }
     }
 
@@ -432,13 +448,15 @@ mod tests {
             .filter(|id| id != &participant_id)
             .collect::<Vec<_>>();
 
+
+
         let mut handles = Vec::new();
         let mut expected_results = Vec::new();
         for seed in 0..5 {
             let channel = client.new_channel_for_task(MpcTaskId::ManyTriples {
                 start: UniqueId::new(participant_id, seed, 0),
                 count: 1,
-            })?;
+            }, client.all_participant_ids())?;
             handles.push(tracking::spawn_checked(
                 &format!("task {}", seed),
                 task_leader(channel, other_participant_ids.clone(), seed),
@@ -475,6 +493,7 @@ mod tests {
                     data: other_participant_id.0 as u64 + seed,
                 })
                 .unwrap()],
+                channel.participants.clone()
             )
             .await?;
         }
@@ -503,6 +522,7 @@ mod tests {
                         data: inner.data * inner.data,
                     })
                     .unwrap()],
+                    channel.participants.clone()
                 )
                 .await?;
 

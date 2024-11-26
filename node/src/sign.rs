@@ -12,18 +12,19 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
+
 /// Performs an MPC presignature operation. This is shared for the initiator
 /// and for passive participants.
 pub async fn pre_sign(
     channel: NetworkTaskChannel,
-    participants: Vec<ParticipantId>,
     me: ParticipantId,
     threshold: usize,
     triple0: TripleGenerationOutput<Secp256k1>,
     triple1: TripleGenerationOutput<Secp256k1>,
     keygen_out: KeygenOutput<Secp256k1>,
 ) -> anyhow::Result<PresignOutput<Secp256k1>> {
-    let cs_participants = participants
+    let cs_participants = channel
+        .participants
         .iter()
         .copied()
         .map(Participant::from)
@@ -40,7 +41,7 @@ pub async fn pre_sign(
             threshold,
         },
     )?;
-    let presignature = run_protocol("presign", channel, participants, me, protocol).await?;
+    let presignature = run_protocol("presign", channel, me, protocol).await?;
     metrics::MPC_NUM_PRESIGNATURES_GENERATED.inc();
     Ok(presignature)
 }
@@ -50,19 +51,15 @@ pub async fn pre_sign(
 #[allow(clippy::too_many_arguments)]
 pub async fn pre_sign_unowned(
     channel: NetworkTaskChannel,
-    participants: Vec<ParticipantId>,
     me: ParticipantId,
     threshold: usize,
     keygen_out: KeygenOutput<Secp256k1>,
     triple_store: Arc<TripleStorage>,
-    triple0_id: UniqueId,
-    triple1_id: UniqueId,
+    paired_triple_id: UniqueId,
 ) -> anyhow::Result<PresignOutput<Secp256k1>> {
-    let triple0 = triple_store.take_unowned(triple0_id).await?;
-    let triple1 = triple_store.take_unowned(triple1_id).await?;
+    let (triple0, triple1) = triple_store.take_unowned(paired_triple_id).await?;
     pre_sign(
         channel,
-        participants,
         me,
         threshold,
         triple0,
@@ -76,13 +73,13 @@ pub async fn pre_sign_unowned(
 /// and for passive participants.
 pub async fn sign(
     channel: NetworkTaskChannel,
-    participants: Vec<ParticipantId>,
     me: ParticipantId,
     keygen_out: KeygenOutput<Secp256k1>,
     presign_out: PresignOutput<Secp256k1>,
     msg_hash: Scalar,
 ) -> anyhow::Result<FullSignature<Secp256k1>> {
-    let cs_participants = participants
+    let cs_participants = channel
+        .participants
         .iter()
         .copied()
         .map(Participant::from)
@@ -94,7 +91,7 @@ pub async fn sign(
         presign_out,
         msg_hash,
     )?;
-    let signature = run_protocol("sign", channel, participants, me, protocol).await?;
+    let signature = run_protocol("sign", channel, me, protocol).await?;
     metrics::MPC_NUM_SIGNATURES_GENERATED.inc();
     Ok(signature)
 }

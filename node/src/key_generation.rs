@@ -9,17 +9,17 @@ use k256::Secp256k1;
 /// This protocol is identical for the leader and the followers.
 pub async fn run_key_generation(
     channel: NetworkTaskChannel,
-    participants: Vec<ParticipantId>,
     me: ParticipantId,
     threshold: usize,
 ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
-    let cs_participants = participants
+    let cs_participants = channel
+        .participants
         .iter()
         .copied()
         .map(Participant::from)
         .collect::<Vec<_>>();
     let protocol = cait_sith::keygen::<Secp256k1>(&cs_participants, me.into(), threshold)?;
-    run_protocol("key generation", channel, participants, me, protocol).await
+    run_protocol("key generation", channel, me, protocol).await
 }
 
 #[cfg(test)]
@@ -52,7 +52,7 @@ mod tests {
 
         // We'll have the first participant be the leader.
         let channel = if participant_id == all_participant_ids[0] {
-            client.new_channel_for_task(MpcTaskId::KeyGeneration)?
+            client.new_channel_for_task(MpcTaskId::KeyGeneration, client.all_participant_ids())?
         } else {
             channel_receiver
                 .recv()
@@ -60,7 +60,7 @@ mod tests {
                 .ok_or_else(|| anyhow::anyhow!("No channel"))?
         };
         let key =
-            run_key_generation(channel, all_participant_ids.clone(), participant_id, 3).await?;
+            run_key_generation(channel, participant_id, 3).await?;
 
         Ok(key)
     }

@@ -14,6 +14,8 @@ use rustls::server::danger::ClientCertVerifier;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use x509_parser::prelude::{FromDer, X509Certificate};
 use x509_parser::public_key::PublicKey;
@@ -23,7 +25,7 @@ use x509_parser::public_key::PublicKey;
 pub struct QuicMeshSender {
     my_id: ParticipantId,
     participants: Vec<ParticipantId>,
-    connections: HashMap<ParticipantId, PersistentConnection>,
+    connections: HashMap<ParticipantId, Arc<PersistentConnection>>,
 }
 
 /// Implements MeshNetworkTransportReceiver.
@@ -92,6 +94,7 @@ struct PersistentConnection {
     target_participant_id: ParticipantId,
     participant_identities: Arc<ParticipantIdentities>,
     current: Arc<Mutex<Option<Arc<quinn::Connection>>>>,
+    is_alive: Arc<AtomicBool>,
 }
 
 impl PersistentConnection {
@@ -102,43 +105,48 @@ impl PersistentConnection {
     /// connection first.
     async fn new_stream(&self) -> anyhow::Result<quinn::SendStream> {
         let conn = {
-            let current_clone = self.current.clone();
             let mut current = self.current.lock().await;
             if current.is_none() {
                 // Reconnect, if we never connected, or the previous connection was closed.
-                let socket_addr = self.target_address.to_socket_addrs()?.next().unwrap();
-                let new_conn = self.endpoint.connect(socket_addr, "dummy")?.await?;
-                let participant_id = verify_peer_identity(&new_conn, &self.participant_identities)?;
-                if participant_id != self.target_participant_id {
-                    anyhow::bail!("Unexpected peer identity");
-                }
-                let new_conn = Arc::new(new_conn);
-                *current = Some(new_conn.clone());
-
-                tracking::spawn(
-                    &format!(
-                        "Delete connection if closed for participant {}",
-                        participant_id
-                    ),
-                    async move {
-                        // Wait for the connection to close, then delete it.
-                        // It's not immediate and not perfect, but at least we'll try to
-                        // reestablish the connection as soon as we know it's closed.
-                        new_conn.closed().await;
-                        let mut current = current_clone.lock().await;
-                        if let Some(current_conn) = &*current {
-                            if Arc::ptr_eq(current_conn, &new_conn) {
-                                *current = None;
-                            }
-                        }
-                    },
-                );
+                self.reestablish_locked_connection(&mut *current).await?;
             }
             let conn = current.as_mut().unwrap().clone();
             conn
         };
         let stream = conn.open_uni().await?;
         Ok(stream)
+    }
+
+    async fn reestablish_locked_connection(&self, current: &mut Option<Arc<quinn::Connection>>) -> anyhow::Result<()> {
+        let current_clone = self.current.clone();
+        let socket_addr = self.target_address.to_socket_addrs()?.next().unwrap();
+        let new_conn = self.endpoint.connect(socket_addr, "dummy")?.await?;
+        let participant_id = verify_peer_identity(&new_conn, &self.participant_identities)?;
+        if participant_id != self.target_participant_id {
+            anyhow::bail!("Unexpected peer identity");
+        }
+        let new_conn = Arc::new(new_conn);
+        *current = Some(new_conn.clone());
+
+        tracking::spawn(
+            &format!(
+                "Delete connection if closed for participant {}",
+                participant_id
+            ),
+            async move {
+                // Wait for the connection to close, then delete it.
+                // It's not immediate and not perfect, but at least we'll try to
+                // reestablish the connection as soon as we know it's closed.
+                new_conn.closed().await;
+                let mut current = current_clone.lock().await;
+                if let Some(current_conn) = &*current {
+                    if Arc::ptr_eq(current_conn, &new_conn) {
+                        *current = None;
+                    }
+                }
+            },
+        );
+        Ok(())
     }
 }
 
@@ -248,13 +256,14 @@ pub async fn new_quic_mesh_network(
     for participant in &config.participants.participants {
         connections.insert(
             participant.id,
-            PersistentConnection {
+            Arc::new(PersistentConnection {
                 endpoint: client.clone(),
                 target_address: format!("{}:{}", participant.address, participant.port),
                 target_participant_id: participant.id,
                 participant_identities: participant_identities.clone(),
                 current: Arc::new(Mutex::new(None)),
-            },
+                is_alive: Arc::new(AtomicBool::new(true)),
+            }),
         );
     }
 
@@ -267,6 +276,7 @@ pub async fn new_quic_mesh_network(
             let message_sender = message_sender.clone();
             let participant_identities = participant_identities.clone();
             tracking::spawn_checked("Handle connection", async move {
+
                 if let Ok(connection) = conn.await {
                     let verified_participant_id =
                         verify_peer_identity(&connection, &participant_identities)?;
@@ -294,6 +304,8 @@ pub async fn new_quic_mesh_network(
         participants: participant_ids,
         connections,
     };
+
+    sender.run_check_connections(Duration::from_secs(10));
 
     let receiver = QuicMeshReceiver {
         receiver: message_receiver,
@@ -407,6 +419,52 @@ impl MeshNetworkTransportSender for QuicMeshSender {
         futures::future::join_all(handles).await;
         Ok(())
     }
+
+
+    fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
+        self
+            .connections
+            .iter()
+            .filter(
+                |(_, conn)|
+                conn.is_alive.load(Ordering::SeqCst)
+            )
+            .map(|(p, _)| p.clone())
+            .chain(vec![self.my_id])
+            .collect()
+    }
+}
+
+impl QuicMeshSender {
+    fn run_check_connections(&self, period: Duration) {
+        for (id, connection) in &self.connections {
+            if id == &self.my_id {
+                continue;
+            }
+            let connection = connection.clone();
+            let id = id.clone();
+            tracking::spawn(
+                format!("checking connection for participant {}", id).as_str(),
+                async move {
+                    loop {
+                        tokio::time::sleep(period).await;
+                        let mut current = connection.current.lock().await;
+                        if current.is_none() {
+                            match connection.reestablish_locked_connection(&mut *current).await {
+                                Ok(_) => {
+                                    connection.is_alive.store(true, Ordering::SeqCst);
+                                }
+                                Err(err) => {
+                                    tracking::set_progress(format!("Could not reestablish new connection with participant {}, got error {}", id, err).as_str());
+                                    connection.is_alive.store(false, Ordering::SeqCst);
+                                }
+                            }
+                        }
+                    }
+                }
+            );
+        }
+    }
 }
 
 #[async_trait]
@@ -491,6 +549,7 @@ mod tests {
                         MpcMessage {
                             data: vec![vec![1, 2, 3]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
+                            participants: vec![]
                         },
                     )
                     .await
@@ -505,6 +564,7 @@ mod tests {
                         MpcMessage {
                             data: vec![vec![4, 5, 6]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
+                            participants: vec![]
                         },
                     )
                     .await
