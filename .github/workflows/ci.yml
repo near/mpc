@@ -20,14 +20,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # - name: Run Cargo Clippy
-      #   run: |
-      #     CARGO_TARGET_DIR="target/clippy" \
-      #     RUSTFLAGS="-D warnings" \
-      #     cargo clippy --all-features --all-targets --locked
+      - name: Run Cargo Clippy
+        run: |
+          CARGO_TARGET_DIR="target/clippy" \
+          RUSTFLAGS="-D warnings" \
+          cargo clippy --all-features --all-targets --locked
 
-      # - name: Run Cargo fmt
-      #   run: cargo fmt -- --check
+      - name: Run Cargo fmt
+        run: cargo fmt -- --check
 
       - name: Install cargo-nextest
         run: cargo install cargo-nextest
