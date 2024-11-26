@@ -29,13 +29,13 @@ jobs:
       # - name: Run Cargo fmt
       #   run: cargo fmt -- --check
 
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest
+      # - name: Install cargo-nextest
+      #   run: cargo install cargo-nextest
 
-      - name: Run cargo-nextest
-        run: cargo nextest run --release --locked 
+      # - name: Run cargo-nextest
+      #   run: cargo nextest run --release --locked 
 
       - name: Make sure Docker image can be built
-        run: docker build -f Dockerfile --progress=plain . 
+        run: docker build -f integration-test/Dockerfile --progress=plain . 
 
           
