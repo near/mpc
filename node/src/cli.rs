@@ -108,6 +108,7 @@ impl Cli {
                         secret_db.clone(),
                         DBCol::Presignature,
                         network_client.my_participant_id(),
+                        network_client.all_participant_ids(),
                     )?);
 
                     let config = Arc::new(config);

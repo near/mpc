@@ -1,16 +1,15 @@
-use cait_sith::{protocol::Participant, triples::TripleGenerationOutput};
+use cait_sith::{protocol::Participant};
 use k256::Secp256k1;
 
-use crate::assets::{DistributedAssetStorage, PendingUnownedAsset, UniqueId};
+use crate::assets::ProtocolsStorage;
 use crate::background::InFlightGenerationTracker;
 use crate::config::TripleConfig;
-use crate::db::{DBCol, SecretDB};
 use crate::network::MeshNetworkClient;
-use crate::primitives::choose_random_participants;
+use crate::primitives::{choose_random_participants, PairedTriple};
 use crate::protocol::run_protocol;
 use crate::{metrics, tracking};
 use crate::{network::NetworkTaskChannel, primitives::ParticipantId};
-use std::sync::Arc;
+use std::sync::{Arc};
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -51,67 +50,9 @@ pub async fn run_many_triple_generation<const N: usize>(
     Ok(pairs.collect())
 }
 
-// pub type TripleStorage = DistributedAssetStorage<TripleGenerationOutput<Secp256k1>>;
-pub type PairedTriple = (
-    TripleGenerationOutput<Secp256k1>,
-    TripleGenerationOutput<Secp256k1>,
-);
+pub type TripleStorage = ProtocolsStorage<PairedTriple>;
 
-pub(crate) struct TripleStorage {
-    storage: DistributedAssetStorage<PairedTriple>,
-    last_active_participant_ids: Vec<ParticipantId>,
-}
 
-impl TripleStorage {
-    pub fn new(
-        db: Arc<SecretDB>,
-        col: DBCol,
-        my_participant_id: ParticipantId,
-        all_participant_ids: Vec<ParticipantId>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
-            storage: DistributedAssetStorage::<PairedTriple>::new(db, col, my_participant_id)?,
-            last_active_participant_ids: all_participant_ids,
-        })
-    }
-
-    #[allow(dead_code)]
-    pub fn refresh_active_participants_ids(
-        &mut self,
-        participants: &Vec<ParticipantId>,
-    ) -> anyhow::Result<()> {
-        if participants == &self.last_active_participant_ids {
-            return Ok(());
-        }
-        self.last_active_participant_ids = participants.clone();
-        Ok(())
-    }
-
-    pub fn generate_and_reserve_id_range(&self, count: u32) -> UniqueId {
-        self.storage.generate_and_reserve_id_range(count)
-    }
-
-    pub fn num_owned(&self) -> usize {
-        self.storage.num_owned() * 2
-    }
-
-    pub async fn take_owned(&self) -> (UniqueId, PairedTriple) {
-        self.storage.take_owned().await
-    }
-
-    /// Adds an owned asset to the storage.
-    pub fn add_owned(&self, id: UniqueId, value: PairedTriple) {
-        self.storage.add_owned(id, value)
-    }
-
-    pub fn prepare_unowned(&self, id: UniqueId) -> PendingUnownedAsset<PairedTriple> {
-        self.storage.prepare_unowned(id)
-    }
-
-    pub async fn take_unowned(&self, id: UniqueId) -> anyhow::Result<PairedTriple> {
-        self.storage.take_unowned(id).await
-    }
-}
 
 pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
 

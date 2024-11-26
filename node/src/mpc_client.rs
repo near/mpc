@@ -1,9 +1,9 @@
 use crate::config::Config;
 use crate::key_generation::{run_key_generation, KeygenNeeded, KeygenStorage};
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
+use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
 use crate::sign::{
-    pre_sign_unowned, run_background_presignature_generation, sign, PresignOutputWithParticipants,
+    pre_sign_unowned, run_background_presignature_generation, sign,
     PresignatureStorage, SignatureIdGenerator,
 };
 use crate::tracking;

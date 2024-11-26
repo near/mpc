@@ -1,8 +1,8 @@
-use crate::assets::{DistributedAssetStorage, UniqueId};
+use crate::assets::{ProtocolsStorage, UniqueId};
 use crate::background::InFlightGenerationTracker;
 use crate::config::PresignatureConfig;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{participants_from_triples, ParticipantId};
+use crate::primitives::{participants_from_triples, ParticipantId, PresignOutputWithParticipants};
 use crate::protocol::run_protocol;
 use crate::triple::TripleStorage;
 use crate::{metrics, tracking};
@@ -10,7 +10,6 @@ use cait_sith::protocol::Participant;
 use cait_sith::triples::TripleGenerationOutput;
 use cait_sith::{FullSignature, KeygenOutput, PresignArguments, PresignOutput};
 use k256::{Scalar, Secp256k1};
-use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -91,13 +90,7 @@ pub async fn sign(
     Ok(signature)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PresignOutputWithParticipants {
-    pub presignature: PresignOutput<Secp256k1>,
-    pub participants: Vec<ParticipantId>,
-}
-
-pub type PresignatureStorage = DistributedAssetStorage<PresignOutputWithParticipants>;
+pub type PresignatureStorage = ProtocolsStorage<PresignOutputWithParticipants>;
 
 /// Continuously generates presignatures, trying to maintain the desired number of
 /// presignatures available, using the desired number of concurrent computations as
