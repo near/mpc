@@ -12,22 +12,22 @@ on:
 jobs:
   ci-tests:
     name: "Run CI tests"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-8core
     permissions:
-      id-token: write # required to use OIDC authentication
+      contents: read
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # - name: Run Cargo Clippy
-      #   run: |
-      #     CARGO_TARGET_DIR="target/clippy" \
-      #     RUSTFLAGS="-D warnings" \
-      #     cargo clippy --all-features --all-targets --locked
+      - name: Run Cargo Clippy
+        run: |
+          CARGO_TARGET_DIR="target/clippy" \
+          RUSTFLAGS="-D warnings" \
+          cargo clippy --all-features --all-targets --locked
 
-      # - name: Run Cargo fmt
-      #   run: cargo fmt -- --check
+      - name: Run Cargo fmt
+        run: cargo fmt -- --check
 
       - name: Install cargo-nextest
         run: cargo install cargo-nextest
@@ -36,6 +36,6 @@ jobs:
         run: cargo nextest run --release --locked 
 
       - name: Make sure Docker image can be built
-        run: docker build -f Dockerfile --progress=plain . 
+        run: docker build -f integration-test/Dockerfile --progress=plain . 
 
           

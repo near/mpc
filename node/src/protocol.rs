@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use std::sync::{atomic::AtomicUsize, Arc};
 use crate::primitives::{BatchedMessages, ParticipantId};
 use crate::tracking;
 use crate::{network::NetworkTaskChannel, tracking::TaskHandle};
 use cait_sith::protocol::{Action, Protocol};
 use futures::TryFutureExt;
+use std::collections::HashMap;
+use std::sync::{atomic::AtomicUsize, Arc};
 use tokio::sync::mpsc;
 
 /// Runs any cait-sith protocol, returning the result. Exports tracking progress
@@ -15,9 +15,14 @@ pub async fn run_protocol<T>(
     me: ParticipantId,
     mut protocol: impl Protocol<Output = T>,
 ) -> anyhow::Result<T> {
-    let counters = Arc::new(MessageCounters::new(name.to_string(), &channel.participants));
-    let mut queue_senders: HashMap<ParticipantId, mpsc::UnboundedSender<BatchedMessages>> = HashMap::new();
-    let mut queue_receivers: HashMap<ParticipantId, mpsc::UnboundedReceiver<BatchedMessages>> = HashMap::new();
+    let counters = Arc::new(MessageCounters::new(
+        name.to_string(),
+        &channel.participants,
+    ));
+    let mut queue_senders: HashMap<ParticipantId, mpsc::UnboundedSender<BatchedMessages>> =
+        HashMap::new();
+    let mut queue_receivers: HashMap<ParticipantId, mpsc::UnboundedReceiver<BatchedMessages>> =
+        HashMap::new();
 
     for p in &channel.participants {
         let (send, recv) = mpsc::unbounded_channel();
@@ -72,7 +77,7 @@ pub async fn run_protocol<T>(
     let participants = channel.participants.clone();
     let computation_handle = async move {
         loop {
-            let mut messages_to_send : HashMap<ParticipantId, _> = HashMap::new();
+            let mut messages_to_send: HashMap<ParticipantId, _> = HashMap::new();
             let done = loop {
                 match protocol.poke()? {
                     Action::Wait => break None,
@@ -81,11 +86,17 @@ pub async fn run_protocol<T>(
                             if participant == &me {
                                 continue;
                             }
-                            messages_to_send.entry(*participant).or_insert(Vec::new()).push(vec.clone());
+                            messages_to_send
+                                .entry(*participant)
+                                .or_insert(Vec::new())
+                                .push(vec.clone());
                         }
                     }
                     Action::SendPrivate(participant, vec) => {
-                        messages_to_send.entry(From::from(participant)).or_insert(Vec::new()).push(vec.clone());
+                        messages_to_send
+                            .entry(From::from(participant))
+                            .or_insert(Vec::new())
+                            .push(vec.clone());
                     }
                     Action::Return(result) => {
                         // Warning: we cannot return immediately!! There may be some important
@@ -137,7 +148,7 @@ struct MessageCounters {
 }
 
 impl MessageCounters {
-        pub fn new(name: String, participants: &Vec<ParticipantId>) -> Self {
+    pub fn new(name: String, participants: &Vec<ParticipantId>) -> Self {
         Self {
             name,
             task: tracking::current_task(),
@@ -158,18 +169,30 @@ impl MessageCounters {
     }
 
     pub fn queue_send(&self, participant: ParticipantId, num_messages: usize) {
-        self.in_flight.get(&participant).unwrap().fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
+        self.in_flight
+            .get(&participant)
+            .unwrap()
+            .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
         self.report_progress();
     }
 
     pub fn sent(&self, participant: ParticipantId, num_messages: usize) {
-        self.sent.get(&participant).unwrap().fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
-        self.in_flight.get(&participant).unwrap().fetch_sub(num_messages, std::sync::atomic::Ordering::Relaxed);
+        self.sent
+            .get(&participant)
+            .unwrap()
+            .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
+        self.in_flight
+            .get(&participant)
+            .unwrap()
+            .fetch_sub(num_messages, std::sync::atomic::Ordering::Relaxed);
         self.report_progress();
     }
 
     pub fn received(&self, participant: ParticipantId, num_messages: usize) {
-        self.received.get(&participant).unwrap().fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
+        self.received
+            .get(&participant)
+            .unwrap()
+            .fetch_add(num_messages, std::sync::atomic::Ordering::Relaxed);
         self.current_action
             .store(0, std::sync::atomic::Ordering::Relaxed);
     }
