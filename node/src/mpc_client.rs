@@ -226,7 +226,6 @@ impl MpcClient {
     pub async fn make_signature(
         self,
         msg_hash: Scalar,
-        entropy: [u8; 32],
     ) -> anyhow::Result<FullSignature<Secp256k1>> {
         let (triple0_id, triple0) = self.triple_store.take_owned().await;
         let (triple1_id, triple1) = self.triple_store.take_owned().await;
@@ -255,7 +254,6 @@ impl MpcClient {
                 id: generate_signature_id(self.client.my_participant_id()),
                 presignature_id,
                 msg_hash: msg_hash.to_repr().into(),
-                entropy,
             })?,
             self.client.all_participant_ids(),
             self.client.my_participant_id(),

@@ -39,7 +39,7 @@ async fn debug_sign(
                 .map(|_| async {
                     let signature = tracking::spawn(
                         "debug sign repeat",
-                        (**mpc_client).clone().make_signature(msg_hash, entropy),
+                        (**mpc_client).clone().make_signature(msg_hash),
                     )
                     .await??;
                     anyhow::Ok(signature)
