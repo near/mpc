@@ -27,9 +27,11 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     /// message is sent doesn't guarantee that the recipient will receive it; that is up to
     /// the user of the networking layer to deal with.
     async fn send(&self, recipient_id: ParticipantId, message: MpcMessage) -> anyhow::Result<()>;
-    /// Waits until all nodes in the network have been connected to initially.
-    async fn wait_for_ready(&self) -> anyhow::Result<()>;
-
+    /// Waits until at least `threshold` nodes in the network have been connected to initially,
+    /// the threshold includes ourselves.
+    async fn wait_for_ready(&self, threshold: usize) -> anyhow::Result<()>;
+    /// Returns the participant IDs of all nodes in the network that are currently alive.
+    /// This is a subset of all_participant_ids, and includes our own participant ID.
     fn all_alive_participant_ids(&self) -> Vec<ParticipantId>;
 }
 
@@ -80,6 +82,8 @@ impl MeshNetworkClient {
         self.transport_sender.all_participant_ids()
     }
 
+    /// Returns the participant IDs of all nodes in the network that are currently alive.
+    /// This is a subset of all_participant_ids, and includes our own participant ID.
     pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
         self.transport_sender.all_alive_participant_ids()
     }
@@ -333,12 +337,12 @@ pub mod testing {
             Ok(())
         }
 
-        async fn wait_for_ready(&self) -> anyhow::Result<()> {
+        async fn wait_for_ready(&self, _threshold: usize) -> anyhow::Result<()> {
             Ok(())
         }
 
         fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
-            return self.all_participant_ids();
+            self.all_participant_ids()
         }
     }
 
@@ -473,7 +477,7 @@ mod tests {
                 },
                 client.all_participant_ids(),
             )?;
-            handles.push(tracking::spawn_checked(
+            handles.push(tracking::spawn(
                 &format!("task {}", seed),
                 task_leader(channel, other_participant_ids.clone(), seed),
             ));

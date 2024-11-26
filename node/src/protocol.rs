@@ -148,21 +148,21 @@ struct MessageCounters {
 }
 
 impl MessageCounters {
-    pub fn new(name: String, participants: &Vec<ParticipantId>) -> Self {
+    pub fn new(name: String, participants: &[ParticipantId]) -> Self {
         Self {
             name,
             task: tracking::current_task(),
             sent: participants
                 .iter()
-                .map(|p| (p.clone(), AtomicUsize::new(0)))
+                .map(|p| (*p, AtomicUsize::new(0)))
                 .collect(),
             in_flight: participants
                 .iter()
-                .map(|p| (p.clone(), AtomicUsize::new(0)))
+                .map(|p| (*p, AtomicUsize::new(0)))
                 .collect(),
             received: participants
                 .iter()
-                .map(|p| (p.clone(), AtomicUsize::new(0)))
+                .map(|p| (*p, AtomicUsize::new(0)))
                 .collect(),
             current_action: AtomicUsize::new(0),
         }

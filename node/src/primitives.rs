@@ -13,6 +13,8 @@ use std::fmt::Display;
     Copy,
     PartialEq,
     Eq,
+    PartialOrd,
+    Ord,
     Hash,
     BorshSerialize,
     BorshDeserialize,
@@ -80,12 +82,12 @@ pub fn choose_random_participants(
     threshold: usize,
 ) -> Vec<ParticipantId> {
     assert!(participants.len() >= threshold);
-    let mut res: Vec<_> = participants
+    let mut res = participants
         .into_iter()
         .filter(|p| p != &me)
         .choose_multiple(&mut rand::thread_rng(), threshold - 1);
     res.push(me);
-    return res;
+    res
 }
 
 pub fn participants_from_triples(
@@ -96,8 +98,8 @@ pub fn participants_from_triples(
         .1
         .participants
         .iter()
-        .cloned()
+        .copied()
         .filter(|p| triple1.1.participants.contains(p))
-        .map(|p| From::from(p))
+        .map(|p| p.into())
         .collect()
 }
