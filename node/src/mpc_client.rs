@@ -150,6 +150,8 @@ impl MpcClient {
                                 MpcTaskId::Signature {
                                     presignature_id,
                                     msg_hash,
+                                    tweak,
+                                    entropy,
                                     ..
                                 } => {
                                     let msg_hash =
@@ -159,6 +161,12 @@ impl MpcClient {
                                                 anyhow::anyhow!(
                                                     "Failed to convert msg_hash to Scalar"
                                                 )
+                                            })?;
+                                    let tweak =
+                                        Scalar::from_repr(FieldBytes::clone_from_slice(&tweak))
+                                            .into_option()
+                                            .ok_or_else(|| {
+                                                anyhow::anyhow!("Failed to convert tweak to Scalar")
                                             })?;
                                     timeout(
                                         Duration::from_secs(config.signature.timeout_sec),
@@ -171,6 +179,8 @@ impl MpcClient {
                                                 .await?
                                                 .presignature,
                                             msg_hash,
+                                            tweak,
+                                            entropy,
                                         ),
                                     )
                                     .await??;
@@ -232,6 +242,8 @@ impl MpcClient {
     pub async fn make_signature(
         self,
         msg_hash: Scalar,
+        tweak: Scalar,
+        entropy: [u8; 32],
     ) -> anyhow::Result<FullSignature<Secp256k1>> {
         let keygen_out = self.keygen_store.get_generated_key().await;
         let (presignature_id, presignature) = self.presignature_store.take_owned().await;
@@ -241,6 +253,8 @@ impl MpcClient {
                     id: self.signature_id_generator.generate_signature_id(),
                     presignature_id,
                     msg_hash: msg_hash.to_repr().into(),
+                    tweak: tweak.to_repr().into(),
+                    entropy,
                 },
                 presignature.participants,
             )?,
@@ -248,6 +262,8 @@ impl MpcClient {
             keygen_out,
             presignature.presignature,
             msg_hash,
+            tweak,
+            entropy,
         )
         .await?;
 
