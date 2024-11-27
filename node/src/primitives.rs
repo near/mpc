@@ -90,7 +90,7 @@ pub enum MpcTaskId {
 }
 
 pub trait HasParticipants {
-    fn is_subset_of_active_participants(&self, active_participants: &Vec<ParticipantId>) -> bool;
+    fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool;
 }
 
 pub type PairedTriple = (
@@ -99,7 +99,7 @@ pub type PairedTriple = (
 );
 
 impl HasParticipants for PairedTriple {
-    fn is_subset_of_active_participants(&self, active_participants: &Vec<ParticipantId>) -> bool {
+    fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
         let triple_participants = participants_from_triples(&self.0, &self.1);
         triple_participants
             .iter()
@@ -114,7 +114,7 @@ pub struct PresignOutputWithParticipants {
 }
 
 impl HasParticipants for PresignOutputWithParticipants {
-    fn is_subset_of_active_participants(&self, active_participants: &Vec<ParticipantId>) -> bool {
+    fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
         self.participants
             .iter()
             .all(|p| active_participants.contains(p))

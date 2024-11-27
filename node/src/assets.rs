@@ -177,11 +177,11 @@ where
                     Some(cold_queue.cold_queue.pop_front().unwrap())
                 }
             };
-            let value = if value_opt.is_none() {
+            let value = if let Some(value) = value_opt {
+                value
+            } else {
                 // Can't fail, because we keep a sender alive
                 self.hot_receiver.recv_async().await.unwrap()
-            } else {
-                value_opt.unwrap()
             };
             if condition(&value.0, &value.1) {
                 return value;
@@ -479,7 +479,7 @@ where
             self.storage.set_of_alive_participants_has_changed();
         }
         let is_subset_of_active_participants = |_: &UniqueId, value: &T| {
-            value.is_subset_of_active_participants(&alive_participants_ids)
+            value.is_subset_of_active_participants(alive_participants_ids)
         };
         self.storage
             .take_owned_with_condition(is_subset_of_active_participants)
