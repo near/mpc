@@ -129,6 +129,13 @@ pub async fn run_background_presignature_generation(
             && in_flight_generations.num_in_flight()
                 < config.concurrency * 2
         {
+            let current_active_participants_ids = client.all_alive_participant_ids();
+            presignature_store.set_active_participants_ids(current_active_participants_ids.clone());
+            if current_active_participants_ids.len() < threshold {
+                // that should not happen often, so sleeping here is okay
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
             let id = presignature_store.generate_and_reserve_id();
             progress_tracker.set_waiting_for_triples(true);
             let (paired_triple_id, (triple0, triple1)) = triple_store.take_owned().await;
