@@ -138,7 +138,9 @@ pub async fn run_background_presignature_generation(
             }
             let id = presignature_store.generate_and_reserve_id();
             progress_tracker.set_waiting_for_triples(true);
-            let (paired_triple_id, (triple0, triple1)) = triple_store.take_owned(client.all_alive_participant_ids()).await;
+            let (paired_triple_id, (triple0, triple1)) = triple_store
+                .take_owned(client.all_alive_participant_ids())
+                .await;
             progress_tracker.set_waiting_for_triples(false);
             let participants = participants_from_triples(&triple0, &triple1);
             let task_id = crate::primitives::MpcTaskId::Presignature {

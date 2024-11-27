@@ -6,8 +6,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
 /// A unique ID representing an asset (a triple, a presignature, or a signature).
@@ -120,16 +120,19 @@ impl BorshDeserialize for UniqueId {
     }
 }
 
-
 pub struct DoubleQueue<T>
-    where T: Send + 'static {
+where
+    T: Send + 'static,
+{
     senders: [flume::Sender<(UniqueId, T)>; 2],
     receivers: [flume::Receiver<(UniqueId, T)>; 2],
     active_owned_queue_index: AtomicUsize,
 }
 
 impl<T> DoubleQueue<T>
-    where T: Send + 'static {
+where
+    T: Send + 'static,
+{
     pub fn new() -> Self {
         let (sender1, receiver1) = flume::unbounded();
         let (sender2, receiver2) = flume::unbounded();
@@ -140,7 +143,11 @@ impl<T> DoubleQueue<T>
         }
     }
 
-    fn take_owned_conditioned_from_queue(&self, queue_index: usize, condition: &impl Fn (&UniqueId, &T) -> bool) -> anyhow::Result<(UniqueId, T)> {
+    fn take_owned_conditioned_from_queue(
+        &self,
+        queue_index: usize,
+        condition: &impl Fn(&UniqueId, &T) -> bool,
+    ) -> anyhow::Result<(UniqueId, T)> {
         loop {
             let (id, value) = self.receivers[queue_index].try_recv()?;
             if condition(&id, &value) {
@@ -153,10 +160,15 @@ impl<T> DoubleQueue<T>
 
     pub fn add_owned(&self, id: UniqueId, value: T) {
         let active_owned_queue_index = self.active_owned_queue_index.load(Ordering::SeqCst);
-        self.senders[active_owned_queue_index].send((id, value)).unwrap()
+        self.senders[active_owned_queue_index]
+            .send((id, value))
+            .unwrap()
     }
 
-    pub fn take_owned_conditioned(&self, condition: impl Fn (&UniqueId, &T) -> bool) -> anyhow::Result<(UniqueId, T)> {
+    pub fn take_owned_conditioned(
+        &self,
+        condition: impl Fn(&UniqueId, &T) -> bool,
+    ) -> anyhow::Result<(UniqueId, T)> {
         let active_owned_queue_index = self.active_owned_queue_index.load(Ordering::SeqCst);
         let result = self.take_owned_conditioned_from_queue(active_owned_queue_index, &condition);
 
@@ -165,7 +177,12 @@ impl<T> DoubleQueue<T>
         }
 
         let new_active_owned_queue_index = 1 - active_owned_queue_index;
-        let _ = self.active_owned_queue_index.compare_exchange(active_owned_queue_index, new_active_owned_queue_index, Ordering::SeqCst, Ordering::SeqCst);
+        let _ = self.active_owned_queue_index.compare_exchange(
+            active_owned_queue_index,
+            new_active_owned_queue_index,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
         self.take_owned_conditioned_from_queue(new_active_owned_queue_index, &condition)
     }
 
@@ -204,7 +221,7 @@ where
         col: DBCol,
         my_participant_id: ParticipantId,
     ) -> anyhow::Result<Self> {
-        let owned_queue= DoubleQueue::new();
+        let owned_queue = DoubleQueue::new();
 
         // We're just going to replicate the owned assets to memory. It's not the most efficient,
         // but it's the simplest way to implement a multi-consumer, multi-producer queue that
@@ -264,7 +281,10 @@ where
         self.owned_queue.len()
     }
 
-    pub fn take_owned_with_condition(&self, cond: impl Fn(&UniqueId, &T) -> bool) -> anyhow::Result<(UniqueId, T)> {
+    pub fn take_owned_with_condition(
+        &self,
+        cond: impl Fn(&UniqueId, &T) -> bool,
+    ) -> anyhow::Result<(UniqueId, T)> {
         // Can't fail, because we keep a sender alive.
         let (id, asset) = self.owned_queue.take_owned_conditioned(cond)?;
         let mut update = self.db.update();
@@ -274,7 +294,6 @@ where
             .expect("Unrecoverable error writing to database");
         Ok((id, asset))
     }
-
 
     /// used for tests
     #[allow(dead_code)]
@@ -384,15 +403,18 @@ where
     }
 }
 
-
 pub struct ProtocolsStorage<T>
-where T: Serialize + DeserializeOwned + Send + HasParticipants + 'static {
+where
+    T: Serialize + DeserializeOwned + Send + HasParticipants + 'static,
+{
     storage: DistributedAssetStorage<T>,
-    last_alive_participants: Arc<Mutex<Vec<ParticipantId>>>
+    last_alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
 }
 
 impl<T> ProtocolsStorage<T>
-    where T: Serialize + DeserializeOwned + Send + HasParticipants + 'static {
+where
+    T: Serialize + DeserializeOwned + Send + HasParticipants + 'static,
+{
     pub fn new(
         db: Arc<SecretDB>,
         col: DBCol,
@@ -405,13 +427,14 @@ impl<T> ProtocolsStorage<T>
         })
     }
 
-    pub fn set_alive_participants_ids(
-        &self,
-        participants: Vec<ParticipantId>,
-    ) {
+    pub fn set_alive_participants_ids(&self, participants: Vec<ParticipantId>) {
         let mut last_alive_participants = self.last_alive_participants.lock().unwrap();
         if *last_alive_participants != participants {
-            tracing::info!("Set of active participants changed from {:?} to {:?}", last_alive_participants, participants);
+            tracing::info!(
+                "Set of active participants changed from {:?} to {:?}",
+                last_alive_participants,
+                participants
+            );
             *last_alive_participants = participants;
         }
     }
@@ -423,7 +446,6 @@ impl<T> ProtocolsStorage<T>
     pub fn generate_and_reserve_id(&self) -> UniqueId {
         self.storage.generate_and_reserve_id()
     }
-
 
     pub fn num_owned(&self) -> usize {
         self.storage.num_owned() * 2
@@ -437,7 +459,10 @@ impl<T> ProtocolsStorage<T>
                 let is_subset_of_active_participants = |_: &UniqueId, value: &T| {
                     value.is_subset_of_active_participants(&active_participants)
                 };
-                if let Ok((id, value)) = self.storage.take_owned_with_condition(is_subset_of_active_participants) {
+                if let Ok((id, value)) = self
+                    .storage
+                    .take_owned_with_condition(is_subset_of_active_participants)
+                {
                     return (id, value);
                 }
             }
@@ -458,7 +483,6 @@ impl<T> ProtocolsStorage<T>
         self.storage.take_unowned(id).await
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -599,11 +623,20 @@ mod tests {
         store.add_owned(id3, 3);
         store.add_owned(id2, 2);
 
-        assert_eq!(store.take_owned().expect("queue is expected to have value"), (id3, 3));
-        assert_eq!(store.take_owned().expect("queue is expected to have value"), (id2, 2));
+        assert_eq!(
+            store.take_owned().expect("queue is expected to have value"),
+            (id3, 3)
+        );
+        assert_eq!(
+            store.take_owned().expect("queue is expected to have value"),
+            (id2, 2)
+        );
 
         store.add_owned(id1, 1);
-        assert_eq!(store.take_owned().expect("queue is expected to have value"), (id1, 1));
+        assert_eq!(
+            store.take_owned().expect("queue is expected to have value"),
+            (id1, 1)
+        );
 
         // Make sure that ID generation does not depend on the order of adding
         // them.
@@ -626,8 +659,14 @@ mod tests {
             ParticipantId::from_raw(42),
         )
         .unwrap();
-        assert_eq!(store.take_owned().expect("queue is expected to have value"), (id5, 5));
-        assert_eq!(store.take_owned().expect("queue is expected to have value"), (id6, 6));
+        assert_eq!(
+            store.take_owned().expect("queue is expected to have value"),
+            (id5, 5)
+        );
+        assert_eq!(
+            store.take_owned().expect("queue is expected to have value"),
+            (id6, 6)
+        );
     }
 
     #[test]
@@ -707,7 +746,10 @@ mod tests {
             super::DistributedAssetStorage::<u32>::new(db, crate::db::DBCol::Triple, myself)
                 .unwrap();
         assert_eq!(store.num_owned(), 4);
-        assert_eq!(store.take_owned().expect("queue is expected to have value"), (id1, 1));
+        assert_eq!(
+            store.take_owned().expect("queue is expected to have value"),
+            (id1, 1)
+        );
         assert_eq!(
             store.take_owned().expect("queue is expected to have value"),
             (id1.add_to_counter(1).unwrap(), 2)

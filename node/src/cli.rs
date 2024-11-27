@@ -61,7 +61,8 @@ impl Cli {
                 let config = load_config(Path::new(&home_dir), *secret_store_key)?;
 
                 // Start the near indexer
-                let indexer_handle = config.indexer.clone().map(|indexer_config| std::thread::spawn(move || {
+                let indexer_handle = config.indexer.clone().map(|indexer_config| {
+                    std::thread::spawn(move || {
                         actix::System::new().block_on(async {
                             let indexer = near_indexer::Indexer::new(
                                 indexer_config.to_near_indexer_config(home_dir.into()),
@@ -76,7 +77,8 @@ impl Cli {
                             listen_blocks(stream, indexer_config.concurrency, Arc::clone(&stats))
                                 .await;
                         });
-                    }));
+                    })
+                });
 
                 // Start the mpc client
                 let secret_db = SecretDB::new(
@@ -131,7 +133,9 @@ impl Cli {
                 });
 
                 root_task.await?;
-                if let Some(h) = indexer_handle { h.join().unwrap() }
+                if let Some(h) = indexer_handle {
+                    h.join().unwrap()
+                }
 
                 Ok(())
             }

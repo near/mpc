@@ -2,11 +2,11 @@ use crate::assets::UniqueId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::protocol::Participant;
 use cait_sith::triples::TripleGenerationOutput;
+use cait_sith::PresignOutput;
 use k256::Secp256k1;
 use rand::prelude::IteratorRandom;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
-use cait_sith::PresignOutput;
 
 #[derive(
     Clone,
@@ -99,7 +99,9 @@ pub type PairedTriple = (
 impl HasParticipants for PairedTriple {
     fn is_subset_of_active_participants(&self, active_participants: &Vec<ParticipantId>) -> bool {
         let triple_participants = participants_from_triples(&self.0, &self.1);
-        triple_participants.iter().all(|p| active_participants.contains(p))
+        triple_participants
+            .iter()
+            .all(|p| active_participants.contains(p))
     }
 }
 
@@ -111,7 +113,9 @@ pub struct PresignOutputWithParticipants {
 
 impl HasParticipants for PresignOutputWithParticipants {
     fn is_subset_of_active_participants(&self, active_participants: &Vec<ParticipantId>) -> bool {
-        self.participants.iter().all(|p| active_participants.contains(p))
+        self.participants
+            .iter()
+            .all(|p| active_participants.contains(p))
     }
 }
 

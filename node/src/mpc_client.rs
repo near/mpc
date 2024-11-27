@@ -3,8 +3,8 @@ use crate::key_generation::{run_key_generation, KeygenNeeded, KeygenStorage};
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
 use crate::sign::{
-    pre_sign_unowned, run_background_presignature_generation, sign,
-    PresignatureStorage, SignatureIdGenerator,
+    pre_sign_unowned, run_background_presignature_generation, sign, PresignatureStorage,
+    SignatureIdGenerator,
 };
 use crate::tracking;
 use crate::triple::{
@@ -234,7 +234,10 @@ impl MpcClient {
         msg_hash: Scalar,
     ) -> anyhow::Result<FullSignature<Secp256k1>> {
         let keygen_out = self.keygen_store.get_generated_key().await;
-        let (presignature_id, presignature) = self.presignature_store.take_owned(self.client.all_alive_participant_ids()).await;
+        let (presignature_id, presignature) = self
+            .presignature_store
+            .take_owned(self.client.all_alive_participant_ids())
+            .await;
         let signature = sign(
             self.client.new_channel_for_task(
                 MpcTaskId::Signature {
