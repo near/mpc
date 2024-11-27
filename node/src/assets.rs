@@ -123,8 +123,8 @@ impl BorshDeserialize for UniqueId {
 
 pub struct ColdQueue<T> {
     /// Number of elements presented in the cold_queue since last update of set of participants.
-    /// These elements may potentially be used in further presignature/signature generation
-    /// with new set of participants.
+    /// It acts as a barrier in the queue so that if no element in the queue is eligible, we don't loop forever.
+    /// We only move the barrier forward if the condition has possibly changed.
     cold_available: usize,
     cold_queue: VecDeque<(UniqueId, T)>,
 }
@@ -186,6 +186,9 @@ where
             if condition(&value.0, &value.1) {
                 return value;
             }
+
+            // This element won't be retrieved until next call of set_of_alive_participants_has_changed(),
+            // which can possibly imply that result of condition(&value.0, &value.1) has changed
             let mut cold_queue = self.cold_queue.lock().unwrap();
             cold_queue.cold_queue.push_back(value);
         }
@@ -303,8 +306,7 @@ where
         (id, asset)
     }
 
-    /// used for tests
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn take_owned(&self) -> (UniqueId, T) {
         self.take_owned_with_condition(|_, _| true).await
     }
@@ -447,19 +449,9 @@ where
     /// even if it was changed during the call
     fn set_alive_participants_ids(&self, participants: &Vec<ParticipantId>) -> bool {
         let new_hash = Self::get_hash(participants);
-        let last_alive_participants_set_hash =
-            self.last_alive_participants_set_hash.load(Ordering::SeqCst);
-        if new_hash == last_alive_participants_set_hash {
-            return false;
-        }
         self.last_alive_participants_set_hash
-            .compare_exchange(
-                last_alive_participants_set_hash,
-                new_hash,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            )
-            .is_ok()
+            .swap(new_hash, Ordering::Relaxed)
+            != new_hash
     }
 
     pub fn generate_and_reserve_id_range(&self, count: u32) -> UniqueId {
@@ -471,7 +463,7 @@ where
     }
 
     pub fn num_owned(&self) -> usize {
-        self.storage.num_owned() * 2
+        self.storage.num_owned()
     }
 
     pub async fn take_owned(&self, alive_participants_ids: &Vec<ParticipantId>) -> (UniqueId, T) {
