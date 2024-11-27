@@ -530,6 +530,9 @@ pub fn generate_keypair() -> Result<(String, String)> {
 pub fn generate_test_p2p_configs(
     parties: usize,
     threshold: usize,
+    // this is a hack to make sure that when tests run in parallel, they don't
+    // collide on the same port.
+    seed: u16,
 ) -> anyhow::Result<Vec<MpcConfig>> {
     let mut participants = Vec::new();
     let mut keypairs = Vec::new();
@@ -538,7 +541,7 @@ pub fn generate_test_p2p_configs(
         participants.push(ParticipantInfo {
             id: ParticipantId::from_raw(rand::random()),
             address: "127.0.0.1".to_string(),
-            port: 10000 + i as u16,
+            port: 10000 + seed * 1000 + i as u16,
             p2p_public_key: p2p_public_key.clone(),
         });
         keypairs.push((p2p_private_key, p2p_public_key));
@@ -580,7 +583,7 @@ mod tests {
     #[serial]
     async fn test_basic_quic_mesh_network() {
         init_logging();
-        let configs = super::generate_test_p2p_configs(2, 2).unwrap();
+        let configs = super::generate_test_p2p_configs(2, 2, 0).unwrap();
         let participant0 = configs[0].my_participant_id;
         let participant1 = configs[1].my_participant_id;
 
@@ -631,7 +634,7 @@ mod tests {
     #[serial]
     async fn test_wait_for_ready() {
         init_logging();
-        let mut configs = super::generate_test_p2p_configs(4, 4).unwrap();
+        let mut configs = super::generate_test_p2p_configs(4, 4, 1).unwrap();
         // Make node 3 use the wrong address for the 0th node. All connections should work
         // except from 3 to 0.
         configs[3].participants.participants[0].address = "169.254.1.1".to_owned();

@@ -61,8 +61,8 @@ impl Cli {
                 let config = load_config(Path::new(&home_dir), *secret_store_key)?;
 
                 // Start the near indexer
-                let indexer_handle = if let Some(indexer_config) = config.indexer.clone() {
-                    Some(std::thread::spawn(move || {
+                let indexer_handle = config.indexer.clone().map(|indexer_config| {
+                    std::thread::spawn(move || {
                         actix::System::new().block_on(async {
                             let indexer = near_indexer::Indexer::new(
                                 indexer_config.to_near_indexer_config(home_dir.into()),
@@ -77,10 +77,8 @@ impl Cli {
                             listen_blocks(stream, indexer_config.concurrency, Arc::clone(&stats))
                                 .await;
                         });
-                    }))
-                } else {
-                    None
-                };
+                    })
+                });
 
                 // Start the mpc client
                 let secret_db = SecretDB::new(
@@ -134,7 +132,9 @@ impl Cli {
                 });
 
                 root_task.await?;
-                indexer_handle.map(|h| h.join().unwrap());
+                if let Some(h) = indexer_handle {
+                    h.join().unwrap();
+                }
 
                 Ok(())
             }
@@ -143,7 +143,7 @@ impl Cli {
                 num_participants,
                 threshold,
             } => {
-                let configs = generate_test_p2p_configs(num_participants, threshold)?;
+                let configs = generate_test_p2p_configs(num_participants, threshold, 0)?;
                 for (i, config) in configs.into_iter().enumerate() {
                     let subdir = format!("{}/{}", output_dir, i);
                     std::fs::create_dir_all(&subdir)?;
@@ -158,7 +158,7 @@ impl Cli {
                         indexer: Some(IndexerConfig {
                             stream_while_syncing: false,
                             validate_genesis: true,
-                            sync_mode: SyncMode::SyncFromInterruption,
+                            sync_mode: SyncMode::Interruption,
                             concurrency: NonZero::new(1).unwrap(),
                         }),
                         key_generation: KeyGenerationConfig { timeout_sec: 60 },
