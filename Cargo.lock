@@ -1663,7 +1663,6 @@ dependencies = [
 [[package]]
 name = "crypto-shared"
 version = "0.1.0"
-source = "git+https://github.com/near/mpc?rev=1.0.0-rc.5#fd6b4bde66f8dff3b56337ebe96a3605fb971cfc"
 dependencies = [
  "anyhow",
  "borsh",

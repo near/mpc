@@ -3,7 +3,7 @@ members = [
     "node",
 ]
 resolver = "2"
-exclude = ["libs/nearcore"]
+exclude = ["libs"]
 
 [profile.dev-release]
 inherits = "release"
