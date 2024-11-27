@@ -132,7 +132,7 @@ mod derive_tests {
         let mut rng = thread_rng();
         let mut participants_set = HashSet::new();
         while participants_set.len() < num_participants {
-            participants_set.insert(ParticipantId(rng.gen()));
+            participants_set.insert(ParticipantId::from_raw(rng.gen()));
         }
         let participants: Vec<ParticipantId> = participants_set.into_iter().collect();
         let entropy: [u8; 32] = rng.gen();
@@ -189,7 +189,7 @@ mod derive_tests {
         let mut rng = thread_rng();
         let mut participants_set_prime = HashSet::new();
         while participants_set_prime.len() < num_participants {
-            participants_set_prime.insert(ParticipantId(rng.gen()));
+            participants_set_prime.insert(ParticipantId::from_raw(rng.gen()));
         }
         let participants_prime: Vec<ParticipantId> = participants_set_prime.into_iter().collect();
         let delta_prime =

@@ -1,7 +1,7 @@
 use crate::assets::{DistributedAssetStorage, UniqueId};
-use crate::hkdf::derive_randomness;
 use crate::background::InFlightGenerationTracker;
 use crate::config::PresignatureConfig;
+use crate::hkdf::derive_randomness;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{participants_from_triples, ParticipantId};
 use crate::protocol::run_protocol;
@@ -89,7 +89,7 @@ pub async fn sign(
         keygen_out.public_key,
         msg_hash,
         big_r,
-        participants.clone(),
+        channel.participants.clone(),
         entropy,
     );
 

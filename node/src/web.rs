@@ -43,9 +43,11 @@ async fn debug_sign(
                     .map(|i| {
                         tracking::spawn(
                             &format!("debug sign #{}", i),
-                            (**mpc_client)
-                            .clone()
-                            .make_signature(msg_hash, query.tweak, query.entropy),
+                            (**mpc_client).clone().make_signature(
+                                msg_hash,
+                                query.tweak,
+                                query.entropy,
+                            ),
                         )
                         .map(|result| anyhow::Ok(result??))
                     })
