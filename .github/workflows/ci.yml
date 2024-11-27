@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch cargo cache
+      - name: Fetch cache
         uses: actions/cache@v4
         with:
           key: cargo-cache-${{ github.head_ref || github.ref_name }} 
@@ -42,7 +42,7 @@ jobs:
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked 
 
-      - name: Save cargo cache
+      - name: Save cache
         if: always()
         uses: actions/cache/save@v4
         with:
