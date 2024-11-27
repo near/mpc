@@ -53,6 +53,8 @@ pub enum Cli {
         num_participants: usize,
         #[arg(long)]
         threshold: usize,
+        #[arg(long)]
+        seed: Option<u16>,
     },
     GenerateIndexerConfigs(InitConfigArgs),
 }
@@ -191,8 +193,13 @@ impl Cli {
                 output_dir,
                 num_participants,
                 threshold,
+                seed,
             } => {
-                let configs = generate_test_p2p_configs(num_participants, threshold, 0)?;
+                let configs = generate_test_p2p_configs(
+                    num_participants,
+                    threshold,
+                    seed.unwrap_or_default(),
+                )?;
                 for (i, config) in configs.into_iter().enumerate() {
                     let subdir = format!("{}/{}", output_dir, i);
                     std::fs::create_dir_all(&subdir)?;
@@ -202,7 +209,7 @@ impl Cli {
                         p2p_private_key_file: "p2p.pem".to_owned(),
                         web_ui: WebUIConfig {
                             host: "127.0.0.1".to_owned(),
-                            port: 20000 + i as u16,
+                            port: 20000 + 1000 * seed.unwrap_or_default() + i as u16,
                         },
                         indexer: Some(IndexerConfig {
                             stream_while_syncing: false,

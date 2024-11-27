@@ -197,15 +197,16 @@ pub async fn run_background_triple_generation(
 mod tests_many {
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::primitives::{choose_random_participants, MpcTaskId};
+    use crate::primitives::MpcTaskId;
     use crate::tracing::init_logging;
-    use futures::{stream, StreamExt, TryStreamExt};
+    use futures::{stream, StreamExt};
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
     use super::{run_many_triple_generation, PairedTriple};
     use crate::assets::UniqueId;
-    use crate::tracking::{self, AutoAbortTaskCollection};
+    use crate::tracking;
+    use std::collections::HashMap;
 
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
@@ -217,9 +218,26 @@ mod tests_many {
     async fn test_many_triple_generation() {
         init_logging();
         tracking::testing::start_root_task_with_periodic_dump(async {
-            run_test_clients(NUM_PARTICIPANTS, run_triple_gen_client)
+            let all_triples = run_test_clients(NUM_PARTICIPANTS, run_triple_gen_client)
                 .await
                 .unwrap();
+
+            // Sanity check that we generated the right number of triples, and
+            // each triple has THRESHOLD participants.
+            let mut id_to_triple_count = HashMap::new();
+
+            for triples in &all_triples {
+                for (id, _) in triples {
+                    *id_to_triple_count.entry(*id).or_insert(0) += 1;
+                }
+            }
+            assert_eq!(
+                id_to_triple_count.len(),
+                NUM_PARTICIPANTS * BATCHES_TO_GENERATE_PER_CLIENT * TRIPLES_PER_BATCH / 2,
+            );
+            for count in id_to_triple_count.values() {
+                assert_eq!(*count, THRESHOLD);
+            }
         })
         .await;
     }
@@ -227,23 +245,37 @@ mod tests_many {
     async fn run_triple_gen_client(
         client: Arc<MeshNetworkClient>,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
-    ) -> anyhow::Result<Vec<PairedTriple>> {
-        let _passive_channels = {
+    ) -> anyhow::Result<HashMap<UniqueId, PairedTriple>> {
+        let passive_triples = {
             let client = client.clone();
             let participant_id = client.my_participant_id();
             tracking::spawn("monitor passive channels", async move {
-                let mut tasks = AutoAbortTaskCollection::new();
-                loop {
+                let mut tasks = Vec::new();
+                for _ in 0..BATCHES_TO_GENERATE_PER_CLIENT * (THRESHOLD - 1) {
                     let channel = channel_receiver.recv().await.unwrap();
-                    tasks.spawn_checked(
+                    tasks.push(tracking::spawn(
                         &format!("passive task {:?}", channel.task_id),
-                        run_many_triple_generation::<TRIPLES_PER_BATCH>(
-                            channel,
-                            participant_id,
-                            THRESHOLD,
-                        ),
-                    );
+                        async move {
+                            let MpcTaskId::ManyTriples { start, .. } = channel.task_id else {
+                                panic!("Unexpected task id");
+                            };
+                            let triples = run_many_triple_generation::<TRIPLES_PER_BATCH>(
+                                channel,
+                                participant_id,
+                                THRESHOLD,
+                            )
+                            .await
+                            .unwrap();
+                            triples
+                                .into_iter()
+                                .enumerate()
+                                .map(|(i, pair)| (start.add_to_counter(i as u32).unwrap(), pair))
+                                .collect::<Vec<_>>()
+                        },
+                    ));
                 }
+                let results = futures::future::try_join_all(tasks).await.unwrap();
+                results.into_iter().flatten().collect::<Vec<_>>()
             })
         };
 
@@ -258,24 +290,49 @@ mod tests_many {
                         start: start_triple_id,
                         count: TRIPLES_PER_BATCH as u32,
                     };
-                    let participants =
-                        choose_random_participants(all_participant_ids, participant_id, THRESHOLD);
+                    // Pick threshold participants but do it in a uniform way so for the test,
+                    // each node knows how many passive computations to expect.
+                    let participants = {
+                        let mut participants = all_participant_ids;
+                        participants.sort();
+                        let my_index = participants
+                            .iter()
+                            .position(|&p| p == participant_id)
+                            .unwrap();
+                        participants.rotate_left(my_index);
+                        participants.truncate(THRESHOLD);
+                        participants
+                    };
                     let result = tracking::spawn(
                         &format!("task {:?}", task_id),
                         run_many_triple_generation::<TRIPLES_PER_BATCH>(
-                            client.new_channel_for_task(task_id, participants)?,
+                            client.new_channel_for_task(task_id, participants).unwrap(),
                             participant_id,
                             THRESHOLD,
                         ),
                     )
-                    .await??;
-                    anyhow::Ok(result)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                    result
+                        .into_iter()
+                        .enumerate()
+                        .map(move |(i, pair)| {
+                            (start_triple_id.add_to_counter(i as u32).unwrap(), pair)
+                        })
+                        .collect::<Vec<_>>()
                 }
             })
             .buffered(PARALLELISM_PER_CLIENT)
-            .try_collect::<Vec<_>>()
-            .await?;
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
 
-        Ok(triples.into_iter().flatten().collect())
+        Ok(triples
+            .into_iter()
+            .chain(passive_triples.await.unwrap().into_iter())
+            .collect())
     }
 }

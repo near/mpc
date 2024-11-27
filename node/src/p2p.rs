@@ -644,7 +644,7 @@ mod tests {
 
             // Disconnect node 1. Other nodes should notice the change.
             drop((sender1, receiver1));
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
             assert_eq!(
                 sender0.all_alive_participant_ids(),
                 sorted(&[ids[0], ids[2], ids[3]])
@@ -660,8 +660,10 @@ mod tests {
 
             // Reconnect node 1. Other nodes should re-establish the connections.
             let (sender1, _receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
+            sender0.wait_for_ready(4).await.unwrap();
             sender1.wait_for_ready(4).await.unwrap();
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            sender2.wait_for_ready(4).await.unwrap();
+            sender3.wait_for_ready(3).await.unwrap();
             assert_eq!(sender0.all_alive_participant_ids(), sorted(&ids));
             assert_eq!(sender1.all_alive_participant_ids(), sorted(&ids));
             assert_eq!(sender2.all_alive_participant_ids(), sorted(&ids));

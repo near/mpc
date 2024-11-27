@@ -110,7 +110,9 @@ fn sha256hash(data: &[u8]) -> k256::Scalar {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DebugSignatureRequest {
     msg: String,
+    #[serde(default)]
     tweak: Scalar,
+    #[serde(default)]
     entropy: [u8; 32],
     #[serde(default)]
     repeat: Option<usize>,

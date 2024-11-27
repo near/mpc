@@ -337,7 +337,8 @@ pub mod testing {
                 .send(MpcPeerMessage {
                     from: self.my_participant_id,
                     message,
-                })?;
+                })
+                .ok(); // it's ok if receiver doesn't need it anymore
             Ok(())
         }
 

@@ -16,6 +16,7 @@ async fn test_basic_cluster() {
         output_dir: temp_dir.path().to_str().unwrap().to_string(),
         num_participants: NUM_PARTICIPANTS,
         threshold: THRESHOLD,
+        seed: Some(2),
     };
     generate_configs.run().await.unwrap();
 
@@ -54,22 +55,38 @@ async fn test_basic_cluster() {
         })
         .collect::<Vec<_>>();
 
-    // Give servers some time to start up.
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-
-    for i in 0..NUM_PARTICIPANTS {
-        let url = format!(
-            "http://{}:{}/debug/sign?msg=hello&repeat=10",
-            "127.0.0.1",
-            20000 + i
-        );
-        let response = reqwest::get(&url).await.unwrap();
-        assert!(
-            response.status().is_success(),
-            "Failed to get {}: {:?}",
-            url,
-            response
-        );
+    'outer: for i in 0..NUM_PARTICIPANTS {
+        for _ in 0..5 {
+            let url = format!(
+                "http://{}:{}/debug/sign?msg=hello&repeat=10",
+                "127.0.0.1",
+                22000 + i
+            );
+            let response = match reqwest::get(&url).await {
+                Ok(response) => response,
+                Err(e) => {
+                    tracing::error!("Failed to get response from node {}: {}", i, e);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
+            let response_success = response.status().is_success();
+            let response_debug = format!("{:?}", response);
+            let response_text = response.text().await.unwrap_or_default();
+            if !response_success {
+                tracing::error!(
+                    "Unsuccessful response from node {}: {}, error: {}",
+                    i,
+                    response_debug,
+                    response_text
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            } else {
+                tracing::info!("Got response from node {}: {}", i, response_text);
+                continue 'outer;
+            }
+        }
+        panic!("Failed to get response from node {}", i);
     }
 
     drop(normal_runs);
