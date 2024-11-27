@@ -6,6 +6,7 @@ use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
+use near_indexer_primitives::CryptoHash;
 
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -44,9 +45,6 @@ pub struct SignatureRequest {
     pub time_added: Instant,
 }
 
-// The index at which entropy appears in the `sign` function call outcome logs
-const ENTROPY_LOG_INDEX: usize = 1;
-
 pub(crate) async fn listen_blocks(
     stream: tokio::sync::mpsc::Receiver<near_indexer_primitives::StreamerMessage>,
     concurrency: std::num::NonZeroU16,
@@ -82,7 +80,11 @@ async fn handle_message(
                 continue;
             }
             tracing::info!(target: "mpc", "got execution outcome targeting {}", mpc_contract_id);
-            if let Some(_request) = maybe_get_signature_request(execution_outcome, receipt) {
+            if let Some(_request) = maybe_get_signature_request(
+                execution_outcome,
+                receipt,
+                streamer_message.block.header.random_value,
+            ) {
                 // Pass the request to mpc
             }
         }
@@ -99,6 +101,7 @@ async fn handle_message(
 fn maybe_get_signature_request(
     execution_outcome: ExecutionOutcomeWithIdView,
     receipt: ReceiptView,
+    entropy: CryptoHash,
 ) -> Option<SignatureRequest> {
     let outcome = execution_outcome.outcome;
     let ExecutionStatusView::SuccessReceiptId(receipt_id) = outcome.status else {
@@ -123,10 +126,6 @@ fn maybe_get_signature_request(
     }
     tracing::debug!(target: "mpc", "found `sign` function call");
 
-    if outcome.logs.is_empty() {
-        tracing::warn!(target: "mpc", "`sign` did not produce entropy");
-        return None;
-    }
     let sign_args = match serde_json::from_slice::<'_, UnvalidatedSignArgs>(&args) {
         Ok(parsed) => parsed,
         Err(err) => {
@@ -139,14 +138,6 @@ fn maybe_get_signature_request(
             target: "mpc",
             "`sign` did not produce payload correctly: {:?}",
             sign_args.request.payload,
-        );
-        return None;
-    };
-    let Ok(entropy) = serde_json::from_str::<'_, [u8; 32]>(&outcome.logs[ENTROPY_LOG_INDEX]) else {
-        tracing::warn!(
-            target: "mpc",
-            "`sign` did not produce entropy correctly: {:?}",
-            outcome.logs[ENTROPY_LOG_INDEX]
         );
         return None;
     };
@@ -170,7 +161,7 @@ fn maybe_get_signature_request(
         request_id: receipt_id.0,
         request,
         epsilon,
-        entropy,
+        entropy: entropy.into(),
         // TODO: use on-chain timestamp instead
         time_added: Instant::now(),
     })
