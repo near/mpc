@@ -46,7 +46,7 @@ pub fn derive_randomness(
     let encoded_msg_hash: &[u8] = &msg_hash.to_bytes()[..];
     let big_r_encoded_point = big_r.to_encoded_point(true);
     let encoded_big_r: &[u8] = big_r_encoded_point.as_bytes();
-    participants.sort_by_key(|p| p.0); // sort participants
+    participants.sort_by_key(|p| p.raw()); // sort participants
 
     // concatenate all the bytes
     let mut concatenation = Vec::new();
@@ -55,7 +55,7 @@ pub fn derive_randomness(
     concatenation.extend_from_slice(encoded_big_r);
     // Append each ParticipantId's
     for participant in participants {
-        let participant_bytes = participant.0.to_be_bytes();
+        let participant_bytes = participant.raw().to_be_bytes();
         concatenation.extend_from_slice(&participant_bytes);
     }
 

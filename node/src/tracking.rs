@@ -19,7 +19,9 @@ where
 }
 
 /// Like `spawn`, but if the task resolves to an error result, logs the result.
-pub fn spawn_checked<F, R>(description: &str, f: F) -> tokio::task::JoinHandle<anyhow::Result<R>>
+/// This swallows the result, so it should only be used for spawns whose results
+/// are not handled.
+pub fn spawn_checked<F, R>(description: &str, f: F) -> tokio::task::JoinHandle<()>
 where
     F: Future<Output = anyhow::Result<R>> + Send + 'static,
     R: Send + 'static,
@@ -30,10 +32,9 @@ where
     tokio::spawn(
         CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), async move {
             let result = f.await;
-            if let Err(err) = &result {
+            if let Err(err) = result {
                 tracing::error!("Task failed: {}: {}", description_clone, err);
             }
-            result
         }),
     )
 }

@@ -3,13 +3,14 @@ use crate::mpc_client::MpcClient;
 use crate::tracking::{self, TaskHandle};
 use actix_web::error::ErrorInternalServerError;
 use actix_web::{get, web};
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{stream, FutureExt, StreamExt, TryStreamExt};
 use k256::elliptic_curve::scalar::FromUintUnchecked;
 use k256::sha2::{Digest, Sha256};
 use k256::{Scalar, U256};
 use prometheus::{default_registry, Encoder};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 
 #[get("/metrics")]
 async fn metrics() -> String {
@@ -35,20 +36,23 @@ async fn debug_sign(
         .scope("debug_sign", async move {
             let msg_hash = sha256hash(query.msg.as_bytes());
             let repeat = query.repeat.unwrap_or(1);
-            let signatures = stream::iter(0..repeat)
-                .map(|_| async {
-                    let signature = tracking::spawn(
-                        "debug sign repeat",
-                        (**mpc_client)
+            let timeout = Duration::from_secs(query.timeout.unwrap_or(60));
+            let signatures = tokio::time::timeout(
+                timeout,
+                stream::iter(0..repeat)
+                    .map(|i| {
+                        tracking::spawn(
+                            &format!("debug sign #{}", i),
+                            (**mpc_client)
                             .clone()
                             .make_signature(msg_hash, query.tweak, query.entropy),
-                    )
-                    .await??;
-                    anyhow::Ok(signature)
-                })
-                .buffered(query.parallelism.unwrap_or(repeat))
-                .try_collect::<Vec<_>>()
-                .await?;
+                        )
+                        .map(|result| anyhow::Ok(result??))
+                    })
+                    .buffered(query.parallelism.unwrap_or(repeat))
+                    .try_collect::<Vec<_>>(),
+            )
+            .await??;
             anyhow::Ok(web::Json(
                 signatures
                     .into_iter()
@@ -81,6 +85,8 @@ struct DebugSignatureRequest {
     repeat: Option<usize>,
     #[serde(default)]
     parallelism: Option<usize>,
+    #[serde(default)]
+    timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
