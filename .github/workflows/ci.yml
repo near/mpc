@@ -24,7 +24,7 @@ jobs:
       - name: Fetch cargo cache
         uses: actions/cache@v4
         with:
-          key: cargo-cache
+          key: cargo-cache-${{ github.head_ref || github.ref_name }} 
           path: target
       
       - name: Run Clippy fmt
@@ -47,6 +47,6 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: target
-          key: cargo-cache
+          key: cargo-cache-${{ github.head_ref || github.ref_name }} 
 
           
