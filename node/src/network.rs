@@ -27,9 +27,11 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     /// message is sent doesn't guarantee that the recipient will receive it; that is up to
     /// the user of the networking layer to deal with.
     async fn send(&self, recipient_id: ParticipantId, message: MpcMessage) -> anyhow::Result<()>;
-    /// Waits until all nodes in the network have been connected to initially.
-    async fn wait_for_ready(&self) -> anyhow::Result<()>;
-
+    /// Waits until at least `threshold` nodes in the network have been connected to initially,
+    /// the threshold includes ourselves.
+    async fn wait_for_ready(&self, threshold: usize) -> anyhow::Result<()>;
+    /// Returns the participant IDs of all nodes in the network that are currently alive.
+    /// This is a subset of all_participant_ids, and includes our own participant ID.
     fn all_alive_participant_ids(&self) -> Vec<ParticipantId>;
 }
 
@@ -80,6 +82,8 @@ impl MeshNetworkClient {
         self.transport_sender.all_participant_ids()
     }
 
+    /// Returns the participant IDs of all nodes in the network that are currently alive.
+    /// This is a subset of all_participant_ids, and includes our own participant ID.
     pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
         self.transport_sender.all_alive_participant_ids()
     }
@@ -333,7 +337,7 @@ pub mod testing {
             Ok(())
         }
 
-        async fn wait_for_ready(&self) -> anyhow::Result<()> {
+        async fn wait_for_ready(&self, _threshold: usize) -> anyhow::Result<()> {
             Ok(())
         }
 
@@ -397,7 +401,7 @@ pub mod testing {
         FR: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
     {
         let participants = (0..num_participants)
-            .map(|id| ParticipantId(id as u32))
+            .map(|_| ParticipantId::from_raw(rand::random::<u32>()))
             .collect::<Vec<_>>();
         let transports = new_test_transports(participants.clone());
         let join_handles = transports
@@ -473,7 +477,7 @@ mod tests {
                 },
                 client.all_participant_ids(),
             )?;
-            handles.push(tracking::spawn_checked(
+            handles.push(tracking::spawn(
                 &format!("task {}", seed),
                 task_leader(channel, other_participant_ids.clone(), seed),
             ));
@@ -481,7 +485,7 @@ mod tests {
             let expected_total: u64 = other_participant_ids
                 .iter()
                 .map(|id| {
-                    let input = id.0 as u64 + seed;
+                    let input = id.raw() as u64 + seed;
                     input * input
                 })
                 .sum();
@@ -506,7 +510,7 @@ mod tests {
             channel.sender()(
                 *other_participant_id,
                 vec![borsh::to_vec(&TestTripleMessage {
-                    data: other_participant_id.0 as u64 + seed,
+                    data: other_participant_id.raw() as u64 + seed,
                 })
                 .unwrap()],
                 channel.participants.clone(),

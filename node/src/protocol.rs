@@ -148,7 +148,7 @@ struct MessageCounters {
 }
 
 impl MessageCounters {
-    pub fn new(name: String, participants: &Vec<ParticipantId>) -> Self {
+    pub fn new(name: String, participants: &[ParticipantId]) -> Self {
         Self {
             name,
             task: tracking::current_task(),

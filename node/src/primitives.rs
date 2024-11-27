@@ -14,13 +14,15 @@ use cait_sith::PresignOutput;
     Copy,
     PartialEq,
     Eq,
+    PartialOrd,
+    Ord,
     Hash,
     BorshSerialize,
     BorshDeserialize,
     Serialize,
     Deserialize,
 )]
-pub struct ParticipantId(pub u32);
+pub struct ParticipantId(u32);
 
 impl From<Participant> for ParticipantId {
     fn from(participant: Participant) -> Self {
@@ -31,6 +33,16 @@ impl From<Participant> for ParticipantId {
 impl From<ParticipantId> for Participant {
     fn from(participant_id: ParticipantId) -> Self {
         Participant::from(participant_id.0)
+    }
+}
+
+impl ParticipantId {
+    pub fn raw(self) -> u32 {
+        self.0
+    }
+
+    pub fn from_raw(raw: u32) -> Self {
+        ParticipantId(raw)
     }
 }
 
@@ -109,7 +121,7 @@ pub fn choose_random_participants(
     threshold: usize,
 ) -> Vec<ParticipantId> {
     assert!(participants.len() >= threshold);
-    let mut res: Vec<_> = participants
+    let mut res = participants
         .into_iter()
         .filter(|p| p != &me)
         .choose_multiple(&mut rand::thread_rng(), threshold - 1);
@@ -125,8 +137,8 @@ pub fn participants_from_triples(
         .1
         .participants
         .iter()
-        .cloned()
+        .copied()
         .filter(|p| triple1.1.participants.contains(p))
-        .map(From::from)
+        .map(|p| p.into())
         .collect()
 }

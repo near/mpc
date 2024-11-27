@@ -205,7 +205,7 @@ mod tests_many {
                     };
                     let participants =
                         choose_random_participants(all_participant_ids, participant_id, THRESHOLD);
-                    let result = tracking::spawn_checked(
+                    let result = tracking::spawn(
                         &format!("task {:?}", task_id),
                         run_many_triple_generation::<TRIPLES_PER_BATCH>(
                             client.new_channel_for_task(task_id, participants)?,

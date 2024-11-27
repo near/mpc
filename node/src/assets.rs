@@ -30,7 +30,8 @@ pub struct UniqueId(u128);
 impl UniqueId {
     /// Only for testing. Use `generate` or `pick_new_after` instead.
     pub fn new(participant_id: ParticipantId, timestamp: u64, counter: u32) -> Self {
-        let id = ((participant_id.0 as u128) << 96) | ((timestamp as u128) << 32) | counter as u128;
+        let id =
+            ((participant_id.raw() as u128) << 96) | ((timestamp as u128) << 32) | counter as u128;
         Self(id)
     }
 
@@ -44,7 +45,7 @@ impl UniqueId {
     }
 
     pub fn participant_id(&self) -> ParticipantId {
-        ParticipantId((self.0 >> 96) as u32)
+        ParticipantId::from_raw((self.0 >> 96) as u32)
     }
 
     pub fn timestamp(&self) -> u64 {
@@ -58,7 +59,7 @@ impl UniqueId {
     /// Returns the key prefix for the given participant ID. It can be used to
     /// perform a range query in the database for all keys for this participant.
     pub fn prefix_for_participant_id(participant_id: ParticipantId) -> Vec<u8> {
-        participant_id.0.to_be_bytes().to_vec()
+        participant_id.raw().to_be_bytes().to_vec()
     }
 
     /// Pick a new unique ID based on the current time, but ensuring that it is
@@ -212,7 +213,9 @@ where
         for item in db.iter_range(
             col,
             &UniqueId::prefix_for_participant_id(my_participant_id),
-            &UniqueId::prefix_for_participant_id(ParticipantId(my_participant_id.0 + 1)),
+            &UniqueId::prefix_for_participant_id(ParticipantId::from_raw(
+                my_participant_id.raw().checked_add(1).unwrap(),
+            )),
         ) {
             let (key, value) = item?;
             let id = UniqueId::try_from_slice(&key)?;
@@ -500,8 +503,9 @@ mod tests {
 
     #[test]
     fn test_unique_id() {
-        let id = UniqueId::new(ParticipantId(42), 123, 456);
-        assert_eq!(id.participant_id(), ParticipantId(42));
+        let participant_id = ParticipantId::from_raw(42);
+        let id = UniqueId::new(participant_id, 123, 456);
+        assert_eq!(id.participant_id(), participant_id);
         assert_eq!(id.timestamp(), 123);
         assert_eq!(id.counter(), 456);
         assert_eq!(id.add_to_counter(2).unwrap().counter(), 458);
@@ -515,10 +519,10 @@ mod tests {
             id
         );
         assert_eq!(
-            UniqueId::prefix_for_participant_id(ParticipantId(42)),
+            UniqueId::prefix_for_participant_id(participant_id),
             [0, 0, 0, 42]
         );
-        let time_based_1 = UniqueId::generate(ParticipantId(42));
+        let time_based_1 = UniqueId::generate(participant_id);
         let time_based_2 = time_based_1.pick_new_after();
         assert!(time_based_2 > time_based_1);
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -533,7 +537,7 @@ mod tests {
         let store = super::DistributedAssetStorage::<u32>::new(
             db,
             crate::db::DBCol::Triple,
-            ParticipantId(42),
+            ParticipantId::from_raw(42),
         )
         .unwrap();
         assert_eq!(store.num_owned(), 0);
@@ -575,7 +579,7 @@ mod tests {
         let store = super::DistributedAssetStorage::<u32>::new(
             db.clone(),
             crate::db::DBCol::Triple,
-            ParticipantId(42),
+            ParticipantId::from_raw(42),
         )
         .unwrap();
 
@@ -619,7 +623,7 @@ mod tests {
         let store = super::DistributedAssetStorage::<u32>::new(
             db,
             crate::db::DBCol::Triple,
-            ParticipantId(42),
+            ParticipantId::from_raw(42),
         )
         .unwrap();
         assert_eq!(store.take_owned().expect("queue is expected to have value"), (id5, 5));
@@ -633,11 +637,11 @@ mod tests {
         let store = super::DistributedAssetStorage::<u32>::new(
             db,
             crate::db::DBCol::Triple,
-            ParticipantId(42),
+            ParticipantId::from_raw(42),
         )
         .unwrap();
 
-        let other = ParticipantId(43);
+        let other = ParticipantId::from_raw(43);
         let id1 = UniqueId::new(other, 1, 0);
 
         // Put an unowned asset in, take it right after.
@@ -678,10 +682,11 @@ mod tests {
     fn test_distributed_store_persistence() {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let myself = ParticipantId::from_raw(42);
         let store = super::DistributedAssetStorage::<u32>::new(
             db.clone(),
             crate::db::DBCol::Triple,
-            ParticipantId(42),
+            myself,
         )
         .unwrap();
 
@@ -691,19 +696,16 @@ mod tests {
         store.add_owned(id1.add_to_counter(2).unwrap(), 3);
         store.add_owned(id1.add_to_counter(3).unwrap(), 4);
 
-        let other = ParticipantId(43);
+        let other = ParticipantId::from_raw(43);
         store.prepare_unowned(UniqueId::new(other, 1, 0)).commit(5);
         store.prepare_unowned(UniqueId::new(other, 2, 0)).commit(6);
         store.prepare_unowned(UniqueId::new(other, 3, 0)).commit(7);
         store.prepare_unowned(UniqueId::new(other, 4, 0)).commit(8);
 
         drop(store);
-        let store = super::DistributedAssetStorage::<u32>::new(
-            db,
-            crate::db::DBCol::Triple,
-            ParticipantId(42),
-        )
-        .unwrap();
+        let store =
+            super::DistributedAssetStorage::<u32>::new(db, crate::db::DBCol::Triple, myself)
+                .unwrap();
         assert_eq!(store.num_owned(), 4);
         assert_eq!(store.take_owned().expect("queue is expected to have value"), (id1, 1));
         assert_eq!(
