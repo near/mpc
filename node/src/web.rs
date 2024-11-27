@@ -39,7 +39,9 @@ async fn debug_sign(
                 .map(|_| async {
                     let signature = tracking::spawn(
                         "debug sign repeat",
-                        (**mpc_client).clone().make_signature(msg_hash),
+                        (**mpc_client)
+                            .clone()
+                            .make_signature(msg_hash, query.tweak, query.entropy),
                     )
                     .await??;
                     anyhow::Ok(signature)
@@ -73,6 +75,8 @@ fn sha256hash(data: &[u8]) -> k256::Scalar {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DebugSignatureRequest {
     msg: String,
+    tweak: Scalar,
+    entropy: [u8; 32],
     #[serde(default)]
     repeat: Option<usize>,
     #[serde(default)]

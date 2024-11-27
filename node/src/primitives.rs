@@ -68,5 +68,7 @@ pub enum MpcTaskId {
         presignature_id: u64,
         // TODO(#9): We need a proof for any signature requests
         msg_hash: [u8; 32],
+        tweak: [u8; 32],
+        entropy: [u8; 32],
     },
 }

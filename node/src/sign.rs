@@ -93,19 +93,18 @@ pub async fn sign(
 
     // rerandomize the presignature: a variant of [GS21]
     let PresignOutput { big_r, k, sigma } = presign_out;
-    let delta: Scalar = derive_randomness(
-                keygen_out.public_key,
-                msg_hash,
-                big_r,
-                participants.clone(),
-                entropy
-                );
-
+    let delta = derive_randomness(
+        keygen_out.public_key,
+        msg_hash,
+        big_r,
+        participants.clone(),
+        entropy,
+    );
 
     // we use the default inversion: it is absolutely fine to use a
     // variable time inversion since delta is a public value
     let inverted_delta = delta.invert().unwrap();
-    let presign_out: PresignOutput<Secp256k1> = PresignOutput {
+    let presign_out = PresignOutput {
         // R' = [delta] R
         big_r: (big_r * delta).to_affine(),
         // k' = k/delta
