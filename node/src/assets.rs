@@ -410,7 +410,7 @@ impl<T> ProtocolsStorage<T>
         participants: Vec<ParticipantId>,
     ) {
         let mut last_alive_participants = self.last_alive_participants.lock().unwrap();
-        if &*last_alive_participants != &participants {
+        if *last_alive_participants != participants {
             tracing::info!("Set of active participants changed from {:?} to {:?}", last_alive_participants, participants);
             *last_alive_participants = participants;
         }
@@ -471,7 +471,7 @@ mod tests {
     #[test]
     fn test_double_queue() {
         let queue = DoubleQueue::<i32>::new();
-        let common_id = UniqueId::new(ParticipantId(42), 123, 456);
+        let common_id = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
         queue.add_owned(common_id, 0);
         queue.add_owned(common_id, 1);
         queue.add_owned(common_id, 2);
