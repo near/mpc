@@ -155,6 +155,8 @@ where
     }
 
     pub fn set_of_alive_participants_has_changed(&self) {
+        // All presented elements may have a chance to satisfy condition(&value.0, &value.1) call since that moment
+        // So increase cold_available to current size of the cold_queue
         let mut cold_queue = self.cold_queue.lock().unwrap();
         cold_queue.cold_available = cold_queue.cold_queue.len();
     }
@@ -168,6 +170,8 @@ where
         condition: impl Fn(&UniqueId, &T) -> bool,
     ) -> (UniqueId, T) {
         loop {
+            // Try first to retrieve value which may be eligible now
+            // (but wasn't in the past)
             let value_opt = {
                 let mut cold_queue = self.cold_queue.lock().unwrap();
                 if cold_queue.cold_available == 0 {
