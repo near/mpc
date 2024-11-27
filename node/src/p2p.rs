@@ -499,6 +499,7 @@ impl MeshNetworkTransportSender for QuicMeshSender {
             .iter()
             .filter(|(_, conn)| conn.is_alive.load(Ordering::Relaxed))
             .map(|(p, _)| *p)
+            .chain([self.my_id])
             .collect();
         // Make it stable for testing.
         ids.sort();
