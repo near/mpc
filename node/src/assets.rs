@@ -271,7 +271,10 @@ where
             .expect("Unrecoverable error writing to database");
         Ok((id, asset))
     }
-    
+
+
+    /// used for tests
+    #[allow(dead_code)]
     pub fn take_owned(&self) -> anyhow::Result<(UniqueId, T)> {
         self.take_owned_with_condition(|_, _| true)
     }
@@ -382,7 +385,7 @@ where
 pub struct ProtocolsStorage<T>
 where T: Serialize + DeserializeOwned + Send + HasParticipants + 'static {
     storage: DistributedAssetStorage<T>,
-    last_active_participants: Arc<Mutex<Vec<ParticipantId>>>
+    last_alive_participants: Arc<Mutex<Vec<ParticipantId>>>
 }
 
 impl<T> ProtocolsStorage<T>
@@ -395,15 +398,19 @@ impl<T> ProtocolsStorage<T>
     ) -> anyhow::Result<Self> {
         Ok(Self {
             storage: DistributedAssetStorage::<T>::new(db, col, my_participant_id)?,
-            last_active_participants: Arc::new(Mutex::new(all_participant_ids)),
+            last_alive_participants: Arc::new(Mutex::new(all_participant_ids)),
         })
     }
 
-    pub fn set_active_participants_ids(
+    pub fn set_alive_participants_ids(
         &self,
         participants: Vec<ParticipantId>,
     ) {
-        *self.last_active_participants.lock().unwrap() = participants;
+        let mut last_alive_participants = self.last_alive_participants.lock().unwrap();
+        if &*last_alive_participants != &participants {
+            tracing::info!("Set of active participants changed from {:?} to {:?}", last_alive_participants, participants);
+            *last_alive_participants = participants;
+        }
     }
 
     pub fn generate_and_reserve_id_range(&self, count: u32) -> UniqueId {
@@ -419,10 +426,11 @@ impl<T> ProtocolsStorage<T>
         self.storage.num_owned() * 2
     }
 
-    pub async fn take_owned(&self) -> (UniqueId, T) {
+    pub async fn take_owned(&self, alive_participants_ids: Vec<ParticipantId>) -> (UniqueId, T) {
+        self.set_alive_participants_ids(alive_participants_ids);
         loop {
             {
-                let active_participants = self.last_active_participants.lock().unwrap();
+                let active_participants = self.last_alive_participants.lock().unwrap();
                 let is_subset_of_active_participants = |_: &UniqueId, value: &T| {
                     value.is_subset_of_active_participants(&active_participants)
                 };
