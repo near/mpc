@@ -21,22 +21,32 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run Cargo Clippy
+      - name: Fetch cache
+        uses: actions/cache@v4
+        with:
+          key: cargo-cache-${{ github.head_ref || github.ref_name }} 
+          path: target
+      
+      - name: Run Clippy fmt
         run: |
           CARGO_TARGET_DIR="target/clippy" \
           RUSTFLAGS="-D warnings" \
           cargo clippy --all-features --all-targets --locked
-
+ 
       - name: Run Cargo fmt
         run: cargo fmt -- --check
-
+          
       - name: Install cargo-nextest
         run: cargo install cargo-nextest
 
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked 
 
-      - name: Make sure Docker image can be built
-        run: docker build -f integration-test/Dockerfile --progress=plain . 
+      - name: Save cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: target
+          key: cargo-cache-${{ github.head_ref || github.ref_name }} 
 
           

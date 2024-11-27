@@ -134,7 +134,7 @@ impl Cli {
 
                 root_task.await?;
                 if let Some(h) = indexer_handle {
-                    h.join().unwrap()
+                    h.join().unwrap();
                 }
 
                 Ok(())
@@ -144,7 +144,7 @@ impl Cli {
                 num_participants,
                 threshold,
             } => {
-                let configs = generate_test_p2p_configs(num_participants, threshold)?;
+                let configs = generate_test_p2p_configs(num_participants, threshold, 0)?;
                 for (i, config) in configs.into_iter().enumerate() {
                     let subdir = format!("{}/{}", output_dir, i);
                     std::fs::create_dir_all(&subdir)?;
@@ -159,7 +159,7 @@ impl Cli {
                         indexer: Some(IndexerConfig {
                             stream_while_syncing: false,
                             validate_genesis: true,
-                            sync_mode: SyncMode::SyncFromInterruption,
+                            sync_mode: SyncMode::Interruption,
                             concurrency: NonZero::new(1).unwrap(),
                         }),
                         key_generation: KeyGenerationConfig { timeout_sec: 60 },

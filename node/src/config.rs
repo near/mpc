@@ -78,11 +78,11 @@ pub struct IndexerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncMode {
     /// continue from the block Indexer was interrupted
-    SyncFromInterruption,
+    Interruption,
     /// start from the newest block after node finishes syncing
-    SyncFromLatest,
+    Latest,
     /// start from specified block height
-    SyncFromBlock(BlockArgs),
+    Block(BlockArgs),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
