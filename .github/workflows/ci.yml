@@ -6,8 +6,9 @@ concurrency:
 
 on:
   workflow_dispatch:
-  # pull_request:
-  # merge_group:
+  pull_request:
+  merge_group:
+    
 
 jobs:
   ci-tests:
