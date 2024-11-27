@@ -515,8 +515,8 @@ mod tests {
         queue.add_owned(id, 0);
         queue.add_owned(id.add_to_counter(1).unwrap(), 1);
         queue.add_owned(id.add_to_counter(2).unwrap(), 2);
-        let asset1_fut = queue.take_owned_with_condition(|_, _| false);
-        let MaybeDone::Future(asset1_fut) = maybe_done(asset1_fut) else {
+        let never_done_fut = queue.take_owned_with_condition(|_, _| false);
+        let MaybeDone::Future(never_done_fut) = maybe_done(never_done_fut) else {
             panic!("should not be able to take value with false condition");
         };
         let (retrieved_id, value) = queue
@@ -526,24 +526,33 @@ mod tests {
         assert_eq!(retrieved_id, id.add_to_counter(1).unwrap());
         assert_eq!(value, 1);
 
-        // let (id, value) = queue.take_owned_conditioned(|_, _| true).unwrap();
-        // assert_eq!(id, common_id);
-        // assert_eq!(value, 2);
-        //
-        // let Err(_) = queue.take_owned_conditioned(|_, _| false) else {
-        //     panic!("should not be able to take value with false condition");
-        // };
-        //
-        // let (id, value) = queue.take_owned_conditioned(|_, _| true).unwrap();
-        // assert_eq!(id, common_id);
-        // assert_eq!(value, 0);
-        //
-        // let Err(_) = queue.take_owned_conditioned(|_, _| true) else {
-        //     panic!("should not be able to take value from empty queue");
-        // };
-        //
-        // let asset1_fut = queue.take_owned_with_condition(|_, _| false);
-        let MaybeDone::Future(_) = maybe_done(asset1_fut) else {
+        let asset0_fut = queue.take_owned_with_condition(|_, value| value == &0);
+
+        let MaybeDone::Future(asset0_fut) = maybe_done(asset0_fut) else {
+            panic!("should not be able to take value which is in cold queue yet");
+        };
+
+        let asset2_fut = queue.take_owned_with_condition(|_, value| value == &2);
+
+        let MaybeDone::Future(asset0_fut) = maybe_done(asset0_fut) else {
+            panic!("value 2 should be in the cold queue");
+        };
+
+        queue.set_of_alive_participants_has_changed();
+        let (retrieved_id, value) = asset2_fut.now_or_never().unwrap();
+        assert_eq!(retrieved_id, id.add_to_counter(2).unwrap());
+        assert_eq!(value, 2);
+
+        let MaybeDone::Future(asset0_fut) = maybe_done(asset0_fut) else {
+            panic!("value 0 still should be in the cold queue with counter 0");
+        };
+
+        queue.set_of_alive_participants_has_changed();
+        let (retrieved_id, value) = asset0_fut.now_or_never().unwrap();
+        assert_eq!(retrieved_id, id);
+        assert_eq!(value, 0);
+
+        let MaybeDone::Future(_) = maybe_done(never_done_fut) else {
             panic!("should not be able to take value with false condition");
         };
     }
