@@ -1,17 +1,14 @@
 use crate::indexer::stats::IndexerStats;
 use crypto_shared::{derive_epsilon, ScalarExt};
 use k256::Scalar;
-use near_indexer::IndexerExecutionOutcomeWithReceipt;
 use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
-use near_indexer_primitives::CryptoHash;
 
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::time::Instant;
 use tokio::sync::Mutex;
 
 /// Arguments passed to a `sign` function call on-chain
@@ -42,7 +39,7 @@ pub struct SignatureRequest {
     pub request: SignArgs,
     pub epsilon: Scalar,
     pub entropy: [u8; 32],
-    pub time_added: Instant,
+    pub timestamp_nanoesec: u64,
 }
 
 pub(crate) async fn listen_blocks(
@@ -70,25 +67,31 @@ async fn handle_message(
     stats_lock.block_heights_processing.insert(block_height);
     drop(stats_lock);
 
-    for shard in streamer_message.shards {
-        for outcome in shard.receipt_execution_outcomes {
-            let IndexerExecutionOutcomeWithReceipt {
-                execution_outcome,
-                receipt,
-            } = outcome;
-            if execution_outcome.outcome.executor_id != *mpc_contract_id {
-                continue;
-            }
-            tracing::info!(target: "mpc", "got execution outcome targeting {}", mpc_contract_id);
-            if let Some(_request) = maybe_get_signature_request(
-                execution_outcome,
-                receipt,
-                streamer_message.block.header.random_value,
-            ) {
-                // Pass the request to mpc
-            }
-        }
-    }
+    // TODO: pass the signature requests to the MPC node
+    let _signature_requests: Vec<SignatureRequest> = streamer_message
+        .shards
+        .iter()
+        .map(|shard| {
+            shard
+                .receipt_execution_outcomes
+                .iter()
+                .filter_map(|outcome| {
+                    let receipt = outcome.receipt.clone();
+                    let execution_outcome = outcome.execution_outcome.clone();
+                    let sign_args =
+                        maybe_get_sign_args(&receipt, &execution_outcome, mpc_contract_id.clone())?;
+                    let epsilon = derive_epsilon(&receipt.predecessor_id, &sign_args.path);
+                    Some(SignatureRequest {
+                        request_id: receipt.receipt_id.0,
+                        request: sign_args,
+                        epsilon,
+                        entropy: streamer_message.block.header.random_value.into(),
+                        timestamp_nanoesec: streamer_message.block.header.timestamp_nanosec,
+                    })
+                })
+        })
+        .flatten()
+        .collect::<Vec<_>>();
 
     let mut stats_lock = stats.lock().await;
     stats_lock.block_heights_processing.remove(&block_height);
@@ -98,16 +101,19 @@ async fn handle_message(
     Ok(())
 }
 
-fn maybe_get_signature_request(
-    execution_outcome: ExecutionOutcomeWithIdView,
-    receipt: ReceiptView,
-    entropy: CryptoHash,
-) -> Option<SignatureRequest> {
-    let outcome = execution_outcome.outcome;
+fn maybe_get_sign_args(
+    receipt: &ReceiptView,
+    execution_outcome: &ExecutionOutcomeWithIdView,
+    mpc_contract_id: AccountId,
+) -> Option<SignArgs> {
+    let outcome = &execution_outcome.outcome;
+    if outcome.executor_id != *mpc_contract_id {
+        return None;
+    }
     let ExecutionStatusView::SuccessReceiptId(receipt_id) = outcome.status else {
         return None;
     };
-    let ReceiptEnumView::Action { actions, .. } = receipt.receipt else {
+    let ReceiptEnumView::Action { ref actions, .. } = receipt.receipt else {
         return None;
     };
     if actions.len() != 1 {
@@ -141,7 +147,6 @@ fn maybe_get_signature_request(
         );
         return None;
     };
-    let epsilon = derive_epsilon(&receipt.predecessor_id, &sign_args.request.path);
 
     tracing::info!(
         target: "mpc",
@@ -149,20 +154,11 @@ fn maybe_get_signature_request(
         caller_id = receipt.predecessor_id.to_string(),
         payload = hex::encode(sign_args.request.payload),
         key_version = sign_args.request.key_version,
-        entropy = hex::encode(entropy),
         "indexed new `sign` function call"
     );
-    let request = SignArgs {
+    Some(SignArgs {
         payload,
         path: sign_args.request.path,
         key_version: sign_args.request.key_version,
-    };
-    Some(SignatureRequest {
-        request_id: receipt_id.0,
-        request,
-        epsilon,
-        entropy: entropy.into(),
-        // TODO: use on-chain timestamp instead
-        time_added: Instant::now(),
     })
 }
