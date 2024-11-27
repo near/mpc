@@ -6,6 +6,7 @@ mod background;
 mod cli;
 mod config;
 mod db;
+mod hkdf;
 mod indexer;
 mod key_generation;
 mod metrics;

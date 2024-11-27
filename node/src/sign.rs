@@ -1,6 +1,7 @@
 use crate::assets::{ProtocolsStorage, UniqueId};
 use crate::background::InFlightGenerationTracker;
 use crate::config::PresignatureConfig;
+use crate::hkdf::derive_randomness;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{participants_from_triples, ParticipantId, PresignOutputWithParticipants};
 use crate::protocol::run_protocol;
@@ -71,6 +72,8 @@ pub async fn sign(
     keygen_out: KeygenOutput<Secp256k1>,
     presign_out: PresignOutput<Secp256k1>,
     msg_hash: Scalar,
+    tweak: Scalar,
+    entropy: [u8; 32],
 ) -> anyhow::Result<FullSignature<Secp256k1>> {
     let cs_participants = channel
         .participants
@@ -78,6 +81,29 @@ pub async fn sign(
         .copied()
         .map(Participant::from)
         .collect::<Vec<_>>();
+
+    // rerandomize the presignature: a variant of [GS21]
+    let PresignOutput { big_r, k, sigma } = presign_out;
+    let delta = derive_randomness(
+        keygen_out.public_key,
+        msg_hash,
+        big_r,
+        channel.participants.clone(),
+        entropy,
+    );
+
+    // we use the default inversion: it is absolutely fine to use a
+    // variable time inversion since delta is a public value
+    let inverted_delta = delta.invert().unwrap();
+    let presign_out = PresignOutput {
+        // R' = [delta] R
+        big_r: (big_r * delta).to_affine(),
+        // k' = k/delta
+        k: k * inverted_delta,
+        // sigma = sigma/delta + k tweak/delta
+        sigma: (sigma + tweak * k) * inverted_delta,
+    };
+
     let protocol = cait_sith::sign::<Secp256k1>(
         &cs_participants,
         me.into(),
