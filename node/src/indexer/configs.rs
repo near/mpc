@@ -22,9 +22,9 @@ impl IndexerConfig {
 impl From<SyncMode> for near_indexer::SyncModeEnum {
     fn from(sync_mode: SyncMode) -> Self {
         match sync_mode {
-            SyncMode::SyncFromInterruption => Self::FromInterruption,
-            SyncMode::SyncFromLatest => Self::LatestSynced,
-            SyncMode::SyncFromBlock(args) => Self::BlockHeight(args.height),
+            SyncMode::Interruption => Self::FromInterruption,
+            SyncMode::Latest => Self::LatestSynced,
+            SyncMode::Block(args) => Self::BlockHeight(args.height),
         }
     }
 }
