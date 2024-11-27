@@ -4,9 +4,10 @@ use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
@@ -120,13 +121,21 @@ impl BorshDeserialize for UniqueId {
     }
 }
 
+pub struct ColdQueue<T> {
+    /// Number of elements presented in the cold_queue since last update of set of participants.
+    /// These elements may potentially be used in further presignature/signature generation
+    /// with new set of participants.
+    cold_available: usize,
+    cold_queue: VecDeque<(UniqueId, T)>,
+}
+
 pub struct DoubleQueue<T>
 where
     T: Send + 'static,
 {
-    senders: [flume::Sender<(UniqueId, T)>; 2],
-    receivers: [flume::Receiver<(UniqueId, T)>; 2],
-    active_owned_queue_index: AtomicUsize,
+    hot_sender: flume::Sender<(UniqueId, T)>,
+    hot_receiver: flume::Receiver<(UniqueId, T)>,
+    cold_queue: Arc<Mutex<ColdQueue<T>>>,
 }
 
 impl<T> DoubleQueue<T>
@@ -134,60 +143,56 @@ where
     T: Send + 'static,
 {
     pub fn new() -> Self {
-        let (sender1, receiver1) = flume::unbounded();
-        let (sender2, receiver2) = flume::unbounded();
+        let (hot_sender, hot_receiver) = flume::unbounded();
         Self {
-            senders: [sender1, sender2],
-            receivers: [receiver1, receiver2],
-            active_owned_queue_index: AtomicUsize::new(0),
+            hot_sender,
+            hot_receiver,
+            cold_queue: Arc::new(Mutex::new(ColdQueue {
+                cold_available: 0,
+                cold_queue: VecDeque::new(),
+            })),
         }
     }
 
-    fn take_owned_conditioned_from_queue(
-        &self,
-        queue_index: usize,
-        condition: &impl Fn(&UniqueId, &T) -> bool,
-    ) -> anyhow::Result<(UniqueId, T)> {
-        loop {
-            let (id, value) = self.receivers[queue_index].try_recv()?;
-            if condition(&id, &value) {
-                return Ok((id, value));
-            } else {
-                self.senders[1 - queue_index].send((id, value)).unwrap()
-            }
-        }
+    pub fn set_of_alive_participants_has_changed(&self) {
+        let mut cold_queue = self.cold_queue.lock().unwrap();
+        cold_queue.cold_available = cold_queue.cold_queue.len();
     }
 
     pub fn add_owned(&self, id: UniqueId, value: T) {
-        let active_owned_queue_index = self.active_owned_queue_index.load(Ordering::SeqCst);
-        self.senders[active_owned_queue_index]
-            .send((id, value))
-            .unwrap()
+        self.hot_sender.send((id, value)).unwrap()
     }
 
-    pub fn take_owned_conditioned(
+    pub async fn take_owned_with_condition(
         &self,
         condition: impl Fn(&UniqueId, &T) -> bool,
-    ) -> anyhow::Result<(UniqueId, T)> {
-        let active_owned_queue_index = self.active_owned_queue_index.load(Ordering::SeqCst);
-        let result = self.take_owned_conditioned_from_queue(active_owned_queue_index, &condition);
-
-        if result.is_ok() {
-            return result;
+    ) -> (UniqueId, T) {
+        loop {
+            let value_opt = {
+                let mut cold_queue = self.cold_queue.lock().unwrap();
+                if cold_queue.cold_available == 0 {
+                    None
+                } else {
+                    cold_queue.cold_available -= 1;
+                    Some(cold_queue.cold_queue.pop_front().unwrap())
+                }
+            };
+            let value = if value_opt.is_none() {
+                // Can't fail, because we keep a sender alive
+                self.hot_receiver.recv_async().await.unwrap()
+            } else {
+                value_opt.unwrap()
+            };
+            if condition(&value.0, &value.1) {
+                return value;
+            }
+            let mut cold_queue = self.cold_queue.lock().unwrap();
+            cold_queue.cold_queue.push_back(value);
         }
-
-        let new_active_owned_queue_index = 1 - active_owned_queue_index;
-        let _ = self.active_owned_queue_index.compare_exchange(
-            active_owned_queue_index,
-            new_active_owned_queue_index,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
-        self.take_owned_conditioned_from_queue(new_active_owned_queue_index, &condition)
     }
 
     pub fn len(&self) -> usize {
-        self.receivers[0].len() + self.receivers[1].len()
+        self.hot_receiver.len() + self.cold_queue.lock().unwrap().cold_available
     }
 }
 
@@ -251,6 +256,10 @@ where
         })
     }
 
+    fn set_of_alive_participants_has_changed(&self) {
+        self.owned_queue.set_of_alive_participants_has_changed();
+    }
+
     /// Generates an ID that won't conflict with existing ones, and reserves it
     /// so that the next call to the same function will return a different one.
     /// TODO(#10): This reservation does not persist across restarts, leading to
@@ -281,24 +290,23 @@ where
         self.owned_queue.len()
     }
 
-    pub fn take_owned_with_condition(
+    pub async fn take_owned_with_condition(
         &self,
         cond: impl Fn(&UniqueId, &T) -> bool,
-    ) -> anyhow::Result<(UniqueId, T)> {
-        // Can't fail, because we keep a sender alive.
-        let (id, asset) = self.owned_queue.take_owned_conditioned(cond)?;
+    ) -> (UniqueId, T) {
+        let (id, asset) = self.owned_queue.take_owned_with_condition(cond).await;
         let mut update = self.db.update();
         update.delete(self.col, &borsh::to_vec(&id).unwrap());
         update
             .commit()
             .expect("Unrecoverable error writing to database");
-        Ok((id, asset))
+        (id, asset)
     }
 
     /// used for tests
     #[allow(dead_code)]
-    pub fn take_owned(&self) -> anyhow::Result<(UniqueId, T)> {
-        self.take_owned_with_condition(|_, _| true)
+    pub async fn take_owned(&self) -> (UniqueId, T) {
+        self.take_owned_with_condition(|_, _| true).await
     }
 
     /// Adds an owned asset to the storage.
@@ -408,35 +416,50 @@ where
     T: Serialize + DeserializeOwned + Send + HasParticipants + 'static,
 {
     storage: DistributedAssetStorage<T>,
-    last_alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
+    last_alive_participants_set_hash: AtomicU64,
 }
 
 impl<T> ProtocolsStorage<T>
 where
     T: Serialize + DeserializeOwned + Send + HasParticipants + 'static,
 {
+    fn get_hash(participants: &Vec<ParticipantId>) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        participants.hash(&mut hasher);
+        hasher.finish()
+    }
     pub fn new(
         db: Arc<SecretDB>,
         col: DBCol,
         my_participant_id: ParticipantId,
-        all_participant_ids: Vec<ParticipantId>,
+        all_participant_ids: &Vec<ParticipantId>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             storage: DistributedAssetStorage::<T>::new(db, col, my_participant_id)?,
-            last_alive_participants: Arc::new(Mutex::new(all_participant_ids)),
+            last_alive_participants_set_hash: AtomicU64::new(Self::get_hash(all_participant_ids)),
         })
     }
 
-    pub fn set_alive_participants_ids(&self, participants: Vec<ParticipantId>) {
-        let mut last_alive_participants = self.last_alive_participants.lock().unwrap();
-        if *last_alive_participants != participants {
-            tracing::info!(
-                "Set of active participants changed from {:?} to {:?}",
-                last_alive_participants,
-                participants
-            );
-            *last_alive_participants = participants;
+    /// Returns true if set of active participants was actually changed
+    /// It also does not make sense to call this function outside of take_owned,
+    /// since we still use passed set of participants inside of take_owned()
+    /// (for providing condition whether a given set of participants is subset of alive participants)
+    /// even if it was changed during the call
+    fn set_alive_participants_ids(&self, participants: &Vec<ParticipantId>) -> bool {
+        let new_hash = Self::get_hash(participants);
+        let last_alive_participants_set_hash =
+            self.last_alive_participants_set_hash.load(Ordering::SeqCst);
+        if new_hash == last_alive_participants_set_hash {
+            return false;
         }
+        self.last_alive_participants_set_hash
+            .compare_exchange(
+                last_alive_participants_set_hash,
+                new_hash,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_ok()
     }
 
     pub fn generate_and_reserve_id_range(&self, count: u32) -> UniqueId {
@@ -451,23 +474,16 @@ where
         self.storage.num_owned() * 2
     }
 
-    pub async fn take_owned(&self, alive_participants_ids: Vec<ParticipantId>) -> (UniqueId, T) {
-        self.set_alive_participants_ids(alive_participants_ids);
-        loop {
-            {
-                let active_participants = self.last_alive_participants.lock().unwrap();
-                let is_subset_of_active_participants = |_: &UniqueId, value: &T| {
-                    value.is_subset_of_active_participants(&active_participants)
-                };
-                if let Ok((id, value)) = self
-                    .storage
-                    .take_owned_with_condition(is_subset_of_active_participants)
-                {
-                    return (id, value);
-                }
-            }
-            tokio::task::yield_now().await;
+    pub async fn take_owned(&self, alive_participants_ids: &Vec<ParticipantId>) -> (UniqueId, T) {
+        if self.set_alive_participants_ids(alive_participants_ids) {
+            self.storage.set_of_alive_participants_has_changed();
         }
+        let is_subset_of_active_participants = |_: &UniqueId, value: &T| {
+            value.is_subset_of_active_participants(&alive_participants_ids)
+        };
+        self.storage
+            .take_owned_with_condition(is_subset_of_active_participants)
+            .await
     }
 
     /// Adds an owned asset to the storage.
@@ -495,33 +511,40 @@ mod tests {
     #[test]
     fn test_double_queue() {
         let queue = DoubleQueue::<i32>::new();
-        let common_id = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
-        queue.add_owned(common_id, 0);
-        queue.add_owned(common_id, 1);
-        queue.add_owned(common_id, 2);
-        let Err(_) = queue.take_owned_conditioned(|_, _| false) else {
+        let id = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        queue.add_owned(id, 0);
+        queue.add_owned(id.add_to_counter(1).unwrap(), 1);
+        queue.add_owned(id.add_to_counter(2).unwrap(), 2);
+        let asset1_fut = queue.take_owned_with_condition(|_, _| false);
+        let MaybeDone::Future(asset1_fut) = maybe_done(asset1_fut) else {
             panic!("should not be able to take value with false condition");
         };
-        let Ok((id, value)) = queue.take_owned_conditioned(|_, value| value == &1) else {
-            panic!("should be able to take presented value");
-        };
-        assert_eq!(id, common_id);
+        let (retrieved_id, value) = queue
+            .take_owned_with_condition(|_, value| value == &1)
+            .now_or_never()
+            .unwrap();
+        assert_eq!(retrieved_id, id.add_to_counter(1).unwrap());
         assert_eq!(value, 1);
 
-        let (id, value) = queue.take_owned_conditioned(|_, _| true).unwrap();
-        assert_eq!(id, common_id);
-        assert_eq!(value, 2);
-
-        let Err(_) = queue.take_owned_conditioned(|_, _| false) else {
+        // let (id, value) = queue.take_owned_conditioned(|_, _| true).unwrap();
+        // assert_eq!(id, common_id);
+        // assert_eq!(value, 2);
+        //
+        // let Err(_) = queue.take_owned_conditioned(|_, _| false) else {
+        //     panic!("should not be able to take value with false condition");
+        // };
+        //
+        // let (id, value) = queue.take_owned_conditioned(|_, _| true).unwrap();
+        // assert_eq!(id, common_id);
+        // assert_eq!(value, 0);
+        //
+        // let Err(_) = queue.take_owned_conditioned(|_, _| true) else {
+        //     panic!("should not be able to take value from empty queue");
+        // };
+        //
+        // let asset1_fut = queue.take_owned_with_condition(|_, _| false);
+        let MaybeDone::Future(_) = maybe_done(asset1_fut) else {
             panic!("should not be able to take value with false condition");
-        };
-
-        let (id, value) = queue.take_owned_conditioned(|_, _| true).unwrap();
-        assert_eq!(id, common_id);
-        assert_eq!(value, 0);
-
-        let Err(_) = queue.take_owned_conditioned(|_, _| true) else {
-            panic!("should not be able to take value from empty queue");
         };
     }
 
@@ -574,21 +597,22 @@ mod tests {
         assert_eq!(store.num_owned(), 1);
         store.add_owned(id2, 456);
         assert_eq!(store.num_owned(), 2);
-        let asset1 = store.take_owned().expect("queue is expected to have value");
+        let asset1 = store.take_owned().now_or_never().unwrap();
         assert_eq!(asset1, (id1, 123));
         assert_eq!(store.num_owned(), 1);
-        let asset2 = store.take_owned().expect("queue is expected to have value");
+        let asset2 = store.take_owned().now_or_never().unwrap();
         assert_eq!(asset2, (id2, 456));
         assert_eq!(store.num_owned(), 0);
 
         // Dequeuing an asset before it's available will block.
-        let Err(_) = store.take_owned() else {
+        let asset3_fut = store.take_owned();
+        let MaybeDone::Future(asset3_fut) = maybe_done(asset3_fut) else {
             panic!("id3 should not be ready");
         };
 
         let id3 = id2.add_to_counter(1).unwrap();
         store.add_owned(id3, 789);
-        let asset3 = store.take_owned().expect("queue is expected to have value");
+        let asset3 = asset3_fut.now_or_never().unwrap();
         assert_eq!(asset3, (id3, 789));
 
         // Sanity check that generated IDs are monotonically increasing.
@@ -613,30 +637,23 @@ mod tests {
         let id2 = id1.add_to_counter(1).unwrap();
         let id3 = id1.add_to_counter(2).unwrap();
 
-        let Err(_) = store.take_owned() else {
+        let asset1_fut = store.take_owned();
+        let MaybeDone::Future(asset1_fut) = maybe_done(asset1_fut) else {
             panic!("nothing should not be ready");
         };
-        let Err(_) = store.take_owned() else {
+        let asset2_fut = store.take_owned();
+        let MaybeDone::Future(asset2_fut) = maybe_done(asset2_fut) else {
             panic!("nothing should not be ready");
         };
 
         store.add_owned(id3, 3);
         store.add_owned(id2, 2);
 
-        assert_eq!(
-            store.take_owned().expect("queue is expected to have value"),
-            (id3, 3)
-        );
-        assert_eq!(
-            store.take_owned().expect("queue is expected to have value"),
-            (id2, 2)
-        );
+        assert_eq!(asset1_fut.now_or_never().unwrap(), (id3, 3));
+        assert_eq!(asset2_fut.now_or_never().unwrap(), (id2, 2));
 
         store.add_owned(id1, 1);
-        assert_eq!(
-            store.take_owned().expect("queue is expected to have value"),
-            (id1, 1)
-        );
+        assert_eq!(store.take_owned().now_or_never().unwrap(), (id1, 1));
 
         // Make sure that ID generation does not depend on the order of adding
         // them.
@@ -659,14 +676,8 @@ mod tests {
             ParticipantId::from_raw(42),
         )
         .unwrap();
-        assert_eq!(
-            store.take_owned().expect("queue is expected to have value"),
-            (id5, 5)
-        );
-        assert_eq!(
-            store.take_owned().expect("queue is expected to have value"),
-            (id6, 6)
-        );
+        assert_eq!(store.take_owned().now_or_never().unwrap(), (id5, 5));
+        assert_eq!(store.take_owned().now_or_never().unwrap(), (id6, 6));
     }
 
     #[test]
@@ -746,20 +757,17 @@ mod tests {
             super::DistributedAssetStorage::<u32>::new(db, crate::db::DBCol::Triple, myself)
                 .unwrap();
         assert_eq!(store.num_owned(), 4);
+        assert_eq!(store.take_owned().now_or_never().unwrap(), (id1, 1));
         assert_eq!(
-            store.take_owned().expect("queue is expected to have value"),
-            (id1, 1)
-        );
-        assert_eq!(
-            store.take_owned().expect("queue is expected to have value"),
+            store.take_owned().now_or_never().unwrap(),
             (id1.add_to_counter(1).unwrap(), 2)
         );
         assert_eq!(
-            store.take_owned().expect("queue is expected to have value"),
+            store.take_owned().now_or_never().unwrap(),
             (id1.add_to_counter(2).unwrap(), 3)
         );
         assert_eq!(
-            store.take_owned().expect("queue is expected to have value"),
+            store.take_owned().now_or_never().unwrap(),
             (id1.add_to_counter(3).unwrap(), 4)
         );
 

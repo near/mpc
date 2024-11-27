@@ -236,7 +236,7 @@ impl MpcClient {
         let keygen_out = self.keygen_store.get_generated_key().await;
         let (presignature_id, presignature) = self
             .presignature_store
-            .take_owned(self.client.all_alive_participant_ids())
+            .take_owned(&self.client.all_alive_participant_ids())
             .await;
         let signature = sign(
             self.client.new_channel_for_task(
