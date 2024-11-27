@@ -227,7 +227,7 @@ mod tests_many {
             let mut id_to_triple_count = HashMap::new();
 
             for triples in &all_triples {
-                for (id, _) in triples {
+                for id in triples.keys() {
                     *id_to_triple_count.entry(*id).or_insert(0) += 1;
                 }
             }
