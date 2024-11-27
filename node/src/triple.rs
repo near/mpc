@@ -83,7 +83,7 @@ pub async fn run_background_triple_generation(
                 < config.concurrency * 2 * SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE
         {
             let current_active_participants_ids = client.all_alive_participant_ids();
-            triple_store.set_active_participants_ids(current_active_participants_ids.clone());
+            triple_store.set_alive_participants_ids(current_active_participants_ids.clone());
             if current_active_participants_ids.len() < threshold {
                 // that should not happen often, so sleeping here is okay
                 tokio::time::sleep(Duration::from_millis(100)).await;
