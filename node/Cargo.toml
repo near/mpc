@@ -39,8 +39,8 @@ x509-parser = "0.16.0"
 # TODO: audit this and consider migrating just what we need into this repo
 crypto-shared = { git = "https://github.com/near/mpc", rev = "1.0.0-rc.5" }
 
-near-indexer = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
-near-client = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
-near-config-utils = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
-near-o11y = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
+near-indexer = { path = "../libs/nearcore/chain/indexer/" }
+near-indexer-primitives = { path = "../libs/nearcore/chain/indexer-primitives" }
+near-client = { path = "../libs/nearcore/chain/client" }
+near-config-utils = { path = "../libs/nearcore/utils/config" }
+near-o11y = { path = "../libs/nearcore/core/o11y" }
