@@ -31,7 +31,7 @@ web_ui:
 indexer:
   stream_while_syncing: false
   validate_genesis: true
-  sync_mode: SyncFromInterruption
+  sync_mode: Interruption
   concurrency: 1
 key_generation:
   timeout_sec: 60
