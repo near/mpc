@@ -1,42 +1,104 @@
+use futures::FutureExt;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::future::Future;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
+use tokio::task::{JoinError, JoinSet};
 use tokio::task_local;
+
+/// A wrapper around JoinHandle, except that dropping this will abort the task
+/// behind the handle. This is very useful in making sure that background tasks
+/// spawned by futures that are then dropped are are properly cleaned up.
+#[must_use = "Dropping this value will immediately abort the task"]
+pub struct AutoAbortTask<R> {
+    handle: Option<tokio::task::JoinHandle<R>>,
+}
+
+impl<R> Drop for AutoAbortTask<R> {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+}
+
+impl<R> From<tokio::task::JoinHandle<R>> for AutoAbortTask<R> {
+    fn from(handle: tokio::task::JoinHandle<R>) -> Self {
+        Self {
+            handle: Some(handle),
+        }
+    }
+}
+
+/// Mimics the same Future semantics as the underlying JoinHandle.
+impl<R> Future for AutoAbortTask<R> {
+    type Output = Result<R, JoinError>;
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        self.handle.as_mut().unwrap().poll_unpin(cx)
+    }
+}
 
 /// Spawns a new task that is a child of the current tokio task.
 /// Must be called from a tracked tokio task.
-pub fn spawn<F, R>(description: &str, f: F) -> tokio::task::JoinHandle<R>
+/// Unlike tokio::spawn, the returned `AutoAbortTask` will abort the task if it
+/// is dropped, so the caller must explicitly decide on when the spawned task
+/// would continue to exist.
+pub fn spawn<F, R>(description: &str, f: F) -> AutoAbortTask<R>
 where
     F: Future<Output = R> + Send + 'static,
     R: Send + 'static,
 {
-    let current_task = CURRENT_TASK.get();
-    let handle = current_task.0.new_child(description);
-    tokio::spawn(CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), f))
+    tokio::spawn(current_task().scope(description, f)).into()
 }
 
 /// Like `spawn`, but if the task resolves to an error result, logs the result.
 /// This swallows the result, so it should only be used for spawns whose results
 /// are not handled.
-pub fn spawn_checked<F, R>(description: &str, f: F) -> tokio::task::JoinHandle<()>
+pub fn spawn_checked<F, R>(description: &str, f: F) -> AutoAbortTask<()>
 where
     F: Future<Output = anyhow::Result<R>> + Send + 'static,
     R: Send + 'static,
 {
-    let current_task = CURRENT_TASK.get();
-    let handle = current_task.0.new_child(description);
-    let description_clone = description.to_string();
-    tokio::spawn(
-        CURRENT_TASK.scope(Arc::new(TaskHandleScoped(handle)), async move {
-            let result = f.await;
-            if let Err(err) = result {
-                tracing::error!("Task failed: {}: {}", description_clone, err);
-            }
-        }),
-    )
+    tokio::spawn(current_task().scope_checked(description, f)).into()
+}
+
+/// A collection of tasks that should all be aborted when the collection itself
+/// is dropped. It is acceptable to spawn an unbounded number of tasks into this
+/// collection, as it automatically cleans up tasks that have already completed.
+pub struct AutoAbortTaskCollection<R> {
+    join_set: JoinSet<R>,
+}
+
+impl<R: Send + 'static> AutoAbortTaskCollection<R> {
+    pub fn new() -> Self {
+        Self {
+            join_set: JoinSet::new(),
+        }
+    }
+}
+
+impl AutoAbortTaskCollection<()> {
+    /// Like the free function spawn_checked, but spawns the task into the
+    /// `AutoAbortTaskCollection`.
+    /// Note: there's no `spawn` function. This is because if we want to spawn
+    /// a task into such a collection, then this task is a fire-and-forget task,
+    /// so an error should always be printed out.
+    pub fn spawn_checked<F, R>(&mut self, description: &str, f: F)
+    where
+        R: Send + 'static,
+        F: Future<Output = anyhow::Result<R>> + Send + 'static,
+    {
+        self.join_set
+            .spawn(current_task().scope_checked(description, f));
+        // JoinSet itself keeps expired tasks until they are joined on. So we do
+        // some cleanup here to join any tasks that have already completed.
+        while self.join_set.try_join_next().is_some() {}
+    }
 }
 
 /// Reports the progress of the current tokio task.
@@ -182,6 +244,29 @@ impl TaskHandle {
     {
         let child = self.new_child(description);
         CURRENT_TASK.scope(Arc::new(TaskHandleScoped(child)), f)
+    }
+
+    /// Forces the future to run in the scope of the given task handle.
+    /// Useful when there's a tracking gap due to a third party library
+    /// (such as actix_web) spawning futures with tokio::spawn.
+    /// In addition, if the future returns with an error, logs the error.
+    pub fn scope_checked<F, R>(
+        self: &Arc<TaskHandle>,
+        description: &str,
+        f: F,
+    ) -> impl Future<Output = ()>
+    where
+        F: Future<Output = anyhow::Result<R>> + Send + 'static,
+        R: Send + 'static,
+    {
+        let child = self.new_child(description);
+        let description_clone = description.to_string();
+        CURRENT_TASK.scope(Arc::new(TaskHandleScoped(child)), async move {
+            let result = f.await;
+            if let Err(err) = result {
+                tracing::error!("Task failed: {}: {}", description_clone, err);
+            }
+        })
     }
 
     pub fn report(&self) -> TaskStatusReport {

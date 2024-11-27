@@ -5,10 +5,11 @@ use crate::assets::{DistributedAssetStorage, PendingUnownedAsset, UniqueId};
 use crate::background::InFlightGenerationTracker;
 use crate::config::TripleConfig;
 use crate::db::{DBCol, SecretDB};
+use crate::metrics;
 use crate::network::MeshNetworkClient;
 use crate::primitives::choose_random_participants;
 use crate::protocol::run_protocol;
-use crate::{metrics, tracking};
+use crate::tracking::AutoAbortTaskCollection;
 use crate::{network::NetworkTaskChannel, primitives::ParticipantId};
 use std::sync::Arc;
 use std::time::Duration;
@@ -131,6 +132,7 @@ pub async fn run_background_triple_generation(
 ) -> anyhow::Result<()> {
     let in_flight_generations = InFlightGenerationTracker::new();
     let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
+    let mut tasks = AutoAbortTaskCollection::new();
     loop {
         let my_triples_count = triple_store.num_owned();
         metrics::MPC_OWNED_NUM_TRIPLES_AVAILABLE.set(my_triples_count as i64);
@@ -158,7 +160,7 @@ pub async fn run_background_triple_generation(
             let parallelism_limiter = parallelism_limiter.clone();
             let triple_store = triple_store.clone();
             let config_clone = config.clone();
-            tracking::spawn_checked(&format!("{:?}", task_id), async move {
+            tasks.spawn_checked(&format!("{:?}", task_id), async move {
                 let _in_flight = in_flight;
                 let _semaphore_guard = parallelism_limiter.acquire().await?;
                 let triples = timeout(
@@ -203,7 +205,7 @@ mod tests_many {
 
     use super::{run_many_triple_generation, PairedTriple};
     use crate::assets::UniqueId;
-    use crate::tracking;
+    use crate::tracking::{self, AutoAbortTaskCollection};
 
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
@@ -226,13 +228,14 @@ mod tests_many {
         client: Arc<MeshNetworkClient>,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
     ) -> anyhow::Result<Vec<PairedTriple>> {
-        {
+        let _passive_channels = {
             let client = client.clone();
             let participant_id = client.my_participant_id();
             tracking::spawn("monitor passive channels", async move {
+                let mut tasks = AutoAbortTaskCollection::new();
                 loop {
                     let channel = channel_receiver.recv().await.unwrap();
-                    tracking::spawn_checked(
+                    tasks.spawn_checked(
                         &format!("passive task {:?}", channel.task_id),
                         run_many_triple_generation::<TRIPLES_PER_BATCH>(
                             channel,
@@ -241,8 +244,8 @@ mod tests_many {
                         ),
                     );
                 }
-            });
-        }
+            })
+        };
 
         let triples = stream::iter(0..BATCHES_TO_GENERATE_PER_CLIENT)
             .map(move |i| {

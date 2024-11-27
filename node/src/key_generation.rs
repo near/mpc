@@ -1,12 +1,17 @@
-use crate::db::{DBCol, SecretDB};
-use crate::network::NetworkTaskChannel;
-use crate::primitives::ParticipantId;
+use crate::config::Config;
+use crate::db;
+use crate::network::{MeshNetworkClient, NetworkTaskChannel};
+use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::protocol::run_protocol;
+use aes_gcm::aead::generic_array::GenericArray;
+use aes_gcm::{Aes128Gcm, KeyInit};
+use anyhow::Context;
 use cait_sith::protocol::Participant;
 use cait_sith::KeygenOutput;
 use k256::Secp256k1;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio_util::sync::CancellationToken;
+use tokio::sync::mpsc;
 
 /// Runs the key generation protocol, returning the key generated.
 /// This protocol is identical for the leader and the followers.
@@ -25,94 +30,93 @@ pub async fn run_key_generation(
     run_protocol("key generation", channel, me, protocol).await
 }
 
-/// Stores a single generated root key.
-pub struct KeygenStorage {
-    db: Arc<SecretDB>,
-    generated: CancellationToken,
-    key: Arc<tokio::sync::OnceCell<KeygenOutput<Secp256k1>>>,
+/// Reads the root keyshare (keygen output) from disk.
+pub fn load_root_keyshare(
+    home_dir: &Path,
+    encryption_key: [u8; 16],
+) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+    let key_path = home_dir.join("key");
+    let cipher = Aes128Gcm::new(GenericArray::from_slice(&encryption_key));
+    let data = std::fs::read(key_path).context("Failed to read keygen file")?;
+    let decrypted = db::decrypt(&cipher, &data).context("Failed to decrypt keygen")?;
+    serde_json::from_slice(&decrypted).context("Failed to parse keygen")
 }
 
-impl KeygenStorage {
-    /// Reads the generated key from the database, if it exists.
-    /// If it exists, returns (self, None). Otherwise, returns (self, Some(KeygenNeeded))
-    /// where the latter can be used to commit the key once it is generated.
-    pub fn new(db: Arc<SecretDB>) -> anyhow::Result<(Arc<Self>, Option<KeygenNeeded>)> {
-        let existing_key = read_generated_key_from_db(&db)?;
-        let generated = CancellationToken::new();
-        let key = Arc::new(tokio::sync::OnceCell::new());
-        Ok(if let Some(existing_key) = existing_key {
-            key.set(existing_key).ok();
-            generated.cancel();
-            (Self { db, generated, key }.into(), None)
-        } else {
-            let store = Arc::new(Self {
-                db: db.clone(),
-                generated: generated.clone(),
-                key: key.clone(),
-            });
-            (store.clone(), Some(KeygenNeeded { store }))
-        })
-    }
+/// Saves the root keyshare (keygen output) to disk.
+fn save_root_keyshare(
+    home_dir: &Path,
+    encryption_key: [u8; 16],
+    keygen_out: &KeygenOutput<Secp256k1>,
+) -> anyhow::Result<()> {
+    assert_root_key_does_not_exist(home_dir);
+    let key_path = home_dir.join("key");
+    let cipher = Aes128Gcm::new(GenericArray::from_slice(&encryption_key));
+    let data = serde_json::to_vec(keygen_out).context("Failed to serialize keygen")?;
+    let encrypted = db::encrypt(&cipher, &data);
+    std::fs::write(key_path, &encrypted).context("Failed to write keygen file")
+}
 
-    /// Retrieves the generated key, blocking until it is generated.
-    pub async fn get_generated_key(&self) -> KeygenOutput<Secp256k1> {
-        self.generated.cancelled().await;
-        self.key.get().cloned().unwrap()
+/// Panics if the root keyshare file already exists.
+fn assert_root_key_does_not_exist(home_dir: &Path) {
+    if home_dir.join("key").exists() {
+        panic!("Root keyshare file already exists; refusing to overwrite");
     }
 }
 
-pub struct KeygenNeeded {
-    store: Arc<KeygenStorage>,
-}
+/// Performs the key generation protocol, saving the keyshare to disk.
+/// Returns when the key generation is complete or runs into an error.
+/// This is expected to only succeed if all participants are online
+/// and running this function.
+pub async fn run_key_generation_client(
+    home_dir: PathBuf,
+    config: Arc<Config>,
+    client: Arc<MeshNetworkClient>,
+    mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
+) -> anyhow::Result<()> {
+    assert_root_key_does_not_exist(&home_dir);
+    let my_participant_id = client.my_participant_id();
+    let is_leader = my_participant_id
+        == config
+            .mpc
+            .participants
+            .participants
+            .iter()
+            .map(|p| p.id)
+            .min()
+            .unwrap();
 
-impl Drop for KeygenNeeded {
-    fn drop(&mut self) {
-        if !self.store.generated.is_cancelled() {
-            panic!("Key generation was not completed");
+    let channel = if is_leader {
+        client.new_channel_for_task(MpcTaskId::KeyGeneration, client.all_participant_ids())?
+    } else {
+        let channel = channel_receiver.recv().await.unwrap();
+        if channel.task_id != MpcTaskId::KeyGeneration {
+            anyhow::bail!(
+                "Received task ID is not key generation: {:?}",
+                channel.task_id
+            );
         }
-    }
-}
-
-impl KeygenNeeded {
-    pub fn commit(self, keygen_out: KeygenOutput<Secp256k1>) {
-        write_generated_key_to_db(&self.store.db, &keygen_out);
-        self.store.key.set(keygen_out).ok();
-        self.store.generated.cancel();
-    }
-}
-
-fn read_generated_key_from_db(db: &SecretDB) -> anyhow::Result<Option<KeygenOutput<Secp256k1>>> {
-    let keygen = db.get(DBCol::GeneratedKey, b"")?;
-    Ok(keygen
-        .map(|keygen| serde_json::from_slice(&keygen))
-        .transpose()?)
-}
-
-fn write_generated_key_to_db(db: &Arc<SecretDB>, keygen: &KeygenOutput<Secp256k1>) {
-    let mut update = db.update();
-    update.put(
-        DBCol::GeneratedKey,
-        b"",
-        &serde_json::to_vec(keygen).unwrap(),
-    );
-    update
-        .commit()
-        .expect("Failed to commit generated key to db");
+        channel
+    };
+    let key = run_key_generation(
+        channel,
+        my_participant_id,
+        config.mpc.participants.threshold as usize,
+    )
+    .await?;
+    save_root_keyshare(&home_dir, config.secret_storage.aes_key, &key)?;
+    tracing::info!("Key generation completed");
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::run_key_generation;
-    use crate::db::SecretDB;
-    use crate::key_generation::KeygenStorage;
+    use super::{run_key_generation, save_root_keyshare};
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::MpcTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use cait_sith::KeygenOutput;
-    use futures::future::{maybe_done, MaybeDone};
-    use futures::FutureExt;
     use k256::Secp256k1;
     use std::sync::Arc;
     use tokio::sync::mpsc;
@@ -150,30 +154,17 @@ mod tests {
     #[test]
     fn test_keygen_store() {
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let (store, needed) = KeygenStorage::new(db.clone()).unwrap();
-        assert!(needed.is_some());
-
-        // Getting the key should asynchronously block until the key is committed.
-        let MaybeDone::Future(key) = maybe_done(store.get_generated_key()) else {
-            panic!("Key should not already be available");
-        };
+        let encryption_key = [1; 16];
         let generated_key = TestGenerators::new(2, 2)
             .make_keygens()
             .into_iter()
             .next()
             .unwrap()
             .1;
-        needed.unwrap().commit(generated_key.clone());
-        let key = key.now_or_never().unwrap();
-        assert_eq!(key.private_share, generated_key.private_share);
-        assert_eq!(key.public_key, generated_key.public_key);
-        drop(store);
 
-        // Reload the store; the key should be available immediately.
-        let (store, needed) = KeygenStorage::new(db.clone()).unwrap();
-        assert!(needed.is_none());
-        let key = store.get_generated_key().now_or_never().unwrap();
-        assert_eq!(key.private_share, generated_key.private_share);
+        save_root_keyshare(dir.path(), encryption_key, &generated_key).unwrap();
+        let loaded_key = super::load_root_keyshare(dir.path(), encryption_key).unwrap();
+        assert_eq!(generated_key.private_share, loaded_key.private_share);
+        assert_eq!(generated_key.public_key, loaded_key.public_key);
     }
 }

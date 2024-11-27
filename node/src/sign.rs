@@ -5,6 +5,7 @@ use crate::hkdf::derive_randomness;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{participants_from_triples, ParticipantId};
 use crate::protocol::run_protocol;
+use crate::tracking::AutoAbortTaskCollection;
 use crate::triple::TripleStorage;
 use crate::{metrics, tracking};
 use cait_sith::protocol::Participant;
@@ -151,6 +152,7 @@ pub async fn run_background_presignature_generation(
         waiting_for_triples: AtomicBool::new(false),
     });
     let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
+    let mut tasks = AutoAbortTaskCollection::new();
     loop {
         progress_tracker.update_progress();
         let my_presignatures_count: usize = presignature_store.num_owned();
@@ -178,7 +180,7 @@ pub async fn run_background_presignature_generation(
             let presignature_store = presignature_store.clone();
             let config_clone = config.clone();
             let keygen_out = keygen_out.clone();
-            tracking::spawn_checked(&format!("{:?}", task_id), async move {
+            tasks.spawn_checked(&format!("{:?}", task_id), async move {
                 let _in_flight = in_flight;
                 let _semaphore_guard = parallelism_limiter.acquire().await?;
                 let presignature = timeout(

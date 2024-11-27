@@ -4,6 +4,7 @@ use cait_sith::{FullSignature, KeygenOutput, PresignArguments, PresignOutput};
 use k256::{AffinePoint, Scalar, Secp256k1};
 use std::collections::HashMap;
 
+mod basic_cluster;
 mod benchmark;
 mod research;
 

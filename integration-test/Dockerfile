@@ -25,4 +25,4 @@ RUN apt-get update -y \
     && apt-get install -y --no-install-recommends openssl ca-certificates
 WORKDIR /app
 COPY --from=builder /app/target/release/mpc-node mpc-node
-CMD [ "./mpc-node", "start" ]
+CMD [ "/bin/sh", "-c", "./mpc-node generate-key && ./mpc-node start" ]

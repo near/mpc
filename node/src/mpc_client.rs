@@ -1,20 +1,19 @@
 use crate::config::Config;
-use crate::key_generation::{run_key_generation, KeygenNeeded, KeygenStorage};
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::sign::{
     pre_sign_unowned, run_background_presignature_generation, sign, PresignOutputWithParticipants,
     PresignatureStorage, SignatureIdGenerator,
 };
-use crate::tracking;
+use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::triple::{
     run_background_triple_generation, run_many_triple_generation, TripleStorage,
     SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
 };
-use cait_sith::FullSignature;
+use cait_sith::{FullSignature, KeygenOutput};
 use k256::elliptic_curve::PrimeField;
 use k256::{FieldBytes, Scalar, Secp256k1};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
@@ -25,7 +24,7 @@ pub struct MpcClient {
     client: Arc<MeshNetworkClient>,
     triple_store: Arc<TripleStorage>,
     presignature_store: Arc<PresignatureStorage>,
-    keygen_store: Arc<KeygenStorage>,
+    root_keyshare: KeygenOutput<Secp256k1>,
     signature_id_generator: Arc<SignatureIdGenerator>,
 }
 
@@ -35,7 +34,7 @@ impl MpcClient {
         client: Arc<MeshNetworkClient>,
         triple_store: Arc<TripleStorage>,
         presignature_store: Arc<PresignatureStorage>,
-        keygen_store: Arc<KeygenStorage>,
+        root_keyshare: KeygenOutput<Secp256k1>,
     ) -> Self {
         let my_participant_id = client.my_participant_id();
         Self {
@@ -43,7 +42,7 @@ impl MpcClient {
             client,
             triple_store,
             presignature_store,
-            keygen_store,
+            root_keyshare,
             signature_id_generator: Arc::new(SignatureIdGenerator::new(my_participant_id)),
         }
     }
@@ -52,46 +51,31 @@ impl MpcClient {
     /// multiparty computation.
     pub async fn run(
         self,
-        keygen_needed: Option<KeygenNeeded>,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
     ) -> anyhow::Result<()> {
-        let keygen_needed = Arc::new(Mutex::new(keygen_needed));
-        {
+        let monitor_passive_channels = {
             let client = self.client.clone();
             let config = self.config.clone();
             let triple_store = self.triple_store.clone();
             let presignature_store = self.presignature_store.clone();
-            let keygen_store = self.keygen_store.clone();
-            let keygen_needed = keygen_needed.clone();
+            let root_keyshare = self.root_keyshare.clone();
             tracking::spawn("monitor passive channels", async move {
+                let mut tasks = AutoAbortTaskCollection::new();
                 loop {
                     let channel = channel_receiver.recv().await.unwrap();
                     let client = client.clone();
                     let config = config.clone();
                     let triple_store = triple_store.clone();
                     let presignature_store = presignature_store.clone();
-                    let keygen_store = keygen_store.clone();
-                    let keygen_needed = keygen_needed.clone();
-                    tracking::spawn_checked(
+                    let root_keyshare = root_keyshare.clone();
+                    tasks.spawn_checked(
                         &format!("passive task {:?}", channel.task_id),
                         async move {
                             match channel.task_id {
                                 MpcTaskId::KeyGeneration => {
-                                    let Some(keygen_needed) = keygen_needed.lock().unwrap().take()
-                                    else {
-                                        anyhow::bail!("Key already generated");
-                                    };
-
-                                    let key = timeout(
-                                        Duration::from_secs(config.key_generation.timeout_sec),
-                                        run_key_generation(
-                                            channel,
-                                            client.my_participant_id(),
-                                            config.mpc.participants.threshold as usize,
-                                        ),
-                                    )
-                                    .await??;
-                                    keygen_needed.commit(key);
+                                    anyhow::bail!(
+                                        "Key generation rejected in normal node operation"
+                                    );
                                 }
                                 MpcTaskId::ManyTriples { start, count } => {
                                     if count as usize != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
@@ -136,7 +120,7 @@ impl MpcClient {
                                             channel,
                                             client.my_participant_id(),
                                             config.mpc.participants.threshold as usize,
-                                            keygen_store.get_generated_key().await,
+                                            root_keyshare,
                                             triple_store.clone(),
                                             paired_triple_id,
                                         ),
@@ -173,7 +157,7 @@ impl MpcClient {
                                         sign(
                                             channel,
                                             client.my_participant_id(),
-                                            keygen_store.get_generated_key().await,
+                                            root_keyshare,
                                             presignature_store
                                                 .take_unowned(presignature_id)
                                                 .await?
@@ -190,28 +174,10 @@ impl MpcClient {
                         },
                     );
                 }
-            });
-        }
+            })
+        };
 
-        // If we're the first participant, initiate key generation if there is no key.
-        if self.client.my_participant_id() == self.client.all_participant_ids()[0] {
-            let keygen_needed = keygen_needed.lock().unwrap().take();
-            if let Some(keygen_needed) = keygen_needed {
-                let generated_key = run_key_generation(
-                    self.client.new_channel_for_task(
-                        MpcTaskId::KeyGeneration,
-                        self.client.all_participant_ids(),
-                    )?,
-                    self.client.my_participant_id(),
-                    self.config.mpc.participants.threshold as usize,
-                )
-                .await?;
-                keygen_needed.commit(generated_key);
-            }
-        }
-        tracking::set_progress("Bootstrap complete");
-
-        let background_triple_generation = tracking::spawn(
+        let generate_triples = tracking::spawn(
             "generate triples",
             run_background_triple_generation(
                 self.client.clone(),
@@ -221,7 +187,7 @@ impl MpcClient {
             ),
         );
 
-        let background_presignature_generation = tracking::spawn(
+        let generate_presignatures = tracking::spawn(
             "generate presignatures",
             run_background_presignature_generation(
                 self.client.clone(),
@@ -229,12 +195,13 @@ impl MpcClient {
                 self.config.presignature.clone().into(),
                 self.triple_store.clone(),
                 self.presignature_store.clone(),
-                self.keygen_store.get_generated_key().await,
+                self.root_keyshare.clone(),
             ),
         );
 
-        background_triple_generation.await??;
-        background_presignature_generation.await??;
+        monitor_passive_channels.await?;
+        generate_triples.await??;
+        generate_presignatures.await??;
 
         Ok(())
     }
@@ -245,7 +212,6 @@ impl MpcClient {
         tweak: Scalar,
         entropy: [u8; 32],
     ) -> anyhow::Result<FullSignature<Secp256k1>> {
-        let keygen_out = self.keygen_store.get_generated_key().await;
         let (presignature_id, presignature) = self.presignature_store.take_owned().await;
         let signature = sign(
             self.client.new_channel_for_task(
@@ -259,7 +225,7 @@ impl MpcClient {
                 presignature.participants,
             )?,
             self.client.my_participant_id(),
-            keygen_out,
+            self.root_keyshare.clone(),
             presignature.presignature,
             msg_hash,
             tweak,

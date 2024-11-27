@@ -1,11 +1,10 @@
 use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
-use crate::tracking;
+use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
-use futures::{FutureExt, TryFutureExt};
 use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
@@ -31,14 +30,7 @@ pub struct QuicMeshSender {
 /// Implements MeshNetworkTransportReceiver.
 pub struct QuicMeshReceiver {
     receiver: Receiver<MpcPeerMessage>,
-    incoming_connections_join_handle: tokio::task::JoinHandle<()>,
-}
-
-impl Drop for QuicMeshReceiver {
-    fn drop(&mut self) {
-        // Dropping the receiver closes all connections from other nodes.
-        self.incoming_connections_join_handle.abort();
-    }
+    _incoming_connections_task: AutoAbortTask<()>,
 }
 
 /// Maps public keys to participant IDs. Used to identify incoming connections.
@@ -108,15 +100,7 @@ struct PersistentConnection {
     // The task that loops to connect to the target. When `PersistentConnection`
     // is dropped, this task is aborted. The task owns any active connection,
     // so dropping it also frees any connection currently alive.
-    join_handle: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl Drop for PersistentConnection {
-    fn drop(&mut self) {
-        if let Some(handle) = self.join_handle.take() {
-            handle.abort();
-        }
-    }
+    _task: AutoAbortTask<()>,
 }
 
 impl PersistentConnection {
@@ -149,7 +133,7 @@ impl PersistentConnection {
         let (current_sender, current_receiver) = tokio::sync::watch::channel(None);
         let is_alive = Arc::new(AtomicBool::new(false));
         let is_alive_clone = is_alive.clone();
-        let handle = tracking::spawn(
+        let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
                 async fn connect(
@@ -207,7 +191,7 @@ impl PersistentConnection {
             target_participant_id,
             current: current_receiver,
             is_alive,
-            join_handle: Some(handle),
+            _task: task,
         })
     }
 }
@@ -334,45 +318,33 @@ pub async fn new_quic_mesh_network(
     let (message_sender, message_receiver) = mpsc::channel(1000000);
     let endpoint_for_listener = server.clone();
 
-    let incoming_connections_join_handle =
-        tracking::spawn("Handle incoming connections", async move {
-            // Use a join set to control the spawned tasks. That way, when we drop the
-            // future, we also drop all the connections. This provides a way to
-            // gracefully shut down the quic network.
-            let mut join_set = JoinSet::new();
-            while let Some(conn) = endpoint_for_listener.accept().await {
-                let message_sender = message_sender.clone();
-                let participant_identities = participant_identities.clone();
-                let task = tracking::current_task();
-                join_set.spawn(
-                    task.scope("Handle connection", async move {
-                        if let Ok(connection) = conn.await {
-                            let verified_participant_id =
-                                verify_peer_identity(&connection, &participant_identities)?;
-                            tracking::set_progress(&format!(
-                                "Connection from {}",
-                                verified_participant_id
-                            ));
+    let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
+        let mut tasks = AutoAbortTaskCollection::new();
+        while let Some(conn) = endpoint_for_listener.accept().await {
+            let message_sender = message_sender.clone();
+            let participant_identities = participant_identities.clone();
+            tasks.spawn_checked("Handle connection", async move {
+                if let Ok(connection) = conn.await {
+                    let verified_participant_id =
+                        verify_peer_identity(&connection, &participant_identities)?;
+                    tracking::set_progress(&format!("Connection from {}", verified_participant_id));
 
-                            loop {
-                                let stream = connection.accept_uni().await?;
-                                tracing::debug!("Accepted stream from {}", verified_participant_id);
-                                let message_sender = message_sender.clone();
-                                // Don't track this, or else it is too spammy.
-                                tokio::spawn(handle_incoming_stream(
-                                    verified_participant_id,
-                                    stream,
-                                    message_sender,
-                                ));
-                            }
-                        }
-                        anyhow::Ok(())
-                    })
-                    .map_err(|e| tracing::error!("Error in incoming connection handler: {:?}", e))
-                    .map(|_| ()),
-                );
-            }
-        });
+                    loop {
+                        let stream = connection.accept_uni().await?;
+                        tracing::debug!("Accepted stream from {}", verified_participant_id);
+                        let message_sender = message_sender.clone();
+                        // Don't track this, or else it is too spammy.
+                        tokio::spawn(handle_incoming_stream(
+                            verified_participant_id,
+                            stream,
+                            message_sender,
+                        ));
+                    }
+                }
+                anyhow::Ok(())
+            });
+        }
+    });
 
     let sender = QuicMeshSender {
         my_id: config.my_participant_id,
@@ -382,7 +354,7 @@ pub async fn new_quic_mesh_network(
 
     let receiver = QuicMeshReceiver {
         receiver: message_receiver,
-        incoming_connections_join_handle,
+        _incoming_connections_task: incoming_connections_task,
     };
 
     Ok((sender, receiver))
