@@ -143,7 +143,7 @@ impl Cli {
                 num_participants,
                 threshold,
             } => {
-                let configs = generate_test_p2p_configs(num_participants, threshold)?;
+                let configs = generate_test_p2p_configs(num_participants, threshold, 0)?;
                 for (i, config) in configs.into_iter().enumerate() {
                     let subdir = format!("{}/{}", output_dir, i);
                     std::fs::create_dir_all(&subdir)?;
