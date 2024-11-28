@@ -22,6 +22,8 @@ use std::time::Duration;
 use tokio::sync::OnceCell;
 use tokio::time;
 
+/// Wrapper to make Axum understand how to convert anyhow::Error into a 500
+/// response.
 struct AnyhowErrorWrapper(anyhow::Error);
 
 impl From<anyhow::Error> for AnyhowErrorWrapper {
