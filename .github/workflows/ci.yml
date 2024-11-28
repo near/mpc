@@ -21,11 +21,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch cache
-        uses: actions/cache@v4
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          key: cargo-cache-${{ github.head_ref || github.ref_name }} 
-          path: target
+          cache-on-failure: true
+          cache-all-crates: true
       
       - name: Run Clippy fmt
         run: |
@@ -42,11 +42,5 @@ jobs:
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked 
 
-      - name: Save cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: target
-          key: cargo-cache-${{ github.head_ref || github.ref_name }} 
 
           
