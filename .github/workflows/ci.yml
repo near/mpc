@@ -42,7 +42,7 @@ jobs:
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked 
 
-      - name: Make sure Docker image can be built
+      - name: Check Docker image can be built
         run: docker build --cache-to type=gha -f integration-test/Dockerfile --progress=plain . 
         
 
