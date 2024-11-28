@@ -12,7 +12,7 @@ on:
 
 jobs:
   ci-tests:
-    name: "CI tests"
+    name: "Run tests"
     runs-on: ubuntu-22.04-8core
     permissions:
       contents: read
@@ -21,11 +21,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch cache
-        uses: actions/cache@v4
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          key: cargo-cache-${{ github.head_ref || github.ref_name }} 
-          path: target
+          cache-on-failure: true
+          cache-all-crates: true
       
       - name: Run Clippy fmt
         run: |
@@ -42,11 +42,24 @@ jobs:
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked 
 
-      - name: Save cache
-        if: always()
-        uses: actions/cache/save@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check Docker image can be built
+        uses: docker/build-push-action@v6
         with:
-          path: target
-          key: cargo-cache-${{ github.head_ref || github.ref_name }} 
+          context: .
+          push: false
+          file: integration-test/Dockerfile
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # - name: Expose GitHub Runtime
+      #   uses: crazy-max/ghaction-github-runtime@v3
+
+      # - name: Check Docker image can be built
+      #   run: docker build --cache-to type=gha --cache-from type=gha -f integration-test/Dockerfile --progress=plain . 
+        
+
 
           
