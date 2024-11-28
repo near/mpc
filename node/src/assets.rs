@@ -499,10 +499,20 @@ where
 #[cfg(test)]
 mod tests {
     use super::{DoubleQueue, UniqueId};
-    use crate::primitives::ParticipantId;
+    use crate::primitives::{HasParticipants, ParticipantId};
     use borsh::BorshDeserialize;
     use futures::future::{maybe_done, MaybeDone};
     use futures::FutureExt;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+    struct ParticipantsWithI32(Vec<ParticipantId>, i32);
+
+    impl HasParticipants for ParticipantsWithI32 {
+        fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
+            self.0.iter().all(|p| active_participants.contains(p))
+        }
+    }
 
     #[test]
     fn test_double_queue() {
@@ -551,6 +561,120 @@ mod tests {
         let MaybeDone::Future(_) = maybe_done(never_done_fut) else {
             panic!("should not be able to take value with false condition");
         };
+    }
+
+    #[test]
+    fn test_protocols_storage() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let all_participants = vec![
+            ParticipantId::from_raw(0),
+            ParticipantId::from_raw(1),
+            ParticipantId::from_raw(2),
+            ParticipantId::from_raw(3),
+        ];
+        let first_participants_subset = vec![
+            ParticipantId::from_raw(0),
+            ParticipantId::from_raw(1),
+            ParticipantId::from_raw(2),
+        ];
+        let second_participants_subset = vec![
+            ParticipantId::from_raw(1),
+            ParticipantId::from_raw(2),
+            ParticipantId::from_raw(3),
+        ];
+        let store = super::ProtocolsStorage::<ParticipantsWithI32>::new(
+            db,
+            crate::db::DBCol::Triple,
+            ParticipantId::from_raw(42),
+            &all_participants,
+        )
+        .unwrap();
+        assert_eq!(store.num_owned(), 0);
+
+        let id1 = store.generate_and_reserve_id();
+        let id2 = store.generate_and_reserve_id();
+        let id3 = store.generate_and_reserve_id();
+        let id4 = store.generate_and_reserve_id();
+        let id5 = store.generate_and_reserve_id();
+        store.add_owned(id1, ParticipantsWithI32(all_participants.clone(), 123));
+        assert_eq!(store.num_owned(), 1);
+        store.add_owned(id2, ParticipantsWithI32(all_participants.clone(), 456));
+        assert_eq!(store.num_owned(), 2);
+        let asset1 = store.take_owned(&all_participants).now_or_never().unwrap();
+        assert_eq!(
+            asset1,
+            (id1, ParticipantsWithI32(all_participants.clone(), 123))
+        );
+        assert_eq!(store.num_owned(), 1);
+        store.add_owned(
+            id3,
+            ParticipantsWithI32(second_participants_subset.clone(), 789),
+        );
+        assert_eq!(store.num_owned(), 2);
+        let asset_fut = store.take_owned(&first_participants_subset);
+
+        let MaybeDone::Future(asset_fut) = maybe_done(asset_fut) else {
+            panic!("Cannot take value since set of participants has changed");
+        };
+
+        store.add_owned(
+            id4,
+            ParticipantsWithI32(first_participants_subset.clone(), 101112),
+        );
+
+        let asset3 = store
+            .take_owned(&first_participants_subset)
+            .now_or_never()
+            .unwrap();
+        assert_eq!(
+            asset3,
+            (
+                id4,
+                ParticipantsWithI32(first_participants_subset.clone(), 101112)
+            )
+        );
+
+        let MaybeDone::Future(asset_fut) = maybe_done(asset_fut) else {
+            panic!("Cannot take value since set of participants has changed");
+        };
+
+        store.add_owned(
+            id4,
+            ParticipantsWithI32(first_participants_subset.clone(), 131415),
+        );
+        assert_eq!(
+            asset_fut.now_or_never().unwrap(),
+            (
+                id4,
+                ParticipantsWithI32(first_participants_subset.clone(), 131415)
+            )
+        );
+
+        assert_eq!(store.num_owned(), 0);
+        store.add_owned(id5, ParticipantsWithI32(all_participants.clone(), 161718));
+        assert_eq!(store.num_owned(), 1);
+
+        assert_eq!(
+            store.take_owned(&all_participants).now_or_never().unwrap(),
+            (id2, ParticipantsWithI32(all_participants.clone(), 456))
+        );
+        assert_eq!(store.num_owned(), 2);
+
+        assert_eq!(
+            store.take_owned(&all_participants).now_or_never().unwrap(),
+            (
+                id3,
+                ParticipantsWithI32(second_participants_subset.clone(), 789)
+            )
+        );
+        assert_eq!(store.num_owned(), 1);
+
+        assert_eq!(
+            store.take_owned(&all_participants).now_or_never().unwrap(),
+            (id5, ParticipantsWithI32(all_participants.clone(), 161718))
+        );
+        assert_eq!(store.num_owned(), 0);
     }
 
     #[test]
