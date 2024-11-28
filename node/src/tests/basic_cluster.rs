@@ -42,6 +42,9 @@ async fn test_basic_cluster() {
 
     tracing::info!("Key generation complete. Starting normal runs...");
 
+    // Give it some time for the ports to be released.
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
     // We'll bring up the nodes in normal mode, and issue signature
     // requests, and check that they can be completed.
     let normal_runs = (0..NUM_PARTICIPANTS)
@@ -55,8 +58,9 @@ async fn test_basic_cluster() {
         })
         .collect::<Vec<_>>();
 
+    let mut retries_left = 20;
     'outer: for i in 0..NUM_PARTICIPANTS {
-        for _ in 0..5 {
+        while retries_left > 0 {
             let url = format!(
                 "http://{}:{}/debug/sign?msg=hello&repeat=10",
                 "127.0.0.1",
@@ -81,6 +85,7 @@ async fn test_basic_cluster() {
                     response_text
                 );
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                retries_left -= 1;
             } else {
                 tracing::info!("Got response from node {}: {}", i, response_text);
                 continue 'outer;

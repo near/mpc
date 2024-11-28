@@ -13,22 +13,18 @@ use tokio::task_local;
 /// spawned by futures that are then dropped are are properly cleaned up.
 #[must_use = "Dropping this value will immediately abort the task"]
 pub struct AutoAbortTask<R> {
-    handle: Option<tokio::task::JoinHandle<R>>,
+    handle: tokio::task::JoinHandle<R>,
 }
 
 impl<R> Drop for AutoAbortTask<R> {
     fn drop(&mut self) {
-        if let Some(handle) = self.handle.take() {
-            handle.abort();
-        }
+        self.handle.abort();
     }
 }
 
 impl<R> From<tokio::task::JoinHandle<R>> for AutoAbortTask<R> {
     fn from(handle: tokio::task::JoinHandle<R>) -> Self {
-        Self {
-            handle: Some(handle),
-        }
+        Self { handle }
     }
 }
 
@@ -39,7 +35,7 @@ impl<R> Future for AutoAbortTask<R> {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
-        self.handle.as_mut().unwrap().poll_unpin(cx)
+        self.handle.poll_unpin(cx)
     }
 }
 
