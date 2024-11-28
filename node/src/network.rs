@@ -1,5 +1,5 @@
 use crate::primitives::{BatchedMessages, MpcMessage, MpcPeerMessage, MpcTaskId, ParticipantId};
-use crate::tracking;
+use crate::tracking::{self, AutoAbortTask};
 use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
 use std::collections::hash_map::Entry;
@@ -193,18 +193,22 @@ async fn run_receive_messages_loop(
 pub fn run_network_client(
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
     transport_receiver: Box<dyn MeshNetworkTransportReceiver>,
-) -> (Arc<MeshNetworkClient>, mpsc::Receiver<NetworkTaskChannel>) {
+) -> (
+    Arc<MeshNetworkClient>,
+    mpsc::Receiver<NetworkTaskChannel>,
+    AutoAbortTask<()>,
+) {
     // TODO: read duration from config
     let client = Arc::new(MeshNetworkClient {
         transport_sender,
         senders_for_tasks: Arc::new(Mutex::new(HashMap::new())),
     });
     let (new_channel_sender, new_channel_receiver) = mpsc::channel(1000);
-    tracking::spawn_checked(
+    let handle = tracking::spawn_checked(
         "Network receive message loop",
         run_receive_messages_loop(client.clone(), transport_receiver, new_channel_sender),
     );
-    (client, new_channel_receiver)
+    (client, new_channel_receiver, handle)
 }
 
 /// Channel for a specific MPC task that allows sending and receiving messages in order to compute
@@ -408,11 +412,13 @@ pub mod testing {
             .into_iter()
             .enumerate()
             .map(|(i, (sender, receiver))| {
-                let (client, new_channel_receiver) = super::run_network_client(sender, receiver);
-                tracking::spawn(
-                    &format!("client {}", i),
-                    client_runner(client, new_channel_receiver),
-                )
+                let (client, new_channel_receiver, task) =
+                    super::run_network_client(sender, receiver);
+                let client_runner_future = client_runner(client, new_channel_receiver);
+                tracking::spawn(&format!("client {}", i), async move {
+                    let _task = task;
+                    client_runner_future.await
+                })
             })
             .collect::<Vec<_>>();
         futures::future::join_all(join_handles)
@@ -429,8 +435,8 @@ mod tests {
     use crate::assets::UniqueId;
     use crate::network::testing::run_test_clients;
     use crate::primitives::{MpcTaskId, ParticipantId};
-    use crate::tracking;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
+    use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
     use std::collections::HashSet;
     use std::sync::Arc;
@@ -451,12 +457,13 @@ mod tests {
         client: Arc<MeshNetworkClient>,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
     ) -> anyhow::Result<()> {
-        tracking::spawn("monitor passive channels", async move {
+        let _passive_handle = tracking::spawn("monitor passive channels", async move {
+            let mut tasks = AutoAbortTaskCollection::new();
             loop {
                 let Some(channel) = channel_receiver.recv().await else {
                     break;
                 };
-                tracking::spawn_checked(
+                tasks.spawn_checked(
                     &format!("passive task {:?}", channel.task_id),
                     task_follower(channel),
                 );

@@ -5,10 +5,10 @@ edition = "2021"
 
 [dependencies]
 actix = "0.13.0"
-actix-web = "4.9.0"
 aes-gcm = "0.10.3"
 anyhow = "1.0.92"
 async-trait = "0.1.83"
+axum = "0.7.9"
 borsh = { version = "1.5.1", features = ["derive"] }
 cait-sith = { git = "https://github.com/Near-One/cait-sith.git", features = ["k256"], rev = "75af6bf8c25359dd2be25a838057f3a0dc88f633" }
 clap = { version = "4.5.20", features = ["derive", "env"] }
@@ -44,4 +44,7 @@ near-indexer-primitives = { git = "https://github.com/near/nearcore", rev = "2bc
 near-client = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 near-config-utils = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 near-o11y = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
+
+[dev-dependencies]
 serial_test = "3.2.0"
+reqwest = "0.12.9"

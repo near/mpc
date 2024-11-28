@@ -115,7 +115,10 @@ pub async fn run_protocol<T>(
                     continue;
                 }
                 counters.queue_send(p, messages.len());
-                queue_senders.get(&p).unwrap().send(messages).unwrap();
+                // There's a chance this sending can fail, because the sending task can return early
+                // if the connection to some other participant is broken. In that case, the
+                // computation task should also just fail.
+                queue_senders.get(&p).unwrap().send(messages)?;
             }
 
             if let Some(result) = done {
