@@ -1,4 +1,5 @@
 use crate::indexer::stats::IndexerStats;
+use crate::metrics;
 use crypto_shared::{derive_epsilon, ScalarExt};
 use k256::Scalar;
 use near_indexer_primitives::types::AccountId;
@@ -68,7 +69,7 @@ async fn handle_message(
     drop(stats_lock);
 
     // TODO: pass the signature requests to the MPC node
-    let _signature_requests: Vec<SignatureRequest> = streamer_message
+    let signature_requests: Vec<SignatureRequest> = streamer_message
         .shards
         .iter()
         .map(|shard| {
@@ -76,6 +77,7 @@ async fn handle_message(
                 .receipt_execution_outcomes
                 .iter()
                 .filter_map(|outcome| {
+                    tracing::debug!(target: "mpc", "Got a receipt outcome");
                     let receipt = outcome.receipt.clone();
                     let execution_outcome = outcome.execution_outcome.clone();
                     let sign_args =
@@ -92,6 +94,12 @@ async fn handle_message(
         })
         .flatten()
         .collect::<Vec<_>>();
+
+    crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height as i64);
+
+    for _ in signature_requests {
+        metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
+    }
 
     let mut stats_lock = stats.lock().await;
     stats_lock.block_heights_processing.remove(&block_height);

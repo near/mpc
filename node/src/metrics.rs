@@ -35,3 +35,21 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref MPC_NUM_SIGN_REQUESTS_INDEXED: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_num_signature_requests",
+            "Number of signatures requests indexed"
+        )
+        .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_INDEXER_LATEST_BLOCK_HEIGHT: prometheus::IntGauge =
+        prometheus::register_int_gauge!(
+            "mpc_indexer_latest_block_height",
+            "Latest block height processed by the near indexer"
+        )
+        .unwrap();
+}

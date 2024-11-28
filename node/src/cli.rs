@@ -152,7 +152,7 @@ impl Cli {
                             validate_genesis: true,
                             sync_mode: SyncMode::SyncFromInterruption,
                             concurrency: NonZero::new(1).unwrap(),
-                            mpc_contract_id: AccountId::from_str("mpc.node0").unwrap(),
+                            mpc_contract_id: AccountId::from_str("test0").unwrap(),
                         }),
                         key_generation: KeyGenerationConfig { timeout_sec: 60 },
                         triple: TripleConfig {
