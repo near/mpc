@@ -43,7 +43,7 @@ jobs:
         run: cargo nextest run --release --locked 
 
       - name: Check Docker image can be built
-        run: docker build --cache-to type=gha -f integration-test/Dockerfile --progress=plain . 
+        run: docker build --cache-to type=gha --cache-from type=gha -f integration-test/Dockerfile --progress=plain . 
         
 
 
