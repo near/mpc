@@ -122,13 +122,14 @@ impl Cli {
                         secret_db.clone(),
                         DBCol::Triple,
                         network_client.my_participant_id(),
-                        network_client.all_participant_ids(),
+                        &network_client.all_participant_ids(),
                     )?);
 
                     let presignature_store = Arc::new(PresignatureStorage::new(
                         secret_db.clone(),
                         DBCol::Presignature,
                         network_client.my_participant_id(),
+                        &network_client.all_participant_ids(),
                     )?);
 
                     let config = Arc::new(config);

@@ -1,9 +1,9 @@
 use crate::config::Config;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
+use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
 use crate::sign::{
-    pre_sign_unowned, run_background_presignature_generation, sign, PresignOutputWithParticipants,
-    PresignatureStorage, SignatureIdGenerator,
+    pre_sign_unowned, run_background_presignature_generation, sign, PresignatureStorage,
+    SignatureIdGenerator,
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::triple::{
@@ -212,7 +212,10 @@ impl MpcClient {
         tweak: Scalar,
         entropy: [u8; 32],
     ) -> anyhow::Result<FullSignature<Secp256k1>> {
-        let (presignature_id, presignature) = self.presignature_store.take_owned().await;
+        let (presignature_id, presignature) = self
+            .presignature_store
+            .take_owned(&self.client.all_alive_participant_ids())
+            .await;
         let signature = sign(
             self.client.new_channel_for_task(
                 MpcTaskId::Signature {

@@ -2,6 +2,7 @@ use crate::assets::UniqueId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::protocol::Participant;
 use cait_sith::triples::TripleGenerationOutput;
+use cait_sith::PresignOutput;
 use k256::Secp256k1;
 use rand::prelude::IteratorRandom;
 use serde::{Deserialize, Serialize};
@@ -86,6 +87,38 @@ pub enum MpcTaskId {
         tweak: [u8; 32],
         entropy: [u8; 32],
     },
+}
+
+pub trait HasParticipants {
+    fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool;
+}
+
+pub type PairedTriple = (
+    TripleGenerationOutput<Secp256k1>,
+    TripleGenerationOutput<Secp256k1>,
+);
+
+impl HasParticipants for PairedTriple {
+    fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
+        let triple_participants = participants_from_triples(&self.0, &self.1);
+        triple_participants
+            .iter()
+            .all(|p| active_participants.contains(p))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PresignOutputWithParticipants {
+    pub presignature: PresignOutput<Secp256k1>,
+    pub participants: Vec<ParticipantId>,
+}
+
+impl HasParticipants for PresignOutputWithParticipants {
+    fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
+        self.participants
+            .iter()
+            .all(|p| active_participants.contains(p))
+    }
 }
 
 pub fn choose_random_participants(

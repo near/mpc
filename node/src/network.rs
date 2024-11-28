@@ -442,6 +442,9 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
+    /// Just some big prime number
+    static MOD: u64 = 1_000_000_007;
+
     #[tokio::test]
     async fn test_network_basic() {
         start_root_task_with_periodic_dump(async move {
@@ -493,7 +496,7 @@ mod tests {
                 .iter()
                 .map(|id| {
                     let input = id.raw() as u64 + seed;
-                    input * input
+                    (input * input) % MOD
                 })
                 .sum();
             expected_results.push(expected_total);
@@ -546,7 +549,7 @@ mod tests {
                 channel.sender()(
                     message.from,
                     vec![borsh::to_vec(&TestTripleMessage {
-                        data: inner.data * inner.data,
+                        data: (inner.data * inner.data) % MOD,
                     })
                     .unwrap()],
                     channel.participants.clone(),
