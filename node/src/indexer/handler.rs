@@ -77,7 +77,7 @@ async fn handle_message(
                 .receipt_execution_outcomes
                 .iter()
                 .filter_map(|outcome| {
-                    tracing::debug!(target: "mpc", "Got a receipt outcome");
+                    metrics::MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES.inc();
                     let receipt = outcome.receipt.clone();
                     let execution_outcome = outcome.execution_outcome.clone();
                     let sign_args =

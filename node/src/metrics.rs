@@ -37,6 +37,15 @@ lazy_static! {
 }
 
 lazy_static! {
+    pub static ref MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_indexer_num_receipt_execution_outcomes",
+            "Number of receipt execution outcomes processed by the near indexer"
+        )
+        .unwrap();
+}
+
+lazy_static! {
     pub static ref MPC_NUM_SIGN_REQUESTS_INDEXED: prometheus::IntCounter =
         prometheus::register_int_counter!(
             "mpc_num_signature_requests",

@@ -41,7 +41,7 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     subprocess.run((binary_path, 'generate-test-configs',
                     '--output-dir', dot_near, '--num-participants', '2', '--threshold', '1'))
 
-    # Finish configuring the nodes and start them
+    # Finish configuring the mpc nodes and start them
     for i in range(0, num_mpc_nodes):
         node = nodes[num_validators + i]
 
@@ -60,17 +60,40 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
         secret_key_hex = '0123456789ABCDEF0123456789ABCDEF'
         node.run_cmd(cmd=(binary_path, 'start', '--home-dir', node.node_dir, secret_key_hex))
 
-    return nodes
-
-def test_index_signature_request():
-    nodes = start_cluster_with_mpc(2, 2)
-
     # Deploy the mpc contract
     last_block_hash = nodes[0].get_latest_block().hash_bytes
     tx = sign_deploy_contract_tx(nodes[0].signer_key, load_mpc_contract(), 10, last_block_hash)
     res = nodes[0].send_tx_and_wait(tx, 20)
     assert('SuccessValue' in res['result']['status'])
-    print(json.dumps(res, indent=2))
+
+    # Initialize the mpc contract
+    # TODO: construct args properly from the mpc configs
+    init_args = {
+        'epoch': 0,
+        'participants': {
+            'alice.near': {
+                'account_id': 'alice.near',
+                'cipher_pk':[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                'sign_pk':'ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae',
+                'url':'127.0.0.1'
+            }
+        },
+        'threshold': 2,
+        'public_key': 'ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae',
+    }
+    tx = sign_function_call_tx(
+        nodes[0].signer_key,
+        nodes[0].signer_key.account_id,
+        'init',
+        json.dumps(init_args).encode('utf-8'),
+        150 * GGAS, 1, 20, last_block_hash)
+    res = nodes[0].send_tx_and_wait(tx, 20)
+    assert('SuccessValue' in res['result']['status'])
+
+    return nodes
+
+def test_index_signature_request():
+    nodes = start_cluster_with_mpc(2, 2)
 
     # Send a signature request
     payload = [ 12, 1, 2, 0, 4, 5, 6, 8, 8, 9, 10, 11, 12, 13, 14, 44]
@@ -79,6 +102,7 @@ def test_index_signature_request():
         'path': 'test',
         'key_version': 0,
     }
+    last_block_hash = nodes[0].get_latest_block().hash_bytes
     tx = sign_function_call_tx(
         nodes[1].signer_key,
         nodes[0].signer_key.account_id,
@@ -87,8 +111,9 @@ def test_index_signature_request():
         150 * GGAS, 1, 20, last_block_hash)
     res = nodes[1].send_tx_and_wait(tx, 20)
 
-    # Check MPC node metrics
+    # TODO: wait specifically for MPC_NUM_SIGN_REQUESTS_INDEXED metric
     with session() as s:
+
         r = s.get("http://127.0.0.1:20000/metrics")
         r.raise_for_status()
         print(r.content)
