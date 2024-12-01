@@ -11,14 +11,17 @@ import json
 import time
 import pathlib
 import subprocess
+from prometheus_client.parser import text_string_to_metric_families
 
 sys.path.append(str(pathlib.Path(__file__).resolve()
                     .parents[1] / 'libs' / 'nearcore' / 'pytest' / 'lib'))
 from cluster import start_cluster, session
 from transaction import sign_deploy_contract_tx, sign_function_call_tx
-from utils import load_binary_file
+from utils import load_binary_file, MetricsTracker
 
-GGAS = 10**9
+TIMEOUT = 90
+
+TGAS = 10**12
 
 repo_dir = pathlib.Path(__file__).resolve().parents[1]
 
@@ -67,40 +70,40 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     assert('SuccessValue' in res['result']['status'])
 
     # Initialize the mpc contract
-    # TODO: construct args properly from the mpc configs
+    # TODO: initialize the contract properly with the MPC nodes as the participants
     init_args = {
-        'epoch': 0,
-        'participants': {
-            'alice.near': {
-                'account_id': 'alice.near',
-                'cipher_pk':[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-                'sign_pk':'ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae',
-                'url':'127.0.0.1'
-            }
-        },
-        'threshold': 2,
-        'public_key': 'ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae',
+        'threshold': 0,
+        'candidates': {},
     }
     tx = sign_function_call_tx(
         nodes[0].signer_key,
         nodes[0].signer_key.account_id,
         'init',
         json.dumps(init_args).encode('utf-8'),
-        150 * GGAS, 1, 20, last_block_hash)
+        150 * TGAS, 0, 20, last_block_hash)
     res = nodes[0].send_tx_and_wait(tx, 20)
     assert('SuccessValue' in res['result']['status'])
 
     return nodes
 
 def test_index_signature_request():
+    started = time.time()
     nodes = start_cluster_with_mpc(2, 2)
 
+    # TODO: pick up the port from the mpc config
+    metrics2 = MetricsTracker(nodes[2])
+    metrics2.addr = "http://127.0.0.1:20000/metrics"
+    metrics3 = MetricsTracker(nodes[3])
+    metrics3.addr = "http://127.0.0.1:20001/metrics"
+
     # Send a signature request
-    payload = [ 12, 1, 2, 0, 4, 5, 6, 8, 8, 9, 10, 11, 12, 13, 14, 44]
+    payload = [12,1,2,0,4,5,6,8,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,44]
     sign_args= {
-        'payload': payload,
-        'path': 'test',
-        'key_version': 0,
+        'request': {
+            'key_version': 0,
+            'path': 'test',
+            'payload': payload,
+        }
     }
     last_block_hash = nodes[0].get_latest_block().hash_bytes
     tx = sign_function_call_tx(
@@ -108,15 +111,18 @@ def test_index_signature_request():
         nodes[0].signer_key.account_id,
         'sign',
         json.dumps(sign_args).encode('utf-8'),
-        150 * GGAS, 1, 20, last_block_hash)
-    res = nodes[1].send_tx_and_wait(tx, 20)
+        150 * TGAS, 1, 20, last_block_hash)
+    res = nodes[1].send_tx(tx)
 
-    # TODO: wait specifically for MPC_NUM_SIGN_REQUESTS_INDEXED metric
-    with session() as s:
+    # Wait for the indexers to observe the signature request
+    while True:
+        assert time.time() - started < TIMEOUT, "Waiting for mpc indexers"
+        if metrics2.get_int_metric_value('mpc_num_signature_requests') == 1 and \
+            metrics3.get_int_metric_value('mpc_num_signature_requests') == 1:
+                break
+        time.sleep(1)
 
-        r = s.get("http://127.0.0.1:20000/metrics")
-        r.raise_for_status()
-        print(r.content)
+    print('EPIC')
 
 if __name__ == '__main__':
     test_index_signature_request()

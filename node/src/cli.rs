@@ -121,7 +121,7 @@ impl Cli {
                         "web server",
                         run_web_server(root_task_handle, config.web_ui.clone(), mpc_client.clone()),
                     );
-                    mpc_client.clone().run(channel_receiver).await?;
+                    //mpc_client.clone().run(channel_receiver).await?;
                     anyhow::Ok(())
                 });
 
