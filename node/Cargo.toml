@@ -5,17 +5,19 @@ edition = "2021"
 
 [dependencies]
 actix = "0.13.0"
-actix-web = "4.9.0"
 aes-gcm = "0.10.3"
 anyhow = "1.0.92"
 async-trait = "0.1.83"
+axum = "0.7.9"
 borsh = { version = "1.5.1", features = ["derive"] }
-cait-sith = { git = "https://github.com/Near-One/cait-sith.git", features = ["k256"], rev = "b82c3546c4ace84f771b311b4cd5e40fed9bc3d5" }
+cait-sith = { git = "https://github.com/Near-One/cait-sith.git", features = ["k256"], rev = "75af6bf8c25359dd2be25a838057f3a0dc88f633" }
 clap = { version = "4.5.20", features = ["derive", "env"] }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"
 hex = { version = "0.4.3", features = ["serde"] }
+hex-literal = "0.4.1"
+hkdf = "0.12.4"
 humantime = "2.1.0"
 k256 = "0.13.4"
 lazy_static = "1.5.0"
@@ -28,6 +30,7 @@ rustls = { version = "0.23.16", default-features = false, features = ["ring"] }
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
 serde_yaml = "0.9.34"
+sha3 = "0.10.8"
 tempfile = "3.14.0"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-util = "0.7.12"
@@ -44,3 +47,7 @@ near-indexer-primitives = { path = "../libs/nearcore/chain/indexer-primitives" }
 near-client = { path = "../libs/nearcore/chain/client" }
 near-config-utils = { path = "../libs/nearcore/utils/config" }
 near-o11y = { path = "../libs/nearcore/core/o11y" }
+
+[dev-dependencies]
+serial_test = "3.2.0"
+reqwest = "0.12.9"

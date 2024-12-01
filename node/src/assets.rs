@@ -1,11 +1,13 @@
 use crate::db::{DBCol, SecretDB};
-use crate::primitives::ParticipantId;
+use crate::primitives::{HasParticipants, ParticipantId};
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
@@ -29,7 +31,8 @@ pub struct UniqueId(u128);
 impl UniqueId {
     /// Only for testing. Use `generate` or `pick_new_after` instead.
     pub fn new(participant_id: ParticipantId, timestamp: u64, counter: u32) -> Self {
-        let id = ((participant_id.0 as u128) << 96) | ((timestamp as u128) << 32) | counter as u128;
+        let id =
+            ((participant_id.raw() as u128) << 96) | ((timestamp as u128) << 32) | counter as u128;
         Self(id)
     }
 
@@ -43,7 +46,7 @@ impl UniqueId {
     }
 
     pub fn participant_id(&self) -> ParticipantId {
-        ParticipantId((self.0 >> 96) as u32)
+        ParticipantId::from_raw((self.0 >> 96) as u32)
     }
 
     pub fn timestamp(&self) -> u64 {
@@ -57,7 +60,7 @@ impl UniqueId {
     /// Returns the key prefix for the given participant ID. It can be used to
     /// perform a range query in the database for all keys for this participant.
     pub fn prefix_for_participant_id(participant_id: ParticipantId) -> Vec<u8> {
-        participant_id.0.to_be_bytes().to_vec()
+        participant_id.raw().to_be_bytes().to_vec()
     }
 
     /// Pick a new unique ID based on the current time, but ensuring that it is
@@ -118,6 +121,88 @@ impl BorshDeserialize for UniqueId {
     }
 }
 
+pub struct ColdQueue<T> {
+    /// Number of elements presented in the cold_queue since last update of set of participants.
+    /// It acts as a barrier in the queue so that if no element in the queue is eligible, we don't loop forever.
+    /// We only move the barrier forward if the condition has possibly changed.
+    cold_available: usize,
+    cold_queue: VecDeque<(UniqueId, T)>,
+}
+
+pub struct DoubleQueue<T>
+where
+    T: Send + 'static,
+{
+    hot_sender: flume::Sender<(UniqueId, T)>,
+    hot_receiver: flume::Receiver<(UniqueId, T)>,
+    cold_queue: Arc<Mutex<ColdQueue<T>>>,
+}
+
+impl<T> DoubleQueue<T>
+where
+    T: Send + 'static,
+{
+    pub fn new() -> Self {
+        let (hot_sender, hot_receiver) = flume::unbounded();
+        Self {
+            hot_sender,
+            hot_receiver,
+            cold_queue: Arc::new(Mutex::new(ColdQueue {
+                cold_available: 0,
+                cold_queue: VecDeque::new(),
+            })),
+        }
+    }
+
+    pub fn set_of_alive_participants_has_changed(&self) {
+        // All presented elements may have a chance to satisfy condition(&value.0, &value.1) call since that moment
+        // So increase cold_available to current size of the cold_queue
+        let mut cold_queue = self.cold_queue.lock().unwrap();
+        cold_queue.cold_available = cold_queue.cold_queue.len();
+    }
+
+    pub fn add_owned(&self, id: UniqueId, value: T) {
+        self.hot_sender.send((id, value)).unwrap()
+    }
+
+    pub async fn take_owned_with_condition(
+        &self,
+        condition: impl Fn(&UniqueId, &T) -> bool,
+    ) -> (UniqueId, T) {
+        loop {
+            // Try first to retrieve value which may be eligible now
+            // (but wasn't in the past)
+            let value_opt = {
+                let mut cold_queue = self.cold_queue.lock().unwrap();
+                if cold_queue.cold_available == 0 {
+                    None
+                } else {
+                    cold_queue.cold_available -= 1;
+                    Some(cold_queue.cold_queue.pop_front().unwrap())
+                }
+            };
+            let value = if let Some(value) = value_opt {
+                value
+            } else {
+                // Can't fail, because we keep a sender alive
+                self.hot_receiver.recv_async().await.unwrap()
+            };
+            if condition(&value.0, &value.1) {
+                return value;
+            }
+
+            // This element won't be retrieved until next call of set_of_alive_participants_has_changed(),
+            // which can possibly imply that result of condition(&value.0, &value.1) has changed
+            let mut cold_queue = self.cold_queue.lock().unwrap();
+            cold_queue.cold_queue.push_back(value);
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.hot_receiver.len() + self.cold_queue.lock().unwrap().cold_available
+    }
+}
+
 /// Persistent storage for a single type of asset (triples or presignatures).
 /// The storage is distributed across all participants, with each participant
 /// owning some of the assets. Each asset has exactly one owner.
@@ -134,8 +219,7 @@ where
     db: Arc<SecretDB>,
     col: DBCol,
     my_participant_id: ParticipantId,
-    owned_sender: flume::Sender<(UniqueId, T)>,
-    owned_receiver: flume::Receiver<(UniqueId, T)>,
+    owned_queue: DoubleQueue<T>,
     last_id: Mutex<Option<UniqueId>>,
     pending_unowned_assets: Arc<Mutex<HashMap<UniqueId, oneshot::Receiver<()>>>>,
 }
@@ -149,7 +233,7 @@ where
         col: DBCol,
         my_participant_id: ParticipantId,
     ) -> anyhow::Result<Self> {
-        let (owned_sender, owned_receiver) = flume::unbounded();
+        let owned_queue = DoubleQueue::new();
 
         // We're just going to replicate the owned assets to memory. It's not the most efficient,
         // but it's the simplest way to implement a multi-consumer, multi-producer queue that
@@ -158,23 +242,29 @@ where
         for item in db.iter_range(
             col,
             &UniqueId::prefix_for_participant_id(my_participant_id),
-            &UniqueId::prefix_for_participant_id(ParticipantId(my_participant_id.0 + 1)),
+            &UniqueId::prefix_for_participant_id(ParticipantId::from_raw(
+                my_participant_id.raw().checked_add(1).unwrap(),
+            )),
         ) {
             let (key, value) = item?;
             let id = UniqueId::try_from_slice(&key)?;
             let value = serde_json::from_slice(&value)?;
-            owned_sender.send((id, value)).unwrap();
+            owned_queue.add_owned(id, value);
             last_id = Some(id);
         }
+
         Ok(Self {
             db,
             col,
             my_participant_id,
-            owned_sender,
-            owned_receiver,
+            owned_queue,
             last_id: Mutex::new(last_id),
             pending_unowned_assets: Arc::new(Mutex::new(HashMap::new())),
         })
+    }
+
+    fn set_of_alive_participants_has_changed(&self) {
+        self.owned_queue.set_of_alive_participants_has_changed();
     }
 
     /// Generates an ID that won't conflict with existing ones, and reserves it
@@ -204,21 +294,25 @@ where
 
     /// Returns the current number of owned assets in the database.
     pub fn num_owned(&self) -> usize {
-        self.owned_receiver.len()
+        self.owned_queue.len()
     }
 
-    /// Removes an asset from the storage and returns it, blocking if the
-    /// available assets have been exhausted, waiting for a new owned asset to
-    /// arrive.
-    pub async fn take_owned(&self) -> (UniqueId, T) {
-        // Can't fail, because we keep a sender alive.
-        let (id, asset) = self.owned_receiver.recv_async().await.unwrap();
+    pub async fn take_owned_with_condition(
+        &self,
+        cond: impl Fn(&UniqueId, &T) -> bool,
+    ) -> (UniqueId, T) {
+        let (id, asset) = self.owned_queue.take_owned_with_condition(cond).await;
         let mut update = self.db.update();
         update.delete(self.col, &borsh::to_vec(&id).unwrap());
         update
             .commit()
             .expect("Unrecoverable error writing to database");
         (id, asset)
+    }
+
+    #[cfg(test)]
+    pub async fn take_owned(&self) -> (UniqueId, T) {
+        self.take_owned_with_condition(|_, _| true).await
     }
 
     /// Adds an owned asset to the storage.
@@ -231,7 +325,7 @@ where
             .commit()
             .expect("Unrecoverable error writing to database");
         // Can't fail, because we keep a receiver alive.
-        self.owned_sender.send((id, value)).unwrap();
+        self.owned_queue.add_owned(id, value);
     }
 
     /// For unowned assets, this should be called first before participating
@@ -268,7 +362,9 @@ where
             pending.await.ok();
         }
         let key = borsh::to_vec(&id).unwrap();
-        let value_ser = self.db.get(self.col, &key)?.context("Asset not found")?;
+        let value_ser = self.db.get(self.col, &key)?.ok_or_else(|| {
+            anyhow::anyhow!("Unowned {} not found in the database: {:?}", self.col, id)
+        })?;
         let mut update = self.db.update();
         update.delete(self.col, &key);
         update
@@ -321,18 +417,271 @@ where
     }
 }
 
+pub struct ProtocolsStorage<T>
+where
+    T: Serialize + DeserializeOwned + Send + HasParticipants + 'static,
+{
+    storage: DistributedAssetStorage<T>,
+    last_alive_participants_set_hash: AtomicU64,
+}
+
+impl<T> ProtocolsStorage<T>
+where
+    T: Serialize + DeserializeOwned + Send + HasParticipants + 'static,
+{
+    fn get_hash(participants: &Vec<ParticipantId>) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        participants.hash(&mut hasher);
+        hasher.finish()
+    }
+    pub fn new(
+        db: Arc<SecretDB>,
+        col: DBCol,
+        my_participant_id: ParticipantId,
+        all_participant_ids: &Vec<ParticipantId>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            storage: DistributedAssetStorage::<T>::new(db, col, my_participant_id)?,
+            last_alive_participants_set_hash: AtomicU64::new(Self::get_hash(all_participant_ids)),
+        })
+    }
+
+    /// Returns true if set of active participants was actually changed
+    /// It also does not make sense to call this function outside of take_owned,
+    /// since we still use passed set of participants inside of take_owned()
+    /// (for providing condition whether a given set of participants is subset of alive participants)
+    /// even if it was changed during the call
+    fn set_alive_participants_ids(&self, participants: &Vec<ParticipantId>) -> bool {
+        let new_hash = Self::get_hash(participants);
+        self.last_alive_participants_set_hash
+            .swap(new_hash, Ordering::Relaxed)
+            != new_hash
+    }
+
+    pub fn generate_and_reserve_id_range(&self, count: u32) -> UniqueId {
+        self.storage.generate_and_reserve_id_range(count)
+    }
+
+    pub fn generate_and_reserve_id(&self) -> UniqueId {
+        self.storage.generate_and_reserve_id()
+    }
+
+    pub fn num_owned(&self) -> usize {
+        self.storage.num_owned()
+    }
+
+    pub async fn take_owned(&self, alive_participants_ids: &Vec<ParticipantId>) -> (UniqueId, T) {
+        if self.set_alive_participants_ids(alive_participants_ids) {
+            self.storage.set_of_alive_participants_has_changed();
+        }
+        let is_subset_of_active_participants = |_: &UniqueId, value: &T| {
+            value.is_subset_of_active_participants(alive_participants_ids)
+        };
+        self.storage
+            .take_owned_with_condition(is_subset_of_active_participants)
+            .await
+    }
+
+    /// Adds an owned asset to the storage.
+    pub fn add_owned(&self, id: UniqueId, value: T) {
+        self.storage.add_owned(id, value)
+    }
+
+    pub fn prepare_unowned(&self, id: UniqueId) -> PendingUnownedAsset<T> {
+        self.storage.prepare_unowned(id)
+    }
+
+    pub async fn take_unowned(&self, id: UniqueId) -> anyhow::Result<T> {
+        self.storage.take_unowned(id).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::UniqueId;
-    use crate::primitives::ParticipantId;
+    use super::{DoubleQueue, UniqueId};
+    use crate::primitives::{HasParticipants, ParticipantId};
     use borsh::BorshDeserialize;
     use futures::future::{maybe_done, MaybeDone};
     use futures::FutureExt;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+    struct ParticipantsWithI32(Vec<ParticipantId>, i32);
+
+    impl HasParticipants for ParticipantsWithI32 {
+        fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
+            self.0.iter().all(|p| active_participants.contains(p))
+        }
+    }
+
+    #[test]
+    fn test_double_queue() {
+        let queue = DoubleQueue::<i32>::new();
+        let id = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        queue.add_owned(id, 0);
+        queue.add_owned(id.add_to_counter(1).unwrap(), 1);
+        queue.add_owned(id.add_to_counter(2).unwrap(), 2);
+        let never_done_fut = queue.take_owned_with_condition(|_, _| false);
+        let MaybeDone::Future(never_done_fut) = maybe_done(never_done_fut) else {
+            panic!("should not be able to take value with false condition");
+        };
+        let (retrieved_id, value) = queue
+            .take_owned_with_condition(|_, value| value == &1)
+            .now_or_never()
+            .unwrap();
+        assert_eq!(retrieved_id, id.add_to_counter(1).unwrap());
+        assert_eq!(value, 1);
+
+        let asset0_fut = queue.take_owned_with_condition(|_, value| value == &0);
+
+        let MaybeDone::Future(asset0_fut) = maybe_done(asset0_fut) else {
+            panic!("should not be able to take value which is in cold queue yet");
+        };
+
+        let asset2_fut = queue.take_owned_with_condition(|_, value| value == &2);
+
+        let MaybeDone::Future(asset0_fut) = maybe_done(asset0_fut) else {
+            panic!("value 2 should be in the cold queue");
+        };
+
+        queue.set_of_alive_participants_has_changed();
+        let (retrieved_id, value) = asset2_fut.now_or_never().unwrap();
+        assert_eq!(retrieved_id, id.add_to_counter(2).unwrap());
+        assert_eq!(value, 2);
+
+        let MaybeDone::Future(asset0_fut) = maybe_done(asset0_fut) else {
+            panic!("value 0 still should be in the cold queue with counter 0");
+        };
+
+        queue.set_of_alive_participants_has_changed();
+        let (retrieved_id, value) = asset0_fut.now_or_never().unwrap();
+        assert_eq!(retrieved_id, id);
+        assert_eq!(value, 0);
+
+        let MaybeDone::Future(_) = maybe_done(never_done_fut) else {
+            panic!("should not be able to take value with false condition");
+        };
+    }
+
+    #[test]
+    fn test_protocols_storage() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let all_participants = vec![
+            ParticipantId::from_raw(0),
+            ParticipantId::from_raw(1),
+            ParticipantId::from_raw(2),
+            ParticipantId::from_raw(3),
+        ];
+        let first_participants_subset = vec![
+            ParticipantId::from_raw(0),
+            ParticipantId::from_raw(1),
+            ParticipantId::from_raw(2),
+        ];
+        let second_participants_subset = vec![
+            ParticipantId::from_raw(1),
+            ParticipantId::from_raw(2),
+            ParticipantId::from_raw(3),
+        ];
+        let store = super::ProtocolsStorage::<ParticipantsWithI32>::new(
+            db,
+            crate::db::DBCol::Triple,
+            ParticipantId::from_raw(42),
+            &all_participants,
+        )
+        .unwrap();
+        assert_eq!(store.num_owned(), 0);
+
+        let id1 = store.generate_and_reserve_id();
+        let id2 = store.generate_and_reserve_id();
+        let id3 = store.generate_and_reserve_id();
+        let id4 = store.generate_and_reserve_id();
+        let id5 = store.generate_and_reserve_id();
+        store.add_owned(id1, ParticipantsWithI32(all_participants.clone(), 123));
+        assert_eq!(store.num_owned(), 1);
+        store.add_owned(id2, ParticipantsWithI32(all_participants.clone(), 456));
+        assert_eq!(store.num_owned(), 2);
+        let asset1 = store.take_owned(&all_participants).now_or_never().unwrap();
+        assert_eq!(
+            asset1,
+            (id1, ParticipantsWithI32(all_participants.clone(), 123))
+        );
+        assert_eq!(store.num_owned(), 1);
+        store.add_owned(
+            id3,
+            ParticipantsWithI32(second_participants_subset.clone(), 789),
+        );
+        assert_eq!(store.num_owned(), 2);
+        let asset_fut = store.take_owned(&first_participants_subset);
+
+        let MaybeDone::Future(asset_fut) = maybe_done(asset_fut) else {
+            panic!("Cannot take value since set of participants has changed");
+        };
+
+        store.add_owned(
+            id4,
+            ParticipantsWithI32(first_participants_subset.clone(), 101112),
+        );
+
+        let asset3 = store
+            .take_owned(&first_participants_subset)
+            .now_or_never()
+            .unwrap();
+        assert_eq!(
+            asset3,
+            (
+                id4,
+                ParticipantsWithI32(first_participants_subset.clone(), 101112)
+            )
+        );
+
+        let MaybeDone::Future(asset_fut) = maybe_done(asset_fut) else {
+            panic!("Cannot take value since set of participants has changed");
+        };
+
+        store.add_owned(
+            id4,
+            ParticipantsWithI32(first_participants_subset.clone(), 131415),
+        );
+        assert_eq!(
+            asset_fut.now_or_never().unwrap(),
+            (
+                id4,
+                ParticipantsWithI32(first_participants_subset.clone(), 131415)
+            )
+        );
+
+        assert_eq!(store.num_owned(), 0);
+        store.add_owned(id5, ParticipantsWithI32(all_participants.clone(), 161718));
+        assert_eq!(store.num_owned(), 1);
+
+        assert_eq!(
+            store.take_owned(&all_participants).now_or_never().unwrap(),
+            (id2, ParticipantsWithI32(all_participants.clone(), 456))
+        );
+        assert_eq!(store.num_owned(), 2);
+
+        assert_eq!(
+            store.take_owned(&all_participants).now_or_never().unwrap(),
+            (
+                id3,
+                ParticipantsWithI32(second_participants_subset.clone(), 789)
+            )
+        );
+        assert_eq!(store.num_owned(), 1);
+
+        assert_eq!(
+            store.take_owned(&all_participants).now_or_never().unwrap(),
+            (id5, ParticipantsWithI32(all_participants.clone(), 161718))
+        );
+        assert_eq!(store.num_owned(), 0);
+    }
 
     #[test]
     fn test_unique_id() {
-        let id = UniqueId::new(ParticipantId(42), 123, 456);
-        assert_eq!(id.participant_id(), ParticipantId(42));
+        let participant_id = ParticipantId::from_raw(42);
+        let id = UniqueId::new(participant_id, 123, 456);
+        assert_eq!(id.participant_id(), participant_id);
         assert_eq!(id.timestamp(), 123);
         assert_eq!(id.counter(), 456);
         assert_eq!(id.add_to_counter(2).unwrap().counter(), 458);
@@ -346,10 +695,10 @@ mod tests {
             id
         );
         assert_eq!(
-            UniqueId::prefix_for_participant_id(ParticipantId(42)),
+            UniqueId::prefix_for_participant_id(participant_id),
             [0, 0, 0, 42]
         );
-        let time_based_1 = UniqueId::generate(ParticipantId(42));
+        let time_based_1 = UniqueId::generate(participant_id);
         let time_based_2 = time_based_1.pick_new_after();
         assert!(time_based_2 > time_based_1);
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -364,7 +713,7 @@ mod tests {
         let store = super::DistributedAssetStorage::<u32>::new(
             db,
             crate::db::DBCol::Triple,
-            ParticipantId(42),
+            ParticipantId::from_raw(42),
         )
         .unwrap();
         assert_eq!(store.num_owned(), 0);
@@ -407,7 +756,7 @@ mod tests {
         let store = super::DistributedAssetStorage::<u32>::new(
             db.clone(),
             crate::db::DBCol::Triple,
-            ParticipantId(42),
+            ParticipantId::from_raw(42),
         )
         .unwrap();
 
@@ -453,7 +802,7 @@ mod tests {
         let store = super::DistributedAssetStorage::<u32>::new(
             db,
             crate::db::DBCol::Triple,
-            ParticipantId(42),
+            ParticipantId::from_raw(42),
         )
         .unwrap();
         assert_eq!(store.take_owned().now_or_never().unwrap(), (id5, 5));
@@ -467,11 +816,11 @@ mod tests {
         let store = super::DistributedAssetStorage::<u32>::new(
             db,
             crate::db::DBCol::Triple,
-            ParticipantId(42),
+            ParticipantId::from_raw(42),
         )
         .unwrap();
 
-        let other = ParticipantId(43);
+        let other = ParticipantId::from_raw(43);
         let id1 = UniqueId::new(other, 1, 0);
 
         // Put an unowned asset in, take it right after.
@@ -512,10 +861,11 @@ mod tests {
     fn test_distributed_store_persistence() {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let myself = ParticipantId::from_raw(42);
         let store = super::DistributedAssetStorage::<u32>::new(
             db.clone(),
             crate::db::DBCol::Triple,
-            ParticipantId(42),
+            myself,
         )
         .unwrap();
 
@@ -525,19 +875,16 @@ mod tests {
         store.add_owned(id1.add_to_counter(2).unwrap(), 3);
         store.add_owned(id1.add_to_counter(3).unwrap(), 4);
 
-        let other = ParticipantId(43);
+        let other = ParticipantId::from_raw(43);
         store.prepare_unowned(UniqueId::new(other, 1, 0)).commit(5);
         store.prepare_unowned(UniqueId::new(other, 2, 0)).commit(6);
         store.prepare_unowned(UniqueId::new(other, 3, 0)).commit(7);
         store.prepare_unowned(UniqueId::new(other, 4, 0)).commit(8);
 
         drop(store);
-        let store = super::DistributedAssetStorage::<u32>::new(
-            db,
-            crate::db::DBCol::Triple,
-            ParticipantId(42),
-        )
-        .unwrap();
+        let store =
+            super::DistributedAssetStorage::<u32>::new(db, crate::db::DBCol::Triple, myself)
+                .unwrap();
         assert_eq!(store.num_owned(), 4);
         assert_eq!(store.take_owned().now_or_never().unwrap(), (id1, 1));
         assert_eq!(

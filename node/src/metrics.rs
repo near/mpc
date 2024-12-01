@@ -28,6 +28,15 @@ lazy_static! {
 }
 
 lazy_static! {
+    pub static ref MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE: prometheus::IntGauge =
+        prometheus::register_int_gauge!(
+            "mpc_owned_num_presignatures_available",
+            "Number of presignatures generated that we own, and not yet used"
+        )
+        .unwrap();
+}
+
+lazy_static! {
     pub static ref MPC_NUM_SIGNATURES_GENERATED: prometheus::IntCounter =
         prometheus::register_int_counter!(
             "mpc_num_signatures_generated",

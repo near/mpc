@@ -1,33 +1,120 @@
-use crate::network::NetworkTaskChannel;
-use crate::primitives::ParticipantId;
+use crate::config::Config;
+use crate::db;
+use crate::network::{MeshNetworkClient, NetworkTaskChannel};
+use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::protocol::run_protocol;
+use aes_gcm::aead::generic_array::GenericArray;
+use aes_gcm::{Aes128Gcm, KeyInit};
+use anyhow::Context;
 use cait_sith::protocol::Participant;
 use cait_sith::KeygenOutput;
 use k256::Secp256k1;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tokio::sync::mpsc;
 
 /// Runs the key generation protocol, returning the key generated.
 /// This protocol is identical for the leader and the followers.
 pub async fn run_key_generation(
     channel: NetworkTaskChannel,
-    participants: Vec<ParticipantId>,
     me: ParticipantId,
     threshold: usize,
 ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
-    let cs_participants = participants
+    let cs_participants = channel
+        .participants
         .iter()
         .copied()
         .map(Participant::from)
         .collect::<Vec<_>>();
     let protocol = cait_sith::keygen::<Secp256k1>(&cs_participants, me.into(), threshold)?;
-    run_protocol("key generation", channel, participants, me, protocol).await
+    run_protocol("key generation", channel, me, protocol).await
+}
+
+/// Reads the root keyshare (keygen output) from disk.
+pub fn load_root_keyshare(
+    home_dir: &Path,
+    encryption_key: [u8; 16],
+) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+    let key_path = home_dir.join("key");
+    let cipher = Aes128Gcm::new(GenericArray::from_slice(&encryption_key));
+    let data = std::fs::read(key_path).context("Failed to read keygen file")?;
+    let decrypted = db::decrypt(&cipher, &data).context("Failed to decrypt keygen")?;
+    serde_json::from_slice(&decrypted).context("Failed to parse keygen")
+}
+
+/// Saves the root keyshare (keygen output) to disk.
+fn save_root_keyshare(
+    home_dir: &Path,
+    encryption_key: [u8; 16],
+    keygen_out: &KeygenOutput<Secp256k1>,
+) -> anyhow::Result<()> {
+    assert_root_key_does_not_exist(home_dir);
+    let key_path = home_dir.join("key");
+    let cipher = Aes128Gcm::new(GenericArray::from_slice(&encryption_key));
+    let data = serde_json::to_vec(keygen_out).context("Failed to serialize keygen")?;
+    let encrypted = db::encrypt(&cipher, &data);
+    std::fs::write(key_path, &encrypted).context("Failed to write keygen file")
+}
+
+/// Panics if the root keyshare file already exists.
+fn assert_root_key_does_not_exist(home_dir: &Path) {
+    if home_dir.join("key").exists() {
+        panic!("Root keyshare file already exists; refusing to overwrite");
+    }
+}
+
+/// Performs the key generation protocol, saving the keyshare to disk.
+/// Returns when the key generation is complete or runs into an error.
+/// This is expected to only succeed if all participants are online
+/// and running this function.
+pub async fn run_key_generation_client(
+    home_dir: PathBuf,
+    config: Arc<Config>,
+    client: Arc<MeshNetworkClient>,
+    mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
+) -> anyhow::Result<()> {
+    assert_root_key_does_not_exist(&home_dir);
+    let my_participant_id = client.my_participant_id();
+    let is_leader = my_participant_id
+        == config
+            .mpc
+            .participants
+            .participants
+            .iter()
+            .map(|p| p.id)
+            .min()
+            .unwrap();
+
+    let channel = if is_leader {
+        client.new_channel_for_task(MpcTaskId::KeyGeneration, client.all_participant_ids())?
+    } else {
+        let channel = channel_receiver.recv().await.unwrap();
+        if channel.task_id != MpcTaskId::KeyGeneration {
+            anyhow::bail!(
+                "Received task ID is not key generation: {:?}",
+                channel.task_id
+            );
+        }
+        channel
+    };
+    let key = run_key_generation(
+        channel,
+        my_participant_id,
+        config.mpc.participants.threshold as usize,
+    )
+    .await?;
+    save_root_keyshare(&home_dir, config.secret_storage.aes_key, &key)?;
+    tracing::info!("Key generation completed");
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::run_key_generation;
+    use super::{run_key_generation, save_root_keyshare};
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::MpcTaskId;
+    use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use cait_sith::KeygenOutput;
     use k256::Secp256k1;
@@ -52,16 +139,32 @@ mod tests {
 
         // We'll have the first participant be the leader.
         let channel = if participant_id == all_participant_ids[0] {
-            client.new_channel_for_task(MpcTaskId::KeyGeneration)?
+            client.new_channel_for_task(MpcTaskId::KeyGeneration, client.all_participant_ids())?
         } else {
             channel_receiver
                 .recv()
                 .await
                 .ok_or_else(|| anyhow::anyhow!("No channel"))?
         };
-        let key =
-            run_key_generation(channel, all_participant_ids.clone(), participant_id, 3).await?;
+        let key = run_key_generation(channel, participant_id, 3).await?;
 
         Ok(key)
+    }
+
+    #[test]
+    fn test_keygen_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let encryption_key = [1; 16];
+        let generated_key = TestGenerators::new(2, 2)
+            .make_keygens()
+            .into_iter()
+            .next()
+            .unwrap()
+            .1;
+
+        save_root_keyshare(dir.path(), encryption_key, &generated_key).unwrap();
+        let loaded_key = super::load_root_keyshare(dir.path(), encryption_key).unwrap();
+        assert_eq!(generated_key.private_share, loaded_key.private_share);
+        assert_eq!(generated_key.public_key, loaded_key.public_key);
     }
 }

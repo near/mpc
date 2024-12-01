@@ -1,11 +1,10 @@
 use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
-use crate::tracking;
+use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
-use futures::lock::Mutex;
 use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
@@ -13,8 +12,10 @@ use rustls::quic::Suite;
 use rustls::server::danger::ClientCertVerifier;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::task::JoinSet;
 use x509_parser::prelude::{FromDer, X509Certificate};
 use x509_parser::public_key::PublicKey;
 
@@ -23,12 +24,13 @@ use x509_parser::public_key::PublicKey;
 pub struct QuicMeshSender {
     my_id: ParticipantId,
     participants: Vec<ParticipantId>,
-    connections: HashMap<ParticipantId, PersistentConnection>,
+    connections: HashMap<ParticipantId, Arc<PersistentConnection>>,
 }
 
 /// Implements MeshNetworkTransportReceiver.
 pub struct QuicMeshReceiver {
     receiver: Receiver<MpcPeerMessage>,
+    _incoming_connections_task: AutoAbortTask<()>,
 }
 
 /// Maps public keys to participant IDs. Used to identify incoming connections.
@@ -85,60 +87,112 @@ impl ClientCertVerifier for DummyClientCertVerifier {
 
 /// A retrying connection that will automatically reconnect if the QUIC
 /// connection is broken.
-#[derive(Clone)]
 struct PersistentConnection {
-    endpoint: Endpoint,
-    target_address: String,
     target_participant_id: ParticipantId,
-    participant_identities: Arc<ParticipantIdentities>,
-    current: Arc<Mutex<Option<Arc<quinn::Connection>>>>,
+    // Current connection. This is an Option because it can be None if the
+    // connection was never established. It is a Weak because the connection
+    // is owned by the loop-to-connect task (see the `new` method) and when
+    // the connection is closed it is dropped.
+    current: tokio::sync::watch::Receiver<Option<Weak<quinn::Connection>>>,
+    // Atomic to quickly read whether a connection is alive. It's faster than
+    // checking the current connection.
+    is_alive: Arc<AtomicBool>,
+    // The task that loops to connect to the target. When `PersistentConnection`
+    // is dropped, this task is aborted. The task owns any active connection,
+    // so dropping it also frees any connection currently alive.
+    _task: AutoAbortTask<()>,
 }
 
 impl PersistentConnection {
+    const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+
     /// Returns a new QUIC stream, establishing a new connection if necessary.
     /// The stream itself can still fail after returning if the connection
     /// drops while the stream is used; but if the connection is already known
     /// to have failed before the stream is opened, this will re-establish the
     /// connection first.
     async fn new_stream(&self) -> anyhow::Result<quinn::SendStream> {
-        let conn = {
-            let current_clone = self.current.clone();
-            let mut current = self.current.lock().await;
-            if current.is_none() {
-                // Reconnect, if we never connected, or the previous connection was closed.
-                let socket_addr = self.target_address.to_socket_addrs()?.next().unwrap();
-                let new_conn = self.endpoint.connect(socket_addr, "dummy")?.await?;
-                let participant_id = verify_peer_identity(&new_conn, &self.participant_identities)?;
-                if participant_id != self.target_participant_id {
-                    anyhow::bail!("Unexpected peer identity");
-                }
-                let new_conn = Arc::new(new_conn);
-                *current = Some(new_conn.clone());
-
-                tracking::spawn(
-                    &format!(
-                        "Delete connection if closed for participant {}",
-                        participant_id
-                    ),
-                    async move {
-                        // Wait for the connection to close, then delete it.
-                        // It's not immediate and not perfect, but at least we'll try to
-                        // reestablish the connection as soon as we know it's closed.
-                        new_conn.closed().await;
-                        let mut current = current_clone.lock().await;
-                        if let Some(current_conn) = &*current {
-                            if Arc::ptr_eq(current_conn, &new_conn) {
-                                *current = None;
-                            }
-                        }
-                    },
-                );
-            }
-            let conn = current.as_mut().unwrap().clone();
-            conn
-        };
+        let conn = self
+            .current
+            .borrow()
+            .clone()
+            .and_then(|weak| weak.upgrade())
+            .ok_or_else(|| {
+                anyhow::anyhow!("Connection to {} is broken", self.target_participant_id)
+            })?;
         let stream = conn.open_uni().await?;
         Ok(stream)
+    }
+
+    pub fn new(
+        endpoint: Endpoint,
+        target_address: String,
+        target_participant_id: ParticipantId,
+        participant_identities: Arc<ParticipantIdentities>,
+    ) -> anyhow::Result<PersistentConnection> {
+        let (current_sender, current_receiver) = tokio::sync::watch::channel(None);
+        let is_alive = Arc::new(AtomicBool::new(false));
+        let is_alive_clone = is_alive.clone();
+        let task = tracking::spawn(
+            &format!("Persistent connection to {}", target_participant_id),
+            async move {
+                async fn connect(
+                    endpoint: &Endpoint,
+                    target_address: &str,
+                    target_participant_id: ParticipantId,
+                    participant_identities: &ParticipantIdentities,
+                ) -> anyhow::Result<Connection> {
+                    let socket_addr = target_address.to_socket_addrs()?.next().unwrap();
+                    let conn = endpoint.connect(socket_addr, "dummy")?.await?;
+
+                    let participant_id = verify_peer_identity(&conn, participant_identities)?;
+                    if participant_id != target_participant_id {
+                        anyhow::bail!("Unexpected peer identity");
+                    }
+                    Ok(conn)
+                }
+
+                loop {
+                    let new_conn = match connect(
+                        &endpoint,
+                        &target_address,
+                        target_participant_id,
+                        &participant_identities,
+                    )
+                    .await
+                    {
+                        Ok(new_conn) => new_conn,
+                        Err(e) => {
+                            tracing::info!(
+                                "Could not connect to {}, retrying: {}",
+                                target_participant_id,
+                                e
+                            );
+                            // Don't immediately retry, to avoid spamming the network with
+                            // connection attempts.
+                            tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
+                            continue;
+                        }
+                    };
+                    let new_conn = Arc::new(new_conn);
+                    if current_sender
+                        .send(Some(Arc::downgrade(&new_conn)))
+                        .is_err()
+                    {
+                        break;
+                    }
+                    is_alive_clone.store(true, Ordering::Relaxed);
+                    new_conn.closed().await;
+                    is_alive_clone.store(false, Ordering::Relaxed);
+                }
+            },
+        );
+        Ok(PersistentConnection {
+            target_participant_id,
+            current: current_receiver,
+            is_alive,
+            _task: task,
+        })
     }
 }
 
@@ -246,15 +300,17 @@ pub async fn new_quic_mesh_network(
     }
     let participant_identities = Arc::new(participant_identities);
     for participant in &config.participants.participants {
+        if participant.id == config.my_participant_id {
+            continue;
+        }
         connections.insert(
             participant.id,
-            PersistentConnection {
-                endpoint: client.clone(),
-                target_address: format!("{}:{}", participant.address, participant.port),
-                target_participant_id: participant.id,
-                participant_identities: participant_identities.clone(),
-                current: Arc::new(Mutex::new(None)),
-            },
+            Arc::new(PersistentConnection::new(
+                client.clone(),
+                format!("{}:{}", participant.address, participant.port),
+                participant.id,
+                participant_identities.clone(),
+            )?),
         );
     }
 
@@ -262,11 +318,12 @@ pub async fn new_quic_mesh_network(
     let (message_sender, message_receiver) = mpsc::channel(1000000);
     let endpoint_for_listener = server.clone();
 
-    tracking::spawn("Handle incoming connections", async move {
+    let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
+        let mut tasks = AutoAbortTaskCollection::new();
         while let Some(conn) = endpoint_for_listener.accept().await {
             let message_sender = message_sender.clone();
             let participant_identities = participant_identities.clone();
-            tracking::spawn_checked("Handle connection", async move {
+            tasks.spawn_checked("Handle connection", async move {
                 if let Ok(connection) = conn.await {
                     let verified_participant_id =
                         verify_peer_identity(&connection, &participant_identities)?;
@@ -297,6 +354,7 @@ pub async fn new_quic_mesh_network(
 
     let receiver = QuicMeshReceiver {
         receiver: message_receiver,
+        _incoming_connections_task: incoming_connections_task,
     };
 
     Ok((sender, receiver))
@@ -381,31 +439,43 @@ impl MeshNetworkTransportSender for QuicMeshSender {
         Ok(())
     }
 
-    async fn wait_for_ready(&self) -> anyhow::Result<()> {
-        let handles = self.connections.iter().map(|(participant_id, conn)| {
+    async fn wait_for_ready(&self, threshold: usize) -> anyhow::Result<()> {
+        assert!(threshold - 1 <= self.connections.len());
+        let mut join_set = JoinSet::new();
+        for (participant_id, conn) in &self.connections {
             let participant_id = *participant_id;
             let conn = conn.clone();
-            tracking::spawn(
-                &format!("Wait for connection to {}", participant_id),
-                async move {
-                    loop {
-                        match conn.new_stream().await {
-                            Ok(_) => break,
-                            Err(e) => {
-                                tracing::info!(
-                                    "Waiting for connection to {}: {}",
-                                    participant_id,
-                                    e
-                                );
-                            }
-                        }
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    }
-                },
-            )
-        });
-        futures::future::join_all(handles).await;
+            join_set.spawn(async move {
+                let mut receiver = conn.current.clone();
+                while receiver
+                    .borrow()
+                    .clone()
+                    .is_none_or(|weak| weak.upgrade().is_none())
+                {
+                    tracing::info!("Waiting for connection to {}", participant_id);
+                    receiver.changed().await?;
+                }
+                tracing::info!("Connected to {}", participant_id);
+                anyhow::Ok(())
+            });
+        }
+        for _ in 1..threshold {
+            join_set.join_next().await.unwrap()??;
+        }
         Ok(())
+    }
+
+    fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
+        let mut ids: Vec<_> = self
+            .connections
+            .iter()
+            .filter(|(_, conn)| conn.is_alive.load(Ordering::Relaxed))
+            .map(|(p, _)| *p)
+            .chain([self.my_id])
+            .collect();
+        // Make it stable for testing.
+        ids.sort();
+        ids
     }
 }
 
@@ -432,15 +502,18 @@ pub fn generate_keypair() -> Result<(String, String)> {
 pub fn generate_test_p2p_configs(
     parties: usize,
     threshold: usize,
+    // this is a hack to make sure that when tests run in parallel, they don't
+    // collide on the same port.
+    seed: u16,
 ) -> anyhow::Result<Vec<MpcConfig>> {
     let mut participants = Vec::new();
     let mut keypairs = Vec::new();
     for i in 0..parties {
         let (p2p_private_key, p2p_public_key) = generate_keypair()?;
         participants.push(ParticipantInfo {
-            id: ParticipantId(i as u32),
+            id: ParticipantId::from_raw(rand::random()),
             address: "127.0.0.1".to_string(),
-            port: 10000 + i as u16,
+            port: 10000 + seed * 1000 + i as u16,
             p2p_public_key: p2p_public_key.clone(),
         });
         keypairs.push((p2p_private_key, p2p_public_key));
@@ -456,7 +529,7 @@ pub fn generate_test_p2p_configs(
         };
 
         let config = MpcConfig {
-            my_participant_id: ParticipantId(i as u32),
+            my_participant_id: participants.participants[i].id,
             secrets: SecretsConfig {
                 p2p_private_key: keypair.0,
             },
@@ -474,47 +547,137 @@ mod tests {
     use crate::primitives::{MpcMessage, ParticipantId};
     use crate::tracing::init_logging;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
+    use serial_test::serial;
+    use std::time::Duration;
+    use tokio::time::timeout;
 
     #[tokio::test]
+    #[serial]
     async fn test_basic_quic_mesh_network() {
         init_logging();
-        let configs = super::generate_test_p2p_configs(2, 2).unwrap();
-        println!("{:?}", configs[0]);
+        let configs = super::generate_test_p2p_configs(2, 2, 0).unwrap();
+        let participant0 = configs[0].my_participant_id;
+        let participant1 = configs[1].my_participant_id;
+
         start_root_task_with_periodic_dump(async move {
             let (sender0, mut receiver0) = super::new_quic_mesh_network(&configs[0]).await.unwrap();
             let (sender1, mut receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
 
+            sender0.wait_for_ready(2).await.unwrap();
+            sender1.wait_for_ready(2).await.unwrap();
+
             for _ in 0..100 {
                 sender0
                     .send(
-                        ParticipantId(1),
+                        participant1,
                         MpcMessage {
                             data: vec![vec![1, 2, 3]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
+                            participants: vec![],
                         },
                     )
                     .await
                     .unwrap();
                 let msg = receiver1.receive().await.unwrap();
-                assert_eq!(msg.from, ParticipantId(0));
+                assert_eq!(msg.from, participant0);
                 assert_eq!(msg.message.data, vec![vec![1, 2, 3]]);
 
                 sender1
                     .send(
-                        ParticipantId(0),
+                        participant0,
                         MpcMessage {
                             data: vec![vec![4, 5, 6]],
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
+                            participants: vec![],
                         },
                     )
                     .await
                     .unwrap();
 
                 let msg = receiver0.receive().await.unwrap();
-                assert_eq!(msg.from, ParticipantId(1));
+                assert_eq!(msg.from, participant1);
                 assert_eq!(msg.message.data, vec![vec![4, 5, 6]]);
             }
         })
         .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_wait_for_ready() {
+        init_logging();
+        let mut configs = super::generate_test_p2p_configs(4, 4, 1).unwrap();
+        // Make node 3 use the wrong address for the 0th node. All connections should work
+        // except from 3 to 0.
+        configs[3].participants.participants[0].address = "169.254.1.1".to_owned();
+        start_root_task_with_periodic_dump(async move {
+            let (sender0, _receiver0) = super::new_quic_mesh_network(&configs[0]).await.unwrap();
+            let (sender1, receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
+            let (sender2, _receiver2) = super::new_quic_mesh_network(&configs[2]).await.unwrap();
+            let (sender3, _receiver3) = super::new_quic_mesh_network(&configs[3]).await.unwrap();
+
+            sender0.wait_for_ready(4).await.unwrap();
+            sender1.wait_for_ready(4).await.unwrap();
+            sender2.wait_for_ready(4).await.unwrap();
+            // Node 3 should not be able to connect to node 0, so if we wait for 4,
+            // it should fail.
+            assert!(timeout(Duration::from_secs(1), sender3.wait_for_ready(4))
+                .await
+                .is_err());
+
+            // But if we wait for 3, it should succeed.
+            sender3.wait_for_ready(3).await.unwrap();
+
+            let ids: Vec<_> = configs[0]
+                .participants
+                .participants
+                .iter()
+                .map(|p| p.id)
+                .collect();
+            assert_eq!(sender0.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(sender1.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(sender2.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(
+                sender3.all_alive_participant_ids(),
+                sorted(&[ids[1], ids[2], ids[3]]),
+            );
+
+            // Disconnect node 1. Other nodes should notice the change.
+            drop((sender1, receiver1));
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            assert_eq!(
+                sender0.all_alive_participant_ids(),
+                sorted(&[ids[0], ids[2], ids[3]])
+            );
+            assert_eq!(
+                sender2.all_alive_participant_ids(),
+                sorted(&[ids[0], ids[2], ids[3]])
+            );
+            assert_eq!(
+                sender3.all_alive_participant_ids(),
+                sorted(&[ids[2], ids[3]])
+            );
+
+            // Reconnect node 1. Other nodes should re-establish the connections.
+            let (sender1, _receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
+            sender0.wait_for_ready(4).await.unwrap();
+            sender1.wait_for_ready(4).await.unwrap();
+            sender2.wait_for_ready(4).await.unwrap();
+            sender3.wait_for_ready(3).await.unwrap();
+            assert_eq!(sender0.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(sender1.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(sender2.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(
+                sender3.all_alive_participant_ids(),
+                sorted(&[ids[1], ids[2], ids[3]]),
+            );
+        })
+        .await;
+    }
+
+    fn sorted(ids: &[ParticipantId]) -> Vec<ParticipantId> {
+        let mut ids = ids.to_vec();
+        ids.sort();
+        ids
     }
 }

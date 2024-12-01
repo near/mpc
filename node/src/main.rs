@@ -2,9 +2,11 @@ use clap::Parser;
 use tracing::init_logging;
 
 mod assets;
+mod background;
 mod cli;
 mod config;
 mod db;
+mod hkdf;
 mod indexer;
 mod key_generation;
 mod metrics;
@@ -14,6 +16,8 @@ mod p2p;
 mod primitives;
 mod protocol;
 mod sign;
+#[cfg(test)]
+mod tests;
 mod tracing;
 mod tracking;
 mod triple;

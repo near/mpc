@@ -1,6 +1,7 @@
 use aes_gcm::aead::generic_array::GenericArray;
 use aes_gcm::aead::Aead;
 use aes_gcm::{AeadCore, Aes128Gcm, AesGcm, KeyInit};
+use std::fmt::Display;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -14,7 +15,6 @@ pub struct SecretDB {
 /// Each DBCol corresponds to a column family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DBCol {
-    GeneratedKey,
     Triple,
     Presignature,
 }
@@ -22,26 +22,31 @@ pub enum DBCol {
 impl DBCol {
     fn as_str(&self) -> &'static str {
         match self {
-            DBCol::GeneratedKey => "key",
             DBCol::Triple => "triple",
             DBCol::Presignature => "presignature",
         }
     }
 
-    fn all() -> [DBCol; 3] {
-        [DBCol::GeneratedKey, DBCol::Triple, DBCol::Presignature]
+    fn all() -> [DBCol; 2] {
+        [DBCol::Triple, DBCol::Presignature]
+    }
+}
+
+impl Display for DBCol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
 /// Encrypts a single value with AES-GCM. This encryption is randomized.
-fn encrypt(cipher: &Aes128Gcm, plaintext: &[u8]) -> Vec<u8> {
+pub fn encrypt(cipher: &Aes128Gcm, plaintext: &[u8]) -> Vec<u8> {
     let nonce = aes_gcm::Aes128Gcm::generate_nonce(&mut rand::thread_rng());
     let ciphertext = cipher.encrypt(&nonce, plaintext).unwrap();
     [nonce.as_slice(), &ciphertext].concat()
 }
 
 /// Decrypts a single value with AES-GCM.
-fn decrypt(cipher: &Aes128Gcm, ciphertext: &[u8]) -> anyhow::Result<Vec<u8>> {
+pub fn decrypt(cipher: &Aes128Gcm, ciphertext: &[u8]) -> anyhow::Result<Vec<u8>> {
     const NONCE_LEN: usize = 12; // dictated by the aes-gcm library.
     if ciphertext.len() < NONCE_LEN {
         return Err(anyhow::anyhow!("ciphertext is too short"));
@@ -78,8 +83,7 @@ impl SecretDB {
     /// Returns the undecrypted ciphertext, for testing.
     #[cfg(test)]
     pub fn get_ciphertext(&self, col: DBCol, key: &[u8]) -> anyhow::Result<Option<Vec<u8>>> {
-        let value = self.db.get_cf(&self.cf_handle(col), key)?;
-        value.map(|v| Ok(v)).transpose()
+        Ok(self.db.get_cf(&self.cf_handle(col), key)?)
     }
 
     /// Returns an iterator for all values in the given range.
@@ -161,7 +165,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let db = SecretDB::new(dir.path(), [1; 16])?;
         let mut update = db.update();
-        update.put(DBCol::GeneratedKey, b"key", b"value");
+        update.put(DBCol::Presignature, b"key", b"value");
         update.put(DBCol::Triple, b"triple1", b"tripledata");
         update.put(
             DBCol::Triple,
@@ -170,7 +174,7 @@ mod tests {
         );
         update.put(DBCol::Triple, b"triple3", b"");
         update.commit()?;
-        assert_eq!(db.get(DBCol::GeneratedKey, b"key")?.unwrap(), b"value");
+        assert_eq!(db.get(DBCol::Presignature, b"key")?.unwrap(), b"value");
         assert_eq!(db.get(DBCol::Triple, b"triple1")?.unwrap(), b"tripledata");
         assert_eq!(
             db.get(DBCol::Triple, b"triple2")?.unwrap(),

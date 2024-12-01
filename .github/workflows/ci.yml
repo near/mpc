@@ -1,0 +1,65 @@
+name: CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  pull_request:
+  merge_group:
+    
+
+jobs:
+  ci-tests:
+    name: "Run tests"
+    runs-on: ubuntu-22.04-8core
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+      
+      - name: Run Clippy fmt
+        run: |
+          CARGO_TARGET_DIR="target/clippy" \
+          RUSTFLAGS="-D warnings" \
+          cargo clippy --all-features --all-targets --locked
+ 
+      - name: Run Cargo fmt
+        run: cargo fmt -- --check
+          
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest
+
+      - name: Run cargo-nextest
+        run: cargo nextest run --release --locked 
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check Docker image can be built
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          file: integration-test/Dockerfile
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # - name: Expose GitHub Runtime
+      #   uses: crazy-max/ghaction-github-runtime@v3
+
+      # - name: Check Docker image can be built
+      #   run: docker build --cache-to type=gha --cache-from type=gha -f integration-test/Dockerfile --progress=plain . 
+        
+
+
+          

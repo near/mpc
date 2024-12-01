@@ -9,7 +9,6 @@ pub struct Config {
     pub mpc: MpcConfig,
     pub web_ui: WebUIConfig,
     pub indexer: Option<IndexerConfig>,
-    pub key_generation: KeyGenerationConfig,
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
     pub signature: SignatureConfig,
@@ -20,11 +19,6 @@ pub struct Config {
 pub struct SecretStorageConfig {
     pub data_dir: PathBuf,
     pub aes_key: [u8; 16],
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyGenerationConfig {
-    pub timeout_sec: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +33,8 @@ pub struct TripleConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresignatureConfig {
+    pub concurrency: usize,
+    pub desired_presignatures_to_buffer: usize,
     pub timeout_sec: u64,
 }
 
@@ -79,11 +75,11 @@ pub struct IndexerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncMode {
     /// continue from the block Indexer was interrupted
-    SyncFromInterruption,
+    Interruption,
     /// start from the newest block after node finishes syncing
-    SyncFromLatest,
+    Latest,
     /// start from specified block height
-    SyncFromBlock(BlockArgs),
+    Block(BlockArgs),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,7 +101,6 @@ pub struct ConfigFile {
     pub p2p_private_key_file: String,
     pub web_ui: WebUIConfig,
     pub indexer: Option<IndexerConfig>,
-    pub key_generation: KeyGenerationConfig,
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
     pub signature: SignatureConfig,
@@ -164,7 +159,6 @@ pub fn load_config(home_dir: &Path, secret_key: [u8; 16]) -> anyhow::Result<Conf
         mpc: mpc_config,
         web_ui: web_config,
         indexer: file_config.indexer,
-        key_generation: file_config.key_generation,
         triple: file_config.triple,
         presignature: file_config.presignature,
         signature: file_config.signature,
