@@ -12,6 +12,7 @@ import time
 import pathlib
 import subprocess
 from prometheus_client.parser import text_string_to_metric_families
+from multiprocessing import Pool
 
 sys.path.append(str(pathlib.Path(__file__).resolve()
                     .parents[1] / 'libs' / 'nearcore' / 'pytest' / 'lib'))
@@ -35,8 +36,9 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     nodes = start_cluster(
         num_validators, num_mpc_nodes, 1, None,
         [["epoch_length", 10], ["block_producer_kickout_threshold", 80]], {})
-    for i in range(0, num_mpc_nodes):
-        nodes[num_validators + i].kill(gentle=True)
+    mpc_nodes = range(num_validators, num_validators + num_mpc_nodes)
+    for i in mpc_nodes:
+        nodes[i].kill(gentle=True)
 
     # Generate the mpc configs
     binary_path = os.path.join(repo_dir / 'target' / 'debug', 'mpc-node')
@@ -44,24 +46,32 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     subprocess.run((binary_path, 'generate-test-configs',
                     '--output-dir', dot_near, '--num-participants', '2', '--threshold', '1'))
 
-    # Finish configuring the mpc nodes and start them
-    for i in range(0, num_mpc_nodes):
-        node = nodes[num_validators + i]
-
-        mpc_config_dir = dot_near / str(i)
+    # Set up the node's home directories
+    for i in mpc_nodes:
+        # Move the generated mpc configs
+        mpc_config_dir = dot_near / str(i - num_validators)
         for fname in os.listdir(mpc_config_dir):
-            subprocess.run(('mv', os.path.join(mpc_config_dir, fname), node.node_dir))
+            subprocess.run(('mv', os.path.join(mpc_config_dir, fname), nodes[i].node_dir))
 
-        # Indexer requires tracked shard
-        fname = os.path.join(node.node_dir, 'config.json')
+        # Indexer config must explicitly specify tracked shard
+        fname = os.path.join(nodes[i].node_dir, 'config.json')
         with open(fname) as fd:
             config_json = json.load(fd)
         config_json['tracked_shards'] = [0]
         with open(fname, 'w') as fd:
             json.dump(config_json, fd, indent=2)
 
-        secret_key_hex = '0123456789ABCDEF0123456789ABCDEF'
-        node.run_cmd(cmd=(binary_path, 'start', '--home-dir', node.node_dir, secret_key_hex))
+    secret_key_hex = '0123456789ABCDEF0123456789ABCDEF'
+
+    # Generate the root keyshares
+    commands = [(binary_path, 'generate-key',
+                 '--home-dir', nodes[i].node_dir, secret_key_hex) for i in mpc_nodes]
+    with Pool() as pool:
+        pool.map(subprocess.run, commands)
+
+    # Start the mpc nodes
+    for i in mpc_nodes:
+        nodes[i].run_cmd(cmd=(binary_path, 'start', '--home-dir', nodes[i].node_dir, secret_key_hex))
 
     # Deploy the mpc contract
     last_block_hash = nodes[0].get_latest_block().hash_bytes
@@ -90,11 +100,8 @@ def test_index_signature_request():
     started = time.time()
     nodes = start_cluster_with_mpc(2, 2)
 
-    # TODO: pick up the port from the mpc config
     metrics2 = MetricsTracker(nodes[2])
-    metrics2.addr = "http://127.0.0.1:20000/metrics"
     metrics3 = MetricsTracker(nodes[3])
-    metrics3.addr = "http://127.0.0.1:20001/metrics"
 
     # Send a signature request
     payload = [12,1,2,0,4,5,6,8,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,44]

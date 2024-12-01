@@ -151,7 +151,7 @@ impl Cli {
                         .set(mpc_client.clone())
                         .map_err(|_| ())
                         .unwrap();
-                    //mpc_client.clone().run(channel_receiver).await?;
+                    mpc_client.clone().run(channel_receiver).await?;
 
                     anyhow::Ok(())
                 });
