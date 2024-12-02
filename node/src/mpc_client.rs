@@ -5,6 +5,7 @@ use crate::sign::{
     pre_sign_unowned, run_background_presignature_generation, sign, PresignatureStorage,
     SignatureIdGenerator,
 };
+use crate::sign_request::{SignRequestStorage, SignatureRequest};
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::triple::{
     run_background_triple_generation, run_many_triple_generation, TripleStorage,
@@ -24,6 +25,7 @@ pub struct MpcClient {
     client: Arc<MeshNetworkClient>,
     triple_store: Arc<TripleStorage>,
     presignature_store: Arc<PresignatureStorage>,
+    sign_request_store: Arc<SignRequestStorage>,
     root_keyshare: KeygenOutput<Secp256k1>,
     signature_id_generator: Arc<SignatureIdGenerator>,
 }
@@ -34,6 +36,7 @@ impl MpcClient {
         client: Arc<MeshNetworkClient>,
         triple_store: Arc<TripleStorage>,
         presignature_store: Arc<PresignatureStorage>,
+        sign_request_store: Arc<SignRequestStorage>,
         root_keyshare: KeygenOutput<Secp256k1>,
     ) -> Self {
         let my_participant_id = client.my_participant_id();
@@ -42,6 +45,7 @@ impl MpcClient {
             client,
             triple_store,
             presignature_store,
+            sign_request_store,
             root_keyshare,
             signature_id_generator: Arc::new(SignatureIdGenerator::new(my_participant_id)),
         }
@@ -52,6 +56,7 @@ impl MpcClient {
     pub async fn run(
         self,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
+        mut sign_request_receiver: mpsc::Receiver<SignatureRequest>,
     ) -> anyhow::Result<()> {
         let monitor_passive_channels = {
             let client = self.client.clone();
@@ -177,6 +182,18 @@ impl MpcClient {
             })
         };
 
+        let monitor_signature_requests = {
+            tracking::spawn("monitor signature requests", async move {
+                loop {
+                    let request = sign_request_receiver.recv().await.unwrap();
+                    if self.sign_request_store.add(request) {
+                        // TODO: decide if we are the leader for this signature request,
+                        // and if so, initiate the signature computation
+                    }
+                }
+            })
+        };
+
         let generate_triples = tracking::spawn(
             "generate triples",
             run_background_triple_generation(
@@ -200,6 +217,7 @@ impl MpcClient {
         );
 
         monitor_passive_channels.await?;
+        monitor_signature_requests.await?;
         generate_triples.await??;
         generate_presignatures.await??;
 

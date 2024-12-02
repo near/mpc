@@ -1,5 +1,6 @@
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
+use crate::sign_request::SignatureRequest;
 use crypto_shared::{derive_epsilon, ScalarExt};
 use k256::Scalar;
 use near_indexer_primitives::types::AccountId;
@@ -10,7 +11,7 @@ use near_indexer_primitives::views::{
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 
 /// Arguments passed to a `sign` function call on-chain
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -33,25 +34,21 @@ pub struct SignArgs {
     pub key_version: u32,
 }
 
-// TODO: currently we never read these fields
-#[allow(dead_code)]
-pub struct SignatureRequest {
-    pub request_id: [u8; 32],
-    pub request: SignArgs,
-    pub epsilon: Scalar,
-    pub entropy: [u8; 32],
-    pub timestamp_nanoesec: u64,
-}
-
 pub(crate) async fn listen_blocks(
     stream: tokio::sync::mpsc::Receiver<near_indexer_primitives::StreamerMessage>,
     concurrency: std::num::NonZeroU16,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
+    sign_request_sender: Arc<mpsc::Sender<SignatureRequest>>,
 ) {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
-            handle_message(streamer_message, Arc::clone(&stats), &mpc_contract_id)
+            handle_message(
+                streamer_message,
+                Arc::clone(&stats),
+                &mpc_contract_id,
+                Arc::clone(&sign_request_sender),
+            )
         })
         .buffer_unordered(usize::from(concurrency.get()));
 
@@ -62,13 +59,13 @@ async fn handle_message(
     streamer_message: near_indexer_primitives::StreamerMessage,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: &AccountId,
+    sign_request_sender: Arc<mpsc::Sender<SignatureRequest>>,
 ) -> anyhow::Result<()> {
     let block_height = streamer_message.block.header.height;
     let mut stats_lock = stats.lock().await;
     stats_lock.block_heights_processing.insert(block_height);
     drop(stats_lock);
 
-    // TODO: pass the signature requests to the MPC node
     let signature_requests: Vec<SignatureRequest> = streamer_message
         .shards
         .iter()
@@ -97,8 +94,11 @@ async fn handle_message(
 
     crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height as i64);
 
-    for _ in signature_requests {
+    for request in signature_requests {
         metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
+        if let Err(err) = sign_request_sender.send(request).await {
+            tracing::error!(target: "mpc", %err, "error sending sign request to mpc node");
+        }
     }
 
     let mut stats_lock = stats.lock().await;

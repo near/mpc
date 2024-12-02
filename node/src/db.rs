@@ -17,6 +17,7 @@ pub struct SecretDB {
 pub enum DBCol {
     Triple,
     Presignature,
+    SignRequest,
 }
 
 impl DBCol {
@@ -24,11 +25,12 @@ impl DBCol {
         match self {
             DBCol::Triple => "triple",
             DBCol::Presignature => "presignature",
+            DBCol::SignRequest => "sign_request",
         }
     }
 
-    fn all() -> [DBCol; 2] {
-        [DBCol::Triple, DBCol::Presignature]
+    fn all() -> [DBCol; 3] {
+        [DBCol::Triple, DBCol::Presignature, DBCol::SignRequest]
     }
 }
 

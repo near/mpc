@@ -11,6 +11,7 @@ use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_quic_mesh_network};
 use crate::sign::PresignatureStorage;
+use crate::sign_request::SignRequestStorage;
 use crate::tracking;
 use crate::triple::TripleStorage;
 use crate::web::start_web_server;
@@ -18,9 +19,10 @@ use anyhow::Context;
 use clap::Parser;
 use near_indexer_primitives::types::AccountId;
 use std::num::NonZero;
-use std::str::FromStr;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio::sync::{Mutex, OnceCell};
 
 #[derive(Parser, Debug)]
@@ -69,9 +71,10 @@ impl Cli {
                 secret_store_key_hex,
             } => {
                 let secret_store_key = parse_encryption_key(&secret_store_key_hex)?;
-
                 let config = load_config(Path::new(&home_dir), secret_store_key)?;
                 let root_keyshare = load_root_keyshare(Path::new(&home_dir), secret_store_key)?;
+
+                let (sign_request_sender, sign_request_receiver) = mpsc::channel(10000);
 
                 // Start the near indexer
                 let indexer_handle = config.indexer.clone().map(|indexer_config| {
@@ -92,6 +95,7 @@ impl Cli {
                                 indexer_config.concurrency,
                                 Arc::clone(&stats),
                                 indexer_config.mpc_contract_id,
+                                Arc::new(sign_request_sender),
                             )
                             .await;
                         });
@@ -139,19 +143,25 @@ impl Cli {
                         &network_client.all_participant_ids(),
                     )?);
 
+                    let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
+
                     let config = Arc::new(config);
                     let mpc_client = MpcClient::new(
                         config.clone(),
                         network_client,
                         triple_store,
                         presignature_store,
+                        sign_request_store,
                         root_keyshare,
                     );
                     mpc_client_cell
                         .set(mpc_client.clone())
                         .map_err(|_| ())
                         .unwrap();
-                    mpc_client.clone().run(channel_receiver).await?;
+                    mpc_client
+                        .clone()
+                        .run(channel_receiver, sign_request_receiver)
+                        .await?;
 
                     anyhow::Ok(())
                 });
