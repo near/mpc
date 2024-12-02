@@ -8,6 +8,8 @@ COPY node node
 COPY Cargo.lock Cargo.lock
 COPY Cargo.toml Cargo.toml
 
+RUN git submodule update --init --recursive
+
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
