@@ -39,9 +39,6 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 x509-parser = "0.16.0"
 
-# TODO: audit this and consider migrating just what we need into this repo
-crypto-shared = { path = "../libs/mpc/chain-signatures/crypto-shared" }
-
 near-indexer = { path = "../libs/nearcore/chain/indexer/" }
 near-indexer-primitives = { path = "../libs/nearcore/chain/indexer-primitives" }
 near-client = { path = "../libs/nearcore/chain/client" }
