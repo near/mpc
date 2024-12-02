@@ -21,13 +21,13 @@ from transaction import sign_deploy_contract_tx, sign_function_call_tx
 from utils import load_binary_file, MetricsTracker
 
 TIMEOUT = 90
-
 TGAS = 10**12
 
-repo_dir = pathlib.Path(__file__).resolve().parents[1]
+mpc_repo_dir = pathlib.Path(__file__).resolve().parents[1]
+mpc_binary_path = os.path.join(mpc_repo_dir / 'target' / 'debug', 'mpc-node')
 
 def load_mpc_contract() -> bytearray:
-    path = repo_dir / 'libs/mpc/chain-signatures/res/mpc_contract.wasm'
+    path = mpc_repo_dir / 'libs/mpc/chain-signatures/res/mpc_contract.wasm'
     return load_binary_file(path)
 
 def start_cluster_with_mpc(num_validators, num_mpc_nodes):
@@ -41,9 +41,8 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
         nodes[i].kill(gentle=True)
 
     # Generate the mpc configs
-    binary_path = os.path.join(repo_dir / 'target' / 'debug', 'mpc-node')
     dot_near = pathlib.Path.home() / '.near'
-    subprocess.run((binary_path, 'generate-test-configs',
+    subprocess.run((mpc_binary_path, 'generate-test-configs',
                     '--output-dir', dot_near, '--num-participants', '2', '--threshold', '1'))
 
     # Set up the node's home directories
@@ -64,14 +63,14 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     secret_key_hex = '0123456789ABCDEF0123456789ABCDEF'
 
     # Generate the root keyshares
-    commands = [(binary_path, 'generate-key',
+    commands = [(mpc_binary_path, 'generate-key',
                  '--home-dir', nodes[i].node_dir, secret_key_hex) for i in mpc_nodes]
     with Pool() as pool:
         pool.map(subprocess.run, commands)
 
     # Start the mpc nodes
     for i in mpc_nodes:
-        nodes[i].run_cmd(cmd=(binary_path, 'start', '--home-dir', nodes[i].node_dir, secret_key_hex))
+        nodes[i].run_cmd(cmd=(mpc_binary_path, 'start', '--home-dir', nodes[i].node_dir, secret_key_hex))
 
     # Deploy the mpc contract
     last_block_hash = nodes[0].get_latest_block().hash_bytes
@@ -124,9 +123,10 @@ def test_index_signature_request():
     # Wait for the indexers to observe the signature request
     while True:
         assert time.time() - started < TIMEOUT, "Waiting for mpc indexers"
-        if metrics2.get_int_metric_value('mpc_num_signature_requests') == 1 and \
-            metrics3.get_int_metric_value('mpc_num_signature_requests') == 1:
-                break
+        res2 = metrics2.get_int_metric_value('mpc_num_signature_requests')
+        res3 = metrics3.get_int_metric_value('mpc_num_signature_requests')
+        if res2 == 1 and res3 == 1:
+            break
         time.sleep(1)
 
     print('EPIC')
