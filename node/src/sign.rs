@@ -248,10 +248,12 @@ impl PresignatureGenerationProgressTracker {
 /// Simple ID generator for signatures. Generates monotonically increasing IDs.
 /// Does not persist state across restarts, so if the clock rewinds then the
 /// generated IDs can conflict with previously generated IDs.
+#[allow(dead_code)]
 pub struct SignatureIdGenerator {
     last_id: Mutex<UniqueId>,
 }
 
+#[allow(dead_code)]
 impl SignatureIdGenerator {
     pub fn new(my_participant_id: ParticipantId) -> Self {
         Self {

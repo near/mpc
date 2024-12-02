@@ -58,14 +58,47 @@ async fn test_basic_cluster() {
         })
         .collect::<Vec<_>>();
 
+    // First ask the nodes to "index" the signature requests
     let mut retries_left = 20;
     'outer: for i in 0..NUM_PARTICIPANTS {
         while retries_left > 0 {
             let url = format!(
-                "http://{}:{}/debug/sign?msg=hello&repeat=10",
+                "http://{}:{}/debug/index?msg=hello&repeat=10",
                 "127.0.0.1",
                 22000 + i
             );
+            let response = match reqwest::get(&url).await {
+                Ok(response) => response,
+                Err(e) => {
+                    tracing::error!("Failed to get response from node {}: {}", i, e);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
+            let response_success = response.status().is_success();
+            let response_debug = format!("{:?}", response);
+            let response_text = response.text().await.unwrap_or_default();
+            if !response_success {
+                tracing::error!(
+                    "Unsuccessful response from node {}: {}, error: {}",
+                    i,
+                    response_debug,
+                    response_text
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                retries_left -= 1;
+            } else {
+                tracing::info!("Got response from node {}: {}", i, response_text);
+                continue 'outer;
+            }
+        }
+        panic!("Failed to get response from node {}", i);
+    }
+
+    let mut retries_left = 20;
+    'outer: for i in 0..NUM_PARTICIPANTS {
+        while retries_left > 0 {
+            let url = format!("http://{}:{}/debug/sign?repeat=10", "127.0.0.1", 22000 + i);
             let response = match reqwest::get(&url).await {
                 Ok(response) => response,
                 Err(e) => {

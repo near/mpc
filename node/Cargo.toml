@@ -24,6 +24,7 @@ lazy_static = "1.5.0"
 prometheus = "0.13.4"
 quinn = "0.11.5"
 rand = "0.8.5"
+rand_xorshift = "0.3"
 rcgen = "0.13.1"
 rocksdb = "0.21.0"
 rustls = { version = "0.23.16", default-features = false, features = ["ring"] }

@@ -86,10 +86,8 @@ pub fn derive_randomness(
 // TODO: Modify the following function and use instead hkdf.
 // WARNING: DO NOT change anything before making sure that the legacy secret/public keys are also changed
 // and stored signatures could still be verified.
-#[allow(dead_code)]
 const TWEAK_DERIVATION_PREFIX: &str = "near-mpc-recovery v0.1.0 epsilon derivation:";
 
-#[allow(dead_code)]
 pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Scalar {
     // ',' is ACCOUNT_DATA_SEPARATOR from nearcore that indicate the end
     // of the accound id in the trie key. We reuse the same constant to

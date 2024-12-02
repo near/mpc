@@ -5,17 +5,18 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
 use crate::sign::{
     pre_sign_unowned, run_background_presignature_generation, sign, PresignatureStorage,
-    SignatureIdGenerator,
 };
+use crate::sign_request::local_node_is_leader;
+use crate::sign_request::SignatureId;
 use crate::sign_request::{SignRequestStorage, SignatureRequest};
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::triple::{
     run_background_triple_generation, run_many_triple_generation, TripleStorage,
     SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
 };
+
 use cait_sith::{FullSignature, KeygenOutput};
-use k256::elliptic_curve::PrimeField;
-use k256::{FieldBytes, Scalar, Secp256k1};
+use k256::Secp256k1;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -29,7 +30,6 @@ pub struct MpcClient {
     presignature_store: Arc<PresignatureStorage>,
     sign_request_store: Arc<SignRequestStorage>,
     root_keyshare: KeygenOutput<Secp256k1>,
-    signature_id_generator: Arc<SignatureIdGenerator>,
 }
 
 impl MpcClient {
@@ -41,7 +41,6 @@ impl MpcClient {
         sign_request_store: Arc<SignRequestStorage>,
         root_keyshare: KeygenOutput<Secp256k1>,
     ) -> Self {
-        let my_participant_id = client.my_participant_id();
         Self {
             config,
             client,
@@ -49,7 +48,6 @@ impl MpcClient {
             presignature_store,
             sign_request_store,
             root_keyshare,
-            signature_id_generator: Arc::new(SignatureIdGenerator::new(my_participant_id)),
         }
     }
 
@@ -65,6 +63,7 @@ impl MpcClient {
             let config = self.config.clone();
             let triple_store = self.triple_store.clone();
             let presignature_store = self.presignature_store.clone();
+            let sign_request_store = self.sign_request_store.clone();
             let root_keyshare = self.root_keyshare.clone();
             tracking::spawn("monitor passive channels", async move {
                 let mut tasks = AutoAbortTaskCollection::new();
@@ -74,6 +73,7 @@ impl MpcClient {
                     let config = config.clone();
                     let triple_store = triple_store.clone();
                     let presignature_store = presignature_store.clone();
+                    let sign_request_store = sign_request_store.clone();
                     let root_keyshare = root_keyshare.clone();
                     tasks.spawn_checked(
                         &format!("passive task {:?}", channel.task_id),
@@ -139,26 +139,21 @@ impl MpcClient {
                                     });
                                 }
                                 MpcTaskId::Signature {
+                                    id,
                                     presignature_id,
-                                    msg_hash,
-                                    tweak,
-                                    entropy,
-                                    ..
                                 } => {
-                                    let msg_hash =
-                                        Scalar::from_repr(FieldBytes::clone_from_slice(&msg_hash))
-                                            .into_option()
-                                            .ok_or_else(|| {
-                                                anyhow::anyhow!(
-                                                    "Failed to convert msg_hash to Scalar"
-                                                )
-                                            })?;
-                                    let tweak =
-                                        Scalar::from_repr(FieldBytes::clone_from_slice(&tweak))
-                                            .into_option()
-                                            .ok_or_else(|| {
-                                                anyhow::anyhow!("Failed to convert tweak to Scalar")
-                                            })?;
+                                    // TODO: decide a better timeout for this
+                                    let SignatureRequest {
+                                        msg_hash,
+                                        tweak,
+                                        entropy,
+                                        ..
+                                    } = timeout(
+                                        Duration::from_secs(config.signature.timeout_sec),
+                                        sign_request_store.get(id),
+                                    )
+                                    .await??;
+
                                     timeout(
                                         Duration::from_secs(config.signature.timeout_sec),
                                         sign(
@@ -185,6 +180,8 @@ impl MpcClient {
         };
 
         let monitor_chain = {
+            let this = Arc::new(self.clone());
+            let config = self.config.clone();
             tracking::spawn("monitor chain", async move {
                 loop {
                     let ChainSignatureRequest {
@@ -203,9 +200,14 @@ impl MpcClient {
                         timestamp_nanosec,
                     };
 
-                    if self.sign_request_store.add(request) {
-                        // TODO: decide if we are the leader for this request,
-                        // and if so, initiate the signature computation
+                    // Check if we've already seen this request
+                    if !self.sign_request_store.add(&request) {
+                        continue;
+                    }
+
+                    if local_node_is_leader(&config.mpc, &request) {
+                        // TODO: do something with this
+                        let _ = this.clone().make_signature(request.id).await;
                     }
                 }
             })
@@ -241,33 +243,34 @@ impl MpcClient {
         Ok(())
     }
 
+    // TODO: this is testonly and needs to be protected
+    pub fn add_sign_request(self, request: &SignatureRequest) {
+        self.sign_request_store.add(request);
+    }
+
     pub async fn make_signature(
-        self,
-        msg_hash: Scalar,
-        tweak: Scalar,
-        entropy: [u8; 32],
+        self: Arc<Self>,
+        id: SignatureId,
     ) -> anyhow::Result<FullSignature<Secp256k1>> {
         let (presignature_id, presignature) = self
             .presignature_store
             .take_owned(&self.client.all_alive_participant_ids())
             .await;
+        let sign_request = self.sign_request_store.get(id).await?;
         let signature = sign(
             self.client.new_channel_for_task(
                 MpcTaskId::Signature {
-                    id: self.signature_id_generator.generate_signature_id(),
+                    id,
                     presignature_id,
-                    msg_hash: msg_hash.to_repr().into(),
-                    tweak: tweak.to_repr().into(),
-                    entropy,
                 },
                 presignature.participants,
             )?,
             self.client.my_participant_id(),
             self.root_keyshare.clone(),
             presignature.presignature,
-            msg_hash,
-            tweak,
-            entropy,
+            sign_request.msg_hash,
+            sign_request.tweak,
+            sign_request.entropy,
         )
         .await?;
 

@@ -1,5 +1,6 @@
 use crate::config::WebUIConfig;
 use crate::mpc_client::MpcClient;
+use crate::sign_request::SignatureRequest;
 use crate::tracking::{self, TaskHandle};
 use anyhow::Context;
 use axum::body::Body;
@@ -16,6 +17,7 @@ use k256::elliptic_curve::scalar::FromUintUnchecked;
 use k256::sha2::{Digest, Sha256};
 use k256::{Scalar, U256};
 use prometheus::{default_registry, Encoder, TextEncoder};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
@@ -53,6 +55,31 @@ async fn debug_tasks(State(state): State<WebServerState>) -> String {
     format!("{:?}", state.root_task_handle.report())
 }
 
+fn generate_ids(repeat: usize, seed: u64) -> Vec<[u8; 32]> {
+    let mut rng: rand_xorshift::XorShiftRng = rand::SeedableRng::seed_from_u64(seed);
+    (0..repeat).map(|_| rng.gen::<[u8; 32]>()).collect()
+}
+
+async fn debug_index(
+    State(state): State<WebServerState>,
+    Query(query): Query<DebugIndexRequest>,
+) -> Result<(), AnyhowErrorWrapper> {
+    let Some(mpc_client) = state.mpc_client.unwrap().get().cloned() else {
+        return Err(anyhow::anyhow!("MPC client not ready").into());
+    };
+    let repeat = query.repeat.unwrap_or(1);
+    for id in generate_ids(repeat, query.seed) {
+        mpc_client.clone().add_sign_request(&SignatureRequest {
+            id,
+            msg_hash: sha256hash(query.msg.as_bytes()),
+            tweak: query.tweak,
+            entropy: query.entropy,
+            timestamp_nanosec: 0,
+        });
+    }
+    Ok(())
+}
+
 async fn debug_sign(
     State(state): State<WebServerState>,
     Query(query): Query<DebugSignatureRequest>,
@@ -60,22 +87,20 @@ async fn debug_sign(
     let Some(mpc_client) = state.mpc_client.unwrap().get().cloned() else {
         return Err(anyhow::anyhow!("MPC client not ready").into());
     };
+    let client = Arc::new(mpc_client);
     let result = state
         .task_handle
         .scope("debug_sign", async move {
-            let msg_hash = sha256hash(query.msg.as_bytes());
             let repeat = query.repeat.unwrap_or(1);
+            let ids = generate_ids(repeat, query.seed);
             let timeout = Duration::from_secs(query.timeout.unwrap_or(60));
-
             let signatures = time::timeout(
                 timeout,
-                stream::iter(0..repeat)
-                    .map(|i| {
+                stream::iter(ids.clone())
+                    .map(|id| {
                         tracking::spawn(
-                            &format!("debug sign #{}", i),
-                            mpc_client
-                                .clone()
-                                .make_signature(msg_hash, query.tweak, query.entropy),
+                            &format!("debug sign #{:?}", id),
+                            client.clone().make_signature(id),
                         )
                         .map(|result| anyhow::Ok(result??))
                     })
@@ -110,14 +135,24 @@ fn sha256hash(data: &[u8]) -> k256::Scalar {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct DebugSignatureRequest {
+struct DebugIndexRequest {
+    #[serde(default)]
+    repeat: Option<usize>,
+    #[serde(default)]
+    seed: u64,
     msg: String,
     #[serde(default)]
     tweak: Scalar,
     #[serde(default)]
     entropy: [u8; 32],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DebugSignatureRequest {
     #[serde(default)]
     repeat: Option<usize>,
+    #[serde(default)]
+    seed: u64,
     #[serde(default)]
     parallelism: Option<usize>,
     #[serde(default)]
@@ -162,7 +197,9 @@ pub async fn start_web_server(
         .route("/metrics", get(metrics))
         .route("/debug/tasks", get(debug_tasks));
     let router = if mpc_client.is_some() {
-        router.route("/debug/sign", get(debug_sign))
+        router
+            .route("/debug/index", get(debug_index))
+            .route("/debug/sign", get(debug_sign))
     } else {
         router
     };
