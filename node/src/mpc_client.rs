@@ -1,4 +1,6 @@
 use crate::config::Config;
+use crate::hkdf::derive_tweak;
+use crate::indexer::handler::ChainSignatureRequest;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
 use crate::sign::{
@@ -56,7 +58,7 @@ impl MpcClient {
     pub async fn run(
         self,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
-        mut sign_request_receiver: mpsc::Receiver<SignatureRequest>,
+        mut sign_request_receiver: mpsc::Receiver<ChainSignatureRequest>,
     ) -> anyhow::Result<()> {
         let monitor_passive_channels = {
             let client = self.client.clone();
@@ -182,12 +184,27 @@ impl MpcClient {
             })
         };
 
-        let monitor_signature_requests = {
-            tracking::spawn("monitor signature requests", async move {
+        let monitor_chain = {
+            tracking::spawn("monitor chain", async move {
                 loop {
-                    let request = sign_request_receiver.recv().await.unwrap();
+                    let ChainSignatureRequest {
+                        request_id,
+                        request,
+                        predecessor_id,
+                        entropy,
+                        timestamp_nanosec,
+                    } = sign_request_receiver.recv().await.unwrap();
+
+                    let request = SignatureRequest {
+                        id: request_id,
+                        msg_hash: request.payload,
+                        tweak: derive_tweak(&predecessor_id, &request.path),
+                        entropy,
+                        timestamp_nanosec,
+                    };
+
                     if self.sign_request_store.add(request) {
-                        // TODO: decide if we are the leader for this signature request,
+                        // TODO: decide if we are the leader for this request,
                         // and if so, initiate the signature computation
                     }
                 }
@@ -217,7 +234,7 @@ impl MpcClient {
         );
 
         monitor_passive_channels.await?;
-        monitor_signature_requests.await?;
+        monitor_chain.await?;
         generate_triples.await??;
         generate_presignatures.await??;
 

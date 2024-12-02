@@ -1,7 +1,6 @@
+use crate::hkdf::ScalarExt;
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
-use crate::sign_request::SignatureRequest;
-use crypto_shared::{derive_epsilon, ScalarExt};
 use k256::Scalar;
 use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::views::{
@@ -34,12 +33,21 @@ pub struct SignArgs {
     pub key_version: u32,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct ChainSignatureRequest {
+    pub request_id: [u8; 32],
+    pub request: SignArgs,
+    pub predecessor_id: AccountId,
+    pub entropy: [u8; 32],
+    pub timestamp_nanosec: u64,
+}
+
 pub(crate) async fn listen_blocks(
     stream: tokio::sync::mpsc::Receiver<near_indexer_primitives::StreamerMessage>,
     concurrency: std::num::NonZeroU16,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
-    sign_request_sender: Arc<mpsc::Sender<SignatureRequest>>,
+    sign_request_sender: Arc<mpsc::Sender<ChainSignatureRequest>>,
 ) {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
@@ -59,14 +67,14 @@ async fn handle_message(
     streamer_message: near_indexer_primitives::StreamerMessage,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: &AccountId,
-    sign_request_sender: Arc<mpsc::Sender<SignatureRequest>>,
+    sign_request_sender: Arc<mpsc::Sender<ChainSignatureRequest>>,
 ) -> anyhow::Result<()> {
     let block_height = streamer_message.block.header.height;
     let mut stats_lock = stats.lock().await;
     stats_lock.block_heights_processing.insert(block_height);
     drop(stats_lock);
 
-    let signature_requests: Vec<SignatureRequest> = streamer_message
+    let signature_requests: Vec<ChainSignatureRequest> = streamer_message
         .shards
         .iter()
         .map(|shard| {
@@ -79,13 +87,12 @@ async fn handle_message(
                     let execution_outcome = outcome.execution_outcome.clone();
                     let sign_args =
                         maybe_get_sign_args(&receipt, &execution_outcome, mpc_contract_id.clone())?;
-                    let epsilon = derive_epsilon(&receipt.predecessor_id, &sign_args.path);
-                    Some(SignatureRequest {
+                    Some(ChainSignatureRequest {
                         request_id: receipt.receipt_id.0,
                         request: sign_args,
-                        epsilon,
+                        predecessor_id: receipt.predecessor_id.clone(),
                         entropy: streamer_message.block.header.random_value.into(),
-                        timestamp_nanoesec: streamer_message.block.header.timestamp_nanosec,
+                        timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
                     })
                 })
         })
