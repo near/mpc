@@ -40,6 +40,6 @@ impl SignRequestStorage {
         update
             .commit()
             .expect("Unrecoverable error writing to database");
-        return true;
+        true
     }
 }

@@ -77,7 +77,7 @@ async fn handle_message(
     let signature_requests: Vec<ChainSignatureRequest> = streamer_message
         .shards
         .iter()
-        .map(|shard| {
+        .flat_map(|shard| {
             shard
                 .receipt_execution_outcomes
                 .iter()
@@ -96,7 +96,6 @@ async fn handle_message(
                     })
                 })
         })
-        .flatten()
         .collect::<Vec<_>>();
 
     crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height as i64);
@@ -147,7 +146,7 @@ fn maybe_get_sign_args(
     }
     tracing::debug!(target: "mpc", "found `sign` function call");
 
-    let sign_args = match serde_json::from_slice::<'_, UnvalidatedSignArgs>(&args) {
+    let sign_args = match serde_json::from_slice::<'_, UnvalidatedSignArgs>(args) {
         Ok(parsed) => parsed,
         Err(err) => {
             tracing::warn!(target: "mpc", %err, "failed to parse `sign` arguments");
