@@ -20,7 +20,7 @@ from cluster import start_cluster, session
 from transaction import sign_deploy_contract_tx, sign_function_call_tx
 from utils import load_binary_file, MetricsTracker
 
-TIMEOUT = 90
+TIMEOUT = 60
 TGAS = 10**12
 
 mpc_repo_dir = pathlib.Path(__file__).resolve().parents[1]
@@ -39,6 +39,7 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     mpc_nodes = range(num_validators, num_validators + num_mpc_nodes)
     for i in mpc_nodes:
         nodes[i].kill(gentle=True)
+        nodes[i].reset_data()
 
     # Generate the mpc configs
     dot_near = pathlib.Path.home() / '.near'
