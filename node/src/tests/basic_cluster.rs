@@ -63,7 +63,7 @@ async fn test_basic_cluster() {
     'outer: for i in 0..NUM_PARTICIPANTS {
         while retries_left > 0 {
             let url = format!(
-                "http://{}:{}/debug/index?msg=hello&repeat=10",
+                "http://{}:{}/debug/index?msg=hello&repeat=10&seed=23",
                 "127.0.0.1",
                 22000 + i
             );
@@ -98,7 +98,11 @@ async fn test_basic_cluster() {
     let mut retries_left = 20;
     'outer: for i in 0..NUM_PARTICIPANTS {
         while retries_left > 0 {
-            let url = format!("http://{}:{}/debug/sign?repeat=10", "127.0.0.1", 22000 + i);
+            let url = format!(
+                "http://{}:{}/debug/sign?repeat=10&seed=23",
+                "127.0.0.1",
+                22000 + i
+            );
             let response = match reqwest::get(&url).await {
                 Ok(response) => response,
                 Err(e) => {

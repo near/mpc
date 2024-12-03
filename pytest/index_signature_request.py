@@ -24,7 +24,7 @@ TIMEOUT = 60
 TGAS = 10**12
 
 mpc_repo_dir = pathlib.Path(__file__).resolve().parents[1]
-mpc_binary_path = os.path.join(mpc_repo_dir / 'target' / 'debug', 'mpc-node')
+mpc_binary_path = os.path.join(mpc_repo_dir / 'target' / 'release', 'mpc-node')
 
 def load_mpc_contract() -> bytearray:
     path = mpc_repo_dir / 'libs/mpc/chain-signatures/res/mpc_contract.wasm'
@@ -44,7 +44,7 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     # Generate the mpc configs
     dot_near = pathlib.Path.home() / '.near'
     subprocess.run((mpc_binary_path, 'generate-test-configs',
-                    '--output-dir', dot_near, '--num-participants', '2', '--threshold', '1'))
+                    '--output-dir', dot_near, '--num-participants', '2', '--threshold', '2'))
 
     # Set up the node's home directories
     for i in mpc_nodes:
@@ -61,17 +61,18 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
         with open(fname, 'w') as fd:
             json.dump(config_json, fd, indent=2)
 
-    secret_key_hex = '0123456789ABCDEF0123456789ABCDEF'
+    def secret_key_hex(i):
+        return str(chr(ord('A') + i) * 32)
 
     # Generate the root keyshares
     commands = [(mpc_binary_path, 'generate-key',
-                 '--home-dir', nodes[i].node_dir, secret_key_hex) for i in mpc_nodes]
+                 '--home-dir', nodes[i].node_dir, secret_key_hex(i)) for i in mpc_nodes]
     with Pool() as pool:
         pool.map(subprocess.run, commands)
 
     # Start the mpc nodes
     for i in mpc_nodes:
-        nodes[i].run_cmd(cmd=(mpc_binary_path, 'start', '--home-dir', nodes[i].node_dir, secret_key_hex))
+        nodes[i].run_cmd(cmd=(mpc_binary_path, 'start', '--home-dir', nodes[i].node_dir, secret_key_hex(i)))
 
     # Deploy the mpc contract
     last_block_hash = nodes[0].get_latest_block().hash_bytes
@@ -80,15 +81,20 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     assert('SuccessValue' in res['result']['status'])
 
     # Initialize the mpc contract
-    # TODO: initialize the contract properly with the MPC nodes as the participants
     init_args = {
+        'epoch': 0,
         'threshold': 0,
-        'candidates': {},
+        'participants': {
+            'participants': {},
+            'next_id': 0,
+            'account_to_participant_id': {},
+        },
+        'public_key': 'ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae',
     }
     tx = sign_function_call_tx(
         nodes[0].signer_key,
         nodes[0].signer_key.account_id,
-        'init',
+        'init_running',
         json.dumps(init_args).encode('utf-8'),
         150 * TGAS, 0, 20, last_block_hash)
     res = nodes[0].send_tx_and_wait(tx, 20)

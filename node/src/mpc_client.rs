@@ -1,6 +1,8 @@
 use crate::config::Config;
 use crate::hkdf::derive_tweak;
 use crate::indexer::handler::ChainSignatureRequest;
+use crate::indexer::response::RespondArgs;
+use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
 use crate::sign::{
@@ -57,6 +59,7 @@ impl MpcClient {
         self,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
         mut sign_request_receiver: mpsc::Receiver<ChainSignatureRequest>,
+        sign_response_sender: mpsc::Sender<RespondArgs>,
     ) -> anyhow::Result<()> {
         let monitor_passive_channels = {
             let client = self.client.clone();
@@ -206,8 +209,11 @@ impl MpcClient {
                     }
 
                     if local_node_is_leader(&config.mpc, &request) {
-                        // TODO: do something with this
-                        let _ = this.clone().make_signature(request.id).await;
+                        metrics::MPC_NUM_SIGN_REQUESTS_LEADER.inc();
+                        if let Ok(signature) = this.clone().make_signature(request.id).await {
+                            let response = RespondArgs::new(&request, &signature);
+                            let _ = sign_response_sender.send(response).await;
+                        }
                     }
                 }
             })

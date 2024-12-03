@@ -64,6 +64,24 @@ lazy_static! {
 }
 
 lazy_static! {
+    pub static ref MPC_NUM_SIGN_REQUESTS_LEADER: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_num_signature_requests_leader",
+            "Number of signatures requests for which this node is the leader"
+        )
+        .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_NUM_SIGN_RESPONSES_SENT: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_num_signature_responses_sent",
+            "Number of signature responses sent by this node"
+        )
+        .unwrap();
+}
+
+lazy_static! {
     pub static ref MPC_INDEXER_LATEST_BLOCK_HEIGHT: prometheus::IntGauge =
         prometheus::register_int_gauge!(
             "mpc_indexer_latest_block_height",

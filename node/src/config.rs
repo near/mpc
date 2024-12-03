@@ -70,6 +70,8 @@ pub struct IndexerConfig {
     pub concurrency: std::num::NonZeroU16,
     /// MPC contract id
     pub mpc_contract_id: AccountId,
+    /// Credentials used to sign signature response txs
+    pub near_credentials_file: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -44,6 +44,7 @@ near-indexer = { path = "../libs/nearcore/chain/indexer/" }
 near-indexer-primitives = { path = "../libs/nearcore/chain/indexer-primitives" }
 near-client = { path = "../libs/nearcore/chain/client" }
 near-config-utils = { path = "../libs/nearcore/utils/config" }
+near-crypto = { path = "../libs/nearcore/core/crypto" }
 near-o11y = { path = "../libs/nearcore/core/o11y" }
 
 [dev-dependencies]
