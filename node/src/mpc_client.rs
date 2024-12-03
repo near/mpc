@@ -225,7 +225,8 @@ impl MpcClient {
                                 let signature = timeout(
                                     Duration::from_secs(config.signature.timeout_sec),
                                     this.clone().make_signature(request.id),
-                                ).await??;
+                                )
+                                .await??;
 
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
                                     .with_label_values(&["succeeded"])
@@ -236,7 +237,7 @@ impl MpcClient {
                             }
 
                             anyhow::Ok(())
-                        }
+                        },
                     );
                 }
             })
