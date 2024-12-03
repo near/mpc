@@ -186,7 +186,13 @@ impl MpcClient {
             let this = Arc::new(self.clone());
             let config = self.config.clone();
             tracking::spawn("monitor chain", async move {
+                let mut tasks = AutoAbortTaskCollection::new();
                 loop {
+                    let this = this.clone();
+                    let config = config.clone();
+                    let sign_request_store = self.sign_request_store.clone();
+                    let sign_response_sender = sign_response_sender.clone();
+
                     let ChainSignatureRequest {
                         request_id,
                         request,
@@ -195,35 +201,43 @@ impl MpcClient {
                         timestamp_nanosec,
                     } = sign_request_receiver.recv().await.unwrap();
 
-                    let request = SignatureRequest {
-                        id: request_id,
-                        msg_hash: request.payload,
-                        tweak: derive_tweak(&predecessor_id, &request.path),
-                        entropy,
-                        timestamp_nanosec,
-                    };
+                    tasks.spawn_checked(
+                        &format!("indexed sign request {:?}", request_id),
+                        async move {
+                            let request = SignatureRequest {
+                                id: request_id,
+                                msg_hash: request.payload,
+                                tweak: derive_tweak(&predecessor_id, &request.path),
+                                entropy,
+                                timestamp_nanosec,
+                            };
 
-                    // Check if we've already seen this request
-                    if !self.sign_request_store.add(&request) {
-                        continue;
-                    }
+                            // Check if we've already seen this request
+                            if !sign_request_store.add(&request) {
+                                return anyhow::Ok(());
+                            }
 
-                    if local_node_is_leader(&config.mpc, &request) {
-                            metrics::MPC_NUM_SIGN_REQUESTS_LEADER
-                                .with_label_values(&["total"])
-                                .inc();
-                        if let Ok(signature) = this.clone().make_signature(request.id).await {
-                            metrics::MPC_NUM_SIGN_REQUESTS_LEADER
-                                .with_label_values(&["succeeded"])
-                                .inc();
-                            let response = RespondArgs::new(&request, &signature);
-                            let _ = sign_response_sender.send(response).await;
-                        } else {
-                            metrics::MPC_NUM_SIGN_REQUESTS_LEADER
-                                .with_label_values(&["failed"])
-                                .inc();
+                            if local_node_is_leader(&config.mpc, &request) {
+                                metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                    .with_label_values(&["total"])
+                                    .inc();
+
+                                let signature = timeout(
+                                    Duration::from_secs(config.signature.timeout_sec),
+                                    this.clone().make_signature(request.id),
+                                ).await??;
+
+                                metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                    .with_label_values(&["succeeded"])
+                                    .inc();
+
+                                let response = RespondArgs::new(&request, &signature);
+                                let _ = sign_response_sender.send(response).await;
+                            }
+
+                            anyhow::Ok(())
                         }
-                    }
+                    );
                 }
             })
         };
