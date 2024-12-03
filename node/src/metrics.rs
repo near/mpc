@@ -64,10 +64,11 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub static ref MPC_NUM_SIGN_REQUESTS_LEADER: prometheus::IntCounter =
-        prometheus::register_int_counter!(
+    pub static ref MPC_NUM_SIGN_REQUESTS_LEADER: prometheus::IntCounterVec =
+        prometheus::register_int_counter_vec!(
             "mpc_num_signature_requests_leader",
-            "Number of signatures requests for which this node is the leader"
+            "Number of signatures requests for which this node is the leader",
+            &["result"],
         )
         .unwrap();
 }

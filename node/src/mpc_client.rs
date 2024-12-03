@@ -209,10 +209,19 @@ impl MpcClient {
                     }
 
                     if local_node_is_leader(&config.mpc, &request) {
-                        metrics::MPC_NUM_SIGN_REQUESTS_LEADER.inc();
+                            metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                .with_label_values(&["total"])
+                                .inc();
                         if let Ok(signature) = this.clone().make_signature(request.id).await {
+                            metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                .with_label_values(&["succeeded"])
+                                .inc();
                             let response = RespondArgs::new(&request, &signature);
                             let _ = sign_response_sender.send(response).await;
+                        } else {
+                            metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                .with_label_values(&["failed"])
+                                .inc();
                         }
                     }
                 }
