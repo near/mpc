@@ -15,7 +15,7 @@ pub trait ScalarExt: Sized {
 
 impl ScalarExt for Scalar {
     /// Returns nothing if the bytes are greater than the field size of Secp256k1.
-    /// This will be very rare with random bytes as the field size is
+    /// This will be very rare (probability around 1/2^224) with random bytes as the field size is
     /// 2^256 - 2^32 - 2^9 - 2^8 - 2^7 - 2^6 - 2^4 - 1
     fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
         let bytes = U256::from_be_slice(bytes.as_slice());
@@ -65,8 +65,10 @@ pub fn derive_randomness(
     let mut delta: Scalar = Scalar::ZERO;
     // If the randomness created is 0 then we want to generate a new randomness
     while bool::from(delta.is_zero()) {
-        // Generate randomization out of HKDF(entropy, pk, msg_hash, big_r, participants, cnt)
+        // Generate randomization out of HKDF(entropy, pk, msg_hash, big_r, participants, nonce)
         // where entropy is a public but unpredictable random string
+        // the nonce is a succession of appended ones of growing length depending on the number of times
+        // we enter into this loop
         let mut okm = [0u8; 32];
 
         // append an extra 0 at the end of the concatenation everytime delta hits zero
@@ -77,6 +79,7 @@ pub fn derive_randomness(
         delta = match Scalar::from_bytes(okm) {
             Some(delta) => delta,
             // if delta falls outside the field
+            // probability is negligible: in the order of 1/2^224
             None => Scalar::ZERO,
         }
     }
@@ -121,11 +124,11 @@ mod derive_tests {
         [u8; 32],
         Scalar,
     ) {
-        let sk: Scalar = Scalar::generate_vartime(&mut OsRng);
-        let pk: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR * sk);
-        let r: Scalar = Scalar::generate_vartime(&mut OsRng);
-        let big_r: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR * r);
-        let msg_hash: Scalar = Scalar::generate_vartime(&mut OsRng);
+        let sk = Scalar::generate_vartime(&mut OsRng);
+        let pk = AffinePoint::from(AffinePoint::GENERATOR * sk);
+        let r = Scalar::generate_vartime(&mut OsRng);
+        let big_r = AffinePoint::from(AffinePoint::GENERATOR * r);
+        let msg_hash = Scalar::generate_vartime(&mut OsRng);
         // Generate unique ten ParticipantId values
         let mut rng = thread_rng();
         let mut participants_set = HashSet::new();
@@ -146,7 +149,7 @@ mod derive_tests {
         let (pk, big_r, _, participants, entropy, delta) = compute_random_outputs(num_participants);
 
         // different msg_hash
-        let msg_hash_prime: Scalar = Scalar::generate_vartime(&mut OsRng);
+        let msg_hash_prime = Scalar::generate_vartime(&mut OsRng);
         let delta_prime =
             derive_randomness(pk, msg_hash_prime, big_r, participants.clone(), entropy);
 
@@ -159,8 +162,8 @@ mod derive_tests {
         let (pk, _, msg_hash, participants, entropy, delta) =
             compute_random_outputs(num_participants);
         // different big_r
-        let r_prime: Scalar = Scalar::generate_vartime(&mut OsRng);
-        let big_r_prime: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR * r_prime);
+        let r_prime = Scalar::generate_vartime(&mut OsRng);
+        let big_r_prime = AffinePoint::from(AffinePoint::GENERATOR * r_prime);
         let delta_prime =
             derive_randomness(pk, msg_hash, big_r_prime, participants.clone(), entropy);
         assert!(delta != delta_prime);
@@ -172,8 +175,8 @@ mod derive_tests {
         let (_, big_r, msg_hash, participants, entropy, delta) =
             compute_random_outputs(num_participants);
         // different pk
-        let sk_prime: Scalar = Scalar::generate_vartime(&mut OsRng);
-        let pk_prime: AffinePoint = AffinePoint::from(AffinePoint::GENERATOR * sk_prime);
+        let sk_prime = Scalar::generate_vartime(&mut OsRng);
+        let pk_prime = AffinePoint::from(AffinePoint::GENERATOR * sk_prime);
         let delta_prime =
             derive_randomness(pk_prime, msg_hash, big_r, participants.clone(), entropy);
         assert!(delta != delta_prime);

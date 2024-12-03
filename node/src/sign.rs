@@ -67,6 +67,8 @@ pub async fn pre_sign_unowned(
 
 /// Performs an MPC signature operation. This is the same for the initiator
 /// and for passive participants.
+/// The entropy is used to rerandomize the presignature (inspired by [GS21])
+/// The tweak allows key derivation
 pub async fn sign(
     channel: NetworkTaskChannel,
     me: ParticipantId,
