@@ -1,6 +1,7 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use near_indexer_primitives::types::AccountId;
+use near_crypto::ED25519SecretKey;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -120,10 +121,6 @@ impl ConfigFile {
 pub struct ParticipantsConfig {
     /// The threshold for the MPC protocol.
     pub threshold: u32,
-    /// Shared private key for signing TLS certificates. It's just to keep the
-    /// TLS library happy. We don't rely on CA authentication because we're
-    /// hardcoding everyone's public keys.
-    pub dummy_issuer_private_key: String,
     pub participants: Vec<ParticipantInfo>,
 }
 
@@ -138,9 +135,9 @@ pub struct ParticipantInfo {
     pub p2p_public_key: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct SecretsConfig {
-    pub p2p_private_key: String,
+    pub p2p_private_key: near_crypto::ED25519SecretKey,
 }
 
 pub fn load_config(home_dir: &Path, secret_key: [u8; 16]) -> anyhow::Result<Config> {
@@ -149,10 +146,15 @@ pub fn load_config(home_dir: &Path, secret_key: [u8; 16]) -> anyhow::Result<Conf
     let mpc_config = MpcConfig {
         my_participant_id: file_config.my_participant_id,
         secrets: SecretsConfig {
-            p2p_private_key: std::fs::read_to_string(
-                home_dir.join(&file_config.p2p_private_key_file),
-            )
-            .context("Load p2p private key")?,
+            p2p_private_key: ED25519SecretKey(
+                hex::decode(
+                    &std::fs::read_to_string(home_dir.join(&file_config.p2p_private_key_file))
+                        .context("Load p2p private key")?,
+                )
+                .context("Decode p2p private key")?
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("Invalid p2p private key length"))?,
+            ),
         },
         participants: file_config.participants,
     };
