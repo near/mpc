@@ -11,11 +11,17 @@ use crate::{metrics, tracking};
 use cait_sith::protocol::Participant;
 use cait_sith::triples::TripleGenerationOutput;
 use cait_sith::{FullSignature, KeygenOutput, PresignArguments, PresignOutput};
-use k256::{Scalar, Secp256k1};
+use k256::{elliptic_curve::CurveArithmetic, Scalar, Secp256k1};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::time::timeout;
+
+pub type PublicKey = <Secp256k1 as CurveArithmetic>::AffinePoint;
+
+pub fn derive_key(public_key: PublicKey, epsilon: Scalar) -> PublicKey {
+    (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * epsilon + public_key).to_affine()
+}
 
 /// Performs an MPC presignature operation. This is shared for the initiator
 /// and for passive participants.
@@ -85,16 +91,17 @@ pub async fn sign(
         .map(Participant::from)
         .collect::<Vec<_>>();
 
+    let public_key = derive_key(keygen_out.public_key, tweak);
+
     // rerandomize the presignature: a variant of [GS21]
     let PresignOutput { big_r, k, sigma } = presign_out;
     let delta = derive_randomness(
-        keygen_out.public_key,
+        public_key,
         msg_hash,
         big_r,
         channel.participants.clone(),
         entropy,
     );
-
     // we use the default inversion: it is absolutely fine to use a
     // variable time inversion since delta is a public value
     let inverted_delta = delta.invert().unwrap();
@@ -110,7 +117,7 @@ pub async fn sign(
     let protocol = cait_sith::sign::<Secp256k1>(
         &cs_participants,
         me.into(),
-        keygen_out.public_key,
+        public_key,
         presign_out,
         msg_hash,
     )?;
