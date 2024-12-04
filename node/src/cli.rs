@@ -233,7 +233,7 @@ impl Cli {
                     };
                     std::fs::write(
                         format!("{}/p2p_key", subdir),
-                        hex::encode(&config.secrets.p2p_private_key.0),
+                        hex::encode(config.secrets.p2p_private_key.0),
                     )?;
                     std::fs::write(
                         format!("{}/config.yaml", subdir),

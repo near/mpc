@@ -235,10 +235,10 @@ fn keypair_to_raw_ed25519_secret_key(
     if pkcs8_encoded.len() != 16 + 32 + 3 + 32 {
         anyhow::bail!("Invalid PKCS8 length");
     }
-    if &pkcs8_encoded[..16] != &PKCS8_HEADER {
+    if pkcs8_encoded[..16] != PKCS8_HEADER {
         anyhow::bail!("Invalid PKCS8 header");
     }
-    if &pkcs8_encoded[16 + 32..16 + 32 + 3] != &PKCS8_MIDDLE {
+    if pkcs8_encoded[16 + 32..16 + 32 + 3] != PKCS8_MIDDLE {
         anyhow::bail!("Invalid PKCS8 middle");
     }
 
