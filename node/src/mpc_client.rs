@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::hkdf::derive_tweak;
 use crate::indexer::handler::ChainSignatureRequest;
-use crate::indexer::response::RespondArgs;
+use crate::indexer::response::ChainRespondArgs;
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
@@ -59,7 +59,7 @@ impl MpcClient {
         self,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
         mut sign_request_receiver: mpsc::Receiver<ChainSignatureRequest>,
-        sign_response_sender: mpsc::Sender<RespondArgs>,
+        sign_response_sender: mpsc::Sender<ChainRespondArgs>,
     ) -> anyhow::Result<()> {
         let monitor_passive_channels = {
             let client = self.client.clone();
@@ -232,7 +232,7 @@ impl MpcClient {
                                     .with_label_values(&["succeeded"])
                                     .inc();
 
-                                let response = RespondArgs::new(&request, &signature);
+                                let response = ChainRespondArgs::new(&request, &signature);
                                 let _ = sign_response_sender.send(response).await;
                             }
 

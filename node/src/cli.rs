@@ -253,7 +253,7 @@ impl Cli {
                             sync_mode: SyncMode::Interruption,
                             concurrency: NonZero::new(1).unwrap(),
                             mpc_contract_id: AccountId::from_str("test0").unwrap(),
-                            near_credentials_file: "node_key.json".to_owned(),
+                            near_credentials_file: "validator_key.json".to_owned(),
                         }),
                         triple: TripleConfig {
                             concurrency: 4,

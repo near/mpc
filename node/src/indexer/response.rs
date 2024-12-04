@@ -5,7 +5,7 @@ use k256::{AffinePoint, Scalar, Secp256k1};
 use near_client;
 use near_crypto::KeyFile;
 use near_indexer_primitives::near_primitives::transaction::{
-    FunctionCallAction, SignedTransaction, Transaction, TransactionV1,
+    FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
 };
 use near_indexer_primitives::types::AccountId;
 use near_o11y::WithSpanContextExt;
@@ -18,38 +18,72 @@ pub fn load_near_credentials(home_dir: &Path, filename: String) -> anyhow::Resul
     Ok(KeyFile::from_file(&path)?)
 }
 
-#[derive(Serialize)]
-struct RespondArgsRequest {
-    epsilon: Scalar,
-    payload_hash: Scalar,
+#[derive(Debug, PartialEq, Eq, Serialize, Clone, Copy)]
+struct SerializableScalar {
+    pub scalar: Scalar,
 }
 
-#[derive(Serialize)]
-struct RespondArgsResponse {
-    big_r: AffinePoint,
-    s: Scalar,
-    recovery_id: u8,
+impl From<Scalar> for SerializableScalar {
+    fn from(scalar: Scalar) -> Self {
+        SerializableScalar { scalar }
+    }
 }
 
-#[derive(Serialize)]
-pub struct RespondArgs {
-    request: RespondArgsRequest,
-    response: RespondArgsResponse,
+#[derive(Debug, PartialEq, Eq, Serialize, Clone, Copy)]
+struct SerializableAffinePoint {
+    pub affine_point: AffinePoint,
 }
 
-impl RespondArgs {
-    pub fn new(request: &SignatureRequest, signature: &FullSignature<Secp256k1>) -> Self {
-        RespondArgs {
-            request: RespondArgsRequest {
-                epsilon: request.tweak,
-                payload_hash: request.msg_hash,
+#[derive(Serialize, Debug, Clone)]
+struct ChainSignatureRequest {
+    pub epsilon: SerializableScalar,
+    pub payload_hash: SerializableScalar,
+}
+
+impl ChainSignatureRequest {
+    pub fn new(payload_hash: Scalar, epsilon: Scalar) -> Self {
+        let epsilon = SerializableScalar { scalar: epsilon };
+        let payload_hash = SerializableScalar {
+            scalar: payload_hash,
+        };
+        ChainSignatureRequest {
+            epsilon,
+            payload_hash,
+        }
+    }
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+struct ChainSignatureResponse {
+    pub big_r: SerializableAffinePoint,
+    pub s: SerializableScalar,
+    pub recovery_id: u8,
+}
+
+impl ChainSignatureResponse {
+    pub fn new(big_r: AffinePoint, s: Scalar, recovery_id: u8) -> Self {
+        ChainSignatureResponse {
+            big_r: SerializableAffinePoint {
+                affine_point: big_r,
             },
-            response: RespondArgsResponse {
-                big_r: signature.big_r,
-                s: signature.s,
-                // TODO: figure out what this is
-                recovery_id: 0,
-            },
+            s: SerializableScalar { scalar: s },
+            recovery_id,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct ChainRespondArgs {
+    request: ChainSignatureRequest,
+    response: ChainSignatureResponse,
+}
+
+impl ChainRespondArgs {
+    pub fn new(request: &SignatureRequest, response: &FullSignature<Secp256k1>) -> Self {
+        ChainRespondArgs {
+            request: ChainSignatureRequest::new(request.msg_hash, request.tweak),
+            // TODO: figure out correct recovery_id
+            response: ChainSignatureResponse::new(response.big_r, response.s, 0),
         }
     }
 }
@@ -57,12 +91,11 @@ impl RespondArgs {
 pub(crate) async fn chain_sender(
     key_file: KeyFile,
     mpc_contract_id: AccountId,
-    mut receiver: mpsc::Receiver<RespondArgs>,
+    mut receiver: mpsc::Receiver<ChainRespondArgs>,
     client: actix::Addr<near_client::ClientActor>,
 ) {
-    while let Some(response_args) = receiver.recv().await {
-        metrics::MPC_NUM_SIGN_RESPONSES_SENT.inc();
-        let Ok(response_ser) = serde_json::to_string(&response_args) else {
+    while let Some(respond_args) = receiver.recv().await {
+        let Ok(response_ser) = serde_json::to_string(&respond_args) else {
             tracing::error!(target: "mpc", "Failed to serialize response args");
             continue;
         };
@@ -80,6 +113,7 @@ pub(crate) async fn chain_sender(
             continue;
         };
         let block_hash = status.sync_info.latest_block_hash;
+        tracing::info!(target = "mpc", "tx args {:?}", response_ser);
 
         let action = FunctionCallAction {
             method_name: "respond".to_owned(),
@@ -87,23 +121,25 @@ pub(crate) async fn chain_sender(
             gas: 300000000000000,
             deposit: 0,
         };
-        let transaction = Transaction::V1(TransactionV1 {
+        let transaction = Transaction::V0(TransactionV0 {
             signer_id: key_file.account_id.clone(),
             public_key: key_file.public_key.clone(),
-            nonce: 0,
+            nonce: 10,
             receiver_id: mpc_contract_id.clone(),
             block_hash,
             actions: vec![action.into()],
-            priority_fee: 0,
         });
-        let signature = key_file
-            .secret_key
-            .sign(transaction.get_hash_and_size().0.as_ref());
 
+        let tx_hash = transaction.get_hash_and_size().0;
+        tracing::info!(target = "mpc", "sending response tx {:?}", tx_hash);
+
+        let signature = key_file.secret_key.sign(tx_hash.as_ref());
+
+        metrics::MPC_NUM_SIGN_RESPONSES_SENT.inc();
         let _ = client
             .send(
                 near_client::ProcessTxRequest {
-                    transaction: SignedTransaction::new(signature, transaction),
+                    transaction: SignedTransaction::new(signature, transaction.clone()),
                     is_forwarded: false,
                     check_only: false,
                 }
