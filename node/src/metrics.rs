@@ -44,3 +44,49 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_indexer_num_receipt_execution_outcomes",
+            "Number of receipt execution outcomes processed by the near indexer"
+        )
+        .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_NUM_SIGN_REQUESTS_INDEXED: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_num_signature_requests",
+            "Number of signatures requests indexed"
+        )
+        .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_NUM_SIGN_REQUESTS_LEADER: prometheus::IntCounterVec =
+        prometheus::register_int_counter_vec!(
+            "mpc_num_signature_requests_leader",
+            "Number of signatures requests for which this node is the leader",
+            &["result"],
+        )
+        .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_NUM_SIGN_RESPONSES_SENT: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_num_signature_responses_sent",
+            "Number of signature responses sent by this node"
+        )
+        .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_INDEXER_LATEST_BLOCK_HEIGHT: prometheus::IntGauge =
+        prometheus::register_int_gauge!(
+            "mpc_indexer_latest_block_height",
+            "Latest block height processed by the near indexer"
+        )
+        .unwrap();
+}

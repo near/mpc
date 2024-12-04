@@ -1,4 +1,5 @@
 use crate::assets::UniqueId;
+use crate::sign_request::SignatureId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::protocol::Participant;
 use cait_sith::triples::TripleGenerationOutput;
@@ -80,12 +81,8 @@ pub enum MpcTaskId {
         paired_triple_id: UniqueId,
     },
     Signature {
-        id: UniqueId,
+        id: SignatureId,
         presignature_id: UniqueId,
-        // TODO(#9): We need a proof for any signature requests
-        msg_hash: [u8; 32],
-        tweak: [u8; 32],
-        entropy: [u8; 32],
     },
 }
 

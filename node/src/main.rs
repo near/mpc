@@ -16,6 +16,7 @@ mod p2p;
 mod primitives;
 mod protocol;
 mod sign;
+mod sign_request;
 #[cfg(test)]
 mod tests;
 mod tracing;

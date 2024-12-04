@@ -1,6 +1,7 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use near_crypto::ED25519SecretKey;
+use near_indexer_primitives::types::AccountId;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -68,6 +69,10 @@ pub struct IndexerConfig {
     pub sync_mode: SyncMode,
     /// Sets the concurrency for indexing
     pub concurrency: std::num::NonZeroU16,
+    /// MPC contract id
+    pub mpc_contract_id: AccountId,
+    /// Credentials used to sign signature response txs
+    pub near_credentials_file: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,7 +167,9 @@ pub fn load_config(home_dir: &Path, secret_key: [u8; 16]) -> anyhow::Result<Conf
         presignature: file_config.presignature,
         signature: file_config.signature,
         secret_storage: SecretStorageConfig {
-            data_dir: home_dir.join("data"),
+            // TODO(saketh): the indexer uses <home_dir>/data by default and we must be careful
+            // to avoid a conflict. It would be nice if it were configureable in IndexerConfig.
+            data_dir: home_dir.join("mpc-data"),
             aes_key: secret_key,
         },
     };

@@ -5,20 +5,26 @@ use crate::config::{
 use crate::db::{DBCol, SecretDB};
 use crate::indexer::configs::InitConfigArgs;
 use crate::indexer::handler::listen_blocks;
+use crate::indexer::response::chain_sender;
+use crate::indexer::response::load_near_credentials;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::key_generation::{load_root_keyshare, run_key_generation_client};
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_quic_mesh_network};
 use crate::sign::PresignatureStorage;
+use crate::sign_request::SignRequestStorage;
 use crate::tracking;
 use crate::triple::TripleStorage;
 use crate::web::start_web_server;
 use anyhow::Context;
 use clap::Parser;
+use near_indexer_primitives::types::AccountId;
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio::sync::{Mutex, OnceCell};
 
 #[derive(Parser, Debug)]
@@ -67,26 +73,45 @@ impl Cli {
                 secret_store_key_hex,
             } => {
                 let secret_store_key = parse_encryption_key(&secret_store_key_hex)?;
-
                 let config = load_config(Path::new(&home_dir), secret_store_key)?;
                 let root_keyshare = load_root_keyshare(Path::new(&home_dir), secret_store_key)?;
+
+                let (sign_request_sender, sign_request_receiver) = mpsc::channel(10000);
+                let (sign_response_sender, sign_response_receiver) = mpsc::channel(10000);
 
                 // Start the near indexer
                 let indexer_handle = config.indexer.clone().map(|indexer_config| {
                     std::thread::spawn(move || {
                         actix::System::new().block_on(async {
+                            let near_credentials = load_near_credentials(
+                                Path::new(&home_dir),
+                                indexer_config.near_credentials_file.clone(),
+                            )
+                            .expect("Failed to load near credentials");
                             let indexer = near_indexer::Indexer::new(
                                 indexer_config.to_near_indexer_config(home_dir.into()),
                             )
                             .expect("Failed to initialize the Indexer");
                             let stream = indexer.streamer();
-                            let view_client = indexer.client_actors().0;
+                            let (view_client, client) = indexer.client_actors();
                             let stats: Arc<Mutex<IndexerStats>> =
                                 Arc::new(Mutex::new(IndexerStats::new()));
 
                             actix::spawn(indexer_logger(Arc::clone(&stats), view_client));
-                            listen_blocks(stream, indexer_config.concurrency, Arc::clone(&stats))
-                                .await;
+                            actix::spawn(chain_sender(
+                                near_credentials,
+                                indexer_config.mpc_contract_id.clone(),
+                                sign_response_receiver,
+                                client,
+                            ));
+                            listen_blocks(
+                                stream,
+                                indexer_config.concurrency,
+                                Arc::clone(&stats),
+                                indexer_config.mpc_contract_id,
+                                sign_request_sender,
+                            )
+                            .await;
                         });
                     })
                 });
@@ -132,19 +157,29 @@ impl Cli {
                         &network_client.all_participant_ids(),
                     )?);
 
+                    let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
+
                     let config = Arc::new(config);
                     let mpc_client = MpcClient::new(
                         config.clone(),
                         network_client,
                         triple_store,
                         presignature_store,
+                        sign_request_store,
                         root_keyshare,
                     );
                     mpc_client_cell
                         .set(mpc_client.clone())
                         .map_err(|_| ())
                         .unwrap();
-                    mpc_client.clone().run(channel_receiver).await?;
+                    mpc_client
+                        .clone()
+                        .run(
+                            channel_receiver,
+                            sign_request_receiver,
+                            sign_response_sender,
+                        )
+                        .await?;
 
                     anyhow::Ok(())
                 });
@@ -217,6 +252,8 @@ impl Cli {
                             validate_genesis: true,
                             sync_mode: SyncMode::Interruption,
                             concurrency: NonZero::new(1).unwrap(),
+                            mpc_contract_id: AccountId::from_str("test0").unwrap(),
+                            near_credentials_file: "validator_key.json".to_owned(),
                         }),
                         triple: TripleConfig {
                             concurrency: 4,

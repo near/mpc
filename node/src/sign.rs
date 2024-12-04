@@ -11,7 +11,7 @@ use crate::{metrics, tracking};
 use cait_sith::protocol::Participant;
 use cait_sith::triples::TripleGenerationOutput;
 use cait_sith::{FullSignature, KeygenOutput, PresignArguments, PresignOutput};
-use k256::{Scalar, Secp256k1};
+use k256::{elliptic_curve::CurveArithmetic, Scalar, Secp256k1};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -65,8 +65,16 @@ pub async fn pre_sign_unowned(
     pre_sign(channel, me, threshold, triple0, triple1, keygen_out).await
 }
 
+type PublicKey = <Secp256k1 as CurveArithmetic>::AffinePoint;
+
+fn derive_key(public_key: PublicKey, tweak: Scalar) -> PublicKey {
+    (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key).to_affine()
+}
+
 /// Performs an MPC signature operation. This is the same for the initiator
 /// and for passive participants.
+/// The entropy is used to rerandomize the presignature (inspired by [GS21])
+/// The tweak allows key derivation
 pub async fn sign(
     channel: NetworkTaskChannel,
     me: ParticipantId,
@@ -83,16 +91,17 @@ pub async fn sign(
         .map(Participant::from)
         .collect::<Vec<_>>();
 
+    let public_key = derive_key(keygen_out.public_key, tweak);
+
     // rerandomize the presignature: a variant of [GS21]
     let PresignOutput { big_r, k, sigma } = presign_out;
     let delta = derive_randomness(
-        keygen_out.public_key,
+        public_key,
         msg_hash,
         big_r,
         channel.participants.clone(),
         entropy,
     );
-
     // we use the default inversion: it is absolutely fine to use a
     // variable time inversion since delta is a public value
     let inverted_delta = delta.invert().unwrap();
@@ -108,7 +117,7 @@ pub async fn sign(
     let protocol = cait_sith::sign::<Secp256k1>(
         &cs_participants,
         me.into(),
-        keygen_out.public_key,
+        public_key,
         presign_out,
         msg_hash,
     )?;
@@ -248,10 +257,12 @@ impl PresignatureGenerationProgressTracker {
 /// Simple ID generator for signatures. Generates monotonically increasing IDs.
 /// Does not persist state across restarts, so if the clock rewinds then the
 /// generated IDs can conflict with previously generated IDs.
+#[allow(dead_code)]
 pub struct SignatureIdGenerator {
     last_id: Mutex<UniqueId>,
 }
 
+#[allow(dead_code)]
 impl SignatureIdGenerator {
     pub fn new(my_participant_id: ParticipantId) -> Self {
         Self {

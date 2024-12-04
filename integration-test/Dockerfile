@@ -7,11 +7,18 @@ FROM chef AS planner
 COPY node node
 COPY Cargo.lock Cargo.lock
 COPY Cargo.toml Cargo.toml
+COPY .git .git
+COPY .gitmodules .gitmodules
 
-RUN cargo chef prepare --recipe-path recipe.json
+RUN git submodule update --init --recursive
+RUN cargo chef prepare --recipe-path /app/recipe.json
 
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
+COPY .git .git
+COPY .gitmodules .gitmodules
+
+RUN git submodule update --init --recursive
 RUN cargo chef cook --release --recipe-path recipe.json
 
 COPY node node

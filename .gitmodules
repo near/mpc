@@ -1,0 +1,6 @@
+[submodule "libs/nearcore"]
+	path = libs/nearcore
+	url = https://github.com/near/nearcore
+[submodule "libs/mpc"]
+	path = libs/mpc
+	url = https://github.com/near/mpc.git

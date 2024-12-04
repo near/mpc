@@ -24,6 +24,7 @@ lazy_static = "1.5.0"
 prometheus = "0.13.4"
 quinn = "0.11.5"
 rand = "0.8.5"
+rand_xorshift = "0.3"
 rcgen = "0.13.1"
 rocksdb = "0.21.0"
 rustls = { version = "0.23.16", default-features = false, features = ["ring"] }
@@ -43,8 +44,8 @@ near-indexer = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd927
 near-indexer-primitives = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 near-client = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 near-config-utils = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
-near-o11y = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 near-crypto = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
+near-o11y = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 
 [dev-dependencies]
 serial_test = "3.2.0"
