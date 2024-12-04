@@ -17,12 +17,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::time::timeout;
 
-pub type PublicKey = <Secp256k1 as CurveArithmetic>::AffinePoint;
-
-pub fn derive_key(public_key: PublicKey, epsilon: Scalar) -> PublicKey {
-    (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * epsilon + public_key).to_affine()
-}
-
 /// Performs an MPC presignature operation. This is shared for the initiator
 /// and for passive participants.
 pub async fn pre_sign(
@@ -69,6 +63,12 @@ pub async fn pre_sign_unowned(
 ) -> anyhow::Result<PresignOutput<Secp256k1>> {
     let (triple0, triple1) = triple_store.take_unowned(paired_triple_id).await?;
     pre_sign(channel, me, threshold, triple0, triple1, keygen_out).await
+}
+
+type PublicKey = <Secp256k1 as CurveArithmetic>::AffinePoint;
+
+fn derive_key(public_key: PublicKey, tweak: Scalar) -> PublicKey {
+    (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key).to_affine()
 }
 
 /// Performs an MPC signature operation. This is the same for the initiator
