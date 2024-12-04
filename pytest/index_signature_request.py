@@ -72,7 +72,9 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
 
     # Start the mpc nodes
     for i in mpc_nodes:
-        nodes[i].run_cmd(cmd=(mpc_binary_path, 'start', '--home-dir', nodes[i].node_dir, secret_key_hex(i)))
+        cmd = (mpc_binary_path, 'start', '--home-dir', nodes[i].node_dir, secret_key_hex(i))
+        # mpc-node produces way too much output if we run with debug logs
+        nodes[i].run_cmd(cmd=cmd, extra_env={'RUST_LOG':'INFO'})
 
     # Deploy the mpc contract
     last_block_hash = nodes[0].get_latest_block().hash_bytes
