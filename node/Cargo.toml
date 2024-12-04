@@ -40,12 +40,12 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 x509-parser = "0.16.0"
 
-near-indexer = { path = "../libs/nearcore/chain/indexer/" }
-near-indexer-primitives = { path = "../libs/nearcore/chain/indexer-primitives" }
-near-client = { path = "../libs/nearcore/chain/client" }
-near-config-utils = { path = "../libs/nearcore/utils/config" }
-near-crypto = { path = "../libs/nearcore/core/crypto" }
-near-o11y = { path = "../libs/nearcore/core/o11y" }
+near-indexer = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
+near-client = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
+near-config-utils = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
+near-crypto = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
+near-o11y = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 
 [dev-dependencies]
 serial_test = "3.2.0"

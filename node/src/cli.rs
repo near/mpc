@@ -109,7 +109,7 @@ impl Cli {
                                 indexer_config.concurrency,
                                 Arc::clone(&stats),
                                 indexer_config.mpc_contract_id,
-                                Arc::new(sign_request_sender),
+                                sign_request_sender,
                             )
                             .await;
                         });

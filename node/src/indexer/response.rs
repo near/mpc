@@ -34,6 +34,11 @@ struct SerializableAffinePoint {
     pub affine_point: AffinePoint,
 }
 
+/* The format in which the chain signatures contract expects
+ * to receive the details of the original request. `epsilon`
+ * is used to refer to the tweak derived from the caller's
+ * account id and the derivation path.
+ */
 #[derive(Serialize, Debug, Clone)]
 struct ChainSignatureRequest {
     pub epsilon: SerializableScalar,
@@ -53,6 +58,9 @@ impl ChainSignatureRequest {
     }
 }
 
+/* The format in which the chain signatures contract expects
+ * to receive the completed signature.
+ */
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 struct ChainSignatureResponse {
     pub big_r: SerializableAffinePoint,
@@ -72,6 +80,11 @@ impl ChainSignatureResponse {
     }
 }
 
+/* These arguments are passed to the `respond` function of the
+ * chain signatures contract. It takes both the details of the
+ * original request and the completed signature, then verifies
+ * that the signature matches the requested key and payload.
+ */
 #[derive(Serialize)]
 pub struct ChainRespondArgs {
     request: ChainSignatureRequest,

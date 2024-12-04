@@ -47,7 +47,7 @@ pub(crate) async fn listen_blocks(
     concurrency: std::num::NonZeroU16,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
-    sign_request_sender: Arc<mpsc::Sender<ChainSignatureRequest>>,
+    sign_request_sender: mpsc::Sender<ChainSignatureRequest>,
 ) {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
@@ -55,7 +55,7 @@ pub(crate) async fn listen_blocks(
                 streamer_message,
                 Arc::clone(&stats),
                 &mpc_contract_id,
-                Arc::clone(&sign_request_sender),
+                sign_request_sender.clone(),
             )
         })
         .buffer_unordered(usize::from(concurrency.get()));
@@ -67,7 +67,7 @@ async fn handle_message(
     streamer_message: near_indexer_primitives::StreamerMessage,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: &AccountId,
-    sign_request_sender: Arc<mpsc::Sender<ChainSignatureRequest>>,
+    sign_request_sender: mpsc::Sender<ChainSignatureRequest>,
 ) -> anyhow::Result<()> {
     let block_height = streamer_message.block.header.height;
     let mut stats_lock = stats.lock().await;

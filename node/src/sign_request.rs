@@ -81,7 +81,7 @@ fn compute_hash(participant_id: &ParticipantId, signature_request_id: &[u8; 32])
 
 // A simple strategy for picking exactly one leader per request.
 // Note that if the chosen leader is offline the request will not be served.
-pub fn local_node_is_leader(config: &MpcConfig, request: &SignatureRequest) -> bool {
+pub fn local_node_is_leader_for_signing(config: &MpcConfig, request: &SignatureRequest) -> bool {
     let my_hash = compute_hash(&config.my_participant_id, &request.id);
     for participant in &config.participants.participants {
         if compute_hash(&participant.id, &request.id) < my_hash {

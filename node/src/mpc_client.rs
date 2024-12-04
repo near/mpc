@@ -8,9 +8,9 @@ use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
 use crate::sign::{
     pre_sign_unowned, run_background_presignature_generation, sign, PresignatureStorage,
 };
-use crate::sign_request::local_node_is_leader;
-use crate::sign_request::SignatureId;
-use crate::sign_request::{SignRequestStorage, SignatureRequest};
+use crate::sign_request::{
+    local_node_is_leader_for_signing, SignRequestStorage, SignatureId, SignatureRequest,
+};
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::triple::{
     run_background_triple_generation, run_many_triple_generation, TripleStorage,
@@ -145,7 +145,7 @@ impl MpcClient {
                                     id,
                                     presignature_id,
                                 } => {
-                                    // TODO: decide a better timeout for this
+                                    // TODO(#69): decide a better timeout for this
                                     let SignatureRequest {
                                         msg_hash,
                                         tweak,
@@ -217,7 +217,7 @@ impl MpcClient {
                                 return anyhow::Ok(());
                             }
 
-                            if local_node_is_leader(&config.mpc, &request) {
+                            if local_node_is_leader_for_signing(&config.mpc, &request) {
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
                                     .with_label_values(&["total"])
                                     .inc();
