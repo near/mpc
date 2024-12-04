@@ -81,7 +81,7 @@ impl ClientCertVerifier for DummyClientCertVerifier {
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        vec![rustls::SignatureScheme::ECDSA_NISTP256_SHA256]
+        vec![rustls::SignatureScheme::ED25519]
     }
 }
 
@@ -196,15 +196,68 @@ impl PersistentConnection {
     }
 }
 
+/// We hardcode a dummy private key used for signing certificates. This is
+/// fine because we're not relying on a certificate authority to verify
+/// public keys; rather the public keys come from the contract on chain.
+/// Still, TLS requires us to have signed certificates, so this is just to
+/// satisfy the TLS protocol.
+const DUMMY_ISSUER_PRIVATE_KEY: &str = "-----BEGIN PRIVATE KEY-----
+MFECAQEwBQYDK2VwBCIEIGkMPQEb0GXxgFXbgojLebmHnCUpS3QYqJrYcfyFqHtW
+gSEAAbdC8KDpDZPqZalKndJm2N6EXn+cNxIb2gRa21P5mcs=
+-----END PRIVATE KEY-----";
+
+const PKCS8_HEADER: [u8; 16] = [
+    0x30, 0x51, 0x02, 0x01, 0x01, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
+];
+
+const PKCS8_MIDDLE: [u8; 3] = [0x81, 0x21, 0x00];
+
+/// Converts an ED25519 secret key to a keypair that can be used in TLS.
+fn raw_ed25519_secret_key_to_keypair(
+    key: &near_crypto::ED25519SecretKey,
+) -> anyhow::Result<rcgen::KeyPair> {
+    let mut pkcs8_encoded = Vec::with_capacity(16 + 32 + 3 + 32);
+    pkcs8_encoded.extend_from_slice(&PKCS8_HEADER);
+    pkcs8_encoded.extend_from_slice(&key.0[..32]);
+    pkcs8_encoded.extend_from_slice(&PKCS8_MIDDLE);
+    pkcs8_encoded.extend_from_slice(&key.0[32..]);
+    let private_key = PrivatePkcs8KeyDer::from(pkcs8_encoded.as_slice());
+    let keypair = rcgen::KeyPair::try_from(&private_key)?;
+    Ok(keypair)
+}
+
+/// Converts a keypair to an ED25519 secret key, asserting that it is the
+/// exact kind of keypair we expect.
+fn keypair_to_raw_ed25519_secret_key(
+    keypair: &rcgen::KeyPair,
+) -> anyhow::Result<near_crypto::ED25519SecretKey> {
+    let pkcs8_encoded = keypair.serialize_der();
+    if pkcs8_encoded.len() != 16 + 32 + 3 + 32 {
+        anyhow::bail!("Invalid PKCS8 length");
+    }
+    if &pkcs8_encoded[..16] != &PKCS8_HEADER {
+        anyhow::bail!("Invalid PKCS8 header");
+    }
+    if &pkcs8_encoded[16 + 32..16 + 32 + 3] != &PKCS8_MIDDLE {
+        anyhow::bail!("Invalid PKCS8 middle");
+    }
+
+    let mut key = [0u8; 64];
+    key[..32].copy_from_slice(&pkcs8_encoded[16..16 + 32]);
+    key[32..].copy_from_slice(&pkcs8_encoded[16 + 32 + 3..]);
+
+    Ok(near_crypto::ED25519SecretKey(key))
+}
+
 /// Configures the quinn library to properly perform TLS handshakes.
 fn configure_quinn(config: &MpcConfig) -> anyhow::Result<(ServerConfig, ClientConfig)> {
     // The issuer is a dummy certificate authority that every node trusts.
-    let issuer_signer = rcgen::KeyPair::from_pem(&config.participants.dummy_issuer_private_key)?;
+    let issuer_signer = rcgen::KeyPair::from_pem(DUMMY_ISSUER_PRIVATE_KEY)?;
     let issuer_cert =
         rcgen::CertificateParams::new(vec!["root".to_string()])?.self_signed(&issuer_signer)?;
 
     // This is the keypair that is secret to this node, used in P2P handshakes.
-    let p2p_key = rcgen::KeyPair::from_pem(&config.secrets.p2p_private_key)?;
+    let p2p_key = raw_ed25519_secret_key_to_keypair(&config.secrets.p2p_private_key)?;
     let p2p_key_der =
         rustls::pki_types::PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(p2p_key.serialize_der()));
 
@@ -379,10 +432,18 @@ fn verify_peer_identity(
     let Ok(public_key) = cert.1.public_key().parsed() else {
         anyhow::bail!("Connection with invalid public key");
     };
-    let PublicKey::EC(ec) = public_key else {
-        anyhow::bail!("Connection with unexpected public key type");
+    // The library doesn't recognize ED25519 keys, but that's fine, we'll compare the raw
+    // bytes directly.
+    let PublicKey::Unknown(public_key_data) = public_key else {
+        anyhow::bail!(
+            "Connection with unexpected public key type: {:?}",
+            public_key
+        );
     };
-    let Some(peer_id) = participant_identities.key_to_participant_id.get(ec.data()) else {
+    let Some(peer_id) = participant_identities
+        .key_to_participant_id
+        .get(public_key_data)
+    else {
         anyhow::bail!("Connection with unknown public key");
     };
     Ok(*peer_id)
@@ -489,12 +550,12 @@ impl MeshNetworkTransportReceiver for QuicMeshReceiver {
     }
 }
 
-/// Generates an ECDSA keypair, returning the pem-encoded private key and the
+/// Generates an ED25519 keypair, returning the pem-encoded private key and the
 /// hex-encoded public key.
-pub fn generate_keypair() -> Result<(String, String)> {
-    let key_pair = rcgen::KeyPair::generate()?;
+pub fn generate_keypair() -> Result<(near_crypto::ED25519SecretKey, String)> {
+    let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
     Ok((
-        key_pair.serialize_pem(),
+        keypair_to_raw_ed25519_secret_key(&key_pair)?,
         hex::encode(key_pair.public_key_raw()),
     ))
 }
@@ -518,13 +579,11 @@ pub fn generate_test_p2p_configs(
         });
         keypairs.push((p2p_private_key, p2p_public_key));
     }
-    let (issuer_private_key, _) = generate_keypair()?;
 
     let mut configs = Vec::new();
     for (i, keypair) in keypairs.into_iter().enumerate() {
         let participants = ParticipantsConfig {
             threshold: threshold as u32,
-            dummy_issuer_private_key: issuer_private_key.clone(),
             participants: participants.clone(),
         };
 
@@ -544,12 +603,21 @@ pub fn generate_test_p2p_configs(
 #[cfg(test)]
 mod tests {
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
+    use crate::p2p::{keypair_to_raw_ed25519_secret_key, raw_ed25519_secret_key_to_keypair};
     use crate::primitives::{MpcMessage, ParticipantId};
     use crate::tracing::init_logging;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use serial_test::serial;
     use std::time::Duration;
     use tokio::time::timeout;
+
+    #[test]
+    fn test_pkcs8_ed25519_encoding() {
+        let (private_key, _) = super::generate_keypair().unwrap();
+        let keypair = raw_ed25519_secret_key_to_keypair(&private_key).unwrap();
+        let private_key2 = keypair_to_raw_ed25519_secret_key(&keypair).unwrap();
+        assert_eq!(private_key, private_key2);
+    }
 
     #[tokio::test]
     #[serial]

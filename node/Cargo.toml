@@ -44,6 +44,7 @@ near-indexer-primitives = { git = "https://github.com/near/nearcore", rev = "2bc
 near-client = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 near-config-utils = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 near-o11y = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
+near-crypto = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 
 [dev-dependencies]
 serial_test = "3.2.0"

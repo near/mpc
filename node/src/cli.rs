@@ -207,7 +207,7 @@ impl Cli {
                     let file_config = ConfigFile {
                         my_participant_id: config.my_participant_id,
                         participants: config.participants,
-                        p2p_private_key_file: "p2p.pem".to_owned(),
+                        p2p_private_key_file: "p2p_key".to_owned(),
                         web_ui: WebUIConfig {
                             host: "127.0.0.1".to_owned(),
                             port: 20000 + 1000 * seed.unwrap_or_default() + i as u16,
@@ -232,8 +232,8 @@ impl Cli {
                         signature: SignatureConfig { timeout_sec: 60 },
                     };
                     std::fs::write(
-                        format!("{}/p2p.pem", subdir),
-                        &config.secrets.p2p_private_key,
+                        format!("{}/p2p_key", subdir),
+                        hex::encode(&config.secrets.p2p_private_key.0),
                     )?;
                     std::fs::write(
                         format!("{}/config.yaml", subdir),
