@@ -1,7 +1,7 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
-use near_indexer_primitives::types::AccountId;
 use near_crypto::ED25519SecretKey;
+use near_indexer_primitives::types::AccountId;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
