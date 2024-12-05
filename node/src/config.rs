@@ -61,8 +61,6 @@ pub struct WebUIConfig {
 /// Configures behavior of the near indexer.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexerConfig {
-    /// Force streaming while node is syncing
-    pub stream_while_syncing: bool,
     /// Tells whether to validate the genesis file before starting
     pub validate_genesis: bool,
     /// Sets the starting point for indexing

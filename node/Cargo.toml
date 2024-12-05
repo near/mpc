@@ -47,6 +47,8 @@ near-config-utils = { git = "https://github.com/near/nearcore", rev = "2bce389e4
 near-crypto = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 near-o11y = { git = "https://github.com/near/nearcore", rev = "2bce389e4fd9273b78e4efbb16fb3317a7389b5b" }
 
+mpc-contract = { git = "https://github.com/near/mpc/", tag = "1.0.0-rc.5" }
+
 [dev-dependencies]
 serial_test = "3.2.0"
 reqwest = "0.12.9"
