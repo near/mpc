@@ -5,6 +5,7 @@ use cait_sith::FullSignature;
 use k256::{AffinePoint, Scalar, Secp256k1};
 use near_client;
 use near_indexer_primitives::types::AccountId;
+use near_indexer_primitives::types::{BlockReference, Finality};
 use near_o11y::WithSpanContextExt;
 use serde::Serialize;
 use std::sync::Arc;
@@ -97,11 +98,13 @@ pub(crate) async fn handle_sign_responses(
     tx_signer: Arc<TransactionSigner>,
     mpc_contract_id: AccountId,
     mut receiver: mpsc::Receiver<ChainRespondArgs>,
+    view_client: actix::Addr<near_client::ViewClientActor>,
     client: actix::Addr<near_client::ClientActor>,
 ) {
     while let Some(respond_args) = receiver.recv().await {
         let tx_signer = tx_signer.clone();
         let mpc_contract_id = mpc_contract_id.clone();
+        let view_client = view_client.clone();
         let client = client.clone();
         actix::spawn(async move {
             let Ok(response_ser) = serde_json::to_string(&respond_args) else {
@@ -110,29 +113,25 @@ pub(crate) async fn handle_sign_responses(
             };
             tracing::debug!(target = "mpc", "tx args {:?}", response_ser);
 
-            let Ok(Ok(status)) = client
+            let Ok(Ok(block)) = view_client
                 .send(
-                    near_client::Status {
-                        is_health_check: false,
-                        detailed: false,
-                    }
-                    .with_span_context(),
+                    near_client::GetBlock(BlockReference::Finality(Finality::Final))
+                        .with_span_context(),
                 )
                 .await
             else {
                 tracing::warn!(
                     target = "mpc",
-                    "failed to get indexer status; could not send response tx"
+                    "failed to get block hash to send response tx"
                 );
                 return;
             };
-            let block_hash = status.sync_info.latest_block_hash;
 
             let transaction = tx_signer.create_and_sign_function_call_tx(
                 mpc_contract_id.clone(),
                 "respond".to_string(),
                 response_ser.into(),
-                block_hash,
+                block.header.hash,
             );
             tracing::info!(
                 target = "mpc",

@@ -97,11 +97,12 @@ impl Cli {
                             let stats: Arc<Mutex<IndexerStats>> =
                                 Arc::new(Mutex::new(IndexerStats::new()));
 
-                            actix::spawn(indexer_logger(Arc::clone(&stats), view_client));
+                            actix::spawn(indexer_logger(Arc::clone(&stats), view_client.clone()));
                             actix::spawn(handle_sign_responses(
                                 Arc::new(transaction_signer),
                                 indexer_config.mpc_contract_id.clone(),
                                 sign_response_receiver,
+                                view_client,
                                 client,
                             ));
                             listen_blocks(
