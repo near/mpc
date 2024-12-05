@@ -19,6 +19,7 @@ use crate::triple::TripleStorage;
 use crate::web::start_web_server;
 use anyhow::Context;
 use clap::Parser;
+use near_crypto::SecretKey;
 use near_indexer_primitives::types::AccountId;
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
@@ -47,9 +48,9 @@ pub enum Cli {
         #[arg(env("MPC_ROOT_KEYSHARE"))]
         root_keyshare: Option<String>,
         /// p2p private key, if this is being passed in rather than loaded from disk.
-        /// It should be in the format of "ed25519:...".
+        /// It must be in the format of "ed25519:...".
         #[arg(env("MPC_P2P_PRIVATE_KEY"))]
-        p2p_private_key: Option<String>,
+        p2p_private_key: Option<SecretKey>,
     },
     /// Generates the root keyshare. This will only succeed if all participants
     /// run this command together, as in, every node will wait for the full set
@@ -285,7 +286,7 @@ impl Cli {
                     };
                     std::fs::write(
                         format!("{}/p2p_key", subdir),
-                        hex::encode(config.secrets.p2p_private_key.0),
+                        SecretKey::ED25519(config.secrets.p2p_private_key).to_string(),
                     )?;
                     std::fs::write(
                         format!("{}/config.yaml", subdir),

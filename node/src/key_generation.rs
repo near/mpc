@@ -49,7 +49,7 @@ impl RootKeyshareData {
         }
     }
 
-    pub fn of_epoch_0(keygen_output: KeygenOutput<Secp256k1>) -> Self {
+    pub fn of_epoch_zero(keygen_output: KeygenOutput<Secp256k1>) -> Self {
         Self {
             epoch: 0,
             private_share: keygen_output.private_share,
@@ -139,7 +139,7 @@ pub async fn run_key_generation_client(
     save_root_keyshare(
         &home_dir,
         config.secret_storage.aes_key,
-        &RootKeyshareData::of_epoch_0(key),
+        &RootKeyshareData::of_epoch_zero(key),
     )?;
     tracing::info!("Key generation completed");
     Ok(())
@@ -203,7 +203,7 @@ mod tests {
         save_root_keyshare(
             dir.path(),
             encryption_key,
-            &RootKeyshareData::of_epoch_0(generated_key.clone()),
+            &RootKeyshareData::of_epoch_zero(generated_key.clone()),
         )
         .unwrap();
         let loaded_key = super::load_root_keyshare(dir.path(), encryption_key, &None).unwrap();
