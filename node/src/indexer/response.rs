@@ -1,22 +1,14 @@
+use crate::indexer::transaction::TransactionSigner;
 use crate::metrics;
 use crate::sign_request::SignatureRequest;
 use cait_sith::FullSignature;
 use k256::{AffinePoint, Scalar, Secp256k1};
 use near_client;
-use near_crypto::KeyFile;
-use near_indexer_primitives::near_primitives::transaction::{
-    FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
-};
 use near_indexer_primitives::types::AccountId;
 use near_o11y::WithSpanContextExt;
 use serde::Serialize;
-use std::path::Path;
+use std::sync::Arc;
 use tokio::sync::mpsc;
-
-pub fn load_near_credentials(home_dir: &Path, filename: String) -> anyhow::Result<KeyFile> {
-    let path = home_dir.join(filename);
-    Ok(KeyFile::from_file(&path)?)
-}
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone, Copy)]
 struct SerializableScalar {
@@ -101,63 +93,64 @@ impl ChainRespondArgs {
     }
 }
 
-pub(crate) async fn chain_sender(
-    key_file: KeyFile,
+pub(crate) async fn handle_sign_responses(
+    tx_signer: Arc<TransactionSigner>,
     mpc_contract_id: AccountId,
     mut receiver: mpsc::Receiver<ChainRespondArgs>,
     client: actix::Addr<near_client::ClientActor>,
 ) {
     while let Some(respond_args) = receiver.recv().await {
-        let Ok(response_ser) = serde_json::to_string(&respond_args) else {
-            tracing::error!(target: "mpc", "Failed to serialize response args");
-            continue;
-        };
+        let tx_signer = tx_signer.clone();
+        let mpc_contract_id = mpc_contract_id.clone();
+        let client = client.clone();
+        actix::spawn(async move {
+            let Ok(response_ser) = serde_json::to_string(&respond_args) else {
+                tracing::error!(target: "mpc", "Failed to serialize response args");
+                return;
+            };
+            tracing::debug!(target = "mpc", "tx args {:?}", response_ser);
 
-        let Ok(Ok(status)) = client
-            .send(
-                near_client::Status {
-                    is_health_check: false,
-                    detailed: false,
-                }
-                .with_span_context(),
-            )
-            .await
-        else {
-            continue;
-        };
-        let block_hash = status.sync_info.latest_block_hash;
-        tracing::info!(target = "mpc", "tx args {:?}", response_ser);
+            let Ok(Ok(status)) = client
+                .send(
+                    near_client::Status {
+                        is_health_check: false,
+                        detailed: false,
+                    }
+                    .with_span_context(),
+                )
+                .await
+            else {
+                tracing::warn!(
+                    target = "mpc",
+                    "failed to get indexer status; could not send response tx"
+                );
+                return;
+            };
+            let block_hash = status.sync_info.latest_block_hash;
 
-        let action = FunctionCallAction {
-            method_name: "respond".to_owned(),
-            args: response_ser.into(),
-            gas: 300000000000000,
-            deposit: 0,
-        };
-        let transaction = Transaction::V0(TransactionV0 {
-            signer_id: key_file.account_id.clone(),
-            public_key: key_file.public_key.clone(),
-            nonce: 10,
-            receiver_id: mpc_contract_id.clone(),
-            block_hash,
-            actions: vec![action.into()],
+            let transaction = tx_signer.create_and_sign_function_call_tx(
+                mpc_contract_id.clone(),
+                "respond".to_string(),
+                response_ser.into(),
+                block_hash,
+            );
+            tracing::info!(
+                target = "mpc",
+                "sending response tx {:?}",
+                transaction.get_hash()
+            );
+
+            metrics::MPC_NUM_SIGN_RESPONSES_SENT.inc();
+            let _ = client
+                .send(
+                    near_client::ProcessTxRequest {
+                        transaction,
+                        is_forwarded: false,
+                        check_only: false,
+                    }
+                    .with_span_context(),
+                )
+                .await;
         });
-
-        let tx_hash = transaction.get_hash_and_size().0;
-        tracing::info!(target = "mpc", "sending response tx {:?}", tx_hash);
-
-        let signature = key_file.secret_key.sign(tx_hash.as_ref());
-
-        metrics::MPC_NUM_SIGN_RESPONSES_SENT.inc();
-        let _ = client
-            .send(
-                near_client::ProcessTxRequest {
-                    transaction: SignedTransaction::new(signature, transaction.clone()),
-                    is_forwarded: false,
-                    check_only: false,
-                }
-                .with_span_context(),
-            )
-            .await;
     }
 }
