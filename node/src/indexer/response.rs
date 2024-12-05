@@ -35,24 +35,24 @@ struct SerializableAffinePoint {
 }
 
 /* The format in which the chain signatures contract expects
- * to receive the details of the original request. `epsilon`
+ * to receive the details of the original request. `tweak`
  * is used to refer to the tweak derived from the caller's
  * account id and the derivation path.
  */
 #[derive(Serialize, Debug, Clone)]
 struct ChainSignatureRequest {
-    pub epsilon: SerializableScalar,
+    pub tweak: SerializableScalar,
     pub payload_hash: SerializableScalar,
 }
 
 impl ChainSignatureRequest {
-    pub fn new(payload_hash: Scalar, epsilon: Scalar) -> Self {
-        let epsilon = SerializableScalar { scalar: epsilon };
+    pub fn new(payload_hash: Scalar, tweak: Scalar) -> Self {
+        let tweak = SerializableScalar { scalar: tweak };
         let payload_hash = SerializableScalar {
             scalar: payload_hash,
         };
         ChainSignatureRequest {
-            epsilon,
+            tweak,
             payload_hash,
         }
     }
