@@ -5,9 +5,9 @@ use crate::config::{
 use crate::db::{DBCol, SecretDB};
 use crate::indexer::configs::InitConfigArgs;
 use crate::indexer::handler::listen_blocks;
-use crate::indexer::response::chain_sender;
-use crate::indexer::response::load_near_credentials;
+use crate::indexer::response::handle_sign_responses;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
+use crate::indexer::transaction::TransactionSigner;
 use crate::key_generation::{load_root_keyshare, run_key_generation_client};
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
@@ -83,9 +83,9 @@ impl Cli {
                 let indexer_handle = config.indexer.clone().map(|indexer_config| {
                     std::thread::spawn(move || {
                         actix::System::new().block_on(async {
-                            let near_credentials = load_near_credentials(
-                                Path::new(&home_dir),
-                                indexer_config.near_credentials_file.clone(),
+                            let transaction_signer = TransactionSigner::from_file(
+                                &Path::new(&home_dir)
+                                    .join(indexer_config.near_credentials_file.clone()),
                             )
                             .expect("Failed to load near credentials");
                             let indexer = near_indexer::Indexer::new(
@@ -97,11 +97,12 @@ impl Cli {
                             let stats: Arc<Mutex<IndexerStats>> =
                                 Arc::new(Mutex::new(IndexerStats::new()));
 
-                            actix::spawn(indexer_logger(Arc::clone(&stats), view_client));
-                            actix::spawn(chain_sender(
-                                near_credentials,
+                            actix::spawn(indexer_logger(Arc::clone(&stats), view_client.clone()));
+                            actix::spawn(handle_sign_responses(
+                                Arc::new(transaction_signer),
                                 indexer_config.mpc_contract_id.clone(),
                                 sign_response_receiver,
+                                view_client,
                                 client,
                             ));
                             listen_blocks(
