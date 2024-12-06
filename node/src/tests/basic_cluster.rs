@@ -53,6 +53,8 @@ async fn test_basic_cluster() {
             let cli = Cli::Start {
                 home_dir: home_dir.to_str().unwrap().to_string(),
                 secret_store_key_hex: hex::encode(encryption_keys[i]),
+                p2p_private_key: None,
+                root_keyshare: None,
             };
             AutoAbortTask::from(tokio::spawn(cli.run()))
         })

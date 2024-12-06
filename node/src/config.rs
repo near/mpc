@@ -1,9 +1,10 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
-use near_crypto::ED25519SecretKey;
+use near_crypto::{PublicKey, SecretKey};
 use near_indexer_primitives::types::AccountId;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct Config {
@@ -132,7 +133,7 @@ pub struct ParticipantInfo {
     pub address: String,
     pub port: u16,
     /// Public key that corresponds to this P2P peer's private key.
-    pub p2p_public_key: String,
+    pub p2p_public_key: PublicKey,
 }
 
 #[derive(Clone, Debug)]
@@ -140,22 +141,29 @@ pub struct SecretsConfig {
     pub p2p_private_key: near_crypto::ED25519SecretKey,
 }
 
-pub fn load_config(home_dir: &Path, secret_key: [u8; 16]) -> anyhow::Result<Config> {
+pub fn load_config(
+    home_dir: &Path,
+    secret_key: [u8; 16],
+    // Allows the p2p private key to be provided via env var rather than file.
+    p2p_private_key_override: &Option<SecretKey>,
+) -> anyhow::Result<Config> {
     let config_path = home_dir.join("config.yaml");
     let file_config = ConfigFile::from_file(&config_path).context("Load config.yaml")?;
+    let p2p_private_key = if let Some(p2p_private_key_override) = p2p_private_key_override {
+        p2p_private_key_override.clone()
+    } else {
+        SecretKey::from_str(
+            &std::fs::read_to_string(home_dir.join(&file_config.p2p_private_key_file))
+                .context("Load p2p private key")?,
+        )
+        .context("Decode p2p private key")?
+    };
+    let SecretKey::ED25519(p2p_private_key) = p2p_private_key else {
+        anyhow::bail!("P2P private key must be ED25519");
+    };
     let mpc_config = MpcConfig {
         my_participant_id: file_config.my_participant_id,
-        secrets: SecretsConfig {
-            p2p_private_key: ED25519SecretKey(
-                hex::decode(
-                    &std::fs::read_to_string(home_dir.join(&file_config.p2p_private_key_file))
-                        .context("Load p2p private key")?,
-                )
-                .context("Decode p2p private key")?
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("Invalid p2p private key length"))?,
-            ),
-        },
+        secrets: SecretsConfig { p2p_private_key },
         participants: file_config.participants,
     };
     let web_config = file_config.web_ui;

@@ -8,7 +8,8 @@ use aes_gcm::{Aes128Gcm, KeyInit};
 use anyhow::Context;
 use cait_sith::protocol::Participant;
 use cait_sith::KeygenOutput;
-use k256::Secp256k1;
+use k256::{AffinePoint, Scalar, Secp256k1};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -30,11 +31,43 @@ pub async fn run_key_generation(
     run_protocol("key generation", channel, me, protocol).await
 }
 
+/// The root keyshare data along with an epoch. The epoch is incremented
+/// for each key resharing. This is the format stored in the old MPC
+/// implementation, and we're keeping it the same to ease migration.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RootKeyshareData {
+    pub epoch: u64,
+    pub private_share: Scalar,
+    pub public_key: AffinePoint,
+}
+
+impl RootKeyshareData {
+    pub fn keygen_output(&self) -> KeygenOutput<Secp256k1> {
+        KeygenOutput {
+            private_share: self.private_share,
+            public_key: self.public_key,
+        }
+    }
+
+    pub fn of_epoch_zero(keygen_output: KeygenOutput<Secp256k1>) -> Self {
+        Self {
+            epoch: 0,
+            private_share: keygen_output.private_share,
+            public_key: keygen_output.public_key,
+        }
+    }
+}
+
 /// Reads the root keyshare (keygen output) from disk.
 pub fn load_root_keyshare(
     home_dir: &Path,
     encryption_key: [u8; 16],
-) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+    root_keyshare_override: &Option<String>,
+) -> anyhow::Result<RootKeyshareData> {
+    if let Some(override_key) = root_keyshare_override {
+        return serde_json::from_str(override_key)
+            .with_context(|| format!("Failed to parse root keyshare: {}", override_key));
+    }
     let key_path = home_dir.join("key");
     let cipher = Aes128Gcm::new(GenericArray::from_slice(&encryption_key));
     let data = std::fs::read(key_path).context("Failed to read keygen file")?;
@@ -46,12 +79,12 @@ pub fn load_root_keyshare(
 fn save_root_keyshare(
     home_dir: &Path,
     encryption_key: [u8; 16],
-    keygen_out: &KeygenOutput<Secp256k1>,
+    root_keyshare: &RootKeyshareData,
 ) -> anyhow::Result<()> {
     assert_root_key_does_not_exist(home_dir);
     let key_path = home_dir.join("key");
     let cipher = Aes128Gcm::new(GenericArray::from_slice(&encryption_key));
-    let data = serde_json::to_vec(keygen_out).context("Failed to serialize keygen")?;
+    let data = serde_json::to_vec(&root_keyshare).context("Failed to serialize keygen")?;
     let encrypted = db::encrypt(&cipher, &data);
     std::fs::write(key_path, &encrypted).context("Failed to write keygen file")
 }
@@ -103,7 +136,11 @@ pub async fn run_key_generation_client(
         config.mpc.participants.threshold as usize,
     )
     .await?;
-    save_root_keyshare(&home_dir, config.secret_storage.aes_key, &key)?;
+    save_root_keyshare(
+        &home_dir,
+        config.secret_storage.aes_key,
+        &RootKeyshareData::of_epoch_zero(key),
+    )?;
     tracing::info!("Key generation completed");
     Ok(())
 }
@@ -111,6 +148,7 @@ pub async fn run_key_generation_client(
 #[cfg(test)]
 mod tests {
     use super::{run_key_generation, save_root_keyshare};
+    use crate::key_generation::RootKeyshareData;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::MpcTaskId;
@@ -162,8 +200,13 @@ mod tests {
             .unwrap()
             .1;
 
-        save_root_keyshare(dir.path(), encryption_key, &generated_key).unwrap();
-        let loaded_key = super::load_root_keyshare(dir.path(), encryption_key).unwrap();
+        save_root_keyshare(
+            dir.path(),
+            encryption_key,
+            &RootKeyshareData::of_epoch_zero(generated_key.clone()),
+        )
+        .unwrap();
+        let loaded_key = super::load_root_keyshare(dir.path(), encryption_key, &None).unwrap();
         assert_eq!(generated_key.private_share, loaded_key.private_share);
         assert_eq!(generated_key.public_key, loaded_key.public_key);
     }

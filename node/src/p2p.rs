@@ -2,7 +2,7 @@ use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfi
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
 use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
@@ -36,7 +36,7 @@ pub struct QuicMeshReceiver {
 /// Maps public keys to participant IDs. Used to identify incoming connections.
 #[derive(Default)]
 struct ParticipantIdentities {
-    key_to_participant_id: HashMap<Vec<u8>, ParticipantId>,
+    key_to_participant_id: HashMap<near_crypto::PublicKey, ParticipantId>,
 }
 
 /// A always-allowing client certificate verifier for the QUIC TLS layer.
@@ -349,7 +349,7 @@ pub async fn new_quic_mesh_network(
         participant_ids.push(participant.id);
         participant_identities
             .key_to_participant_id
-            .insert(hex::decode(&participant.p2p_public_key)?, participant.id);
+            .insert(participant.p2p_public_key.clone(), participant.id);
     }
     let participant_identities = Arc::new(participant_identities);
     for participant in &config.participants.participants {
@@ -440,9 +440,14 @@ fn verify_peer_identity(
             public_key
         );
     };
+    let public_key = near_crypto::ED25519PublicKey(
+        public_key_data
+            .try_into()
+            .context("Connection with public key of unexpected length")?,
+    );
     let Some(peer_id) = participant_identities
         .key_to_participant_id
-        .get(public_key_data)
+        .get(&near_crypto::PublicKey::ED25519(public_key))
     else {
         anyhow::bail!("Connection with unknown public key");
     };
@@ -552,11 +557,12 @@ impl MeshNetworkTransportReceiver for QuicMeshReceiver {
 
 /// Generates an ED25519 keypair, returning the pem-encoded private key and the
 /// hex-encoded public key.
-pub fn generate_keypair() -> Result<(near_crypto::ED25519SecretKey, String)> {
+pub fn generate_keypair() -> Result<(near_crypto::ED25519SecretKey, near_crypto::ED25519PublicKey)>
+{
     let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
     Ok((
         keypair_to_raw_ed25519_secret_key(&key_pair)?,
-        hex::encode(key_pair.public_key_raw()),
+        near_crypto::ED25519PublicKey(key_pair.public_key_raw().try_into().unwrap()),
     ))
 }
 
@@ -575,7 +581,7 @@ pub fn generate_test_p2p_configs(
             id: ParticipantId::from_raw(rand::random()),
             address: "127.0.0.1".to_string(),
             port: 10000 + seed * 1000 + i as u16,
-            p2p_public_key: p2p_public_key.clone(),
+            p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
         });
         keypairs.push((p2p_private_key, p2p_public_key));
     }

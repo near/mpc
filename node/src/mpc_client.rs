@@ -17,7 +17,8 @@ use crate::triple::{
     SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
 };
 
-use cait_sith::{FullSignature, KeygenOutput};
+use crate::key_generation::RootKeyshareData;
+use cait_sith::FullSignature;
 use k256::Secp256k1;
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,7 +32,7 @@ pub struct MpcClient {
     triple_store: Arc<TripleStorage>,
     presignature_store: Arc<PresignatureStorage>,
     sign_request_store: Arc<SignRequestStorage>,
-    root_keyshare: KeygenOutput<Secp256k1>,
+    root_keyshare: RootKeyshareData,
 }
 
 impl MpcClient {
@@ -41,7 +42,7 @@ impl MpcClient {
         triple_store: Arc<TripleStorage>,
         presignature_store: Arc<PresignatureStorage>,
         sign_request_store: Arc<SignRequestStorage>,
-        root_keyshare: KeygenOutput<Secp256k1>,
+        root_keyshare: RootKeyshareData,
     ) -> Self {
         Self {
             config,
@@ -130,7 +131,7 @@ impl MpcClient {
                                             channel,
                                             client.my_participant_id(),
                                             config.mpc.participants.threshold as usize,
-                                            root_keyshare,
+                                            root_keyshare.keygen_output(),
                                             triple_store.clone(),
                                             paired_triple_id,
                                         ),
@@ -162,7 +163,7 @@ impl MpcClient {
                                         sign(
                                             channel,
                                             client.my_participant_id(),
-                                            root_keyshare,
+                                            root_keyshare.keygen_output(),
                                             presignature_store
                                                 .take_unowned(presignature_id)
                                                 .await?
@@ -261,7 +262,7 @@ impl MpcClient {
                 self.config.presignature.clone().into(),
                 self.triple_store.clone(),
                 self.presignature_store.clone(),
-                self.root_keyshare.clone(),
+                self.root_keyshare.keygen_output(),
             ),
         );
 
@@ -296,7 +297,7 @@ impl MpcClient {
                 presignature.participants,
             )?,
             self.client.my_participant_id(),
-            self.root_keyshare.clone(),
+            self.root_keyshare.keygen_output(),
             presignature.presignature,
             sign_request.msg_hash,
             sign_request.tweak,

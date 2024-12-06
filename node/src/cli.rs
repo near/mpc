@@ -19,6 +19,7 @@ use crate::triple::TripleStorage;
 use crate::web::start_web_server;
 use anyhow::Context;
 use clap::Parser;
+use near_crypto::SecretKey;
 use near_indexer_primitives::types::AccountId;
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
@@ -35,9 +36,21 @@ pub enum Cli {
         #[arg(long, env("MPC_HOME_DIR"))]
         home_dir: String,
         /// Hex-encoded 16 byte AES key for local storage encryption.
-        /// TODO: What's the right way to pass in secrets?
+        /// This key should come from a secure secret storage.
         #[arg(env("MPC_SECRET_STORE_KEY"))]
         secret_store_key_hex: String,
+        /// Root keyshare, if this is being passed in rather than loaded from disk.
+        /// This should be used if the root keyshare is being stored with a secret
+        /// manager (such as Google Secret Manager) instead of encrypted on disk.
+        /// A bash script should be used to first read the root keyshare from the
+        /// secret manager, and then pass it in via this argument.
+        /// The root keyshare should be passed in as a JSON string.
+        #[arg(env("MPC_ROOT_KEYSHARE"))]
+        root_keyshare: Option<String>,
+        /// p2p private key, if this is being passed in rather than loaded from disk.
+        /// It must be in the format of "ed25519:...".
+        #[arg(env("MPC_P2P_PRIVATE_KEY"))]
+        p2p_private_key: Option<SecretKey>,
     },
     /// Generates the root keyshare. This will only succeed if all participants
     /// run this command together, as in, every node will wait for the full set
@@ -71,10 +84,13 @@ impl Cli {
             Cli::Start {
                 home_dir,
                 secret_store_key_hex,
+                root_keyshare,
+                p2p_private_key,
             } => {
                 let secret_store_key = parse_encryption_key(&secret_store_key_hex)?;
-                let config = load_config(Path::new(&home_dir), secret_store_key)?;
-                let root_keyshare = load_root_keyshare(Path::new(&home_dir), secret_store_key)?;
+                let config = load_config(Path::new(&home_dir), secret_store_key, &p2p_private_key)?;
+                let root_keyshare =
+                    load_root_keyshare(Path::new(&home_dir), secret_store_key, &root_keyshare)?;
 
                 let (sign_request_sender, sign_request_receiver) = mpsc::channel(10000);
                 let (sign_response_sender, sign_response_receiver) = mpsc::channel(10000);
@@ -199,7 +215,7 @@ impl Cli {
                 secret_store_key_hex,
             } => {
                 let encryption_key = parse_encryption_key(&secret_store_key_hex)?;
-                let config = load_config(Path::new(&home_dir), encryption_key)?;
+                let config = load_config(Path::new(&home_dir), encryption_key, &None)?;
                 let (root_task, _) = tracking::start_root_task(async move {
                     let root_task_handle = tracking::current_task();
                     let _web_server_handle = tracking::spawn_checked(
@@ -271,7 +287,7 @@ impl Cli {
                     };
                     std::fs::write(
                         format!("{}/p2p_key", subdir),
-                        hex::encode(config.secrets.p2p_private_key.0),
+                        SecretKey::ED25519(config.secrets.p2p_private_key).to_string(),
                     )?;
                     std::fs::write(
                         format!("{}/config.yaml", subdir),
