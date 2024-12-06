@@ -210,9 +210,37 @@ pub(crate) async fn chain_sender(
 // Test the recovery_id generation
 #[cfg(test)]
 mod recovery_id_tests {
-    [#test]
-    fn expected_recovery_id(){
-        // TODO: complete these tests
-        assert!(true);
+    use k256::AffinePoint;
+    use k256::ecdsa::{ SigningKey, RecoveryId};
+    use rand::rngs::OsRng;
+    use k256::sha2::{Sha256, Digest};
+    use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
+    use crate::indexer::response::ChainRespondArgs;
+
+    #[test]
+    fn test_ecdsa_recovery_from_big_r(){
+        // generate a pair of ecdsa keys
+        let mut rng = OsRng;
+        let signing_key = SigningKey::random(&mut rng);
+
+        // compute a signature with recovery id
+        let message = b"Testing ECDSA with recovery ID!";
+        let digest = Sha256::new_with_prefix(message);
+        match signing_key.sign_digest_recoverable(digest){
+            Ok((signature, recid)) => {
+                // recover R
+                let (r, _) = signature.split_scalars();
+                let r_bytes = r.to_repr();
+                let big_r =  AffinePoint::decompress(&r_bytes, u8::from(recid.is_y_odd()).into())
+                                        .unwrap();
+                // compute recovery_id using our function
+                let tested_recid = ChainRespondArgs::ecdsa_recovery_from_big_r(&big_r);
+                let tested_recid = RecoveryId::from_byte(tested_recid).unwrap();
+
+                assert!(tested_recid.is_x_reduced() == recid.is_x_reduced());
+                assert!(tested_recid.is_y_odd() == recid.is_y_odd());
+            },
+            Err(_)  => assert!(false),
+        }
     }
 }
