@@ -1,7 +1,14 @@
 use crate::metrics;
 use crate::sign_request::SignatureRequest;
 use cait_sith::FullSignature;
-use k256::{AffinePoint, Scalar, Secp256k1};
+use k256::{
+     AffinePoint,
+     elliptic_curve::bigint::U256,
+     elliptic_curve::point::AffineCoordinates,
+     elliptic_curve::ops::Reduce,
+     Scalar,
+     Secp256k1
+    };
 use near_client;
 use near_crypto::KeyFile;
 use near_indexer_primitives::near_primitives::transaction::{
@@ -32,6 +39,11 @@ impl From<Scalar> for SerializableScalar {
 #[derive(Debug, PartialEq, Eq, Serialize, Clone, Copy)]
 struct SerializableAffinePoint {
     pub affine_point: AffinePoint,
+}
+
+
+pub enum ChainSignatureError {
+    InvalidRecoveryId,
 }
 
 /* The format in which the chain signatures contract expects
@@ -69,13 +81,22 @@ struct ChainSignatureResponse {
 }
 
 impl ChainSignatureResponse {
-    pub fn new(big_r: AffinePoint, s: Scalar, recovery_id: u8) -> Self {
-        ChainSignatureResponse {
-            big_r: SerializableAffinePoint {
-                affine_point: big_r,
-            },
+    const MAX_RECOVERY_ID: u8 = 3;
+    pub fn new(big_r: AffinePoint, s: Scalar, recovery_id: u8) -> Result<Self,ChainSignatureError> {
+        if recovery_id > Self::MAX_RECOVERY_ID {
+            return Err(ChainSignatureError::InvalidRecoveryId);
+        }
+        Ok(ChainSignatureResponse {
+            big_r: SerializableAffinePoint { affine_point: big_r },
             s: SerializableScalar { scalar: s },
             recovery_id,
+        })
+    }
+
+    pub (crate) fn is_ok_or_panic( response : Result<Self, ChainSignatureError>) -> ChainSignatureResponse {
+        match response {
+            Ok(value) => value,
+            Err(_) => panic!("Expected Chain Signature Response instead of error, panicking!"),
         }
     }
 }
@@ -92,12 +113,47 @@ pub struct ChainRespondArgs {
 }
 
 impl ChainRespondArgs {
+    /// WARNING: this function assumes the input full signature is valid and comes from an authentic response
     pub fn new(request: &SignatureRequest, response: &FullSignature<Secp256k1>) -> Self {
+        // figure out correct recovery_id for the public key
+        let recovery_id = Self::ecdsa_recovery_from_big_r(response.big_r);
         ChainRespondArgs {
             request: ChainSignatureRequest::new(request.msg_hash, request.tweak),
-            // TODO: figure out correct recovery_id
-            response: ChainSignatureResponse::new(response.big_r, response.s, 0),
+            response: ChainSignatureResponse::is_ok_or_panic(
+                        ChainSignatureResponse::new(response.big_r, response.s, recovery_id)
+                    ),
         }
+    }
+
+    /// The recovery id is only made of two significant bits
+    /// The lower bit determines the sign bit of the point R
+    /// The higher bit determines whether the x coordinate of R exceeded
+    /// the curve order when computing R_x mod p
+    fn ecdsa_recovery_from_big_r (big_r: AffinePoint) -> u8 {
+        let mut recovery_id = 0;
+
+        // if Ry is odd then set recovery_id lower bit to 1
+        recovery_id = recovery_id | big_r.y_is_odd().unwrap_u8();
+
+        // if Rx is reducible modulo the group order then set recovery_id higher bit to 1
+        let big_r_x = big_r.x();
+        let reduced_big_r_x = <Scalar as Reduce<U256>>::reduce_bytes(&big_r_x)
+                                                        .to_bytes();
+        let reduced_u256_big_r_x = U256::from_be_slice(&reduced_big_r_x);
+
+        // COMMENT SIMON: I need somebody to double check that big endian is the right call
+        // cait_sith calls reduce_bytes on the x coordinate of a point (inside function `x_coordinate')
+        // reduce_bytes internally calls from_be_byte_array
+        // this means that big_r_x is stored in Big Endian.
+        // I thus called U256::from_be_slice to have the
+        // unreduced version of big_r_x in the same representation
+        let unchecked_u256_big_r_x = U256::from_be_slice(&big_r_x);
+
+        // check the similarity between reduced vs unreduced Rx values both represented in Big Endian
+        if reduced_u256_big_r_x != unchecked_u256_big_r_x{
+            recovery_id = recovery_id | 2;
+        }
+        recovery_id
     }
 }
 
@@ -159,5 +215,15 @@ pub(crate) async fn chain_sender(
                 .with_span_context(),
             )
             .await;
+    }
+}
+
+// Test the recovery_id generation
+#[cfg(test)]
+mod recovery_id_tests {
+    [#test]
+    fn expected_recovery_id(){
+        // TODO: complete these tests
+        assert!(true);
     }
 }
