@@ -3,9 +3,10 @@ use crate::sign_request::SignatureRequest;
 use cait_sith::FullSignature;
 use k256::{
      AffinePoint,
-     elliptic_curve::bigint::U256,
      elliptic_curve::point::AffineCoordinates,
+     elliptic_curve::PrimeField,
      elliptic_curve::ops::Reduce,
+     elliptic_curve::bigint::U256,
      Scalar,
      Secp256k1
     };
@@ -116,7 +117,7 @@ impl ChainRespondArgs {
     /// WARNING: this function assumes the input full signature is valid and comes from an authentic response
     pub fn new(request: &SignatureRequest, response: &FullSignature<Secp256k1>) -> Self {
         // figure out correct recovery_id for the public key
-        let recovery_id = Self::ecdsa_recovery_from_big_r(response.big_r);
+        let recovery_id = Self::ecdsa_recovery_from_big_r(&response.big_r);
         ChainRespondArgs {
             request: ChainSignatureRequest::new(request.msg_hash, request.tweak),
             response: ChainSignatureResponse::is_ok_or_panic(
@@ -129,31 +130,19 @@ impl ChainRespondArgs {
     /// The lower bit determines the sign bit of the point R
     /// The higher bit determines whether the x coordinate of R exceeded
     /// the curve order when computing R_x mod p
-    fn ecdsa_recovery_from_big_r (big_r: AffinePoint) -> u8 {
-        let mut recovery_id = 0;
-
-        // if Ry is odd then set recovery_id lower bit to 1
-        recovery_id = recovery_id | big_r.y_is_odd().unwrap_u8();
-
-        // if Rx is reducible modulo the group order then set recovery_id higher bit to 1
+    pub (crate) fn ecdsa_recovery_from_big_r (big_r: &AffinePoint) -> u8 {
+        // compare Rx representation before and after reducing it modulo the group order
         let big_r_x = big_r.x();
-        let reduced_big_r_x = <Scalar as Reduce<U256>>::reduce_bytes(&big_r_x)
-                                                        .to_bytes();
-        let reduced_u256_big_r_x = U256::from_be_slice(&reduced_big_r_x);
+        let reduced_big_r_x = <Scalar as Reduce<U256>>::reduce_bytes(&big_r_x);
+        let is_x_reduced = reduced_big_r_x.to_repr() != big_r_x;
 
-        // COMMENT SIMON: I need somebody to double check that big endian is the right call
-        // cait_sith calls reduce_bytes on the x coordinate of a point (inside function `x_coordinate')
-        // reduce_bytes internally calls from_be_byte_array
-        // this means that big_r_x is stored in Big Endian.
-        // I thus called U256::from_be_slice to have the
-        // unreduced version of big_r_x in the same representation
-        let unchecked_u256_big_r_x = U256::from_be_slice(&big_r_x);
 
-        // check the similarity between reduced vs unreduced Rx values both represented in Big Endian
-        if reduced_u256_big_r_x != unchecked_u256_big_r_x{
-            recovery_id = recovery_id | 2;
-        }
-        recovery_id
+        // if Rx is larger than the group order then set recovery_id higher bit to 1
+        // if Ry is odd then set recovery_id lower bit to 1
+        return   (is_x_reduced as u8) << 1 | big_r.y_is_odd().unwrap_u8();
+
+
+
     }
 }
 
