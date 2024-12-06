@@ -1,3 +1,4 @@
+use crate::config::BlockArgs;
 use crate::config::{
     load_config, ConfigFile, IndexerConfig, PresignatureConfig, SignatureConfig, SyncMode,
     TripleConfig, WebUIConfig,
@@ -5,6 +6,7 @@ use crate::config::{
 use crate::db::{DBCol, SecretDB};
 use crate::indexer::configs::InitConfigArgs;
 use crate::indexer::handler::listen_blocks;
+use crate::indexer::participants::read_participants_from_chain;
 use crate::indexer::response::handle_sign_responses;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::indexer::transaction::TransactionSigner;
@@ -92,6 +94,7 @@ impl Cli {
                 let root_keyshare =
                     load_root_keyshare(Path::new(&home_dir), secret_store_key, &root_keyshare)?;
 
+                let (participants_sender, mut participants_receiver) = mpsc::channel(10);
                 let (sign_request_sender, sign_request_receiver) = mpsc::channel(10000);
                 let (sign_response_sender, sign_response_receiver) = mpsc::channel(10000);
 
@@ -113,6 +116,12 @@ impl Cli {
                             let stats: Arc<Mutex<IndexerStats>> =
                                 Arc::new(Mutex::new(IndexerStats::new()));
 
+                            actix::spawn(read_participants_from_chain(
+                                indexer_config.mpc_contract_id.clone(),
+                                view_client.clone(),
+                                client.clone(),
+                                participants_sender,
+                            ));
                             actix::spawn(indexer_logger(Arc::clone(&stats), view_client.clone()));
                             actix::spawn(handle_sign_responses(
                                 Arc::new(transaction_signer),
@@ -132,6 +141,9 @@ impl Cli {
                         });
                     })
                 });
+
+                let participants = participants_receiver.recv().await;
+                tracing::info!(target: "mpc", "Read participant set {:?} from chain", participants);
 
                 // Start the mpc client
                 let secret_db = SecretDB::new(
@@ -265,9 +277,8 @@ impl Cli {
                             port: 20000 + 1000 * seed.unwrap_or_default() + i as u16,
                         },
                         indexer: Some(IndexerConfig {
-                            stream_while_syncing: false,
                             validate_genesis: true,
-                            sync_mode: SyncMode::Interruption,
+                            sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
                             concurrency: NonZero::new(1).unwrap(),
                             mpc_contract_id: AccountId::from_str("test0").unwrap(),
                             near_credentials_file: "validator_key.json".to_owned(),

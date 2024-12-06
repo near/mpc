@@ -10,6 +10,7 @@ import sys
 import json
 import time
 import pathlib
+import requests
 import subprocess
 from prometheus_client.parser import text_string_to_metric_families
 from multiprocessing import Pool
@@ -132,10 +133,13 @@ def test_index_signature_request():
     # Wait for the indexers to observe the signature request
     while True:
         assert time.time() - started < TIMEOUT, "Waiting for mpc indexers"
-        res2 = metrics2.get_int_metric_value('mpc_num_signature_requests')
-        res3 = metrics3.get_int_metric_value('mpc_num_signature_requests')
-        if res2 == 1 and res3 == 1:
-            break
+        try:
+            res2 = metrics2.get_int_metric_value('mpc_num_signature_requests')
+            res3 = metrics3.get_int_metric_value('mpc_num_signature_requests')
+            if res2 == 1 and res3 == 1:
+                break
+        except requests.exceptions.ConnectionError:
+            pass
         time.sleep(1)
 
     print('EPIC')
