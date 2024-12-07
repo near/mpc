@@ -8,6 +8,7 @@ use aes_gcm::{Aes128Gcm, KeyInit};
 use anyhow::Context;
 use cait_sith::protocol::Participant;
 use cait_sith::KeygenOutput;
+use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, Scalar, Secp256k1};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -139,9 +140,16 @@ pub async fn run_key_generation_client(
     save_root_keyshare(
         &home_dir,
         config.secret_storage.aes_key,
-        &RootKeyshareData::of_epoch_zero(key),
+        &RootKeyshareData::of_epoch_zero(key.clone()),
     )?;
     tracing::info!("Key generation completed");
+
+    // TODO(#75): Send vote_pk transaction to vote for the public key on the contract.
+    // For now, just print it out so integration test can look at it.
+    let public_key = near_crypto::PublicKey::SECP256K1(near_crypto::Secp256K1PublicKey::try_from(
+        &key.public_key.to_encoded_point(false).as_bytes()[1..65],
+    )?);
+    println!("Public key: {:?}", public_key);
     Ok(())
 }
 

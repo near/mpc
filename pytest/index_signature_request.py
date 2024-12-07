@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import time
+import re
 import pathlib
 import subprocess
 from prometheus_client.parser import text_string_to_metric_families
@@ -30,12 +31,20 @@ def load_mpc_contract() -> bytearray:
     path = mpc_repo_dir / 'libs/mpc/chain-signatures/res/mpc_contract.wasm'
     return load_binary_file(path)
 
+def run_cmd_capturing_output(cmd):
+    return subprocess.run(cmd, capture_output=True, text=True)
+
 def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     # Start a near network with extra observer nodes; we will use their
     # config.json, genesis.json, etc. to configure the mpc nodes' indexers
+    node_config = {
+        # make debugging easier.
+        'archive': True,
+        'gc_num_epochs_to_keep': 1000,
+    }
     nodes = start_cluster(
         num_validators, num_mpc_nodes, 1, None,
-        [["epoch_length", 10], ["block_producer_kickout_threshold", 80]], {})
+        [["epoch_length", 10], ["block_producer_kickout_threshold", 80]], {i: node_config for i in range(num_validators + num_mpc_nodes)})
     mpc_nodes = range(num_validators, num_validators + num_mpc_nodes)
     for i in mpc_nodes:
         nodes[i].kill(gentle=True)
@@ -60,6 +69,7 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
         config_json['tracked_shards'] = [0]
         with open(fname, 'w') as fd:
             json.dump(config_json, fd, indent=2)
+        print(f"Wrote {fname} as config for node {i}")
 
     def secret_key_hex(i):
         return str(chr(ord('A') + i) * 32)
@@ -68,7 +78,18 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     commands = [(mpc_binary_path, 'generate-key',
                  '--home-dir', nodes[i].node_dir, secret_key_hex(i)) for i in mpc_nodes]
     with Pool() as pool:
-        pool.map(subprocess.run, commands)
+        keygen_results = pool.map(run_cmd_capturing_output, commands)
+    
+    # grep for "Public key: ..." in the output from the first keygen command
+    # to extract the public key
+    public_key = None
+    for line in keygen_results[0].stdout.split('\n'):
+        m = re.match(r'Public key: (.*)', line)
+        if m:
+            public_key = m.group(1)
+            break
+    assert public_key is not None, "Failed to extract public key from keygen output"
+    print(f"Public key: {public_key}")
 
     # Start the mpc nodes
     for i in mpc_nodes:
@@ -91,7 +112,7 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
             'next_id': 0,
             'account_to_participant_id': {},
         },
-        'public_key': 'ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae',
+        'public_key': public_key,
     }
     tx = sign_function_call_tx(
         nodes[0].signer_key,
@@ -127,7 +148,15 @@ def test_index_signature_request():
         'sign',
         json.dumps(sign_args).encode('utf-8'),
         150 * TGAS, 1, 20, last_block_hash)
-    res = nodes[1].send_tx(tx)
+    tx_hash = nodes[1].send_tx(tx)['result']
+    for _ in range(20):
+        try:
+            res = nodes[1].get_tx(tx_hash, nodes[0].signer_key.account_id)
+            print(res)
+            break
+        except Exception as e:
+            print(e)
+        time.sleep(1)
 
     # Wait for the indexers to observe the signature request
     while True:
