@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import time
+import yaml
 import pathlib
 import requests
 import subprocess
@@ -26,6 +27,13 @@ TGAS = 10**12
 
 mpc_repo_dir = pathlib.Path(__file__).resolve().parents[1]
 mpc_binary_path = os.path.join(mpc_repo_dir / 'target' / 'release', 'mpc-node')
+
+# Some boilerplate to make pyyaml ignore unknown fields
+def ignore_unknown(loader, tag_suffix, node):
+    return None
+class SafeLoaderIgnoreUnknown(yaml.SafeLoader):
+    pass
+SafeLoaderIgnoreUnknown.add_multi_constructor('!', ignore_unknown)
 
 def load_mpc_contract() -> bytearray:
     path = mpc_repo_dir / 'libs/mpc/chain-signatures/res/mpc_contract.wasm'
@@ -45,7 +53,28 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     # Generate the mpc configs
     dot_near = pathlib.Path.home() / '.near'
     subprocess.run((mpc_binary_path, 'generate-test-configs',
-                    '--output-dir', dot_near, '--num-participants', '2', '--threshold', '2'))
+                                    '--output-dir', dot_near,
+                                    '--num-participants', str(num_mpc_nodes),
+                                    '--threshold', str(num_mpc_nodes)))
+
+    # Get the participant set from the mpc configs
+    participants = {}
+    for i in range(0, num_mpc_nodes):
+        config_file_path = pathlib.Path(dot_near / str(i) / 'config.yaml')
+        with open(config_file_path) as file:
+            mpc_config = yaml.load(file, Loader=SafeLoaderIgnoreUnknown)
+        my_participant_id = mpc_config['my_participant_id']
+        for p in mpc_config['participants']['participants']:
+            if p['id'] == my_participant_id:
+                my_pk = p['p2p_public_key']
+                my_addr = p['address']
+                my_port = p['port']
+        participants[f"test{i}"] = {
+            "account_id": f"test{i}",
+            "cipher_pk": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            "sign_pk": my_pk,
+            "url": f"http://{my_addr}:{my_port}",
+        }
 
     # Set up the node's home directories
     for i in mpc_nodes:
@@ -86,9 +115,9 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     # Initialize the mpc contract
     init_args = {
         'epoch': 0,
-        'threshold': 0,
+        'threshold': num_mpc_nodes,
         'participants': {
-            'participants': {},
+            'participants': participants,
             'next_id': 0,
             'account_to_participant_id': {},
         },

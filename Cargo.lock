@@ -3692,6 +3692,7 @@ dependencies = [
  "near-indexer",
  "near-indexer-primitives",
  "near-o11y",
+ "near-sdk",
  "prometheus",
  "quinn",
  "rand",
@@ -3711,6 +3712,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "url",
  "x509-parser",
 ]
 

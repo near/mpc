@@ -90,7 +90,8 @@ impl Cli {
                 p2p_private_key,
             } => {
                 let secret_store_key = parse_encryption_key(&secret_store_key_hex)?;
-                let config = load_config(Path::new(&home_dir), secret_store_key, &p2p_private_key)?;
+                let mut config =
+                    load_config(Path::new(&home_dir), secret_store_key, &p2p_private_key)?;
                 let root_keyshare =
                     load_root_keyshare(Path::new(&home_dir), secret_store_key, &root_keyshare)?;
 
@@ -118,6 +119,7 @@ impl Cli {
 
                             actix::spawn(read_participants_from_chain(
                                 indexer_config.mpc_contract_id.clone(),
+                                indexer_config.port_override,
                                 view_client.clone(),
                                 client.clone(),
                                 participants_sender,
@@ -142,8 +144,23 @@ impl Cli {
                     })
                 });
 
-                let participants = participants_receiver.recv().await;
-                tracing::info!(target: "mpc", "Read participant set {:?} from chain", participants);
+                // Replace participants in config with those listed in the smart contract state
+                if config.indexer.is_some() {
+                    if let Some(participants) = participants_receiver.recv().await {
+                        tracing::info!(target: "mpc", "read participant set {:?} from chain", participants);
+                        let my_public_key = config.mpc.secrets.my_public_key();
+                        tracing::info!(target: "mpc", "my public key is {my_public_key}");
+                        for p in &participants.participants {
+                            if p.p2p_public_key == my_public_key {
+                                tracing::info!(target: "mpc", "updated my participant id to {}", p.id);
+                                config.mpc.my_participant_id = p.id;
+                            }
+                        }
+                        config.mpc.participants = participants;
+                    } else {
+                        tracing::error!(target: "mpc", "Participant sender dropped by indexer");
+                    }
+                }
 
                 // Start the mpc client
                 let secret_db = SecretDB::new(
@@ -281,6 +298,7 @@ impl Cli {
                             sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
                             concurrency: NonZero::new(1).unwrap(),
                             mpc_contract_id: AccountId::from_str("test0").unwrap(),
+                            port_override: None,
                             near_credentials_file: "validator_key.json".to_owned(),
                         }),
                         triple: TripleConfig {

@@ -70,6 +70,8 @@ pub struct IndexerConfig {
     pub concurrency: std::num::NonZeroU16,
     /// MPC contract id
     pub mpc_contract_id: AccountId,
+    /// If specified, replaces the port number in any ParticipantInfos read from chain
+    pub port_override: Option<u16>,
     /// Credentials used to sign signature response txs
     pub near_credentials_file: String,
 }
@@ -137,6 +139,12 @@ pub struct ParticipantInfo {
 #[derive(Clone, Debug)]
 pub struct SecretsConfig {
     pub p2p_private_key: near_crypto::ED25519SecretKey,
+}
+
+impl SecretsConfig {
+    pub fn my_public_key(&self) -> near_crypto::PublicKey {
+        near_crypto::SecretKey::ED25519(self.p2p_private_key.clone()).public_key()
+    }
 }
 
 pub fn load_config(
