@@ -1,10 +1,12 @@
 use crate::config::{
-    load_config, ConfigFile, IndexerConfig, PresignatureConfig, SignatureConfig, SyncMode,
+    load_config_file, ConfigFile, IndexerConfig, PresignatureConfig, SignatureConfig, SyncMode,
     TripleConfig, WebUIConfig,
 };
+use crate::config::{BlockArgs, MpcConfig, SecretsConfig};
 use crate::db::{DBCol, SecretDB};
 use crate::indexer::configs::InitConfigArgs;
 use crate::indexer::handler::listen_blocks;
+use crate::indexer::participants::read_participants_from_chain;
 use crate::indexer::response::handle_sign_responses;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::indexer::transaction::TransactionSigner;
@@ -17,7 +19,6 @@ use crate::sign_request::SignRequestStorage;
 use crate::tracking;
 use crate::triple::TripleStorage;
 use crate::web::start_web_server;
-use anyhow::Context;
 use clap::Parser;
 use near_crypto::SecretKey;
 use near_indexer_primitives::types::AccountId;
@@ -47,10 +48,13 @@ pub enum Cli {
         /// The root keyshare should be passed in as a JSON string.
         #[arg(env("MPC_ROOT_KEYSHARE"))]
         root_keyshare: Option<String>,
-        /// p2p private key, if this is being passed in rather than loaded from disk.
-        /// It must be in the format of "ed25519:...".
+        /// p2p private key for TLS. It must be in the format of "ed25519:...".
         #[arg(env("MPC_P2P_PRIVATE_KEY"))]
-        p2p_private_key: Option<SecretKey>,
+        p2p_private_key: SecretKey,
+        /// Near account secret key. Signing transactions will only be posted to the
+        /// contract if this is specified.
+        #[arg(env("MPC_ACCOUNT_SK"))]
+        account_secret_key: Option<SecretKey>,
     },
     /// Generates the root keyshare. This will only succeed if all participants
     /// run this command together, as in, every node will wait for the full set
@@ -62,6 +66,9 @@ pub enum Cli {
         home_dir: String,
         #[arg(env("MPC_SECRET_STORE_KEY"))]
         secret_store_key_hex: String,
+        /// p2p private key for TLS. It must be in the format of "ed25519:...".
+        #[arg(env("MPC_P2P_PRIVATE_KEY"))]
+        p2p_private_key: SecretKey,
     },
     /// Generates a set of test configurations suitable for running MPC in
     /// an integration test.
@@ -74,6 +81,8 @@ pub enum Cli {
         threshold: usize,
         #[arg(long)]
         seed: Option<u16>,
+        #[arg(long)]
+        enable_indexer: bool,
     },
     GenerateIndexerConfigs(InitConfigArgs),
 }
@@ -86,26 +95,32 @@ impl Cli {
                 secret_store_key_hex,
                 root_keyshare,
                 p2p_private_key,
+                account_secret_key,
             } => {
-                let secret_store_key = parse_encryption_key(&secret_store_key_hex)?;
-                let config = load_config(Path::new(&home_dir), secret_store_key, &p2p_private_key)?;
+                let home_dir = PathBuf::from(home_dir);
+                let secrets = SecretsConfig::from_cli(&secret_store_key_hex, p2p_private_key)?;
+                let config = ConfigFile::from_file(&home_dir.join("config.yaml"))?;
                 let root_keyshare =
-                    load_root_keyshare(Path::new(&home_dir), secret_store_key, &root_keyshare)?;
+                    load_root_keyshare(&home_dir, secrets.local_storage_aes_key, &root_keyshare)?;
 
+                let (participants_sender, mut participants_receiver) = mpsc::channel(10);
                 let (sign_request_sender, sign_request_receiver) = mpsc::channel(10000);
                 let (sign_response_sender, sign_response_receiver) = mpsc::channel(10000);
 
                 // Start the near indexer
                 let indexer_handle = config.indexer.clone().map(|indexer_config| {
+                    let config = config.clone();
+                    let home_dir = home_dir.clone();
                     std::thread::spawn(move || {
                         actix::System::new().block_on(async {
-                            let transaction_signer = TransactionSigner::from_file(
-                                &Path::new(&home_dir)
-                                    .join(indexer_config.near_credentials_file.clone()),
-                            )
-                            .expect("Failed to load near credentials");
+                            let transaction_signer = account_secret_key.map(|account_secret_key| {
+                                Arc::new(TransactionSigner::from_key(
+                                    config.my_near_account_id.clone(),
+                                    account_secret_key,
+                                ))
+                            });
                             let indexer = near_indexer::Indexer::new(
-                                indexer_config.to_near_indexer_config(home_dir.into()),
+                                indexer_config.to_near_indexer_config(home_dir.clone()),
                             )
                             .expect("Failed to initialize the Indexer");
                             let stream = indexer.streamer();
@@ -113,9 +128,16 @@ impl Cli {
                             let stats: Arc<Mutex<IndexerStats>> =
                                 Arc::new(Mutex::new(IndexerStats::new()));
 
+                            actix::spawn(read_participants_from_chain(
+                                indexer_config.mpc_contract_id.clone(),
+                                indexer_config.port_override,
+                                view_client.clone(),
+                                client.clone(),
+                                participants_sender,
+                            ));
                             actix::spawn(indexer_logger(Arc::clone(&stats), view_client.clone()));
                             actix::spawn(handle_sign_responses(
-                                Arc::new(transaction_signer),
+                                transaction_signer,
                                 indexer_config.mpc_contract_id.clone(),
                                 sign_response_receiver,
                                 view_client,
@@ -133,10 +155,31 @@ impl Cli {
                     })
                 });
 
+                // Replace participants in config with those listed in the smart contract state
+                let participants = if config.indexer.is_some() {
+                    let Some(participants) = participants_receiver.recv().await else {
+                        anyhow::bail!("Participant sender dropped by indexer");
+                    };
+                    tracing::info!(target: "mpc", "read participant set {:?} from chain", participants);
+                    participants
+                } else {
+                    let Some(participants) = config.participants.clone() else {
+                        anyhow::bail!("Participants must either be read from on chain or specified statically in the config");
+                    };
+                    participants
+                };
+
+                let mpc_config = MpcConfig::from_participants_with_near_account_id(
+                    participants,
+                    &config.my_near_account_id,
+                )?;
+
+                let config = config.to_full_config(mpc_config, secrets);
+
                 // Start the mpc client
                 let secret_db = SecretDB::new(
-                    &config.secret_storage.data_dir,
-                    config.secret_storage.aes_key,
+                    &home_dir.join("mpc-data"),
+                    config.secrets.local_storage_aes_key,
                 )?;
 
                 let (root_task, _) = tracking::start_root_task(async move {
@@ -153,7 +196,8 @@ impl Cli {
                         .await?,
                     );
 
-                    let (sender, receiver) = new_quic_mesh_network(&config.mpc).await?;
+                    let (sender, receiver) =
+                        new_quic_mesh_network(&config.mpc, &config.secrets.p2p_private_key).await?;
                     sender
                         .wait_for_ready(config.mpc.participants.threshold as usize)
                         .await?;
@@ -213,9 +257,20 @@ impl Cli {
             Cli::GenerateKey {
                 home_dir,
                 secret_store_key_hex,
+                p2p_private_key,
             } => {
-                let encryption_key = parse_encryption_key(&secret_store_key_hex)?;
-                let config = load_config(Path::new(&home_dir), encryption_key, &None)?;
+                let secrets = SecretsConfig::from_cli(&secret_store_key_hex, p2p_private_key)?;
+                let config = load_config_file(Path::new(&home_dir))?;
+                // TODO(#75): Support reading from smart contract state here as well.
+                let mpc_config = MpcConfig::from_participants_with_near_account_id(
+                    config
+                        .participants
+                        .clone()
+                        .expect("Static participants config required"),
+                    &config.my_near_account_id,
+                )?;
+                let config = config.to_full_config(mpc_config, secrets);
+
                 let (root_task, _) = tracking::start_root_task(async move {
                     let root_task_handle = tracking::current_task();
                     let _web_server_handle = tracking::spawn_checked(
@@ -223,7 +278,8 @@ impl Cli {
                         start_web_server(root_task_handle, config.web_ui.clone(), None).await?,
                     );
 
-                    let (sender, receiver) = new_quic_mesh_network(&config.mpc).await?;
+                    let (sender, receiver) =
+                        new_quic_mesh_network(&config.mpc, &config.secrets.p2p_private_key).await?;
                     // Must wait for all participants to be ready before starting key generation.
                     sender
                         .wait_for_ready(config.mpc.participants.participants.len())
@@ -247,30 +303,29 @@ impl Cli {
                 num_participants,
                 threshold,
                 seed,
+                enable_indexer,
             } => {
                 let configs = generate_test_p2p_configs(
                     num_participants,
                     threshold,
                     seed.unwrap_or_default(),
                 )?;
-                for (i, config) in configs.into_iter().enumerate() {
+                for (i, (mpc_config, p2p_private_key)) in configs.into_iter().enumerate() {
                     let subdir = format!("{}/{}", output_dir, i);
                     std::fs::create_dir_all(&subdir)?;
                     let file_config = ConfigFile {
-                        my_participant_id: config.my_participant_id,
-                        participants: config.participants,
-                        p2p_private_key_file: "p2p_key".to_owned(),
+                        my_near_account_id: format!("test{}", i).parse().unwrap(),
+                        participants: Some(mpc_config.participants),
                         web_ui: WebUIConfig {
                             host: "127.0.0.1".to_owned(),
                             port: 20000 + 1000 * seed.unwrap_or_default() + i as u16,
                         },
-                        indexer: Some(IndexerConfig {
-                            stream_while_syncing: false,
+                        indexer: enable_indexer.then_some(IndexerConfig {
                             validate_genesis: true,
-                            sync_mode: SyncMode::Interruption,
+                            sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
                             concurrency: NonZero::new(1).unwrap(),
                             mpc_contract_id: AccountId::from_str("test0").unwrap(),
-                            near_credentials_file: "validator_key.json".to_owned(),
+                            port_override: None,
                         }),
                         triple: TripleConfig {
                             concurrency: 4,
@@ -287,7 +342,7 @@ impl Cli {
                     };
                     std::fs::write(
                         format!("{}/p2p_key", subdir),
-                        SecretKey::ED25519(config.secrets.p2p_private_key).to_string(),
+                        SecretKey::ED25519(p2p_private_key).to_string(),
                     )?;
                     std::fs::write(
                         format!("{}/config.yaml", subdir),
@@ -305,14 +360,4 @@ impl Cli {
             }
         }
     }
-}
-
-/// Parses a hex-encoded 16-byte AES encryption key.
-fn parse_encryption_key(s: &str) -> anyhow::Result<[u8; 16]> {
-    let key = hex::decode(s).context("Encryption key must be 32 hex characters")?;
-    let key: [u8; 16] = key
-        .as_slice()
-        .try_into()
-        .context("Encryption key must be 16 bytes (32 bytes hex)")?;
-    Ok(key)
 }

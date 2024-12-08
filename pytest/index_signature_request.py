@@ -10,7 +10,9 @@ import sys
 import json
 import time
 import re
+import yaml
 import pathlib
+import requests
 import subprocess
 from prometheus_client.parser import text_string_to_metric_families
 from multiprocessing import Pool
@@ -27,6 +29,13 @@ TGAS = 10**12
 mpc_repo_dir = pathlib.Path(__file__).resolve().parents[1]
 mpc_binary_path = os.path.join(mpc_repo_dir / 'target' / 'release', 'mpc-node')
 
+# Some boilerplate to make pyyaml ignore unknown fields
+def ignore_unknown(loader, tag_suffix, node):
+    return None
+class SafeLoaderIgnoreUnknown(yaml.SafeLoader):
+    pass
+SafeLoaderIgnoreUnknown.add_multi_constructor('!', ignore_unknown)
+
 def load_mpc_contract() -> bytearray:
     path = mpc_repo_dir / 'libs/mpc/chain-signatures/res/mpc_contract.wasm'
     return load_binary_file(path)
@@ -39,8 +48,8 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     # config.json, genesis.json, etc. to configure the mpc nodes' indexers
     node_config = {
         # make debugging easier.
-        'archive': True,
-        'gc_num_epochs_to_keep': 1000,
+        # 'archive': True,
+        # 'gc_num_epochs_to_keep': 1000,
     }
     nodes = start_cluster(
         num_validators, num_mpc_nodes, 1, None,
@@ -53,7 +62,30 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     # Generate the mpc configs
     dot_near = pathlib.Path.home() / '.near'
     subprocess.run((mpc_binary_path, 'generate-test-configs',
-                    '--output-dir', dot_near, '--num-participants', '2', '--threshold', '2'))
+                                    '--output-dir', dot_near,
+                                    '--num-participants', str(num_mpc_nodes),
+                                    '--threshold', str(num_mpc_nodes),
+                                    '--enable-indexer'))
+
+    # Get the participant set from the mpc configs
+    participants = {}
+    account_id_to_participant_id = {}
+    config_file_path = pathlib.Path(dot_near / '0' / 'config.yaml')
+    with open(config_file_path) as file:
+        mpc_config = yaml.load(file, Loader=SafeLoaderIgnoreUnknown)
+    for i, p in enumerate(mpc_config['participants']['participants']):
+        assert p['near_account_id'] == f"test{i}", f"This test only works with account IDs 'test0', 'test1', etc; expected 'test{i}', got {p['near_account_id']}"
+        my_pk = p['p2p_public_key']
+        my_addr = p['address']
+        my_port = p['port']
+            
+        participants[f"test{i}"] = {
+            "account_id": f"test{i}",
+            "cipher_pk": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            "sign_pk": my_pk,
+            "url": f"http://{my_addr}:{my_port}",
+        }
+        account_id_to_participant_id[f"test{i}"] = p['id']
 
     # Set up the node's home directories
     for i in mpc_nodes:
@@ -73,13 +105,20 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
 
     def secret_key_hex(i):
         return str(chr(ord('A') + i) * 32)
+    
+    def p2p_private_key(i):
+        return open(pathlib.Path(nodes[i].node_dir) / 'p2p_key').read()
+    
+    def near_secret_key(i):
+        validator_key = json.loads(open(pathlib.Path(nodes[i].node_dir) / 'validator_key.json').read())
+        return validator_key['secret_key']
 
     # Generate the root keyshares
     commands = [(mpc_binary_path, 'generate-key',
-                 '--home-dir', nodes[i].node_dir, secret_key_hex(i)) for i in mpc_nodes]
+                 '--home-dir', nodes[i].node_dir, secret_key_hex(i), p2p_private_key(i)) for i in mpc_nodes]
     with Pool() as pool:
         keygen_results = pool.map(run_cmd_capturing_output, commands)
-    
+
     # grep for "Public key: ..." in the output from the first keygen command
     # to extract the public key
     public_key = None
@@ -91,12 +130,6 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     assert public_key is not None, "Failed to extract public key from keygen output"
     print(f"Public key: {public_key}")
 
-    # Start the mpc nodes
-    for i in mpc_nodes:
-        cmd = (mpc_binary_path, 'start', '--home-dir', nodes[i].node_dir, secret_key_hex(i))
-        # mpc-node produces way too much output if we run with debug logs
-        nodes[i].run_cmd(cmd=cmd, extra_env={'RUST_LOG':'INFO'})
-
     # Deploy the mpc contract
     last_block_hash = nodes[0].get_latest_block().hash_bytes
     tx = sign_deploy_contract_tx(nodes[0].signer_key, load_mpc_contract(), 10, last_block_hash)
@@ -106,14 +139,26 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     # Initialize the mpc contract
     init_args = {
         'epoch': 0,
-        'threshold': 0,
+        'threshold': num_mpc_nodes,
         'participants': {
-            'participants': {},
-            'next_id': 0,
-            'account_to_participant_id': {},
+            'participants': participants,
+            'next_id': 0,  # not used
+            'account_to_participant_id': account_id_to_participant_id,
         },
         'public_key': public_key,
     }
+
+    # Start the mpc nodes
+    for i in mpc_nodes:
+        cmd = (mpc_binary_path, 'start', '--home-dir', nodes[i].node_dir)
+        # mpc-node produces way too much output if we run with debug logs
+        nodes[i].run_cmd(cmd=cmd, extra_env={
+            'RUST_LOG':'INFO',
+            'MPC_SECRET_STORE_KEY': secret_key_hex(i),
+            'MPC_P2P_PRIVATE_KEY': p2p_private_key(i),
+            'MPC_ACCOUNT_SK': near_secret_key(i),
+        })
+
     tx = sign_function_call_tx(
         nodes[0].signer_key,
         nodes[0].signer_key.account_id,
@@ -149,6 +194,19 @@ def test_index_signature_request():
         json.dumps(sign_args).encode('utf-8'),
         150 * TGAS, 1, 20, last_block_hash)
     tx_hash = nodes[1].send_tx(tx)['result']
+
+    # Wait for the indexers to observe the signature request
+    while True:
+        assert time.time() - started < TIMEOUT, "Waiting for mpc indexers"
+        try:
+            res2 = metrics2.get_int_metric_value('mpc_num_signature_requests')
+            res3 = metrics3.get_int_metric_value('mpc_num_signature_requests')
+            if res2 == 1 and res3 == 1:
+                break
+        except requests.exceptions.ConnectionError:
+            pass
+        time.sleep(1)
+
     for _ in range(20):
         try:
             res = nodes[1].get_tx(tx_hash, nodes[0].signer_key.account_id)
@@ -156,15 +214,6 @@ def test_index_signature_request():
             break
         except Exception as e:
             print(e)
-        time.sleep(1)
-
-    # Wait for the indexers to observe the signature request
-    while True:
-        assert time.time() - started < TIMEOUT, "Waiting for mpc indexers"
-        res2 = metrics2.get_int_metric_value('mpc_num_signature_requests')
-        res3 = metrics3.get_int_metric_value('mpc_num_signature_requests')
-        if res2 == 1 and res3 == 1:
-            break
         time.sleep(1)
 
     print('EPIC')

@@ -139,7 +139,7 @@ pub async fn run_key_generation_client(
     .await?;
     save_root_keyshare(
         &home_dir,
-        config.secret_storage.aes_key,
+        config.secrets.local_storage_aes_key,
         &RootKeyshareData::of_epoch_zero(key.clone()),
     )?;
     tracing::info!("Key generation completed");

@@ -1,11 +1,9 @@
-use near_crypto::{InMemorySigner, Signer};
+use near_crypto::{InMemorySigner, SecretKey, Signer};
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
 };
 use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::CryptoHash;
-use std::io;
-use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
@@ -15,11 +13,11 @@ pub(crate) struct TransactionSigner {
 }
 
 impl TransactionSigner {
-    pub(crate) fn from_file(path: &Path) -> io::Result<Self> {
-        Ok(TransactionSigner {
-            signer: Signer::InMemory(InMemorySigner::from_file(path)?),
+    pub(crate) fn from_key(account_id: AccountId, key: SecretKey) -> Self {
+        TransactionSigner {
+            signer: Signer::InMemory(InMemorySigner::from_secret_key(account_id, key)),
             nonce: AtomicU64::new(1),
-        })
+        }
     }
 
     /// Atomically increments the nonce and returns the previous value
