@@ -17,6 +17,7 @@ async fn test_basic_cluster() {
         num_participants: NUM_PARTICIPANTS,
         threshold: THRESHOLD,
         seed: Some(2),
+        disable_indexer: true,
     };
     generate_configs.run().await.unwrap();
 

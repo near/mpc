@@ -21,6 +21,7 @@ use crate::tracking;
 use crate::triple::TripleStorage;
 use crate::web::start_web_server;
 use anyhow::Context;
+use clap::ArgAction;
 use clap::Parser;
 use near_crypto::SecretKey;
 use near_indexer_primitives::types::AccountId;
@@ -77,6 +78,8 @@ pub enum Cli {
         threshold: usize,
         #[arg(long)]
         seed: Option<u16>,
+        #[arg(long, action = ArgAction::SetTrue)]
+        disable_indexer: bool,
     },
     GenerateIndexerConfigs(InitConfigArgs),
 }
@@ -279,6 +282,7 @@ impl Cli {
                 num_participants,
                 threshold,
                 seed,
+                disable_indexer,
             } => {
                 let configs = generate_test_p2p_configs(
                     num_participants,
@@ -296,14 +300,18 @@ impl Cli {
                             host: "127.0.0.1".to_owned(),
                             port: 20000 + 1000 * seed.unwrap_or_default() + i as u16,
                         },
-                        indexer: Some(IndexerConfig {
-                            validate_genesis: true,
-                            sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
-                            concurrency: NonZero::new(1).unwrap(),
-                            mpc_contract_id: AccountId::from_str("test0").unwrap(),
-                            port_override: None,
-                            near_credentials_file: "validator_key.json".to_owned(),
-                        }),
+                        indexer: if disable_indexer {
+                            None
+                        } else {
+                            Some(IndexerConfig {
+                                validate_genesis: true,
+                                sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
+                                concurrency: NonZero::new(1).unwrap(),
+                                mpc_contract_id: AccountId::from_str("test0").unwrap(),
+                                port_override: None,
+                                near_credentials_file: "validator_key.json".to_owned(),
+                            })
+                        },
                         triple: TripleConfig {
                             concurrency: 4,
                             desired_triples_to_buffer: 65536,
