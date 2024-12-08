@@ -7,6 +7,7 @@ use crate::db::{DBCol, SecretDB};
 use crate::indexer::configs::InitConfigArgs;
 use crate::indexer::handler::listen_blocks;
 use crate::indexer::participants::read_participants_from_chain;
+use crate::indexer::participants::ConfigFromChain;
 use crate::indexer::response::handle_sign_responses;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::indexer::transaction::TransactionSigner;
@@ -101,6 +102,7 @@ impl Cli {
 
                 // Start the near indexer
                 let indexer_handle = config.indexer.clone().map(|indexer_config| {
+                    let my_public_key = config.mpc.secrets.my_public_key();
                     std::thread::spawn(move || {
                         actix::System::new().block_on(async {
                             let transaction_signer = TransactionSigner::from_file(
@@ -120,6 +122,7 @@ impl Cli {
                             actix::spawn(read_participants_from_chain(
                                 indexer_config.mpc_contract_id.clone(),
                                 indexer_config.port_override,
+                                my_public_key,
                                 view_client.clone(),
                                 client.clone(),
                                 participants_sender,
@@ -144,22 +147,22 @@ impl Cli {
                     })
                 });
 
-                // Replace participants in config with those listed in the smart contract state
+                // If we're running an indexer, we read the participant info from the mpc contract
                 if config.indexer.is_some() {
-                    if let Some(participants) = participants_receiver.recv().await {
-                        tracing::info!(target: "mpc", "read participant set {:?} from chain", participants);
-                        let my_public_key = config.mpc.secrets.my_public_key();
-                        tracing::info!(target: "mpc", "my public key is {my_public_key}");
-                        for p in &participants.participants {
-                            if p.p2p_public_key == my_public_key {
-                                tracing::info!(target: "mpc", "updated my participant id to {}", p.id);
-                                config.mpc.my_participant_id = p.id;
-                            }
-                        }
-                        config.mpc.participants = participants;
-                    } else {
-                        tracing::error!(target: "mpc", "Participant sender dropped by indexer");
-                    }
+                    tracing::info!(target: "mpc", "awaiting participants from indexer");
+                    let ConfigFromChain {
+                        participants,
+                        my_participant_id,
+                    } = participants_receiver
+                        .recv()
+                        .await
+                        .expect("participant sender dropped by indexer")
+                        .unwrap();
+                    tracing::info!(target: "mpc", "received participants from indexer {:?} {}",
+                        participants, my_participant_id);
+
+                    config.mpc.participants = participants;
+                    config.mpc.my_participant_id = my_participant_id;
                 }
 
                 // Start the mpc client
