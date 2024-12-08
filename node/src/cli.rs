@@ -7,6 +7,7 @@ use crate::db::{DBCol, SecretDB};
 use crate::indexer::configs::InitConfigArgs;
 use crate::indexer::handler::listen_blocks;
 use crate::indexer::participants::read_participants_from_chain;
+use crate::indexer::participants::ConfigFromChain;
 use crate::indexer::response::handle_sign_responses;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::indexer::transaction::TransactionSigner;
@@ -20,6 +21,7 @@ use crate::tracking;
 use crate::triple::TripleStorage;
 use crate::web::start_web_server;
 use anyhow::Context;
+use clap::ArgAction;
 use clap::Parser;
 use near_crypto::SecretKey;
 use near_indexer_primitives::types::AccountId;
@@ -76,6 +78,8 @@ pub enum Cli {
         threshold: usize,
         #[arg(long)]
         seed: Option<u16>,
+        #[arg(long, action = ArgAction::SetTrue)]
+        disable_indexer: bool,
     },
     GenerateIndexerConfigs(InitConfigArgs),
 }
@@ -101,6 +105,7 @@ impl Cli {
 
                 // Start the near indexer
                 let indexer_handle = config.indexer.clone().map(|indexer_config| {
+                    let my_public_key = config.mpc.secrets.my_public_key();
                     std::thread::spawn(move || {
                         actix::System::new().block_on(async {
                             let transaction_signer = TransactionSigner::from_file(
@@ -120,6 +125,7 @@ impl Cli {
                             actix::spawn(read_participants_from_chain(
                                 indexer_config.mpc_contract_id.clone(),
                                 indexer_config.port_override,
+                                my_public_key,
                                 view_client.clone(),
                                 client.clone(),
                                 participants_sender,
@@ -144,22 +150,22 @@ impl Cli {
                     })
                 });
 
-                // Replace participants in config with those listed in the smart contract state
+                // If we're running an indexer, we read the participant info from the mpc contract
                 if config.indexer.is_some() {
-                    if let Some(participants) = participants_receiver.recv().await {
-                        tracing::info!(target: "mpc", "read participant set {:?} from chain", participants);
-                        let my_public_key = config.mpc.secrets.my_public_key();
-                        tracing::info!(target: "mpc", "my public key is {my_public_key}");
-                        for p in &participants.participants {
-                            if p.p2p_public_key == my_public_key {
-                                tracing::info!(target: "mpc", "updated my participant id to {}", p.id);
-                                config.mpc.my_participant_id = p.id;
-                            }
-                        }
-                        config.mpc.participants = participants;
-                    } else {
-                        tracing::error!(target: "mpc", "Participant sender dropped by indexer");
-                    }
+                    tracing::info!(target: "mpc", "awaiting participants from indexer");
+                    let ConfigFromChain {
+                        participants,
+                        my_participant_id,
+                    } = participants_receiver
+                        .recv()
+                        .await
+                        .expect("participant sender dropped by indexer")
+                        .unwrap();
+                    tracing::info!(target: "mpc", "received participants from indexer {:?} {}",
+                        participants, my_participant_id);
+
+                    config.mpc.participants = participants;
+                    config.mpc.my_participant_id = my_participant_id;
                 }
 
                 // Start the mpc client
@@ -276,6 +282,7 @@ impl Cli {
                 num_participants,
                 threshold,
                 seed,
+                disable_indexer,
             } => {
                 let configs = generate_test_p2p_configs(
                     num_participants,
@@ -293,14 +300,18 @@ impl Cli {
                             host: "127.0.0.1".to_owned(),
                             port: 20000 + 1000 * seed.unwrap_or_default() + i as u16,
                         },
-                        indexer: Some(IndexerConfig {
-                            validate_genesis: true,
-                            sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
-                            concurrency: NonZero::new(1).unwrap(),
-                            mpc_contract_id: AccountId::from_str("test0").unwrap(),
-                            port_override: None,
-                            near_credentials_file: "validator_key.json".to_owned(),
-                        }),
+                        indexer: if disable_indexer {
+                            None
+                        } else {
+                            Some(IndexerConfig {
+                                validate_genesis: true,
+                                sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
+                                concurrency: NonZero::new(1).unwrap(),
+                                mpc_contract_id: AccountId::from_str("test0").unwrap(),
+                                port_override: None,
+                                near_credentials_file: "validator_key.json".to_owned(),
+                            })
+                        },
                         triple: TripleConfig {
                             concurrency: 4,
                             desired_triples_to_buffer: 65536,

@@ -1,6 +1,7 @@
 use crate::config::{ParticipantInfo, ParticipantsConfig};
 use crate::indexer::lib::{get_mpc_contract_state, wait_for_contract_code, wait_for_full_sync};
 use crate::primitives::ParticipantId;
+use anyhow::anyhow;
 use mpc_contract::ProtocolContractState;
 use near_indexer_primitives::types::AccountId;
 use std::collections::BTreeMap;
@@ -8,95 +9,130 @@ use std::str::FromStr;
 use tokio::sync::mpsc;
 use url::Url;
 
+#[derive(Debug)]
+pub(crate) struct ConfigFromChain {
+    pub my_participant_id: ParticipantId,
+    pub participants: ParticipantsConfig,
+}
+
 pub(crate) async fn read_participants_from_chain(
     mpc_contract_id: AccountId,
     port_override: Option<u16>,
+    my_public_key: near_crypto::PublicKey,
     view_client: actix::Addr<near_client::ViewClientActor>,
     client: actix::Addr<near_client::ClientActor>,
-    sender: mpsc::Sender<ParticipantsConfig>,
+    sender: mpsc::Sender<anyhow::Result<ConfigFromChain>>,
 ) {
-    // Currently we assume the set of participants is static.
-    // We wait first to catch up to the chain to avoid reading
-    // the participants from an outdated state.
+    let result = read_participants_from_chain_impl(
+        mpc_contract_id,
+        port_override,
+        my_public_key,
+        view_client,
+        client,
+    )
+    .await;
+
+    let _ = sender.send(result).await;
+}
+
+async fn read_participants_from_chain_impl(
+    mpc_contract_id: AccountId,
+    port_override: Option<u16>,
+    my_public_key: near_crypto::PublicKey,
+    view_client: actix::Addr<near_client::ViewClientActor>,
+    client: actix::Addr<near_client::ClientActor>,
+) -> anyhow::Result<ConfigFromChain> {
+    // We wait first to catch up to the chain to avoid reading the participants from an outdated state.
+    // We currently assume the participant set is static and do not detect or support any updates.
+    tracing::info!(target: "mpc", "awaiting full sync to read mpc contract state");
     wait_for_full_sync(&client).await;
 
-    // In tests it is possible to catch up to the chain before the
-    // contract is even deployed.
+    // In tests it is possible to catch up to the chain before the contract is even deployed.
+    tracing::info!(target: "mpc", "awaiting mpc contract state");
     wait_for_contract_code(mpc_contract_id.clone(), &view_client).await;
 
-    let state = match get_mpc_contract_state(mpc_contract_id.clone(), &view_client).await {
-        Ok(state) => state,
-        Err(err) => {
-            tracing::warn!(target: "mpc", %err, "error getting mpc contract state from account {:?}", mpc_contract_id);
-            return;
-        }
-    };
-
+    let state = get_mpc_contract_state(mpc_contract_id.clone(), &view_client).await?;
+    tracing::info!(target: "mpc", "got mpc contract state {:?}", state);
     let ProtocolContractState::Running(state) = state else {
-        tracing::warn!(target: "mpc", "mpc contract is not in a Running state");
-        return;
+        anyhow::bail!("mpc contract is not in a Running state");
     };
 
-    tracing::info!(target: "mpc", "read mpc contract state {:?}", state);
-
-    let _ = sender
-        .send(ParticipantsConfig {
+    let participants = convert_participant_infos(state.participants.participants, port_override)?;
+    let my_participant_id = find_my_participant_id(&participants, my_public_key)?;
+    Ok(ConfigFromChain {
+        my_participant_id,
+        participants: ParticipantsConfig {
             threshold: state.threshold as u32,
-            participants: convert_participant_infos(state.participants.participants, port_override),
-        })
-        .await;
+            participants,
+        },
+    })
 }
 
 fn convert_participant_infos(
     participants: BTreeMap<AccountId, mpc_contract::primitives::ParticipantInfo>,
     port_override: Option<u16>,
-) -> Vec<ParticipantInfo> {
-    let num_participants = participants.len();
-    participants
-        .into_iter()
-        .zip(0..num_participants)
-        .filter_map(|((_account_id, p), i)| {
-            let Ok(url) = Url::parse(&p.url) else {
-                tracing::error!(target: "mpc", "could not parse participant url {}", p.url);
-                return None;
-            };
-            let Some(address) = url.host_str() else {
-                tracing::error!(target: "mpc", "no host found in participant url {}", p.url);
-                return None;
-            };
-            let Some(port) = port_override.or(url.port()) else {
-                tracing::error!(target: "mpc", "no port found in participant url {}", p.url);
-                return None;
-            };
-            // Here we need to turn the near_sdk::PublicKey used in the smart contract into a
-            // near_crypto::PublicKey used by the mpc nodes. For some reason near_sdk has an
-            // impl TryFrom<near_sdk::PublicKey> for near_crypto::PublicKey but it's test-only.
-            // For lack of better option we use this to-string from-string conversion instead.
-            let Ok(p2p_public_key) = near_crypto::PublicKey::from_str(&String::from(&p.sign_pk))
-            else {
-                tracing::error!(target: "mpc", "invalid participant public key {:?}", p.sign_pk);
-                return None;
-            };
-            Some(ParticipantInfo {
-                // We label the participants from 0 to N-1 by map order
-                id: ParticipantId::from_raw(i as u32),
-                address: address.to_string(),
-                port,
-                p2p_public_key,
-            })
+) -> anyhow::Result<Vec<ParticipantInfo>> {
+    let mut converted = vec![];
+    for (i, (_account_id, p)) in participants.into_iter().enumerate() {
+        let url = Url::parse(&p.url)?;
+        let address = url
+            .host_str()
+            .ok_or(anyhow!("no host found in url {}", p.url))?;
+        let port = port_override
+            .or(url.port())
+            .ok_or(anyhow!("no port found in url {}", p.url))?;
+        // Here we need to turn the near_sdk::PublicKey used in the smart contract into a
+        // near_crypto::PublicKey used by the mpc nodes. For some reason near_sdk has an
+        // impl TryFrom<near_sdk::PublicKey> for near_crypto::PublicKey but it's test-only.
+        // For lack of better option we use this to-string from-string conversion instead.
+        let p2p_public_key = near_crypto::PublicKey::from_str(&String::from(&p.sign_pk))?;
+        converted.push(ParticipantInfo {
+            // We label the participants from 0 to N-1 by map order
+            id: ParticipantId::from_raw(i as u32),
+            address: address.to_string(),
+            port,
+            p2p_public_key,
+        });
+    }
+    Ok(converted)
+}
+
+fn find_my_participant_id(
+    participants: &[ParticipantInfo],
+    my_public_key: near_crypto::PublicKey,
+) -> anyhow::Result<ParticipantId> {
+    let my_participant_id = participants
+        .iter()
+        .filter_map(|p| {
+            if p.p2p_public_key == my_public_key {
+                Some(p.id)
+            } else {
+                None
+            }
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    if my_participant_id.len() != 1 {
+        anyhow::bail!(
+            "found {} participants matching my public key {}; expected 1",
+            my_participant_id.len(),
+            my_public_key
+        );
+    }
+
+    Ok(my_participant_id[0])
 }
 
 #[cfg(test)]
 mod tests {
     use crate::indexer::participants::convert_participant_infos;
+    use crate::indexer::participants::find_my_participant_id;
     use near_indexer_primitives::types::AccountId;
     use std::collections::BTreeMap;
     use std::collections::HashMap;
     use std::str::FromStr;
 
-    fn create_participant_data() -> Vec<(String, String, [u8; 32], String)> {
+    fn create_participant_data_raw() -> Vec<(String, String, [u8; 32], String)> {
         vec![
             (
                 "multichain-node-dev-0.testnet".to_string(),
@@ -128,10 +164,79 @@ mod tests {
         ]
     }
 
-    fn create_chain_participant_infos(
+    fn create_invalid_participant_data_raw() -> Vec<(String, String, [u8; 32], String)> {
+        // The on-chain participant data is strongly typed with AccountId and near_sdk::PublicKey.
+        // It's really only possible to have bad data in the urls, which are arbitrary strings.
+        vec![
+            // Bad URL format (missing port)
+            (
+                "multichain-node-dev-4.testnet".to_string(),
+                "http://10.101.0.124".to_string(),
+                [
+                    77, 77, 246, 133, 91, 43, 56, 37, 237, 43, 127, 75, 236, 251, 226, 234, 124,
+                    148, 8, 23, 187, 84, 234, 165, 196, 186, 239, 124, 115, 223, 66, 107,
+                ],
+                "ed25519:4NfJteMHBr8vvpczkUf7cN2eV6d8wTi3ZCWGPsJRzcMg".to_string(),
+            ),
+            // Bad URL format (missing host)
+            (
+                "multichain-node-dev-5.testnet".to_string(),
+                "http://:3000".to_string(),
+                [
+                    52, 159, 137, 246, 113, 122, 2, 170, 247, 166, 73, 185, 138, 199, 175, 9, 230,
+                    81, 127, 253, 76, 183, 234, 138, 159, 110, 222, 232, 248, 74, 51, 12,
+                ],
+                "ed25519:5op5eGtWrVAWmNjyaLhZMm4itc8bWottr8PGUJEzcKHd".to_string(),
+            ),
+            // Bad URL format (missing http prefix)
+            (
+                "multichain-node-dev-6.testnet".to_string(),
+                "10.101.0.122:3000".to_string(),
+                [
+                    73, 12, 220, 236, 69, 28, 157, 52, 209, 134, 175, 75, 7, 71, 248, 44, 61, 188,
+                    69, 223, 13, 154, 109, 75, 140, 214, 138, 120, 53, 146, 7, 59,
+                ],
+                "ed25519:41VQ8NxWF11cjse5WjiJBtbrGDPKLQ712Kg1oGyM9w9P".to_string(),
+            ),
+        ]
+    }
+
+    fn create_participant_data_raw_duplicate_pk() -> Vec<(String, String, [u8; 32], String)> {
+        vec![
+            (
+                "multichain-node-dev-0.testnet".to_string(),
+                "http://10.101.0.56:3000".to_string(),
+                [
+                    90, 157, 29, 39, 252, 60, 149, 46, 122, 247, 162, 241, 200, 79, 85, 41, 40,
+                    238, 194, 50, 195, 242, 195, 231, 135, 244, 161, 93, 130, 168, 41, 22,
+                ],
+                "ed25519:4upBpJYUrjPBzqNYaY8pvJGQtep7YMT3j9zRsopYQqfG".to_string(),
+            ),
+            (
+                "multichain-node-dev-1.testnet".to_string(),
+                "http://10.101.0.81:3000".to_string(),
+                [
+                    52, 159, 137, 246, 113, 122, 2, 170, 247, 166, 73, 185, 138, 199, 175, 9, 230,
+                    81, 127, 253, 76, 183, 234, 138, 159, 110, 222, 232, 248, 74, 51, 12,
+                ],
+                "ed25519:6sqMFXkswuH9b7Pnn6dGAy1vA1X3N2CSrKDDkdHzTcrv".to_string(),
+            ),
+            (
+                "multichain-node-dev-2.testnet".to_string(),
+                "http://10.101.0.57:3000".to_string(),
+                [
+                    120, 174, 103, 211, 138, 250, 166, 211, 41, 187, 160, 23, 92, 32, 10, 140, 36,
+                    138, 90, 130, 215, 143, 187, 143, 113, 224, 96, 230, 193, 134, 216, 0,
+                ],
+                "ed25519:4upBpJYUrjPBzqNYaY8pvJGQtep7YMT3j9zRsopYQqfG".to_string(),
+            ),
+        ]
+    }
+
+    fn create_chain_participant_infos_from_raw(
+        raw: Vec<(String, String, [u8; 32], String)>,
     ) -> BTreeMap<AccountId, mpc_contract::primitives::ParticipantInfo> {
-        create_participant_data()
-            .iter()
+        raw.iter()
             .map(|(account_id, url, cipher_pk, pk)| {
                 let account_id = AccountId::from_str(account_id).unwrap();
                 let url = url.to_string();
@@ -149,6 +254,21 @@ mod tests {
             .collect()
     }
 
+    fn create_chain_participant_infos(
+    ) -> BTreeMap<AccountId, mpc_contract::primitives::ParticipantInfo> {
+        create_chain_participant_infos_from_raw(create_participant_data_raw())
+    }
+
+    fn create_invalid_chain_participant_infos(
+    ) -> BTreeMap<AccountId, mpc_contract::primitives::ParticipantInfo> {
+        create_chain_participant_infos_from_raw(create_invalid_participant_data_raw())
+    }
+
+    fn create_chain_participant_infos_duplicate_pk(
+    ) -> BTreeMap<AccountId, mpc_contract::primitives::ParticipantInfo> {
+        create_chain_participant_infos_from_raw(create_participant_data_raw_duplicate_pk())
+    }
+
     // Check that the participant ids are assigned 0 to N-1 by AccountId order
     #[test]
     fn test_participant_ids() {
@@ -161,7 +281,7 @@ mod tests {
         }
         assert!(account_ids.is_sorted());
 
-        let converted = convert_participant_infos(chain_infos, None);
+        let converted = convert_participant_infos(chain_infos, None).unwrap();
         let mut pk_to_participant_id = HashMap::<String, usize>::default();
         for (i, participant) in converted.into_iter().enumerate() {
             assert!(participant.id.raw() == i as u32);
@@ -180,12 +300,71 @@ mod tests {
     fn test_port_override() {
         let chain_infos = create_chain_participant_infos();
 
-        let converted = convert_participant_infos(chain_infos.clone(), None);
+        let converted = convert_participant_infos(chain_infos.clone(), None).unwrap();
         converted.into_iter().for_each(|p| assert!(p.port == 3000));
 
-        let with_override = convert_participant_infos(chain_infos, Some(443));
+        let with_override = convert_participant_infos(chain_infos, Some(443)).unwrap();
         with_override
             .into_iter()
             .for_each(|p| assert!(p.port == 443));
+    }
+
+    // It is fatal if any of the participants has bad data, even if the others are OK
+    #[test]
+    fn test_bad_participant_data() {
+        let chain_infos = create_chain_participant_infos();
+        for (account_id, bad_data) in create_invalid_chain_participant_infos() {
+            let mut chain_infos = chain_infos.clone();
+            chain_infos.insert(account_id, bad_data);
+            assert!(convert_participant_infos(chain_infos, None).is_err());
+        }
+    }
+
+    #[test]
+    fn test_find_my_participant_id() {
+        let chain_infos = create_chain_participant_infos();
+        let converted = convert_participant_infos(chain_infos.clone(), None).unwrap();
+
+        let p0_key = near_crypto::PublicKey::from_str(
+            "ed25519:4upBpJYUrjPBzqNYaY8pvJGQtep7YMT3j9zRsopYQqfG",
+        )
+        .unwrap();
+        assert_eq!(0, find_my_participant_id(&converted, p0_key).unwrap().raw());
+
+        let p1_key = near_crypto::PublicKey::from_str(
+            "ed25519:6sqMFXkswuH9b7Pnn6dGAy1vA1X3N2CSrKDDkdHzTcrv",
+        )
+        .unwrap();
+        assert_eq!(1, find_my_participant_id(&converted, p1_key).unwrap().raw());
+
+        let p2_key = near_crypto::PublicKey::from_str(
+            "ed25519:Fru1RoC6dw1xY2J6C6ZSBUt5PEysxTLX2kDexxqoDN6k",
+        )
+        .unwrap();
+        assert_eq!(2, find_my_participant_id(&converted, p2_key).unwrap().raw());
+    }
+
+    #[test]
+    fn test_missing_participant_id() {
+        let chain_infos = create_chain_participant_infos();
+        let converted = convert_participant_infos(chain_infos.clone(), None).unwrap();
+
+        let missing_key = near_crypto::PublicKey::from_str(
+            "ed25519:4NfJteMHBr8vvpczkUf7cN2eV6d8wTi3ZCWGPsJRzcMg",
+        )
+        .unwrap();
+        assert!(find_my_participant_id(&converted, missing_key).is_err());
+    }
+
+    #[test]
+    fn test_duplicate_public_key() {
+        let chain_infos = create_chain_participant_infos_duplicate_pk();
+        let converted = convert_participant_infos(chain_infos.clone(), None).unwrap();
+
+        let p0_key = near_crypto::PublicKey::from_str(
+            "ed25519:4upBpJYUrjPBzqNYaY8pvJGQtep7YMT3j9zRsopYQqfG",
+        )
+        .unwrap();
+        assert!(find_my_participant_id(&converted, p0_key).is_err());
     }
 }
