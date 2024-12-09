@@ -1,10 +1,11 @@
-use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
+use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
+use near_crypto::ED25519SecretKey;
 use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
@@ -250,14 +251,16 @@ fn keypair_to_raw_ed25519_secret_key(
 }
 
 /// Configures the quinn library to properly perform TLS handshakes.
-fn configure_quinn(config: &MpcConfig) -> anyhow::Result<(ServerConfig, ClientConfig)> {
+fn configure_quinn(
+    p2p_private_key: &near_crypto::ED25519SecretKey,
+) -> anyhow::Result<(ServerConfig, ClientConfig)> {
     // The issuer is a dummy certificate authority that every node trusts.
     let issuer_signer = rcgen::KeyPair::from_pem(DUMMY_ISSUER_PRIVATE_KEY)?;
     let issuer_cert =
         rcgen::CertificateParams::new(vec!["root".to_string()])?.self_signed(&issuer_signer)?;
 
     // This is the keypair that is secret to this node, used in P2P handshakes.
-    let p2p_key = raw_ed25519_secret_key_to_keypair(&config.secrets.p2p_private_key)?;
+    let p2p_key = raw_ed25519_secret_key_to_keypair(p2p_private_key)?;
     let p2p_key_der =
         rustls::pki_types::PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(p2p_key.serialize_der()));
 
@@ -318,11 +321,12 @@ fn initial_suite_from_provider(provider: &Arc<rustls::crypto::CryptoProvider>) -
 /// Creates a mesh network using QUIC for communication.
 pub async fn new_quic_mesh_network(
     config: &MpcConfig,
+    p2p_private_key: &near_crypto::ED25519SecretKey,
 ) -> Result<(
     impl MeshNetworkTransportSender,
     impl MeshNetworkTransportReceiver,
 )> {
-    let (server_config, client_config) = configure_quinn(config)?;
+    let (server_config, client_config) = configure_quinn(p2p_private_key)?;
 
     let my_port = config
         .participants
@@ -572,7 +576,7 @@ pub fn generate_test_p2p_configs(
     // this is a hack to make sure that when tests run in parallel, they don't
     // collide on the same port.
     seed: u16,
-) -> anyhow::Result<Vec<MpcConfig>> {
+) -> anyhow::Result<Vec<(MpcConfig, ED25519SecretKey)>> {
     let mut participants = Vec::new();
     let mut keypairs = Vec::new();
     for i in 0..parties {
@@ -582,6 +586,7 @@ pub fn generate_test_p2p_configs(
             address: "127.0.0.1".to_string(),
             port: 10000 + seed * 1000 + i as u16,
             p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
+            near_account_id: format!("test{}", i).parse().unwrap(),
         });
         keypairs.push((p2p_private_key, p2p_public_key));
     }
@@ -593,14 +598,11 @@ pub fn generate_test_p2p_configs(
             participants: participants.clone(),
         };
 
-        let config = MpcConfig {
+        let mpc_config = MpcConfig {
             my_participant_id: participants.participants[i].id,
-            secrets: SecretsConfig {
-                p2p_private_key: keypair.0,
-            },
             participants,
         };
-        configs.push(config);
+        configs.push((mpc_config, keypair.0));
     }
 
     Ok(configs)
@@ -630,12 +632,18 @@ mod tests {
     async fn test_basic_quic_mesh_network() {
         init_logging();
         let configs = super::generate_test_p2p_configs(2, 2, 0).unwrap();
-        let participant0 = configs[0].my_participant_id;
-        let participant1 = configs[1].my_participant_id;
+        let participant0 = configs[0].0.my_participant_id;
+        let participant1 = configs[1].0.my_participant_id;
 
         start_root_task_with_periodic_dump(async move {
-            let (sender0, mut receiver0) = super::new_quic_mesh_network(&configs[0]).await.unwrap();
-            let (sender1, mut receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
+            let (sender0, mut receiver0) =
+                super::new_quic_mesh_network(&configs[0].0, &configs[0].1)
+                    .await
+                    .unwrap();
+            let (sender1, mut receiver1) =
+                super::new_quic_mesh_network(&configs[1].0, &configs[1].1)
+                    .await
+                    .unwrap();
 
             sender0.wait_for_ready(2).await.unwrap();
             sender1.wait_for_ready(2).await.unwrap();
@@ -683,12 +691,20 @@ mod tests {
         let mut configs = super::generate_test_p2p_configs(4, 4, 1).unwrap();
         // Make node 3 use the wrong address for the 0th node. All connections should work
         // except from 3 to 0.
-        configs[3].participants.participants[0].address = "169.254.1.1".to_owned();
+        configs[3].0.participants.participants[0].address = "169.254.1.1".to_owned();
         start_root_task_with_periodic_dump(async move {
-            let (sender0, _receiver0) = super::new_quic_mesh_network(&configs[0]).await.unwrap();
-            let (sender1, receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
-            let (sender2, _receiver2) = super::new_quic_mesh_network(&configs[2]).await.unwrap();
-            let (sender3, _receiver3) = super::new_quic_mesh_network(&configs[3]).await.unwrap();
+            let (sender0, _receiver0) = super::new_quic_mesh_network(&configs[0].0, &configs[0].1)
+                .await
+                .unwrap();
+            let (sender1, receiver1) = super::new_quic_mesh_network(&configs[1].0, &configs[1].1)
+                .await
+                .unwrap();
+            let (sender2, _receiver2) = super::new_quic_mesh_network(&configs[2].0, &configs[2].1)
+                .await
+                .unwrap();
+            let (sender3, _receiver3) = super::new_quic_mesh_network(&configs[3].0, &configs[3].1)
+                .await
+                .unwrap();
 
             sender0.wait_for_ready(4).await.unwrap();
             sender1.wait_for_ready(4).await.unwrap();
@@ -703,6 +719,7 @@ mod tests {
             sender3.wait_for_ready(3).await.unwrap();
 
             let ids: Vec<_> = configs[0]
+                .0
                 .participants
                 .participants
                 .iter()
@@ -733,7 +750,9 @@ mod tests {
             );
 
             // Reconnect node 1. Other nodes should re-establish the connections.
-            let (sender1, _receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
+            let (sender1, _receiver1) = super::new_quic_mesh_network(&configs[1].0, &configs[1].1)
+                .await
+                .unwrap();
             sender0.wait_for_ready(4).await.unwrap();
             sender1.wait_for_ready(4).await.unwrap();
             sender2.wait_for_ready(4).await.unwrap();
