@@ -175,7 +175,7 @@ impl Cli {
                     &config.my_near_account_id,
                 )?;
 
-                let config = config.to_full_config(mpc_config, secrets);
+                let config = config.into_full_config(mpc_config, secrets);
 
                 // Start the mpc client
                 let secret_db = SecretDB::new(
@@ -270,7 +270,7 @@ impl Cli {
                         .expect("Static participants config required"),
                     &config.my_near_account_id,
                 )?;
-                let config = config.to_full_config(mpc_config, secrets);
+                let config = config.into_full_config(mpc_config, secrets);
 
                 let (root_task, _) = tracking::start_root_task(async move {
                     let root_task_handle = tracking::current_task();

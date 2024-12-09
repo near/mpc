@@ -5,6 +5,7 @@ use near_indexer_primitives::types::AccountId;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+/// The full configuration needed to run the node.
 #[derive(Debug)]
 pub struct Config {
     pub mpc: MpcConfig,
@@ -37,6 +38,8 @@ pub struct SignatureConfig {
     pub timeout_sec: u64,
 }
 
+/// Configuration about the MPC protocol. It can come from either the contract
+/// on chain, or static offline config file.
 #[derive(Debug)]
 pub struct MpcConfig {
     pub my_participant_id: ParticipantId,
@@ -104,15 +107,21 @@ pub struct BlockArgs {
     pub height: u64,
 }
 
-/// The contents of the main config.yaml file.
+/// The contents of the on-disk config.yaml file. Contains no secrets.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigFile {
+    /// The near account ID that this node owns. If an on-chain contract is
+    /// used, this account is used to sign transactions for the on-chain
+    /// contract. If static config is used, this account is used to look up
+    /// the participant ID.
     pub my_near_account_id: AccountId,
     pub web_ui: WebUIConfig,
     pub indexer: Option<IndexerConfig>,
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
     pub signature: SignatureConfig,
+    /// If specified, this is the static configuration for the MPC protocol,
+    /// replacing what would be read from the contract.
     pub participants: Option<ParticipantsConfig>,
 }
 
@@ -123,7 +132,7 @@ impl ConfigFile {
         Ok(config)
     }
 
-    pub fn to_full_config(self, mpc: MpcConfig, secrets: SecretsConfig) -> Config {
+    pub fn into_full_config(self, mpc: MpcConfig, secrets: SecretsConfig) -> Config {
         Config {
             mpc,
             secrets,
@@ -154,6 +163,7 @@ pub struct ParticipantInfo {
     pub near_account_id: AccountId,
 }
 
+/// Secrets that come from environment variables rather than the config file.
 #[derive(Clone, Debug)]
 pub struct SecretsConfig {
     pub p2p_private_key: near_crypto::ED25519SecretKey,
