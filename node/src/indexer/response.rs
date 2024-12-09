@@ -135,6 +135,7 @@ pub(crate) async fn handle_sign_responses(
                 "respond".to_string(),
                 response_ser.into(),
                 block.header.hash,
+                block.header.height,
             );
             tracing::info!(
                 target = "mpc",
@@ -143,7 +144,7 @@ pub(crate) async fn handle_sign_responses(
             );
 
             metrics::MPC_NUM_SIGN_RESPONSES_SENT.inc();
-            let _ = client
+            let result = client
                 .send(
                     near_client::ProcessTxRequest {
                         transaction,
@@ -153,6 +154,21 @@ pub(crate) async fn handle_sign_responses(
                     .with_span_context(),
                 )
                 .await;
+            match result {
+                Ok(response) => match response {
+                    near_client::ProcessTxResponse::RequestRouted => {}
+                    _ => {
+                        tracing::error!(
+                            target: "mpc",
+                            "Failed to send response tx: unexpected ProcessTxResponse: {:?}",
+                            response
+                        );
+                    }
+                },
+                Err(err) => {
+                    tracing::error!(target: "mpc", "Failed to send response tx: {:?}", err);
+                }
+            }
         });
     }
 }
