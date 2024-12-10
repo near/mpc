@@ -72,6 +72,7 @@ pub struct MpcPeerMessage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum MpcTaskId {
     KeyGeneration,
+    KeyResharing,
     ManyTriples {
         start: UniqueId,
         count: u32,
