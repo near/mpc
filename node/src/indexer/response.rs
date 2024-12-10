@@ -95,14 +95,17 @@ impl ChainRespondArgs {
 }
 
 pub(crate) async fn handle_sign_responses(
-    tx_signer: Arc<TransactionSigner>,
+    tx_signer: Option<Arc<TransactionSigner>>,
     mpc_contract_id: AccountId,
     mut receiver: mpsc::Receiver<ChainRespondArgs>,
     view_client: actix::Addr<near_client::ViewClientActor>,
     client: actix::Addr<near_client::ClientActor>,
 ) {
     while let Some(respond_args) = receiver.recv().await {
-        let tx_signer = tx_signer.clone();
+        let Some(tx_signer) = tx_signer.clone() else {
+            tracing::error!(target: "mpc", "Transaction signer unavailable; account secret key not provided");
+            continue;
+        };
         let mpc_contract_id = mpc_contract_id.clone();
         let view_client = view_client.clone();
         let client = client.clone();
