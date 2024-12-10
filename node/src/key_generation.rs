@@ -79,18 +79,26 @@ pub fn load_root_keyshare(
     serde_json::from_slice(&decrypted).context("Failed to parse keygen")
 }
 
-/// Saves the root keyshare (keygen output) to disk.
+/// Saves the root keyshare to disk independently of whether it already exist or not.
 fn save_root_keyshare(
     home_dir: &Path,
     encryption_key: [u8; 16],
     keygen_out: &KeygenOutput<Secp256k1>,
 ) -> anyhow::Result<()> {
-    assert_root_key_does_not_exist(home_dir);
     let key_path = home_dir.join("key");
     let cipher = Aes128Gcm::new(GenericArray::from_slice(&encryption_key));
     let data = serde_json::to_vec(keygen_out).context("Failed to serialize keygen")?;
     let encrypted = db::encrypt(&cipher, &data);
     std::fs::write(key_path, &encrypted).context("Failed to write keygen file")
+}
+// verifies that no root key exists then encrypts the root keyshare (keygen output) to disk
+fn keygen_save_root_keyshare(
+    home_dir: &Path,
+    encryption_key: [u8; 16],
+    keygen_out: &KeygenOutput<Secp256k1>,
+) -> anyhow::Result<()> {
+    assert_root_key_does_not_exist(home_dir);
+    save_root_keyshare(home_dir, encryption_key, keygen_out)
 }
 
 /// Panics if the root keyshare file already exists.
@@ -152,7 +160,7 @@ pub async fn run_key_generation_client(
         config.mpc.participants.threshold as usize,
     )
     .await?;
-    save_root_keyshare(&home_dir, config.secret_storage.aes_key, &key)?;
+    keygen_save_root_keyshare(&home_dir, config.secret_storage.aes_key, &key)?;
     tracing::info!("Key generation completed");
     Ok(())
 }
