@@ -22,9 +22,6 @@ config = json.load(open('/data/config.json'))
 # boot nodes must be filled in or else the node will not have any peers.
 config['network']['boot_nodes'] = "${BOOT_NODES}"
 
-# This is for development: always fall back to GCS storage; makes state sync much faster.
-config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
-
 # Track whichever shard the contract account is on.
 config['tracked_shards'] = []
 config['tracked_accounts'] = ["$CONTRACT"]
