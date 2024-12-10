@@ -110,11 +110,11 @@ fn assert_root_key_does_not_exist(home_dir: &Path) {
 
 /// Opens a channel between client and protocol participants w.r.t. a specific task
 async fn create_channel(
-        config: &Arc<Config>,
-        client: &Arc<MeshNetworkClient>,
-        mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
-        task: MpcTaskId,
-) -> anyhow::Result<NetworkTaskChannel>{
+    config: &Arc<Config>,
+    client: &Arc<MeshNetworkClient>,
+    mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
+    task: MpcTaskId,
+) -> anyhow::Result<NetworkTaskChannel> {
     let my_participant_id = client.my_participant_id();
     let is_leader = my_participant_id
         == config
@@ -152,7 +152,8 @@ pub async fn run_key_generation_client(
     channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
 ) -> anyhow::Result<()> {
     assert_root_key_does_not_exist(&home_dir);
-    let channel = create_channel(&config, &client, channel_receiver, MpcTaskId::KeyGeneration).await?;
+    let channel =
+        create_channel(&config, &client, channel_receiver, MpcTaskId::KeyGeneration).await?;
 
     let key = run_key_generation(
         channel,
@@ -161,6 +162,76 @@ pub async fn run_key_generation_client(
     )
     .await?;
     keygen_save_root_keyshare(&home_dir, config.secret_storage.aes_key, &key)?;
+    tracing::info!("Key generation completed");
+    Ok(())
+}
+
+/// Loads the keyshare if it already exists and outputs None otherwise
+fn load_root_key_if_exist(
+    home_dir: &Path,
+    encryption_key: [u8; 16],
+) -> Option<KeygenOutput<Secp256k1>> {
+    if home_dir.join("key").exists() {
+        let keyshare = load_root_keyshare(home_dir, encryption_key).unwrap();
+        return Some(keyshare);
+    }
+    None
+}
+
+/// Performs the key resharing protocol, deleating the old keyshare and saving the
+/// new one on disk.
+/// Returns when the key resharing is complete or runs into an error
+/// (not meeting the resharing requirements).
+/// One success conditions is having every participant belonging to the *new_participant_list*
+/// be online and running this function.
+pub async fn run_key_resharing_client(
+    home_dir: PathBuf,
+    config: Arc<Config>,
+    client: Arc<MeshNetworkClient>,
+    channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
+    old_participants: &[Participant],
+    old_threshold: usize,
+    public_key: AffinePoint,
+) -> anyhow::Result<()> {
+    // TODO: close channel with old participants?
+    // TODO: check if mpc.participants list is up-to-date?
+    // TODO: check if mpc.newthreshold is up-to-date
+    let channel =
+        create_channel(&config, &client, channel_receiver, MpcTaskId::KeyResharing).await?;
+
+    // WARNING: assume the aes storage encryption key does not change before and after key resharing
+    let my_old_key = load_root_key_if_exist(&home_dir, config.secret_storage.aes_key);
+    let my_old_share = match my_old_key {
+        Some(k) => {
+            // compare the equality of public keys in my_old_key with the input public key
+            if k.public_key != public_key {
+                panic!("No match between input public key and node's public key");
+            }
+            Some(k.private_share)
+        }
+        None => None,
+    };
+
+    // call resharing and generate the new share
+    let private_share = run_key_resharing(
+        channel,
+        client.my_participant_id(),
+        config.mpc.participants.threshold as usize,
+        old_participants,
+        old_threshold,
+        my_old_share,
+        public_key,
+    )
+    .await?;
+
+    // reassemble the key_share with the public key into a new key
+    let my_new_key = KeygenOutput {
+        private_share,
+        public_key,
+    };
+
+    // TODO: make sure this overwrites the store/rewrite the old key
+    save_root_keyshare(&home_dir, config.secret_storage.aes_key, &my_new_key)?;
     tracing::info!("Key generation completed");
     Ok(())
 }
