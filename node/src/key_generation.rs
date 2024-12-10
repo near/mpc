@@ -8,7 +8,8 @@ use aes_gcm::{Aes128Gcm, KeyInit};
 use anyhow::Context;
 use cait_sith::protocol::Participant;
 use cait_sith::KeygenOutput;
-use k256::Secp256k1;
+use k256::elliptic_curve::CurveArithmetic;
+use k256::{Secp256k1,Scalar, AffinePoint};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -29,6 +30,42 @@ pub async fn run_key_generation(
     let protocol = cait_sith::keygen::<Secp256k1>(&cs_participants, me.into(), threshold)?;
     run_protocol("key generation", channel, me, protocol).await
 }
+
+/// Runs the key resharing protocol,
+/// This protocol is identical for the leader and the followers.
+/// When the set of old participants is the same as the set of new participants
+/// then we talk about "key refresh"
+/// This function would not succeed if:
+///     - the number of participants common between old and new is smaller
+///     than the old threshold
+///     - the threshold is larger than the number of participants
+pub async fn reshare(
+    channel: NetworkTaskChannel,
+    me: ParticipantId,
+    new_threshold: usize,
+    old_participants: &[Participant],
+    old_threshold: usize,
+    my_share: Option<Scalar>,
+    public_key: AffinePoint,
+)-> anyhow::Result<<Secp256k1 as CurveArithmetic>::Scalar> {
+    let new_participants = channel
+        .participants
+        .iter()
+        .copied()
+        .map(Participant::from)
+        .collect::<Vec<_>>();
+    let protocol = cait_sith::reshare::<Secp256k1>(
+            &old_participants,
+            old_threshold,
+            &new_participants,
+            new_threshold,
+            me.into(),
+            my_share,
+            public_key,
+        )?;
+    run_protocol("key resharing", channel, me, protocol).await
+}
+
 
 /// Reads the root keyshare (keygen output) from disk.
 pub fn load_root_keyshare(
