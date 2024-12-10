@@ -6,7 +6,6 @@ use k256::{
     elliptic_curve::point::AffineCoordinates, elliptic_curve::PrimeField, AffinePoint, Scalar,
     Secp256k1,
 };
-use near_client;
 use near_crypto::KeyFile;
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
@@ -38,29 +37,30 @@ struct SerializableAffinePoint {
     pub affine_point: AffinePoint,
 }
 
+#[derive(Debug)]
 pub enum ChainSignatureError {
     InvalidRecoveryId,
 }
 
 /* The format in which the chain signatures contract expects
- * to receive the details of the original request. `serializable_tweak`
- * is used to refer to the tweak derived from the caller's
+ * to receive the details of the original request. `tweak`
+ * is used to refer to the (serializable) tweak derived from the caller's
  * account id and the derivation path.
  */
 #[derive(Serialize, Debug, Clone)]
 struct ChainSignatureRequest {
-    pub serializable_tweak: SerializableScalar,
+    pub tweak: SerializableScalar,
     pub payload_hash: SerializableScalar,
 }
 
 impl ChainSignatureRequest {
     pub fn new(payload_hash: Scalar, tweak: Scalar) -> Self {
-        let serializable_tweak = SerializableScalar { scalar: tweak };
+        let tweak = SerializableScalar { scalar: tweak };
         let payload_hash = SerializableScalar {
             scalar: payload_hash,
         };
         ChainSignatureRequest {
-            serializable_tweak,
+            tweak,
             payload_hash,
         }
     }
@@ -94,15 +94,6 @@ impl ChainSignatureResponse {
             recovery_id,
         })
     }
-
-    pub(crate) fn is_ok_or_panic(
-        response: Result<Self, ChainSignatureError>,
-    ) -> ChainSignatureResponse {
-        match response {
-            Ok(value) => value,
-            Err(_) => panic!("Expected Chain Signature Response instead of error, panicking!"),
-        }
-    }
 }
 
 /* These arguments are passed to the `respond` function of the
@@ -123,11 +114,8 @@ impl ChainRespondArgs {
         let recovery_id = Self::ecdsa_recovery_from_big_r(&response.big_r);
         ChainRespondArgs {
             request: ChainSignatureRequest::new(request.msg_hash, request.tweak),
-            response: ChainSignatureResponse::is_ok_or_panic(ChainSignatureResponse::new(
-                response.big_r,
-                response.s,
-                recovery_id,
-            )),
+            response: ChainSignatureResponse::new(response.big_r, response.s, recovery_id)
+                .expect("Expected Chain Signature Response instead of error, panicking!"),
         }
     }
 
