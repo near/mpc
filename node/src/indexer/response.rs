@@ -2,14 +2,10 @@ use crate::metrics;
 use crate::sign_request::SignatureRequest;
 use cait_sith::FullSignature;
 use k256::{
-     AffinePoint,
-     elliptic_curve::point::AffineCoordinates,
-     elliptic_curve::PrimeField,
-     elliptic_curve::ops::Reduce,
-     elliptic_curve::bigint::U256,
-     Scalar,
-     Secp256k1
-    };
+    elliptic_curve::bigint::U256, elliptic_curve::ops::Reduce,
+    elliptic_curve::point::AffineCoordinates, elliptic_curve::PrimeField, AffinePoint, Scalar,
+    Secp256k1,
+};
 use near_client;
 use near_crypto::KeyFile;
 use near_indexer_primitives::near_primitives::transaction::{
@@ -41,7 +37,6 @@ impl From<Scalar> for SerializableScalar {
 struct SerializableAffinePoint {
     pub affine_point: AffinePoint,
 }
-
 
 pub enum ChainSignatureError {
     InvalidRecoveryId,
@@ -83,18 +78,26 @@ struct ChainSignatureResponse {
 
 impl ChainSignatureResponse {
     const MAX_RECOVERY_ID: u8 = 3;
-    pub fn new(big_r: AffinePoint, s: Scalar, recovery_id: u8) -> Result<Self,ChainSignatureError> {
+    pub fn new(
+        big_r: AffinePoint,
+        s: Scalar,
+        recovery_id: u8,
+    ) -> Result<Self, ChainSignatureError> {
         if recovery_id > Self::MAX_RECOVERY_ID {
             return Err(ChainSignatureError::InvalidRecoveryId);
         }
         Ok(ChainSignatureResponse {
-            big_r: SerializableAffinePoint { affine_point: big_r },
+            big_r: SerializableAffinePoint {
+                affine_point: big_r,
+            },
             s: SerializableScalar { scalar: s },
             recovery_id,
         })
     }
 
-    pub (crate) fn is_ok_or_panic( response : Result<Self, ChainSignatureError>) -> ChainSignatureResponse {
+    pub(crate) fn is_ok_or_panic(
+        response: Result<Self, ChainSignatureError>,
+    ) -> ChainSignatureResponse {
         match response {
             Ok(value) => value,
             Err(_) => panic!("Expected Chain Signature Response instead of error, panicking!"),
@@ -120,9 +123,11 @@ impl ChainRespondArgs {
         let recovery_id = Self::ecdsa_recovery_from_big_r(&response.big_r);
         ChainRespondArgs {
             request: ChainSignatureRequest::new(request.msg_hash, request.tweak),
-            response: ChainSignatureResponse::is_ok_or_panic(
-                        ChainSignatureResponse::new(response.big_r, response.s, recovery_id)
-                    ),
+            response: ChainSignatureResponse::is_ok_or_panic(ChainSignatureResponse::new(
+                response.big_r,
+                response.s,
+                recovery_id,
+            )),
         }
     }
 
@@ -130,7 +135,7 @@ impl ChainRespondArgs {
     /// The lower bit determines the sign bit of the point R
     /// The higher bit determines whether the x coordinate of R exceeded
     /// the curve order when computing R_x mod p
-    pub (crate) fn ecdsa_recovery_from_big_r (big_r: &AffinePoint) -> u8 {
+    pub(crate) fn ecdsa_recovery_from_big_r(big_r: &AffinePoint) -> u8 {
         // compare Rx representation before and after reducing it modulo the group order
         let big_r_x = big_r.x();
         let reduced_big_r_x = <Scalar as Reduce<U256>>::reduce_bytes(&big_r_x);
@@ -206,15 +211,15 @@ pub(crate) async fn chain_sender(
 // Test the recovery_id generation
 #[cfg(test)]
 mod recovery_id_tests {
-    use k256::AffinePoint;
-    use k256::ecdsa::{ SigningKey, RecoveryId};
-    use rand::rngs::OsRng;
-    use k256::sha2::{Sha256, Digest};
-    use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
     use crate::indexer::response::ChainRespondArgs;
+    use k256::ecdsa::{RecoveryId, SigningKey};
+    use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
+    use k256::sha2::{Digest, Sha256};
+    use k256::AffinePoint;
+    use rand::rngs::OsRng;
 
     #[test]
-    fn test_ecdsa_recovery_from_big_r(){
+    fn test_ecdsa_recovery_from_big_r() {
         // generate a pair of ecdsa keys
         let mut rng = OsRng;
         let signing_key = SigningKey::random(&mut rng);
@@ -222,21 +227,21 @@ mod recovery_id_tests {
         // compute a signature with recovery id
         let message = b"Testing ECDSA with recovery ID!";
         let digest = Sha256::new_with_prefix(message);
-        match signing_key.sign_digest_recoverable(digest){
+        match signing_key.sign_digest_recoverable(digest) {
             Ok((signature, recid)) => {
                 // recover R
                 let (r, _) = signature.split_scalars();
                 let r_bytes = r.to_repr();
-                let big_r =  AffinePoint::decompress(&r_bytes, u8::from(recid.is_y_odd()).into())
-                                        .unwrap();
+                let big_r =
+                    AffinePoint::decompress(&r_bytes, u8::from(recid.is_y_odd()).into()).unwrap();
                 // compute recovery_id using our function
                 let tested_recid = ChainRespondArgs::ecdsa_recovery_from_big_r(&big_r);
                 let tested_recid = RecoveryId::from_byte(tested_recid).unwrap();
 
                 assert!(tested_recid.is_x_reduced() == recid.is_x_reduced());
                 assert!(tested_recid.is_y_odd() == recid.is_y_odd());
-            },
-            Err(_)  => panic!("The signature in tghe test has failed"),
+            }
+            Err(_) => panic!("The signature in the test has failed"),
         }
     }
 }
