@@ -136,13 +136,9 @@ impl ChainRespondArgs {
         let reduced_big_r_x = <Scalar as Reduce<U256>>::reduce_bytes(&big_r_x);
         let is_x_reduced = reduced_big_r_x.to_repr() != big_r_x;
 
-
         // if Rx is larger than the group order then set recovery_id higher bit to 1
         // if Ry is odd then set recovery_id lower bit to 1
-        return   (is_x_reduced as u8) << 1 | big_r.y_is_odd().unwrap_u8();
-
-
-
+        (is_x_reduced as u8) << 1 | big_r.y_is_odd().unwrap_u8()
     }
 }
 
@@ -240,7 +236,7 @@ mod recovery_id_tests {
                 assert!(tested_recid.is_x_reduced() == recid.is_x_reduced());
                 assert!(tested_recid.is_y_odd() == recid.is_y_odd());
             },
-            Err(_)  => assert!(false),
+            Err(_)  => panic!("The signature in tghe test has failed"),
         }
     }
 }
