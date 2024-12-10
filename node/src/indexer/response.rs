@@ -135,6 +135,7 @@ pub(crate) async fn handle_sign_responses(
                 "respond".to_string(),
                 response_ser.into(),
                 block.header.hash,
+                block.header.height,
             );
             tracing::info!(
                 target = "mpc",
@@ -142,8 +143,7 @@ pub(crate) async fn handle_sign_responses(
                 transaction.get_hash()
             );
 
-            metrics::MPC_NUM_SIGN_RESPONSES_SENT.inc();
-            let _ = client
+            let result = client
                 .send(
                     near_client::ProcessTxRequest {
                         transaction,
@@ -153,6 +153,26 @@ pub(crate) async fn handle_sign_responses(
                     .with_span_context(),
                 )
                 .await;
+            match result {
+                Ok(response) => match response {
+                    // We're not a validator, so we should always be routing the transaction.
+                    near_client::ProcessTxResponse::RequestRouted => {
+                        metrics::MPC_NUM_SIGN_RESPONSES_SENT.inc();
+                    }
+                    _ => {
+                        metrics::MPC_NUM_SIGN_RESPONSES_FAILED_TO_SEND_IMMEDIATELY.inc();
+                        tracing::error!(
+                            target: "mpc",
+                            "Failed to send response tx: unexpected ProcessTxResponse: {:?}",
+                            response
+                        );
+                    }
+                },
+                Err(err) => {
+                    metrics::MPC_NUM_SIGN_RESPONSES_FAILED_TO_SEND_IMMEDIATELY.inc();
+                    tracing::error!(target: "mpc", "Failed to send response tx: {:?}", err);
+                }
+            }
         });
     }
 }
