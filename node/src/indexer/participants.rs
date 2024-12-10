@@ -78,7 +78,6 @@ fn convert_participant_infos(
             );
         };
         converted.push(ParticipantInfo {
-            // We label the participants from 0 to N-1 by map order
             id: ParticipantId::from_raw(*participant_id),
             address: address.to_string(),
             port,
