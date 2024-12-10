@@ -100,17 +100,13 @@ fn assert_root_key_does_not_exist(home_dir: &Path) {
     }
 }
 
-/// Performs the key generation protocol, saving the keyshare to disk.
-/// Returns when the key generation is complete or runs into an error.
-/// This is expected to only succeed if all participants are online
-/// and running this function.
-pub async fn run_key_generation_client(
-    home_dir: PathBuf,
-    config: Arc<Config>,
-    client: Arc<MeshNetworkClient>,
-    mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
-) -> anyhow::Result<()> {
-    assert_root_key_does_not_exist(&home_dir);
+/// Opens a channel between client and protocol participants w.r.t. a specific task
+async fn create_channel(
+        config: &Arc<Config>,
+        client: &Arc<MeshNetworkClient>,
+        mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
+        task: MpcTaskId,
+) -> anyhow::Result<NetworkTaskChannel>{
     let my_participant_id = client.my_participant_id();
     let is_leader = my_participant_id
         == config
@@ -123,10 +119,10 @@ pub async fn run_key_generation_client(
             .unwrap();
 
     let channel = if is_leader {
-        client.new_channel_for_task(MpcTaskId::KeyGeneration, client.all_participant_ids())?
+        client.new_channel_for_task(task, client.all_participant_ids())?
     } else {
         let channel = channel_receiver.recv().await.unwrap();
-        if channel.task_id != MpcTaskId::KeyGeneration {
+        if channel.task_id != task {
             anyhow::bail!(
                 "Received task ID is not key generation: {:?}",
                 channel.task_id
@@ -134,9 +130,25 @@ pub async fn run_key_generation_client(
         }
         channel
     };
+    Ok(channel)
+}
+
+/// Performs the key generation protocol, saving the keyshare to disk.
+/// Returns when the key generation is complete or runs into an error.
+/// This is expected to only succeed if all participants are online
+/// and running this function.
+pub async fn run_key_generation_client(
+    home_dir: PathBuf,
+    config: Arc<Config>,
+    client: Arc<MeshNetworkClient>,
+    channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
+) -> anyhow::Result<()> {
+    assert_root_key_does_not_exist(&home_dir);
+    let channel = create_channel(&config, &client, channel_receiver, MpcTaskId::KeyGeneration).await?;
+
     let key = run_key_generation(
         channel,
-        my_participant_id,
+        client.my_participant_id(),
         config.mpc.participants.threshold as usize,
     )
     .await?;
