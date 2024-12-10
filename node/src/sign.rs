@@ -65,7 +65,6 @@ pub async fn pre_sign_unowned(
     pre_sign(channel, me, threshold, triple0, triple1, keygen_out).await
 }
 
-
 /// Performs an MPC signature operation. This is the same for the initiator
 /// and for passive participants.
 /// The entropy is used to rerandomize the presignature (inspired by [GS21])
