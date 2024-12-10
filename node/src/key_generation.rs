@@ -9,7 +9,7 @@ use anyhow::Context;
 use cait_sith::protocol::Participant;
 use cait_sith::KeygenOutput;
 use k256::elliptic_curve::CurveArithmetic;
-use k256::{Secp256k1,Scalar, AffinePoint};
+use k256::{AffinePoint, Scalar, Secp256k1};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -39,33 +39,33 @@ pub async fn run_key_generation(
 ///     - the number of participants common between old and new is smaller
 ///     than the old threshold
 ///     - the threshold is larger than the number of participants
-pub async fn reshare(
+pub async fn run_key_resharing(
     channel: NetworkTaskChannel,
     me: ParticipantId,
-    new_threshold: usize,
+    threshold: usize,
     old_participants: &[Participant],
     old_threshold: usize,
     my_share: Option<Scalar>,
     public_key: AffinePoint,
-)-> anyhow::Result<<Secp256k1 as CurveArithmetic>::Scalar> {
+) -> anyhow::Result<<Secp256k1 as CurveArithmetic>::Scalar> {
     let new_participants = channel
         .participants
         .iter()
         .copied()
         .map(Participant::from)
         .collect::<Vec<_>>();
+
     let protocol = cait_sith::reshare::<Secp256k1>(
-            &old_participants,
-            old_threshold,
-            &new_participants,
-            new_threshold,
-            me.into(),
-            my_share,
-            public_key,
-        )?;
+        old_participants,
+        old_threshold,
+        &new_participants,
+        threshold,
+        me.into(),
+        my_share,
+        public_key,
+    )?;
     run_protocol("key resharing", channel, me, protocol).await
 }
-
 
 /// Reads the root keyshare (keygen output) from disk.
 pub fn load_root_keyshare(
