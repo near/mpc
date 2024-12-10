@@ -76,8 +76,8 @@ pub enum Cli {
     GenerateTestConfigs {
         #[arg(long)]
         output_dir: String,
-        #[arg(long)]
-        num_participants: usize,
+        #[arg(long, value_delimiter = ',')]
+        participants: Vec<AccountId>,
         #[arg(long)]
         threshold: usize,
         #[arg(long)]
@@ -301,21 +301,18 @@ impl Cli {
             }
             Cli::GenerateTestConfigs {
                 output_dir,
-                num_participants,
+                participants,
                 threshold,
                 seed,
                 disable_indexer,
             } => {
-                let configs = generate_test_p2p_configs(
-                    num_participants,
-                    threshold,
-                    seed.unwrap_or_default(),
-                )?;
+                let configs =
+                    generate_test_p2p_configs(&participants, threshold, seed.unwrap_or_default())?;
                 for (i, (mpc_config, p2p_private_key)) in configs.into_iter().enumerate() {
                     let subdir = format!("{}/{}", output_dir, i);
                     std::fs::create_dir_all(&subdir)?;
                     let file_config = ConfigFile {
-                        my_near_account_id: format!("test{}", i).parse().unwrap(),
+                        my_near_account_id: participants[i].clone(),
                         participants: Some(mpc_config.participants),
                         web_ui: WebUIConfig {
                             host: "127.0.0.1".to_owned(),

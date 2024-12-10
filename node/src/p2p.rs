@@ -6,6 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
 use near_crypto::ED25519SecretKey;
+use near_sdk::AccountId;
 use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
@@ -571,7 +572,7 @@ pub fn generate_keypair() -> Result<(near_crypto::ED25519SecretKey, near_crypto:
 }
 
 pub fn generate_test_p2p_configs(
-    parties: usize,
+    participant_accounts: &[AccountId],
     threshold: usize,
     // this is a hack to make sure that when tests run in parallel, they don't
     // collide on the same port.
@@ -579,14 +580,14 @@ pub fn generate_test_p2p_configs(
 ) -> anyhow::Result<Vec<(MpcConfig, ED25519SecretKey)>> {
     let mut participants = Vec::new();
     let mut keypairs = Vec::new();
-    for i in 0..parties {
+    for (i, participant_account) in participant_accounts.iter().enumerate() {
         let (p2p_private_key, p2p_public_key) = generate_keypair()?;
         participants.push(ParticipantInfo {
             id: ParticipantId::from_raw(rand::random()),
             address: "127.0.0.1".to_string(),
             port: 10000 + seed * 1000 + i as u16,
             p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
-            near_account_id: format!("test{}", i).parse().unwrap(),
+            near_account_id: participant_account.clone(),
         });
         keypairs.push((p2p_private_key, p2p_public_key));
     }
@@ -631,7 +632,12 @@ mod tests {
     #[serial]
     async fn test_basic_quic_mesh_network() {
         init_logging();
-        let configs = super::generate_test_p2p_configs(2, 2, 0).unwrap();
+        let configs = super::generate_test_p2p_configs(
+            &["test0".parse().unwrap(), "test1".parse().unwrap()],
+            2,
+            0,
+        )
+        .unwrap();
         let participant0 = configs[0].0.my_participant_id;
         let participant1 = configs[1].0.my_participant_id;
 
@@ -688,7 +694,17 @@ mod tests {
     #[serial]
     async fn test_wait_for_ready() {
         init_logging();
-        let mut configs = super::generate_test_p2p_configs(4, 4, 1).unwrap();
+        let mut configs = super::generate_test_p2p_configs(
+            &[
+                "test0".parse().unwrap(),
+                "test1".parse().unwrap(),
+                "test2".parse().unwrap(),
+                "test3".parse().unwrap(),
+            ],
+            4,
+            1,
+        )
+        .unwrap();
         // Make node 3 use the wrong address for the 0th node. All connections should work
         // except from 3 to 0.
         configs[3].0.participants.participants[0].address = "169.254.1.1".to_owned();

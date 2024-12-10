@@ -14,7 +14,9 @@ async fn test_basic_cluster() {
     let temp_dir = tempfile::tempdir().unwrap();
     let generate_configs = Cli::GenerateTestConfigs {
         output_dir: temp_dir.path().to_str().unwrap().to_string(),
-        num_participants: NUM_PARTICIPANTS,
+        participants: (0..NUM_PARTICIPANTS)
+            .map(|i| format!("test{}", i).parse().unwrap())
+            .collect(),
         threshold: THRESHOLD,
         seed: Some(2),
         disable_indexer: true,
