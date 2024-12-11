@@ -43,24 +43,24 @@ pub enum ChainSignatureError {
 }
 
 /* The format in which the chain signatures contract expects
- * to receive the details of the original request. `tweak`
+ * to receive the details of the original request. `epsilon`
  * is used to refer to the (serializable) tweak derived from the caller's
  * account id and the derivation path.
  */
 #[derive(Serialize, Debug, Clone)]
 struct ChainSignatureRequest {
-    pub tweak: SerializableScalar,
+    pub epsilon: SerializableScalar,
     pub payload_hash: SerializableScalar,
 }
 
 impl ChainSignatureRequest {
     pub fn new(payload_hash: Scalar, tweak: Scalar) -> Self {
-        let tweak = SerializableScalar { scalar: tweak };
+        let epsilon = SerializableScalar { scalar: tweak };
         let payload_hash = SerializableScalar {
             scalar: payload_hash,
         };
         ChainSignatureRequest {
-            tweak,
+            epsilon,
             payload_hash,
         }
     }
