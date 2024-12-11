@@ -199,28 +199,31 @@ mod recovery_id_tests {
 
     #[test]
     fn test_ecdsa_recovery_from_big_r() {
-        // generate a pair of ecdsa keys
-        let mut rng = OsRng;
-        let signing_key = SigningKey::random(&mut rng);
+        for _ in 0..256 {
+            // generate a pair of ecdsa keys
+            let mut rng = OsRng;
+            let signing_key = SigningKey::random(&mut rng);
 
-        // compute a signature with recovery id
-        let message = b"Testing ECDSA with recovery ID!";
-        let digest = Sha256::new_with_prefix(message);
-        match signing_key.sign_digest_recoverable(digest) {
-            Ok((signature, recid)) => {
-                // recover R
-                let (r, _) = signature.split_scalars();
-                let r_bytes = r.to_repr();
-                let big_r =
-                    AffinePoint::decompress(&r_bytes, u8::from(recid.is_y_odd()).into()).unwrap();
-                // compute recovery_id using our function
-                let tested_recid = ChainRespondArgs::ecdsa_recovery_from_big_r(&big_r);
-                let tested_recid = RecoveryId::from_byte(tested_recid).unwrap();
+            // compute a signature with recovery id
+            let message = b"Testing ECDSA with recovery ID!";
+            let digest = Sha256::new_with_prefix(message);
+            match signing_key.sign_digest_recoverable(digest) {
+                Ok((signature, recid)) => {
+                    // recover R
+                    let (r, _) = signature.split_scalars();
+                    let r_bytes = r.to_repr();
+                    let big_r =
+                        AffinePoint::decompress(&r_bytes, u8::from(recid.is_y_odd()).into())
+                            .unwrap();
+                    // compute recovery_id using our function
+                    let tested_recid = ChainRespondArgs::ecdsa_recovery_from_big_r(&big_r);
+                    let tested_recid = RecoveryId::from_byte(tested_recid).unwrap();
 
-                assert!(tested_recid.is_x_reduced() == recid.is_x_reduced());
-                assert!(tested_recid.is_y_odd() == recid.is_y_odd());
+                    assert!(tested_recid.is_x_reduced() == recid.is_x_reduced());
+                    assert!(tested_recid.is_y_odd() == recid.is_y_odd());
+                }
+                Err(_) => panic!("The signature in the test has failed"),
             }
-            Err(_) => panic!("The signature in the test has failed"),
         }
     }
 }
