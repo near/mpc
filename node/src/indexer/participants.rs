@@ -8,12 +8,18 @@ use std::str::FromStr;
 use tokio::sync::mpsc;
 use url::Url;
 
+#[derive(Debug)]
+pub struct ConfigFromChain {
+    pub participants: ParticipantsConfig,
+    pub root_public_key: near_crypto::PublicKey,
+}
+
 pub(crate) async fn read_participants_from_chain(
     mpc_contract_id: AccountId,
     port_override: Option<u16>,
     view_client: actix::Addr<near_client::ViewClientActor>,
     client: actix::Addr<near_client::ClientActor>,
-    sender: mpsc::Sender<anyhow::Result<ParticipantsConfig>>,
+    sender: mpsc::Sender<anyhow::Result<ConfigFromChain>>,
 ) {
     let result =
         read_participants_from_chain_impl(mpc_contract_id, port_override, view_client, client)
@@ -27,7 +33,7 @@ async fn read_participants_from_chain_impl(
     port_override: Option<u16>,
     view_client: actix::Addr<near_client::ViewClientActor>,
     client: actix::Addr<near_client::ClientActor>,
-) -> anyhow::Result<ParticipantsConfig> {
+) -> anyhow::Result<ConfigFromChain> {
     // We wait first to catch up to the chain to avoid reading the participants from an outdated state.
     // We currently assume the participant set is static and do not detect or support any updates.
     tracing::info!(target: "mpc", "awaiting full sync to read mpc contract state");
@@ -44,9 +50,14 @@ async fn read_participants_from_chain_impl(
     };
 
     let participants = convert_participant_infos(state.participants, port_override)?;
-    Ok(ParticipantsConfig {
-        participants,
-        threshold: state.threshold.try_into()?,
+    let root_public_key = near_crypto::PublicKey::from_str(&String::from(&state.public_key))
+        .context("could not parse root public key")?;
+    Ok(ConfigFromChain {
+        participants: ParticipantsConfig {
+            participants,
+            threshold: state.threshold.try_into()?,
+        },
+        root_public_key,
     })
 }
 

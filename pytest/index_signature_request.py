@@ -210,12 +210,17 @@ def test_index_signature_request():
             print(e)
         time.sleep(1)
 
-    signature_base64 = res['status']['StatusValue']
-    while len(signature_base64) % 4 != 0:
-        signature_base64 += '='
-    signature = base64.b64decode(signature_base64)
-    signature = json.loads(signature)
-    print("SUCCESS! Signature:", signature)
+    try:
+        signature_base64 = res['result']['status']['SuccessValue']
+        while len(signature_base64) % 4 != 0:
+            signature_base64 += '='
+        signature = base64.b64decode(signature_base64)
+        signature = json.loads(signature)
+        print("SUCCESS! Signature:", signature)
+    except Exception as e:
+        print("Failed to get signature:", e)
+        print("Response:", res)
+        assert False
 
 if __name__ == '__main__':
     test_index_signature_request()

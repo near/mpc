@@ -10,7 +10,9 @@ use crate::indexer::participants::read_participants_from_chain;
 use crate::indexer::response::handle_sign_responses;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::indexer::transaction::TransactionSigner;
-use crate::key_generation::{load_root_keyshare, run_key_generation_client};
+use crate::key_generation::{
+    affine_point_to_public_key, load_root_keyshare, run_key_generation_client,
+};
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_quic_mesh_network};
@@ -104,7 +106,7 @@ impl Cli {
                 let root_keyshare =
                     load_root_keyshare(&home_dir, secrets.local_storage_aes_key, &root_keyshare)?;
 
-                let (participants_sender, mut participants_receiver) = mpsc::channel(10);
+                let (chain_config_sender, mut chain_config_receiver) = mpsc::channel(10);
                 let (sign_request_sender, sign_request_receiver) = mpsc::channel(10000);
                 let (sign_response_sender, sign_response_receiver) = mpsc::channel(10000);
 
@@ -134,7 +136,7 @@ impl Cli {
                                 indexer_config.port_override,
                                 view_client.clone(),
                                 client.clone(),
-                                participants_sender,
+                                chain_config_sender,
                             ));
                             actix::spawn(indexer_logger(Arc::clone(&stats), view_client.clone()));
                             actix::spawn(handle_sign_responses(
@@ -158,11 +160,21 @@ impl Cli {
 
                 // Replace participants in config with those listed in the smart contract state
                 let participants = if config.indexer.is_some() {
-                    let Some(participants) = participants_receiver.recv().await else {
+                    let Some(chain_config) = chain_config_receiver.recv().await else {
                         anyhow::bail!("Participant sender dropped by indexer");
                     };
-                    tracing::info!(target: "mpc", "read participant set {:?} from chain", participants);
-                    participants?
+                    let chain_config = chain_config?;
+                    tracing::info!(target: "mpc", "read chain config {:?} from chain", chain_config);
+                    let public_key_from_keyshare =
+                        affine_point_to_public_key(root_keyshare.public_key)?;
+                    if chain_config.root_public_key != public_key_from_keyshare {
+                        anyhow::bail!(
+                            "Root public key mismatch: {:?} != {:?}",
+                            chain_config.root_public_key,
+                            public_key_from_keyshare
+                        );
+                    }
+                    chain_config.participants
                 } else {
                     let Some(participants) = config.participants.clone() else {
                         anyhow::bail!("Participants must either be read from on chain or specified statically in the config");
