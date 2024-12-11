@@ -37,11 +37,6 @@ struct SerializableAffinePoint {
     pub affine_point: AffinePoint,
 }
 
-#[derive(Debug)]
-pub enum ChainSignatureError {
-    InvalidRecoveryId,
-}
-
 /* The format in which the chain signatures contract expects
  * to receive the details of the original request. `epsilon`
  * is used to refer to the (serializable) tweak derived from the caller's
@@ -78,13 +73,9 @@ struct ChainSignatureResponse {
 
 impl ChainSignatureResponse {
     const MAX_RECOVERY_ID: u8 = 3;
-    pub fn new(
-        big_r: AffinePoint,
-        s: Scalar,
-        recovery_id: u8,
-    ) -> Result<Self, ChainSignatureError> {
+    pub fn new(big_r: AffinePoint, s: Scalar, recovery_id: u8) -> anyhow::Result<Self> {
         if recovery_id > Self::MAX_RECOVERY_ID {
-            return Err(ChainSignatureError::InvalidRecoveryId);
+            anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
         }
         Ok(ChainSignatureResponse {
             big_r: SerializableAffinePoint {
