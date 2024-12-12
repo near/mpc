@@ -1,26 +1,19 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
-use near_crypto::{PublicKey, SecretKey};
+use near_crypto::PublicKey;
 use near_indexer_primitives::types::AccountId;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
+use std::path::Path;
 
+/// The full configuration needed to run the node.
 #[derive(Debug)]
 pub struct Config {
     pub mpc: MpcConfig,
+    pub secrets: SecretsConfig,
     pub web_ui: WebUIConfig,
-    pub indexer: Option<IndexerConfig>,
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
     pub signature: SignatureConfig,
-    pub secret_storage: SecretStorageConfig,
-}
-
-#[derive(Debug)]
-pub struct SecretStorageConfig {
-    pub data_dir: PathBuf,
-    pub aes_key: [u8; 16],
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,11 +38,35 @@ pub struct SignatureConfig {
     pub timeout_sec: u64,
 }
 
+/// Configuration about the MPC protocol. It can come from either the contract
+/// on chain, or static offline config file.
 #[derive(Debug)]
 pub struct MpcConfig {
     pub my_participant_id: ParticipantId,
-    pub secrets: SecretsConfig,
     pub participants: ParticipantsConfig,
+}
+
+impl MpcConfig {
+    pub fn from_participants_with_near_account_id(
+        participants: ParticipantsConfig,
+        my_near_account_id: &AccountId,
+    ) -> anyhow::Result<Self> {
+        let my_participant_id = participants
+            .participants
+            .iter()
+            .find(|p| &p.near_account_id == my_near_account_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "My near account id {} not found in participants",
+                    my_near_account_id
+                )
+            })?
+            .id;
+        Ok(Self {
+            my_participant_id,
+            participants,
+        })
+    }
 }
 
 /// Config for the web UI, which is mostly for debugging and metrics.
@@ -72,8 +89,6 @@ pub struct IndexerConfig {
     pub mpc_contract_id: AccountId,
     /// If specified, replaces the port number in any ParticipantInfos read from chain
     pub port_override: Option<u16>,
-    /// Credentials used to sign signature response txs
-    pub near_credentials_file: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,22 +107,22 @@ pub struct BlockArgs {
     pub height: u64,
 }
 
-/// The contents of the main config.yaml file.
+/// The contents of the on-disk config.yaml file. Contains no secrets.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigFile {
-    /// The participant ID of this node; it must be one of the IDs in the
-    /// participants list.
-    pub my_participant_id: ParticipantId,
-    /// Contains information about all participants. This MUST BE IDENTICAL
-    /// on all nodes.
-    pub participants: ParticipantsConfig,
-    /// Private key used for the P2P communication's TLS.
-    pub p2p_private_key_file: String,
+    /// The near account ID that this node owns. If an on-chain contract is
+    /// used, this account is used to sign transactions for the on-chain
+    /// contract. If static config is used, this account is used to look up
+    /// the participant ID.
+    pub my_near_account_id: AccountId,
     pub web_ui: WebUIConfig,
     pub indexer: Option<IndexerConfig>,
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
     pub signature: SignatureConfig,
+    /// If specified, this is the static configuration for the MPC protocol,
+    /// replacing what would be read from the contract.
+    pub participants: Option<ParticipantsConfig>,
 }
 
 impl ConfigFile {
@@ -115,6 +130,17 @@ impl ConfigFile {
         let file = std::fs::read_to_string(path)?;
         let config: Self = serde_yaml::from_str(&file)?;
         Ok(config)
+    }
+
+    pub fn into_full_config(self, mpc: MpcConfig, secrets: SecretsConfig) -> Config {
+        Config {
+            mpc,
+            secrets,
+            web_ui: self.web_ui,
+            triple: self.triple,
+            presignature: self.presignature,
+            signature: self.signature,
+        }
     }
 }
 
@@ -134,58 +160,39 @@ pub struct ParticipantInfo {
     pub port: u16,
     /// Public key that corresponds to this P2P peer's private key.
     pub p2p_public_key: PublicKey,
+    pub near_account_id: AccountId,
 }
 
+/// Secrets that come from environment variables rather than the config file.
 #[derive(Clone, Debug)]
 pub struct SecretsConfig {
     pub p2p_private_key: near_crypto::ED25519SecretKey,
+    pub local_storage_aes_key: [u8; 16],
 }
 
 impl SecretsConfig {
-    pub fn my_public_key(&self) -> near_crypto::PublicKey {
-        near_crypto::SecretKey::ED25519(self.p2p_private_key.clone()).public_key()
+    pub fn from_cli(
+        local_storage_aes_key_hex: &str,
+        p2p_private_key: near_crypto::SecretKey,
+    ) -> anyhow::Result<Self> {
+        let local_storage_aes_key = hex::decode(local_storage_aes_key_hex)
+            .context("Encryption key must be 32 hex characters")?;
+        let local_storage_aes_key: [u8; 16] = local_storage_aes_key
+            .as_slice()
+            .try_into()
+            .context("Encryption key must be 16 bytes (32 bytes hex)")?;
+
+        let near_crypto::SecretKey::ED25519(p2p_private_key) = p2p_private_key else {
+            anyhow::bail!("P2P private key must be ed25519");
+        };
+        Ok(Self {
+            p2p_private_key,
+            local_storage_aes_key,
+        })
     }
 }
 
-pub fn load_config(
-    home_dir: &Path,
-    secret_key: [u8; 16],
-    // Allows the p2p private key to be provided via env var rather than file.
-    p2p_private_key_override: &Option<SecretKey>,
-) -> anyhow::Result<Config> {
+pub fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
     let config_path = home_dir.join("config.yaml");
-    let file_config = ConfigFile::from_file(&config_path).context("Load config.yaml")?;
-    let p2p_private_key = if let Some(p2p_private_key_override) = p2p_private_key_override {
-        p2p_private_key_override.clone()
-    } else {
-        SecretKey::from_str(
-            &std::fs::read_to_string(home_dir.join(&file_config.p2p_private_key_file))
-                .context("Load p2p private key")?,
-        )
-        .context("Decode p2p private key")?
-    };
-    let SecretKey::ED25519(p2p_private_key) = p2p_private_key else {
-        anyhow::bail!("P2P private key must be ED25519");
-    };
-    let mpc_config = MpcConfig {
-        my_participant_id: file_config.my_participant_id,
-        secrets: SecretsConfig { p2p_private_key },
-        participants: file_config.participants,
-    };
-    let web_config = file_config.web_ui;
-    let config = Config {
-        mpc: mpc_config,
-        web_ui: web_config,
-        indexer: file_config.indexer,
-        triple: file_config.triple,
-        presignature: file_config.presignature,
-        signature: file_config.signature,
-        secret_storage: SecretStorageConfig {
-            // TODO(saketh): the indexer uses <home_dir>/data by default and we must be careful
-            // to avoid a conflict. It would be nice if it were configureable in IndexerConfig.
-            data_dir: home_dir.join("mpc-data"),
-            aes_key: secret_key,
-        },
-    };
-    Ok(config)
+    ConfigFile::from_file(&config_path).context("Load config.yaml")
 }

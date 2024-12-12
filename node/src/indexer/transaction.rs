@@ -1,30 +1,32 @@
-use near_crypto::{InMemorySigner, Signer};
+use near_crypto::{InMemorySigner, SecretKey, Signer};
+use near_indexer::near_primitives::account::AccessKey;
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
 };
 use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::CryptoHash;
-use std::io;
-use std::path::Path;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
+use std::sync::Mutex;
 
 pub(crate) struct TransactionSigner {
     signer: Signer,
-    nonce: AtomicU64,
+    nonce: Mutex<u64>,
 }
 
 impl TransactionSigner {
-    pub(crate) fn from_file(path: &Path) -> io::Result<Self> {
-        Ok(TransactionSigner {
-            signer: Signer::InMemory(InMemorySigner::from_file(path)?),
-            nonce: AtomicU64::new(1),
-        })
+    pub(crate) fn from_key(account_id: AccountId, key: SecretKey) -> Self {
+        TransactionSigner {
+            signer: Signer::InMemory(InMemorySigner::from_secret_key(account_id, key)),
+            nonce: Mutex::new(0),
+        }
     }
 
     /// Atomically increments the nonce and returns the previous value
-    fn increment_nonce(&self) -> u64 {
-        self.nonce.fetch_add(1, Ordering::SeqCst)
+    fn make_nonce(&self, last_known_block_height: u64) -> u64 {
+        let min_nonce = AccessKey::ACCESS_KEY_NONCE_RANGE_MULTIPLIER * last_known_block_height;
+        let mut nonce = self.nonce.lock().unwrap();
+        let new_nonce = std::cmp::max(min_nonce, *nonce + 1);
+        *nonce = new_nonce;
+        new_nonce
     }
 
     pub(crate) fn create_and_sign_function_call_tx(
@@ -33,6 +35,7 @@ impl TransactionSigner {
         method_name: String,
         args: Vec<u8>,
         block_hash: CryptoHash,
+        block_height: u64,
     ) -> SignedTransaction {
         let action = FunctionCallAction {
             method_name,
@@ -47,7 +50,7 @@ impl TransactionSigner {
         let transaction = Transaction::V0(TransactionV0 {
             signer_id,
             public_key: self.signer.public_key().clone(),
-            nonce: self.increment_nonce(),
+            nonce: self.make_nonce(block_height),
             receiver_id,
             block_hash,
             actions: vec![action.into()],
