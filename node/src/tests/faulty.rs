@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::cli::Cli;
 use crate::config::load_config_file;
-use crate::tests::wait_till_udp_port_free;
+use crate::tests::free_resources_after_shutdown;
 use crate::tracking::AutoAbortTask;
 use near_o11y::testonly::init_integration_logger;
 use rand::Rng;
@@ -77,8 +77,9 @@ async fn test_faulty_cluster() {
         .await
         .unwrap();
 
-    for participant in &configs[0].participants.as_ref().unwrap().participants {
-        wait_till_udp_port_free(participant.port).await;
+    // Release the ports.
+    for config in &configs {
+        free_resources_after_shutdown(config).await;
     }
 
     tracing::info!("Key generation complete. Starting normal runs...");
@@ -145,8 +146,7 @@ async fn test_faulty_cluster() {
     let mut dropped_indices = HashSet::new();
     dropped_indices.insert(index);
 
-    wait_till_udp_port_free(configs[0].participants.as_ref().unwrap().participants[index].port)
-        .await;
+    free_resources_after_shutdown(&configs[index]).await;
 
     let mut signature_generated = false;
     'outer: for _ in 0..2 {
@@ -190,10 +190,7 @@ async fn test_faulty_cluster() {
     };
     drop(normal_runs.remove(&another_index).unwrap());
     dropped_indices.insert(another_index);
-    wait_till_udp_port_free(
-        configs[0].participants.as_ref().unwrap().participants[another_index].port,
-    )
-    .await;
+    free_resources_after_shutdown(&configs[another_index]).await;
 
     let index = loop {
         let i = rng.gen_range(0..NUM_PARTICIPANTS);
@@ -264,4 +261,8 @@ async fn test_faulty_cluster() {
 
     drop(task);
     drop(normal_runs);
+
+    for config in &configs {
+        free_resources_after_shutdown(config).await;
+    }
 }
