@@ -7,6 +7,7 @@ use std::collections::HashMap;
 mod basic_cluster;
 mod benchmark;
 mod research;
+mod faulty;
 
 /// Convenient test utilities to generate keys, triples, presignatures, and signatures.
 pub struct TestGenerators {

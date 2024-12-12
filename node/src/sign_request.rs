@@ -10,7 +10,7 @@ use tokio::sync::broadcast;
 
 pub type SignatureId = [u8; 32];
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SignatureRequest {
     pub id: SignatureId,
     pub msg_hash: Scalar,
