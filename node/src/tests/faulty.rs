@@ -6,6 +6,25 @@ use near_o11y::testonly::init_integration_logger;
 use rand::Rng;
 use serial_test::serial;
 
+struct DebugResponse {
+    success: bool,
+    debug: String,
+    text: String,
+}
+
+async fn send_request(request_url: &str, index: usize) -> Result<DebugResponse, anyhow::Error> {
+    let url = format!("http://{}:{}/{}", "127.0.0.1", 22000 + index, request_url);
+    let response = reqwest::get(&url).await?;
+    let response_success = response.status().is_success();
+    let response_debug = format!("{:?}", response);
+    let response_text = response.text().await.unwrap_or_default();
+    Ok(DebugResponse {
+        success: response_success,
+        debug: response_debug,
+        text: response_text,
+    })
+}
+
 // Make a cluster of four nodes. Test the following:
 // 1. Shut down one node and confirms that signatures can still be generated.
 // 2. Stop another node and assert that no signatures can be generated.
@@ -19,7 +38,9 @@ async fn test_faulty_cluster() {
     let temp_dir = tempfile::tempdir().unwrap();
     let generate_configs = Cli::GenerateTestConfigs {
         output_dir: temp_dir.path().to_str().unwrap().to_string(),
-        num_participants: NUM_PARTICIPANTS,
+        participants: (0..NUM_PARTICIPANTS)
+            .map(|i| format!("test{}", i).parse().unwrap())
+            .collect(),
         threshold: THRESHOLD,
         seed: Some(2),
         disable_indexer: true,
@@ -37,6 +58,10 @@ async fn test_faulty_cluster() {
             let cli = Cli::GenerateKey {
                 home_dir: home_dir.to_str().unwrap().to_string(),
                 secret_store_key_hex: hex::encode(encryption_keys[i]),
+                p2p_private_key: std::fs::read_to_string(home_dir.join("p2p_key"))
+                    .unwrap()
+                    .parse()
+                    .unwrap(),
             };
             cli.run()
         })
@@ -59,7 +84,11 @@ async fn test_faulty_cluster() {
             let cli = Cli::Start {
                 home_dir: home_dir.to_str().unwrap().to_string(),
                 secret_store_key_hex: hex::encode(encryption_keys[i]),
-                p2p_private_key: None,
+                p2p_private_key: std::fs::read_to_string(home_dir.join("p2p_key"))
+                    .unwrap()
+                    .parse()
+                    .unwrap(),
+                account_secret_key: None,
                 root_keyshare: None,
             };
             (i, AutoAbortTask::from(tokio::spawn(cli.run())))
@@ -71,34 +100,28 @@ async fn test_faulty_cluster() {
     let mut retries_left = 20;
     'outer: for i in 0..NUM_PARTICIPANTS {
         while retries_left > 0 {
-            let url = format!(
-                "http://{}:{}/debug/index?msg=hello&repeat=1&seed=23",
-                "127.0.0.1",
-                22000 + i
-            );
-            let response = match reqwest::get(&url).await {
-                Ok(response) => response,
+            match send_request("debug/index?msg=hello&repeat=1&seed=23", i).await {
+                Ok(response) => {
+                    if response.success {
+                        tracing::info!("Got response from node {}: {}", i, response.text);
+                        continue 'outer;
+                    } else {
+                        tracing::error!(
+                            "Unsuccessful response from node {}: {}, error: {}",
+                            i,
+                            response.debug,
+                            response.text
+                        );
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        retries_left -= 1;
+                    }
+                }
                 Err(e) => {
                     tracing::error!("Failed to get response from node {}: {}", i, e);
                     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    retries_left -= 1;
                     continue;
                 }
-            };
-            let response_success = response.status().is_success();
-            let response_debug = format!("{:?}", response);
-            let response_text = response.text().await.unwrap_or_default();
-            if !response_success {
-                tracing::error!(
-                    "Unsuccessful response from node {}: {}, error: {}",
-                    i,
-                    response_debug,
-                    response_text
-                );
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                retries_left -= 1;
-            } else {
-                tracing::info!("Got response from node {}: {}", i, response_text);
-                continue 'outer;
             }
         }
         panic!("Failed to get response from node {}", i);
@@ -118,32 +141,25 @@ async fn test_faulty_cluster() {
     let mut signature_generated = false;
     'outer: for _ in 0..2 {
         for i in 0..NUM_PARTICIPANTS {
-            let url = format!(
-                "http://{}:{}/debug/sign?repeat=1&seed=23",
-                "127.0.0.1",
-                22000 + i
-            );
-            let response = match reqwest::get(&url).await {
-                Ok(response) => response,
+            match send_request("debug/sign?repeat=1&seed=23", i).await {
+                Ok(response) => {
+                    if response.success {
+                        tracing::info!("Got response from node {}: {}", i, response.text);
+                        signature_generated = true;
+                        break 'outer;
+                    } else {
+                        tracing::error!(
+                            "Unsuccessful response from node {}: {}, error: {}",
+                            i,
+                            response.debug,
+                            response.text
+                        );
+                    }
+                }
                 Err(e) => {
                     tracing::error!("Failed to get response from node {}: {}", i, e);
                     continue;
                 }
-            };
-            let response_success = response.status().is_success();
-            let response_debug = format!("{:?}", response);
-            let response_text = response.text().await.unwrap_or_default();
-            if !response_success {
-                tracing::error!(
-                    "Unsuccessful response from node {}: {}, error: {}",
-                    i,
-                    response_debug,
-                    response_text
-                );
-            } else {
-                tracing::info!("Got response from node {}: {}", i, response_text);
-                signature_generated = true;
-                break 'outer;
             }
         }
     }
@@ -164,6 +180,7 @@ async fn test_faulty_cluster() {
     };
     drop(normal_runs.remove(&another_index).unwrap());
     dropped_indices.insert(another_index);
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     let index = loop {
         let i = rng.gen_range(0..NUM_PARTICIPANTS);
@@ -172,16 +189,11 @@ async fn test_faulty_cluster() {
         }
     };
 
-    let url = format!(
-        "http://{}:{}/debug/sign?repeat=1&seed=23",
-        "127.0.0.1",
-        22000 + index
-    );
-    match reqwest::get(&url).await {
+    match send_request("debug/sign?repeat=1&seed=23", index).await {
         Ok(response) => {
-            let response_success = response.status().is_success();
-            let response_debug = format!("{:?}", response);
-            let response_text = response.text().await.unwrap_or_default();
+            let response_success = response.success;
+            let response_debug = response.debug;
+            let response_text = response.text;
             if !response_success {
                 tracing::info!(
                     "Unsuccessful response from node {}: {}, error: {}",
@@ -199,7 +211,7 @@ async fn test_faulty_cluster() {
         Err(e) => {
             tracing::info!("Failed to get response from node {}: {}", index, e);
         }
-    };
+    }
 
     tracing::info!("Step 2 complete");
 
@@ -210,33 +222,30 @@ async fn test_faulty_cluster() {
         let cli = Cli::Start {
             home_dir: home_dir.to_str().unwrap().to_string(),
             secret_store_key_hex: hex::encode(encryption_keys[another_index]),
-            p2p_private_key: None,
+            p2p_private_key: std::fs::read_to_string(home_dir.join("p2p_key"))
+                .unwrap()
+                .parse()
+                .unwrap(),
+            account_secret_key: None,
             root_keyshare: None,
         };
         cli.run().await.unwrap();
     }));
-    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-    let url = format!(
-        "http://{}:{}/debug/sign?repeat=1&seed=23",
-        "127.0.0.1",
-        22000 + another_index
-    );
-    match reqwest::get(&url).await {
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+    match send_request("debug/index?msg=hello&repeat=1&seed=23", another_index).await {
         Ok(response) => {
-            let response_success = response.status().is_success();
-            let response_debug = format!("{:?}", response);
-            let response_text = response.text().await.unwrap_or_default();
-            if !response_success {
+            if !response.success {
                 panic!(
                     "Unsuccessful response from node {}: {}, error: {}",
-                    another_index, response_debug, response_text
+                    another_index, response.debug, response.text
                 );
             }
         }
         Err(e) => {
             panic!("Failed to get response from node {}: {}", another_index, e);
         }
-    };
+    }
 
     tracing::info!("Step 3 complete");
 
