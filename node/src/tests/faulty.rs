@@ -13,7 +13,7 @@ struct DebugResponse {
 }
 
 async fn send_request(request_url: &str, index: usize) -> Result<DebugResponse, anyhow::Error> {
-    let url = format!("http://{}:{}/{}", "127.0.0.1", 22000 + index, request_url);
+    let url = format!("http://{}:{}/{}", "127.0.0.1", 23000 + index, request_url);
     let response = reqwest::get(&url).await?;
     let response_success = response.status().is_success();
     let response_debug = format!("{:?}", response);
@@ -42,7 +42,7 @@ async fn test_faulty_cluster() {
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
         threshold: THRESHOLD,
-        seed: Some(2),
+        seed: Some(3),
         disable_indexer: true,
     };
     generate_configs.run().await.unwrap();
