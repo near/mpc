@@ -146,11 +146,16 @@ pub async fn run_key_generation_client(
 
     // TODO(#75): Send vote_pk transaction to vote for the public key on the contract.
     // For now, just print it out so integration test can look at it.
-    let public_key = near_crypto::PublicKey::SECP256K1(near_crypto::Secp256K1PublicKey::try_from(
-        &key.public_key.to_encoded_point(false).as_bytes()[1..65],
-    )?);
+    let public_key = affine_point_to_public_key(key.public_key)?;
     println!("Public key: {:?}", public_key);
     Ok(())
+}
+
+pub fn affine_point_to_public_key(point: AffinePoint) -> anyhow::Result<near_crypto::PublicKey> {
+    Ok(near_crypto::PublicKey::SECP256K1(
+        near_crypto::Secp256K1PublicKey::try_from(&point.to_encoded_point(false).as_bytes()[1..65])
+            .context("Failed to convert affine point to public key")?,
+    ))
 }
 
 #[cfg(test)]
