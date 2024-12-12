@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::cli::Cli;
+use crate::config::load_config_file;
+use crate::tests::wait_till_udp_port_free;
 use crate::tracking::AutoAbortTask;
 use near_o11y::testonly::init_integration_logger;
 use rand::Rng;
@@ -47,6 +49,10 @@ async fn test_faulty_cluster() {
     };
     generate_configs.run().await.unwrap();
 
+    let configs = (0..NUM_PARTICIPANTS)
+        .map(|i| load_config_file(&temp_dir.path().join(format!("{}", i))).unwrap())
+        .collect::<Vec<_>>();
+
     let encryption_keys = (0..NUM_PARTICIPANTS)
         .map(|_| rand::random::<[u8; 16]>())
         .collect::<Vec<_>>();
@@ -71,10 +77,11 @@ async fn test_faulty_cluster() {
         .await
         .unwrap();
 
-    tracing::info!("Key generation complete. Starting normal runs...");
+    for participant in &configs[0].participants.as_ref().unwrap().participants {
+        wait_till_udp_port_free(participant.port).await;
+    }
 
-    // Give it some time for the ports to be released.
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    tracing::info!("Key generation complete. Starting normal runs...");
 
     // We'll bring up the nodes in normal mode, and issue signature
     // requests, and check that they can be completed.
@@ -138,6 +145,9 @@ async fn test_faulty_cluster() {
     let mut dropped_indices = HashSet::new();
     dropped_indices.insert(index);
 
+    wait_till_udp_port_free(configs[0].participants.as_ref().unwrap().participants[index].port)
+        .await;
+
     let mut signature_generated = false;
     'outer: for _ in 0..2 {
         for i in 0..NUM_PARTICIPANTS {
@@ -180,7 +190,10 @@ async fn test_faulty_cluster() {
     };
     drop(normal_runs.remove(&another_index).unwrap());
     dropped_indices.insert(another_index);
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    wait_till_udp_port_free(
+        configs[0].participants.as_ref().unwrap().participants[another_index].port,
+    )
+    .await;
 
     let index = loop {
         let i = rng.gen_range(0..NUM_PARTICIPANTS);

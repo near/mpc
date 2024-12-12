@@ -130,3 +130,18 @@ impl TestGenerators {
             .1
     }
 }
+
+pub async fn wait_till_udp_port_free(port: u16) {
+    let mut retries_left = 20;
+    while retries_left > 0 {
+        tracing::info!("Waiting for port {} to be free...", port);
+        let result = std::net::UdpSocket::bind(format!("0.0.0.0:{}", port));
+        if result.is_ok() {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        retries_left -= 1;
+    }
+    tracing::info!("Port {} is free", port);
+    assert!(retries_left > 0, "Failed to free port {}", port);
+}
