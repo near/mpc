@@ -1,4 +1,6 @@
 use crate::cli::Cli;
+use crate::config::load_config_file;
+use crate::tests::free_resources_after_shutdown;
 use crate::tracking::AutoAbortTask;
 use near_o11y::testonly::init_integration_logger;
 use serial_test::serial;
@@ -22,6 +24,10 @@ async fn test_basic_cluster() {
         disable_indexer: true,
     };
     generate_configs.run().await.unwrap();
+
+    let configs = (0..NUM_PARTICIPANTS)
+        .map(|i| load_config_file(&temp_dir.path().join(format!("{}", i))).unwrap())
+        .collect::<Vec<_>>();
 
     let encryption_keys = (0..NUM_PARTICIPANTS)
         .map(|_| rand::random::<[u8; 16]>())
@@ -47,10 +53,12 @@ async fn test_basic_cluster() {
         .await
         .unwrap();
 
-    tracing::info!("Key generation complete. Starting normal runs...");
+    // Release the ports.
+    for config in &configs {
+        free_resources_after_shutdown(config).await;
+    }
 
-    // Give it some time for the ports to be released.
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    tracing::info!("Key generation complete. Starting normal runs...");
 
     // We'll bring up the nodes in normal mode, and issue signature
     // requests, and check that they can be completed.
@@ -145,4 +153,7 @@ async fn test_basic_cluster() {
     }
 
     drop(normal_runs);
+    for config in &configs {
+        free_resources_after_shutdown(config).await;
+    }
 }

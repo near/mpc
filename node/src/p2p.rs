@@ -128,6 +128,7 @@ impl PersistentConnection {
 
     pub fn new(
         endpoint: Endpoint,
+        my_id: ParticipantId,
         target_address: String,
         target_participant_id: ParticipantId,
         participant_identities: Arc<ParticipantIdentities>,
@@ -163,12 +164,16 @@ impl PersistentConnection {
                     )
                     .await
                     {
-                        Ok(new_conn) => new_conn,
+                        Ok(new_conn) => {
+                            tracing::info!("Connected to {}, me {}", target_participant_id, my_id);
+                            new_conn
+                        }
                         Err(e) => {
                             tracing::info!(
-                                "Could not connect to {}, retrying: {}",
+                                "Could not connect to {}, retrying: {}, me {}",
                                 target_participant_id,
-                                e
+                                e,
+                                my_id
                             );
                             // Don't immediately retry, to avoid spamming the network with
                             // connection attempts.
@@ -365,6 +370,7 @@ pub async fn new_quic_mesh_network(
             participant.id,
             Arc::new(PersistentConnection::new(
                 client.clone(),
+                config.my_participant_id,
                 format!("{}:{}", participant.address, participant.port),
                 participant.id,
                 participant_identities.clone(),
@@ -515,6 +521,7 @@ impl MeshNetworkTransportSender for QuicMeshSender {
         let mut join_set = JoinSet::new();
         for (participant_id, conn) in &self.connections {
             let participant_id = *participant_id;
+            let my_id = self.my_id;
             let conn = conn.clone();
             join_set.spawn(async move {
                 let mut receiver = conn.current.clone();
@@ -523,10 +530,10 @@ impl MeshNetworkTransportSender for QuicMeshSender {
                     .clone()
                     .is_none_or(|weak| weak.upgrade().is_none())
                 {
-                    tracing::info!("Waiting for connection to {}", participant_id);
+                    tracing::info!("Waiting for connection to {}, me {}", participant_id, my_id);
                     receiver.changed().await?;
                 }
-                tracing::info!("Connected to {}", participant_id);
+                tracing::info!("Connected to {}, me {}", participant_id, my_id);
                 anyhow::Ok(())
             });
         }
