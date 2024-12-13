@@ -245,7 +245,7 @@ impl NetworkTaskChannel {
     /// i.e. can only be decrypted by the recipient.
     pub fn sender(&self) -> SendFnForTaskChannel {
         let transport_sender = self.sender.clone();
-        let task_id = self.task_id.clone();
+        let task_id = self.task_id;
         Arc::new(
             move |recipient_id, message, participants: Vec<ParticipantId>| {
                 let transport_sender = transport_sender.clone();
