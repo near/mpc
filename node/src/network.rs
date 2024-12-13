@@ -3,9 +3,10 @@ use crate::tracking::{self, AutoAbortTask};
 use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::option::Option;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 /// Abstraction of the networking layer, from the view of one client, the sender side.
@@ -111,33 +112,12 @@ impl MeshNetworkClient {
                     senders_for_tasks.lock().unwrap().remove(&task_id);
                 };
 
-                let transport_sender = self.transport_sender.clone();
-                let send_fn: SendFnForTaskChannel = Arc::new(
-                    move |recipient_id, message, participants: Vec<ParticipantId>| {
-                        let transport_sender = transport_sender.clone();
-                        async move {
-                            transport_sender
-                                .send(
-                                    recipient_id,
-                                    MpcMessage {
-                                        task_id,
-                                        data: message,
-                                        participants,
-                                    },
-                                )
-                                .await?;
-                            Ok(())
-                        }
-                        .boxed()
-                    },
-                );
-
                 SenderOrNewChannel::NewChannel {
                     sender,
                     channel: NetworkTaskChannel {
                         task_id,
                         my_participant_id: self.my_participant_id(),
-                        sender: send_fn,
+                        sender: self.transport_sender.clone(),
                         receiver,
                         drop: Some(Box::new(drop_fn)),
                         participants,
@@ -220,7 +200,7 @@ pub struct NetworkTaskChannel {
     pub task_id: MpcTaskId,
     my_participant_id: ParticipantId, // for debugging
     pub participants: Vec<ParticipantId>,
-    sender: SendFnForTaskChannel,
+    sender: Arc<dyn MeshNetworkTransportSender>,
     receiver: tokio::sync::mpsc::Receiver<MpcPeerMessage>,
     drop: Option<Box<dyn FnOnce() + Send + Sync>>,
 }
@@ -264,7 +244,27 @@ impl NetworkTaskChannel {
     /// The implementation of this function will guarantee that all messages sent are encrypted,
     /// i.e. can only be decrypted by the recipient.
     pub fn sender(&self) -> SendFnForTaskChannel {
-        self.sender.clone()
+        let transport_sender = self.sender.clone();
+        let task_id = self.task_id.clone();
+        Arc::new(
+            move |recipient_id, message, participants: Vec<ParticipantId>| {
+                let transport_sender = transport_sender.clone();
+                async move {
+                    transport_sender
+                        .send(
+                            recipient_id,
+                            MpcMessage {
+                                task_id,
+                                data: message,
+                                participants,
+                            },
+                        )
+                        .await?;
+                    Ok(())
+                }
+                .boxed()
+            },
+        )
     }
 
     /// Receives a message from another participant in the MPC task.
@@ -277,19 +277,41 @@ impl NetworkTaskChannel {
     ///
     /// This future may never resolve if the MPC computation fails to progress (i.e. all clients
     /// decide they need to receive a message before sending one). It is up to the caller to
-    /// implement a timeout mechanism.
+    /// implement a timeout mechanism. However, if we notice that not all participants of the
+    /// computation are online anymore, this method will return an error soon.
     pub async fn receive(&mut self) -> anyhow::Result<MpcPeerMessage> {
-        let result = self
-            .receiver
-            .recv()
-            .await
-            .ok_or_else(|| anyhow::anyhow!("Channel closed"));
-        tracing::debug!(
-            target: "network",
-            "[{}] [Task {:?}] Received message: {:?}",
-            self.my_participant_id, self.task_id, result
-        );
-        result
+        loop {
+            let timer = tokio::time::sleep(Duration::from_secs(1));
+            tokio::select! {
+                _ = timer => {
+                    if !self.all_participants_still_alive() {
+                        anyhow::bail!("Computation cannot succeed as not all participants are alive anymore");
+                    }
+                }
+                result = self.receiver.recv() => {
+                    let Some(result) = result else {
+                        anyhow::bail!("Channel closed");
+                    };
+                    tracing::debug!(
+                        target: "network",
+                        "[{}] [Task {:?}] Received message: {:?}",
+                        self.my_participant_id, self.task_id, result
+                    );
+                    return Ok(result);
+                }
+            }
+        }
+    }
+
+    fn all_participants_still_alive(&self) -> bool {
+        let still_alive = self
+            .sender
+            .all_alive_participant_ids()
+            .into_iter()
+            .collect::<HashSet<_>>();
+        self.participants
+            .iter()
+            .all(|participant_id| still_alive.contains(participant_id))
     }
 }
 

@@ -137,7 +137,7 @@ pub async fn wait_till_udp_port_free(port: u16) {
     let mut retries_left = 20;
     while retries_left > 0 {
         tracing::info!("Waiting for UDP port {} to be free...", port);
-        let result = std::net::UdpSocket::bind(format!("0.0.0.0:{}", port));
+        let result = std::net::UdpSocket::bind(format!("127.0.0.1:{}", port));
         if result.is_ok() {
             break;
         }
@@ -152,7 +152,7 @@ pub async fn wait_till_tcp_port_free(port: u16) {
     let mut retries_left = 20;
     while retries_left > 0 {
         tracing::info!("Waiting for TCP port {} to be free...", port);
-        let result = std::net::TcpListener::bind(format!("0.0.0.0:{}", port));
+        let result = std::net::TcpListener::bind(format!("127.0.0.1:{}", port));
         if result.is_ok() {
             break;
         }

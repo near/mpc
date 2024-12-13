@@ -199,7 +199,7 @@ async fn test_faulty_cluster() {
         }
     };
 
-    match send_request("debug/sign?repeat=1&seed=23", index).await {
+    match send_request("debug/sign?repeat=1&seed=23&timeout=30", index).await {
         Ok(response) => {
             let response_success = response.success;
             let response_debug = response.debug;

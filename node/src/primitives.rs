@@ -7,11 +7,10 @@ use cait_sith::PresignOutput;
 use k256::Secp256k1;
 use rand::prelude::IteratorRandom;
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 #[derive(
     Clone,
-    Debug,
     Copy,
     PartialEq,
     Eq,
@@ -48,6 +47,12 @@ impl ParticipantId {
 }
 
 impl Display for ParticipantId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Debug for ParticipantId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
