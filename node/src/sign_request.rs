@@ -80,17 +80,21 @@ fn compute_hash(participant_id: &ParticipantId, signature_request_id: &[u8; 32])
 }
 
 /// Computes primary and second leaders for a given request.
-pub fn compute_leaders_for_signing(config: &MpcConfig, request: &SignatureRequest) -> (ParticipantId, ParticipantId) {
-    let mut leader = &config.my_participant_id;
-    let mut next_leader = &config.my_participant_id;
-    for participant in &config.participants.participants {
-        let cur_hash = compute_hash(&participant.id, &request.id);
-        if cur_hash < compute_hash(leader, &request.id) {
-            next_leader = leader;
-            leader = &participant.id;
-        } else if cur_hash < compute_hash(next_leader, &request.id) {
-            next_leader = &participant.id;
-        }
+pub fn compute_leaders_for_signing(
+    config: &MpcConfig,
+    request: &SignatureRequest,
+) -> (ParticipantId, ParticipantId) {
+    let mut all_hashes = config
+        .participants
+        .participants
+        .iter()
+        .map(|p| (compute_hash(&p.id, &request.id), p.id))
+        .collect::<Vec<_>>();
+    all_hashes.sort();
+    assert!(!all_hashes.is_empty());
+    if all_hashes.len() == 1 {
+        return (all_hashes[0].1, all_hashes[0].1);
     }
-    (leader.clone(), next_leader.clone())
+
+    (all_hashes[0].1, all_hashes[1].1)
 }
