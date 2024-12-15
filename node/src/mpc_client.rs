@@ -9,7 +9,7 @@ use crate::sign::{
     pre_sign_unowned, run_background_presignature_generation, sign, PresignatureStorage,
 };
 use crate::sign_request::{
-    local_node_is_leader_for_signing, SignRequestStorage, SignatureId, SignatureRequest,
+    compute_leaders_for_signing, SignRequestStorage, SignatureId, SignatureRequest,
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::triple::{
@@ -186,6 +186,7 @@ impl MpcClient {
         let monitor_chain = {
             let this = Arc::new(self.clone());
             let config = self.config.clone();
+            let network_client = self.client.clone();
             tracking::spawn("monitor chain", async move {
                 let mut tasks = AutoAbortTaskCollection::new();
                 loop {
@@ -201,6 +202,8 @@ impl MpcClient {
                         entropy,
                         timestamp_nanosec,
                     } = sign_request_receiver.recv().await.unwrap();
+
+                    let alive_participants = network_client.all_alive_participant_ids();
 
                     tasks.spawn_checked(
                         &format!("indexed sign request {:?}", request_id),
@@ -218,7 +221,14 @@ impl MpcClient {
                                 return anyhow::Ok(());
                             }
 
-                            if local_node_is_leader_for_signing(&config.mpc, &request) {
+                            let (primary_leader, secondary_leader) =
+                                compute_leaders_for_signing(&config.mpc, &request);
+                            // start the signing process if we are the primary leader or if we are the secondary leader
+                            // and the primary leader is not alive
+                            if config.mpc.my_participant_id == primary_leader
+                                || (config.mpc.my_participant_id == secondary_leader
+                                    && !alive_participants.contains(&primary_leader))
+                            {
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
                                     .with_label_values(&["total"])
                                     .inc();
