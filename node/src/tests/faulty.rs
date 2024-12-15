@@ -35,8 +35,8 @@ async fn send_request(request_url: &str, index: usize) -> Result<DebugResponse, 
 #[serial]
 async fn test_faulty_cluster() {
     init_integration_logger();
-    const NUM_PARTICIPANTS: usize = 4;
-    const THRESHOLD: usize = 3;
+    const NUM_PARTICIPANTS: usize = 6;
+    const THRESHOLD: usize = 5;
     let temp_dir = tempfile::tempdir().unwrap();
     let generate_configs = Cli::GenerateTestConfigs {
         output_dir: temp_dir.path().to_str().unwrap().to_string(),

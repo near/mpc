@@ -342,13 +342,13 @@ impl Cli {
                             })
                         },
                         triple: TripleConfig {
-                            concurrency: 2,
+                            concurrency: 8,
                             desired_triples_to_buffer: 65536,
                             timeout_sec: 60,
                             parallel_triple_generation_stagger_time_sec: 1,
                         },
                         presignature: PresignatureConfig {
-                            concurrency: 2,
+                            concurrency: 8,
                             desired_presignatures_to_buffer: 8192,
                             timeout_sec: 60,
                         },
