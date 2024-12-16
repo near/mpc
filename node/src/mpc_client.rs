@@ -62,12 +62,12 @@ impl MpcClient {
         sign_response_sender: mpsc::Sender<ChainRespondArgs>,
     ) -> anyhow::Result<()> {
         let monitor_passive_channels = {
-            let root_keyshare = self.root_keyshare.clone();
             let client = self.client.clone();
             let config = self.config.clone();
             let triple_store = self.triple_store.clone();
             let presignature_store = self.presignature_store.clone();
             let sign_request_store = self.sign_request_store.clone();
+            let root_keyshare = self.root_keyshare.clone();
             tracking::spawn("monitor passive channels", async move {
                 let mut tasks = AutoAbortTaskCollection::new();
                 loop {
