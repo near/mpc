@@ -116,8 +116,7 @@ impl ChainRespondArgs {
         let recovery_id = Self::brute_force_recovery_id(public_key, &response, &request.msg_hash)?;
         Ok(ChainRespondArgs {
             request: ChainSignatureRequest::new(request.msg_hash, request.tweak),
-            response: ChainSignatureResponse::new(response.big_r, response.s, recovery_id)
-                .expect("Expected Chain Signature Response instead of error, panicking!"),
+            response: ChainSignatureResponse::new(response.big_r, response.s, recovery_id)?,
         })
     }
 
