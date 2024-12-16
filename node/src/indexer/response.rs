@@ -4,12 +4,7 @@ use anyhow::Context;
 use cait_sith::FullSignature;
 use k256::{
     ecdsa::{RecoveryId, VerifyingKey},
-    elliptic_curve::{
-        bigint::{ArrayEncoding, U256},
-        ops::Reduce,
-        point::AffineCoordinates,
-        Curve, CurveArithmetic, PrimeField,
-    },
+    elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
 use near_crypto::KeyFile;
@@ -112,7 +107,7 @@ impl ChainRespondArgs {
         response: &FullSignature<Secp256k1>,
         public_key: &AffinePoint,
     ) -> anyhow::Result<Self> {
-        let recovery_id = Self::brute_force_recovery_id(public_key, &response, &request.msg_hash)?;
+        let recovery_id = Self::brute_force_recovery_id(public_key, response, &request.msg_hash)?;
         Ok(ChainRespondArgs {
             request: ChainSignatureRequest::new(request.msg_hash, request.tweak),
             response: ChainSignatureResponse::new(response.big_r, response.s, recovery_id)?,
@@ -129,7 +124,7 @@ impl ChainRespondArgs {
             <<Secp256k1 as CurveArithmetic>::Scalar as Reduce<<Secp256k1 as Curve>::Uint>>
             ::reduce_bytes(&signature.big_r.x()), signature.s)
             .context("Cannot create signature from cait_sith signature")?;
-        let expected_pk = match VerifyingKey::from_affine(expected_pk.clone()) {
+        let expected_pk = match VerifyingKey::from_affine(*expected_pk) {
             Ok(pk) => pk,
             _ => anyhow::bail!("The affine point cannot be transformed into a verifying key"),
         };
@@ -149,7 +144,13 @@ impl ChainRespondArgs {
     /// The lower bit determines the sign bit of the point R
     /// The higher bit determines whether the x coordinate of R exceeded
     /// the curve order when computing R_x mod p
+    /// TODO(#98): This function doesn't work. Why?
+    #[cfg(test)]
     pub(crate) fn ecdsa_recovery_from_big_r(big_r: &AffinePoint, s: &Scalar) -> u8 {
+        use k256::elliptic_curve::bigint::ArrayEncoding;
+        use k256::elliptic_curve::PrimeField;
+        use k256::U256;
+
         // compare Rx representation before and after reducing it modulo the group order
         let big_r_x = big_r.x();
         let reduced_big_r_x = <Scalar as Reduce<
@@ -165,7 +166,7 @@ impl ChainRespondArgs {
         if s_int > order_divided_by_two {
             println!("Flipped");
             // flip the bit
-            y_bit = y_bit ^ 1;
+            y_bit ^= 1;
         }
         // if Rx is larger than the group order then set recovery_id higher bit to 1
         // if Ry is odd then set recovery_id lower bit to 1
@@ -318,7 +319,7 @@ mod recovery_id_tests {
 
                     let full_sig = FullSignature {
                         big_r: hypothetical_big_r,
-                        s: s.as_ref().clone(),
+                        s: *s.as_ref(),
                     };
 
                     let tested_recid = ChainRespondArgs::brute_force_recovery_id(

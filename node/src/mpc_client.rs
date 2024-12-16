@@ -233,11 +233,7 @@ impl MpcClient {
                                     .inc();
 
                                 let response =
-                                    ChainRespondArgs::new(
-                                    &request,
-                                    &signature,
-                                    &public_key,
-                                )?;
+                                    ChainRespondArgs::new(&request, &signature, &public_key)?;
                                 let _ = sign_response_sender.send(response).await;
                             }
 
