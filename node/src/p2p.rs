@@ -1,10 +1,12 @@
-use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
+use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
+use near_crypto::ED25519SecretKey;
+use near_sdk::AccountId;
 use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
@@ -36,7 +38,7 @@ pub struct QuicMeshReceiver {
 /// Maps public keys to participant IDs. Used to identify incoming connections.
 #[derive(Default)]
 struct ParticipantIdentities {
-    key_to_participant_id: HashMap<Vec<u8>, ParticipantId>,
+    key_to_participant_id: HashMap<near_crypto::PublicKey, ParticipantId>,
 }
 
 /// A always-allowing client certificate verifier for the QUIC TLS layer.
@@ -89,11 +91,12 @@ impl ClientCertVerifier for DummyClientCertVerifier {
 /// connection is broken.
 struct PersistentConnection {
     target_participant_id: ParticipantId,
-    // Current connection. This is an Option because it can be None if the
-    // connection was never established. It is a Weak because the connection
-    // is owned by the loop-to-connect task (see the `new` method) and when
-    // the connection is closed it is dropped.
-    current: tokio::sync::watch::Receiver<Option<Weak<quinn::Connection>>>,
+    // Current connection and version. The connection is an Option because it
+    // can be None if the connection was never established. It is a Weak
+    // because the connection is owned by the loop-to-connect task (see the
+    // `new` method) and when the connection is closed it is dropped. The
+    // version is incremented every time the connection is re-established.
+    current: tokio::sync::watch::Receiver<Option<(usize, Weak<quinn::Connection>)>>,
     // Atomic to quickly read whether a connection is alive. It's faster than
     // checking the current connection.
     is_alive: Arc<AtomicBool>,
@@ -111,21 +114,31 @@ impl PersistentConnection {
     /// drops while the stream is used; but if the connection is already known
     /// to have failed before the stream is opened, this will re-establish the
     /// connection first.
-    async fn new_stream(&self) -> anyhow::Result<quinn::SendStream> {
-        let conn = self
-            .current
-            .borrow()
-            .clone()
-            .and_then(|weak| weak.upgrade())
-            .ok_or_else(|| {
-                anyhow::anyhow!("Connection to {} is broken", self.target_participant_id)
-            })?;
+    async fn new_stream(&self, expected_version: usize) -> anyhow::Result<quinn::SendStream> {
+        let Some(conn) = self.current.borrow().clone() else {
+            anyhow::bail!(
+                "Connection to {} was never established",
+                self.target_participant_id
+            );
+        };
+
+        let (version, conn) = conn;
+        if version != expected_version {
+            anyhow::bail!(
+                "Connection to {} is not the original connection expected",
+                self.target_participant_id
+            );
+        }
+        let Some(conn) = conn.upgrade() else {
+            anyhow::bail!("Connection to {} was dropped", self.target_participant_id);
+        };
         let stream = conn.open_uni().await?;
         Ok(stream)
     }
 
     pub fn new(
         endpoint: Endpoint,
+        my_id: ParticipantId,
         target_address: String,
         target_participant_id: ParticipantId,
         participant_identities: Arc<ParticipantIdentities>,
@@ -152,6 +165,7 @@ impl PersistentConnection {
                     Ok(conn)
                 }
 
+                let mut connection_version = 1;
                 loop {
                     let new_conn = match connect(
                         &endpoint,
@@ -161,12 +175,16 @@ impl PersistentConnection {
                     )
                     .await
                     {
-                        Ok(new_conn) => new_conn,
+                        Ok(new_conn) => {
+                            tracing::info!("Connected to {}, me {}", target_participant_id, my_id);
+                            new_conn
+                        }
                         Err(e) => {
                             tracing::info!(
-                                "Could not connect to {}, retrying: {}",
+                                "Could not connect to {}, retrying: {}, me {}",
                                 target_participant_id,
-                                e
+                                e,
+                                my_id
                             );
                             // Don't immediately retry, to avoid spamming the network with
                             // connection attempts.
@@ -176,11 +194,12 @@ impl PersistentConnection {
                     };
                     let new_conn = Arc::new(new_conn);
                     if current_sender
-                        .send(Some(Arc::downgrade(&new_conn)))
+                        .send(Some((connection_version, Arc::downgrade(&new_conn))))
                         .is_err()
                     {
                         break;
                     }
+                    connection_version += 1;
                     is_alive_clone.store(true, Ordering::Relaxed);
                     new_conn.closed().await;
                     is_alive_clone.store(false, Ordering::Relaxed);
@@ -250,14 +269,16 @@ fn keypair_to_raw_ed25519_secret_key(
 }
 
 /// Configures the quinn library to properly perform TLS handshakes.
-fn configure_quinn(config: &MpcConfig) -> anyhow::Result<(ServerConfig, ClientConfig)> {
+fn configure_quinn(
+    p2p_private_key: &near_crypto::ED25519SecretKey,
+) -> anyhow::Result<(ServerConfig, ClientConfig)> {
     // The issuer is a dummy certificate authority that every node trusts.
     let issuer_signer = rcgen::KeyPair::from_pem(DUMMY_ISSUER_PRIVATE_KEY)?;
     let issuer_cert =
         rcgen::CertificateParams::new(vec!["root".to_string()])?.self_signed(&issuer_signer)?;
 
     // This is the keypair that is secret to this node, used in P2P handshakes.
-    let p2p_key = raw_ed25519_secret_key_to_keypair(&config.secrets.p2p_private_key)?;
+    let p2p_key = raw_ed25519_secret_key_to_keypair(p2p_private_key)?;
     let p2p_key_der =
         rustls::pki_types::PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(p2p_key.serialize_der()));
 
@@ -318,11 +339,12 @@ fn initial_suite_from_provider(provider: &Arc<rustls::crypto::CryptoProvider>) -
 /// Creates a mesh network using QUIC for communication.
 pub async fn new_quic_mesh_network(
     config: &MpcConfig,
+    p2p_private_key: &near_crypto::ED25519SecretKey,
 ) -> Result<(
     impl MeshNetworkTransportSender,
     impl MeshNetworkTransportReceiver,
 )> {
-    let (server_config, client_config) = configure_quinn(config)?;
+    let (server_config, client_config) = configure_quinn(p2p_private_key)?;
 
     let my_port = config
         .participants
@@ -349,7 +371,7 @@ pub async fn new_quic_mesh_network(
         participant_ids.push(participant.id);
         participant_identities
             .key_to_participant_id
-            .insert(hex::decode(&participant.p2p_public_key)?, participant.id);
+            .insert(participant.p2p_public_key.clone(), participant.id);
     }
     let participant_identities = Arc::new(participant_identities);
     for participant in &config.participants.participants {
@@ -360,6 +382,7 @@ pub async fn new_quic_mesh_network(
             participant.id,
             Arc::new(PersistentConnection::new(
                 client.clone(),
+                config.my_participant_id,
                 format!("{}:{}", participant.address, participant.port),
                 participant.id,
                 participant_identities.clone(),
@@ -440,9 +463,14 @@ fn verify_peer_identity(
             public_key
         );
     };
+    let public_key = near_crypto::ED25519PublicKey(
+        public_key_data
+            .try_into()
+            .context("Connection with public key of unexpected length")?,
+    );
     let Some(peer_id) = participant_identities
         .key_to_participant_id
-        .get(public_key_data)
+        .get(&near_crypto::PublicKey::ED25519(public_key))
     else {
         anyhow::bail!("Connection with unknown public key");
     };
@@ -482,14 +510,26 @@ impl MeshNetworkTransportSender for QuicMeshSender {
         self.participants.clone()
     }
 
-    async fn send(&self, recipient_id: ParticipantId, message: MpcMessage) -> Result<()> {
+    fn connection_version(&self, participant_id: ParticipantId) -> usize {
+        self.connections
+            .get(&participant_id)
+            .map(|conn| conn.current.borrow().clone().map(|(v, _)| v).unwrap_or(0))
+            .unwrap_or(0)
+    }
+
+    async fn send(
+        &self,
+        recipient_id: ParticipantId,
+        message: MpcMessage,
+        connection_version: usize,
+    ) -> Result<()> {
         // For now, every message opens a new stream. This is totally fine
         // for performance, but it does mean messages may not arrive in order.
         let mut stream = self
             .connections
             .get(&recipient_id)
             .ok_or_else(|| anyhow!("Recipient not found"))?
-            .new_stream()
+            .new_stream(connection_version)
             .await?;
 
         let msg = borsh::to_vec(&message)?;
@@ -505,18 +545,19 @@ impl MeshNetworkTransportSender for QuicMeshSender {
         let mut join_set = JoinSet::new();
         for (participant_id, conn) in &self.connections {
             let participant_id = *participant_id;
+            let my_id = self.my_id;
             let conn = conn.clone();
             join_set.spawn(async move {
                 let mut receiver = conn.current.clone();
                 while receiver
                     .borrow()
                     .clone()
-                    .is_none_or(|weak| weak.upgrade().is_none())
+                    .is_none_or(|(_, weak)| weak.upgrade().is_none())
                 {
-                    tracing::info!("Waiting for connection to {}", participant_id);
+                    tracing::info!("Waiting for connection to {}, me {}", participant_id, my_id);
                     receiver.changed().await?;
                 }
-                tracing::info!("Connected to {}", participant_id);
+                tracing::info!("Connected to {}, me {}", participant_id, my_id);
                 anyhow::Ok(())
             });
         }
@@ -552,30 +593,32 @@ impl MeshNetworkTransportReceiver for QuicMeshReceiver {
 
 /// Generates an ED25519 keypair, returning the pem-encoded private key and the
 /// hex-encoded public key.
-pub fn generate_keypair() -> Result<(near_crypto::ED25519SecretKey, String)> {
+pub fn generate_keypair() -> Result<(near_crypto::ED25519SecretKey, near_crypto::ED25519PublicKey)>
+{
     let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
     Ok((
         keypair_to_raw_ed25519_secret_key(&key_pair)?,
-        hex::encode(key_pair.public_key_raw()),
+        near_crypto::ED25519PublicKey(key_pair.public_key_raw().try_into().unwrap()),
     ))
 }
 
 pub fn generate_test_p2p_configs(
-    parties: usize,
+    participant_accounts: &[AccountId],
     threshold: usize,
     // this is a hack to make sure that when tests run in parallel, they don't
     // collide on the same port.
     seed: u16,
-) -> anyhow::Result<Vec<MpcConfig>> {
+) -> anyhow::Result<Vec<(MpcConfig, ED25519SecretKey)>> {
     let mut participants = Vec::new();
     let mut keypairs = Vec::new();
-    for i in 0..parties {
+    for (i, participant_account) in participant_accounts.iter().enumerate() {
         let (p2p_private_key, p2p_public_key) = generate_keypair()?;
         participants.push(ParticipantInfo {
             id: ParticipantId::from_raw(rand::random()),
             address: "127.0.0.1".to_string(),
             port: 10000 + seed * 1000 + i as u16,
-            p2p_public_key: p2p_public_key.clone(),
+            p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
+            near_account_id: participant_account.clone(),
         });
         keypairs.push((p2p_private_key, p2p_public_key));
     }
@@ -587,14 +630,11 @@ pub fn generate_test_p2p_configs(
             participants: participants.clone(),
         };
 
-        let config = MpcConfig {
+        let mpc_config = MpcConfig {
             my_participant_id: participants.participants[i].id,
-            secrets: SecretsConfig {
-                p2p_private_key: keypair.0,
-            },
             participants,
         };
-        configs.push(config);
+        configs.push((mpc_config, keypair.0));
     }
 
     Ok(configs)
@@ -623,13 +663,24 @@ mod tests {
     #[serial]
     async fn test_basic_quic_mesh_network() {
         init_logging();
-        let configs = super::generate_test_p2p_configs(2, 2, 0).unwrap();
-        let participant0 = configs[0].my_participant_id;
-        let participant1 = configs[1].my_participant_id;
+        let configs = super::generate_test_p2p_configs(
+            &["test0".parse().unwrap(), "test1".parse().unwrap()],
+            2,
+            0,
+        )
+        .unwrap();
+        let participant0 = configs[0].0.my_participant_id;
+        let participant1 = configs[1].0.my_participant_id;
 
         start_root_task_with_periodic_dump(async move {
-            let (sender0, mut receiver0) = super::new_quic_mesh_network(&configs[0]).await.unwrap();
-            let (sender1, mut receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
+            let (sender0, mut receiver0) =
+                super::new_quic_mesh_network(&configs[0].0, &configs[0].1)
+                    .await
+                    .unwrap();
+            let (sender1, mut receiver1) =
+                super::new_quic_mesh_network(&configs[1].0, &configs[1].1)
+                    .await
+                    .unwrap();
 
             sender0.wait_for_ready(2).await.unwrap();
             sender1.wait_for_ready(2).await.unwrap();
@@ -643,6 +694,7 @@ mod tests {
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
                             participants: vec![],
                         },
+                        1,
                     )
                     .await
                     .unwrap();
@@ -658,6 +710,7 @@ mod tests {
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
                             participants: vec![],
                         },
+                        1,
                     )
                     .await
                     .unwrap();
@@ -674,15 +727,33 @@ mod tests {
     #[serial]
     async fn test_wait_for_ready() {
         init_logging();
-        let mut configs = super::generate_test_p2p_configs(4, 4, 1).unwrap();
+        let mut configs = super::generate_test_p2p_configs(
+            &[
+                "test0".parse().unwrap(),
+                "test1".parse().unwrap(),
+                "test2".parse().unwrap(),
+                "test3".parse().unwrap(),
+            ],
+            4,
+            1,
+        )
+        .unwrap();
         // Make node 3 use the wrong address for the 0th node. All connections should work
         // except from 3 to 0.
-        configs[3].participants.participants[0].address = "169.254.1.1".to_owned();
+        configs[3].0.participants.participants[0].address = "169.254.1.1".to_owned();
         start_root_task_with_periodic_dump(async move {
-            let (sender0, _receiver0) = super::new_quic_mesh_network(&configs[0]).await.unwrap();
-            let (sender1, receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
-            let (sender2, _receiver2) = super::new_quic_mesh_network(&configs[2]).await.unwrap();
-            let (sender3, _receiver3) = super::new_quic_mesh_network(&configs[3]).await.unwrap();
+            let (sender0, _receiver0) = super::new_quic_mesh_network(&configs[0].0, &configs[0].1)
+                .await
+                .unwrap();
+            let (sender1, receiver1) = super::new_quic_mesh_network(&configs[1].0, &configs[1].1)
+                .await
+                .unwrap();
+            let (sender2, _receiver2) = super::new_quic_mesh_network(&configs[2].0, &configs[2].1)
+                .await
+                .unwrap();
+            let (sender3, _receiver3) = super::new_quic_mesh_network(&configs[3].0, &configs[3].1)
+                .await
+                .unwrap();
 
             sender0.wait_for_ready(4).await.unwrap();
             sender1.wait_for_ready(4).await.unwrap();
@@ -697,6 +768,7 @@ mod tests {
             sender3.wait_for_ready(3).await.unwrap();
 
             let ids: Vec<_> = configs[0]
+                .0
                 .participants
                 .participants
                 .iter()
@@ -727,7 +799,9 @@ mod tests {
             );
 
             // Reconnect node 1. Other nodes should re-establish the connections.
-            let (sender1, _receiver1) = super::new_quic_mesh_network(&configs[1]).await.unwrap();
+            let (sender1, _receiver1) = super::new_quic_mesh_network(&configs[1].0, &configs[1].1)
+                .await
+                .unwrap();
             sender0.wait_for_ready(4).await.unwrap();
             sender1.wait_for_ready(4).await.unwrap();
             sender2.wait_for_ready(4).await.unwrap();

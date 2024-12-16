@@ -10,7 +10,7 @@ use tokio::sync::broadcast;
 
 pub type SignatureId = [u8; 32];
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SignatureRequest {
     pub id: SignatureId,
     pub msg_hash: Scalar,
@@ -79,14 +79,22 @@ fn compute_hash(participant_id: &ParticipantId, signature_request_id: &[u8; 32])
     h.finalize().into()
 }
 
-// A simple strategy for picking exactly one leader per request.
-// Note that if the chosen leader is offline the request will not be served.
-pub fn local_node_is_leader_for_signing(config: &MpcConfig, request: &SignatureRequest) -> bool {
-    let my_hash = compute_hash(&config.my_participant_id, &request.id);
-    for participant in &config.participants.participants {
-        if compute_hash(&participant.id, &request.id) < my_hash {
-            return false;
-        }
+/// Computes primary and second leaders for a given request.
+pub fn compute_leaders_for_signing(
+    config: &MpcConfig,
+    request: &SignatureRequest,
+) -> (ParticipantId, ParticipantId) {
+    let mut all_hashes = config
+        .participants
+        .participants
+        .iter()
+        .map(|p| (compute_hash(&p.id, &request.id), p.id))
+        .collect::<Vec<_>>();
+    all_hashes.sort();
+    assert!(!all_hashes.is_empty());
+    if all_hashes.len() == 1 {
+        return (all_hashes[0].1, all_hashes[0].1);
     }
-    true
+
+    (all_hashes[0].1, all_hashes[1].1)
 }

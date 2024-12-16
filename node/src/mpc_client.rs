@@ -9,7 +9,7 @@ use crate::sign::{
     pre_sign_unowned, run_background_presignature_generation, sign, PresignatureStorage,
 };
 use crate::sign_request::{
-    local_node_is_leader_for_signing, SignRequestStorage, SignatureId, SignatureRequest,
+    compute_leaders_for_signing, SignRequestStorage, SignatureId, SignatureRequest,
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::triple::{
@@ -17,7 +17,8 @@ use crate::triple::{
     SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
 };
 
-use cait_sith::{FullSignature, KeygenOutput};
+use crate::key_generation::RootKeyshareData;
+use cait_sith::FullSignature;
 use k256::{AffinePoint, Secp256k1};
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,7 +32,7 @@ pub struct MpcClient {
     triple_store: Arc<TripleStorage>,
     presignature_store: Arc<PresignatureStorage>,
     sign_request_store: Arc<SignRequestStorage>,
-    root_keyshare: KeygenOutput<Secp256k1>,
+    root_keyshare: RootKeyshareData,
 }
 
 impl MpcClient {
@@ -41,7 +42,7 @@ impl MpcClient {
         triple_store: Arc<TripleStorage>,
         presignature_store: Arc<PresignatureStorage>,
         sign_request_store: Arc<SignRequestStorage>,
-        root_keyshare: KeygenOutput<Secp256k1>,
+        root_keyshare: RootKeyshareData,
     ) -> Self {
         Self {
             config,
@@ -130,7 +131,7 @@ impl MpcClient {
                                             channel,
                                             client.my_participant_id(),
                                             config.mpc.participants.threshold as usize,
-                                            root_keyshare,
+                                            root_keyshare.keygen_output(),
                                             triple_store.clone(),
                                             paired_triple_id,
                                         ),
@@ -162,7 +163,7 @@ impl MpcClient {
                                         sign(
                                             channel,
                                             client.my_participant_id(),
-                                            root_keyshare,
+                                            root_keyshare.keygen_output(),
                                             presignature_store
                                                 .take_unowned(presignature_id)
                                                 .await?
@@ -185,6 +186,7 @@ impl MpcClient {
         let monitor_chain = {
             let this = Arc::new(self.clone());
             let config = self.config.clone();
+            let network_client = self.client.clone();
             tracking::spawn("monitor chain", async move {
                 let mut tasks = AutoAbortTaskCollection::new();
                 loop {
@@ -200,6 +202,8 @@ impl MpcClient {
                         entropy,
                         timestamp_nanosec,
                     } = sign_request_receiver.recv().await.unwrap();
+
+                    let alive_participants = network_client.all_alive_participant_ids();
 
                     tasks.spawn_checked(
                         &format!("indexed sign request {:?}", request_id),
@@ -217,7 +221,14 @@ impl MpcClient {
                                 return anyhow::Ok(());
                             }
 
-                            if local_node_is_leader_for_signing(&config.mpc, &request) {
+                            let (primary_leader, secondary_leader) =
+                                compute_leaders_for_signing(&config.mpc, &request);
+                            // start the signing process if we are the primary leader or if we are the secondary leader
+                            // and the primary leader is not alive
+                            if config.mpc.my_participant_id == primary_leader
+                                || (config.mpc.my_participant_id == secondary_leader
+                                    && !alive_participants.contains(&primary_leader))
+                            {
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
                                     .with_label_values(&["total"])
                                     .inc();
@@ -262,7 +273,7 @@ impl MpcClient {
                 self.config.presignature.clone().into(),
                 self.triple_store.clone(),
                 self.presignature_store.clone(),
-                self.root_keyshare.clone(),
+                self.root_keyshare.keygen_output(),
             ),
         );
 
@@ -297,7 +308,7 @@ impl MpcClient {
                 presignature.participants,
             )?,
             self.client.my_participant_id(),
-            self.root_keyshare.clone(),
+            self.root_keyshare.keygen_output(),
             presignature.presignature,
             sign_request.msg_hash,
             sign_request.tweak,

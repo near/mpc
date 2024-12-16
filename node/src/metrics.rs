@@ -77,7 +77,19 @@ lazy_static! {
     pub static ref MPC_NUM_SIGN_RESPONSES_SENT: prometheus::IntCounter =
         prometheus::register_int_counter!(
             "mpc_num_signature_responses_sent",
-            "Number of signature responses sent by this node"
+            "Number of signature responses sent by this node. Note that transactions can still be
+             rejected later when they arrive at the chunk producer, and we wouldn't know of that."
+        )
+        .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_NUM_SIGN_RESPONSES_FAILED_TO_SEND_IMMEDIATELY: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_num_signature_responses_failed_to_send_immediately",
+            "Number of signature responses sent by this node, where the sending failed immediately
+             at the local node. Note that transactions can still be rejected later when they arrive
+             at the chunk producer, and we wouldn't know of that."
         )
         .unwrap();
 }
