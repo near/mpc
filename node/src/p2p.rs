@@ -98,7 +98,7 @@ struct PersistentConnection {
     // because the connection is owned by the loop-to-connect task (see the
     // `new` method) and when the connection is closed it is dropped. The
     // version is incremented every time the connection is re-established.
-    current: tokio::sync::watch::Receiver<Option<(usize, Weak<TcpConnection>)>>,
+    current: tokio::sync::watch::Receiver<Option<(usize, Weak<TlsConnection>)>>,
     // Atomic to quickly read whether a connection is alive. It's faster than
     // checking the current connection.
     is_alive: Arc<AtomicBool>,
@@ -108,13 +108,26 @@ struct PersistentConnection {
     _task: AutoAbortTask<()>,
 }
 
-struct TcpConnection {
-    sender: UnboundedSender<TcpPacket>,
+/// State for a single TLS/TCP connection to one participant. We only ever send
+/// messages through this connection, so there is nothing to handle receiving.
+/// Dropping this struct will automatically close the connection.
+struct TlsConnection {
+    /// Used to send messages via the connection.
+    sender: UnboundedSender<Packet>,
+    /// Task that reads messages from the channel (other side of `sender`) and
+    /// sends it over the TLS connection. This task owns the connection, so
+    /// dropping it closes the connection.
     _sender_task: AutoAbortTask<()>,
+    /// Task that periodically sends a Ping message to the other side. It does
+    /// not expect a Pong, it simply keeps the connection alive (so we can
+    /// quickly detect if the connection is broken).
     _keepalive_task: AutoAbortTask<()>,
+    /// This is cancelled when the connection is closed. Used to wait for the
+    /// connection to close.
     closed: CancellationToken,
 }
 
+/// Simple structure to cancel the CancellationToken when dropped.
 struct DropToCancel(CancellationToken);
 
 impl Drop for DropToCancel {
@@ -123,18 +136,21 @@ impl Drop for DropToCancel {
     }
 }
 
-enum TcpPacket {
+/// Either a Ping or a data packet.
+enum Packet {
     Ping,
     Data(Vec<u8>),
 }
 
-impl TcpConnection {
+impl TlsConnection {
+    /// Makes a TLS/TCP connection to the given address, authenticating the
+    /// other side as the given participant.
     async fn new(
         client_config: Arc<ClientConfig>,
         target_address: &str,
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
-    ) -> anyhow::Result<TcpConnection> {
+    ) -> anyhow::Result<TlsConnection> {
         let conn = TcpStream::connect(target_address)
             .await
             .context("TCP connect")?;
@@ -153,7 +169,7 @@ impl TcpConnection {
             );
         }
 
-        let (sender, mut receiver) = mpsc::unbounded_channel::<TcpPacket>();
+        let (sender, mut receiver) = mpsc::unbounded_channel::<Packet>();
         let closed = CancellationToken::new();
         let closed_clone = closed.clone();
         let sender_task = tracking::spawn_checked(
@@ -168,11 +184,11 @@ impl TcpConnection {
                                 break;
                             };
                             match data {
-                                TcpPacket::Ping => {
+                                Packet::Ping => {
                                     tls_conn.write_u8(0).await?;
                                     sent_bytes += 1;
                                 }
-                                TcpPacket::Data(vec) => {
+                                Packet::Data(vec) => {
                                     tls_conn.write_u8(1).await?;
                                     tls_conn.write_u32(vec.len() as u32).await?;
                                     tls_conn.write_all(&vec).await?;
@@ -200,7 +216,7 @@ impl TcpConnection {
             async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    if sender_clone.send(TcpPacket::Ping).is_err() {
+                    if sender_clone.send(Packet::Ping).is_err() {
                         // The receiver side will be dropped when the sender task is
                         // dropped (i.e. connection is closed).
                         break;
@@ -208,7 +224,7 @@ impl TcpConnection {
                 }
             },
         );
-        Ok(TcpConnection {
+        Ok(TlsConnection {
             sender,
             _sender_task: sender_task,
             _keepalive_task: keepalive_task,
@@ -221,7 +237,7 @@ impl TcpConnection {
     }
 
     fn send(&self, data: Vec<u8>) -> anyhow::Result<()> {
-        self.sender.send(TcpPacket::Data(data))?;
+        self.sender.send(Packet::Data(data))?;
         Ok(())
     }
 }
@@ -268,7 +284,7 @@ impl PersistentConnection {
             async move {
                 let mut connection_version = 1;
                 loop {
-                    let new_conn = match TcpConnection::new(
+                    let new_conn = match TlsConnection::new(
                         client_config.clone(),
                         &target_address,
                         target_participant_id,
@@ -369,7 +385,12 @@ fn keypair_to_raw_ed25519_secret_key(
     Ok(near_crypto::ED25519SecretKey(key))
 }
 
-/// Configures the quinn library to properly perform TLS handshakes.
+/// Configures TLS server and client to properly perform TLS handshakes.
+/// On the server side it expects a client to provide a certificate that
+/// presents a public key that matches one of the participants in the MPC
+/// network. On the client side it expects the server to present a
+/// certificate that presents a public key that matches the expected participant
+/// being connected to.
 fn configure_tls(
     p2p_private_key: &near_crypto::ED25519SecretKey,
 ) -> anyhow::Result<(Arc<ServerConfig>, Arc<ClientConfig>)> {
