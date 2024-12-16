@@ -240,9 +240,11 @@ mod recovery_id_tests {
     use crate::indexer::response::ChainRespondArgs;
     use cait_sith::FullSignature;
     use k256::ecdsa::{RecoveryId, SigningKey};
-    use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
+    use k256::elliptic_curve::{
+        bigint::CheckedAdd, point::DecompressPoint, Curve, FieldBytesEncoding, PrimeField,
+    };
     use k256::AffinePoint;
-    use k256::Scalar;
+    use k256::{Scalar, Secp256k1};
     use rand::rngs::OsRng;
 
     #[test]
@@ -265,7 +267,17 @@ mod recovery_id_tests {
                     .unwrap();
                     // recover R
                     let (r, s) = signature.split_scalars();
-                    let r_bytes = r.to_repr();
+                    let mut r_bytes = r.to_repr();
+                    // if r is reduced then recover the unreduced one
+                    if recid.is_x_reduced() {
+                        match Option::<<Secp256k1 as Curve>::Uint>::from(
+                            <<Secp256k1 as Curve>::Uint>::decode_field_bytes(&r_bytes)
+                                .checked_add(&Secp256k1::ORDER),
+                        ) {
+                            Some(restored) => r_bytes = restored.encode_field_bytes(),
+                            None => panic!("No reduction should happen here if r was reduced"),
+                        };
+                    }
                     let big_r =
                         AffinePoint::decompress(&r_bytes, u8::from(recid.is_y_odd()).into())
                             .unwrap();
