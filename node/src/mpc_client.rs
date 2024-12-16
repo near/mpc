@@ -24,8 +24,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
-
-
 #[derive(Clone)]
 pub struct MpcClient {
     config: Arc<Config>,
@@ -54,8 +52,6 @@ impl MpcClient {
             root_keyshare,
         }
     }
-
-
 
     /// Main entry point for the MPC node. Runs all the business logic for doing
     /// multiparty computation.
@@ -232,12 +228,15 @@ impl MpcClient {
                                 )
                                 .await??;
 
-
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
                                     .with_label_values(&["succeeded"])
                                     .inc();
 
-                                let response = ChainRespondArgs::new(&request, &signature, &self.root_keyshare.public_key)?;
+                                let response = ChainRespondArgs::new(
+                                    &request,
+                                    &signature,
+                                    &self.root_keyshare.public_key,
+                                )?;
                                 let _ = sign_response_sender.send(response).await;
                             }
 
