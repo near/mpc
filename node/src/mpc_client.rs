@@ -24,6 +24,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
+
+
 #[derive(Clone)]
 pub struct MpcClient {
     config: Arc<Config>,
@@ -53,6 +55,8 @@ impl MpcClient {
         }
     }
 
+
+
     /// Main entry point for the MPC node. Runs all the business logic for doing
     /// multiparty computation.
     pub async fn run(
@@ -62,12 +66,12 @@ impl MpcClient {
         sign_response_sender: mpsc::Sender<ChainRespondArgs>,
     ) -> anyhow::Result<()> {
         let monitor_passive_channels = {
+            let root_keyshare = self.root_keyshare.clone();
             let client = self.client.clone();
             let config = self.config.clone();
             let triple_store = self.triple_store.clone();
             let presignature_store = self.presignature_store.clone();
             let sign_request_store = self.sign_request_store.clone();
-            let root_keyshare = self.root_keyshare.clone();
             tracking::spawn("monitor passive channels", async move {
                 let mut tasks = AutoAbortTaskCollection::new();
                 loop {
@@ -228,11 +232,12 @@ impl MpcClient {
                                 )
                                 .await??;
 
+
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
                                     .with_label_values(&["succeeded"])
                                     .inc();
 
-                                let response = ChainRespondArgs::new(&request, &signature);
+                                let response = ChainRespondArgs::new(&request, &signature, &self.root_keyshare.public_key)?;
                                 let _ = sign_response_sender.send(response).await;
                             }
 
