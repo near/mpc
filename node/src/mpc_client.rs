@@ -18,7 +18,7 @@ use crate::triple::{
 };
 
 use cait_sith::{FullSignature, KeygenOutput};
-use k256::Secp256k1;
+use k256::{AffinePoint, Secp256k1};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -222,7 +222,7 @@ impl MpcClient {
                                     .with_label_values(&["total"])
                                     .inc();
 
-                                let signature = timeout(
+                                let (signature, public_key) = timeout(
                                     Duration::from_secs(config.signature.timeout_sec),
                                     this.clone().make_signature(request.id),
                                 )
@@ -232,10 +232,11 @@ impl MpcClient {
                                     .with_label_values(&["succeeded"])
                                     .inc();
 
-                                let response = ChainRespondArgs::new(
+                                let response =
+                                    ChainRespondArgs::new(
                                     &request,
                                     &signature,
-                                    &self.root_keyshare.public_key,
+                                    &public_key,
                                 )?;
                                 let _ = sign_response_sender.send(response).await;
                             }
@@ -285,13 +286,13 @@ impl MpcClient {
     pub async fn make_signature(
         self: Arc<Self>,
         id: SignatureId,
-    ) -> anyhow::Result<FullSignature<Secp256k1>> {
+    ) -> anyhow::Result<(FullSignature<Secp256k1>, AffinePoint)> {
         let (presignature_id, presignature) = self
             .presignature_store
             .take_owned(&self.client.all_alive_participant_ids())
             .await;
         let sign_request = self.sign_request_store.get(id).await?;
-        let signature = sign(
+        let (signature, public_key) = sign(
             self.client.new_channel_for_task(
                 MpcTaskId::Signature {
                     id,
@@ -308,6 +309,6 @@ impl MpcClient {
         )
         .await?;
 
-        Ok(signature)
+        Ok((signature, public_key))
     }
 }

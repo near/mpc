@@ -11,7 +11,7 @@ use crate::{metrics, tracking};
 use cait_sith::protocol::Participant;
 use cait_sith::triples::TripleGenerationOutput;
 use cait_sith::{FullSignature, KeygenOutput, PresignArguments, PresignOutput};
-use k256::{Scalar, Secp256k1};
+use k256::{AffinePoint, Scalar, Secp256k1};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -77,7 +77,7 @@ pub async fn sign(
     msg_hash: Scalar,
     tweak: Scalar,
     entropy: [u8; 32],
-) -> anyhow::Result<FullSignature<Secp256k1>> {
+) -> anyhow::Result<(FullSignature<Secp256k1>, AffinePoint)> {
     let cs_participants = channel
         .participants
         .iter()
@@ -117,7 +117,7 @@ pub async fn sign(
     )?;
     let signature = run_protocol("sign", channel, me, protocol).await?;
     metrics::MPC_NUM_SIGNATURES_GENERATED.inc();
-    Ok(signature)
+    Ok((signature, public_key))
 }
 
 pub type PresignatureStorage = ProtocolsStorage<PresignOutputWithParticipants>;

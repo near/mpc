@@ -32,7 +32,7 @@ fn test_recover_with_contract() {
         let pubkey = derive_public_key(root_pubkey, tweak);
 
         let recovery_id =
-            ChainRespondArgs::brute_force_recovery_id(&pubkey ,&signature, &msg_hash).unwrap();
+            ChainRespondArgs::brute_force_recovery_id(&pubkey, &signature, &msg_hash).unwrap();
 
         if check_ec_signature(
             &pubkey,
