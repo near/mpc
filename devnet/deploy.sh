@@ -1,5 +1,5 @@
 #!/bin/bash
-# set -exo pipefail
+set -eo pipefail
 
 ##########################################################################################
 # Variable definition block
@@ -118,7 +118,7 @@ fi
 for i in $(seq 0 $((PARTICIPANTS - 1))); do
     generate_key $i
     # near account create-account sponsor-by-faucet-service mpc-test$i-$SUFFIX.testnet use-manually-provided-public-key $(jq -r '.near_account_public_key' configs/$i.json) network-config testnet create
-    near account create-account fund-myself mpc-test$i-$SUFFIX.testnet '0.1 NEAR' autogenerate-new-keypair save-to-legacy-keychain sign-as $SIGNER network-config testnet sign-with-legacy-keychain send
+    near account create-account fund-myself mpc-test$i-$SUFFIX.testnet '0.01 NEAR' autogenerate-new-keypair save-to-legacy-keychain sign-as $SIGNER network-config testnet sign-with-legacy-keychain send
 done
 
 

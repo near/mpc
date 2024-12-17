@@ -1,9 +1,9 @@
 {
-        "cipher_public_key": "edb3a64454cd32b6116a437cba5f357953dd4aa36da832d4ff7e54288127ac3c",
-        "cipher_private_key": "0be8a1e4bc57bd1066f1ea6754c798a1168e52d711a8a35a893b399e4bacfae2",
-        "sign_public_key": "ed25519:8xsS1qiBqZTTatzUCJXrshBmZfDKfS34dtB7jRmsmZUf",
-        "sign_secret_key": "ed25519:5NiA4P8pvCb5uqBxcDfmi5xQCd2qgRVjmzcvgyxdkoZLT1YQPMX1gUyPgG8yhQpVW3iBAu6ZhrT7iPKzWoJRkzsM",
-        "near_account_public_key": "ed25519:B2qsEtNY43zD9KJ7GmFH3k1ucjR8cAhQEFwh7UupDS49",
-        "near_account_secret_key": "ed25519:5nDekyFoiU6zrzgCEWq4aSKc84pyTh1NpvXuBfDvsaPLoZGRFZh49Mz8DdEJi3A7fFxRe8pJRe6QyZFq4AQpNox5",
+        "cipher_public_key": "566a3d640557c13b0e9d0ef6db9b8102761069d715b44a7e12d6d6f92a61941e",
+        "cipher_private_key": "931400e3691ceb0bea974540caeafa0eb1ea83965909cba658c2256f62728fb7",
+        "sign_public_key": "ed25519:CFEd5CZ4aN97dwwoUymasF6HNvuzciqRcLmKthMWxZB",
+        "sign_secret_key": "ed25519:2KZMnRmKm58MqpxSNxyeS6eVoi1V7VfpwhMu1ZWW6hc9oaeyZ45vX3sDPU3BsKBcMnNQRzRkFUqaBzTPt92Vw6aH",
+        "near_account_public_key": "ed25519:2M4um6kCSLsMkoBqptaLLhDZAQ5LTYhxYZMU958wywXX",
+        "near_account_secret_key": "ed25519:3C7DDMFTsn8oHaKwP9KLKqySJJzgRga6shUf2oXHvRzEcVGWvYwoNqDTMWVS42GDY9Xsi7bUn4nGnhsXZwwaSTcu",
         "url": "http://old-mpc-node-0.service.mpc.consul:3000"
     }
