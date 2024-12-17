@@ -1,7 +1,9 @@
 use crate::config::Config;
 use crate::hkdf::derive_tweak;
 use crate::indexer::handler::ChainSignatureRequest;
+use crate::indexer::lib::has_success_value;
 use crate::indexer::response::ChainRespondArgs;
+use crate::key_generation::RootKeyshareData;
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
@@ -16,14 +18,15 @@ use crate::triple::{
     run_background_triple_generation, run_many_triple_generation, TripleStorage,
     SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
 };
-
-use crate::key_generation::RootKeyshareData;
+use actix::Addr;
 use cait_sith::FullSignature;
 use k256::{AffinePoint, Secp256k1};
+use near_client::ViewClientActor;
+use near_indexer_primitives::types::AccountId;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
-use tokio::time::timeout;
+use tokio::sync::{mpsc, OnceCell};
+use tokio::time::{sleep, timeout};
 
 #[derive(Clone)]
 pub struct MpcClient {
@@ -61,6 +64,9 @@ impl MpcClient {
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
         mut sign_request_receiver: mpsc::Receiver<ChainSignatureRequest>,
         sign_response_sender: mpsc::Sender<ChainRespondArgs>,
+        view_client: Arc<OnceCell<Addr<ViewClientActor>>>,
+        mpc_contract_id: Option<AccountId>,
+        disable_primary_leader: bool,
     ) -> anyhow::Result<()> {
         let monitor_passive_channels = {
             let client = self.client.clone();
@@ -204,6 +210,8 @@ impl MpcClient {
                     } = sign_request_receiver.recv().await.unwrap();
 
                     let alive_participants = network_client.all_alive_participant_ids();
+                    let view_client = view_client.clone();
+                    let mpc_contract_id = mpc_contract_id.clone();
 
                     tasks.spawn_checked(
                         &format!("indexed sign request {:?}", request_id),
@@ -223,14 +231,51 @@ impl MpcClient {
 
                             let (primary_leader, secondary_leader) =
                                 compute_leaders_for_signing(&config.mpc, &request);
-                            // start the signing process if we are the primary leader or if we are the secondary leader
-                            // and the primary leader is not alive
-                            if config.mpc.my_participant_id == primary_leader
-                                || (config.mpc.my_participant_id == secondary_leader
-                                    && !alive_participants.contains(&primary_leader))
-                            {
+
+                            let should_lead = async {
+                                // primary leader
+                                if config.mpc.my_participant_id == primary_leader {
+                                    if disable_primary_leader {
+                                        metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                            .with_label_values(&["ignored_as_primary"])
+                                            .inc();
+                                    } else {
+                                        return Ok::<bool, anyhow::Error>(true);
+                                    }
+                                }
+                                // secondary leader
+                                if config.mpc.my_participant_id == secondary_leader {
+                                    // primary leader is not alive
+                                    if !alive_participants.contains(&primary_leader) {
+                                        return Ok(true);
+                                    }
+                                    // primary leader has not responded on-chain
+                                    if let Some(mpc_contract_id) = mpc_contract_id {
+                                        sleep(Duration::from_secs(
+                                            config.signature.secondary_leader_delay_sec,
+                                        ))
+                                        .await;
+                                        // NB: if we have trouble reading the chain, we won't initiate
+                                        if !has_success_value(
+                                            near_indexer_primitives::CryptoHash(request_id),
+                                            mpc_contract_id,
+                                            view_client
+                                                .get()
+                                                .ok_or(anyhow::anyhow!("no view client addr"))?,
+                                        )
+                                        .await?
+                                        {
+                                            return Ok(true);
+                                        }
+                                    }
+                                }
+                                Ok(false)
+                            }
+                            .await?;
+
+                            if should_lead {
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
-                                    .with_label_values(&["total"])
+                                    .with_label_values(&["initiated"])
                                     .inc();
 
                                 let (signature, public_key) = timeout(
@@ -240,7 +285,7 @@ impl MpcClient {
                                 .await??;
 
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
-                                    .with_label_values(&["succeeded"])
+                                    .with_label_values(&["initiated_and_succeeded"])
                                     .inc();
 
                                 let response =

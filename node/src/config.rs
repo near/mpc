@@ -36,6 +36,10 @@ pub struct PresignatureConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignatureConfig {
     pub timeout_sec: u64,
+    /// Number of seconds after which the secondary leader will check for a response on-chain.
+    /// If the response is not found, it will act as the leader and initiate computation.
+    /// This value has no effect if the node is not configured to run an indexer.
+    pub secondary_leader_delay_sec: u64,
 }
 
 /// Configuration about the MPC protocol. It can come from either the contract

@@ -74,6 +74,7 @@ async fn test_basic_cluster() {
                     .unwrap(),
                 account_secret_key: None,
                 root_keyshare: None,
+                disable_primary_leader: false,
             };
             AutoAbortTask::from(tokio::spawn(cli.run()))
         })

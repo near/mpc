@@ -13,6 +13,7 @@ import time
 import re
 import yaml
 import pathlib
+import argparse
 import requests
 import subprocess
 from prometheus_client.parser import text_string_to_metric_families
@@ -41,7 +42,7 @@ def load_mpc_contract() -> bytearray:
     path = mpc_repo_dir / 'libs/mpc/chain-signatures/res/mpc_contract.wasm'
     return load_binary_file(path)
 
-def start_cluster_with_mpc(num_validators, num_mpc_nodes):
+def start_cluster_with_mpc(num_validators, num_mpc_nodes, disable_primary_leader):
     # Start a near network with extra observer nodes; we will use their
     # config.json, genesis.json, etc. to configure the mpc nodes' indexers
     nodes = start_cluster(
@@ -145,6 +146,8 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     # Start the mpc nodes
     for i in mpc_nodes:
         cmd = (mpc_binary_path, 'start', '--home-dir', nodes[i].node_dir)
+        if disable_primary_leader:
+            cmd = cmd + ('--disable-primary-leader', )
         # mpc-node produces way too much output if we run with debug logs
         nodes[i].run_cmd(cmd=cmd, extra_env={
             'RUST_LOG': 'INFO',
@@ -164,9 +167,15 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
 
     return nodes
 
-def test_index_signature_request():
+def get_leader_outcomes_by_result(metrics):
+    res = dict()
+    for (labels, ct) in metrics.get_metric_all_values('mpc_num_signature_requests_leader'):
+        res[labels['result']] = ct
+    return res
+
+def test_chain_signature_request(disable_primary_leader):
     started = time.time()
-    nodes = start_cluster_with_mpc(2, 2)
+    nodes = start_cluster_with_mpc(2, 2, disable_primary_leader)
 
     metrics2 = MetricsTracker(nodes[2])
     metrics3 = MetricsTracker(nodes[3])
@@ -222,5 +231,20 @@ def test_index_signature_request():
         print("Response:", res)
         assert False
 
+    leader = get_leader_outcomes_by_result(metrics2)
+    other = get_leader_outcomes_by_result(metrics3)
+    if 'initiated' not in leader:
+        leader, other = other, leader
+    assert leader == {'initiated': 1, 'initiated_and_succeeded': 1}
+    if disable_primary_leader:
+        assert other == {'ignored_as_primary': 1}
+    else:
+        assert other == {}
+
 if __name__ == '__main__':
-    test_index_signature_request()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--disable-primary-leader", action="store_true",
+                        help="Make primary leaders ignore sign requests")
+    args = parser.parse_args()
+
+    test_chain_signature_request(args.disable_primary_leader)

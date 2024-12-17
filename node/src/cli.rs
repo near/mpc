@@ -21,8 +21,10 @@ use crate::sign_request::SignRequestStorage;
 use crate::tracking;
 use crate::triple::TripleStorage;
 use crate::web::start_web_server;
+use actix::Addr;
 use clap::ArgAction;
 use clap::Parser;
+use near_client::ViewClientActor;
 use near_crypto::SecretKey;
 use near_indexer_primitives::types::AccountId;
 use std::num::NonZero;
@@ -58,6 +60,10 @@ pub enum Cli {
         /// contract if this is specified.
         #[arg(env("MPC_ACCOUNT_SK"))]
         account_secret_key: Option<SecretKey>,
+        /// If this flag is enabled, the node will ignore any signature requests for which
+        /// it is the primary leader. Allows us to test the behavior of the secondary leaders.
+        #[arg(long, action = ArgAction::SetTrue)]
+        disable_primary_leader: bool,
     },
     /// Generates the root keyshare. This will only succeed if all participants
     /// run this command together, as in, every node will wait for the full set
@@ -99,6 +105,7 @@ impl Cli {
                 root_keyshare,
                 p2p_private_key,
                 account_secret_key,
+                disable_primary_leader,
             } => {
                 let home_dir = PathBuf::from(home_dir);
                 let secrets = SecretsConfig::from_cli(&secret_store_key_hex, p2p_private_key)?;
@@ -109,11 +116,14 @@ impl Cli {
                 let (chain_config_sender, mut chain_config_receiver) = mpsc::channel(10);
                 let (sign_request_sender, sign_request_receiver) = mpsc::channel(10000);
                 let (sign_response_sender, sign_response_receiver) = mpsc::channel(10000);
+                let view_client_addr: Arc<OnceCell<Addr<ViewClientActor>>> =
+                    Arc::new(OnceCell::new());
 
                 // Start the near indexer
                 let indexer_handle = config.indexer.clone().map(|indexer_config| {
                     let config = config.clone();
                     let home_dir = home_dir.clone();
+                    let view_client_addr = view_client_addr.clone();
                     std::thread::spawn(move || {
                         actix::System::new().block_on(async {
                             let transaction_signer = account_secret_key.map(|account_secret_key| {
@@ -128,6 +138,7 @@ impl Cli {
                             .expect("Failed to initialize the Indexer");
                             let stream = indexer.streamer();
                             let (view_client, client) = indexer.client_actors();
+                            view_client_addr.set(view_client.clone()).unwrap();
                             let stats: Arc<Mutex<IndexerStats>> =
                                 Arc::new(Mutex::new(IndexerStats::new()));
 
@@ -187,6 +198,10 @@ impl Cli {
                     &config.my_near_account_id,
                 )?;
 
+                let mpc_contract_id = config
+                    .indexer
+                    .as_ref()
+                    .map(|cfg| cfg.mpc_contract_id.clone());
                 let config = config.into_full_config(mpc_config, secrets);
 
                 // Start the mpc client
@@ -252,6 +267,9 @@ impl Cli {
                             channel_receiver,
                             sign_request_receiver,
                             sign_response_sender,
+                            view_client_addr,
+                            mpc_contract_id,
+                            disable_primary_leader,
                         )
                         .await?;
 
@@ -352,7 +370,10 @@ impl Cli {
                             desired_presignatures_to_buffer: 8192,
                             timeout_sec: 60,
                         },
-                        signature: SignatureConfig { timeout_sec: 60 },
+                        signature: SignatureConfig {
+                            timeout_sec: 60,
+                            secondary_leader_delay_sec: 15,
+                        },
                     };
                     std::fs::write(
                         format!("{}/p2p_key", subdir),

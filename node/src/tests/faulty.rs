@@ -98,6 +98,7 @@ async fn test_faulty_cluster() {
                     .unwrap(),
                 account_secret_key: None,
                 root_keyshare: None,
+                disable_primary_leader: false,
             };
             (i, AutoAbortTask::from(tokio::spawn(cli.run())))
         })
@@ -238,6 +239,7 @@ async fn test_faulty_cluster() {
                 .unwrap(),
             account_secret_key: None,
             root_keyshare: None,
+            disable_primary_leader: false,
         };
         cli.run().await.unwrap();
     }));

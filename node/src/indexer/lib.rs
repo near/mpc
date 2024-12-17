@@ -5,8 +5,12 @@ use near_client::ClientActor;
 use near_client::Status;
 use near_indexer_primitives::types;
 use near_indexer_primitives::types::AccountId;
+use near_indexer_primitives::types::TransactionOrReceiptId;
+use near_indexer_primitives::views::ExecutionStatusView::SuccessReceiptId;
+use near_indexer_primitives::views::ExecutionStatusView::SuccessValue;
 use near_indexer_primitives::views::QueryRequest;
 use near_indexer_primitives::views::QueryResponseKind::CallResult;
+use near_indexer_primitives::CryptoHash;
 use near_o11y::WithSpanContextExt;
 use std::time::Duration;
 use tokio::time;
@@ -70,6 +74,39 @@ pub(crate) async fn wait_for_contract_code(
             .is_ok()
         {
             return;
+        }
+    }
+}
+
+/* When a sign function call is made, the immediate execution outcome for the
+ * receipt is another receipt id. To understand whether the signature has been
+ * completed we have to descend into the receipts and look for a SuccessValue.
+ * TODO(#100): Avoid making multiple queries to the view client here.
+ */
+pub(crate) async fn has_success_value(
+    mut receipt_id: CryptoHash,
+    receiver_id: AccountId,
+    client: &actix::Addr<near_client::ViewClientActor>,
+) -> anyhow::Result<bool> {
+    loop {
+        let query = near_client::GetExecutionOutcome {
+            id: TransactionOrReceiptId::Receipt {
+                receipt_id,
+                receiver_id: receiver_id.clone(),
+            },
+        };
+        // The client should respond
+        let response = client.send(query.with_span_context()).await?;
+        // But there may not be an execution outcome yet
+        let Ok(execution_outcome) = response else {
+            return Ok(false);
+        };
+        match execution_outcome.outcome_proof.outcome.status {
+            SuccessReceiptId(id) => {
+                receipt_id = id;
+            }
+            SuccessValue(_) => return Ok(true),
+            _ => return Ok(false),
         }
     }
 }
