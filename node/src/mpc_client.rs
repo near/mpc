@@ -285,7 +285,7 @@ impl MpcClient {
         Ok(())
     }
 
-    // TODO: this is testonly and needs to be protected
+    #[cfg(test)]
     pub fn add_sign_request(self, request: &SignatureRequest) {
         self.sign_request_store.add(request);
     }

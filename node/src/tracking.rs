@@ -114,8 +114,8 @@ where
     let handle = Arc::new(TaskHandle {
         _parent: None,
         children: Mutex::new(WeakCollection::new()),
-        description: "root".to_string(),
-        start_time: Instant::now(),
+        _description: "root".to_string(),
+        _start_time: Instant::now(),
         progress: Mutex::new(("".to_string(), Instant::now())),
         finished: AtomicBool::new(false),
     });
@@ -168,6 +168,7 @@ impl<T> WeakCollection<T> {
         }
     }
 
+    #[cfg(test)]
     fn iter(&self) -> impl Iterator<Item = Arc<T>> + '_ {
         self.buffers[1 - self.current]
             .iter()
@@ -187,8 +188,8 @@ impl<T> WeakCollection<T> {
 pub struct TaskHandle {
     _parent: Option<Arc<TaskHandle>>, // This is needed to keep the parent alive
     children: Mutex<WeakCollection<TaskHandle>>,
-    description: String,
-    start_time: Instant,
+    _description: String,
+    _start_time: Instant,
     progress: Mutex<(String, Instant)>,
     finished: AtomicBool,
 }
@@ -221,8 +222,8 @@ impl TaskHandle {
         let handle = Arc::new(TaskHandle {
             _parent: Some(self.clone()),
             children: Mutex::new(WeakCollection::new()),
-            description,
-            start_time: Instant::now(),
+            _description: description,
+            _start_time: Instant::now(),
             progress,
             finished: AtomicBool::new(false),
         });
@@ -271,6 +272,7 @@ impl TaskHandle {
         })
     }
 
+    #[cfg(test)]
     pub fn report(&self) -> TaskStatusReport {
         let children_handles = self.children.lock().unwrap().iter().collect::<Vec<_>>();
         let children_reports = children_handles
@@ -282,10 +284,10 @@ impl TaskHandle {
         let progress_elapsed = progress.1.elapsed();
         drop(progress);
         TaskStatusReport {
-            description: self.description.clone(),
+            description: self._description.clone(),
             progress: progress_string,
             progress_elapsed,
-            elapsed: self.start_time.elapsed(),
+            elapsed: self._start_time.elapsed(),
             finished: self.finished.load(std::sync::atomic::Ordering::Relaxed),
             children: children_reports,
         }
