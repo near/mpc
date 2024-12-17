@@ -5,5 +5,5 @@
         "sign_secret_key": "ed25519:3LVkwft4HWnUkEZcwir5wvr996ni758djMSoBpHYqS3g76gNudpSHCo32GC43qMnKJrKuXrPiLPBD3jDSGHzqXiu",
         "near_account_public_key": "ed25519:F9YTk6ivMPwAfQacbCKjvyEVafDusWZyU3Lr6JmLj6EW",
         "near_account_secret_key": "ed25519:25QjVvrmgSDK2Eoaum2JDfTCTiEqrconVvfoHLr1sdJ4phd6ktpDBdKY3izmcv7fF7aheEuhNEkPfkDvbt45sTia",
-        "url": "http://old-mpc-node-1.service.mpc.consul:3000"
+        "url": "http://mpc-node-1.service.mpc.consul:3000"
     }
