@@ -1,6 +1,6 @@
 #!/bin/bash
 SOURCE="nearone-robin.testnet"
-SUFFIX="-test3"
+SUFFIX="-test-key-generation0004"
 
 REQUEST=$(cat << EOF
 {
@@ -13,4 +13,4 @@ REQUEST=$(cat << EOF
 }
 EOF)
 
-near call "signer$SUFFIX.$SOURCE" --use-account $SOURCE sign "$REQUEST" --deposit-yocto 1 --gas 60000000000000
+near call "signer-6e3c4c3b-e824-4f83-aff8-35efa70e360e.testnet" --use-account signer-6e3c4c3b-e824-4f83-aff8-35efa70e360e.testnet sign "$REQUEST" --deposit-yocto 1 --gas 60000000000000
