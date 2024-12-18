@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 ##########################################################################################
 # Variable definition block
@@ -8,7 +9,7 @@
 REDEPLOY=0
 THRESHOLD=2
 PARTICIPANTS=2
-SUFFIX=$(uuidgen)
+SUFFIX=$(uuidgen | tr '[:upper:]' '[:lower:]')
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 SIGNER="signer-$SUFFIX.testnet"
 
@@ -75,13 +76,13 @@ generate_key() {
     # near account secret key: ed25519:4TD46TdwQvxkT7SBCfooSTvt5tGbUnbVcNgZ4pShRgnPJsQ5h4wTYEWVkqAYMXeyuDzSBW43Tndr8HqPajTXMS3M
     # We need to write it in a json file
     KEYGEN_OUTPUT=$(cargo run)
-    echo $KEYGEN_OUTPUT
-    CIPHER_PUBLIC_KEY=$(echo $KEYGEN_OUTPUT | grep -oP 'cipher public key: \K[0-9a-f]+')
-    CIPHER_PRIVATE_KEY=$(echo $KEYGEN_OUTPUT | grep -oP 'cipher private key: \K[0-9a-f]+')
-    SIGN_PUBLIC_KEY=$(echo $KEYGEN_OUTPUT | grep -oP 'sign public key sign_pk: \Ked25519:[0-9a-zA-Z]+')
-    SIGN_SECRET_KEY=$(echo $KEYGEN_OUTPUT | grep -oP 'sign secret key sign_sk: \Ked25519:[0-9a-zA-Z]+')
-    NEAR_ACCOUNT_PUBLIC_KEY=$(echo $KEYGEN_OUTPUT | grep -oP 'near account public key: \Ked25519:[0-9a-zA-Z]+')
-    NEAR_ACCOUNT_SECRET_KEY=$(echo $KEYGEN_OUTPUT | grep -oP 'near account secret key: \Ked25519:[0-9a-zA-Z]+')
+    echo "$KEYGEN_OUTPUT"
+    CIPHER_PUBLIC_KEY=$(echo "$KEYGEN_OUTPUT" | sed -n 's/.*cipher public key: //p')
+    CIPHER_PRIVATE_KEY=$(echo "$KEYGEN_OUTPUT" | sed -n 's/.*cipher private key: //p')
+    SIGN_PUBLIC_KEY=$(echo "$KEYGEN_OUTPUT" | sed -n 's/.*sign public key sign_pk: //p')
+    SIGN_SECRET_KEY=$(echo "$KEYGEN_OUTPUT" | sed -n 's/.*sign secret key sign_sk: //p')
+    NEAR_ACCOUNT_PUBLIC_KEY=$(echo "$KEYGEN_OUTPUT" | sed -n 's/.*near account public key: //p')
+    NEAR_ACCOUNT_SECRET_KEY=$(echo "$KEYGEN_OUTPUT" | sed -n 's/.*near account secret key: //p')
 
     cd "$SCRIPT_DIR"
     mkdir -p configs
@@ -112,6 +113,7 @@ hex_public_key_to_json_byte_array() {
 
 near account create-account sponsor-by-faucet-service $SIGNER autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
 if [ $REDEPLOY -eq 1 ]; then
+    echo "Redeploying contract"
     near deploy $SIGNER "$(compile_contract)"
 fi
 for i in $(seq 0 $((PARTICIPANTS - 1))); do
