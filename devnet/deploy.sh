@@ -165,7 +165,7 @@ FORMATED_CANDIDATES="variable \"mpc_nodes\" {\n
             \t\t\tcipher_sk: \"$(jq -r '.cipher_private_key' configs/$i.json)\",\n
             \t\t\tsign_sk: \"$(jq -r '.sign_secret_key' configs/$i.json)\"\n
         \t\t}"
-        [ $((i + 1)) -lt $PARTICIPANTS ] && echo ",\n"
+        if [ $((i + 1)) -lt $PARTICIPANTS ]; then echo ",\n"; fi
     done)
     \t]\n
 }\n
