@@ -20,7 +20,10 @@ use crate::sign::PresignatureStorage;
 use crate::sign_request::SignRequestStorage;
 use crate::tracking;
 use crate::triple::TripleStorage;
+#[cfg(not(test))]
 use crate::web::start_web_server;
+#[cfg(test)]
+use crate::web_test::start_web_server_testing;
 use clap::ArgAction;
 use clap::Parser;
 use near_crypto::SecretKey;
@@ -196,17 +199,22 @@ impl Cli {
                 )?;
 
                 let (root_task, _) = tracking::start_root_task(async move {
-                    let root_task_handle = tracking::current_task();
-
+                    let _root_task_handle = tracking::current_task();
                     let mpc_client_cell = Arc::new(OnceCell::new());
+                    #[cfg(test)]
                     let _web_server_handle = tracking::spawn(
                         "web server",
-                        start_web_server(
-                            root_task_handle,
+                        start_web_server_testing(
+                            _root_task_handle,
                             config.web_ui.clone(),
                             Some(mpc_client_cell.clone()),
                         )
                         .await?,
+                    );
+                    #[cfg(not(test))]
+                    let _web_server_handle = tracking::spawn(
+                        "web server",
+                        start_web_server(config.web_ui.clone()).await?,
                     );
 
                     let (sender, receiver) =
@@ -285,12 +293,19 @@ impl Cli {
                 let config = config.into_full_config(mpc_config, secrets);
 
                 let (root_task, _) = tracking::start_root_task(async move {
-                    let root_task_handle = tracking::current_task();
+                    let _root_task_handle = tracking::current_task();
+                    #[cfg(test)]
                     let _web_server_handle = tracking::spawn_checked(
                         "web server",
-                        start_web_server(root_task_handle, config.web_ui.clone(), None).await?,
+                        start_web_server_testing(_root_task_handle, config.web_ui.clone(), None)
+                            .await?,
                     );
 
+                    #[cfg(not(test))]
+                    let _web_server_handle = tracking::spawn_checked(
+                        "web server",
+                        start_web_server(config.web_ui.clone()).await?,
+                    );
                     let (sender, receiver) =
                         new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key).await?;
                     // Must wait for all participants to be ready before starting key generation.

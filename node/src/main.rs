@@ -23,6 +23,8 @@ mod tracing;
 mod tracking;
 mod triple;
 mod web;
+#[cfg(test)]
+mod web_test;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
