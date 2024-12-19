@@ -24,6 +24,7 @@ use crate::web::start_web_server;
 use actix::Addr;
 use clap::ArgAction;
 use clap::Parser;
+use clap::ValueEnum;
 use near_client::ViewClientActor;
 use near_crypto::SecretKey;
 use near_indexer_primitives::types::AccountId;
@@ -33,6 +34,18 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::{Mutex, OnceCell};
+
+// Allows us to test the behavior of the secondary leaders by
+// configuring the primary leaders to misbehave in different ways.
+#[derive(Debug, Clone, PartialEq, Copy, ValueEnum)]
+pub enum LeaderMode {
+    Normal,
+    /// The node will completely ignore any signature requests for which it is the primary leader.
+    DisablePrimary,
+    /// The node will initiate signature computation as it should when it is the primary leader.
+    /// However, it won't actually send the respond transaction.
+    DropPrimaryResponse,
+}
 
 #[derive(Parser, Debug)]
 pub enum Cli {
@@ -60,10 +73,8 @@ pub enum Cli {
         /// contract if this is specified.
         #[arg(env("MPC_ACCOUNT_SK"))]
         account_secret_key: Option<SecretKey>,
-        /// If this flag is enabled, the node will ignore any signature requests for which
-        /// it is the primary leader. Allows us to test the behavior of the secondary leaders.
-        #[arg(long, action = ArgAction::SetTrue)]
-        disable_primary_leader: bool,
+        #[arg(long, default_value = "normal")]
+        leader_mode: LeaderMode,
     },
     /// Generates the root keyshare. This will only succeed if all participants
     /// run this command together, as in, every node will wait for the full set
@@ -105,7 +116,7 @@ impl Cli {
                 root_keyshare,
                 p2p_private_key,
                 account_secret_key,
-                disable_primary_leader,
+                leader_mode,
             } => {
                 let home_dir = PathBuf::from(home_dir);
                 let secrets = SecretsConfig::from_cli(&secret_store_key_hex, p2p_private_key)?;
@@ -269,7 +280,7 @@ impl Cli {
                             sign_response_sender,
                             view_client_addr,
                             mpc_contract_id,
-                            disable_primary_leader,
+                            leader_mode,
                         )
                         .await?;
 

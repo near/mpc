@@ -1,4 +1,4 @@
-use crate::cli::Cli;
+use crate::cli::{Cli, LeaderMode};
 use crate::config::load_config_file;
 use crate::tests::free_resources_after_shutdown;
 use crate::tracking::AutoAbortTask;
@@ -74,7 +74,7 @@ async fn test_basic_cluster() {
                     .unwrap(),
                 account_secret_key: None,
                 root_keyshare: None,
-                disable_primary_leader: false,
+                leader_mode: LeaderMode::Normal,
             };
             AutoAbortTask::from(tokio::spawn(cli.run()))
         })

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::cli::Cli;
+use crate::cli::{Cli, LeaderMode};
 use crate::config::load_config_file;
 use crate::tests::free_resources_after_shutdown;
 use crate::tracking::AutoAbortTask;
@@ -98,7 +98,7 @@ async fn test_faulty_cluster() {
                     .unwrap(),
                 account_secret_key: None,
                 root_keyshare: None,
-                disable_primary_leader: false,
+                leader_mode: LeaderMode::Normal,
             };
             (i, AutoAbortTask::from(tokio::spawn(cli.run())))
         })
@@ -239,7 +239,7 @@ async fn test_faulty_cluster() {
                 .unwrap(),
             account_secret_key: None,
             root_keyshare: None,
-            disable_primary_leader: false,
+            leader_mode: LeaderMode::Normal,
         };
         cli.run().await.unwrap();
     }));

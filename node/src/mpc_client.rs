@@ -1,3 +1,4 @@
+use crate::cli::LeaderMode;
 use crate::config::Config;
 use crate::hkdf::derive_tweak;
 use crate::indexer::handler::ChainSignatureRequest;
@@ -21,12 +22,19 @@ use crate::triple::{
 use actix::Addr;
 use cait_sith::FullSignature;
 use k256::{AffinePoint, Secp256k1};
+use lru::LruCache;
 use near_client::ViewClientActor;
 use near_indexer_primitives::types::AccountId;
+use std::num::NonZero;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::{mpsc, OnceCell};
 use tokio::time::{sleep, timeout};
+
+const SECONDARY_LEADER_SIGNATURE_CACHE_SIZE: NonZero<usize> = NonZero::new(10000).unwrap();
+
+type SignatureCache = LruCache<SignatureId, (FullSignature<Secp256k1>, AffinePoint)>;
 
 #[derive(Clone)]
 pub struct MpcClient {
@@ -36,6 +44,7 @@ pub struct MpcClient {
     presignature_store: Arc<PresignatureStorage>,
     sign_request_store: Arc<SignRequestStorage>,
     root_keyshare: RootKeyshareData,
+    secondary_leader_signature_cache: Arc<Mutex<SignatureCache>>,
 }
 
 impl MpcClient {
@@ -54,6 +63,9 @@ impl MpcClient {
             presignature_store,
             sign_request_store,
             root_keyshare,
+            secondary_leader_signature_cache: Arc::new(Mutex::new(LruCache::new(
+                SECONDARY_LEADER_SIGNATURE_CACHE_SIZE,
+            ))),
         }
     }
 
@@ -66,7 +78,7 @@ impl MpcClient {
         sign_response_sender: mpsc::Sender<ChainRespondArgs>,
         view_client: Arc<OnceCell<Addr<ViewClientActor>>>,
         mpc_contract_id: Option<AccountId>,
-        disable_primary_leader: bool,
+        leader_mode: LeaderMode,
     ) -> anyhow::Result<()> {
         let monitor_passive_channels = {
             let client = self.client.clone();
@@ -75,6 +87,7 @@ impl MpcClient {
             let presignature_store = self.presignature_store.clone();
             let sign_request_store = self.sign_request_store.clone();
             let root_keyshare = self.root_keyshare.clone();
+            let secondary_leader_signature_cache = self.secondary_leader_signature_cache.clone();
             tracking::spawn("monitor passive channels", async move {
                 let mut tasks = AutoAbortTaskCollection::new();
                 loop {
@@ -85,6 +98,7 @@ impl MpcClient {
                     let presignature_store = presignature_store.clone();
                     let sign_request_store = sign_request_store.clone();
                     let root_keyshare = root_keyshare.clone();
+                    let secondary_leader_signature_cache = secondary_leader_signature_cache.clone();
                     tasks.spawn_checked(
                         &format!("passive task {:?}", channel.task_id),
                         async move {
@@ -153,18 +167,13 @@ impl MpcClient {
                                     presignature_id,
                                 } => {
                                     // TODO(#69): decide a better timeout for this
-                                    let SignatureRequest {
-                                        msg_hash,
-                                        tweak,
-                                        entropy,
-                                        ..
-                                    } = timeout(
+                                    let request = timeout(
                                         Duration::from_secs(config.signature.timeout_sec),
                                         sign_request_store.get(id),
                                     )
                                     .await??;
 
-                                    timeout(
+                                    let signature = timeout(
                                         Duration::from_secs(config.signature.timeout_sec),
                                         sign(
                                             channel,
@@ -174,12 +183,24 @@ impl MpcClient {
                                                 .take_unowned(presignature_id)
                                                 .await?
                                                 .presignature,
-                                            msg_hash,
-                                            tweak,
-                                            entropy,
+                                            request.msg_hash,
+                                            request.tweak,
+                                            request.entropy,
                                         ),
                                     )
                                     .await??;
+
+                                    // As the secondary leader, we store the full signature in case
+                                    // we need to submit it ourselves due to lack of successful
+                                    // response from the primary leader as observed on-chain.
+                                    let (_, secondary_leader) =
+                                        compute_leaders_for_signing(&config.mpc, &request);
+                                    if config.mpc.my_participant_id == secondary_leader {
+                                        secondary_leader_signature_cache
+                                            .lock()
+                                            .expect("poisoned lock")
+                                            .push(request.id, signature);
+                                    }
                                 }
                             }
                             anyhow::Ok(())
@@ -212,6 +233,8 @@ impl MpcClient {
                     let alive_participants = network_client.all_alive_participant_ids();
                     let view_client = view_client.clone();
                     let mpc_contract_id = mpc_contract_id.clone();
+                    let secondary_leader_signature_cache =
+                        self.secondary_leader_signature_cache.clone();
 
                     tasks.spawn_checked(
                         &format!("indexed sign request {:?}", request_id),
@@ -235,7 +258,7 @@ impl MpcClient {
                             let should_lead = async {
                                 // primary leader
                                 if config.mpc.my_participant_id == primary_leader {
-                                    if disable_primary_leader {
+                                    if leader_mode == LeaderMode::DisablePrimary {
                                         metrics::MPC_NUM_SIGN_REQUESTS_LEADER
                                             .with_label_values(&["ignored_as_primary"])
                                             .inc();
@@ -274,20 +297,51 @@ impl MpcClient {
                             .await?;
 
                             if should_lead {
-                                metrics::MPC_NUM_SIGN_REQUESTS_LEADER
-                                    .with_label_values(&["initiated"])
-                                    .inc();
+                                // Check if we already have the signature cached. This can occur if
+                                // the primary leader failed to submit the signature on-chain after
+                                // successfully leading the computation.
+                                if let Some((signature, public_key)) = {
+                                    let mut cache = secondary_leader_signature_cache
+                                        .lock()
+                                        .expect("poisoned cache");
+                                    cache.pop(&request.id)
+                                } {
+                                    metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                        .with_label_values(&["secondary_responded_from_cache"])
+                                        .inc();
+                                    let response =
+                                        ChainRespondArgs::new(&request, &signature, &public_key)?;
+                                    let _ = sign_response_sender.send(response).await;
+                                    return anyhow::Ok(());
+                                }
 
+                                // Lead the signature computation
+                                if config.mpc.my_participant_id == primary_leader {
+                                    metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                        .with_label_values(&["initiated_as_primary"])
+                                        .inc();
+                                } else {
+                                    metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                        .with_label_values(&["initiated_as_secondary"])
+                                        .inc();
+                                }
                                 let (signature, public_key) = timeout(
                                     Duration::from_secs(config.signature.timeout_sec),
                                     this.clone().make_signature(request.id),
                                 )
                                 .await??;
-
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
                                     .with_label_values(&["initiated_and_succeeded"])
                                     .inc();
 
+                                if config.mpc.my_participant_id == primary_leader
+                                    && leader_mode == LeaderMode::DropPrimaryResponse
+                                {
+                                    metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                        .with_label_values(&["primary_dropped_response"])
+                                        .inc();
+                                    return anyhow::Ok(());
+                                }
                                 let response =
                                     ChainRespondArgs::new(&request, &signature, &public_key)?;
                                 let _ = sign_response_sender.send(response).await;

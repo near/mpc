@@ -42,7 +42,7 @@ def load_mpc_contract() -> bytearray:
     path = mpc_repo_dir / 'libs/mpc/chain-signatures/res/mpc_contract.wasm'
     return load_binary_file(path)
 
-def start_cluster_with_mpc(num_validators, num_mpc_nodes, disable_primary_leader):
+def start_cluster_with_mpc(num_validators, num_mpc_nodes, leader_mode):
     # Start a near network with extra observer nodes; we will use their
     # config.json, genesis.json, etc. to configure the mpc nodes' indexers
     nodes = start_cluster(
@@ -145,9 +145,7 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, disable_primary_leader
 
     # Start the mpc nodes
     for i in mpc_nodes:
-        cmd = (mpc_binary_path, 'start', '--home-dir', nodes[i].node_dir)
-        if disable_primary_leader:
-            cmd = cmd + ('--disable-primary-leader', )
+        cmd = (mpc_binary_path, 'start', '--home-dir', nodes[i].node_dir, '--leader-mode', leader_mode)
         # mpc-node produces way too much output if we run with debug logs
         nodes[i].run_cmd(cmd=cmd, extra_env={
             'RUST_LOG': 'INFO',
@@ -173,9 +171,9 @@ def get_leader_outcomes_by_result(metrics):
         res[labels['result']] = ct
     return res
 
-def test_chain_signature_request(disable_primary_leader):
+def test_chain_signature_request(leader_mode):
     started = time.time()
-    nodes = start_cluster_with_mpc(2, 2, disable_primary_leader)
+    nodes = start_cluster_with_mpc(2, 2, leader_mode)
 
     metrics2 = MetricsTracker(nodes[2])
     metrics3 = MetricsTracker(nodes[3])
@@ -233,18 +231,27 @@ def test_chain_signature_request(disable_primary_leader):
 
     leader = get_leader_outcomes_by_result(metrics2)
     other = get_leader_outcomes_by_result(metrics3)
-    if 'initiated' not in leader:
+    if 'initiated_and_succeeded' not in leader:
         leader, other = other, leader
-    assert leader == {'initiated': 1, 'initiated_and_succeeded': 1}
-    if disable_primary_leader:
-        assert other == {'ignored_as_primary': 1}
-    else:
+    print(leader_mode, leader, other)
+
+    if leader_mode == 'normal':
+        assert leader == {'initiated_as_primary': 1, 'initiated_and_succeeded': 1}
         assert other == {}
+    elif leader_mode == 'disable-primary':
+        assert leader == {'initiated_as_secondary': 1, 'initiated_and_succeeded': 1}
+        assert other == {'ignored_as_primary': 1}
+    elif leader_mode == 'drop-primary-response':
+        assert leader == {'initiated_as_primary': 1, 'initiated_and_succeeded': 1, 'primary_dropped_response': 1}
+        assert other == {'secondary_responded_from_cache': 1}
+    else:
+        assert False, f"unexpected leader_mode {leader_mode}"
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--disable-primary-leader", action="store_true",
-                        help="Make primary leaders ignore sign requests")
+    parser.add_argument("--leader-mode", type=str, default="normal",
+                        help="Modifies the behavior of the primary leaders")
     args = parser.parse_args()
 
-    test_chain_signature_request(args.disable_primary_leader)
+    assert args.leader_mode in ["normal", "disable-primary", "drop-primary-response"]
+    test_chain_signature_request(args.leader_mode)
