@@ -368,6 +368,7 @@ impl Cli {
                             timeout_sec: 60,
                         },
                         signature: SignatureConfig { timeout_sec: 60 },
+                        cores: Some(24),
                     };
                     std::fs::write(
                         format!("{}/p2p_key", subdir),

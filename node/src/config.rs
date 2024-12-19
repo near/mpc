@@ -123,6 +123,10 @@ pub struct ConfigFile {
     /// If specified, this is the static configuration for the MPC protocol,
     /// replacing what would be read from the contract.
     pub participants: Option<ParticipantsConfig>,
+
+    /// This value is only considered when the node is run in normal node. It defines the number of
+    /// working threads for the runtime and defaults to 24
+    pub cores: Option<usize>,
 }
 
 impl ConfigFile {
