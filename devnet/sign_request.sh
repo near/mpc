@@ -2,6 +2,7 @@
 ##########################################################################################
 # Function to display help
 ##########################################################################################
+set -exo pipefail
 
 show_help() {
     echo "Usage: $0 [options]"
@@ -49,4 +50,4 @@ REQUEST=$(cat << EOF
 }
 EOF)
 
-near call $SIGNER --use-account $SIGNER "$REQUEST" --deposit-yocto 1 --gas 60000000000000
+near call $SIGNER --use-account $SIGNER sign "$REQUEST" --deposit-yocto 1 --gas 60000000000000
