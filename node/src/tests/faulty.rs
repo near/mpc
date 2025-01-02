@@ -3,7 +3,6 @@ use std::collections::{HashMap, HashSet};
 use crate::cli::Cli;
 use crate::config::load_config_file;
 use crate::tests::free_resources_after_shutdown;
-use crate::tracking::AutoAbortTask;
 use near_o11y::testonly::init_integration_logger;
 use rand::Rng;
 use serial_test::serial;
@@ -47,7 +46,7 @@ async fn test_faulty_cluster() {
         seed: Some(3),
         disable_indexer: true,
     };
-    generate_configs.run().await.unwrap();
+    generate_configs.run().unwrap();
 
     let configs = (0..NUM_PARTICIPANTS)
         .map(|i| load_config_file(&temp_dir.path().join(format!("{}", i))).unwrap())
@@ -69,13 +68,12 @@ async fn test_faulty_cluster() {
                     .parse()
                     .unwrap(),
             };
-            cli.run()
+            std::thread::spawn(move || cli.run())
         })
         .collect::<Vec<_>>();
-
-    futures::future::try_join_all(key_generation_runs)
-        .await
-        .unwrap();
+    for h in key_generation_runs {
+        let _ = h.join().unwrap();
+    }
 
     // Release the ports.
     for config in &configs {
@@ -99,7 +97,7 @@ async fn test_faulty_cluster() {
                 account_secret_key: None,
                 root_keyshare: None,
             };
-            (i, AutoAbortTask::from(tokio::spawn(cli.run())))
+            (i, cli.run())
         })
         .collect::<HashMap<_, _>>();
 
@@ -142,7 +140,9 @@ async fn test_faulty_cluster() {
     let mut rng = rand::thread_rng();
     let index = rng.gen_range(0..NUM_PARTICIPANTS);
     let to_drop = normal_runs.remove(&index).unwrap();
-    drop(to_drop);
+    if let Ok(Some(x)) = to_drop {
+        x.mpc_handle.cancel();
+    }
     let mut dropped_indices = HashSet::new();
     dropped_indices.insert(index);
 
@@ -181,14 +181,16 @@ async fn test_faulty_cluster() {
     tracing::info!("Step 1 complete");
 
     // Second step: drop another node, and make sure signatures cannot be generated
-
     let another_index = loop {
         let i = rng.gen_range(0..NUM_PARTICIPANTS);
         if !dropped_indices.contains(&i) {
             break i;
         }
     };
-    drop(normal_runs.remove(&another_index).unwrap());
+    let to_drop = normal_runs.remove(&another_index).unwrap();
+    if let Ok(Some(x)) = to_drop {
+        x.mpc_handle.cancel();
+    }
     dropped_indices.insert(another_index);
     free_resources_after_shutdown(&configs[another_index]).await;
 
@@ -227,7 +229,7 @@ async fn test_faulty_cluster() {
 
     // Third step: bring up the dropped node in step 2, and make sure signatures can be generated again
 
-    let task = AutoAbortTask::from(tokio::spawn(async move {
+    let handle = {
         let home_dir = temp_dir.path().join(format!("{}", another_index));
         let cli = Cli::Start {
             home_dir: home_dir.to_str().unwrap().to_string(),
@@ -239,8 +241,8 @@ async fn test_faulty_cluster() {
             account_secret_key: None,
             root_keyshare: None,
         };
-        cli.run().await.unwrap();
-    }));
+        cli.run()
+    };
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     match send_request("debug/index?msg=hello&repeat=1&seed=23", another_index).await {
@@ -258,9 +260,16 @@ async fn test_faulty_cluster() {
     }
 
     tracing::info!("Step 3 complete");
+    if let Ok(Some(run)) = handle {
+        run.mpc_handle.cancel();
+    }
 
-    drop(task);
-    drop(normal_runs);
+    for run in &normal_runs {
+        let run = run.1;
+        if let Ok(Some(run)) = run {
+            run.mpc_handle.cancel();
+        }
+    }
 
     for config in &configs {
         free_resources_after_shutdown(config).await;

@@ -32,8 +32,9 @@ use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::thread::JoinHandle;
 use tokio::sync::mpsc;
-use tokio::sync::{Mutex, OnceCell};
+use tokio::sync::{Mutex, Notify, OnceCell};
 
 #[derive(Parser, Debug)]
 pub enum Cli {
@@ -93,8 +94,24 @@ pub enum Cli {
     GenerateIndexerConfigs(InitConfigArgs),
 }
 
+pub struct Handle<T> {
+    pub handle: JoinHandle<T>,
+    pub cancel: Arc<Notify>,
+}
+impl<T> Handle<T> {
+    #[allow(dead_code)]
+    pub fn cancel(&self) {
+        self.cancel.notify_one();
+    }
+}
+
+pub struct StartResponse {
+    pub mpc_handle: Handle<Result<(), anyhow::Error>>,
+    pub indexer_handle: Option<JoinHandle<()>>,
+}
+
 impl Cli {
-    pub async fn run(self) -> anyhow::Result<()> {
+    pub fn run(self) -> anyhow::Result<Option<StartResponse>> {
         match self {
             Cli::Start {
                 home_dir,
@@ -118,6 +135,7 @@ impl Cli {
                     let config = config.clone();
                     let home_dir = home_dir.clone();
                     std::thread::spawn(move || {
+                        // todo: replace actix with tokio
                         actix::System::new().block_on(async {
                             let transaction_signer = account_secret_key.map(|account_secret_key| {
                                 Arc::new(TransactionSigner::from_key(
@@ -161,119 +179,147 @@ impl Cli {
                     })
                 });
 
-                // Replace participants in config with those listed in the smart contract state
-                let participants = if config.indexer.is_some() {
-                    let Some(chain_config) = chain_config_receiver.recv().await else {
-                        anyhow::bail!("Participant sender dropped by indexer");
-                    };
-                    let chain_config = chain_config?;
-                    tracing::info!(target: "mpc", "read chain config {:?} from chain", chain_config);
-                    let public_key_from_keyshare =
-                        affine_point_to_public_key(root_keyshare.public_key)?;
-                    if chain_config.root_public_key != public_key_from_keyshare {
-                        anyhow::bail!(
-                            "Root public key mismatch: {:?} != {:?}",
-                            chain_config.root_public_key,
-                            public_key_from_keyshare
-                        );
+                let cancel_mpc = Arc::new(Notify::new());
+                let cancel_mpc_clone = cancel_mpc.clone();
+                let n_threads = config.cores;
+                let mpc_handle = std::thread::spawn(move || {
+                    let rt = if let Some(n_threads) = n_threads {
+                        tokio::runtime::Builder::new_multi_thread()
+                            .worker_threads(std::cmp::max(n_threads, 1))
+                            .enable_all()
+                            .build()
+                    } else {
+                        tokio::runtime::Runtime::new()
                     }
-                    chain_config.participants
-                } else {
-                    let Some(participants) = config.participants.clone() else {
-                        anyhow::bail!("Participants must either be read from on chain or specified statically in the config");
+                    .unwrap();
+
+                    // Replace participants in config with those listed in the smart contract state
+                    let participants = if config.indexer.is_some() {
+                        let Some(chain_config) =
+                            rt.block_on(async { chain_config_receiver.recv().await })
+                        else {
+                            anyhow::bail!("Participant sender dropped by indexer");
+                        };
+                        let chain_config = chain_config?;
+                        tracing::info!(target: "mpc", "read chain config {:?} from chain", chain_config);
+                        let public_key_from_keyshare =
+                            affine_point_to_public_key(root_keyshare.public_key)?;
+                        if chain_config.root_public_key != public_key_from_keyshare {
+                            anyhow::bail!(
+                                "Root public key mismatch: {:?} != {:?}",
+                                chain_config.root_public_key,
+                                public_key_from_keyshare
+                            );
+                        }
+                        chain_config.participants
+                    } else {
+                        let Some(participants) = config.participants.clone() else {
+                            anyhow::bail!("Participants must either be read from on chain or specified statically in the config");
+                        };
+                        participants
                     };
-                    participants
-                };
 
-                let mpc_config = MpcConfig::from_participants_with_near_account_id(
-                    participants,
-                    &config.my_near_account_id,
-                )?;
+                    let mpc_config = MpcConfig::from_participants_with_near_account_id(
+                        participants,
+                        &config.my_near_account_id,
+                    )?;
 
-                let config = config.into_full_config(mpc_config, secrets);
+                    let config = config.into_full_config(mpc_config, secrets);
 
-                // Start the mpc client
-                let secret_db = SecretDB::new(
-                    &home_dir.join("mpc-data"),
-                    config.secrets.local_storage_aes_key,
-                )?;
+                    // Start the mpc client
+                    let secret_db = SecretDB::new(
+                        &home_dir.join("mpc-data"),
+                        config.secrets.local_storage_aes_key,
+                    )?;
 
-                let (root_task, _) = tracking::start_root_task(async move {
-                    let _root_task_handle = tracking::current_task();
-                    let mpc_client_cell = Arc::new(OnceCell::new());
-                    #[cfg(test)]
-                    let _web_server_handle = tracking::spawn(
-                        "web server",
-                        start_web_server_testing(
-                            _root_task_handle,
-                            config.web_ui.clone(),
-                            Some(mpc_client_cell.clone()),
-                        )
-                        .await?,
-                    );
-                    #[cfg(not(test))]
-                    let _web_server_handle = tracking::spawn(
-                        "web server",
-                        start_web_server(config.web_ui.clone()).await?,
-                    );
+                    rt.block_on(async move {
+                        let (root_task, _) = tracking::start_root_task(async move {
+                            let _root_task_handle = tracking::current_task();
+                            let mpc_client_cell = Arc::new(OnceCell::new());
+                            #[cfg(test)]
+                            let _web_server_handle = tracking::spawn(
+                                "web server",
+                                start_web_server_testing(
+                                    _root_task_handle,
+                                    config.web_ui.clone(),
+                                    Some(mpc_client_cell.clone()),
+                                )
+                                .await?,
+                            );
+                            #[cfg(not(test))]
+                            let _web_server_handle = tracking::spawn(
+                                "web server",
+                                start_web_server(config.web_ui.clone()).await?,
+                            );
 
-                    let (sender, receiver) =
-                        new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key).await?;
-                    sender
-                        .wait_for_ready(config.mpc.participants.threshold as usize)
-                        .await?;
-                    let (network_client, channel_receiver, _handle) =
-                        run_network_client(Arc::new(sender), Box::new(receiver));
+                            let (sender, receiver) =
+                                new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key)
+                                    .await?;
+                            sender
+                                .wait_for_ready(config.mpc.participants.threshold as usize)
+                                .await?;
+                            let (network_client, channel_receiver, _handle) =
+                                run_network_client(Arc::new(sender), Box::new(receiver));
 
-                    let triple_store = Arc::new(TripleStorage::new(
-                        secret_db.clone(),
-                        DBCol::Triple,
-                        network_client.my_participant_id(),
-                        &network_client.all_participant_ids(),
-                    )?);
+                            let triple_store = Arc::new(TripleStorage::new(
+                                secret_db.clone(),
+                                DBCol::Triple,
+                                network_client.my_participant_id(),
+                                &network_client.all_participant_ids(),
+                            )?);
 
-                    let presignature_store = Arc::new(PresignatureStorage::new(
-                        secret_db.clone(),
-                        DBCol::Presignature,
-                        network_client.my_participant_id(),
-                        &network_client.all_participant_ids(),
-                    )?);
+                            let presignature_store = Arc::new(PresignatureStorage::new(
+                                secret_db.clone(),
+                                DBCol::Presignature,
+                                network_client.my_participant_id(),
+                                &network_client.all_participant_ids(),
+                            )?);
 
-                    let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
+                            let sign_request_store =
+                                Arc::new(SignRequestStorage::new(secret_db.clone())?);
 
-                    let config = Arc::new(config);
-                    let mpc_client = MpcClient::new(
-                        config.clone(),
-                        network_client,
-                        triple_store,
-                        presignature_store,
-                        sign_request_store,
-                        root_keyshare,
-                    );
-                    mpc_client_cell
-                        .set(mpc_client.clone())
-                        .map_err(|_| ())
-                        .unwrap();
-                    mpc_client
-                        .clone()
-                        .run(
-                            channel_receiver,
-                            sign_request_receiver,
-                            sign_response_sender,
-                        )
-                        .await?;
+                            let config = Arc::new(config);
+                            let mpc_client = MpcClient::new(
+                                config.clone(),
+                                network_client,
+                                triple_store,
+                                presignature_store,
+                                sign_request_store,
+                                root_keyshare,
+                            );
+                            mpc_client_cell
+                                .set(mpc_client.clone())
+                                .map_err(|_| ())
+                                .unwrap();
+                            mpc_client
+                                .clone()
+                                .run(
+                                    channel_receiver,
+                                    sign_request_receiver,
+                                    sign_response_sender,
+                                )
+                                .await?;
 
-                    anyhow::Ok(())
+                            anyhow::Ok(())
+                        });
+                        tokio::select! {
+                            x = root_task => {x}
+                            _ = cancel_mpc_clone.notified() => {
+                                println!("received signal to abort");
+                                    Ok(())
+                            }
+                        }
+                    })
                 });
 
-                root_task.await?;
-                if let Some(indexer_handle) = indexer_handle {
-                    indexer_handle
-                        .join()
-                        .map_err(|_| anyhow::anyhow!("Indexer thread panicked"))?;
-                }
-
-                Ok(())
+                let mpc_handle = Handle {
+                    handle: mpc_handle,
+                    cancel: cancel_mpc,
+                };
+                Ok(Some(StartResponse {
+                    indexer_handle,
+                    mpc_handle,
+                }))
             }
             Cli::GenerateKey {
                 home_dir,
@@ -291,40 +337,47 @@ impl Cli {
                     &config.my_near_account_id,
                 )?;
                 let config = config.into_full_config(mpc_config, secrets);
-
-                let (root_task, _) = tracking::start_root_task(async move {
-                    let _root_task_handle = tracking::current_task();
-                    #[cfg(test)]
-                    let _web_server_handle = tracking::spawn_checked(
-                        "web server",
-                        start_web_server_testing(_root_task_handle, config.web_ui.clone(), None)
+                let rt = tokio::runtime::Runtime::new()?;
+                rt.block_on(async {
+                    let (root_task, _) = tracking::start_root_task(async move {
+                        let _root_task_handle = tracking::current_task();
+                        #[cfg(test)]
+                        let _web_server_handle = tracking::spawn_checked(
+                            "web server",
+                            start_web_server_testing(
+                                _root_task_handle,
+                                config.web_ui.clone(),
+                                None,
+                            )
                             .await?,
-                    );
+                        );
 
-                    #[cfg(not(test))]
-                    let _web_server_handle = tracking::spawn_checked(
-                        "web server",
-                        start_web_server(config.web_ui.clone()).await?,
-                    );
-                    let (sender, receiver) =
-                        new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key).await?;
-                    // Must wait for all participants to be ready before starting key generation.
-                    sender
-                        .wait_for_ready(config.mpc.participants.participants.len())
+                        #[cfg(not(test))]
+                        let _web_server_handle = tracking::spawn_checked(
+                            "web server",
+                            start_web_server(config.web_ui.clone()).await?,
+                        );
+                        let (sender, receiver) =
+                            new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key)
+                                .await?;
+                        // Must wait for all participants to be ready before starting key generation.
+                        sender
+                            .wait_for_ready(config.mpc.participants.participants.len())
+                            .await?;
+                        let (network_client, channel_receiver, _handle) =
+                            run_network_client(Arc::new(sender), Box::new(receiver));
+                        run_key_generation_client(
+                            PathBuf::from(home_dir),
+                            config.into(),
+                            network_client,
+                            channel_receiver,
+                        )
                         .await?;
-                    let (network_client, channel_receiver, _handle) =
-                        run_network_client(Arc::new(sender), Box::new(receiver));
-                    run_key_generation_client(
-                        PathBuf::from(home_dir),
-                        config.into(),
-                        network_client,
-                        channel_receiver,
-                    )
-                    .await?;
-                    anyhow::Ok(())
-                });
-                root_task.await?;
-                Ok(())
+                        anyhow::Ok(())
+                    });
+                    root_task.await
+                })?;
+                Ok(None)
             }
             Cli::GenerateTestConfigs {
                 output_dir,
@@ -368,6 +421,7 @@ impl Cli {
                             timeout_sec: 60,
                         },
                         signature: SignatureConfig { timeout_sec: 60 },
+                        cores: Some(15),
                     };
                     std::fs::write(
                         format!("{}/p2p_key", subdir),
@@ -378,14 +432,14 @@ impl Cli {
                         serde_yaml::to_string(&file_config)?,
                     )?;
                 }
-                Ok(())
+                Ok(None)
             }
             Cli::GenerateIndexerConfigs(config) => {
                 // TODO: there is some weird serialization issue which causes configs to be written
                 // with human-readable ByteSizes (e.g. '40.0 MB' instead of 40000000), which neard
                 // cannot parse.
                 near_indexer::indexer_init_configs(&config.home_dir.clone().into(), config.into())?;
-                Ok(())
+                Ok(None)
             }
         }
     }
