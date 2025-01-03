@@ -27,7 +27,7 @@ use crate::web_test::start_web_server_testing;
 use clap::ArgAction;
 use clap::Parser;
 use near_crypto::SecretKey;
-use near_indexer_primitives::types::AccountId;
+use near_indexer_primitives::types::{AccountId, Finality};
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -353,6 +353,7 @@ impl Cli {
                                 sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
                                 concurrency: NonZero::new(1).unwrap(),
                                 mpc_contract_id: AccountId::from_str("test0").unwrap(),
+                                finality: Finality::None,
                                 port_override: None,
                             })
                         },
