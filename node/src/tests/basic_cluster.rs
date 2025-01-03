@@ -148,10 +148,7 @@ async fn test_basic_cluster() {
         }
         panic!("Failed to get response from node {}", i);
     }
-    normal_runs
-        .iter()
-        .flatten()
-        .for_each(|run| run.mpc_handle.cancel());
+
     drop(normal_runs);
     for config in &configs {
         free_resources_after_shutdown(config).await;

@@ -94,14 +94,28 @@ pub enum Cli {
     GenerateIndexerConfigs(InitConfigArgs),
 }
 
+/// Helper struct to cancel threads.
+/// When dropped, this struct calls .notify_one() on cancel and .join() on handle
+/// Dropping this struct is blocking until .join() resolves.
 pub struct Handle<T> {
-    pub handle: JoinHandle<T>,
+    pub handle: Option<JoinHandle<T>>,
     pub cancel: Arc<Notify>,
 }
+
 impl<T> Handle<T> {
-    #[allow(dead_code)]
     pub fn cancel(&self) {
         self.cancel.notify_one();
+    }
+}
+
+impl<T> Drop for Handle<T> {
+    fn drop(&mut self) {
+        self.cancel();
+        if let Some(join_handle) = self.handle.take() {
+            if let Err(e) = join_handle.join() {
+                tracing::info!("mpc thread panicked: {:?}", e);
+            }
+        }
     }
 }
 
@@ -305,7 +319,6 @@ impl Cli {
                         tokio::select! {
                             x = root_task => {x}
                             _ = cancel_mpc_clone.notified() => {
-                                println!("received signal to abort");
                                     Ok(())
                             }
                         }
@@ -313,7 +326,7 @@ impl Cli {
                 });
 
                 let mpc_handle = Handle {
-                    handle: mpc_handle,
+                    handle: Some(mpc_handle),
                     cancel: cancel_mpc,
                 };
                 Ok(Some(StartResponse {

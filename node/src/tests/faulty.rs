@@ -140,9 +140,7 @@ async fn test_faulty_cluster() {
     let mut rng = rand::thread_rng();
     let index = rng.gen_range(0..NUM_PARTICIPANTS);
     let to_drop = normal_runs.remove(&index).unwrap();
-    if let Ok(Some(x)) = to_drop {
-        x.mpc_handle.cancel();
-    }
+    drop(to_drop);
     let mut dropped_indices = HashSet::new();
     dropped_indices.insert(index);
 
@@ -187,10 +185,7 @@ async fn test_faulty_cluster() {
             break i;
         }
     };
-    let to_drop = normal_runs.remove(&another_index).unwrap();
-    if let Ok(Some(x)) = to_drop {
-        x.mpc_handle.cancel();
-    }
+    drop(normal_runs.remove(&another_index).unwrap());
     dropped_indices.insert(another_index);
     free_resources_after_shutdown(&configs[another_index]).await;
 
@@ -260,16 +255,8 @@ async fn test_faulty_cluster() {
     }
 
     tracing::info!("Step 3 complete");
-    if let Ok(Some(run)) = handle {
-        run.mpc_handle.cancel();
-    }
-
-    for run in &normal_runs {
-        let run = run.1;
-        if let Ok(Some(run)) = run {
-            run.mpc_handle.cancel();
-        }
-    }
+    drop(handle);
+    drop(normal_runs);
 
     for config in &configs {
         free_resources_after_shutdown(config).await;
