@@ -1,7 +1,6 @@
 use crate::cli::Cli;
 use crate::config::load_config_file;
 use crate::tests::free_resources_after_shutdown;
-use crate::tracking::AutoAbortTask;
 use near_o11y::testonly::init_integration_logger;
 use serial_test::serial;
 
@@ -23,7 +22,8 @@ async fn test_basic_cluster() {
         seed: Some(2),
         disable_indexer: true,
     };
-    generate_configs.run().await.unwrap();
+
+    generate_configs.run().unwrap();
 
     let configs = (0..NUM_PARTICIPANTS)
         .map(|i| load_config_file(&temp_dir.path().join(format!("{}", i))).unwrap())
@@ -45,14 +45,12 @@ async fn test_basic_cluster() {
                     .parse()
                     .unwrap(),
             };
-            cli.run()
+            std::thread::spawn(move || cli.run())
         })
         .collect::<Vec<_>>();
-
-    futures::future::try_join_all(key_generation_runs)
-        .await
-        .unwrap();
-
+    for h in key_generation_runs {
+        h.join().unwrap().unwrap();
+    }
     // Release the ports.
     for config in &configs {
         free_resources_after_shutdown(config).await;
@@ -75,10 +73,9 @@ async fn test_basic_cluster() {
                 account_secret_key: None,
                 root_keyshare: None,
             };
-            AutoAbortTask::from(tokio::spawn(cli.run()))
+            cli.run().unwrap()
         })
         .collect::<Vec<_>>();
-
     // First ask the nodes to "index" the signature requests
     let mut retries_left = 20;
     'outer: for i in 0..NUM_PARTICIPANTS {

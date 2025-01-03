@@ -26,9 +26,23 @@ mod web;
 #[cfg(test)]
 mod web_test;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     init_logging();
     let cli = cli::Cli::parse();
-    cli.run().await
+    if let Ok(Some(mut start_response)) = cli.run() {
+        if let Some(indexer_handle) = start_response.indexer_handle {
+            indexer_handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("Indexer thread panicked!"))?;
+        }
+        let ret = if let Some(mpc_handle) = start_response.mpc_handle.handle.take() {
+            mpc_handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("mpc thread panicked!"))?
+        } else {
+            Err(anyhow::anyhow!("expected thread handle"))?
+        };
+        ret?
+    }
+    Ok(())
 }
