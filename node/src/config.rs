@@ -1,7 +1,7 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use near_crypto::PublicKey;
-use near_indexer_primitives::types::AccountId;
+use near_indexer_primitives::types::{AccountId, Finality};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -83,6 +83,8 @@ pub struct IndexerConfig {
     pub validate_genesis: bool,
     /// Sets the starting point for indexing
     pub sync_mode: SyncMode,
+    /// Sets the finality level at which blocks are streamed
+    pub finality: Finality,
     /// Sets the concurrency for indexing
     pub concurrency: std::num::NonZeroU16,
     /// MPC contract id

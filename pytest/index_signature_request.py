@@ -181,6 +181,8 @@ def test_index_signature_request():
         }
     }
     last_block_hash = nodes[0].get_latest_block().hash_bytes
+
+    tx_sent = time.time()
     tx = sign_function_call_tx(
         nodes[1].signer_key,
         nodes[0].signer_key.account_id,
@@ -197,6 +199,8 @@ def test_index_signature_request():
             res2 = metrics2.get_int_metric_value('mpc_num_signature_requests')
             res3 = metrics3.get_int_metric_value('mpc_num_signature_requests')
             if res2 == 1 and res3 == 1:
+                tx_indexed = time.time()
+                print("Indexer latency: ", tx_indexed - tx_sent)
                 break
         except requests.exceptions.ConnectionError:
             pass
