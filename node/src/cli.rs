@@ -165,7 +165,11 @@ impl Cli {
                             .expect("Failed to initialize the Indexer");
                             let stream = indexer.streamer();
                             let (view_client, client) = indexer.client_actors();
-                            let indexer_state = Arc::new(IndexerState::new());
+                            let indexer_state = Arc::new(IndexerState::new(
+                                view_client.clone(),
+                                client.clone(),
+                                indexer_config.mpc_contract_id.clone(),
+                            ));
                             // TODO: migrate this into IndexerState
                             let stats: Arc<Mutex<IndexerStats>> =
                                 Arc::new(Mutex::new(IndexerStats::new()));
@@ -179,11 +183,8 @@ impl Cli {
                             ));
                             actix::spawn(indexer_logger(Arc::clone(&stats), view_client.clone()));
                             actix::spawn(handle_sign_responses(
-                                transaction_signer,
-                                indexer_config.mpc_contract_id.clone(),
                                 sign_response_receiver,
-                                view_client,
-                                client,
+                                transaction_signer,
                                 indexer_state.clone(),
                             ));
                             listen_blocks(
