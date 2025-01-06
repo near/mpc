@@ -1,5 +1,6 @@
 use crate::hkdf::ScalarExt;
 use crate::indexer::stats::IndexerStats;
+use crate::indexer::IndexerState;
 use crate::metrics;
 use k256::Scalar;
 use near_crypto::PublicKey;
@@ -50,6 +51,7 @@ pub(crate) async fn listen_blocks(
     mpc_contract_id: AccountId,
     account_public_key: Option<PublicKey>,
     sign_request_sender: mpsc::Sender<ChainSignatureRequest>,
+    indexer_state: Arc<IndexerState>,
 ) {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
@@ -59,6 +61,7 @@ pub(crate) async fn listen_blocks(
                 &mpc_contract_id,
                 &account_public_key,
                 sign_request_sender.clone(),
+                indexer_state.clone(),
             )
         })
         .buffer_unordered(usize::from(concurrency.get()));
@@ -72,6 +75,7 @@ async fn handle_message(
     mpc_contract_id: &AccountId,
     account_public_key: &Option<PublicKey>,
     sign_request_sender: mpsc::Sender<ChainSignatureRequest>,
+    indexer_state: Arc<IndexerState>,
 ) -> anyhow::Result<()> {
     let block_height = streamer_message.block.header.height;
     let mut stats_lock = stats.lock().await;
@@ -81,8 +85,8 @@ async fn handle_message(
     let mut signature_requests = vec![];
     let mut my_tx_nonces = vec![];
 
-    streamer_message.shards.iter().for_each(|shard| {
-        shard.receipt_execution_outcomes.iter().for_each(|outcome| {
+    for shard in streamer_message.shards {
+        for outcome in shard.receipt_execution_outcomes {
             metrics::MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES.inc();
             let receipt = outcome.receipt.clone();
             let execution_outcome = outcome.execution_outcome.clone();
@@ -97,20 +101,19 @@ async fn handle_message(
                     timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
                 });
             }
-        });
-
+        }
         if let Some(account_public_key) = account_public_key {
             if let Some(chunk) = &shard.chunk {
-                chunk.transactions.iter().for_each(|tx| {
+                for tx in &chunk.transactions {
                     if tx.transaction.public_key == *account_public_key {
                         let nonce = tx.transaction.nonce;
                         metrics::MPC_ACCESS_KEY_NONCE.set(nonce as i64);
                         my_tx_nonces.push(nonce);
                     }
-                });
+                }
             }
         }
-    });
+    }
 
     crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height as i64);
 
@@ -119,6 +122,10 @@ async fn handle_message(
         if let Err(err) = sign_request_sender.send(request).await {
             tracing::error!(target: "mpc", %err, "error sending sign request to mpc node");
         }
+    }
+
+    for nonce in my_tx_nonces {
+        indexer_state.insert_nonce(nonce);
     }
 
     let mut stats_lock = stats.lock().await;

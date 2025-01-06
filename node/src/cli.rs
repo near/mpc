@@ -10,6 +10,7 @@ use crate::indexer::participants::read_participants_from_chain;
 use crate::indexer::response::handle_sign_responses;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::indexer::transaction::TransactionSigner;
+use crate::indexer::IndexerState;
 use crate::key_generation::{
     affine_point_to_public_key, load_root_keyshare, run_key_generation_client,
 };
@@ -164,6 +165,8 @@ impl Cli {
                             .expect("Failed to initialize the Indexer");
                             let stream = indexer.streamer();
                             let (view_client, client) = indexer.client_actors();
+                            let indexer_state = Arc::new(IndexerState::new());
+                            // TODO: migrate this into IndexerState
                             let stats: Arc<Mutex<IndexerStats>> =
                                 Arc::new(Mutex::new(IndexerStats::new()));
 
@@ -181,6 +184,7 @@ impl Cli {
                                 sign_response_receiver,
                                 view_client,
                                 client,
+                                indexer_state.clone(),
                             ));
                             listen_blocks(
                                 stream,
@@ -189,6 +193,7 @@ impl Cli {
                                 indexer_config.mpc_contract_id,
                                 account_secret_key.map(|key| key.public_key()),
                                 sign_request_sender,
+                                indexer_state,
                             )
                             .await;
                         });

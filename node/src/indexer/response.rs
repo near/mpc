@@ -1,4 +1,5 @@
 use crate::indexer::transaction::TransactionSigner;
+use crate::indexer::IndexerState;
 use crate::metrics;
 use crate::sign_request::SignatureRequest;
 use anyhow::Context;
@@ -173,6 +174,7 @@ pub(crate) async fn handle_sign_responses(
     mut receiver: mpsc::Receiver<ChainRespondArgs>,
     view_client: actix::Addr<near_client::ViewClientActor>,
     client: actix::Addr<near_client::ClientActor>,
+    indexer_state: Arc<IndexerState>,
 ) {
     while let Some(respond_args) = receiver.recv().await {
         let Some(tx_signer) = tx_signer.clone() else {
