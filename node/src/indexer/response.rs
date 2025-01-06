@@ -257,7 +257,7 @@ async fn ensure_respond_tx(
         )
         .await
         else {
-            // If the respose fails to send immediately, wait a short period and try again
+            // If the response fails to send immediately, wait a short period and try again
             time::sleep(Duration::from_secs(1)).await;
             continue;
         };
@@ -265,8 +265,10 @@ async fn ensure_respond_tx(
         // If the transaction is sent, wait the full timeout then check if it got included
         time::sleep(timeout).await;
         if indexer_state.has_nonce(nonce) {
+            metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
             return;
         }
+        metrics::MPC_NUM_SIGN_RESPONSES_TIMED_OUT.inc();
     }
 }
 
@@ -291,7 +293,7 @@ pub(crate) async fn handle_sign_responses(
                 tx_signer.clone(),
                 indexer_state.clone(),
                 response_ser,
-                Duration::from_secs(6),
+                Duration::from_secs(6), // TODO: maybe set the timeout and num_attempts in the config
                 NonZeroUsize::new(3).unwrap(),
             )
             .await;
