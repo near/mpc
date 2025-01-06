@@ -47,4 +47,4 @@ jobs:
           file: deployment/Dockerfile-gcp
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: nearone/mpc-node-gcp:latest,nearone/mpc-node-gcp:${{ github.ref_name }}-${{ github.event.inputs.build-ref }}
+          tags: nearone/mpc-node-gcp:latest,nearone/mpc-node-gcp:${{ github.event.inputs.build-ref }}-${{ github.sha }}
