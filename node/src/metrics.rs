@@ -102,3 +102,12 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref MPC_ACCESS_KEY_NONCE: prometheus::IntGauge = prometheus::register_int_gauge!(
+        "mpc_access_key_nonce",
+        "Latest observed nonce among transactions submitted using
+             the node's access key for its near account",
+    )
+    .unwrap();
+}

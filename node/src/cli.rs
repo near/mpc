@@ -151,12 +151,13 @@ impl Cli {
                     std::thread::spawn(move || {
                         // todo: replace actix with tokio
                         actix::System::new().block_on(async {
-                            let transaction_signer = account_secret_key.map(|account_secret_key| {
-                                Arc::new(TransactionSigner::from_key(
-                                    config.my_near_account_id.clone(),
-                                    account_secret_key,
-                                ))
-                            });
+                            let transaction_signer =
+                                account_secret_key.clone().map(|account_secret_key| {
+                                    Arc::new(TransactionSigner::from_key(
+                                        config.my_near_account_id.clone(),
+                                        account_secret_key,
+                                    ))
+                                });
                             let indexer = near_indexer::Indexer::new(
                                 indexer_config.to_near_indexer_config(home_dir.clone()),
                             )
@@ -186,6 +187,7 @@ impl Cli {
                                 indexer_config.concurrency,
                                 Arc::clone(&stats),
                                 indexer_config.mpc_contract_id,
+                                account_secret_key.map(|key| key.public_key()),
                                 sign_request_sender,
                             )
                             .await;
