@@ -1,7 +1,9 @@
 use crate::hkdf::ScalarExt;
 use crate::indexer::stats::IndexerStats;
+use crate::indexer::IndexerState;
 use crate::metrics;
 use k256::Scalar;
+use near_crypto::PublicKey;
 use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
@@ -47,7 +49,9 @@ pub(crate) async fn listen_blocks(
     concurrency: std::num::NonZeroU16,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
+    account_public_key: Option<PublicKey>,
     sign_request_sender: mpsc::Sender<ChainSignatureRequest>,
+    indexer_state: Arc<IndexerState>,
 ) {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
@@ -55,7 +59,9 @@ pub(crate) async fn listen_blocks(
                 streamer_message,
                 Arc::clone(&stats),
                 &mpc_contract_id,
+                &account_public_key,
                 sign_request_sender.clone(),
+                indexer_state.clone(),
             )
         })
         .buffer_unordered(usize::from(concurrency.get()));
@@ -67,36 +73,47 @@ async fn handle_message(
     streamer_message: near_indexer_primitives::StreamerMessage,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: &AccountId,
+    account_public_key: &Option<PublicKey>,
     sign_request_sender: mpsc::Sender<ChainSignatureRequest>,
+    indexer_state: Arc<IndexerState>,
 ) -> anyhow::Result<()> {
     let block_height = streamer_message.block.header.height;
     let mut stats_lock = stats.lock().await;
     stats_lock.block_heights_processing.insert(block_height);
     drop(stats_lock);
 
-    let signature_requests: Vec<ChainSignatureRequest> = streamer_message
-        .shards
-        .iter()
-        .flat_map(|shard| {
-            shard
-                .receipt_execution_outcomes
-                .iter()
-                .filter_map(|outcome| {
-                    metrics::MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES.inc();
-                    let receipt = outcome.receipt.clone();
-                    let execution_outcome = outcome.execution_outcome.clone();
-                    let sign_args =
-                        maybe_get_sign_args(&receipt, &execution_outcome, mpc_contract_id.clone())?;
-                    Some(ChainSignatureRequest {
-                        request_id: receipt.receipt_id.0,
-                        request: sign_args,
-                        predecessor_id: receipt.predecessor_id.clone(),
-                        entropy: streamer_message.block.header.random_value.into(),
-                        timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
-                    })
-                })
-        })
-        .collect::<Vec<_>>();
+    let mut signature_requests = vec![];
+    let mut my_tx_nonces = vec![];
+
+    for shard in streamer_message.shards {
+        for outcome in shard.receipt_execution_outcomes {
+            metrics::MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES.inc();
+            let receipt = outcome.receipt.clone();
+            let execution_outcome = outcome.execution_outcome.clone();
+            if let Some(sign_args) =
+                maybe_get_sign_args(&receipt, &execution_outcome, mpc_contract_id.clone())
+            {
+                signature_requests.push(ChainSignatureRequest {
+                    request_id: receipt.receipt_id.0,
+                    request: sign_args,
+                    predecessor_id: receipt.predecessor_id.clone(),
+                    entropy: streamer_message.block.header.random_value.into(),
+                    timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
+                });
+            }
+        }
+        if let Some(account_public_key) = account_public_key {
+            if let Some(chunk) = &shard.chunk {
+                for tx in &chunk.transactions {
+                    if tx.transaction.public_key == *account_public_key {
+                        let nonce = tx.transaction.nonce;
+                        metrics::MPC_ACCESS_KEY_NONCE.set(nonce as i64);
+                        my_tx_nonces.push(nonce);
+                    }
+                }
+            }
+        }
+    }
 
     crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height as i64);
 
@@ -105,6 +122,10 @@ async fn handle_message(
         if let Err(err) = sign_request_sender.send(request).await {
             tracing::error!(target: "mpc", %err, "error sending sign request to mpc node");
         }
+    }
+
+    for nonce in my_tx_nonces {
+        indexer_state.insert_nonce(nonce);
     }
 
     let mut stats_lock = stats.lock().await;

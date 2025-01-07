@@ -10,6 +10,7 @@ use crate::indexer::participants::read_participants_from_chain;
 use crate::indexer::response::handle_sign_responses;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::indexer::transaction::TransactionSigner;
+use crate::indexer::IndexerState;
 use crate::key_generation::{
     affine_point_to_public_key, load_root_keyshare, run_key_generation_client,
 };
@@ -151,18 +152,25 @@ impl Cli {
                     std::thread::spawn(move || {
                         // todo: replace actix with tokio
                         actix::System::new().block_on(async {
-                            let transaction_signer = account_secret_key.map(|account_secret_key| {
-                                Arc::new(TransactionSigner::from_key(
-                                    config.my_near_account_id.clone(),
-                                    account_secret_key,
-                                ))
-                            });
+                            let transaction_signer =
+                                account_secret_key.clone().map(|account_secret_key| {
+                                    Arc::new(TransactionSigner::from_key(
+                                        config.my_near_account_id.clone(),
+                                        account_secret_key,
+                                    ))
+                                });
                             let indexer = near_indexer::Indexer::new(
                                 indexer_config.to_near_indexer_config(home_dir.clone()),
                             )
                             .expect("Failed to initialize the Indexer");
                             let stream = indexer.streamer();
                             let (view_client, client) = indexer.client_actors();
+                            let indexer_state = Arc::new(IndexerState::new(
+                                view_client.clone(),
+                                client.clone(),
+                                indexer_config.mpc_contract_id.clone(),
+                            ));
+                            // TODO: migrate this into IndexerState
                             let stats: Arc<Mutex<IndexerStats>> =
                                 Arc::new(Mutex::new(IndexerStats::new()));
 
@@ -175,18 +183,18 @@ impl Cli {
                             ));
                             actix::spawn(indexer_logger(Arc::clone(&stats), view_client.clone()));
                             actix::spawn(handle_sign_responses(
-                                transaction_signer,
-                                indexer_config.mpc_contract_id.clone(),
                                 sign_response_receiver,
-                                view_client,
-                                client,
+                                transaction_signer,
+                                indexer_state.clone(),
                             ));
                             listen_blocks(
                                 stream,
                                 indexer_config.concurrency,
                                 Arc::clone(&stats),
                                 indexer_config.mpc_contract_id,
+                                account_secret_key.map(|key| key.public_key()),
                                 sign_request_sender,
+                                indexer_state,
                             )
                             .await;
                         });

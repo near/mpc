@@ -95,10 +95,37 @@ lazy_static! {
 }
 
 lazy_static! {
+    pub static ref MPC_NUM_SIGN_RESPONSES_INDEXED: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_num_sign_responses_indexed",
+            "Number of signature responses sent by this node subsequently observed on chain",
+        )
+        .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_NUM_SIGN_RESPONSES_TIMED_OUT: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_num_sign_responses_timed_out",
+            "Number of signature responses sent by this node which did not appear on chain in time",
+        )
+        .unwrap();
+}
+
+lazy_static! {
     pub static ref MPC_INDEXER_LATEST_BLOCK_HEIGHT: prometheus::IntGauge =
         prometheus::register_int_gauge!(
             "mpc_indexer_latest_block_height",
             "Latest block height processed by the near indexer"
         )
         .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_ACCESS_KEY_NONCE: prometheus::IntGauge = prometheus::register_int_gauge!(
+        "mpc_access_key_nonce",
+        "Latest observed nonce among transactions submitted using
+             the node's access key for its near account",
+    )
+    .unwrap();
 }

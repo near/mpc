@@ -1,4 +1,6 @@
 use crate::indexer::transaction::TransactionSigner;
+use crate::indexer::IndexerState;
+use crate::indexer::Nonce;
 use crate::metrics;
 use crate::sign_request::SignatureRequest;
 use anyhow::Context;
@@ -8,12 +10,14 @@ use k256::{
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
-use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::types::{BlockReference, Finality};
 use near_o11y::WithSpanContextExt;
 use serde::Serialize;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::time;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone, Copy)]
 struct SerializableScalar {
@@ -167,85 +171,132 @@ impl ChainRespondArgs {
     }
 }
 
+/// Creates, signs, and submits a `respond` function call with the given serialized arguments.
+async fn submit_respond_tx(
+    tx_signer: Arc<TransactionSigner>,
+    indexer_state: Arc<IndexerState>,
+    response_ser: std::string::String,
+) -> Option<Nonce> {
+    let Ok(Ok(block)) = indexer_state
+        .view_client
+        .send(near_client::GetBlock(BlockReference::Finality(Finality::Final)).with_span_context())
+        .await
+    else {
+        tracing::warn!(
+            target = "mpc",
+            "failed to get block hash to send response tx"
+        );
+        return None;
+    };
+
+    let transaction = tx_signer.create_and_sign_function_call_tx(
+        indexer_state.mpc_contract_id.clone(),
+        "respond".to_string(),
+        response_ser.into(),
+        block.header.hash,
+        block.header.height,
+    );
+    tracing::info!(
+        target = "mpc",
+        "sending response tx {:?}",
+        transaction.get_hash()
+    );
+
+    let nonce = transaction.transaction.nonce();
+    let result = indexer_state
+        .client
+        .send(
+            near_client::ProcessTxRequest {
+                transaction,
+                is_forwarded: false,
+                check_only: false,
+            }
+            .with_span_context(),
+        )
+        .await;
+    match result {
+        Ok(response) => match response {
+            // We're not a validator, so we should always be routing the transaction.
+            near_client::ProcessTxResponse::RequestRouted => {
+                metrics::MPC_NUM_SIGN_RESPONSES_SENT.inc();
+                Some(nonce)
+            }
+            _ => {
+                metrics::MPC_NUM_SIGN_RESPONSES_FAILED_TO_SEND_IMMEDIATELY.inc();
+                tracing::error!(
+                    target: "mpc",
+                    "Failed to send response tx: unexpected ProcessTxResponse: {:?}",
+                    response
+                );
+                None
+            }
+        },
+        Err(err) => {
+            metrics::MPC_NUM_SIGN_RESPONSES_FAILED_TO_SEND_IMMEDIATELY.inc();
+            tracing::error!(target: "mpc", "Failed to send response tx: {:?}", err);
+            None
+        }
+    }
+}
+
+/// Attempts to ensure that a `respond` function call with given args is included on-chain.
+/// If the submitted transaction is not observed by the indexer before the `timeout`, tries again.
+/// Will make up to `num_attempts` attempts.
+async fn ensure_respond_tx(
+    tx_signer: Arc<TransactionSigner>,
+    indexer_state: Arc<IndexerState>,
+    response_ser: std::string::String,
+    timeout: Duration,
+    num_attempts: NonZeroUsize,
+) {
+    for _ in 0..num_attempts.into() {
+        let Some(nonce) = submit_respond_tx(
+            tx_signer.clone(),
+            indexer_state.clone(),
+            response_ser.clone(),
+        )
+        .await
+        else {
+            // If the response fails to send immediately, wait a short period and try again
+            time::sleep(Duration::from_secs(1)).await;
+            continue;
+        };
+
+        // If the transaction is sent, wait the full timeout then check if it got included
+        time::sleep(timeout).await;
+        if indexer_state.has_nonce(nonce) {
+            metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
+            return;
+        }
+        metrics::MPC_NUM_SIGN_RESPONSES_TIMED_OUT.inc();
+    }
+}
+
 pub(crate) async fn handle_sign_responses(
-    tx_signer: Option<Arc<TransactionSigner>>,
-    mpc_contract_id: AccountId,
     mut receiver: mpsc::Receiver<ChainRespondArgs>,
-    view_client: actix::Addr<near_client::ViewClientActor>,
-    client: actix::Addr<near_client::ClientActor>,
+    tx_signer: Option<Arc<TransactionSigner>>,
+    indexer_state: Arc<IndexerState>,
 ) {
     while let Some(respond_args) = receiver.recv().await {
         let Some(tx_signer) = tx_signer.clone() else {
             tracing::error!(target: "mpc", "Transaction signer unavailable; account secret key not provided");
             continue;
         };
-        let mpc_contract_id = mpc_contract_id.clone();
-        let view_client = view_client.clone();
-        let client = client.clone();
+        let indexer_state = indexer_state.clone();
         actix::spawn(async move {
             let Ok(response_ser) = serde_json::to_string(&respond_args) else {
                 tracing::error!(target: "mpc", "Failed to serialize response args");
                 return;
             };
             tracing::debug!(target = "mpc", "tx args {:?}", response_ser);
-
-            let Ok(Ok(block)) = view_client
-                .send(
-                    near_client::GetBlock(BlockReference::Finality(Finality::Final))
-                        .with_span_context(),
-                )
-                .await
-            else {
-                tracing::warn!(
-                    target = "mpc",
-                    "failed to get block hash to send response tx"
-                );
-                return;
-            };
-
-            let transaction = tx_signer.create_and_sign_function_call_tx(
-                mpc_contract_id.clone(),
-                "respond".to_string(),
-                response_ser.into(),
-                block.header.hash,
-                block.header.height,
-            );
-            tracing::info!(
-                target = "mpc",
-                "sending response tx {:?}",
-                transaction.get_hash()
-            );
-
-            let result = client
-                .send(
-                    near_client::ProcessTxRequest {
-                        transaction,
-                        is_forwarded: false,
-                        check_only: false,
-                    }
-                    .with_span_context(),
-                )
-                .await;
-            match result {
-                Ok(response) => match response {
-                    // We're not a validator, so we should always be routing the transaction.
-                    near_client::ProcessTxResponse::RequestRouted => {
-                        metrics::MPC_NUM_SIGN_RESPONSES_SENT.inc();
-                    }
-                    _ => {
-                        metrics::MPC_NUM_SIGN_RESPONSES_FAILED_TO_SEND_IMMEDIATELY.inc();
-                        tracing::error!(
-                            target: "mpc",
-                            "Failed to send response tx: unexpected ProcessTxResponse: {:?}",
-                            response
-                        );
-                    }
-                },
-                Err(err) => {
-                    metrics::MPC_NUM_SIGN_RESPONSES_FAILED_TO_SEND_IMMEDIATELY.inc();
-                    tracing::error!(target: "mpc", "Failed to send response tx: {:?}", err);
-                }
-            }
+            ensure_respond_tx(
+                tx_signer.clone(),
+                indexer_state.clone(),
+                response_ser,
+                Duration::from_secs(6), // TODO: maybe set the timeout and num_attempts in the config
+                NonZeroUsize::new(3).unwrap(),
+            )
+            .await;
         });
     }
 }
