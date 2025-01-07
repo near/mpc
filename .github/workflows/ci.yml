@@ -56,13 +56,3 @@ jobs:
           file: integration-test/Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      # - name: Expose GitHub Runtime
-      #   uses: crazy-max/ghaction-github-runtime@v3
-
-      # - name: Check Docker image can be built
-      #   run: docker build --cache-to type=gha --cache-from type=gha -f integration-test/Dockerfile --progress=plain . 
-        
-
-
-          
