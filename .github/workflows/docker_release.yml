@@ -26,7 +26,11 @@ jobs:
         with:
           ref: ${{ github.event.inputs.build-ref }}
         
-
+      - name: Get short SHA
+        shell: bash
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+  
       - name: Initialize submodules
         run: git submodule update --init --recursive
 
@@ -39,7 +43,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Check Docker image can be built
+      - name: Build and push MPC Docker image to Docker Hub
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -47,4 +51,4 @@ jobs:
           file: deployment/Dockerfile-gcp
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: nearone/mpc-node-gcp:latest,nearone/mpc-node-gcp:${{ github.event.inputs.build-ref }}-${{ github.sha }}
+          tags: nearone/mpc-node-gcp:latest,nearone/mpc-node-gcp:${{ github.event.inputs.build-ref }}-${{ env.sha_short }}
