@@ -29,7 +29,7 @@ mod web_test;
 fn main() -> anyhow::Result<()> {
     init_logging();
     let cli = cli::Cli::parse();
-    if let Ok(Some(mut start_response)) = cli.run() {
+    if let Some(mut start_response) = cli.run()? {
         if let Some(indexer_handle) = start_response.indexer_handle {
             indexer_handle
                 .join()
