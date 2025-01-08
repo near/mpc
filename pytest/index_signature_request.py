@@ -20,8 +20,10 @@ from prometheus_client.parser import text_string_to_metric_families
 from multiprocessing import Pool
 from concurrent.futures import ThreadPoolExecutor
 
-sys.path.append(str(pathlib.Path(__file__).resolve()
-                    .parents[1] / 'libs' / 'nearcore' / 'pytest' / 'lib'))
+sys.path.append(
+    str(
+        pathlib.Path(__file__).resolve().parents[1] / 'libs' / 'nearcore' /
+        'pytest' / 'lib'))
 from cluster import start_cluster, session
 from transaction import sign_deploy_contract_tx, sign_function_call_tx
 from utils import load_binary_file, MetricsTracker
@@ -32,16 +34,23 @@ TGAS = 10**12
 mpc_repo_dir = pathlib.Path(__file__).resolve().parents[1]
 mpc_binary_path = os.path.join(mpc_repo_dir / 'target' / 'release', 'mpc-node')
 
+
 # Some boilerplate to make pyyaml ignore unknown fields
 def ignore_unknown(loader, tag_suffix, node):
     return None
+
+
 class SafeLoaderIgnoreUnknown(yaml.SafeLoader):
     pass
+
+
 SafeLoaderIgnoreUnknown.add_multi_constructor('!', ignore_unknown)
 
+
 def load_mpc_contract() -> bytearray:
-    path = mpc_repo_dir / 'libs/mpc/chain-signatures/res/mpc_contract.wasm'
+    path = mpc_repo_dir / 'libs/chain-signatures/res/mpc_contract.wasm'
     return load_binary_file(path)
+
 
 def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     # Start a near network with extra observer nodes; we will use their
@@ -56,10 +65,11 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
 
     # Generate the mpc configs
     dot_near = pathlib.Path.home() / '.near'
-    subprocess.run((mpc_binary_path, 'generate-test-configs',
-                                    '--output-dir', dot_near,
-                                    '--participants', ','.join(f'test{i + num_validators}' for i in range(num_mpc_nodes)),
-                                    '--threshold', str(num_mpc_nodes)))
+    subprocess.run(
+        (mpc_binary_path, 'generate-test-configs', '--output-dir', dot_near,
+         '--participants', ','.join(f'test{i + num_validators}'
+                                    for i in range(num_mpc_nodes)),
+         '--threshold', str(num_mpc_nodes)))
 
     # Get the participant set from the mpc configs
     participants = {}
@@ -76,10 +86,16 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
         my_port = p['port']
 
         participants[near_account] = {
-            "account_id": near_account,
-            "cipher_pk": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-            "sign_pk": my_pk,
-            "url": f"http://{my_addr}:{my_port}",
+            "account_id":
+            near_account,
+            "cipher_pk": [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ],
+            "sign_pk":
+            my_pk,
+            "url":
+            f"http://{my_addr}:{my_port}",
         }
         account_id_to_participant_id[near_account] = p['id']
 
@@ -88,7 +104,8 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
         # Move the generated mpc configs
         mpc_config_dir = dot_near / str(i - num_validators)
         for fname in os.listdir(mpc_config_dir):
-            subprocess.run(('mv', os.path.join(mpc_config_dir, fname), nodes[i].node_dir))
+            subprocess.run(('mv', os.path.join(mpc_config_dir,
+                                               fname), nodes[i].node_dir))
 
         # Indexer config must explicitly specify tracked shard
         fname = os.path.join(nodes[i].node_dir, 'config.json')
@@ -106,12 +123,15 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
         return open(pathlib.Path(nodes[i].node_dir) / 'p2p_key').read()
 
     def near_secret_key(i):
-        validator_key = json.loads(open(pathlib.Path(nodes[i].node_dir) / 'validator_key.json').read())
+        validator_key = json.loads(
+            open(pathlib.Path(nodes[i].node_dir) /
+                 'validator_key.json').read())
         return validator_key['secret_key']
 
     # Generate the root keyshares
-    commands = [(mpc_binary_path, 'generate-key',
-                 '--home-dir', nodes[i].node_dir, secret_key_hex(i), p2p_private_key(i)) for i in mpc_nodes]
+    commands = [(mpc_binary_path, 'generate-key', '--home-dir',
+                 nodes[i].node_dir, secret_key_hex(i), p2p_private_key(i))
+                for i in mpc_nodes]
     with Pool() as pool:
         keygen_results = pool.map(subprocess.check_output, commands)
 
@@ -128,9 +148,10 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
 
     # Deploy the mpc contract
     last_block_hash = nodes[0].get_latest_block().hash_bytes
-    tx = sign_deploy_contract_tx(nodes[0].signer_key, load_mpc_contract(), 10, last_block_hash)
+    tx = sign_deploy_contract_tx(nodes[0].signer_key, load_mpc_contract(), 10,
+                                 last_block_hash)
     res = nodes[0].send_tx_and_wait(tx, 20)
-    assert('SuccessValue' in res['result']['status'])
+    assert ('SuccessValue' in res['result']['status'])
 
     # Initialize the mpc contract
     init_args = {
@@ -148,23 +169,23 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     for i in mpc_nodes:
         cmd = (mpc_binary_path, 'start', '--home-dir', nodes[i].node_dir)
         # mpc-node produces way too much output if we run with debug logs
-        nodes[i].run_cmd(cmd=cmd, extra_env={
-            'RUST_LOG': 'INFO',
-            'MPC_SECRET_STORE_KEY': secret_key_hex(i),
-            'MPC_P2P_PRIVATE_KEY': p2p_private_key(i),
-            'MPC_ACCOUNT_SK': near_secret_key(i),
-        })
+        nodes[i].run_cmd(cmd=cmd,
+                         extra_env={
+                             'RUST_LOG': 'INFO',
+                             'MPC_SECRET_STORE_KEY': secret_key_hex(i),
+                             'MPC_P2P_PRIVATE_KEY': p2p_private_key(i),
+                             'MPC_ACCOUNT_SK': near_secret_key(i),
+                         })
 
-    tx = sign_function_call_tx(
-        nodes[0].signer_key,
-        nodes[0].signer_key.account_id,
-        'init_running',
-        json.dumps(init_args).encode('utf-8'),
-        150 * TGAS, 0, 20, last_block_hash)
+    tx = sign_function_call_tx(nodes[0].signer_key,
+                               nodes[0].signer_key.account_id, 'init_running',
+                               json.dumps(init_args).encode('utf-8'),
+                               150 * TGAS, 0, 20, last_block_hash)
     res = nodes[0].send_tx_and_wait(tx, 20)
-    assert('SuccessValue' in res['result']['status'])
+    assert ('SuccessValue' in res['result']['status'])
 
     return nodes
+
 
 def test_index_signature_request(num_requests):
     started = time.time()
@@ -179,8 +200,11 @@ def test_index_signature_request(num_requests):
     # Construct signature requests
     txs = []
     for i in range(0, num_requests):
-        payload = [i,1,2,0,4,5,6,8,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,44]
-        sign_args= {
+        payload = [
+            i, 1, 2, 0, 4, 5, 6, 8, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+            19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 44
+        ]
+        sign_args = {
             'request': {
                 'key_version': 0,
                 'path': 'test',
@@ -188,19 +212,15 @@ def test_index_signature_request(num_requests):
             }
         }
         nonce = 20 + i
-        tx = sign_function_call_tx(
-            nodes[1].signer_key,
-            tx_recipient_id,
-            'sign',
-            json.dumps(sign_args).encode('utf-8'),
-            150 * TGAS,
-            1,
-            nonce,
-            last_block_hash)
+        tx = sign_function_call_tx(nodes[1].signer_key, tx_recipient_id,
+                                   'sign',
+                                   json.dumps(sign_args).encode('utf-8'),
+                                   150 * TGAS, 1, nonce, last_block_hash)
         txs.append(tx)
 
     def send_tx(tx):
         return nodes[1].send_tx(tx)['result']
+
     tx_sent = time.time()
     with ThreadPoolExecutor() as executor:
         tx_hashes = list(executor.map(send_tx, txs))
@@ -252,9 +272,12 @@ def test_index_signature_request(num_requests):
     res3 = metrics2.get_int_metric_value('mpc_num_sign_responses_timed_out')
     print("Nodes sent responses which failed to be included:", res2, res3)
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num-requests", type=int, default=1,
+    parser.add_argument("--num-requests",
+                        type=int,
+                        default=1,
                         help="Number of signature requests to make")
     args = parser.parse_args()
 
