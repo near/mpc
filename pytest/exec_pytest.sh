@@ -91,7 +91,7 @@ done
 
 # optional: reset submodules
 if [ $RESET_SUBMODULES == true ]; then
-    printf "\nRestting submodules"
+    printf "\nResetting submodules"
     if ! log_output git submodule foreach --recursive git reset --hard; then
         echo "Error updating submodule"
         exit 1
@@ -113,13 +113,13 @@ if ! log_output bash -c "cd '$LIB_DIR/nearcore' && cargo build --quiet --color=a
 fi
 
 printf "\nBuilding contract"
-if ! log_output bash -c "cd '$LIB_DIR/mpc/chain-signatures' && cargo build --quiet --color=always -p mpc-contract --target=wasm32-unknown-unknown --release"; then
+if ! log_output bash -c "cd '$LIB_DIR/chain-signatures' && cargo build --quiet --color=always -p mpc-contract --target=wasm32-unknown-unknown --release"; then
     echo "Cargo failed to compile contract"
     exit 1
 fi
 
 printf "\nCopying contract"
-if ! log_output bash -c "cp '$LIB_DIR/mpc/target/wasm32-unknown-unknown/release/mpc_contract.wasm' '$LIB_DIR/mpc/chain-signatures/res/mpc_contract.wasm'"; then
+if ! log_output bash -c "mkdir -p '$LIB_DIR/chain-signatures/res' && cp '$LIB_DIR/chain-signatures/target/wasm32-unknown-unknown/release/mpc_contract.wasm' '$LIB_DIR/chain-signatures/res/mpc_contract.wasm'"; then
     echo "Failed to copy the contract"
     exit 1
 fi
@@ -150,17 +150,17 @@ fi
 
 printf "\nInstalling requirements"
 if ! log_output pip install -r "$REQ_DIR"; then
-    echo: "Error: Failed to install requirements."
+    echo "Error: Failed to install requirements."
     exit 1
 fi
 
 printf "\nExecuting tests"
 for test_file in "${TEST_FILES[@]}"; do
-    echo "Running test: $test_file"
+    printf '\nRunning test: %s' "$test_file"
     if ! log_output python "$PYTEST_DIR/$test_file"; then
-        echo "Error: Test '$test_file' failed."
+        printf '\nError: Test %s failed.' "$test_file"
         exit 1
     else
-        printf "\nSuccess: Test '$test_file' passed.\n"
+        printf '\nSuccess: Test %s\n' "$test_file"
     fi
 done

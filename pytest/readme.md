@@ -18,7 +18,7 @@ cd libs/nearcore && cargo build -p neard
 cd ../chain-signatures && cargo build -p mpc-contract --target=wasm32-unknown-unknown --release
 
 # copy the contract:
-cd .. && cp target/wasm32-unknown-unknown/release/mpc_contract.wasm chain-signatures/res/mpc_contract.wasm
+mkdir -p res && cd cp target/wasm32-unknown-unknown/release/mpc_contract.wasm chain-signatures/res/mpc_contract.wasm
 # build the main node
 cd ../.. && cargo build -p mpc-node --release
 ```

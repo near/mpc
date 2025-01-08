@@ -47,9 +47,9 @@ jobs:
 
       - name: Build the contract
         run: | 
-          cd libs/mpc/chain-signatures
+          cd libs/chain-signatures
           cargo build -p mpc-contract --target=wasm32-unknown-unknown --release
-          cp ../target/wasm32-unknown-unknown/release/mpc_contract.wasm res/mpc_contract.wasm
+          mkdir -p res && cp target/wasm32-unknown-unknown/release/mpc_contract.wasm res/mpc_contract.wasm
 
       - name: Build near core
         run: |
