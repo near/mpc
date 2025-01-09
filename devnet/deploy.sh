@@ -67,7 +67,7 @@ generate_key() {
         return
     fi
 
-    cd "$SCRIPT_DIR/../libs/infra/scripts/generate_keys"
+    cd "$SCRIPT_DIR/generate_keys"
 
     # Output is like this:
     # cipher public key: a634485bc7f52339e867cd42d6f6cd02a691cf09a19ec5af97de6b563e9c9856
