@@ -51,7 +51,16 @@ jobs:
           cargo build -p mpc-contract --target=wasm32-unknown-unknown --release
           mkdir -p res && cp target/wasm32-unknown-unknown/release/mpc_contract.wasm res/mpc_contract.wasm
 
-      - name: Build near core
+      - name: Download near core binary from S3
+        id: download-neard
+        continue-on-error: true
+        run: |
+          mkdir -p libs/nearcore/target/debug
+          curl -o libs/nearcore/target/debug/neard https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/Linux-x86_64/master/0194311ddd68647a6f6fe27e4ecb1d4256225f4c/neard
+          chmod +x libs/nearcore/target/debug/neard
+
+      - name: Build near core as fallback
+        if: steps.download-neard.outcome != 'success'
         run: |
           cd libs/nearcore
           cargo build -p neard
