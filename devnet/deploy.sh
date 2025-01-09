@@ -5,12 +5,12 @@ set -exo pipefail
 # Variable definition block
 ##########################################################################################
 
-# Default values 
+# Default values
 REDEPLOY=0
 THRESHOLD=2
 PARTICIPANTS=2
 SUFFIX=$(uuidgen | tr '[:upper:]' '[:lower:]')
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 SIGNER="signer-$SUFFIX.testnet"
 
 ##########################################################################################
@@ -30,22 +30,24 @@ show_help() {
 ##########################################################################################
 
 while [ ! -z "$1" ]; do
-   if [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
-      show_help; exit 0;
-   elif [[ "$1" == "-r" ]] || [[ "$1" == "--redeploy" ]]; then
-      REDEPLOY="$2"
-      shift
-   elif [[ $1 == "-t" ]] || [[ "$1" == "--threshold" ]]; then
-      THRESHOLD="$2"
-      shift
-   elif [[ $1 == "-p" ]] || [[ "$1" == "--participants" ]]; then
-      PARTICIPANTS="$2"
-      shift
-   else
-      echo "Incorrect input provided $1"
-      show_help; exit 0;
-   fi
-shift
+    if [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
+        show_help
+        exit 0
+    elif [[ "$1" == "-r" ]] || [[ "$1" == "--redeploy" ]]; then
+        REDEPLOY="$2"
+        shift
+    elif [[ $1 == "-t" ]] || [[ "$1" == "--threshold" ]]; then
+        THRESHOLD="$2"
+        shift
+    elif [[ $1 == "-p" ]] || [[ "$1" == "--participants" ]]; then
+        PARTICIPANTS="$2"
+        shift
+    else
+        echo "Incorrect input provided $1"
+        show_help
+        exit 0
+    fi
+    shift
 done
 
 ##########################################################################################
@@ -53,9 +55,9 @@ done
 ##########################################################################################
 
 compile_contract() {
-    cd "$SCRIPT_DIR/../libs/mpc/chain-signatures"
+    cd "$SCRIPT_DIR/../libs/chain-signatures"
     cargo build -p mpc-contract --target wasm32-unknown-unknown --release
-    echo "$SCRIPT_DIR/../libs/mpc/target/wasm32-unknown-unknown/release/mpc_contract.wasm"
+    echo "$SCRIPT_DIR/../libs/chain-signatures/target/wasm32-unknown-unknown/release/mpc_contract.wasm"
 }
 
 generate_key() {
@@ -65,7 +67,7 @@ generate_key() {
         return
     fi
 
-    cd "$SCRIPT_DIR/../libs/mpc/infra/scripts/generate_keys"
+    cd "$SCRIPT_DIR/../libs/infra/scripts/generate_keys"
 
     # Output is like this:
     # cipher public key: a634485bc7f52339e867cd42d6f6cd02a691cf09a19ec5af97de6b563e9c9856
@@ -94,7 +96,7 @@ generate_key() {
         \"near_account_public_key\": \"$NEAR_ACCOUNT_PUBLIC_KEY\",
         \"near_account_secret_key\": \"$NEAR_ACCOUNT_SECRET_KEY\",
         \"url\": \"http://mpc-node-$1.service.mpc.consul:3000\"
-    }" > devnet_configs/$1.json
+    }" >devnet_configs/"$1".json
 }
 
 hex_public_key_to_json_byte_array() {
@@ -110,41 +112,39 @@ hex_public_key_to_json_byte_array() {
 # Main code block
 ##########################################################################################
 
-
-near account create-account sponsor-by-faucet-service $SIGNER autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
-if [ $REDEPLOY -eq 1 ]; then
+near account create-account sponsor-by-faucet-service "$SIGNER" autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+if [ "$REDEPLOY" -eq 1 ]; then
     echo "Redeploying contract"
     if [ -d "$DIR" ]; then
         echo "Clearing existing configs directory"
         rm -rf "devnet_configs"
-        
+
     fi
-    near deploy $SIGNER "$(compile_contract)"
+    near deploy "$SIGNER" "$(compile_contract)"
 fi
 for i in $(seq 0 $((PARTICIPANTS - 1))); do
     echo "Generating key for participant $i"
-    generate_key $i
-    near account create-account sponsor-by-faucet-service mpc-test$i-$SUFFIX.testnet use-manually-provided-public-key $(jq -r '.near_account_public_key' devnet_configs/$i.json) network-config testnet create
+    generate_key "$i"
+    near account create-account sponsor-by-faucet-service mpc-test"$i"-"$SUFFIX".testnet use-manually-provided-public-key $(jq -r '.near_account_public_key' devnet_configs/"$i".json) network-config testnet create
     # near account create-account fund-myself mpc-test$i-$SUFFIX.testnet '0.01 NEAR' use-manually-provided-public-key $(jq -r '.near_account_public_key' devnet_configs/$i.json) sign-as $SIGNER network-config testnet sign-with-legacy-keychain send
 done
 
-
 CANDIDATES="{
     $(for i in $(seq 0 $((PARTICIPANTS - 1))); do
-        MPC_NAME=mpc-test$i-$SUFFIX.testnet
-        echo "\"$MPC_NAME\": {
+    MPC_NAME=mpc-test$i-$SUFFIX.testnet
+    echo "\"$MPC_NAME\": {
             \"account_id\": \"$MPC_NAME\",
-            \"cipher_pk\": $(hex_public_key_to_json_byte_array $(jq -r '.cipher_public_key' devnet_configs/$i.json)),
-            \"sign_pk\": \"$(jq -r '.sign_public_key' devnet_configs/$i.json)\",
-            \"url\": \"$(jq -r '.url' devnet_configs/$i.json)\"
+            \"cipher_pk\": $(hex_public_key_to_json_byte_array $(jq -r '.cipher_public_key' devnet_configs/"$i".json)),
+            \"sign_pk\": \"$(jq -r '.sign_public_key' devnet_configs/"$i".json)\",
+            \"url\": \"$(jq -r '.url' devnet_configs/"$i".json)\"
         }"
-        if [ $((i + 1)) -lt $PARTICIPANTS ]; then echo ","; fi
-    done)
+    if [ $((i + 1)) -lt "$PARTICIPANTS" ]; then echo ","; fi
+done)
 }"
 
 INIT_ARGS=$(jq -n --argjson candidates "$CANDIDATES" --argjson threshold "$THRESHOLD" '{ "candidates": $candidates, "threshold": $threshold }')
 
-near call $SIGNER init "$INIT_ARGS" --use-account $SIGNER
+near call "$SIGNER" init "$INIT_ARGS" --use-account "$SIGNER"
 
 # Initialize the JSON structure
 nodes='{
@@ -152,8 +152,8 @@ nodes='{
 '
 
 for i in $(seq 0 $((PARTICIPANTS - 1))); do
-  # Use jq to extract and format data for the current file
-  node=$(jq --arg i "$i" --arg s "$SUFFIX" '
+    # Use jq to extract and format data for the current file
+    node=$(jq --arg i "$i" --arg s "$SUFFIX" '
     {
       account: "mpc-test\($i)-\($s).testnet",
       account_pk: .near_account_public_key,
@@ -165,11 +165,11 @@ for i in $(seq 0 $((PARTICIPANTS - 1))); do
     }
   ' "devnet_configs/$i.json")
 
-  if [ $((i + 1)) -lt $PARTICIPANTS ]
-    then nodes+="$node,\n"
-  else
-    nodes+="$node\n"
-  fi
+    if [ $((i + 1)) -lt "$PARTICIPANTS" ]; then
+        nodes+="$node,\n"
+    else
+        nodes+="$node\n"
+    fi
 
 done
 
@@ -178,7 +178,7 @@ nodes+="
   \"mpc_contract_signer\": \"signer-$SUFFIX.testnet\"
 }"
 
-echo -e "$nodes"| jq > devnet_configs/nodes.tfvars.json
+echo -e "$nodes" | jq >devnet_configs/nodes.tfvars.json
 
 echo "The signer account is $SIGNER."
 echo "The signer account is required in the sign_request.sh script. Please retain it until the completion of the process."
