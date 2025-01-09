@@ -8,6 +8,6 @@ edition = "2021"
 [dependencies]
 hex = "0.4.3"
 near-crypto = "0.23"
-mpc-keys = { path = "../../../chain-signatures/keys" }
+mpc-keys = { path = "../chain-signatures/keys" }
 
 [workspace]
