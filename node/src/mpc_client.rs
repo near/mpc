@@ -195,13 +195,18 @@ impl MpcClient {
                     let sign_request_store = self.sign_request_store.clone();
                     let sign_response_sender = sign_response_sender.clone();
 
-                    let ChainSignatureRequest {
+                    let Some(ChainSignatureRequest {
                         request_id,
                         request,
                         predecessor_id,
                         entropy,
                         timestamp_nanosec,
-                    } = sign_request_receiver.recv().await.unwrap();
+                    }) = sign_request_receiver.recv().await
+                    else {
+                        // If this branch hits, it means the channel is closed, meaning the
+                        // indexer is being shutdown. So just quit this task.
+                        break;
+                    };
 
                     let alive_participants = network_client.all_alive_participant_ids();
 
