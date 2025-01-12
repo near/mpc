@@ -60,7 +60,7 @@ impl MpcClient {
         self,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
         mut sign_request_receiver: mpsc::Receiver<ChainSignatureRequest>,
-        sign_response_sender: mpsc::Sender<ChainRespondArgs>,
+        sign_response_sender: mpsc::Sender<(ChainRespondArgs, u64)>,
     ) -> anyhow::Result<()> {
         let monitor_passive_channels = {
             let client = self.client.clone();
@@ -245,7 +245,9 @@ impl MpcClient {
 
                                 let response =
                                     ChainRespondArgs::new(&request, &signature, &public_key)?;
-                                let _ = sign_response_sender.send(response).await;
+                                let _ = sign_response_sender
+                                    .send((response, request.timestamp_nanosec))
+                                    .await;
                             }
 
                             anyhow::Ok(())

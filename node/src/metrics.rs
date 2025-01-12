@@ -1,4 +1,5 @@
 use lazy_static::lazy_static;
+use near_o11y::metrics::exponential_buckets;
 
 lazy_static! {
     pub static ref MPC_NUM_TRIPLES_GENERATED: prometheus::IntCounter =
@@ -99,6 +100,18 @@ lazy_static! {
         prometheus::register_int_counter!(
             "mpc_num_sign_responses_indexed",
             "Number of signature responses sent by this node subsequently observed on chain",
+        )
+        .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_SIGN_RESPONSE_LATENCIES: prometheus::HistogramVec =
+        prometheus::register_histogram_vec!(
+            "mpc_sign_response_latencies",
+            "Latency from the block containing the signature request to the
+             block containing the signature response",
+            &[],
+            exponential_buckets(0.5, 2.0, 11).unwrap(),
         )
         .unwrap();
 }
