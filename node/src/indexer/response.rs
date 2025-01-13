@@ -268,9 +268,7 @@ async fn ensure_respond_tx(
         if let Some(response_timestamp_nanosec) = indexer_state.peek_nonce(nonce) {
             // Record the request-to-response latency
             let latency_sec = (response_timestamp_nanosec - request_timestamp_nanosec) as f64 / 1e9;
-            metrics::MPC_SIGN_REQUEST_TO_RESPONSE_LATENCY
-                .with_label_values(&[])
-                .observe(latency_sec);
+            metrics::MPC_SIGN_REQUEST_TO_RESPONSE_LATENCY.observe(latency_sec);
             return;
         }
 

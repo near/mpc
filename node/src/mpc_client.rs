@@ -241,7 +241,6 @@ impl MpcClient {
                                 .await??;
                                 let make_signature_duration = signature_start.elapsed();
                                 metrics::MPC_SIGN_COMPUTATION_LATENCY
-                                    .with_label_values(&[])
                                     .observe(make_signature_duration.as_secs_f64());
 
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER

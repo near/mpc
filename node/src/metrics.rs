@@ -75,12 +75,11 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub static ref MPC_SIGN_COMPUTATION_LATENCY: prometheus::HistogramVec =
-        prometheus::register_histogram_vec!(
+    pub static ref MPC_SIGN_COMPUTATION_LATENCY: prometheus::Histogram =
+        prometheus::register_histogram!(
             "mpc_signature_computation_latency",
             "Time elapsed between the leader initiating a signature computation
              and obtaining a full signature",
-            &[],
             exponential_buckets(0.1, 2.0, 10).unwrap(),
         )
         .unwrap();
@@ -108,12 +107,11 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub static ref MPC_SIGN_REQUEST_TO_RESPONSE_LATENCY: prometheus::HistogramVec =
-        prometheus::register_histogram_vec!(
+    pub static ref MPC_SIGN_REQUEST_TO_RESPONSE_LATENCY: prometheus::Histogram =
+        prometheus::register_histogram!(
             "mpc_signature_request_to_response_latency",
             "Latency from the block containing the signature request to the
              block containing the signature response",
-            &[],
             exponential_buckets(0.5, 2.0, 10).unwrap(),
         )
         .unwrap();
