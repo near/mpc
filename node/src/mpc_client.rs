@@ -21,7 +21,7 @@ use crate::key_generation::RootKeyshareData;
 use cait_sith::FullSignature;
 use k256::{AffinePoint, Secp256k1};
 use std::sync::Arc;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
