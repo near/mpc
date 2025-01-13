@@ -121,7 +121,7 @@ impl BorshDeserialize for UniqueId {
     }
 }
 
- struct ColdQueue<T, CondVal: Default + Eq> {
+struct ColdQueue<T, CondVal: Default + Eq> {
     /// Number of elements presented in the cold_queue since last update of set of participants.
     /// It acts as a barrier in the queue so that if no element in the queue is eligible, we don't loop forever.
     /// We only move the barrier forward if the condition has possibly changed.
@@ -205,13 +205,13 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
     }
 }
 
- enum ColdQueueTakeResult<T> {
+enum ColdQueueTakeResult<T> {
     Taken((UniqueId, T)),
     NotTakenButSomeMayBeAvailable,
     NotTakenAndNoneAvailable,
 }
 
- enum ColdQueueAddResult<T> {
+enum ColdQueueAddResult<T> {
     ConditionSatisfied(T),
     Enqueued,
 }

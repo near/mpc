@@ -286,28 +286,30 @@ impl Cli {
                                 run_network_client(Arc::new(sender), Box::new(receiver));
 
                             let active_participants_query = {
-                let network_client = network_client.clone();
-                Arc::new(move || network_client.all_alive_participant_ids())
-            };
+                                let network_client = network_client.clone();
+                                Arc::new(move || network_client.all_alive_participant_ids())
+                            };
 
-            let triple_store = Arc::new(TripleStorage::new(
-                Clock::real(),
-                secret_db.clone(),
-                DBCol::Triple,
-                network_client.my_participant_id(),
-                |participants, pair| pair.is_subset_of_active_participants(participants),
-                active_participants_query.clone(),
+                            let triple_store = Arc::new(TripleStorage::new(
+                                Clock::real(),
+                                secret_db.clone(),
+                                DBCol::Triple,
+                                network_client.my_participant_id(),
+                                |participants, pair| {
+                                    pair.is_subset_of_active_participants(participants)
+                                },
+                                active_participants_query.clone(),
                             )?);
 
                             let presignature_store = Arc::new(PresignatureStorage::new(
                                 Clock::real(),
-                secret_db.clone(),
-                DBCol::Presignature,
-                network_client.my_participant_id(),
-                |participants, presignature| {
-                    presignature.is_subset_of_active_participants(participants)
-                },
-                active_participants_query,
+                                secret_db.clone(),
+                                DBCol::Presignature,
+                                network_client.my_participant_id(),
+                                |participants, presignature| {
+                                    presignature.is_subset_of_active_participants(participants)
+                                },
+                                active_participants_query,
                             )?);
 
                             let sign_request_store =
