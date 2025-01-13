@@ -382,6 +382,16 @@ impl Cli {
             } => {
                 let secrets = SecretsConfig::from_cli(&secret_store_key_hex, p2p_private_key)?;
                 let config = load_config_file(Path::new(&home_dir))?;
+                // TODO(#43) this will be refactored to be part of the Start command. For now,
+                // allow the code to be duplicated.
+                let mpc_runtime = if let Some(n_threads) = config.cores {
+                    tokio::runtime::Builder::new_multi_thread()
+                        .worker_threads(std::cmp::max(n_threads, 1))
+                        .enable_all()
+                        .build()?
+                } else {
+                    tokio::runtime::Runtime::new()?
+                };
                 // TODO(#75): Support reading from smart contract state here as well.
                 let mpc_config = MpcConfig::from_participants_with_near_account_id(
                     config
@@ -391,38 +401,49 @@ impl Cli {
                     &config.my_near_account_id,
                 )?;
                 let config = config.into_full_config(mpc_config, secrets);
-                let (root_task, _) = tracking::start_root_task(async move {
-                    let _root_task_handle = tracking::current_task();
-                    #[cfg(test)]
-                    let _web_server_handle = tracking::spawn_checked(
-                        "web server",
-                        start_web_server_testing(_root_task_handle, config.web_ui.clone(), None)
-                            .await?,
-                    );
 
-                    #[cfg(not(test))]
-                    let _web_server_handle = tracking::spawn_checked(
-                        "web server",
-                        start_web_server(config.web_ui.clone()).await?,
-                    );
-                    let (sender, receiver) =
-                        new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key).await?;
-                    // Must wait for all participants to be ready before starting key generation.
-                    sender
-                        .wait_for_ready(config.mpc.participants.participants.len())
-                        .await?;
-                    let (network_client, channel_receiver, _handle) =
-                        run_network_client(Arc::new(sender), Box::new(receiver));
-                    run_key_generation_client(
-                        PathBuf::from(home_dir),
-                        config.into(),
-                        network_client,
-                        channel_receiver,
-                    )
-                    .await?;
-                    anyhow::Ok(())
-                });
-                root_task.await?;
+                mpc_runtime
+                    .spawn(async move {
+                        let (root_task, _) = tracking::start_root_task(async move {
+                            let _root_task_handle = tracking::current_task();
+                            #[cfg(test)]
+                            let _web_server_handle = tracking::spawn_checked(
+                                "web server",
+                                start_web_server_testing(
+                                    _root_task_handle,
+                                    config.web_ui.clone(),
+                                    None,
+                                )
+                                .await?,
+                            );
+
+                            #[cfg(not(test))]
+                            let _web_server_handle = tracking::spawn_checked(
+                                "web server",
+                                start_web_server(config.web_ui.clone()).await?,
+                            );
+                            let (sender, receiver) =
+                                new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key)
+                                    .await?;
+                            // Must wait for all participants to be ready before starting key generation.
+                            sender
+                                .wait_for_ready(config.mpc.participants.participants.len())
+                                .await?;
+                            let (network_client, channel_receiver, _handle) =
+                                run_network_client(Arc::new(sender), Box::new(receiver));
+                            run_key_generation_client(
+                                PathBuf::from(home_dir),
+                                config.into(),
+                                network_client,
+                                channel_receiver,
+                            )
+                            .await?;
+                            anyhow::Ok(())
+                        });
+                        root_task.await
+                    })
+                    .await??;
+                drop(AsyncDroppableRuntime::new(mpc_runtime));
                 Ok(())
             }
             Cli::GenerateTestConfigs {
