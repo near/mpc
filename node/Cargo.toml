@@ -51,6 +51,7 @@ near-client = { git = "https://github.com/near/nearcore", rev = "88ec6c83b10e687
 near-config-utils = { git = "https://github.com/near/nearcore", rev = "88ec6c83b10e687474316517279f5bab76698db5" }
 near-crypto = { git = "https://github.com/near/nearcore", rev = "88ec6c83b10e687474316517279f5bab76698db5" }
 near-o11y = { git = "https://github.com/near/nearcore", rev = "88ec6c83b10e687474316517279f5bab76698db5" }
+near-time = { git = "https://github.com/near/nearcore", rev = "88ec6c83b10e687474316517279f5bab76698db5", features = ["clock"] }
 
 mpc-contract = { git = "https://github.com/near/mpc/", tag = "1.0.0-rc.5" }
 

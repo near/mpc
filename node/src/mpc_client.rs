@@ -294,10 +294,7 @@ impl MpcClient {
         self: Arc<Self>,
         id: SignatureId,
     ) -> anyhow::Result<(FullSignature<Secp256k1>, AffinePoint)> {
-        let (presignature_id, presignature) = self
-            .presignature_store
-            .take_owned(&self.client.all_alive_participant_ids())
-            .await;
+        let (presignature_id, presignature) = self.presignature_store.take_owned().await;
         let sign_request = self.sign_request_store.get(id).await?;
         let (signature, public_key) = sign(
             self.client.new_channel_for_task(

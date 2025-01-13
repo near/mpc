@@ -1,4 +1,4 @@
-use crate::assets::{ProtocolsStorage, UniqueId};
+use crate::assets::{DistributedAssetStorage, UniqueId};
 use crate::background::InFlightGenerationTracker;
 use crate::config::PresignatureConfig;
 use crate::hkdf::{derive_public_key, derive_randomness};
@@ -120,7 +120,7 @@ pub async fn sign(
     Ok((signature, public_key))
 }
 
-pub type PresignatureStorage = ProtocolsStorage<PresignOutputWithParticipants>;
+pub type PresignatureStorage = DistributedAssetStorage<PresignOutputWithParticipants>;
 
 /// Continuously generates presignatures, trying to maintain the desired number of
 /// presignatures available, using the desired number of concurrent computations as
@@ -160,17 +160,9 @@ pub async fn run_background_presignature_generation(
             && in_flight_generations.num_in_flight()
                 < config.concurrency * 2
         {
-            let current_active_participants_ids = client.all_alive_participant_ids();
-            if current_active_participants_ids.len() < threshold {
-                // that should not happen often, so sleeping here is okay
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                continue;
-            }
             let id = presignature_store.generate_and_reserve_id();
             progress_tracker.set_waiting_for_triples(true);
-            let (paired_triple_id, (triple0, triple1)) = triple_store
-                .take_owned(&current_active_participants_ids)
-                .await;
+            let (paired_triple_id, (triple0, triple1)) = triple_store.take_owned().await;
             progress_tracker.set_waiting_for_triples(false);
             let participants = participants_from_triples(&triple0, &triple1);
             let task_id = crate::primitives::MpcTaskId::Presignature {

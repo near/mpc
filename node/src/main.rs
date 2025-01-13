@@ -2,6 +2,8 @@ use clap::Parser;
 use tracing::init_logging;
 
 mod assets;
+#[cfg(test)]
+mod async_testing;
 mod background;
 mod cli;
 mod config;
