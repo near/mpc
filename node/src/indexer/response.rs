@@ -266,9 +266,9 @@ async fn ensure_respond_tx(
         // If the transaction is sent, wait the full timeout then check if it got included
         time::sleep(timeout).await;
         if let Some(response_timestamp_nanosec) = indexer_state.peek_nonce(nonce) {
-            metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
+            // Record the request-to-response latency
             let latency_sec = (response_timestamp_nanosec - request_timestamp_nanosec) as f64 / 1e9;
-            metrics::MPC_SIGN_RESPONSE_LATENCIES
+            metrics::MPC_SIGN_REQUEST_TO_RESPONSE_LATENCY
                 .with_label_values(&[])
                 .observe(latency_sec);
             return;
@@ -277,10 +277,8 @@ async fn ensure_respond_tx(
         metrics::MPC_NUM_SIGN_RESPONSES_TIMED_OUT.inc();
     }
 
-    // If we give up without observing a successful response, increment the +inf bucket
-    metrics::MPC_SIGN_RESPONSE_LATENCIES
-        .with_label_values(&[])
-        .observe(f64::MAX);
+    // We gave up without observing our response on-chain
+    metrics::MPC_NUM_SIGN_RESPONSES_ABANDONED.inc();
 }
 
 pub(crate) async fn handle_sign_responses(

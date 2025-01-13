@@ -21,7 +21,7 @@ use crate::key_generation::RootKeyshareData;
 use cait_sith::FullSignature;
 use k256::{AffinePoint, Secp256k1};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Instant, Duration};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
@@ -233,11 +233,16 @@ impl MpcClient {
                                     .with_label_values(&["total"])
                                     .inc();
 
+                                let signature_start = Instant::now();
                                 let (signature, public_key) = timeout(
                                     Duration::from_secs(config.signature.timeout_sec),
                                     this.clone().make_signature(request.id),
                                 )
                                 .await??;
+                                let make_signature_duration = signature_start.elapsed();
+                                metrics::MPC_SIGN_COMPUTATION_LATENCY
+                                    .with_label_values(&[])
+                                    .observe(make_signature_duration.as_secs_f64());
 
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
                                     .with_label_values(&["succeeded"])
