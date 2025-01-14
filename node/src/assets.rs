@@ -1,13 +1,13 @@
 use crate::db::{DBCol, SecretDB};
-use crate::primitives::{HasParticipants, ParticipantId};
+use crate::primitives::ParticipantId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_time::Clock;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
@@ -121,80 +121,179 @@ impl BorshDeserialize for UniqueId {
     }
 }
 
-pub struct ColdQueue<T> {
+struct ColdQueue<T, CondVal: Default + Eq> {
     /// Number of elements presented in the cold_queue since last update of set of participants.
     /// It acts as a barrier in the queue so that if no element in the queue is eligible, we don't loop forever.
     /// We only move the barrier forward if the condition has possibly changed.
     cold_available: usize,
     cold_queue: VecDeque<(UniqueId, T)>,
+
+    /// The last condition value that was used to check against the cold queue elements.
+    /// Whenever the current condition value changes, we need to update the cold_available barrier.
+    last_condition_value: CondVal,
+    /// The actual condition function; this doesn't change.
+    condition: fn(&CondVal, &T) -> bool,
+    /// Function to fetch the condition value.
+    condition_value_fetcher: Arc<dyn Fn() -> CondVal + Send + Sync>,
+    /// The time when we should next fetch the condition value.
+    next_fetch_due: near_time::Instant,
+    clock: Clock,
 }
 
-pub struct DoubleQueue<T>
+impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
+    pub(self) fn new(
+        clock: Clock,
+        condition: fn(&CondVal, &T) -> bool,
+        condition_value_fetcher: Arc<dyn Fn() -> CondVal + Send + Sync>,
+    ) -> Self {
+        Self {
+            cold_available: 0,
+            cold_queue: VecDeque::new(),
+            last_condition_value: Default::default(),
+            condition,
+            condition_value_fetcher,
+            next_fetch_due: clock.now(),
+            clock,
+        }
+    }
+
+    /// Unconditionally update the condition value;
+    /// If the condition value changed, move the barrier to the end of the queue.
+    pub(self) fn update_condition_value(&mut self) {
+        const CONDITION_REFRESH_INTERVAL: near_time::Duration = near_time::Duration::seconds(1);
+        self.next_fetch_due = self.clock.now() + CONDITION_REFRESH_INTERVAL;
+        let new_condition_value = (self.condition_value_fetcher)();
+        if new_condition_value != self.last_condition_value {
+            self.last_condition_value = new_condition_value;
+            self.cold_available = self.cold_queue.len();
+        }
+    }
+
+    fn update_condition_value_if_due(&mut self) {
+        if self.clock.now() < self.next_fetch_due {
+            return;
+        }
+        self.update_condition_value();
+    }
+
+    /// Try to remove and return an element that satisfies the current condition.
+    /// If the element doesn't match, it will be moved to the end of the queue after the barrier.
+    pub(self) fn take(&mut self) -> ColdQueueTakeResult<T> {
+        self.update_condition_value_if_due();
+        if self.cold_available == 0 {
+            return ColdQueueTakeResult::NotTakenAndNoneAvailable;
+        };
+        let (id, value) = self.cold_queue.pop_front().unwrap(); // can't fail
+        self.cold_available -= 1;
+        if (self.condition)(&self.last_condition_value, &value) {
+            return ColdQueueTakeResult::Taken((id, value));
+        }
+        self.cold_queue.push_back((id, value));
+        ColdQueueTakeResult::NotTakenButSomeMayBeAvailable
+    }
+
+    /// Adds an element to the cold queue. If the condition is satisfied,
+    /// instead of adding, it is returned. Otherwise, adds it to the end of the cold
+    /// queue after the barrier.
+    pub(self) fn maybe_add(&mut self, id: UniqueId, value: T) -> ColdQueueAddResult<T> {
+        self.update_condition_value_if_due();
+        if (self.condition)(&self.last_condition_value, &value) {
+            return ColdQueueAddResult::ConditionSatisfied(value);
+        }
+        self.cold_queue.push_back((id, value));
+        ColdQueueAddResult::Enqueued
+    }
+}
+
+enum ColdQueueTakeResult<T> {
+    Taken((UniqueId, T)),
+    NotTakenButSomeMayBeAvailable,
+    NotTakenAndNoneAvailable,
+}
+
+enum ColdQueueAddResult<T> {
+    ConditionSatisfied(T),
+    Enqueued,
+}
+
+pub struct DoubleQueue<T, CondVal: Default + Eq>
 where
     T: Send + 'static,
 {
     hot_sender: flume::Sender<(UniqueId, T)>,
     hot_receiver: flume::Receiver<(UniqueId, T)>,
-    cold_queue: Arc<Mutex<ColdQueue<T>>>,
+    cold_queue: Arc<Mutex<ColdQueue<T, CondVal>>>,
+    clock: Clock,
 }
 
-impl<T> DoubleQueue<T>
+impl<T, CondVal: Default + Eq> DoubleQueue<T, CondVal>
 where
     T: Send + 'static,
 {
-    pub fn new() -> Self {
+    pub fn new(
+        clock: Clock,
+        condition: fn(&CondVal, &T) -> bool,
+        condition_value_fetcher: Arc<dyn Fn() -> CondVal + Send + Sync>,
+    ) -> Self {
         let (hot_sender, hot_receiver) = flume::unbounded();
         Self {
             hot_sender,
             hot_receiver,
-            cold_queue: Arc::new(Mutex::new(ColdQueue {
-                cold_available: 0,
-                cold_queue: VecDeque::new(),
-            })),
+            cold_queue: Arc::new(Mutex::new(ColdQueue::new(
+                clock.clone(),
+                condition,
+                condition_value_fetcher,
+            ))),
+            clock,
         }
-    }
-
-    pub fn set_of_alive_participants_has_changed(&self) {
-        // All presented elements may have a chance to satisfy condition(&value.0, &value.1) call since that moment
-        // So increase cold_available to current size of the cold_queue
-        let mut cold_queue = self.cold_queue.lock().unwrap();
-        cold_queue.cold_available = cold_queue.cold_queue.len();
     }
 
     pub fn add_owned(&self, id: UniqueId, value: T) {
         self.hot_sender.send((id, value)).unwrap()
     }
 
-    pub async fn take_owned_with_condition(
-        &self,
-        condition: impl Fn(&UniqueId, &T) -> bool,
-    ) -> (UniqueId, T) {
+    pub async fn take_owned(&self) -> (UniqueId, T) {
+        // Always query the new condition value before taking an element.
+        // This is to prevent the case where the condition has been updated,
+        // but we're not yet aware of it, and the caller calls this in a loop and
+        // we keep yielding undesired elements, but the caller keeps throwing them
+        // away and we quickly exhaust the available assets.
+        self.cold_queue.lock().unwrap().update_condition_value();
         loop {
-            // Try first to retrieve value which may be eligible now
-            // (but wasn't in the past)
-            let value_opt = {
-                let mut cold_queue = self.cold_queue.lock().unwrap();
-                if cold_queue.cold_available == 0 {
-                    None
-                } else {
-                    cold_queue.cold_available -= 1;
-                    Some(cold_queue.cold_queue.pop_front().unwrap())
+            let taken = self.cold_queue.lock().unwrap().take();
+            match taken {
+                ColdQueueTakeResult::Taken(result) => {
+                    return result;
                 }
-            };
-            let value = if let Some(value) = value_opt {
-                value
-            } else {
-                // Can't fail, because we keep a sender alive
-                self.hot_receiver.recv_async().await.unwrap()
-            };
-            if condition(&value.0, &value.1) {
-                return value;
-            }
+                ColdQueueTakeResult::NotTakenButSomeMayBeAvailable => {
+                    continue;
+                }
+                ColdQueueTakeResult::NotTakenAndNoneAvailable => {
+                    // If the cold queue is exhausted, wait for a new element that is just produced.
+                    // Then, if that element also doesn't satisfy our condition, we put it in the cold
+                    // queue and continue.
 
-            // This element won't be retrieved until next call of set_of_alive_participants_has_changed(),
-            // which can possibly imply that result of condition(&value.0, &value.1) has changed
-            let mut cold_queue = self.cold_queue.lock().unwrap();
-            cold_queue.cold_queue.push_back(value);
+                    tokio::select! {
+                        _ = self.clock.sleep(near_time::Duration::seconds(1)) => {
+                            // Don't wait for too long, because the condition could have changed
+                            // making a cold queue element eligible.
+                            continue;
+                        }
+                        received = self.hot_receiver.recv_async() => {
+                            // can't fail, because self keeps a sender.
+                            let (id, value) = received.unwrap();
+                            match self.cold_queue.lock().unwrap().maybe_add(id, value) {
+                                ColdQueueAddResult::ConditionSatisfied(value) => {
+                                    return (id, value);
+                                }
+                                ColdQueueAddResult::Enqueued => {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -219,7 +318,7 @@ where
     db: Arc<SecretDB>,
     col: DBCol,
     my_participant_id: ParticipantId,
-    owned_queue: DoubleQueue<T>,
+    owned_queue: DoubleQueue<T, Vec<ParticipantId>>,
     last_id: Mutex<Option<UniqueId>>,
     pending_unowned_assets: Arc<Mutex<HashMap<UniqueId, oneshot::Receiver<()>>>>,
 }
@@ -229,11 +328,14 @@ where
     T: Serialize + DeserializeOwned + Send + 'static,
 {
     pub fn new(
+        clock: Clock,
         db: Arc<SecretDB>,
         col: DBCol,
         my_participant_id: ParticipantId,
+        condition: fn(&Vec<ParticipantId>, &T) -> bool,
+        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
     ) -> anyhow::Result<Self> {
-        let owned_queue = DoubleQueue::new();
+        let owned_queue = DoubleQueue::new(clock, condition, alive_participant_ids_query);
 
         // We're just going to replicate the owned assets to memory. It's not the most efficient,
         // but it's the simplest way to implement a multi-consumer, multi-producer queue that
@@ -261,10 +363,6 @@ where
             last_id: Mutex::new(last_id),
             pending_unowned_assets: Arc::new(Mutex::new(HashMap::new())),
         })
-    }
-
-    fn set_of_alive_participants_has_changed(&self) {
-        self.owned_queue.set_of_alive_participants_has_changed();
     }
 
     /// Generates an ID that won't conflict with existing ones, and reserves it
@@ -297,22 +395,14 @@ where
         self.owned_queue.len()
     }
 
-    pub async fn take_owned_with_condition(
-        &self,
-        cond: impl Fn(&UniqueId, &T) -> bool,
-    ) -> (UniqueId, T) {
-        let (id, asset) = self.owned_queue.take_owned_with_condition(cond).await;
+    pub async fn take_owned(&self) -> (UniqueId, T) {
+        let (id, asset) = self.owned_queue.take_owned().await;
         let mut update = self.db.update();
         update.delete(self.col, &borsh::to_vec(&id).unwrap());
         update
             .commit()
             .expect("Unrecoverable error writing to database");
         (id, asset)
-    }
-
-    #[cfg(test)]
-    pub async fn take_owned(&self) -> (UniqueId, T) {
-        self.take_owned_with_condition(|_, _| true).await
     }
 
     /// Adds an owned asset to the storage.
@@ -417,93 +507,17 @@ where
     }
 }
 
-pub struct ProtocolsStorage<T>
-where
-    T: Serialize + DeserializeOwned + Send + HasParticipants + 'static,
-{
-    storage: DistributedAssetStorage<T>,
-    last_alive_participants_set_hash: AtomicU64,
-}
-
-impl<T> ProtocolsStorage<T>
-where
-    T: Serialize + DeserializeOwned + Send + HasParticipants + 'static,
-{
-    fn get_hash(participants: &Vec<ParticipantId>) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        participants.hash(&mut hasher);
-        hasher.finish()
-    }
-    pub fn new(
-        db: Arc<SecretDB>,
-        col: DBCol,
-        my_participant_id: ParticipantId,
-        all_participant_ids: &Vec<ParticipantId>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
-            storage: DistributedAssetStorage::<T>::new(db, col, my_participant_id)?,
-            last_alive_participants_set_hash: AtomicU64::new(Self::get_hash(all_participant_ids)),
-        })
-    }
-
-    /// Returns true if set of active participants was actually changed
-    /// It also does not make sense to call this function outside of take_owned,
-    /// since we still use passed set of participants inside of take_owned()
-    /// (for providing condition whether a given set of participants is subset of alive participants)
-    /// even if it was changed during the call
-    fn set_alive_participants_ids(&self, participants: &Vec<ParticipantId>) -> bool {
-        let new_hash = Self::get_hash(participants);
-        self.last_alive_participants_set_hash
-            .swap(new_hash, Ordering::Relaxed)
-            != new_hash
-    }
-
-    pub fn generate_and_reserve_id_range(&self, count: u32) -> UniqueId {
-        self.storage.generate_and_reserve_id_range(count)
-    }
-
-    pub fn generate_and_reserve_id(&self) -> UniqueId {
-        self.storage.generate_and_reserve_id()
-    }
-
-    pub fn num_owned(&self) -> usize {
-        self.storage.num_owned()
-    }
-
-    pub async fn take_owned(&self, alive_participants_ids: &Vec<ParticipantId>) -> (UniqueId, T) {
-        if self.set_alive_participants_ids(alive_participants_ids) {
-            self.storage.set_of_alive_participants_has_changed();
-        }
-        let is_subset_of_active_participants = |_: &UniqueId, value: &T| {
-            value.is_subset_of_active_participants(alive_participants_ids)
-        };
-        self.storage
-            .take_owned_with_condition(is_subset_of_active_participants)
-            .await
-    }
-
-    /// Adds an owned asset to the storage.
-    pub fn add_owned(&self, id: UniqueId, value: T) {
-        self.storage.add_owned(id, value)
-    }
-
-    pub fn prepare_unowned(&self, id: UniqueId) -> PendingUnownedAsset<T> {
-        self.storage.prepare_unowned(id)
-    }
-
-    pub async fn take_unowned(&self, id: UniqueId) -> anyhow::Result<T> {
-        self.storage.take_unowned(id).await
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{DoubleQueue, UniqueId};
+    use crate::async_testing::{run_future_once, MaybeReady};
     use crate::primitives::{HasParticipants, ParticipantId};
     use borsh::BorshDeserialize;
-    use futures::future::{maybe_done, MaybeDone};
     use futures::FutureExt;
+    use near_time::FakeClock;
     use serde::{Deserialize, Serialize};
+    use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
     struct ParticipantsWithI32(Vec<ParticipantId>, i32);
@@ -516,55 +530,75 @@ mod tests {
 
     #[test]
     fn test_double_queue() {
-        let queue = DoubleQueue::<i32>::new();
-        let id = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
-        queue.add_owned(id, 0);
-        queue.add_owned(id.add_to_counter(1).unwrap(), 1);
-        queue.add_owned(id.add_to_counter(2).unwrap(), 2);
-        let never_done_fut = queue.take_owned_with_condition(|_, _| false);
-        let MaybeDone::Future(never_done_fut) = maybe_done(never_done_fut) else {
-            panic!("should not be able to take value with false condition");
+        let clock = FakeClock::default();
+        let cond_value = Arc::new(AtomicI32::new(0));
+        let cond_value_query_count = Arc::new(AtomicUsize::new(0));
+        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, {
+            let cond_value = cond_value.clone();
+            let cond_value_query_count = cond_value_query_count.clone();
+            Arc::new(move || {
+                cond_value_query_count.fetch_add(1, Ordering::Relaxed);
+                cond_value.load(Ordering::Relaxed)
+            })
+        });
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        let id2 = id1.add_to_counter(1).unwrap();
+        let id3 = id1.add_to_counter(2).unwrap();
+        let id4 = id1.add_to_counter(3).unwrap();
+        queue.add_owned(id1, 1);
+        queue.add_owned(id2, 3);
+        queue.add_owned(id3, 5);
+
+        // Make condition "% 2 == 1".
+        cond_value.store(1, Ordering::Relaxed);
+        assert_eq!(queue.take_owned().now_or_never().unwrap(), (id1, 1));
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 1);
+
+        // Make condition "% 2 == 0". Start taking an element, but then, change the condition to
+        // "% 2 == 1". The task that has been waiting for an element does not immediately notice
+        // it, until a timer has passed.
+        cond_value.store(0, Ordering::Relaxed);
+        let fut = queue.take_owned();
+        let MaybeReady::Future(fut) = run_future_once(fut) else {
+            panic!("should not be able to take value when no element meets condition");
         };
-        let (retrieved_id, value) = queue
-            .take_owned_with_condition(|_, value| value == &1)
-            .now_or_never()
-            .unwrap();
-        assert_eq!(retrieved_id, id.add_to_counter(1).unwrap());
-        assert_eq!(value, 1);
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 2);
 
-        let asset0_fut = queue.take_owned_with_condition(|_, value| value == &0);
-
-        let MaybeDone::Future(asset0_fut) = maybe_done(asset0_fut) else {
-            panic!("should not be able to take value which is in cold queue yet");
+        cond_value.store(1, Ordering::Relaxed);
+        let MaybeReady::Future(fut) = run_future_once(fut) else {
+            panic!("should not be able to take value even when cond value changed");
         };
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 2);
 
-        let asset2_fut = queue.take_owned_with_condition(|_, value| value == &2);
+        clock.advance(near_time::Duration::seconds(1));
+        assert_eq!(fut.now_or_never().unwrap(), (id2, 3));
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 3);
 
-        let MaybeDone::Future(asset0_fut) = maybe_done(asset0_fut) else {
-            panic!("value 2 should be in the cold queue");
+        cond_value.store(0, Ordering::Relaxed);
+        let fut = queue.take_owned();
+        let MaybeReady::Future(fut) = run_future_once(fut) else {
+            panic!("should not be able to take value when no element meets condition");
         };
-
-        queue.set_of_alive_participants_has_changed();
-        let (retrieved_id, value) = asset2_fut.now_or_never().unwrap();
-        assert_eq!(retrieved_id, id.add_to_counter(2).unwrap());
-        assert_eq!(value, 2);
-
-        let MaybeDone::Future(asset0_fut) = maybe_done(asset0_fut) else {
-            panic!("value 0 still should be in the cold queue with counter 0");
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 4);
+        cond_value.store(1, Ordering::Relaxed);
+        let MaybeReady::Future(fut) = run_future_once(fut) else {
+            panic!("should not be able to take value even when cond value changed");
         };
-
-        queue.set_of_alive_participants_has_changed();
-        let (retrieved_id, value) = asset0_fut.now_or_never().unwrap();
-        assert_eq!(retrieved_id, id);
-        assert_eq!(value, 0);
-
-        let MaybeDone::Future(_) = maybe_done(never_done_fut) else {
-            panic!("should not be able to take value with false condition");
-        };
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 4);
+        queue.add_owned(id4, 4);
+        // Even though the condition changed, we may get an element returned that satisfied a
+        // stale condition (there's no point to prevent that because there can always be
+        // races).
+        assert_eq!(fut.now_or_never().unwrap(), (id4, 4));
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 4);
+        // However, if we take_owned() again, we'll use the correct condition.
+        assert_eq!(queue.take_owned().now_or_never().unwrap(), (id3, 5));
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 5);
     }
 
     #[test]
-    fn test_protocols_storage() {
+    fn test_distributed_assets_storage() {
+        let clock = FakeClock::default();
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let all_participants = vec![
@@ -583,11 +617,17 @@ mod tests {
             ParticipantId::from_raw(2),
             ParticipantId::from_raw(3),
         ];
-        let store = super::ProtocolsStorage::<ParticipantsWithI32>::new(
+        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
+        let store = super::DistributedAssetStorage::<ParticipantsWithI32>::new(
+            clock.clock(),
             db,
             crate::db::DBCol::Triple,
             ParticipantId::from_raw(42),
-            &all_participants,
+            |cond, val| val.is_subset_of_active_participants(cond),
+            {
+                let alive_participants = alive_participants.clone();
+                Arc::new(move || alive_participants.lock().unwrap().clone())
+            },
         )
         .unwrap();
         assert_eq!(store.num_owned(), 0);
@@ -601,7 +641,7 @@ mod tests {
         assert_eq!(store.num_owned(), 1);
         store.add_owned(id2, ParticipantsWithI32(all_participants.clone(), 456));
         assert_eq!(store.num_owned(), 2);
-        let asset1 = store.take_owned(&all_participants).now_or_never().unwrap();
+        let asset1 = store.take_owned().now_or_never().unwrap();
         assert_eq!(
             asset1,
             (id1, ParticipantsWithI32(all_participants.clone(), 123))
@@ -612,9 +652,11 @@ mod tests {
             ParticipantsWithI32(second_participants_subset.clone(), 789),
         );
         assert_eq!(store.num_owned(), 2);
-        let asset_fut = store.take_owned(&first_participants_subset);
 
-        let MaybeDone::Future(asset_fut) = maybe_done(asset_fut) else {
+        *alive_participants.lock().unwrap() = first_participants_subset.clone();
+        let asset_fut = store.take_owned();
+
+        let MaybeReady::Future(asset_fut) = run_future_once(asset_fut) else {
             panic!("Cannot take value since set of participants has changed");
         };
 
@@ -623,10 +665,7 @@ mod tests {
             ParticipantsWithI32(first_participants_subset.clone(), 101112),
         );
 
-        let asset3 = store
-            .take_owned(&first_participants_subset)
-            .now_or_never()
-            .unwrap();
+        let asset3 = store.take_owned().now_or_never().unwrap();
         assert_eq!(
             asset3,
             (
@@ -635,7 +674,7 @@ mod tests {
             )
         );
 
-        let MaybeDone::Future(asset_fut) = maybe_done(asset_fut) else {
+        let MaybeReady::Future(asset_fut) = run_future_once(asset_fut) else {
             panic!("Cannot take value since set of participants has changed");
         };
 
@@ -650,19 +689,22 @@ mod tests {
                 ParticipantsWithI32(first_participants_subset.clone(), 131415)
             )
         );
-
         assert_eq!(store.num_owned(), 0);
+
+        // Now go back to all participants being available.
+        *alive_participants.lock().unwrap() = all_participants.clone();
         store.add_owned(id5, ParticipantsWithI32(all_participants.clone(), 161718));
         assert_eq!(store.num_owned(), 1);
 
+        // Previously ineligible assets (456, 789, and 161718) should now be available.
         assert_eq!(
-            store.take_owned(&all_participants).now_or_never().unwrap(),
+            store.take_owned().now_or_never().unwrap(),
             (id2, ParticipantsWithI32(all_participants.clone(), 456))
         );
         assert_eq!(store.num_owned(), 2);
 
         assert_eq!(
-            store.take_owned(&all_participants).now_or_never().unwrap(),
+            store.take_owned().now_or_never().unwrap(),
             (
                 id3,
                 ParticipantsWithI32(second_participants_subset.clone(), 789)
@@ -671,7 +713,7 @@ mod tests {
         assert_eq!(store.num_owned(), 1);
 
         assert_eq!(
-            store.take_owned(&all_participants).now_or_never().unwrap(),
+            store.take_owned().now_or_never().unwrap(),
             (id5, ParticipantsWithI32(all_participants.clone(), 161718))
         );
         assert_eq!(store.num_owned(), 0);
@@ -711,9 +753,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let store = super::DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
             db,
             crate::db::DBCol::Triple,
             ParticipantId::from_raw(42),
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
         )
         .unwrap();
         assert_eq!(store.num_owned(), 0);
@@ -735,7 +780,7 @@ mod tests {
 
         // Dequeuing an asset before it's available will block.
         let asset3_fut = store.take_owned();
-        let MaybeDone::Future(asset3_fut) = maybe_done(asset3_fut) else {
+        let MaybeReady::Future(asset3_fut) = run_future_once(asset3_fut) else {
             panic!("id3 should not be ready");
         };
 
@@ -754,9 +799,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let store = super::DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
             db.clone(),
             crate::db::DBCol::Triple,
             ParticipantId::from_raw(42),
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
         )
         .unwrap();
 
@@ -767,11 +815,11 @@ mod tests {
         let id3 = id1.add_to_counter(2).unwrap();
 
         let asset1_fut = store.take_owned();
-        let MaybeDone::Future(asset1_fut) = maybe_done(asset1_fut) else {
+        let MaybeReady::Future(asset1_fut) = run_future_once(asset1_fut) else {
             panic!("nothing should not be ready");
         };
         let asset2_fut = store.take_owned();
-        let MaybeDone::Future(asset2_fut) = maybe_done(asset2_fut) else {
+        let MaybeReady::Future(asset2_fut) = run_future_once(asset2_fut) else {
             panic!("nothing should not be ready");
         };
 
@@ -800,9 +848,12 @@ mod tests {
         // here just to clarify the current behavior.
         drop(store);
         let store = super::DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
             db,
             crate::db::DBCol::Triple,
             ParticipantId::from_raw(42),
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
         )
         .unwrap();
         assert_eq!(store.take_owned().now_or_never().unwrap(), (id5, 5));
@@ -814,9 +865,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let store = super::DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
             db,
             crate::db::DBCol::Triple,
             ParticipantId::from_raw(42),
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
         )
         .unwrap();
 
@@ -843,10 +897,10 @@ mod tests {
         let pending4 = store.prepare_unowned(id4);
         let take3_fut = store.take_unowned(id3);
         let take4_fut = store.take_unowned(id4);
-        let MaybeDone::Future(take3_fut) = maybe_done(take3_fut) else {
+        let MaybeReady::Future(take3_fut) = run_future_once(take3_fut) else {
             panic!("id3 should not be ready");
         };
-        let MaybeDone::Future(take4_fut) = maybe_done(take4_fut) else {
+        let MaybeReady::Future(take4_fut) = run_future_once(take4_fut) else {
             panic!("id4 should not be ready");
         };
         pending3.commit(456);
@@ -863,9 +917,12 @@ mod tests {
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let myself = ParticipantId::from_raw(42);
         let store = super::DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
             db.clone(),
             crate::db::DBCol::Triple,
             myself,
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
         )
         .unwrap();
 
@@ -882,9 +939,15 @@ mod tests {
         store.prepare_unowned(UniqueId::new(other, 4, 0)).commit(8);
 
         drop(store);
-        let store =
-            super::DistributedAssetStorage::<u32>::new(db, crate::db::DBCol::Triple, myself)
-                .unwrap();
+        let store = super::DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
+            db,
+            crate::db::DBCol::Triple,
+            myself,
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
+        )
+        .unwrap();
         assert_eq!(store.num_owned(), 4);
         assert_eq!(store.take_owned().now_or_never().unwrap(), (id1, 1));
         assert_eq!(

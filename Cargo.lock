@@ -3706,6 +3706,7 @@ dependencies = [
  "near-indexer-primitives",
  "near-o11y",
  "near-sdk",
+ "near-time 0.0.0",
  "prometheus",
  "rand",
  "rand_xorshift",

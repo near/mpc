@@ -1,7 +1,4 @@
-use cait_sith::protocol::Participant;
-use k256::Secp256k1;
-
-use crate::assets::ProtocolsStorage;
+use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
 use crate::config::TripleConfig;
 use crate::metrics;
@@ -10,6 +7,8 @@ use crate::primitives::{choose_random_participants, PairedTriple};
 use crate::protocol::run_protocol;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{network::NetworkTaskChannel, primitives::ParticipantId};
+use cait_sith::protocol::Participant;
+use k256::Secp256k1;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -51,7 +50,7 @@ pub async fn run_many_triple_generation<const N: usize>(
     Ok(pairs.collect())
 }
 
-pub type TripleStorage = ProtocolsStorage<PairedTriple>;
+pub type TripleStorage = DistributedAssetStorage<PairedTriple>;
 
 pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
 
