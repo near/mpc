@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::cli::Cli;
 use crate::config::load_config_file;
 use crate::tests::free_resources_after_shutdown;
+use crate::tracking::AutoAbortTask;
 use near_o11y::testonly::init_integration_logger;
 use rand::Rng;
 use serial_test::serial;
@@ -30,7 +31,7 @@ async fn send_request(request_url: &str, index: usize) -> Result<DebugResponse, 
 // 1. Shut down one node and confirms that signatures can still be generated.
 // 2. Stop another node and assert that no signatures can be generated.
 // 3. Restart the node that was later shutdown and assert that signatures can be generated again
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 #[serial]
 async fn test_faulty_cluster() {
     init_integration_logger();
@@ -46,7 +47,7 @@ async fn test_faulty_cluster() {
         seed: Some(3),
         disable_indexer: true,
     };
-    generate_configs.run().unwrap();
+    generate_configs.run().await.unwrap();
 
     let configs = (0..NUM_PARTICIPANTS)
         .map(|i| load_config_file(&temp_dir.path().join(format!("{}", i))).unwrap())
@@ -68,12 +69,13 @@ async fn test_faulty_cluster() {
                     .parse()
                     .unwrap(),
             };
-            std::thread::spawn(move || cli.run())
+            cli.run()
         })
         .collect::<Vec<_>>();
-    for h in key_generation_runs {
-        let _ = h.join().unwrap();
-    }
+
+    futures::future::try_join_all(key_generation_runs)
+        .await
+        .unwrap();
 
     // Release the ports.
     for config in &configs {
@@ -97,7 +99,7 @@ async fn test_faulty_cluster() {
                 account_secret_key: None,
                 root_keyshare: None,
             };
-            (i, cli.run())
+            (i, AutoAbortTask::from(tokio::spawn(cli.run())))
         })
         .collect::<HashMap<_, _>>();
 
@@ -236,7 +238,7 @@ async fn test_faulty_cluster() {
             account_secret_key: None,
             root_keyshare: None,
         };
-        cli.run()
+        AutoAbortTask::from(tokio::spawn(cli.run()))
     };
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 

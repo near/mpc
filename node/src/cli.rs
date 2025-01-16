@@ -20,7 +20,7 @@ use crate::p2p::{generate_test_p2p_configs, new_tls_mesh_network};
 use crate::primitives::HasParticipants;
 use crate::sign::PresignatureStorage;
 use crate::sign_request::SignRequestStorage;
-use crate::tracking;
+use crate::tracking::{self, AutoAbortTask};
 use crate::triple::TripleStorage;
 #[cfg(not(test))]
 use crate::web::start_web_server;
@@ -37,7 +37,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use tokio::sync::mpsc;
-use tokio::sync::{Mutex, Notify, OnceCell};
+use tokio::sync::{Mutex, OnceCell};
 
 #[derive(Parser, Debug)]
 pub enum Cli {
@@ -97,38 +97,259 @@ pub enum Cli {
     GenerateIndexerConfigs(InitConfigArgs),
 }
 
-/// Helper struct to cancel threads.
-/// When dropped, this struct calls .notify_one() on cancel and .join() on handle
-/// Dropping this struct is blocking until .join() resolves.
-pub struct Handle<T> {
-    pub handle: Option<JoinHandle<T>>,
-    pub cancel: Arc<Notify>,
-}
+/// Tokio Runtime cannot be dropped in an asynchronous context (for good reason).
+/// However, we need to be able to drop it in two scenarios:
+///  - Integration tests, where we want to start up and shut down the CLI
+///    multiple times.
+///  - When the contract transitions in and out of the Running state (such as
+///    for key resharing), we need to tear down the existing tasks (including
+///    network) and restart with a new configuration. We need to ensure that
+///    all existing tasks have terminated before starting the new configuration.
+///    The only way to do that reliably is by dropping the runtime. If we cannot
+///    drop the runtime in an async context, we'd have to rely on std::thread,
+///    but that itself is difficult to deal with (mostly that we cannot easily
+///    abort it and would have to rely on additional notifications).
+///
+/// Yes, this is an ugly workaround. But in our use case, the async task that
+/// would be dropping a runtime is always on a thread that blocks on that task
+/// and that task only.
+struct AsyncDroppableRuntime(Option<tokio::runtime::Runtime>);
 
-impl<T> Handle<T> {
-    pub fn cancel(&self) {
-        self.cancel.notify_one();
+impl AsyncDroppableRuntime {
+    fn new(runtime: tokio::runtime::Runtime) -> Self {
+        Self(Some(runtime))
     }
 }
 
-impl<T> Drop for Handle<T> {
+impl Drop for AsyncDroppableRuntime {
     fn drop(&mut self) {
-        self.cancel();
-        if let Some(join_handle) = self.handle.take() {
-            if let Err(e) = join_handle.join() {
-                tracing::info!("mpc thread panicked: {:?}", e);
-            }
+        if let Some(runtime) = self.0.take() {
+            std::thread::scope(|s| {
+                s.spawn(|| drop(runtime));
+            });
         }
     }
 }
 
-pub struct StartResponse {
-    pub mpc_handle: Handle<Result<(), anyhow::Error>>,
-    pub indexer_handle: Option<JoinHandle<()>>,
+struct StartResponse {
+    _mpc_runtime: AsyncDroppableRuntime,
+    mpc_task: AutoAbortTask<Result<(), anyhow::Error>>,
+    indexer_handle: Option<JoinHandle<()>>,
 }
 
 impl Cli {
-    pub fn run(self) -> anyhow::Result<Option<StartResponse>> {
+    fn start(
+        home_dir: String,
+        secret_store_key_hex: String,
+        root_keyshare: Option<String>,
+        p2p_private_key: SecretKey,
+        account_secret_key: Option<SecretKey>,
+    ) -> anyhow::Result<StartResponse> {
+        let home_dir = PathBuf::from(home_dir);
+        let secrets = SecretsConfig::from_cli(&secret_store_key_hex, p2p_private_key)?;
+        let config = ConfigFile::from_file(&home_dir.join("config.yaml"))?;
+        let root_keyshare =
+            load_root_keyshare(&home_dir, secrets.local_storage_aes_key, &root_keyshare)?;
+
+        let (chain_config_sender, mut chain_config_receiver) = mpsc::channel(10);
+        let (sign_request_sender, sign_request_receiver) = mpsc::channel(10000);
+        let (sign_response_sender, sign_response_receiver) = mpsc::channel(10000);
+
+        // Start the near indexer
+        let indexer_handle = config.indexer.clone().map(|indexer_config| {
+            let config = config.clone();
+            let home_dir = home_dir.clone();
+            std::thread::spawn(move || {
+                // todo: replace actix with tokio
+                actix::System::new().block_on(async {
+                    let transaction_signer = account_secret_key.clone().map(|account_secret_key| {
+                        Arc::new(TransactionSigner::from_key(
+                            config.my_near_account_id.clone(),
+                            account_secret_key,
+                        ))
+                    });
+                    let indexer = near_indexer::Indexer::new(
+                        indexer_config.to_near_indexer_config(home_dir.clone()),
+                    )
+                    .expect("Failed to initialize the Indexer");
+                    let stream = indexer.streamer();
+                    let (view_client, client) = indexer.client_actors();
+                    let indexer_state = Arc::new(IndexerState::new(
+                        view_client.clone(),
+                        client.clone(),
+                        indexer_config.mpc_contract_id.clone(),
+                    ));
+                    // TODO: migrate this into IndexerState
+                    let stats: Arc<Mutex<IndexerStats>> = Arc::new(Mutex::new(IndexerStats::new()));
+
+                    actix::spawn(read_participants_from_chain(
+                        indexer_config.mpc_contract_id.clone(),
+                        indexer_config.port_override,
+                        view_client.clone(),
+                        client.clone(),
+                        chain_config_sender,
+                    ));
+                    actix::spawn(indexer_logger(Arc::clone(&stats), view_client.clone()));
+                    actix::spawn(handle_sign_responses(
+                        sign_response_receiver,
+                        transaction_signer,
+                        indexer_state.clone(),
+                    ));
+                    listen_blocks(
+                        stream,
+                        indexer_config.concurrency,
+                        Arc::clone(&stats),
+                        indexer_config.mpc_contract_id,
+                        account_secret_key.map(|key| key.public_key()),
+                        sign_request_sender,
+                        indexer_state,
+                    )
+                    .await;
+                });
+            })
+        });
+
+        // Have the MPC tasks be on a separate runtime for two reasons:
+        //  - so that we can limit the number of cores used for MPC tasks,
+        //    in order to avoid starving the indexer, causing it to fall behind.
+        //  - so that we can shut down the MPC tasks without shutting down the
+        //    indexer, in order to process key generation or resharing.
+        let mpc_runtime = if let Some(n_threads) = config.cores {
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(std::cmp::max(n_threads, 1))
+                .enable_all()
+                .build()?
+        } else {
+            tokio::runtime::Runtime::new()?
+        };
+
+        let root_mpc_future = async move {
+            let _root_task_handle = tracking::current_task();
+
+            // Replace participants in config with those listed in the smart contract state
+            let participants = if config.indexer.is_some() {
+                let Some(chain_config) = chain_config_receiver.recv().await else {
+                    anyhow::bail!("Participant sender dropped by indexer");
+                };
+                let chain_config = chain_config?;
+                tracing::info!(target: "mpc", "read chain config {:?} from chain", chain_config);
+                let public_key_from_keyshare =
+                    affine_point_to_public_key(root_keyshare.public_key)?;
+                if chain_config.root_public_key != public_key_from_keyshare {
+                    anyhow::bail!(
+                        "Root public key mismatch: {:?} != {:?}",
+                        chain_config.root_public_key,
+                        public_key_from_keyshare
+                    );
+                }
+                chain_config.participants
+            } else {
+                let Some(participants) = config.participants.clone() else {
+                    anyhow::bail!("Participants must either be read from on chain or specified statically in the config");
+                };
+                participants
+            };
+
+            let mpc_config = MpcConfig::from_participants_with_near_account_id(
+                participants,
+                &config.my_near_account_id,
+            )?;
+
+            let config = config.into_full_config(mpc_config, secrets);
+
+            // Start the mpc client
+            let secret_db = SecretDB::new(
+                &home_dir.join("mpc-data"),
+                config.secrets.local_storage_aes_key,
+            )?;
+
+            let mpc_client_cell = Arc::new(OnceCell::new());
+            #[cfg(test)]
+            let _web_server_handle = tracking::spawn(
+                "web server",
+                start_web_server_testing(
+                    _root_task_handle,
+                    config.web_ui.clone(),
+                    Some(mpc_client_cell.clone()),
+                )
+                .await?,
+            );
+            #[cfg(not(test))]
+            let _web_server_handle =
+                tracking::spawn("web server", start_web_server(config.web_ui.clone()).await?);
+
+            let (sender, receiver) =
+                new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key).await?;
+            sender
+                .wait_for_ready(config.mpc.participants.threshold as usize)
+                .await?;
+            let (network_client, channel_receiver, _handle) =
+                run_network_client(Arc::new(sender), Box::new(receiver));
+
+            let active_participants_query = {
+                let network_client = network_client.clone();
+                Arc::new(move || network_client.all_alive_participant_ids())
+            };
+
+            let triple_store = Arc::new(TripleStorage::new(
+                Clock::real(),
+                secret_db.clone(),
+                DBCol::Triple,
+                network_client.my_participant_id(),
+                |participants, pair| pair.is_subset_of_active_participants(participants),
+                active_participants_query.clone(),
+            )?);
+
+            let presignature_store = Arc::new(PresignatureStorage::new(
+                Clock::real(),
+                secret_db.clone(),
+                DBCol::Presignature,
+                network_client.my_participant_id(),
+                |participants, presignature| {
+                    presignature.is_subset_of_active_participants(participants)
+                },
+                active_participants_query,
+            )?);
+
+            let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
+
+            let config = Arc::new(config);
+            let mpc_client = MpcClient::new(
+                config.clone(),
+                network_client,
+                triple_store,
+                presignature_store,
+                sign_request_store,
+                root_keyshare,
+            );
+            mpc_client_cell
+                .set(mpc_client.clone())
+                .map_err(|_| ())
+                .unwrap();
+            mpc_client
+                .clone()
+                .run(
+                    channel_receiver,
+                    sign_request_receiver,
+                    sign_response_sender,
+                )
+                .await?;
+
+            anyhow::Ok(())
+        };
+        let mpc_task = AutoAbortTask::from(mpc_runtime.spawn(async move {
+            let (root_task, _) = tracking::start_root_task(root_mpc_future);
+            root_task.await
+        }));
+
+        Ok(StartResponse {
+            _mpc_runtime: AsyncDroppableRuntime::new(mpc_runtime),
+            mpc_task,
+            indexer_handle,
+        })
+    }
+
+    pub async fn run(self) -> anyhow::Result<()> {
         match self {
             Cli::Start {
                 home_dir,
@@ -137,225 +358,20 @@ impl Cli {
                 p2p_private_key,
                 account_secret_key,
             } => {
-                let home_dir = PathBuf::from(home_dir);
-                let secrets = SecretsConfig::from_cli(&secret_store_key_hex, p2p_private_key)?;
-                let config = ConfigFile::from_file(&home_dir.join("config.yaml"))?;
-                let root_keyshare =
-                    load_root_keyshare(&home_dir, secrets.local_storage_aes_key, &root_keyshare)?;
-
-                let (chain_config_sender, mut chain_config_receiver) = mpsc::channel(10);
-                let (sign_request_sender, sign_request_receiver) = mpsc::channel(10000);
-                let (sign_response_sender, sign_response_receiver) = mpsc::channel(10000);
-
-                // Start the near indexer
-                let indexer_handle = config.indexer.clone().map(|indexer_config| {
-                    let config = config.clone();
-                    let home_dir = home_dir.clone();
-                    std::thread::spawn(move || {
-                        // todo: replace actix with tokio
-                        actix::System::new().block_on(async {
-                            let transaction_signer =
-                                account_secret_key.clone().map(|account_secret_key| {
-                                    Arc::new(TransactionSigner::from_key(
-                                        config.my_near_account_id.clone(),
-                                        account_secret_key,
-                                    ))
-                                });
-                            let indexer = near_indexer::Indexer::new(
-                                indexer_config.to_near_indexer_config(home_dir.clone()),
-                            )
-                            .expect("Failed to initialize the Indexer");
-                            let stream = indexer.streamer();
-                            let (view_client, client) = indexer.client_actors();
-                            let indexer_state = Arc::new(IndexerState::new(
-                                view_client.clone(),
-                                client.clone(),
-                                indexer_config.mpc_contract_id.clone(),
-                            ));
-                            // TODO: migrate this into IndexerState
-                            let stats: Arc<Mutex<IndexerStats>> =
-                                Arc::new(Mutex::new(IndexerStats::new()));
-
-                            actix::spawn(read_participants_from_chain(
-                                indexer_config.mpc_contract_id.clone(),
-                                indexer_config.port_override,
-                                view_client.clone(),
-                                client.clone(),
-                                chain_config_sender,
-                            ));
-                            actix::spawn(indexer_logger(Arc::clone(&stats), view_client.clone()));
-                            actix::spawn(handle_sign_responses(
-                                sign_response_receiver,
-                                transaction_signer,
-                                indexer_state.clone(),
-                            ));
-                            listen_blocks(
-                                stream,
-                                indexer_config.concurrency,
-                                Arc::clone(&stats),
-                                indexer_config.mpc_contract_id,
-                                account_secret_key.map(|key| key.public_key()),
-                                sign_request_sender,
-                                indexer_state,
-                            )
-                            .await;
-                        });
-                    })
-                });
-
-                let cancel_mpc = Arc::new(Notify::new());
-                let cancel_mpc_clone = cancel_mpc.clone();
-                let n_threads = config.cores;
-                let mpc_handle = std::thread::spawn(move || {
-                    let rt = if let Some(n_threads) = n_threads {
-                        tokio::runtime::Builder::new_multi_thread()
-                            .worker_threads(std::cmp::max(n_threads, 1))
-                            .enable_all()
-                            .build()
-                    } else {
-                        tokio::runtime::Runtime::new()
-                    }
-                    .unwrap();
-
-                    // Replace participants in config with those listed in the smart contract state
-                    let participants = if config.indexer.is_some() {
-                        let Some(chain_config) =
-                            rt.block_on(async { chain_config_receiver.recv().await })
-                        else {
-                            anyhow::bail!("Participant sender dropped by indexer");
-                        };
-                        let chain_config = chain_config?;
-                        tracing::info!(target: "mpc", "read chain config {:?} from chain", chain_config);
-                        let public_key_from_keyshare =
-                            affine_point_to_public_key(root_keyshare.public_key)?;
-                        if chain_config.root_public_key != public_key_from_keyshare {
-                            anyhow::bail!(
-                                "Root public key mismatch: {:?} != {:?}",
-                                chain_config.root_public_key,
-                                public_key_from_keyshare
-                            );
-                        }
-                        chain_config.participants
-                    } else {
-                        let Some(participants) = config.participants.clone() else {
-                            anyhow::bail!("Participants must either be read from on chain or specified statically in the config");
-                        };
-                        participants
-                    };
-
-                    let mpc_config = MpcConfig::from_participants_with_near_account_id(
-                        participants,
-                        &config.my_near_account_id,
-                    )?;
-
-                    let config = config.into_full_config(mpc_config, secrets);
-
-                    // Start the mpc client
-                    let secret_db = SecretDB::new(
-                        &home_dir.join("mpc-data"),
-                        config.secrets.local_storage_aes_key,
-                    )?;
-
-                    rt.block_on(async move {
-                        let (root_task, _) = tracking::start_root_task(async move {
-                            let _root_task_handle = tracking::current_task();
-                            let mpc_client_cell = Arc::new(OnceCell::new());
-                            #[cfg(test)]
-                            let _web_server_handle = tracking::spawn(
-                                "web server",
-                                start_web_server_testing(
-                                    _root_task_handle,
-                                    config.web_ui.clone(),
-                                    Some(mpc_client_cell.clone()),
-                                )
-                                .await?,
-                            );
-                            #[cfg(not(test))]
-                            let _web_server_handle = tracking::spawn(
-                                "web server",
-                                start_web_server(config.web_ui.clone()).await?,
-                            );
-
-                            let (sender, receiver) =
-                                new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key)
-                                    .await?;
-                            sender
-                                .wait_for_ready(config.mpc.participants.threshold as usize)
-                                .await?;
-                            let (network_client, channel_receiver, _handle) =
-                                run_network_client(Arc::new(sender), Box::new(receiver));
-
-                            let active_participants_query = {
-                                let network_client = network_client.clone();
-                                Arc::new(move || network_client.all_alive_participant_ids())
-                            };
-
-                            let triple_store = Arc::new(TripleStorage::new(
-                                Clock::real(),
-                                secret_db.clone(),
-                                DBCol::Triple,
-                                network_client.my_participant_id(),
-                                |participants, pair| {
-                                    pair.is_subset_of_active_participants(participants)
-                                },
-                                active_participants_query.clone(),
-                            )?);
-
-                            let presignature_store = Arc::new(PresignatureStorage::new(
-                                Clock::real(),
-                                secret_db.clone(),
-                                DBCol::Presignature,
-                                network_client.my_participant_id(),
-                                |participants, presignature| {
-                                    presignature.is_subset_of_active_participants(participants)
-                                },
-                                active_participants_query,
-                            )?);
-
-                            let sign_request_store =
-                                Arc::new(SignRequestStorage::new(secret_db.clone())?);
-
-                            let config = Arc::new(config);
-                            let mpc_client = MpcClient::new(
-                                config.clone(),
-                                network_client,
-                                triple_store,
-                                presignature_store,
-                                sign_request_store,
-                                root_keyshare,
-                            );
-                            mpc_client_cell
-                                .set(mpc_client.clone())
-                                .map_err(|_| ())
-                                .unwrap();
-                            mpc_client
-                                .clone()
-                                .run(
-                                    channel_receiver,
-                                    sign_request_receiver,
-                                    sign_response_sender,
-                                )
-                                .await?;
-
-                            anyhow::Ok(())
-                        });
-                        tokio::select! {
-                            x = root_task => {x}
-                            _ = cancel_mpc_clone.notified() => {
-                                    Ok(())
-                            }
-                        }
-                    })
-                });
-
-                let mpc_handle = Handle {
-                    handle: Some(mpc_handle),
-                    cancel: cancel_mpc,
-                };
-                Ok(Some(StartResponse {
-                    indexer_handle,
-                    mpc_handle,
-                }))
+                let start_response = Self::start(
+                    home_dir,
+                    secret_store_key_hex,
+                    root_keyshare,
+                    p2p_private_key,
+                    account_secret_key,
+                )?;
+                if let Some(indexer_handle) = start_response.indexer_handle {
+                    indexer_handle
+                        .join()
+                        .map_err(|_| anyhow::anyhow!("Indexer thread panicked!"))?;
+                }
+                start_response.mpc_task.await??;
+                Ok(())
             }
             Cli::GenerateKey {
                 home_dir,
@@ -364,6 +380,16 @@ impl Cli {
             } => {
                 let secrets = SecretsConfig::from_cli(&secret_store_key_hex, p2p_private_key)?;
                 let config = load_config_file(Path::new(&home_dir))?;
+                // TODO(#43) this will be refactored to be part of the Start command. For now,
+                // allow the code to be duplicated.
+                let mpc_runtime = if let Some(n_threads) = config.cores {
+                    tokio::runtime::Builder::new_multi_thread()
+                        .worker_threads(std::cmp::max(n_threads, 1))
+                        .enable_all()
+                        .build()?
+                } else {
+                    tokio::runtime::Runtime::new()?
+                };
                 // TODO(#75): Support reading from smart contract state here as well.
                 let mpc_config = MpcConfig::from_participants_with_near_account_id(
                     config
@@ -373,47 +399,50 @@ impl Cli {
                     &config.my_near_account_id,
                 )?;
                 let config = config.into_full_config(mpc_config, secrets);
-                let rt = tokio::runtime::Runtime::new()?;
-                rt.block_on(async {
-                    let (root_task, _) = tracking::start_root_task(async move {
-                        let _root_task_handle = tracking::current_task();
-                        #[cfg(test)]
-                        let _web_server_handle = tracking::spawn_checked(
-                            "web server",
-                            start_web_server_testing(
-                                _root_task_handle,
-                                config.web_ui.clone(),
-                                None,
-                            )
-                            .await?,
-                        );
 
-                        #[cfg(not(test))]
-                        let _web_server_handle = tracking::spawn_checked(
-                            "web server",
-                            start_web_server(config.web_ui.clone()).await?,
-                        );
-                        let (sender, receiver) =
-                            new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key)
+                mpc_runtime
+                    .spawn(async move {
+                        let (root_task, _) = tracking::start_root_task(async move {
+                            let _root_task_handle = tracking::current_task();
+                            #[cfg(test)]
+                            let _web_server_handle = tracking::spawn_checked(
+                                "web server",
+                                start_web_server_testing(
+                                    _root_task_handle,
+                                    config.web_ui.clone(),
+                                    None,
+                                )
+                                .await?,
+                            );
+
+                            #[cfg(not(test))]
+                            let _web_server_handle = tracking::spawn_checked(
+                                "web server",
+                                start_web_server(config.web_ui.clone()).await?,
+                            );
+                            let (sender, receiver) =
+                                new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key)
+                                    .await?;
+                            // Must wait for all participants to be ready before starting key generation.
+                            sender
+                                .wait_for_ready(config.mpc.participants.participants.len())
                                 .await?;
-                        // Must wait for all participants to be ready before starting key generation.
-                        sender
-                            .wait_for_ready(config.mpc.participants.participants.len())
+                            let (network_client, channel_receiver, _handle) =
+                                run_network_client(Arc::new(sender), Box::new(receiver));
+                            run_key_generation_client(
+                                PathBuf::from(home_dir),
+                                config.into(),
+                                network_client,
+                                channel_receiver,
+                            )
                             .await?;
-                        let (network_client, channel_receiver, _handle) =
-                            run_network_client(Arc::new(sender), Box::new(receiver));
-                        run_key_generation_client(
-                            PathBuf::from(home_dir),
-                            config.into(),
-                            network_client,
-                            channel_receiver,
-                        )
-                        .await?;
-                        anyhow::Ok(())
-                    });
-                    root_task.await
-                })?;
-                Ok(None)
+                            anyhow::Ok(())
+                        });
+                        root_task.await
+                    })
+                    .await??;
+                drop(AsyncDroppableRuntime::new(mpc_runtime));
+                Ok(())
             }
             Cli::GenerateTestConfigs {
                 output_dir,
@@ -469,14 +498,14 @@ impl Cli {
                         serde_yaml::to_string(&file_config)?,
                     )?;
                 }
-                Ok(None)
+                Ok(())
             }
             Cli::GenerateIndexerConfigs(config) => {
                 // TODO: there is some weird serialization issue which causes configs to be written
                 // with human-readable ByteSizes (e.g. '40.0 MB' instead of 40000000), which neard
                 // cannot parse.
                 near_indexer::indexer_init_configs(&config.home_dir.clone().into(), config.into())?;
-                Ok(None)
+                Ok(())
             }
         }
     }
