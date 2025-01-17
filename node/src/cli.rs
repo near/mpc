@@ -1,6 +1,6 @@
 use crate::config::{
-    load_config_file, ConfigFile, IndexerConfig, PresignatureConfig, SignatureConfig, SyncMode,
-    TripleConfig, WebUIConfig,
+    load_config_file, load_respond_config_file, ConfigFile, IndexerConfig, PresignatureConfig,
+    SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
 };
 use crate::config::{BlockArgs, MpcConfig, SecretsConfig};
 use crate::db::{DBCol, SecretDB};
@@ -9,7 +9,6 @@ use crate::indexer::handler::listen_blocks;
 use crate::indexer::participants::read_participants_from_chain;
 use crate::indexer::response::handle_sign_responses;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
-use crate::indexer::transaction::TransactionSigner;
 use crate::indexer::IndexerState;
 use crate::key_generation::{
     affine_point_to_public_key, load_root_keyshare, run_key_generation_client,
@@ -61,8 +60,9 @@ pub enum Cli {
         /// p2p private key for TLS. It must be in the format of "ed25519:...".
         #[arg(env("MPC_P2P_PRIVATE_KEY"))]
         p2p_private_key: SecretKey,
-        /// Near account secret key. Signing transactions will only be posted to the
-        /// contract if this is specified.
+        /// Near account secret key. Must be specified if the node wishes to interact
+        /// with authenticated functions of the contract (join, vote, etc.).
+        /// May be omitted if a static participants config is used.
         #[arg(env("MPC_ACCOUNT_SK"))]
         account_secret_key: Option<SecretKey>,
     },
@@ -147,7 +147,7 @@ impl Cli {
     ) -> anyhow::Result<StartResponse> {
         let home_dir = PathBuf::from(home_dir);
         let secrets = SecretsConfig::from_cli(&secret_store_key_hex, p2p_private_key)?;
-        let config = ConfigFile::from_file(&home_dir.join("config.yaml"))?;
+        let config = load_config_file(&home_dir)?;
         let root_keyshare =
             load_root_keyshare(&home_dir, secrets.local_storage_aes_key, &root_keyshare)?;
 
@@ -157,21 +157,15 @@ impl Cli {
 
         // Start the near indexer
         let indexer_handle = config.indexer.clone().map(|indexer_config| {
-            let config = config.clone();
             let home_dir = home_dir.clone();
             std::thread::spawn(move || {
                 // todo: replace actix with tokio
                 actix::System::new().block_on(async {
-                    let transaction_signer = account_secret_key.clone().map(|account_secret_key| {
-                        Arc::new(TransactionSigner::from_key(
-                            config.my_near_account_id.clone(),
-                            account_secret_key,
-                        ))
-                    });
                     let indexer = near_indexer::Indexer::new(
                         indexer_config.to_near_indexer_config(home_dir.clone()),
                     )
                     .expect("Failed to initialize the Indexer");
+                    let respond_config = load_respond_config_file(&home_dir).unwrap();
                     let stream = indexer.streamer();
                     let (view_client, client) = indexer.client_actors();
                     let indexer_state = Arc::new(IndexerState::new(
@@ -192,7 +186,7 @@ impl Cli {
                     actix::spawn(indexer_logger(Arc::clone(&stats), view_client.clone()));
                     actix::spawn(handle_sign_responses(
                         sign_response_receiver,
-                        transaction_signer,
+                        respond_config,
                         indexer_state.clone(),
                     ));
                     listen_blocks(

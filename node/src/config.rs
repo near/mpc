@@ -1,6 +1,6 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
-use near_crypto::PublicKey;
+use near_crypto::{PublicKey, SecretKey};
 use near_indexer_primitives::types::{AccountId, Finality};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -112,10 +112,12 @@ pub struct BlockArgs {
 /// The contents of the on-disk config.yaml file. Contains no secrets.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigFile {
-    /// The near account ID that this node owns. If an on-chain contract is
-    /// used, this account is used to sign transactions for the on-chain
-    /// contract. If static config is used, this account is used to look up
-    /// the participant ID.
+    /// The near account ID that this node owns.
+    /// If an on-chain contract is used, this account is used to invoke
+    /// identity-sensitive functions of the contract (join, vote, etc.).
+    /// If static ParticipantsConfig is specified, this account id is used
+    /// to identify our own participant ID from within the static config.
+    /// In both cases this account is *not* used to send signature responses.
     pub my_near_account_id: AccountId,
     pub web_ui: WebUIConfig,
     pub indexer: Option<IndexerConfig>,
@@ -200,4 +202,32 @@ impl SecretsConfig {
 pub fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
     let config_path = home_dir.join("config.yaml");
     ConfigFile::from_file(&config_path).context("Load config.yaml")
+}
+
+/// Credentials of the near account used to submit signature responses.
+/// It is recommended to use a separate dedicated account for this purpose.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RespondConfigFile {
+    /// It can be an arbitrary id because respond calls are not authenticated.
+    /// The account should have sufficient NEAR to pay for the function calls.
+    pub account_id: AccountId,
+    /// In production it is recommended to provide 50+ distinct access keys
+    /// to minimize incidence of nonce conflicts under heavy load.
+    pub access_keys: Vec<SecretKey>,
+}
+
+impl RespondConfigFile {
+    pub fn from_file(path: &Path) -> anyhow::Result<Self> {
+        let file = std::fs::read_to_string(path)?;
+        let config: Self = serde_yaml::from_str(&file)?;
+        if config.access_keys.is_empty() {
+            anyhow::bail!("At least one access key must be provided");
+        }
+        Ok(config)
+    }
+}
+
+pub fn load_respond_config_file(home_dir: &Path) -> anyhow::Result<RespondConfigFile> {
+    let config_path = home_dir.join("respond.yaml");
+    RespondConfigFile::from_file(&config_path).context("Load respond.yaml")
 }
