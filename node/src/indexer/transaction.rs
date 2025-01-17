@@ -1,4 +1,4 @@
-use near_crypto::{InMemorySigner, SecretKey, Signer, PublicKey};
+use near_crypto::{InMemorySigner, PublicKey, SecretKey, Signer};
 use near_indexer::near_primitives::account::AccessKey;
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction, SignedTransaction, Transaction, TransactionV0,

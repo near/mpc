@@ -311,7 +311,7 @@ pub(crate) async fn handle_sign_responses(
                 tx_signer.clone(),
                 indexer_state.clone(),
                 response_ser,
-                Duration::from_secs(6), // TODO: maybe set the timeout and num_attempts in the config
+                Duration::from_secs(10), // TODO: maybe set the timeout and num_attempts in the config
                 NonZeroUsize::new(3).unwrap(),
             )
             .await;
