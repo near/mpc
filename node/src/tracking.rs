@@ -168,7 +168,6 @@ impl<T> WeakCollection<T> {
         }
     }
 
-    #[cfg(test)]
     fn iter(&self) -> impl Iterator<Item = Arc<T>> + '_ {
         self.buffers[1 - self.current]
             .iter()
@@ -272,7 +271,6 @@ impl TaskHandle {
         })
     }
 
-    #[cfg(test)]
     pub fn report(&self) -> TaskStatusReport {
         let children_handles = self.children.lock().unwrap().iter().collect::<Vec<_>>();
         let children_reports = children_handles

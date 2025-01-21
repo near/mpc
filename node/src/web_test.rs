@@ -21,10 +21,6 @@ use std::time::Duration;
 use tokio::sync::OnceCell;
 use tokio::time;
 
-async fn debug_tasks(State(state): State<DebugWebServerState>) -> String {
-    format!("{:?}", state.root_task_handle.report())
-}
-
 fn generate_ids(repeat: usize, seed: u64) -> Vec<[u8; 32]> {
     let mut rng: rand_xorshift::XorShiftRng = rand::SeedableRng::seed_from_u64(seed);
     (0..repeat).map(|_| rng.gen::<[u8; 32]>()).collect()
@@ -146,6 +142,10 @@ struct DebugWebServerState {
     /// MPC client, for signing. We take a OnceCell, so that we can start the
     /// web server (for debugging) before the MPC client is ready.
     mpc_client: Option<Arc<OnceCell<MpcClient>>>,
+}
+
+pub(crate) async fn debug_tasks(State(state): State<DebugWebServerState>) -> String {
+    format!("{:?}", state.root_task_handle.report())
 }
 
 /// This function exposes insecure endpoints. Use it only in testing.

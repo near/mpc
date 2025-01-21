@@ -1,15 +1,10 @@
-#[cfg(not(test))]
-use crate::config::WebUIConfig;
+use crate::tracking::TaskHandle;
 use axum::body::Body;
+use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::IntoResponse;
-#[cfg(not(test))]
-use axum::{routing::get, Router};
-#[cfg(not(test))]
-use futures::future::BoxFuture;
-#[cfg(not(test))]
-use futures::FutureExt;
 use prometheus::{default_registry, Encoder, TextEncoder};
+use std::sync::Arc;
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
 pub(crate) struct AnyhowErrorWrapper(anyhow::Error);
@@ -37,6 +32,18 @@ pub(crate) async fn metrics() -> String {
     String::from_utf8(buffer).unwrap()
 }
 
+#[cfg(not(test))]
+#[derive(Clone)]
+struct WebServerState {
+    /// Root task handle for the whole program.
+    root_task_handle: Arc<TaskHandle>,
+}
+
+#[cfg(not(test))]
+async fn debug_tasks(State(state): State<WebServerState>) -> String {
+    format!("{:?}", state.root_task_handle.report())
+}
+
 /// Starts the web server. This is an async function that returns a future.
 /// The function itself will return error if the server cannot be started.
 ///
@@ -45,9 +52,15 @@ pub(crate) async fn metrics() -> String {
 /// the returned future will stop the web server.
 #[cfg(not(test))]
 pub async fn start_web_server(
-    config: WebUIConfig,
-) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
-    let router = Router::new().route("/metrics", get(metrics));
+    root_task_handle: Arc<TaskHandle>,
+    config: crate::config::WebUIConfig,
+) -> anyhow::Result<futures::future::BoxFuture<'static, anyhow::Result<()>>> {
+    use futures::FutureExt;
+
+    let router = axum::Router::new()
+        .route("/metrics", axum::routing::get(metrics))
+        .route("/debug/tasks", axum::routing::get(debug_tasks))
+        .with_state(WebServerState { root_task_handle });
 
     let tcp_listener =
         tokio::net::TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;
