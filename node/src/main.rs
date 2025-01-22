@@ -24,7 +24,9 @@ mod tests;
 mod tracing;
 mod tracking;
 mod triple;
+#[cfg(not(test))]
 mod web;
+mod web_common;
 #[cfg(test)]
 mod web_test;
 

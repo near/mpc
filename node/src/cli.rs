@@ -226,6 +226,18 @@ impl Cli {
         let root_mpc_future = async move {
             let root_task_handle = tracking::current_task();
 
+            // Before doing anything, start the web server so we expose metrics and debug info.
+            let mpc_client_cell = Arc::new(OnceCell::new());
+            #[cfg(test)]
+            let web_server = start_web_server_testing(
+                root_task_handle,
+                config.web_ui.clone(),
+                Some(mpc_client_cell.clone()),
+            );
+            #[cfg(not(test))]
+            let web_server = start_web_server(root_task_handle, config.web_ui.clone());
+            let _web_server_handle = tracking::spawn("web server", web_server);
+
             // Replace participants in config with those listed in the smart contract state
             let participants = if config.indexer.is_some() {
                 let Some(chain_config) = chain_config_receiver.recv().await else {
@@ -262,23 +274,6 @@ impl Cli {
                 &home_dir.join("mpc-data"),
                 config.secrets.local_storage_aes_key,
             )?;
-
-            let mpc_client_cell = Arc::new(OnceCell::new());
-            #[cfg(test)]
-            let _web_server_handle = tracking::spawn(
-                "web server",
-                start_web_server_testing(
-                    root_task_handle,
-                    config.web_ui.clone(),
-                    Some(mpc_client_cell.clone()),
-                )
-                .await?,
-            );
-            #[cfg(not(test))]
-            let _web_server_handle = tracking::spawn(
-                "web server",
-                start_web_server(root_task_handle, config.web_ui.clone()).await?,
-            );
 
             let (sender, receiver) =
                 new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key).await?;
@@ -406,22 +401,18 @@ impl Cli {
                     .spawn(async move {
                         let (root_task, _) = tracking::start_root_task(async move {
                             let root_task_handle = tracking::current_task();
-                            #[cfg(test)]
-                            let _web_server_handle = tracking::spawn_checked(
-                                "web server",
-                                start_web_server_testing(
-                                    root_task_handle,
-                                    config.web_ui.clone(),
-                                    None,
-                                )
-                                .await?,
-                            );
 
-                            #[cfg(not(test))]
-                            let _web_server_handle = tracking::spawn_checked(
-                                "web server",
-                                start_web_server(root_task_handle, config.web_ui.clone()).await?,
+                            #[cfg(test)]
+                            let web_server = start_web_server_testing(
+                                root_task_handle,
+                                config.web_ui.clone(),
+                                None,
                             );
+                            #[cfg(not(test))]
+                            let web_server =
+                                start_web_server(root_task_handle, config.web_ui.clone());
+                            let _web_server_handle = tracking::spawn("web server", web_server);
+
                             let (sender, receiver) =
                                 new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key)
                                     .await?;

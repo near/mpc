@@ -3,7 +3,7 @@ use crate::mpc_client::MpcClient;
 use crate::sign_request::SignatureRequest;
 use crate::tracking::TaskHandle;
 use crate::tracking::{self};
-use crate::web::{metrics, AnyhowErrorWrapper};
+use crate::web_common::{metrics, AnyhowErrorWrapper};
 use anyhow::Context;
 use axum::extract::{Query, State};
 use axum::{routing::get, Router};
@@ -144,7 +144,7 @@ struct DebugWebServerState {
     mpc_client: Option<Arc<OnceCell<MpcClient>>>,
 }
 
-pub(crate) async fn debug_tasks(State(state): State<DebugWebServerState>) -> String {
+async fn debug_tasks(State(state): State<DebugWebServerState>) -> String {
     format!("{:?}", state.root_task_handle.report())
 }
 
