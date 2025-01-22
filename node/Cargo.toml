@@ -15,6 +15,7 @@ clap = { version = "4.5.20", features = ["derive", "env"] }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"
+gcloud-sdk = { version = "0.26.2", default-features = false, features = ["google-cloud-secretmanager-v1", "tls-webpki-roots"] }
 hex = { version = "0.4.3", features = ["serde"] }
 hex-literal = "0.4.1"
 hkdf = "0.12.4"
@@ -28,7 +29,7 @@ rand = "0.8.5"
 rand_xorshift = "0.3"
 rcgen = "0.13.1"
 rocksdb = "0.21.0"
-rustls = { version = "0.23.16" }
+rustls = { version = "0.23.16", default-features = false }
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
 serde_yaml = "0.9.34"
@@ -36,7 +37,7 @@ sha3 = "0.10.8"
 tempfile = "3.14.0"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-util = "0.7.12"
-tokio-rustls = "0.26.1"
+tokio-rustls = { version = "0.26.1", default-features = false }
 tokio-stream = { version = "0.1" }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }

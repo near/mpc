@@ -11,6 +11,7 @@ mod db;
 mod hkdf;
 mod indexer;
 mod key_generation;
+mod keyshare;
 mod metrics;
 mod mpc_client;
 mod network;
