@@ -5487,6 +5487,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "parallel-contract"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "near-sdk",
+ "serde",
+ "sha2",
+]
+
+[[package]]
 name = "parity-wasm"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
