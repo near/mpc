@@ -233,9 +233,10 @@ impl Cli {
                 root_task_handle,
                 config.web_ui.clone(),
                 Some(mpc_client_cell.clone()),
-            );
+            )
+            .await?;
             #[cfg(not(test))]
-            let web_server = start_web_server(root_task_handle, config.web_ui.clone());
+            let web_server = start_web_server(root_task_handle, config.web_ui.clone()).await?;
             let _web_server_handle = tracking::spawn("web server", web_server);
 
             // Replace participants in config with those listed in the smart contract state
@@ -407,10 +408,11 @@ impl Cli {
                                 root_task_handle,
                                 config.web_ui.clone(),
                                 None,
-                            );
+                            )
+                            .await?;
                             #[cfg(not(test))]
                             let web_server =
-                                start_web_server(root_task_handle, config.web_ui.clone());
+                                start_web_server(root_task_handle, config.web_ui.clone()).await?;
                             let _web_server_handle = tracking::spawn("web server", web_server);
 
                             let (sender, receiver) =
