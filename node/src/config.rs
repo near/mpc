@@ -40,7 +40,7 @@ pub struct SignatureConfig {
 
 /// Configuration about the MPC protocol. It can come from either the contract
 /// on chain, or static offline config file.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MpcConfig {
     pub my_participant_id: ParticipantId,
     pub participants: ParticipantsConfig,
