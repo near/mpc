@@ -1,7 +1,7 @@
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
-use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise};
+use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise, PromiseResult};
 use serde::Serialize;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 #[derive(Serialize)]
 pub struct SignRequest {
@@ -17,11 +17,16 @@ pub struct SignArgs {
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Default)]
-pub struct MyContract;
+pub struct TestContract;
 
 #[near_bindgen]
-impl MyContract {
-    pub fn make_parallel_sign_calls(&self, target_contract: AccountId, num_calls: u64, seed: u64) {
+impl TestContract {
+    pub fn parallel_sign(
+        &self,
+        target_contract: AccountId,
+        num_calls: u64,
+        seed: u64,
+    ) -> near_sdk::Promise {
         // Construct `num_calls`-many sign function call promises
         let mut promises = (0..num_calls)
             .map(|i| {
@@ -50,23 +55,27 @@ impl MyContract {
             combined_promise = combined_promise.and(promises.pop().unwrap());
         }
 
-        // Attach a callback to log the final results
-        combined_promise.then(Promise::new(env::current_account_id()).function_call(
-            "handle_results".to_string(),
-            vec![],
-            NearToken::from_near(0),
-            Gas::from_tgas(30),
-        ));
+        // Attach a callback to verify and log the final results
+        let callback_promise =
+            combined_promise.then(Promise::new(env::current_account_id()).function_call(
+                "handle_results".to_string(),
+                vec![],
+                NearToken::from_near(0),
+                Gas::from_tgas(30),
+            ));
+
+        return callback_promise;
     }
 
     #[private]
-    #[handle_result]
-    pub fn handle_results(&self) {
+    pub fn handle_results(&self) -> u64 {
         let num_calls = env::promise_results_count();
         env::log_str(format!("{num_calls} parallel calls completed!").as_str());
         for i in 0..num_calls {
             let result = env::promise_result(i);
             env::log_str(&format!("sign #{i}: {:?}", result));
+            assert!(matches!(result, PromiseResult::Successful(_)));
         }
+        return num_calls;
     }
 }
