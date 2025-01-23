@@ -28,8 +28,6 @@ echo Using GCP_ACCOUNT_SK_SECRET_ID=${GCP_ACCOUNT_SK_SECRET_ID:?"GCP_ACCOUNT_SK_
 
 # Note that other non-secret configurations are passed in config.yaml.
 
-echo "Fetching keyshare from GCP secret manager..."
-KEYSHARE=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_KEYSHARE_SECRET_ID)
 echo "Fetching local encryption key from GCP secret manager..."
 LOCAL_ENCRYPTION_KEY=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_LOCAL_ENCRYPTION_KEY_SECRET_ID)
 echo "Fetching P2P private key from GCP secret manager..."
@@ -38,7 +36,8 @@ echo "Fetching account secret key from GCP secret manager..."
 ACCOUNT_SK=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_ACCOUNT_SK_SECRET_ID)
 
 echo "Starting mpc node..."
-MPC_ROOT_KEYSHARE="${KEYSHARE}" \
+GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
+GCP_KEYSHARE_SECRET_ID="${GCP_KEYSHARE_SECRET_ID}" \
 MPC_SECRET_STORE_KEY=${LOCAL_ENCRYPTION_KEY} \
 MPC_P2P_PRIVATE_KEY=${P2P_PRIVATE_KEY} \
 MPC_ACCOUNT_SK=${ACCOUNT_SK} \
