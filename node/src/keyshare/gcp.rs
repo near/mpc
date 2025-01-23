@@ -19,7 +19,7 @@ impl GcpKeyshareStorage {
     pub async fn new(project_id: String, secret_id: String) -> anyhow::Result<Self> {
         let secrets_client = GoogleApi::from_function(
             SecretManagerServiceClient::new,
-            "https://secretmanager.googleapis.com/",
+            "https://secretmanager.googleapis.com",
             None,
         )
         .await
