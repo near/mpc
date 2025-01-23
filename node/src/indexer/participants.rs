@@ -72,7 +72,7 @@ fn convert_participant_infos(
         let Some(address) = url.host_str() else {
             anyhow::bail!("no host found in participant url {}", p.url);
         };
-        let Some(port) = port_override.or(url.port()) else {
+        let Some(port) = port_override.or(url.port_or_known_default()) else {
             anyhow::bail!("no port found in participant url {}", p.url);
         };
         // Here we need to turn the near_sdk::PublicKey used in the smart contract into a

@@ -3,7 +3,7 @@ use crate::mpc_client::MpcClient;
 use crate::sign_request::SignatureRequest;
 use crate::tracking::TaskHandle;
 use crate::tracking::{self};
-use crate::web::{metrics, AnyhowErrorWrapper};
+use crate::web_common::{metrics, AnyhowErrorWrapper};
 use anyhow::Context;
 use axum::extract::{Query, State};
 use axum::{routing::get, Router};
@@ -20,10 +20,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::OnceCell;
 use tokio::time;
-
-async fn debug_tasks(State(state): State<DebugWebServerState>) -> String {
-    format!("{:?}", state.root_task_handle.report())
-}
 
 fn generate_ids(repeat: usize, seed: u64) -> Vec<[u8; 32]> {
     let mut rng: rand_xorshift::XorShiftRng = rand::SeedableRng::seed_from_u64(seed);
@@ -146,6 +142,10 @@ struct DebugWebServerState {
     /// MPC client, for signing. We take a OnceCell, so that we can start the
     /// web server (for debugging) before the MPC client is ready.
     mpc_client: Option<Arc<OnceCell<MpcClient>>>,
+}
+
+async fn debug_tasks(State(state): State<DebugWebServerState>) -> String {
+    format!("{:?}", state.root_task_handle.report())
 }
 
 /// This function exposes insecure endpoints. Use it only in testing.

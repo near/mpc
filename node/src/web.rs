@@ -1,40 +1,20 @@
-#[cfg(not(test))]
 use crate::config::WebUIConfig;
-use axum::body::Body;
-use axum::http::{Response, StatusCode};
-use axum::response::IntoResponse;
-#[cfg(not(test))]
-use axum::{routing::get, Router};
-#[cfg(not(test))]
+use crate::tracking::TaskHandle;
+use crate::web_common::metrics;
+use axum::extract::State;
+use axum::serve;
 use futures::future::BoxFuture;
-#[cfg(not(test))]
-use futures::FutureExt;
-use prometheus::{default_registry, Encoder, TextEncoder};
-/// Wrapper to make Axum understand how to convert anyhow::Error into a 500
-/// response.
-pub(crate) struct AnyhowErrorWrapper(anyhow::Error);
+use std::sync::Arc;
+use tokio::net::TcpListener;
 
-impl From<anyhow::Error> for AnyhowErrorWrapper {
-    fn from(e: anyhow::Error) -> Self {
-        AnyhowErrorWrapper(e)
-    }
+#[derive(Clone)]
+struct WebServerState {
+    /// Root task handle for the whole program.
+    root_task_handle: Arc<TaskHandle>,
 }
 
-impl IntoResponse for AnyhowErrorWrapper {
-    fn into_response(self) -> Response<Body> {
-        Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from(format!("{:?}", self.0)))
-            .unwrap()
-    }
-}
-
-pub(crate) async fn metrics() -> String {
-    let metric_families = default_registry().gather();
-    let mut buffer = vec![];
-    let encoder = TextEncoder::new();
-    encoder.encode(&metric_families, &mut buffer).unwrap();
-    String::from_utf8(buffer).unwrap()
+async fn debug_tasks(State(state): State<WebServerState>) -> String {
+    format!("{:?}", state.root_task_handle.report())
 }
 
 /// Starts the web server. This is an async function that returns a future.
@@ -43,16 +23,20 @@ pub(crate) async fn metrics() -> String {
 /// The returned future is the one that actually serves. It will be
 /// long-running, and is typically not expected to return. However, dropping
 /// the returned future will stop the web server.
-#[cfg(not(test))]
 pub async fn start_web_server(
+    root_task_handle: Arc<crate::tracking::TaskHandle>,
     config: WebUIConfig,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
-    let router = Router::new().route("/metrics", get(metrics));
+    use futures::FutureExt;
 
-    let tcp_listener =
-        tokio::net::TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;
+    let router = axum::Router::new()
+        .route("/metrics", axum::routing::get(metrics))
+        .route("/debug/tasks", axum::routing::get(debug_tasks))
+        .with_state(WebServerState { root_task_handle });
+
+    let tcp_listener = TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;
     Ok(async move {
-        axum::serve(tcp_listener, router).await?;
+        serve(tcp_listener, router).await?;
         anyhow::Ok(())
     }
     .boxed())
