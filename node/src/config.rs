@@ -5,17 +5,6 @@ use near_indexer_primitives::types::{AccountId, Finality};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// The full configuration needed to run the node.
-#[derive(Debug)]
-pub struct Config {
-    pub mpc: MpcConfig,
-    pub secrets: SecretsConfig,
-    pub web_ui: WebUIConfig,
-    pub triple: TripleConfig,
-    pub presignature: PresignatureConfig,
-    pub signature: SignatureConfig,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripleConfig {
     pub concurrency: usize,
@@ -35,6 +24,11 @@ pub struct PresignatureConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignatureConfig {
+    pub timeout_sec: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeygenConfig {
     pub timeout_sec: u64,
 }
 
@@ -118,10 +112,11 @@ pub struct ConfigFile {
     /// the participant ID.
     pub my_near_account_id: AccountId,
     pub web_ui: WebUIConfig,
-    pub indexer: Option<IndexerConfig>,
+    pub indexer: IndexerConfig,
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
     pub signature: SignatureConfig,
+    pub keygen: KeygenConfig,
     /// If specified, this is the static configuration for the MPC protocol,
     /// replacing what would be read from the contract.
     pub participants: Option<ParticipantsConfig>,
@@ -136,27 +131,16 @@ impl ConfigFile {
         let config: Self = serde_yaml::from_str(&file)?;
         Ok(config)
     }
-
-    pub fn into_full_config(self, mpc: MpcConfig, secrets: SecretsConfig) -> Config {
-        Config {
-            mpc,
-            secrets,
-            web_ui: self.web_ui,
-            triple: self.triple,
-            presignature: self.presignature,
-            signature: self.signature,
-        }
-    }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ParticipantsConfig {
     /// The threshold for the MPC protocol.
     pub threshold: u32,
     pub participants: Vec<ParticipantInfo>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ParticipantInfo {
     pub id: ParticipantId,
     /// Address and port that this participant can be directly reached at.
@@ -195,9 +179,4 @@ impl SecretsConfig {
             local_storage_aes_key,
         })
     }
-}
-
-pub fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
-    let config_path = home_dir.join("config.yaml");
-    ConfigFile::from_file(&config_path).context("Load config.yaml")
 }

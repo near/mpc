@@ -10,6 +10,8 @@ use k256::{
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
+use mpc_contract::primitives;
+use near_crypto::PublicKey;
 use near_indexer_primitives::types::{BlockReference, Finality};
 use near_o11y::WithSpanContextExt;
 use serde::Serialize;
@@ -97,6 +99,43 @@ pub struct ChainRespondArgs {
     response: ChainSignatureResponse,
 }
 
+#[derive(Serialize)]
+pub struct ChainJoinArgs {
+    pub url: String,
+    pub cipher_pk: primitives::hpke::PublicKey,
+    pub sign_pk: PublicKey,
+}
+
+#[derive(Serialize)]
+pub struct ChainVotePkArgs {
+    pub public_key: PublicKey,
+}
+
+#[derive(Serialize)]
+pub struct ChainVoteResharedArgs {
+    pub epoch: u64,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum ChainSendTransactionRequest {
+    Respond(ChainRespondArgs),
+    Join(ChainJoinArgs),
+    VotePk(ChainVotePkArgs),
+    VoteReshared(ChainVoteResharedArgs),
+}
+
+impl ChainSendTransactionRequest {
+    pub fn method(&self) -> &'static str {
+        match self {
+            ChainSendTransactionRequest::Respond(_) => "respond",
+            ChainSendTransactionRequest::Join(_) => "join",
+            ChainSendTransactionRequest::VotePk(_) => "vote_pk",
+            ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
+        }
+    }
+}
+
 impl ChainRespondArgs {
     /// WARNING: this function assumes the input full signature is valid and comes from an authentic response
     pub fn new(
@@ -171,36 +210,30 @@ impl ChainRespondArgs {
     }
 }
 
-/// Creates, signs, and submits a `respond` function call with the given serialized arguments.
-async fn submit_respond_tx(
+/// Creates, signs, and submits a function call with the given name and serialized arguments.
+async fn submit_tx(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
-    response_ser: std::string::String,
+    method: String,
+    params_ser: String,
 ) -> Option<Nonce> {
     let Ok(Ok(block)) = indexer_state
         .view_client
         .send(near_client::GetBlock(BlockReference::Finality(Finality::Final)).with_span_context())
         .await
     else {
-        tracing::warn!(
-            target = "mpc",
-            "failed to get block hash to send response tx"
-        );
+        tracing::warn!(target = "mpc", "failed to get block hash to send tx");
         return None;
     };
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),
-        "respond".to_string(),
-        response_ser.into(),
+        method,
+        params_ser.into(),
         block.header.hash,
         block.header.height,
     );
-    tracing::info!(
-        target = "mpc",
-        "sending response tx {:?}",
-        transaction.get_hash()
-    );
+    tracing::info!(target = "mpc", "sending tx {:?}", transaction.get_hash());
 
     let nonce = transaction.transaction.nonce();
     let result = indexer_state
@@ -214,6 +247,7 @@ async fn submit_respond_tx(
             .with_span_context(),
         )
         .await;
+    // TODO(#43): Fix the metrics: we no longer send only signature response transactions now.
     match result {
         Ok(response) => match response {
             // We're not a validator, so we should always be routing the transaction.
@@ -242,18 +276,20 @@ async fn submit_respond_tx(
 /// Attempts to ensure that a `respond` function call with given args is included on-chain.
 /// If the submitted transaction is not observed by the indexer before the `timeout`, tries again.
 /// Will make up to `num_attempts` attempts.
-async fn ensure_respond_tx(
+async fn ensure_send_transaction(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
-    response_ser: std::string::String,
+    method: String,
+    params_ser: String,
     timeout: Duration,
     num_attempts: NonZeroUsize,
 ) {
     for _ in 0..num_attempts.into() {
-        let Some(nonce) = submit_respond_tx(
+        let Some(nonce) = submit_tx(
             tx_signer.clone(),
             indexer_state.clone(),
-            response_ser.clone(),
+            method.clone(),
+            params_ser.clone(),
         )
         .await
         else {
@@ -272,27 +308,28 @@ async fn ensure_respond_tx(
     }
 }
 
-pub(crate) async fn handle_sign_responses(
-    mut receiver: mpsc::Receiver<ChainRespondArgs>,
+pub(crate) async fn handle_txn_requests(
+    mut receiver: mpsc::Receiver<ChainSendTransactionRequest>,
     tx_signer: Option<Arc<TransactionSigner>>,
     indexer_state: Arc<IndexerState>,
 ) {
-    while let Some(respond_args) = receiver.recv().await {
+    while let Some(tx_request) = receiver.recv().await {
         let Some(tx_signer) = tx_signer.clone() else {
             tracing::error!(target: "mpc", "Transaction signer unavailable; account secret key not provided");
             continue;
         };
         let indexer_state = indexer_state.clone();
         actix::spawn(async move {
-            let Ok(response_ser) = serde_json::to_string(&respond_args) else {
+            let Ok(txn_json) = serde_json::to_string(&tx_request) else {
                 tracing::error!(target: "mpc", "Failed to serialize response args");
                 return;
             };
-            tracing::debug!(target = "mpc", "tx args {:?}", response_ser);
-            ensure_respond_tx(
+            tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
+            ensure_send_transaction(
                 tx_signer.clone(),
                 indexer_state.clone(),
-                response_ser,
+                tx_request.method().to_string(),
+                txn_json,
                 Duration::from_secs(6), // TODO: maybe set the timeout and num_attempts in the config
                 NonZeroUsize::new(3).unwrap(),
             )

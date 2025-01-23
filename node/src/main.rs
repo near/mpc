@@ -7,6 +7,7 @@ mod async_testing;
 mod background;
 mod cli;
 mod config;
+mod coordinator;
 mod db;
 mod hkdf;
 mod indexer;
@@ -18,6 +19,7 @@ mod network;
 mod p2p;
 mod primitives;
 mod protocol;
+mod runtime;
 mod sign;
 mod sign_request;
 #[cfg(test)]
@@ -25,11 +27,7 @@ mod tests;
 mod tracing;
 mod tracking;
 mod triple;
-#[cfg(not(test))]
 mod web;
-mod web_common;
-#[cfg(test)]
-mod web_test;
 
 fn main() -> anyhow::Result<()> {
     init_logging();

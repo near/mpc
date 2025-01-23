@@ -2,14 +2,19 @@ pub mod configs;
 pub mod handler;
 pub mod lib;
 pub mod participants;
+pub mod real;
 pub mod response;
 pub mod stats;
 pub mod transaction;
 
+use handler::ChainSignatureRequest;
 use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::types::Nonce;
+use participants::ConfigFromChain;
+use response::ChainSendTransactionRequest;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
+use tokio::sync::{mpsc, watch};
 
 const RECENT_NONCES_CACHE_SIZE: usize = 10000;
 
@@ -50,4 +55,12 @@ impl IndexerState {
         let cache = self.my_nonces.lock().expect("poisoned lock");
         cache.contains(&nonce)
     }
+}
+
+/// API to interact with the indexer. Can be replaced by a dummy implementation.
+pub struct IndexerAPI {
+    pub contract_state_receiver: watch::Receiver<ConfigFromChain>,
+    pub sign_request_receiver:
+        Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainSignatureRequest>>>,
+    pub txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
 }

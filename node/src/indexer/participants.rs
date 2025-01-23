@@ -4,31 +4,74 @@ use crate::primitives::ParticipantId;
 use anyhow::Context;
 use mpc_contract::ProtocolContractState;
 use near_indexer_primitives::types::AccountId;
+use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
-use tokio::sync::mpsc;
 use url::Url;
 
-#[derive(Debug)]
-pub struct ConfigFromChain {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunningConfigFromChain {
+    pub epoch: u64,
     pub participants: ParticipantsConfig,
     pub root_public_key: near_crypto::PublicKey,
 }
 
-pub(crate) async fn read_participants_from_chain(
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InitializingConfigFromChain {
+    pub participants: ParticipantsConfig,
+    pub pk_votes: BTreeMap<near_crypto::PublicKey, HashSet<AccountId>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResharingConfigFromChain {
+    pub old_epoch: u64,
+    pub old_participants: ParticipantsConfig,
+    pub new_participants: ParticipantsConfig,
+    pub public_key: near_crypto::PublicKey,
+    pub finished_votes: std::collections::HashSet<AccountId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigFromChain {
+    WaitingForSync,
+    Invalid,
+    Initializing(InitializingConfigFromChain),
+    Running(RunningConfigFromChain),
+    Resharing(ResharingConfigFromChain),
+}
+
+pub async fn monitor_chain_state(
     mpc_contract_id: AccountId,
     port_override: Option<u16>,
     view_client: actix::Addr<near_client::ViewClientActor>,
     client: actix::Addr<near_client::ClientActor>,
-    sender: mpsc::Sender<anyhow::Result<ConfigFromChain>>,
-) {
-    let result =
-        read_participants_from_chain_impl(mpc_contract_id, port_override, view_client, client)
-            .await;
-
-    let _ = sender.send(result).await;
+    config_sender: tokio::sync::watch::Sender<ConfigFromChain>,
+) -> anyhow::Result<()> {
+    const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+    let mut prev_config = ConfigFromChain::Invalid;
+    loop {
+        let result = read_config_from_chain(
+            mpc_contract_id.clone(),
+            port_override,
+            view_client.clone(),
+            client.clone(),
+        )
+        .await;
+        match result {
+            Ok(config) => {
+                if config != prev_config {
+                    config_sender.send(config.clone()).unwrap();
+                    prev_config = config;
+                }
+            }
+            Err(e) => {
+                tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
+            }
+        }
+        tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;
+    }
 }
 
-async fn read_participants_from_chain_impl(
+async fn read_config_from_chain(
     mpc_contract_id: AccountId,
     port_override: Option<u16>,
     view_client: actix::Addr<near_client::ViewClientActor>,
@@ -45,26 +88,65 @@ async fn read_participants_from_chain_impl(
 
     let state = get_mpc_contract_state(mpc_contract_id.clone(), &view_client).await?;
     tracing::info!(target: "mpc", "got mpc contract state {:?}", state);
-    let ProtocolContractState::Running(state) = state else {
-        anyhow::bail!("mpc contract is not in a Running state");
+    let config = match state {
+        ProtocolContractState::NotInitialized => ConfigFromChain::Invalid,
+        ProtocolContractState::Initializing(state) => {
+            let mut pk_votes = BTreeMap::new();
+            for (pk, votes) in state.pk_votes.votes {
+                pk_votes.insert(
+                    near_crypto::PublicKey::from_str(&String::from(&pk))
+                        .context("parse public key")?,
+                    votes.into_iter().collect(),
+                );
+            }
+            ConfigFromChain::Initializing(InitializingConfigFromChain {
+                participants: convert_participant_infos(
+                    state.candidates.into(),
+                    port_override,
+                    state.threshold,
+                )?,
+                pk_votes,
+            })
+        }
+        ProtocolContractState::Running(state) => ConfigFromChain::Running(RunningConfigFromChain {
+            epoch: state.epoch,
+            participants: convert_participant_infos(
+                state.participants,
+                port_override,
+                state.threshold,
+            )?,
+            root_public_key: String::from(&state.public_key)
+                .parse()
+                .context("parse public key")?,
+        }),
+        ProtocolContractState::Resharing(state) => {
+            ConfigFromChain::Resharing(ResharingConfigFromChain {
+                old_epoch: state.old_epoch,
+                old_participants: convert_participant_infos(
+                    state.old_participants,
+                    port_override,
+                    state.threshold,
+                )?,
+                new_participants: convert_participant_infos(
+                    state.new_participants,
+                    port_override,
+                    state.threshold,
+                )?,
+                public_key: String::from(&state.public_key)
+                    .parse()
+                    .context("parse public key")?,
+                finished_votes: state.finished_votes,
+            })
+        }
     };
-
-    let participants = convert_participant_infos(state.participants, port_override)?;
-    let root_public_key = near_crypto::PublicKey::from_str(&String::from(&state.public_key))
-        .context("could not parse root public key")?;
-    Ok(ConfigFromChain {
-        participants: ParticipantsConfig {
-            participants,
-            threshold: state.threshold.try_into()?,
-        },
-        root_public_key,
-    })
+    Ok(config)
 }
 
 fn convert_participant_infos(
     participants: mpc_contract::primitives::Participants,
     port_override: Option<u16>,
-) -> anyhow::Result<Vec<ParticipantInfo>> {
+    threshold: usize,
+) -> anyhow::Result<ParticipantsConfig> {
     let mut converted = Vec::new();
     for (account_id, p) in participants.participants {
         let url = Url::parse(&p.url)
@@ -96,7 +178,10 @@ fn convert_participant_infos(
             near_account_id: account_id,
         });
     }
-    Ok(converted)
+    Ok(ParticipantsConfig {
+        participants: converted,
+        threshold: threshold.try_into()?,
+    })
 }
 
 #[cfg(test)]
@@ -226,8 +311,9 @@ mod tests {
         }
         assert!(account_ids.is_sorted());
 
-        let converted = convert_participant_infos(chain_infos.clone(), None).unwrap();
-        for (i, p) in converted.iter().enumerate() {
+        let converted = convert_participant_infos(chain_infos.clone(), None, 3).unwrap();
+        assert_eq!(converted.threshold, 3);
+        for (i, p) in converted.participants.iter().enumerate() {
             assert!(p.near_account_id == account_ids[i]);
             assert!(
                 p.p2p_public_key.to_string() == String::from(&account_id_to_pk[&account_ids[i]])
@@ -241,10 +327,14 @@ mod tests {
     fn test_port_override() {
         let chain_infos = create_chain_participant_infos();
 
-        let converted = convert_participant_infos(chain_infos.clone(), None).unwrap();
+        let converted = convert_participant_infos(chain_infos.clone(), None, 1)
+            .unwrap()
+            .participants;
         converted.into_iter().for_each(|p| assert!(p.port == 3000));
 
-        let with_override = convert_participant_infos(chain_infos, Some(443)).unwrap();
+        let with_override = convert_participant_infos(chain_infos, Some(443), 1)
+            .unwrap()
+            .participants;
         with_override
             .into_iter()
             .for_each(|p| assert!(p.port == 443));
@@ -257,7 +347,7 @@ mod tests {
         for (account_id, bad_data) in create_invalid_chain_participant_infos().participants {
             let mut chain_infos = chain_infos.clone();
             chain_infos.participants.insert(account_id, bad_data);
-            assert!(convert_participant_infos(chain_infos, None).is_err());
+            assert!(convert_participant_infos(chain_infos, None, 1).is_err());
         }
     }
 }

@@ -50,7 +50,7 @@ pub(crate) async fn listen_blocks(
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
     account_public_key: Option<PublicKey>,
-    sign_request_sender: mpsc::Sender<ChainSignatureRequest>,
+    sign_request_sender: mpsc::UnboundedSender<ChainSignatureRequest>,
     indexer_state: Arc<IndexerState>,
 ) {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
@@ -74,7 +74,7 @@ async fn handle_message(
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: &AccountId,
     account_public_key: &Option<PublicKey>,
-    sign_request_sender: mpsc::Sender<ChainSignatureRequest>,
+    sign_request_sender: mpsc::UnboundedSender<ChainSignatureRequest>,
     indexer_state: Arc<IndexerState>,
 ) -> anyhow::Result<()> {
     let block_height = streamer_message.block.header.height;
@@ -119,7 +119,7 @@ async fn handle_message(
 
     for request in signature_requests {
         metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
-        if let Err(err) = sign_request_sender.send(request).await {
+        if let Err(err) = sign_request_sender.send(request) {
             tracing::error!(target: "mpc", %err, "error sending sign request to mpc node");
         }
     }
