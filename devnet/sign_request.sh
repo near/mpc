@@ -50,4 +50,4 @@ REQUEST=$(cat << EOF
 }
 EOF)
 
-near call $SIGNER --use-account $SIGNER sign "$REQUEST" --deposit-yocto 1 --gas 60000000000000
+near call v1.signer-prod.testnet--use-account $SIGNER sign "$REQUEST" --deposit-yocto 1 --gas 60000000000000
