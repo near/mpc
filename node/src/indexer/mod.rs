@@ -12,7 +12,7 @@ pub mod transaction;
 use handler::ChainSignatureRequest;
 use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::types::Nonce;
-use participants::ConfigFromChain;
+use participants::ContractState;
 use response::ChainSendTransactionRequest;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -60,9 +60,22 @@ impl IndexerState {
 }
 
 /// API to interact with the indexer. Can be replaced by a dummy implementation.
+/// The MPC node implementation needs this and only this to be able to interact
+/// with the indexer.
+/// TODO(#155): This would be the interface to abstract away having an indexer
+/// running in a separate process.
 pub struct IndexerAPI {
-    pub contract_state_receiver: watch::Receiver<ConfigFromChain>,
+    /// Provides the current contract state as well as updates to it.
+    pub contract_state_receiver: watch::Receiver<ContractState>,
+    /// Provides signature requests. It is in a mutex, because the logical
+    /// "owner" of this receiver can change over time (specifically, when we
+    /// transition from the Running state to a Resharing state to the Running
+    /// state again, two different tasks would successively "own" the receiver).
+    /// We do not want to re-create the channel, because while resharing is
+    /// happening we want to buffer the signature requests.
     pub sign_request_receiver:
         Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainSignatureRequest>>>,
+    /// Sender to request transactions be signed (by a TransactionSigner that
+    /// the indexer is initialized with) and sent to the chain.
     pub txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
 }

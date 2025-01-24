@@ -2,7 +2,7 @@ use crate::config::{ConfigFile, MpcConfig, SecretsConfig};
 use crate::db::{DBCol, SecretDB};
 use crate::indexer::handler::ChainSignatureRequest;
 use crate::indexer::participants::{
-    ConfigFromChain, InitializingConfigFromChain, ResharingConfigFromChain, RunningConfigFromChain,
+    ContractInitializingState, ContractResharingState, ContractRunningState, ContractState,
 };
 use crate::indexer::response::{ChainSendTransactionRequest, ChainVotePkArgs};
 use crate::indexer::IndexerAPI;
@@ -24,6 +24,11 @@ use std::future::Future;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+/// Main entry point for the MPC node logic. Assumes the existence of an
+/// indexer. Queries and monitors the contract for state transitions, and act
+/// accordingly: if the contract says we need to generate keys, we generate
+/// keys; if the contract says we're running, we run the MPC protocol; if the
+/// contract says we need to perform key resharing, we perform key resharing.
 pub struct Coordinator {
     pub clock: Clock,
     pub secrets: SecretsConfig,
@@ -38,70 +43,80 @@ pub struct Coordinator {
     pub indexer: IndexerAPI,
 }
 
+struct MpcJob {
+    /// Friendly name for the currently running task.
+    name: &'static str,
+    /// The future for the MPC task (keygen, resharing, or normal run).
+    fut: BoxFuture<'static, anyhow::Result<()>>,
+    /// a function that looks at a new contract state and returns true iff the
+    /// current task should be killed.
+    stop_fn: Box<dyn Fn(&ContractState) -> bool + Send>,
+    /// a future that resolves when the current task exceeds the desired
+    /// timeout.
+    timeout_fut: BoxFuture<'static, ()>,
+}
+
 impl Coordinator {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
-            let config = self.indexer.contract_state_receiver.borrow().clone();
-            let (name, mut fut, stop_fn, mut timeout_fut): (
-                &'static str,
-                BoxFuture<'static, anyhow::Result<()>>,
-                Box<dyn Fn(&ConfigFromChain) -> bool + Send>,
-                BoxFuture<'static, ()>,
-            ) = match config {
-                ConfigFromChain::WaitingForSync => {
-                    tracing::info!("Waiting for sync");
-                    (
-                        "WaitingForSync",
-                        futures::future::pending().boxed(),
-                        Box::new(|_| true),
-                        futures::future::pending().boxed(),
-                    )
+            let state = self.indexer.contract_state_receiver.borrow().clone();
+            let mut job = match state {
+                ContractState::WaitingForSync => {
+                    // This is the initial state. We stop this state for any state changes.
+                    MpcJob {
+                        name: "WaitingForSync",
+                        fut: futures::future::pending().boxed(),
+                        stop_fn: Box::new(|_| true),
+                        timeout_fut: futures::future::pending().boxed(),
+                    }
                 }
-                ConfigFromChain::Invalid => {
-                    tracing::error!("Invalid config from chain, waiting for change");
-                    (
-                        "Invalid",
-                        futures::future::pending().boxed(),
-                        Box::new(|_| true),
-                        futures::future::pending().boxed(),
-                    )
+                ContractState::Invalid => {
+                    // Invalid state. Similar to initial state; we do nothing until the state changes.
+                    MpcJob {
+                        name: "Invalid",
+                        fut: futures::future::pending().boxed(),
+                        stop_fn: Box::new(|_| true),
+                        timeout_fut: futures::future::pending().boxed(),
+                    }
                 }
-                ConfigFromChain::Initializing(config) => {
-                    tracing::info!(
-                        "Contract is initializing, performing key generation and voting"
-                    );
-                    (
-                        "Initializing",
-                        Self::create_runtime_and_run(
+                ContractState::Initializing(state) => {
+                    // For initialization state, we generate keys and vote for the public key.
+                    // We give it a timeout, so that if somehow the keygen and voting fail to
+                    // progress, we can retry.
+                    MpcJob {
+                        name: "Initializing",
+                        fut: Self::create_runtime_and_run(
                             "Initializing",
                             self.config_file.cores,
                             Self::run_initialization(
                                 self.secrets.clone(),
                                 self.config_file.clone(),
                                 self.keyshare_storage_factory.create().await?,
-                                config.clone(),
+                                state.clone(),
                                 self.indexer.txn_sender.clone(),
                             ),
                         )?,
-                        Box::new(move |new_config| match new_config {
-                            ConfigFromChain::Initializing(new_config) => {
-                                new_config.participants != config.participants
+                        stop_fn: Box::new(move |new_state| match new_state {
+                            ContractState::Initializing(new_state) => {
+                                new_state.participants != state.participants
                             }
                             _ => true,
                         }),
                         // TODO(#151): This timeout is not ideal. If participants are not synchronized,
                         // they might each timeout out of order and never complete keygen?
-                        sleep(
+                        timeout_fut: sleep(
                             &self.clock,
                             Duration::seconds(self.config_file.keygen.timeout_sec as i64),
                         ),
-                    )
+                    }
                 }
-                ConfigFromChain::Running(config) => {
-                    tracing::info!("Contract is in running state, running MPC node normally");
-                    (
-                        "Running",
-                        Self::create_runtime_and_run(
+                ContractState::Running(state) => {
+                    // For the running state, we run the full MPC protocol.
+                    // There's no timeout. The only time we stop is when the contract state
+                    // changes to no longer be running (or if somehow the epoch changes).
+                    MpcJob {
+                        name: "Running",
+                        fut: Self::create_runtime_and_run(
                             "Running",
                             self.config_file.cores,
                             Self::run_mpc(
@@ -110,7 +125,7 @@ impl Coordinator {
                                 self.secrets.clone(),
                                 self.config_file.clone(),
                                 self.keyshare_storage_factory.create().await?,
-                                config.clone(),
+                                state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer
                                     .sign_request_receiver
@@ -119,20 +134,18 @@ impl Coordinator {
                                     .await,
                             ),
                         )?,
-                        Box::new(move |new_config| match new_config {
-                            ConfigFromChain::Running(new_config) => {
-                                new_config.epoch != config.epoch
-                            }
+                        stop_fn: Box::new(move |new_state| match new_state {
+                            ContractState::Running(new_state) => new_state.epoch != state.epoch,
                             _ => true,
                         }),
-                        futures::future::pending().boxed(),
-                    )
+                        timeout_fut: futures::future::pending().boxed(),
+                    }
                 }
-                ConfigFromChain::Resharing(config) => {
-                    tracing::info!("Contract is in resharing state, running resharing protocol");
-                    (
-                        "Resharing",
-                        Self::create_runtime_and_run(
+                ContractState::Resharing(state) => {
+                    // In resharing state, we perform key resharing, again with a timeout.
+                    MpcJob {
+                        name: "Resharing",
+                        fut: Self::create_runtime_and_run(
                             "Resharing",
                             self.config_file.cores,
                             Self::run_key_resharing(
@@ -141,42 +154,43 @@ impl Coordinator {
                                 self.secrets.clone(),
                                 self.config_file.clone(),
                                 self.keyshare_storage_factory.create().await?,
-                                config.clone(),
+                                state.clone(),
                                 self.indexer.txn_sender.clone(),
                             ),
                         )?,
-                        Box::new(move |new_config| match new_config {
-                            ConfigFromChain::Resharing(new_config) => {
-                                new_config.old_epoch != config.old_epoch
-                                    || new_config.new_participants != config.new_participants
+                        stop_fn: Box::new(move |new_state| match new_state {
+                            ContractState::Resharing(new_state) => {
+                                new_state.old_epoch != state.old_epoch
+                                    || new_state.new_participants != state.new_participants
                             }
                             _ => true,
                         }),
-                        sleep(
+                        timeout_fut: sleep(
                             &self.clock,
                             Duration::seconds(self.config_file.keygen.timeout_sec as i64),
                         ),
-                    )
+                    }
                 }
             };
+            tracing::info!("[{}] Starting", job.name);
             loop {
                 tokio::select! {
-                    res = &mut fut => {
+                    res = &mut job.fut => {
                         if let Err(e) = res {
-                            tracing::error!("[{}] failed: {:?}", name, e);
+                            tracing::error!("[{}] failed: {:?}", job.name, e);
                         } else {
-                            tracing::info!("[{}] finished successfully", name);
+                            tracing::info!("[{}] finished successfully", job.name);
                         }
                         break;
                     }
                     _ = self.indexer.contract_state_receiver.changed() => {
-                        if stop_fn(&self.indexer.contract_state_receiver.borrow()) {
-                            tracing::info!("[{}] config changed incompatibly, stopping", name);
+                        if (job.stop_fn)(&self.indexer.contract_state_receiver.borrow()) {
+                            tracing::info!("[{}] contract state changed incompatibly, stopping", job.name);
                             break;
                         }
                     }
-                    _ = &mut timeout_fut => {
-                        tracing::error!("[{}] timed out, stopping", name);
+                    _ = &mut job.timeout_fut => {
+                        tracing::error!("[{}] timed out, stopping", job.name);
                         break;
                     }
                 }
@@ -191,11 +205,15 @@ impl Coordinator {
     ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
         let task_handle = tracking::current_task();
 
-        // Have the MPC tasks be on a separate runtime for two reasons:
+        // Create a separate runtime, as opposed to making a runtime when the
+        // binary starts, for these reasons:
         //  - so that we can limit the number of cores used for MPC tasks,
         //    in order to avoid starving the indexer, causing it to fall behind.
-        //  - so that we can shut down the MPC tasks without shutting down the
-        //    indexer, in order to process key generation or resharing.
+        //  - so that we can ensure that all MPC tasks are shut down when we
+        //    encounter contract state transitions. By dropping the entire
+        //    runtime, we can ensure that all tasks are stopped. Otherwise, it
+        //    would be very difficult and error-prone to ensure we don't leave
+        //    some long-running task behind.
         let mpc_runtime = if let Some(n_threads) = cores {
             tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(std::cmp::max(n_threads, 1))
@@ -213,11 +231,14 @@ impl Coordinator {
         .boxed())
     }
 
+    /// Entry point to handle the Initializing state of the contract.
+    /// If we have a keyshare, we make sure we call vote_pk.
+    /// If we don't have a keyshare, we run key generation.
     async fn run_initialization(
         secrets: SecretsConfig,
         config_file: ConfigFile,
         keyshare_storage: Box<dyn KeyshareStorage>,
-        contract_config: InitializingConfigFromChain,
+        contract_state: ContractInitializingState,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     ) -> anyhow::Result<()> {
         let existing_key = keyshare_storage.load().await?;
@@ -229,7 +250,7 @@ impl Coordinator {
             }
 
             let my_public_key = affine_point_to_public_key(existing_key.public_key)?;
-            if let Some(votes) = contract_config.pk_votes.get(&my_public_key) {
+            if let Some(votes) = contract_state.pk_votes.get(&my_public_key) {
                 if votes.contains(&config_file.my_near_account_id) {
                     tracing::info!("Initialization: we already voted for our public key; waiting for public key consensus");
                     // Wait indefinitely. We will be terminated when config changes, or when we timeout.
@@ -252,7 +273,7 @@ impl Coordinator {
         }
 
         let mpc_config = MpcConfig::from_participants_with_near_account_id(
-            contract_config.participants,
+            contract_state.participants,
             &config_file.my_near_account_id,
         )?;
         let (sender, receiver) =
@@ -275,13 +296,17 @@ impl Coordinator {
         anyhow::Ok(())
     }
 
+    /// Entry point to handle the Running state of the contract.
+    /// In this state, we generate triples and presignatures, and listen to
+    /// signature requests and submit signature responses.
+    #[allow(clippy::too_many_arguments)]
     async fn run_mpc(
         clock: Clock,
         secret_db: Arc<SecretDB>,
         secrets: SecretsConfig,
         config_file: ConfigFile,
         keyshare_storage: Box<dyn KeyshareStorage>,
-        contract_config: RunningConfigFromChain,
+        contract_state: ContractRunningState,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
         sign_request_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainSignatureRequest>,
@@ -289,7 +314,7 @@ impl Coordinator {
     ) -> anyhow::Result<()> {
         let keyshare = keyshare_storage.load().await?;
         let keyshare = match keyshare {
-            Some(keyshare) if keyshare.epoch == contract_config.epoch => keyshare,
+            Some(keyshare) if keyshare.epoch == contract_state.epoch => keyshare,
             _ => {
                 // TODO(#150): Implement sending join txn.
                 tracing::error!("This node is not a participant in the current epoch. Doing nothing until contract state change.");
@@ -299,7 +324,7 @@ impl Coordinator {
         };
 
         let mpc_config = MpcConfig::from_participants_with_near_account_id(
-            contract_config.participants,
+            contract_state.participants,
             &config_file.my_near_account_id,
         )?;
 
@@ -355,13 +380,15 @@ impl Coordinator {
         Ok(())
     }
 
+    /// Entry point to handle the Resharing state of the contract.
+    /// In this state, we perform key resharing and call vote_reshared.
     async fn run_key_resharing(
         _clock: Clock,
         _secret_db: Arc<SecretDB>,
         _secrets: SecretsConfig,
         _config_file: ConfigFile,
         _keyshare_storage: Box<dyn KeyshareStorage>,
-        _contract_config: ResharingConfigFromChain,
+        _contract_state: ContractResharingState,
         _chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     ) -> anyhow::Result<()> {
         // TODO(#43): Implement key resharing.

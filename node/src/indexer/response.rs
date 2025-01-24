@@ -120,8 +120,12 @@ pub struct ChainVoteResharedArgs {
 #[serde(untagged)]
 pub enum ChainSendTransactionRequest {
     Respond(ChainRespondArgs),
+    // TODO(#150): Implement join.
+    #[allow(dead_code)]
     Join(ChainJoinArgs),
     VotePk(ChainVotePkArgs),
+    // TODO(#43): Implement vote_reshared.
+    #[allow(dead_code)]
     VoteReshared(ChainVoteResharedArgs),
 }
 

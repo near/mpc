@@ -97,6 +97,7 @@ impl AutoAbortTaskCollection<()> {
     }
 
     /// Spawn directly with tokio; used for when we do not have a tracking context.
+    #[cfg(test)]
     pub fn spawn_with_tokio<F>(&mut self, f: F)
     where
         F: Future<Output = ()> + Send + 'static,

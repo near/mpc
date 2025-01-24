@@ -1,8 +1,5 @@
-use crate::indexer::handler::{ChainSignatureRequest, SignArgs};
-use crate::tests::generate_test_configs_with_fake_indexer;
+use crate::tests::{generate_test_configs_with_fake_indexer, request_signature_and_await_response};
 use crate::tracking::AutoAbortTask;
-use k256::elliptic_curve::Field;
-use k256::Scalar;
 use near_o11y::testonly::init_integration_logger;
 use near_time::{Clock, Duration};
 use serial_test::serial;
@@ -15,7 +12,7 @@ async fn test_basic_cluster() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
-    const TXN_DELAY: Duration = Duration::seconds(3);
+    const TXN_DELAY: Duration = Duration::seconds(1);
     const PORT_SEED: u16 = 2;
     let temp_dir = tempfile::tempdir().unwrap();
     let (mut indexer, configs) = generate_test_configs_with_fake_indexer(
@@ -34,17 +31,5 @@ async fn test_basic_cluster() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
-    indexer.request_signature(ChainSignatureRequest {
-        entropy: rand::random(),
-        request_id: rand::random(),
-        predecessor_id: "user0".parse().unwrap(),
-        timestamp_nanosec: rand::random(),
-        request: SignArgs {
-            key_version: 0,
-            path: "m/44'/60'/0'/0/0".to_string(),
-            payload: Scalar::random(&mut rand::thread_rng()),
-        },
-    });
-    let response = indexer.next_response().await;
-    tracing::info!("Response: {:?}", response);
+    assert!(request_signature_and_await_response(&mut indexer, "user0", 20).await);
 }

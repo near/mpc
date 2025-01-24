@@ -73,11 +73,9 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
 
     # Get the participant set from the mpc configs
     participants = {}
-    account_id_to_participant_id = {}
-    config_file_path = pathlib.Path(dot_near / '0' / 'config.yaml')
-    with open(config_file_path) as file:
-        mpc_config = yaml.load(file, Loader=SafeLoaderIgnoreUnknown)
-    for i, p in enumerate(mpc_config['participants']['participants']):
+    with open(pathlib.Path(dot_near / 'participants.json')) as file:
+        participants_config = yaml.load(file, Loader=SafeLoaderIgnoreUnknown)
+    for i, p in enumerate(participants_config['participants']):
         near_account = p['near_account_id']
         assert near_account == f"test{i + num_validators}", \
             f"This test only works with account IDs 'testX' where X is the node index; expected 'test{i + num_validators}', got {near_account}"
@@ -86,18 +84,14 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
         my_port = p['port']
 
         participants[near_account] = {
-            "account_id":
-            near_account,
+            "account_id": near_account,
             "cipher_pk": [
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
             ],
-            "sign_pk":
-            my_pk,
-            "url":
-            f"http://{my_addr}:{my_port}",
+            "sign_pk": my_pk,
+            "url": f"http://{my_addr}:{my_port}",
         }
-        account_id_to_participant_id[near_account] = p['id']
 
     # Set up the node's home directories
     for i in mpc_nodes:
@@ -128,24 +122,6 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
                  'validator_key.json').read())
         return validator_key['secret_key']
 
-    # Generate the root keyshares
-    commands = [(mpc_binary_path, 'generate-key', '--home-dir',
-                 nodes[i].node_dir, secret_key_hex(i), p2p_private_key(i))
-                for i in mpc_nodes]
-    with Pool() as pool:
-        keygen_results = pool.map(subprocess.check_output, commands)
-
-    # grep for "Public key: ..." in the output from the first keygen command
-    # to extract the public key
-    public_key = None
-    for line in keygen_results[0].decode('utf-8', 'ignore').split('\n'):
-        m = re.match(r'Public key: (.*)', line)
-        if m:
-            public_key = m.group(1)
-            break
-    assert public_key is not None, "Failed to extract public key from keygen output"
-    print(f"Public key: {public_key}")
-
     # Deploy the mpc contract
     last_block_hash = nodes[0].get_latest_block().hash_bytes
     tx = sign_deploy_contract_tx(nodes[0].signer_key, load_mpc_contract(), 10,
@@ -155,15 +131,15 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
 
     # Initialize the mpc contract
     init_args = {
-        'epoch': 0,
         'threshold': num_mpc_nodes,
-        'participants': {
-            'participants': participants,
-            'next_id': 0,  # not used
-            'account_to_participant_id': account_id_to_participant_id,
-        },
-        'public_key': public_key,
+        'candidates': participants,
     }
+    tx = sign_function_call_tx(nodes[0].signer_key,
+                               nodes[0].signer_key.account_id, 'init',
+                               json.dumps(init_args).encode('utf-8'),
+                               150 * TGAS, 0, 20, last_block_hash)
+    res = nodes[0].send_tx_and_wait(tx, 20)
+    assert ('SuccessValue' in res['result']['status'])
 
     # Start the mpc nodes
     for i in mpc_nodes:
@@ -176,13 +152,6 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
                              'MPC_P2P_PRIVATE_KEY': p2p_private_key(i),
                              'MPC_ACCOUNT_SK': near_secret_key(i),
                          })
-
-    tx = sign_function_call_tx(nodes[0].signer_key,
-                               nodes[0].signer_key.account_id, 'init_running',
-                               json.dumps(init_args).encode('utf-8'),
-                               150 * TGAS, 0, 20, last_block_hash)
-    res = nodes[0].send_tx_and_wait(tx, 20)
-    assert ('SuccessValue' in res['result']['status'])
 
     return nodes
 

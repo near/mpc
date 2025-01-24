@@ -9,20 +9,20 @@ use std::str::FromStr;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunningConfigFromChain {
+pub struct ContractRunningState {
     pub epoch: u64,
     pub participants: ParticipantsConfig,
     pub root_public_key: near_crypto::PublicKey,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InitializingConfigFromChain {
+pub struct ContractInitializingState {
     pub participants: ParticipantsConfig,
     pub pk_votes: BTreeMap<near_crypto::PublicKey, HashSet<AccountId>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResharingConfigFromChain {
+pub struct ContractResharingState {
     pub old_epoch: u64,
     pub old_participants: ParticipantsConfig,
     pub new_participants: ParticipantsConfig,
@@ -31,12 +31,12 @@ pub struct ResharingConfigFromChain {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConfigFromChain {
+pub enum ContractState {
     WaitingForSync,
     Invalid,
-    Initializing(InitializingConfigFromChain),
-    Running(RunningConfigFromChain),
-    Resharing(ResharingConfigFromChain),
+    Initializing(ContractInitializingState),
+    Running(ContractRunningState),
+    Resharing(ContractResharingState),
 }
 
 pub async fn monitor_chain_state(
@@ -44,12 +44,12 @@ pub async fn monitor_chain_state(
     port_override: Option<u16>,
     view_client: actix::Addr<near_client::ViewClientActor>,
     client: actix::Addr<near_client::ClientActor>,
-    config_sender: tokio::sync::watch::Sender<ConfigFromChain>,
+    contract_state_sender: tokio::sync::watch::Sender<ContractState>,
 ) -> anyhow::Result<()> {
     const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
-    let mut prev_config = ConfigFromChain::Invalid;
+    let mut prev_state = ContractState::Invalid;
     loop {
-        let result = read_config_from_chain(
+        let result = read_contract_state_from_chain(
             mpc_contract_id.clone(),
             port_override,
             view_client.clone(),
@@ -57,10 +57,10 @@ pub async fn monitor_chain_state(
         )
         .await;
         match result {
-            Ok(config) => {
-                if config != prev_config {
-                    config_sender.send(config.clone()).unwrap();
-                    prev_config = config;
+            Ok(state) => {
+                if state != prev_state {
+                    contract_state_sender.send(state.clone()).unwrap();
+                    prev_state = state;
                 }
             }
             Err(e) => {
@@ -71,12 +71,12 @@ pub async fn monitor_chain_state(
     }
 }
 
-async fn read_config_from_chain(
+async fn read_contract_state_from_chain(
     mpc_contract_id: AccountId,
     port_override: Option<u16>,
     view_client: actix::Addr<near_client::ViewClientActor>,
     client: actix::Addr<near_client::ClientActor>,
-) -> anyhow::Result<ConfigFromChain> {
+) -> anyhow::Result<ContractState> {
     // We wait first to catch up to the chain to avoid reading the participants from an outdated state.
     // We currently assume the participant set is static and do not detect or support any updates.
     tracing::info!(target: "mpc", "awaiting full sync to read mpc contract state");
@@ -88,8 +88,8 @@ async fn read_config_from_chain(
 
     let state = get_mpc_contract_state(mpc_contract_id.clone(), &view_client).await?;
     tracing::info!(target: "mpc", "got mpc contract state {:?}", state);
-    let config = match state {
-        ProtocolContractState::NotInitialized => ConfigFromChain::Invalid,
+    let state = match state {
+        ProtocolContractState::NotInitialized => ContractState::Invalid,
         ProtocolContractState::Initializing(state) => {
             let mut pk_votes = BTreeMap::new();
             for (pk, votes) in state.pk_votes.votes {
@@ -99,7 +99,7 @@ async fn read_config_from_chain(
                     votes.into_iter().collect(),
                 );
             }
-            ConfigFromChain::Initializing(InitializingConfigFromChain {
+            ContractState::Initializing(ContractInitializingState {
                 participants: convert_participant_infos(
                     state.candidates.into(),
                     port_override,
@@ -108,7 +108,7 @@ async fn read_config_from_chain(
                 pk_votes,
             })
         }
-        ProtocolContractState::Running(state) => ConfigFromChain::Running(RunningConfigFromChain {
+        ProtocolContractState::Running(state) => ContractState::Running(ContractRunningState {
             epoch: state.epoch,
             participants: convert_participant_infos(
                 state.participants,
@@ -120,7 +120,7 @@ async fn read_config_from_chain(
                 .context("parse public key")?,
         }),
         ProtocolContractState::Resharing(state) => {
-            ConfigFromChain::Resharing(ResharingConfigFromChain {
+            ContractState::Resharing(ContractResharingState {
                 old_epoch: state.old_epoch,
                 old_participants: convert_participant_infos(
                     state.old_participants,
@@ -139,7 +139,7 @@ async fn read_config_from_chain(
             })
         }
     };
-    Ok(config)
+    Ok(state)
 }
 
 fn convert_participant_infos(

@@ -1,5 +1,5 @@
 use super::handler::listen_blocks;
-use super::participants::{monitor_chain_state, ConfigFromChain};
+use super::participants::{monitor_chain_state, ContractState};
 use super::response::handle_txn_requests;
 use super::stats::{indexer_logger, IndexerStats};
 use super::transaction::TransactionSigner;
@@ -20,7 +20,7 @@ pub fn spawn_real_indexer(
     account_secret_key: Option<SecretKey>,
 ) -> (std::thread::JoinHandle<()>, IndexerAPI) {
     let (chain_config_sender, chain_config_receiver) =
-        tokio::sync::watch::channel::<ConfigFromChain>(ConfigFromChain::WaitingForSync);
+        tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
     let (sign_request_sender, sign_request_receiver) = mpsc::unbounded_channel();
     let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
 
