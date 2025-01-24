@@ -21,8 +21,7 @@ use near_workspaces::types::{AccountId, NearToken};
 use near_workspaces::{Account, Contract, Worker};
 use signature::DigestSigner;
 
-pub const CONTRACT_FILE_PATH: &str =
-    "../../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
+pub const CONTRACT_FILE_PATH: &str = "../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
 pub const INVALID_CONTRACT: &str = "../res/mpc_test_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
 

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=60.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nearcore_pytest"
+version = "0.1.0"
+description = "A wrapper package for nearcore pytest"
+#readme = "README.md"
+requires-python = ">=3.6"
+
+[tool.setuptools]
+# Specify the location of the package
+package-dir = {"" = "../../libs/nearcore/pytest/lib"}
+#packages = ["pytest"]
+#packages = {find = {where = ["../../libs/nearcore/pytest/lib"]}}
+include-package-data = true
+
+
+#[tool.setuptools.dynamic.dependencies]
+#file = "../../libs/nearcore/pytest/requirements.txt"

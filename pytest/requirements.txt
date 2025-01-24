@@ -1,0 +1,3 @@
+-r ../libs/nearcore/pytest/requirements.txt
+-e ./nearcore_pytest
+borsh-construct

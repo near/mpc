@@ -3,6 +3,7 @@ use std::hash::Hash;
 
 use crate::config::Config;
 use crate::primitives::StorageKey;
+use near_sdk::log;
 
 use borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
@@ -127,6 +128,7 @@ impl ProposedUpdates {
         for update in entry.updates {
             match update {
                 Update::Config(config) => {
+                    log!("updating config.");
                     promise = promise.function_call(
                         "update_config".into(),
                         serde_json::to_vec(&(&config,)).unwrap(),
@@ -135,6 +137,7 @@ impl ProposedUpdates {
                     );
                 }
                 Update::Contract(code) => {
+                    log!("updating contract.");
                     // deploy contract then do a `migrate` call to migrate state.
                     promise = promise.deploy_contract(code).function_call(
                         "migrate".into(),

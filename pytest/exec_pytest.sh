@@ -21,11 +21,11 @@
 #
 # -------------------------------------------------------------------
 
-TEST_FILES=(
-    "index_signature_request.py"
-    # Add more test files here
-)
-
+TEST_FILES=(tests/*.py)
+#TEST_FILES=(
+#    "pytest.tests.index_signature_request"
+#    "pytest.tests.update_test"
+#)
 LOG_FILE="output.log"
 log_output() {
     if [ "$VERBOSE" = true ]; then
@@ -69,8 +69,13 @@ echo "Git repository root: $GIT_ROOT"
 PYTEST_DIR="$GIT_ROOT/pytest"
 VENV_DIR="$PYTEST_DIR/venv"
 LIB_DIR="$GIT_ROOT/libs"
-REQ_DIR="$LIB_DIR/nearcore/pytest/requirements.txt"
+#REQ_DIR="$LIB_DIR/nearcore/pytest/requirements.txt"
 
+REQ_DIRS=(
+    #"$LIB_DIR/nearcore/pytest/requirements.txt"
+    "$PYTEST_DIR/requirements.txt"
+    # Add more test requirement files here
+)
 RESET_SUBMODULES=false
 VERBOSE=false
 for arg in "$@"; do
@@ -149,15 +154,19 @@ if ! source "$VENV_DIR/bin/activate"; then
 fi
 
 printf "\nInstalling requirements"
-if ! log_output pip install -r "$REQ_DIR"; then
-    echo "Error: Failed to install requirements."
-    exit 1
-fi
+for req in "${REQ_DIRS[@]}"; do
+    printf '\nInstalling requirement: %s' "$req"
+    if ! log_output pip install -r "$req"; then
+        echo "Error: Failed to install requirements."
+        exit 1
+    fi
+done
 
 printf "\nExecuting tests"
 for test_file in "${TEST_FILES[@]}"; do
-    printf '\nRunning test: %s' "$test_file"
+    printf '\nRunning test: %s' "$PYTEST_DIR/$test_file"
     if ! log_output python "$PYTEST_DIR/$test_file"; then
+        #if ! log_output python -m "$test_file"; then
         printf '\nError: Test %s failed.' "$test_file"
         exit 1
     else
