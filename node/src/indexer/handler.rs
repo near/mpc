@@ -73,7 +73,7 @@ async fn handle_message(
     streamer_message: near_indexer_primitives::StreamerMessage,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: &AccountId,
-    account_public_key: &Option<PublicKey>,
+    _account_public_key: &Option<PublicKey>,
     sign_request_sender: mpsc::Sender<ChainSignatureRequest>,
     indexer_state: Arc<IndexerState>,
 ) -> anyhow::Result<()> {
@@ -83,7 +83,7 @@ async fn handle_message(
     drop(stats_lock);
 
     let mut signature_requests = vec![];
-    let mut my_tx_nonces = vec![];
+    let my_tx_nonces = vec![];
 
     for shard in streamer_message.shards {
         for outcome in shard.receipt_execution_outcomes {
@@ -102,7 +102,9 @@ async fn handle_message(
                 });
             }
         }
-        if let Some(account_public_key) = account_public_key {
+
+        // TODO(#153): fix or remove this
+        /*if let Some(account_public_key) = account_public_key {
             if let Some(chunk) = &shard.chunk {
                 for tx in &chunk.transactions {
                     if tx.transaction.public_key == *account_public_key {
@@ -112,7 +114,7 @@ async fn handle_message(
                     }
                 }
             }
-        }
+        }*/
     }
 
     crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height as i64);

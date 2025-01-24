@@ -311,8 +311,9 @@ pub(crate) async fn handle_sign_responses(
                 tx_signer.clone(),
                 indexer_state.clone(),
                 response_ser,
-                Duration::from_secs(10), // TODO: maybe set the timeout and num_attempts in the config
-                NonZeroUsize::new(3).unwrap(),
+                Duration::from_secs(10),
+                // TODO(#153): until nonce detection is fixed, this *must* be 1
+                NonZeroUsize::new(1).unwrap(),
             )
             .await;
         });
