@@ -35,7 +35,7 @@ pub struct SignArgs {
     pub key_version: u32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ChainSignatureRequest {
     pub request_id: [u8; 32],
     pub request: SignArgs,

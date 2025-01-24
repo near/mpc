@@ -301,11 +301,6 @@ impl MpcClient {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub fn add_sign_request(self, request: &SignatureRequest) {
-        self.sign_request_store.add(request);
-    }
-
     pub async fn make_signature(
         self: Arc<Self>,
         id: SignatureId,

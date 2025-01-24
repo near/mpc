@@ -1,4 +1,6 @@
 pub mod configs;
+#[cfg(test)]
+pub mod fake;
 pub mod handler;
 pub mod lib;
 pub mod participants;

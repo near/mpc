@@ -93,30 +93,30 @@ impl ChainSignatureResponse {
  * original request and the completed signature, then verifies
  * that the signature matches the requested key and payload.
  */
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct ChainRespondArgs {
     request: ChainSignatureRequest,
     response: ChainSignatureResponse,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct ChainJoinArgs {
     pub url: String,
     pub cipher_pk: primitives::hpke::PublicKey,
     pub sign_pk: PublicKey,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct ChainVotePkArgs {
     pub public_key: PublicKey,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct ChainVoteResharedArgs {
     pub epoch: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(untagged)]
 pub enum ChainSendTransactionRequest {
     Respond(ChainRespondArgs),

@@ -76,7 +76,6 @@ impl Coordinator {
                             "Initializing",
                             self.config_file.cores,
                             Self::run_initialization(
-                                self.clock.clone(),
                                 self.secrets.clone(),
                                 self.config_file.clone(),
                                 self.keyshare_storage_factory.create().await?,
@@ -90,6 +89,8 @@ impl Coordinator {
                             }
                             _ => true,
                         }),
+                        // TODO(#151): This timeout is not ideal. If participants are not synchronized,
+                        // they might each timeout out of order and never complete keygen?
                         sleep(
                             &self.clock,
                             Duration::seconds(self.config_file.keygen.timeout_sec as i64),
@@ -166,10 +167,11 @@ impl Coordinator {
                         } else {
                             tracing::info!("[{}] finished successfully", name);
                         }
+                        break;
                     }
                     _ = self.indexer.contract_state_receiver.changed() => {
                         if stop_fn(&self.indexer.contract_state_receiver.borrow()) {
-                            tracing::info!("[{}] config changed incompatibility, stopping", name);
+                            tracing::info!("[{}] config changed incompatibly, stopping", name);
                             break;
                         }
                     }
@@ -212,7 +214,6 @@ impl Coordinator {
     }
 
     async fn run_initialization(
-        clock: Clock,
         secrets: SecretsConfig,
         config_file: ConfigFile,
         keyshare_storage: Box<dyn KeyshareStorage>,
@@ -231,9 +232,9 @@ impl Coordinator {
             if let Some(votes) = contract_config.pk_votes.get(&my_public_key) {
                 if votes.contains(&config_file.my_near_account_id) {
                     tracing::info!("Initialization: we already voted for our public key; waiting for public key consensus");
-                    // Wait; we'll keep trying to run initialization until the consensus is reached on the public key.
-                    clock.sleep(Duration::seconds(1)).await;
-                    return Ok(());
+                    // Wait indefinitely. We will be terminated when config changes, or when we timeout.
+                    futures::future::pending::<()>().await;
+                    unreachable!();
                 }
             }
 
@@ -244,11 +245,10 @@ impl Coordinator {
                     public_key: my_public_key,
                 }))
                 .await?;
-            // Give it plenty of time for the vote transaction to be processed.
-            // Don't sleep too little, or else we'd just be voting again and again
-            // wastefully.
-            clock.sleep(Duration::seconds(5)).await;
-            return Ok(());
+
+            // Like above, just wait.
+            futures::future::pending::<()>().await;
+            unreachable!();
         }
 
         let mpc_config = MpcConfig::from_participants_with_near_account_id(

@@ -117,9 +117,6 @@ pub struct ConfigFile {
     pub presignature: PresignatureConfig,
     pub signature: SignatureConfig,
     pub keygen: KeygenConfig,
-    /// If specified, this is the static configuration for the MPC protocol,
-    /// replacing what would be read from the contract.
-    pub participants: Option<ParticipantsConfig>,
     /// This value is only considered when the node is run in normal node. It defines the number of
     /// working threads for the runtime.
     pub cores: Option<usize>,
