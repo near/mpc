@@ -11,6 +11,7 @@ mod db;
 mod hkdf;
 mod indexer;
 mod key_generation;
+mod keyshare;
 mod metrics;
 mod mpc_client;
 mod network;
@@ -24,7 +25,9 @@ mod tests;
 mod tracing;
 mod tracking;
 mod triple;
+#[cfg(not(test))]
 mod web;
+mod web_common;
 #[cfg(test)]
 mod web_test;
 

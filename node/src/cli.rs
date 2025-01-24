@@ -10,9 +10,10 @@ use crate::indexer::participants::read_participants_from_chain;
 use crate::indexer::response::handle_sign_responses;
 use crate::indexer::stats::{indexer_logger, IndexerStats};
 use crate::indexer::IndexerState;
-use crate::key_generation::{
-    affine_point_to_public_key, load_root_keyshare, run_key_generation_client,
-};
+use crate::key_generation::{affine_point_to_public_key, run_key_generation_client};
+use crate::keyshare::gcp::GcpKeyshareStorage;
+use crate::keyshare::local::LocalKeyshareStorage;
+use crate::keyshare::KeyshareStorage;
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::{generate_test_p2p_configs, new_tls_mesh_network};
@@ -31,6 +32,7 @@ use near_crypto::SecretKey;
 use near_indexer_primitives::types::{AccountId, Finality};
 use near_time::Clock;
 use std::num::NonZero;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -42,30 +44,7 @@ use tokio::sync::{Mutex, OnceCell};
 pub enum Cli {
     /// Runs the node in normal operating mode. A root keyshare must already
     /// exist on disk.
-    Start {
-        #[arg(long, env("MPC_HOME_DIR"))]
-        home_dir: String,
-        /// Hex-encoded 16 byte AES key for local storage encryption.
-        /// This key should come from a secure secret storage.
-        #[arg(env("MPC_SECRET_STORE_KEY"))]
-        secret_store_key_hex: String,
-        /// Root keyshare, if this is being passed in rather than loaded from disk.
-        /// This should be used if the root keyshare is being stored with a secret
-        /// manager (such as Google Secret Manager) instead of encrypted on disk.
-        /// A bash script should be used to first read the root keyshare from the
-        /// secret manager, and then pass it in via this argument.
-        /// The root keyshare should be passed in as a JSON string.
-        #[arg(env("MPC_ROOT_KEYSHARE"))]
-        root_keyshare: Option<String>,
-        /// p2p private key for TLS. It must be in the format of "ed25519:...".
-        #[arg(env("MPC_P2P_PRIVATE_KEY"))]
-        p2p_private_key: SecretKey,
-        /// Near account secret key. Must be specified if the node wishes to interact
-        /// with authenticated functions of the contract (join, vote, etc.).
-        /// May be omitted if a static participants config is used.
-        #[arg(env("MPC_ACCOUNT_SK"))]
-        account_secret_key: Option<SecretKey>,
-    },
+    Start(StartCmd),
     /// Generates the root keyshare. This will only succeed if all participants
     /// run this command together, as in, every node will wait for the full set
     /// of participants before generating.
@@ -97,6 +76,30 @@ pub enum Cli {
     GenerateIndexerConfigs(InitConfigArgs),
 }
 
+#[derive(Parser, Debug)]
+pub struct StartCmd {
+    #[arg(long, env("MPC_HOME_DIR"))]
+    pub home_dir: String,
+    /// Hex-encoded 16 byte AES key for local storage encryption.
+    /// This key should come from a secure secret storage.
+    #[arg(env("MPC_SECRET_STORE_KEY"))]
+    pub secret_store_key_hex: String,
+    /// If provided, the root keyshare is stored on GCP.
+    /// This requires GCP_PROJECT_ID to be set as well.
+    #[arg(env("GCP_KEYSHARE_SECRET_ID"))]
+    pub gcp_keyshare_secret_id: Option<String>,
+    #[arg(env("GCP_PROJECT_ID"))]
+    pub gcp_project_id: Option<String>,
+    /// p2p private key for TLS. It must be in the format of "ed25519:...".
+    #[arg(env("MPC_P2P_PRIVATE_KEY"))]
+    pub p2p_private_key: SecretKey,
+    /// Near account secret key. Must be specified if the node wishes to interact
+    /// with authenticated functions of the contract (join, vote, etc.).
+    /// May be omitted if a static participants config is used.
+    #[arg(env("MPC_ACCOUNT_SK"))]
+    pub account_secret_key: Option<SecretKey>,
+}
+
 /// Tokio Runtime cannot be dropped in an asynchronous context (for good reason).
 /// However, we need to be able to drop it in two scenarios:
 ///  - Integration tests, where we want to start up and shut down the CLI
@@ -121,6 +124,14 @@ impl AsyncDroppableRuntime {
     }
 }
 
+impl Deref for AsyncDroppableRuntime {
+    type Target = tokio::runtime::Runtime;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().unwrap()
+    }
+}
+
 impl Drop for AsyncDroppableRuntime {
     fn drop(&mut self) {
         if let Some(runtime) = self.0.take() {
@@ -131,31 +142,47 @@ impl Drop for AsyncDroppableRuntime {
     }
 }
 
+async fn make_keyshare_storage(
+    home_dir: PathBuf,
+    local_encryption_key: [u8; 16],
+    secret_id: Option<String>,
+    project_id: Option<String>,
+) -> anyhow::Result<Box<dyn KeyshareStorage>> {
+    match (secret_id, project_id) {
+        (Some(secret_id), Some(project_id)) => {
+            let storage = GcpKeyshareStorage::new(project_id, secret_id).await?;
+            Ok(Box::new(storage))
+        }
+        (None, None) => {
+            let storage = LocalKeyshareStorage::new(home_dir, local_encryption_key);
+            Ok(Box::new(storage))
+        }
+        _ => {
+            anyhow::bail!(
+                "Both GCP_SECRET_ID and GCP_PROJECT_ID must be set to use GCP secrets storage"
+            );
+        }
+    }
+}
+
 struct StartResponse {
     _mpc_runtime: AsyncDroppableRuntime,
     mpc_task: AutoAbortTask<Result<(), anyhow::Error>>,
     indexer_handle: Option<JoinHandle<()>>,
 }
 
-impl Cli {
-    fn start(
-        home_dir: String,
-        secret_store_key_hex: String,
-        root_keyshare: Option<String>,
-        p2p_private_key: SecretKey,
-        account_secret_key: Option<SecretKey>,
-    ) -> anyhow::Result<StartResponse> {
-        let home_dir = PathBuf::from(home_dir);
-        let secrets = SecretsConfig::from_cli(&secret_store_key_hex, p2p_private_key)?;
+impl StartCmd {
+    fn run(self) -> anyhow::Result<StartResponse> {
+        let home_dir = PathBuf::from(self.home_dir);
+        let secrets = SecretsConfig::from_cli(&self.secret_store_key_hex, self.p2p_private_key)?;
         let config = load_config_file(&home_dir)?;
-        let root_keyshare =
-            load_root_keyshare(&home_dir, secrets.local_storage_aes_key, &root_keyshare)?;
 
         let (chain_config_sender, mut chain_config_receiver) = mpsc::channel(10);
         let (sign_request_sender, sign_request_receiver) = mpsc::channel(10000);
         let (sign_response_sender, sign_response_receiver) = mpsc::channel(10000);
 
         // Start the near indexer
+        let account_secret_key = self.account_secret_key;
         let indexer_handle = config.indexer.clone().map(|indexer_config| {
             let home_dir = home_dir.clone();
             std::thread::spawn(move || {
@@ -216,9 +243,35 @@ impl Cli {
         } else {
             tokio::runtime::Runtime::new()?
         };
+        let mpc_runtime = AsyncDroppableRuntime::new(mpc_runtime);
 
         let root_mpc_future = async move {
-            let _root_task_handle = tracking::current_task();
+            let root_task_handle = tracking::current_task();
+
+            // Before doing anything, start the web server so we expose metrics and debug info.
+            let mpc_client_cell = Arc::new(OnceCell::new());
+            #[cfg(test)]
+            let web_server = start_web_server_testing(
+                root_task_handle,
+                config.web_ui.clone(),
+                Some(mpc_client_cell.clone()),
+            )
+            .await?;
+            #[cfg(not(test))]
+            let web_server = start_web_server(root_task_handle, config.web_ui.clone()).await?;
+            let _web_server_handle = tracking::spawn("web server", web_server);
+
+            let keyshare_storage = make_keyshare_storage(
+                home_dir.clone(),
+                secrets.local_storage_aes_key,
+                self.gcp_keyshare_secret_id,
+                self.gcp_project_id,
+            )
+            .await?;
+            let root_keyshare = keyshare_storage
+                .load()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Root keyshare not found"))?;
 
             // Replace participants in config with those listed in the smart contract state
             let participants = if config.indexer.is_some() {
@@ -256,21 +309,6 @@ impl Cli {
                 &home_dir.join("mpc-data"),
                 config.secrets.local_storage_aes_key,
             )?;
-
-            let mpc_client_cell = Arc::new(OnceCell::new());
-            #[cfg(test)]
-            let _web_server_handle = tracking::spawn(
-                "web server",
-                start_web_server_testing(
-                    _root_task_handle,
-                    config.web_ui.clone(),
-                    Some(mpc_client_cell.clone()),
-                )
-                .await?,
-            );
-            #[cfg(not(test))]
-            let _web_server_handle =
-                tracking::spawn("web server", start_web_server(config.web_ui.clone()).await?);
 
             let (sender, receiver) =
                 new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key).await?;
@@ -337,28 +375,18 @@ impl Cli {
         }));
 
         Ok(StartResponse {
-            _mpc_runtime: AsyncDroppableRuntime::new(mpc_runtime),
+            _mpc_runtime: mpc_runtime,
             mpc_task,
             indexer_handle,
         })
     }
+}
 
+impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self {
-            Cli::Start {
-                home_dir,
-                secret_store_key_hex,
-                root_keyshare,
-                p2p_private_key,
-                account_secret_key,
-            } => {
-                let start_response = Self::start(
-                    home_dir,
-                    secret_store_key_hex,
-                    root_keyshare,
-                    p2p_private_key,
-                    account_secret_key,
-                )?;
+            Cli::Start(start) => {
+                let start_response = start.run()?;
                 if let Some(indexer_handle) = start_response.indexer_handle {
                     indexer_handle
                         .join()
@@ -384,6 +412,7 @@ impl Cli {
                 } else {
                     tokio::runtime::Runtime::new()?
                 };
+                let mpc_runtime = AsyncDroppableRuntime::new(mpc_runtime);
                 // TODO(#75): Support reading from smart contract state here as well.
                 let mpc_config = MpcConfig::from_participants_with_near_account_id(
                     config
@@ -397,23 +426,20 @@ impl Cli {
                 mpc_runtime
                     .spawn(async move {
                         let (root_task, _) = tracking::start_root_task(async move {
-                            let _root_task_handle = tracking::current_task();
-                            #[cfg(test)]
-                            let _web_server_handle = tracking::spawn_checked(
-                                "web server",
-                                start_web_server_testing(
-                                    _root_task_handle,
-                                    config.web_ui.clone(),
-                                    None,
-                                )
-                                .await?,
-                            );
+                            let root_task_handle = tracking::current_task();
 
+                            #[cfg(test)]
+                            let web_server = start_web_server_testing(
+                                root_task_handle,
+                                config.web_ui.clone(),
+                                None,
+                            )
+                            .await?;
                             #[cfg(not(test))]
-                            let _web_server_handle = tracking::spawn_checked(
-                                "web server",
-                                start_web_server(config.web_ui.clone()).await?,
-                            );
+                            let web_server =
+                                start_web_server(root_task_handle, config.web_ui.clone()).await?;
+                            let _web_server_handle = tracking::spawn("web server", web_server);
+
                             let (sender, receiver) =
                                 new_tls_mesh_network(&config.mpc, &config.secrets.p2p_private_key)
                                     .await?;
@@ -424,9 +450,12 @@ impl Cli {
                             let (network_client, channel_receiver, _handle) =
                                 run_network_client(Arc::new(sender), Box::new(receiver));
                             run_key_generation_client(
-                                PathBuf::from(home_dir),
-                                config.into(),
+                                config.mpc.clone().into(),
                                 network_client,
+                                Box::new(LocalKeyshareStorage::new(
+                                    PathBuf::from(home_dir),
+                                    config.secrets.local_storage_aes_key,
+                                )),
                                 channel_receiver,
                             )
                             .await?;
@@ -435,7 +464,6 @@ impl Cli {
                         root_task.await
                     })
                     .await??;
-                drop(AsyncDroppableRuntime::new(mpc_runtime));
                 Ok(())
             }
             Cli::GenerateTestConfigs {
