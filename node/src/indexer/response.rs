@@ -1,3 +1,4 @@
+use crate::config::RespondConfigFile;
 use crate::indexer::transaction::TransactionSigner;
 use crate::indexer::IndexerState;
 use crate::indexer::Nonce;
@@ -196,13 +197,16 @@ async fn submit_respond_tx(
         block.header.hash,
         block.header.height,
     );
-    tracing::info!(
-        target = "mpc",
-        "sending response tx {:?}",
-        transaction.get_hash()
-    );
 
     let nonce = transaction.transaction.nonce();
+    tracing::info!(
+        target = "mpc",
+        "sending response tx {:?} with ak={} nonce={}",
+        transaction.get_hash(),
+        tx_signer.public_key(),
+        nonce,
+    );
+
     let result = indexer_state
         .client
         .send(
@@ -274,14 +278,28 @@ async fn ensure_respond_tx(
 
 pub(crate) async fn handle_sign_responses(
     mut receiver: mpsc::Receiver<ChainRespondArgs>,
-    tx_signer: Option<Arc<TransactionSigner>>,
+    config: RespondConfigFile,
     indexer_state: Arc<IndexerState>,
 ) {
+    let mut signers = config
+        .access_keys
+        .iter()
+        .map(|key| {
+            Arc::new(TransactionSigner::from_key(
+                config.account_id.clone(),
+                key.clone(),
+            ))
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .cycle(); // Produces iterator cycling over the signers endlessly
+
     while let Some(respond_args) = receiver.recv().await {
-        let Some(tx_signer) = tx_signer.clone() else {
+        let Some(tx_signer) = signers.next() else {
             tracing::error!(target: "mpc", "Transaction signer unavailable; account secret key not provided");
             continue;
         };
+        let tx_signer = tx_signer.clone();
         let indexer_state = indexer_state.clone();
         actix::spawn(async move {
             let Ok(response_ser) = serde_json::to_string(&respond_args) else {
@@ -293,8 +311,9 @@ pub(crate) async fn handle_sign_responses(
                 tx_signer.clone(),
                 indexer_state.clone(),
                 response_ser,
-                Duration::from_secs(6), // TODO: maybe set the timeout and num_attempts in the config
-                NonZeroUsize::new(3).unwrap(),
+                Duration::from_secs(10),
+                // TODO(#153): until nonce detection is fixed, this *must* be 1
+                NonZeroUsize::new(1).unwrap(),
             )
             .await;
         });

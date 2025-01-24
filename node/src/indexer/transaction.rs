@@ -1,4 +1,4 @@
-use near_crypto::{InMemorySigner, SecretKey, Signer};
+use near_crypto::{InMemorySigner, PublicKey, SecretKey, Signer};
 use near_indexer::near_primitives::account::AccessKey;
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
@@ -60,5 +60,9 @@ impl TransactionSigner {
         let signature = self.signer.sign(tx_hash.as_ref());
 
         SignedTransaction::new(signature, transaction.clone())
+    }
+
+    pub(crate) fn public_key(&self) -> PublicKey {
+        self.signer.public_key()
     }
 }

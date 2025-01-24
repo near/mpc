@@ -6,6 +6,7 @@ Verifies that the mpc nodes index the signature request.
 """
 
 import base64
+import base58
 import os
 import sys
 import json
@@ -25,10 +26,14 @@ sys.path.append(
         pathlib.Path(__file__).resolve().parents[1] / 'libs' / 'nearcore' /
         'pytest' / 'lib'))
 from cluster import start_cluster, session
-from transaction import sign_deploy_contract_tx, sign_function_call_tx
 from utils import load_binary_file, MetricsTracker
+from transaction import create_create_account_action, create_payment_action, \
+                        create_full_access_key_action, sign_deploy_contract_tx, \
+                        sign_transaction, serialize_transaction, sign_function_call_tx
+from key import Key
 
 TIMEOUT = 60
+NEAR_BASE = 10**24
 TGAS = 10**12
 
 mpc_repo_dir = pathlib.Path(__file__).resolve().parents[1]
@@ -52,7 +57,25 @@ def load_mpc_contract() -> bytearray:
     return load_binary_file(path)
 
 
-def start_cluster_with_mpc(num_validators, num_mpc_nodes):
+# Output is deserializable into the rust type near_crypto::SecretKey
+def serialize_key(key):
+    full_key = bytes(key.decoded_sk()) + bytes(key.decoded_pk())
+    return 'ed25519:' + base58.b58encode(full_key).decode('ascii')
+
+
+def sign_create_account_with_multiple_access_keys_tx(creator_key, new_account_id, keys,
+                                                     nonce, block_hash):
+    create_account_action = create_create_account_action()
+    payment_action = create_payment_action(100 * NEAR_BASE)
+    access_key_actions = [create_full_access_key_action(key.decoded_pk()) for key in keys]
+    actions = [create_account_action, payment_action] + access_key_actions
+    signed_tx = sign_transaction(new_account_id, nonce, actions, block_hash,
+                              creator_key.account_id, creator_key.decoded_pk(),
+                              creator_key.decoded_sk())
+    return serialize_transaction(signed_tx)
+
+
+def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks):
     # Start a near network with extra observer nodes; we will use their
     # config.json, genesis.json, etc. to configure the mpc nodes' indexers
     nodes = start_cluster(
@@ -99,6 +122,18 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
         }
         account_id_to_participant_id[near_account] = p['id']
 
+    last_block_hash = nodes[0].get_latest_block().hash_bytes
+
+    def near_secret_key(i):
+        validator_key = json.loads(
+            open(pathlib.Path(nodes[i].node_dir) /
+                 'validator_key.json').read())
+        return validator_key['secret_key']
+
+    def send_and_confirm_tx(tx):
+        res = nodes[0].send_tx_and_wait(tx, 20)
+        assert ('SuccessValue' in res['result']['status']), res
+
     # Set up the node's home directories
     for i in mpc_nodes:
         # Move the generated mpc configs
@@ -116,17 +151,26 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
             json.dump(config_json, fd, indent=2)
         print(f"Wrote {fname} as config for node {i}")
 
+        # Create respond.yaml with credentials for sending responses
+        account_id = f"respond.test{i}"
+        access_keys = [Key.from_seed_testonly(account_id, seed=f"{s}")
+                       for s in range(0, num_respond_aks)]
+        tx = sign_create_account_with_multiple_access_keys_tx(
+                nodes[i].signer_key, account_id, access_keys, 1, last_block_hash)
+        send_and_confirm_tx(tx)
+        respond_cfg = {
+            'account_id': account_id,
+            'access_keys': list(map(serialize_key, access_keys)),
+        }
+        fname = os.path.join(nodes[i].node_dir, 'respond.yaml')
+        with open(fname, "w") as file:
+            yaml.dump(respond_cfg, file, default_flow_style=False)
+
     def secret_key_hex(i):
         return str(chr(ord('A') + i) * 32)
 
     def p2p_private_key(i):
         return open(pathlib.Path(nodes[i].node_dir) / 'p2p_key').read()
-
-    def near_secret_key(i):
-        validator_key = json.loads(
-            open(pathlib.Path(nodes[i].node_dir) /
-                 'validator_key.json').read())
-        return validator_key['secret_key']
 
     # Generate the root keyshares
     commands = [(mpc_binary_path, 'generate-key', '--home-dir',
@@ -147,11 +191,9 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     print(f"Public key: {public_key}")
 
     # Deploy the mpc contract
-    last_block_hash = nodes[0].get_latest_block().hash_bytes
     tx = sign_deploy_contract_tx(nodes[0].signer_key, load_mpc_contract(), 10,
                                  last_block_hash)
-    res = nodes[0].send_tx_and_wait(tx, 20)
-    assert ('SuccessValue' in res['result']['status'])
+    send_and_confirm_tx(tx)
 
     # Initialize the mpc contract
     init_args = {
@@ -187,9 +229,9 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes):
     return nodes
 
 
-def test_index_signature_request(num_requests):
+def test_index_signature_request(num_requests, num_respond_access_keys):
     started = time.time()
-    nodes = start_cluster_with_mpc(2, 2)
+    nodes = start_cluster_with_mpc(2, 2, num_respond_access_keys)
 
     metrics2 = MetricsTracker(nodes[2])
     metrics3 = MetricsTracker(nodes[3])
@@ -270,8 +312,7 @@ def test_index_signature_request(num_requests):
 
     res2 = metrics2.get_int_metric_value('mpc_num_sign_responses_timed_out')
     res3 = metrics2.get_int_metric_value('mpc_num_sign_responses_timed_out')
-    print("Nodes sent responses which failed to be included:", res2, res3)
-
+    print("Number of nonce conflicts which occurred:", res2, res3)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -279,6 +320,10 @@ if __name__ == '__main__':
                         type=int,
                         default=1,
                         help="Number of signature requests to make")
+    parser.add_argument("--num-respond-access-keys",
+                        type=int,
+                        default=1,
+                        help="Number of access keys to provision for the respond signer account")
     args = parser.parse_args()
 
-    test_index_signature_request(args.num_requests)
+    test_index_signature_request(args.num_requests, args.num_respond_access_keys)
