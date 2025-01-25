@@ -1,4 +1,4 @@
-use crate::cli::{Cli, StartCmd};
+use crate::cli::Cli;
 use crate::config::load_config_file;
 use crate::tests::free_resources_after_shutdown;
 use crate::tracking::AutoAbortTask;
@@ -65,7 +65,7 @@ async fn test_basic_cluster() {
     let normal_runs = (0..NUM_PARTICIPANTS)
         .map(|i| {
             let home_dir = temp_dir.path().join(format!("{}", i));
-            let cli = Cli::Start(StartCmd {
+            let cli = Cli::Start {
                 home_dir: home_dir.to_str().unwrap().to_string(),
                 secret_store_key_hex: hex::encode(encryption_keys[i]),
                 p2p_private_key: std::fs::read_to_string(home_dir.join("p2p_key"))
@@ -73,9 +73,8 @@ async fn test_basic_cluster() {
                     .parse()
                     .unwrap(),
                 account_secret_key: None,
-                gcp_keyshare_secret_id: None,
-                gcp_project_id: None,
-            });
+                root_keyshare: None,
+            };
             AutoAbortTask::from(tokio::spawn(cli.run()))
         })
         .collect::<Vec<_>>();

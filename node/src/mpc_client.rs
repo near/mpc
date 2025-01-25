@@ -17,7 +17,7 @@ use crate::triple::{
     SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
 };
 
-use crate::keyshare::RootKeyshareData;
+use crate::key_generation::RootKeyshareData;
 use cait_sith::FullSignature;
 use k256::{AffinePoint, Secp256k1};
 use std::sync::Arc;
