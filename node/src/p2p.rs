@@ -1,12 +1,10 @@
-use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
+use crate::config::MpcConfig;
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
-use near_crypto::ED25519SecretKey;
-use near_sdk::AccountId;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use rustls::server::danger::ClientCertVerifier;
 use rustls::{ClientConfig, CommonState, ServerConfig};
@@ -246,15 +244,38 @@ impl PersistentConnection {
     const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
     /// Sends a message over the connection. If the connection was reset, fail.
-    fn send_message(&self, expected_version: usize, msg: Vec<u8>) -> anyhow::Result<()> {
-        let Some(conn) = self.current.borrow().clone() else {
-            anyhow::bail!(
-                "Connection to {} was never established",
-                self.target_participant_id
-            );
+    async fn send_message(&self, expected_version: usize, msg: Vec<u8>) -> anyhow::Result<()> {
+        let (expected_version, version, conn) = if expected_version == 0 {
+            // This means that the connection was never established when the computation
+            // started. This is possible when someone else initiated the computation,
+            // before we've got a chance to establish an outgoing connection to the
+            // involved participants yet. So in this case, we shall wait for a connection.
+            let current_conn = self.current.borrow().clone();
+            match current_conn {
+                Some((version, conn)) => (1, version, conn),
+                None => {
+                    let (version, conn) = self
+                        .current
+                        .clone()
+                        .wait_for(|conn| conn.is_some())
+                        .await?
+                        .clone()
+                        .unwrap();
+                    (1, version, conn)
+                }
+            }
+        } else {
+            match self.current.borrow().clone() {
+                Some((version, conn)) => (expected_version, version, conn),
+                None => {
+                    anyhow::bail!(
+                        "Programming error: Connection to {} is missing",
+                        self.target_participant_id
+                    );
+                }
+            }
         };
 
-        let (version, conn) = conn;
         if version != expected_version {
             anyhow::bail!(
                 "Connection to {} is not the original connection expected",
@@ -362,29 +383,6 @@ fn raw_ed25519_secret_key_to_keypair(
     Ok(keypair)
 }
 
-/// Converts a keypair to an ED25519 secret key, asserting that it is the
-/// exact kind of keypair we expect.
-fn keypair_to_raw_ed25519_secret_key(
-    keypair: &rcgen::KeyPair,
-) -> anyhow::Result<near_crypto::ED25519SecretKey> {
-    let pkcs8_encoded = keypair.serialize_der();
-    if pkcs8_encoded.len() != 16 + 32 + 3 + 32 {
-        anyhow::bail!("Invalid PKCS8 length");
-    }
-    if pkcs8_encoded[..16] != PKCS8_HEADER {
-        anyhow::bail!("Invalid PKCS8 header");
-    }
-    if pkcs8_encoded[16 + 32..16 + 32 + 3] != PKCS8_MIDDLE {
-        anyhow::bail!("Invalid PKCS8 middle");
-    }
-
-    let mut key = [0u8; 64];
-    key[..32].copy_from_slice(&pkcs8_encoded[16..16 + 32]);
-    key[32..].copy_from_slice(&pkcs8_encoded[16 + 32 + 3..]);
-
-    Ok(near_crypto::ED25519SecretKey(key))
-}
-
 /// Configures TLS server and client to properly perform TLS handshakes.
 /// On the server side it expects a client to provide a certificate that
 /// presents a public key that matches one of the participants in the MPC
@@ -435,7 +433,7 @@ fn configure_tls(
 pub async fn new_tls_mesh_network(
     config: &MpcConfig,
     p2p_private_key: &near_crypto::ED25519SecretKey,
-) -> Result<(
+) -> anyhow::Result<(
     impl MeshNetworkTransportSender,
     impl MeshNetworkTransportReceiver,
 )> {
@@ -606,11 +604,12 @@ impl MeshNetworkTransportSender for TlsMeshSender {
         recipient_id: ParticipantId,
         message: MpcMessage,
         connection_version: usize,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         self.connections
             .get(&recipient_id)
             .ok_or_else(|| anyhow!("Recipient not found"))?
-            .send_message(connection_version, borsh::to_vec(&message)?)?;
+            .send_message(connection_version, borsh::to_vec(&message)?)
+            .await?;
         Ok(())
     }
 
@@ -623,14 +622,12 @@ impl MeshNetworkTransportSender for TlsMeshSender {
             let conn = conn.clone();
             join_set.spawn(async move {
                 let mut receiver = conn.current.clone();
-                while receiver
-                    .borrow()
-                    .clone()
-                    .is_none_or(|(_, weak)| weak.upgrade().is_none())
-                {
-                    tracing::info!("Waiting for connection to {}, me {}", participant_id, my_id);
-                    receiver.changed().await?;
-                }
+                receiver
+                    .wait_for(|conn| {
+                        conn.as_ref()
+                            .is_some_and(|(_, weak)| weak.upgrade().is_some())
+                    })
+                    .await?;
                 tracing::info!("Connected to {}, me {}", participant_id, my_id);
                 anyhow::Ok(())
             });
@@ -657,7 +654,7 @@ impl MeshNetworkTransportSender for TlsMeshSender {
 
 #[async_trait]
 impl MeshNetworkTransportReceiver for TlsMeshReceiver {
-    async fn receive(&mut self) -> Result<MpcPeerMessage> {
+    async fn receive(&mut self) -> anyhow::Result<MpcPeerMessage> {
         self.receiver
             .recv()
             .await
@@ -665,59 +662,93 @@ impl MeshNetworkTransportReceiver for TlsMeshReceiver {
     }
 }
 
-/// Generates an ED25519 keypair, returning the pem-encoded private key and the
-/// hex-encoded public key.
-pub fn generate_keypair() -> Result<(near_crypto::ED25519SecretKey, near_crypto::ED25519PublicKey)>
-{
-    let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
-    Ok((
-        keypair_to_raw_ed25519_secret_key(&key_pair)?,
-        near_crypto::ED25519PublicKey(key_pair.public_key_raw().try_into().unwrap()),
-    ))
-}
+pub mod testing {
+    use super::{PKCS8_HEADER, PKCS8_MIDDLE};
+    use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
+    use crate::primitives::ParticipantId;
+    use near_crypto::ED25519SecretKey;
+    use near_sdk::AccountId;
 
-pub fn generate_test_p2p_configs(
-    participant_accounts: &[AccountId],
-    threshold: usize,
-    // this is a hack to make sure that when tests run in parallel, they don't
-    // collide on the same port.
-    seed: u16,
-) -> anyhow::Result<Vec<(MpcConfig, ED25519SecretKey)>> {
-    let mut participants = Vec::new();
-    let mut keypairs = Vec::new();
-    for (i, participant_account) in participant_accounts.iter().enumerate() {
-        let (p2p_private_key, p2p_public_key) = generate_keypair()?;
-        participants.push(ParticipantInfo {
-            id: ParticipantId::from_raw(rand::random()),
-            address: "127.0.0.1".to_string(),
-            port: 10000 + seed * 1000 + i as u16,
-            p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
-            near_account_id: participant_account.clone(),
-        });
-        keypairs.push((p2p_private_key, p2p_public_key));
+    /// Converts a keypair to an ED25519 secret key, asserting that it is the
+    /// exact kind of keypair we expect.
+    pub fn keypair_to_raw_ed25519_secret_key(
+        keypair: &rcgen::KeyPair,
+    ) -> anyhow::Result<near_crypto::ED25519SecretKey> {
+        let pkcs8_encoded = keypair.serialize_der();
+        if pkcs8_encoded.len() != 16 + 32 + 3 + 32 {
+            anyhow::bail!("Invalid PKCS8 length");
+        }
+        if pkcs8_encoded[..16] != PKCS8_HEADER {
+            anyhow::bail!("Invalid PKCS8 header");
+        }
+        if pkcs8_encoded[16 + 32..16 + 32 + 3] != PKCS8_MIDDLE {
+            anyhow::bail!("Invalid PKCS8 middle");
+        }
+
+        let mut key = [0u8; 64];
+        key[..32].copy_from_slice(&pkcs8_encoded[16..16 + 32]);
+        key[32..].copy_from_slice(&pkcs8_encoded[16 + 32 + 3..]);
+
+        Ok(near_crypto::ED25519SecretKey(key))
     }
 
-    let mut configs = Vec::new();
-    for (i, keypair) in keypairs.into_iter().enumerate() {
-        let participants = ParticipantsConfig {
-            threshold: threshold as u32,
-            participants: participants.clone(),
-        };
-
-        let mpc_config = MpcConfig {
-            my_participant_id: participants.participants[i].id,
-            participants,
-        };
-        configs.push((mpc_config, keypair.0));
+    /// Generates an ED25519 keypair, returning the pem-encoded private key and the
+    /// hex-encoded public key.
+    pub fn generate_keypair(
+    ) -> anyhow::Result<(near_crypto::ED25519SecretKey, near_crypto::ED25519PublicKey)> {
+        let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
+        Ok((
+            keypair_to_raw_ed25519_secret_key(&key_pair)?,
+            near_crypto::ED25519PublicKey(key_pair.public_key_raw().try_into().unwrap()),
+        ))
     }
 
-    Ok(configs)
+    pub fn generate_test_p2p_configs(
+        participant_accounts: &[AccountId],
+        threshold: usize,
+        // this is a hack to make sure that when tests run in parallel, they don't
+        // collide on the same port.
+        seed: u16,
+    ) -> anyhow::Result<Vec<(MpcConfig, ED25519SecretKey)>> {
+        let mut participants = Vec::new();
+        let mut keypairs = Vec::new();
+        for (i, participant_account) in participant_accounts.iter().enumerate() {
+            let (p2p_private_key, p2p_public_key) = generate_keypair()?;
+            participants.push(ParticipantInfo {
+                id: ParticipantId::from_raw(rand::random()),
+                address: "127.0.0.1".to_string(),
+                port: 10000 + seed * 1000 + i as u16,
+                p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
+                near_account_id: participant_account.clone(),
+            });
+            keypairs.push((p2p_private_key, p2p_public_key));
+        }
+
+        let mut configs = Vec::new();
+        for (i, keypair) in keypairs.into_iter().enumerate() {
+            let participants = ParticipantsConfig {
+                threshold: threshold as u32,
+                participants: participants.clone(),
+            };
+
+            let mpc_config = MpcConfig {
+                my_participant_id: participants.participants[i].id,
+                participants,
+            };
+            configs.push((mpc_config, keypair.0));
+        }
+
+        Ok(configs)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-    use crate::p2p::{keypair_to_raw_ed25519_secret_key, raw_ed25519_secret_key_to_keypair};
+    use crate::p2p::raw_ed25519_secret_key_to_keypair;
+    use crate::p2p::testing::{
+        generate_keypair, generate_test_p2p_configs, keypair_to_raw_ed25519_secret_key,
+    };
     use crate::primitives::{MpcMessage, ParticipantId};
     use crate::tracing::init_logging;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
@@ -727,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_pkcs8_ed25519_encoding() {
-        let (private_key, _) = super::generate_keypair().unwrap();
+        let (private_key, _) = generate_keypair().unwrap();
         let keypair = raw_ed25519_secret_key_to_keypair(&private_key).unwrap();
         let private_key2 = keypair_to_raw_ed25519_secret_key(&keypair).unwrap();
         assert_eq!(private_key, private_key2);
@@ -737,12 +768,9 @@ mod tests {
     #[serial]
     async fn test_basic_tls_mesh_network() {
         init_logging();
-        let configs = super::generate_test_p2p_configs(
-            &["test0".parse().unwrap(), "test1".parse().unwrap()],
-            2,
-            0,
-        )
-        .unwrap();
+        let configs =
+            generate_test_p2p_configs(&["test0".parse().unwrap(), "test1".parse().unwrap()], 2, 0)
+                .unwrap();
         let participant0 = configs[0].0.my_participant_id;
         let participant1 = configs[1].0.my_participant_id;
 
@@ -801,7 +829,7 @@ mod tests {
     #[serial]
     async fn test_wait_for_ready() {
         init_logging();
-        let mut configs = super::generate_test_p2p_configs(
+        let mut configs = generate_test_p2p_configs(
             &[
                 "test0".parse().unwrap(),
                 "test1".parse().unwrap(),
