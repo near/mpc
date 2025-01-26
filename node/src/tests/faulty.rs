@@ -43,14 +43,26 @@ async fn test_faulty_cluster() {
         .await;
     tracing::info!("Key generation complete");
 
-    assert!(request_signature_and_await_response(&mut indexer, "user0", 20).await);
+    let Some(signature_delay) = request_signature_and_await_response(
+        &mut indexer,
+        "user0",
+        std::time::Duration::from_secs(60),
+    )
+    .await
+    else {
+        panic!("Timed out generating the first signature");
+    };
 
     // first step: drop one node, and make sure signatures can still be generated
     let mut rng = rand::thread_rng();
     let to_drop: usize = rng.gen_range(0..NUM_PARTICIPANTS);
     tracing::info!("Bringing down one node #{}", to_drop);
     let disabled1 = indexer.disable(accounts[to_drop].clone()).await;
-    assert!(request_signature_and_await_response(&mut indexer, "user1", 20).await);
+    assert!(
+        request_signature_and_await_response(&mut indexer, "user1", signature_delay * 2)
+            .await
+            .is_some()
+    );
     tracing::info!("Step 1 complete");
 
     // Second step: drop another node, and make sure signatures cannot be generated
@@ -62,12 +74,20 @@ async fn test_faulty_cluster() {
     };
     tracing::info!("Bringing down another node #{}", another_to_drop);
     let disabled2 = indexer.disable(accounts[another_to_drop].clone()).await;
-    assert!(!request_signature_and_await_response(&mut indexer, "user2", 20).await);
+    assert!(
+        request_signature_and_await_response(&mut indexer, "user2", signature_delay * 2)
+            .await
+            .is_none()
+    );
     tracing::info!("Step 2 complete");
 
     // Third step: bring up the dropped node in step 2, and make sure signatures can be generated again
     drop(disabled2);
-    assert!(request_signature_and_await_response(&mut indexer, "user3", 20).await);
+    assert!(
+        request_signature_and_await_response(&mut indexer, "user3", signature_delay * 2)
+            .await
+            .is_some()
+    );
     tracing::info!("Step 3 complete");
 
     drop(disabled1);

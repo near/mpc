@@ -268,12 +268,12 @@ pub fn generate_test_configs_with_fake_indexer(
 }
 
 /// Request a signature from the indexer and wait for the response.
-/// Returns true iff the response was received within the timeout.
+/// Returns the time taken to receive the response, or None if timed out.
 pub async fn request_signature_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,
-    timeout_sec: u64,
-) -> bool {
+    timeout_sec: std::time::Duration,
+) -> Option<std::time::Duration> {
     tracing::info!("Sending signature request from user {}", user);
     let request = ChainSignatureRequest {
         entropy: rand::random(),
@@ -287,19 +287,15 @@ pub async fn request_signature_and_await_response(
         },
     };
     indexer.request_signature(request.clone());
-    match timeout(
-        std::time::Duration::from_secs(timeout_sec),
-        indexer.next_response(),
-    )
-    .await
-    {
+    let start_time = std::time::Instant::now();
+    match timeout(timeout_sec, indexer.next_response()).await {
         Ok(_) => {
             tracing::info!("Got signature response for user {}", user);
-            true
+            Some(start_time.elapsed())
         }
         Err(_) => {
             tracing::info!("Timed out waiting for signature respnse for user {}", user);
-            false
+            None
         }
     }
 }

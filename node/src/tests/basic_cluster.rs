@@ -31,5 +31,11 @@ async fn test_basic_cluster() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
-    assert!(request_signature_and_await_response(&mut indexer, "user0", 20).await);
+    assert!(request_signature_and_await_response(
+        &mut indexer,
+        "user0",
+        std::time::Duration::from_secs(60)
+    )
+    .await
+    .is_some());
 }
