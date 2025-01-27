@@ -94,11 +94,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Check Docker image can be built (GCP)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          file: deployment/Dockerfile-gcp
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Check Docker image can be built
         uses: docker/build-push-action@v6
         with:
           context: .
           push: false
-          file: integration-test/Dockerfile
+          file: deployment/Dockerfile-near-node-initializer
           cache-from: type=gha
           cache-to: type=gha,mode=max
