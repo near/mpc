@@ -146,12 +146,6 @@ impl MpcContract {
 // User contract API
 #[near_bindgen]
 impl VersionedMpcContract {
-    #[handle_result]
-    #[payable]
-    pub fn get_silly_string(&mut self) -> Result<String, Error> {
-        log!("returning a silly string");
-        Ok("silly string".into())
-    }
     /// `key_version` must be less than or equal to the value at `latest_key_version`
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each signature request.
@@ -624,7 +618,6 @@ impl VersionedMpcContract {
             return Ok(false);
         }
 
-        log!("reachte required threshold, moving on to executing the update.");
         let Some(_promise) = self.proposed_updates().do_update(&id, UPDATE_CONFIG_GAS) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
