@@ -146,6 +146,8 @@ impl MpcClient {
                                     id,
                                     presignature_id,
                                 } => {
+                                    metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED
+                                        .inc();
                                     // TODO(#69): decide a better timeout for this
                                     let SignatureRequest {
                                         msg_hash,
@@ -157,6 +159,8 @@ impl MpcClient {
                                         sign_request_store.get(id),
                                     )
                                     .await??;
+                                    metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED
+                                        .inc();
 
                                     timeout(
                                         Duration::from_secs(config.signature.timeout_sec),

@@ -74,6 +74,24 @@ lazy_static! {
 }
 
 lazy_static! {
+    pub static ref MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_num_passive_signature_requests_received",
+            "Number of passive signature requests received from mpc peers"
+        )
+        .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_num_passive_signature_requests_lookup_succeeded",
+            "Number of passive signature requests successfully looked up in local DB"
+        )
+        .unwrap();
+}
+
+lazy_static! {
     pub static ref MPC_NUM_SIGN_RESPONSES_SENT: prometheus::IntCounter =
         prometheus::register_int_counter!(
             "mpc_num_signature_responses_sent",
