@@ -103,7 +103,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Check Docker image can be built
+      - name: Check Docker image can be built (Near Node Initializer)
         uses: docker/build-push-action@v6
         with:
           context: .
