@@ -26,7 +26,7 @@ pub struct SignRequestStorage {
 
 impl SignRequestStorage {
     pub fn new(db: Arc<SecretDB>) -> anyhow::Result<Self> {
-        let (tx, _) = tokio::sync::broadcast::channel(10);
+        let (tx, _) = tokio::sync::broadcast::channel(500);
         Ok(Self { db, add_sender: tx })
     }
 
