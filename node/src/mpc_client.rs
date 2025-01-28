@@ -1,7 +1,6 @@
-use crate::config::Config;
 use crate::hkdf::derive_tweak;
 use crate::indexer::handler::ChainSignatureRequest;
-use crate::indexer::response::ChainRespondArgs;
+use crate::indexer::response::{ChainRespondArgs, ChainSendTransactionRequest};
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
@@ -17,6 +16,7 @@ use crate::triple::{
     SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
 };
 
+use crate::config::{ConfigFile, MpcConfig};
 use crate::keyshare::RootKeyshareData;
 use cait_sith::FullSignature;
 use k256::{AffinePoint, Secp256k1};
@@ -27,7 +27,8 @@ use tokio::time::timeout;
 
 #[derive(Clone)]
 pub struct MpcClient {
-    config: Arc<Config>,
+    config: Arc<ConfigFile>,
+    mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     triple_store: Arc<TripleStorage>,
     presignature_store: Arc<PresignatureStorage>,
@@ -37,7 +38,8 @@ pub struct MpcClient {
 
 impl MpcClient {
     pub fn new(
-        config: Arc<Config>,
+        config: Arc<ConfigFile>,
+        mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         triple_store: Arc<TripleStorage>,
         presignature_store: Arc<PresignatureStorage>,
@@ -46,6 +48,7 @@ impl MpcClient {
     ) -> Self {
         Self {
             config,
+            mpc_config,
             client,
             triple_store,
             presignature_store,
@@ -59,12 +62,15 @@ impl MpcClient {
     pub async fn run(
         self,
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
-        mut sign_request_receiver: mpsc::Receiver<ChainSignatureRequest>,
-        sign_response_sender: mpsc::Sender<ChainRespondArgs>,
+        mut sign_request_receiver: tokio::sync::OwnedMutexGuard<
+            mpsc::UnboundedReceiver<ChainSignatureRequest>,
+        >,
+        chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     ) -> anyhow::Result<()> {
         let monitor_passive_channels = {
             let client = self.client.clone();
             let config = self.config.clone();
+            let mpc_config = self.mpc_config.clone();
             let triple_store = self.triple_store.clone();
             let presignature_store = self.presignature_store.clone();
             let sign_request_store = self.sign_request_store.clone();
@@ -75,6 +81,7 @@ impl MpcClient {
                     let channel = channel_receiver.recv().await.unwrap();
                     let client = client.clone();
                     let config = config.clone();
+                    let mpc_config = mpc_config.clone();
                     let triple_store = triple_store.clone();
                     let presignature_store = presignature_store.clone();
                     let sign_request_store = sign_request_store.clone();
@@ -109,7 +116,7 @@ impl MpcClient {
                                         >(
                                             channel,
                                             client.my_participant_id(),
-                                            config.mpc.participants.threshold as usize,
+                                            mpc_config.participants.threshold as usize,
                                         ),
                                     )
                                     .await??;
@@ -130,7 +137,7 @@ impl MpcClient {
                                         pre_sign_unowned(
                                             channel,
                                             client.my_participant_id(),
-                                            config.mpc.participants.threshold as usize,
+                                            mpc_config.participants.threshold as usize,
                                             root_keyshare.keygen_output(),
                                             triple_store.clone(),
                                             paired_triple_id,
@@ -186,14 +193,16 @@ impl MpcClient {
         let monitor_chain = {
             let this = Arc::new(self.clone());
             let config = self.config.clone();
+            let mpc_config = self.mpc_config.clone();
             let network_client = self.client.clone();
             tracking::spawn("monitor chain", async move {
                 let mut tasks = AutoAbortTaskCollection::new();
                 loop {
                     let this = this.clone();
                     let config = config.clone();
+                    let mpc_config = mpc_config.clone();
                     let sign_request_store = self.sign_request_store.clone();
-                    let sign_response_sender = sign_response_sender.clone();
+                    let chain_tx_sender = chain_txn_sender.clone();
 
                     let Some(ChainSignatureRequest {
                         request_id,
@@ -227,11 +236,11 @@ impl MpcClient {
                             }
 
                             let (primary_leader, secondary_leader) =
-                                compute_leaders_for_signing(&config.mpc, &request);
+                                compute_leaders_for_signing(&mpc_config, &request);
                             // start the signing process if we are the primary leader or if we are the secondary leader
                             // and the primary leader is not alive
-                            if config.mpc.my_participant_id == primary_leader
-                                || (config.mpc.my_participant_id == secondary_leader
+                            if mpc_config.my_participant_id == primary_leader
+                                || (mpc_config.my_participant_id == secondary_leader
                                     && !alive_participants.contains(&primary_leader))
                             {
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
@@ -250,7 +259,9 @@ impl MpcClient {
 
                                 let response =
                                     ChainRespondArgs::new(&request, &signature, &public_key)?;
-                                let _ = sign_response_sender.send(response).await;
+                                let _ = chain_tx_sender
+                                    .send(ChainSendTransactionRequest::Respond(response))
+                                    .await;
                             }
 
                             anyhow::Ok(())
@@ -264,7 +275,7 @@ impl MpcClient {
             "generate triples",
             run_background_triple_generation(
                 self.client.clone(),
-                self.config.mpc.participants.threshold as usize,
+                self.mpc_config.participants.threshold as usize,
                 self.config.triple.clone().into(),
                 self.triple_store.clone(),
             ),
@@ -274,7 +285,7 @@ impl MpcClient {
             "generate presignatures",
             run_background_presignature_generation(
                 self.client.clone(),
-                self.config.mpc.participants.threshold as usize,
+                self.mpc_config.participants.threshold as usize,
                 self.config.presignature.clone().into(),
                 self.triple_store.clone(),
                 self.presignature_store.clone(),
@@ -288,11 +299,6 @@ impl MpcClient {
         generate_presignatures.await??;
 
         Ok(())
-    }
-
-    #[cfg(test)]
-    pub fn add_sign_request(self, request: &SignatureRequest) {
-        self.sign_request_store.add(request);
     }
 
     pub async fn make_signature(

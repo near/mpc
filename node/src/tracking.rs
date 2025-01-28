@@ -95,6 +95,18 @@ impl AutoAbortTaskCollection<()> {
         // some cleanup here to join any tasks that have already completed.
         while self.join_set.try_join_next().is_some() {}
     }
+
+    /// Spawn directly with tokio; used for when we do not have a tracking context.
+    #[cfg(test)]
+    pub fn spawn_with_tokio<F>(&mut self, f: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.join_set.spawn(f);
+        // JoinSet itself keeps expired tasks until they are joined on. So we do
+        // some cleanup here to join any tasks that have already completed.
+        while self.join_set.try_join_next().is_some() {}
+    }
 }
 
 /// Reports the progress of the current tokio task.

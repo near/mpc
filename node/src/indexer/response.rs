@@ -11,8 +11,11 @@ use k256::{
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
+use mpc_contract::primitives;
+use near_crypto::{PublicKey, SecretKey};
 use near_indexer_primitives::types::{BlockReference, Finality};
 use near_o11y::WithSpanContextExt;
+use near_sdk::AccountId;
 use serde::Serialize;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -92,10 +95,52 @@ impl ChainSignatureResponse {
  * original request and the completed signature, then verifies
  * that the signature matches the requested key and payload.
  */
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct ChainRespondArgs {
     request: ChainSignatureRequest,
     response: ChainSignatureResponse,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChainJoinArgs {
+    pub url: String,
+    pub cipher_pk: primitives::hpke::PublicKey,
+    pub sign_pk: PublicKey,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChainVotePkArgs {
+    pub public_key: PublicKey,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChainVoteResharedArgs {
+    pub epoch: u64,
+}
+
+/// Request to send a transaction to the contract on chain.
+#[derive(Serialize, Debug)]
+#[serde(untagged)]
+pub enum ChainSendTransactionRequest {
+    Respond(ChainRespondArgs),
+    // TODO(#150): Implement join.
+    #[allow(dead_code)]
+    Join(ChainJoinArgs),
+    VotePk(ChainVotePkArgs),
+    // TODO(#43): Implement vote_reshared.
+    #[allow(dead_code)]
+    VoteReshared(ChainVoteResharedArgs),
+}
+
+impl ChainSendTransactionRequest {
+    pub fn method(&self) -> &'static str {
+        match self {
+            ChainSendTransactionRequest::Respond(_) => "respond",
+            ChainSendTransactionRequest::Join(_) => "join",
+            ChainSendTransactionRequest::VotePk(_) => "vote_pk",
+            ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
+        }
+    }
 }
 
 impl ChainRespondArgs {
@@ -172,28 +217,86 @@ impl ChainRespondArgs {
     }
 }
 
-/// Creates, signs, and submits a `respond` function call with the given serialized arguments.
-async fn submit_respond_tx(
+struct TransactionSigners {
+    /// Signers that we cycle through for responding to signature requests.
+    /// These can correspond to arbitrary near accounts.
+    respond_signers: Vec<Arc<TransactionSigner>>,
+    /// Signer we use for signing vote_pk, vote_reshared, etc., which must
+    /// correspond to the account that this node runs under.
+    owner_signer: Arc<TransactionSigner>,
+    /// next respond signer to use.
+    next_id: usize,
+}
+
+impl TransactionSigners {
+    pub fn new(
+        respond_config: RespondConfigFile,
+        owner_account_id: AccountId,
+        owner_secret_key: SecretKey,
+    ) -> anyhow::Result<Self> {
+        let respond_signers = respond_config
+            .access_keys
+            .iter()
+            .map(|key| {
+                Arc::new(TransactionSigner::from_key(
+                    respond_config.account_id.clone(),
+                    key.clone(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        let owner_signer = Arc::new(TransactionSigner::from_key(
+            owner_account_id,
+            owner_secret_key,
+        ));
+        anyhow::ensure!(
+            !respond_signers.is_empty(),
+            "At least one responding access key must be provided",
+        );
+        Ok(TransactionSigners {
+            respond_signers,
+            owner_signer,
+            next_id: 0,
+        })
+    }
+
+    fn next_respond_signer(&mut self) -> Arc<TransactionSigner> {
+        let signer = self.respond_signers[self.next_id].clone();
+        self.next_id = (self.next_id + 1) % self.respond_signers.len();
+        signer
+    }
+
+    fn owner_signer(&self) -> Arc<TransactionSigner> {
+        self.owner_signer.clone()
+    }
+
+    pub fn signer_for(&mut self, req: &ChainSendTransactionRequest) -> Arc<TransactionSigner> {
+        match req {
+            ChainSendTransactionRequest::Respond(_) => self.next_respond_signer(),
+            _ => self.owner_signer(),
+        }
+    }
+}
+
+/// Creates, signs, and submits a function call with the given method and serialized arguments.
+async fn submit_tx(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
-    response_ser: std::string::String,
+    method: String,
+    params_ser: String,
 ) -> Option<Nonce> {
     let Ok(Ok(block)) = indexer_state
         .view_client
         .send(near_client::GetBlock(BlockReference::Finality(Finality::Final)).with_span_context())
         .await
     else {
-        tracing::warn!(
-            target = "mpc",
-            "failed to get block hash to send response tx"
-        );
+        tracing::warn!(target = "mpc", "failed to get block hash to send tx");
         return None;
     };
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),
-        "respond".to_string(),
-        response_ser.into(),
+        method,
+        params_ser.into(),
         block.header.hash,
         block.header.height,
     );
@@ -201,7 +304,7 @@ async fn submit_respond_tx(
     let nonce = transaction.transaction.nonce();
     tracing::info!(
         target = "mpc",
-        "sending response tx {:?} with ak={} nonce={}",
+        "sending tx {:?}with ak={} nonce={}",
         transaction.get_hash(),
         tx_signer.public_key(),
         nonce,
@@ -218,6 +321,7 @@ async fn submit_respond_tx(
             .with_span_context(),
         )
         .await;
+    // TODO(#43): Fix the metrics: we no longer send only signature response transactions now.
     match result {
         Ok(response) => match response {
             // We're not a validator, so we should always be routing the transaction.
@@ -243,21 +347,23 @@ async fn submit_respond_tx(
     }
 }
 
-/// Attempts to ensure that a `respond` function call with given args is included on-chain.
+/// Attempts to ensure that a function call with given method and args is included on-chain.
 /// If the submitted transaction is not observed by the indexer before the `timeout`, tries again.
 /// Will make up to `num_attempts` attempts.
-async fn ensure_respond_tx(
+async fn ensure_send_transaction(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
-    response_ser: std::string::String,
+    method: String,
+    params_ser: String,
     timeout: Duration,
     num_attempts: NonZeroUsize,
 ) {
     for _ in 0..num_attempts.into() {
-        let Some(nonce) = submit_respond_tx(
+        let Some(nonce) = submit_tx(
             tx_signer.clone(),
             indexer_state.clone(),
-            response_ser.clone(),
+            method.clone(),
+            params_ser.clone(),
         )
         .await
         else {
@@ -276,41 +382,30 @@ async fn ensure_respond_tx(
     }
 }
 
-pub(crate) async fn handle_sign_responses(
-    mut receiver: mpsc::Receiver<ChainRespondArgs>,
+pub(crate) async fn handle_txn_requests(
+    mut receiver: mpsc::Receiver<ChainSendTransactionRequest>,
+    owner_account_id: AccountId,
+    owner_secret_key: SecretKey,
     config: RespondConfigFile,
     indexer_state: Arc<IndexerState>,
 ) {
-    let mut signers = config
-        .access_keys
-        .iter()
-        .map(|key| {
-            Arc::new(TransactionSigner::from_key(
-                config.account_id.clone(),
-                key.clone(),
-            ))
-        })
-        .collect::<Vec<_>>()
-        .into_iter()
-        .cycle(); // Produces iterator cycling over the signers endlessly
+    let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
+        .expect("Failed to initialize transaction signers");
 
-    while let Some(respond_args) = receiver.recv().await {
-        let Some(tx_signer) = signers.next() else {
-            tracing::error!(target: "mpc", "Transaction signer unavailable; account secret key not provided");
-            continue;
-        };
-        let tx_signer = tx_signer.clone();
+    while let Some(tx_request) = receiver.recv().await {
+        let tx_signer = signers.signer_for(&tx_request);
         let indexer_state = indexer_state.clone();
         actix::spawn(async move {
-            let Ok(response_ser) = serde_json::to_string(&respond_args) else {
+            let Ok(txn_json) = serde_json::to_string(&tx_request) else {
                 tracing::error!(target: "mpc", "Failed to serialize response args");
                 return;
             };
-            tracing::debug!(target = "mpc", "tx args {:?}", response_ser);
-            ensure_respond_tx(
+            tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
+            ensure_send_transaction(
                 tx_signer.clone(),
                 indexer_state.clone(),
-                response_ser,
+                tx_request.method().to_string(),
+                txn_json,
                 Duration::from_secs(10),
                 // TODO(#153): until nonce detection is fixed, this *must* be 1
                 NonZeroUsize::new(1).unwrap(),
