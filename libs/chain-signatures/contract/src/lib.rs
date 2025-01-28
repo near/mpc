@@ -19,7 +19,7 @@ use near_sdk::collections::LookupMap;
 use near_sdk::json_types::U128;
 use near_sdk::{
     env, log, near_bindgen, AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise,
-    PromiseError, PublicKey,
+    PromiseError, PromiseIndex, PublicKey,
 };
 use primitives::{
     CandidateInfo, Candidates, ContractSignatureRequest, Participants, PkVotes, SignRequest,
@@ -65,6 +65,7 @@ impl Default for VersionedMpcContract {
 pub trait SignatureStateHandler {
     fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash);
     fn get_pending_request(&mut self, request: &SignatureRequest) -> Option<YieldIndex>;
+    fn remove_request(&mut self, request: SignatureRequest) -> Result<(), Error>;
 }
 
 pub fn handle_signature_response<T: SignatureStateHandler>(
@@ -80,10 +81,10 @@ pub fn handle_signature_response<T: SignatureStateHandler>(
     }
 }
 
-pub fn handle_signature_state<T: SignatureStateHandler>(
+pub fn update_contract_state_and_construct_signature_promise<T: SignatureStateHandler>(
     mpc_contract: &mut T,
     contract_signature_request: ContractSignatureRequest,
-) {
+) -> PromiseIndex {
     let yield_promise = env::promise_yield_create(
         "clear_state_on_finish",
         &serde_json::to_vec(&(&contract_signature_request,)).unwrap(),
@@ -102,17 +103,14 @@ pub fn handle_signature_state<T: SignatureStateHandler>(
 
     // NOTE: there's another promise after the clear_state_on_finish to avoid any errors
     // that would rollback the state.
-    let final_yield_promise = env::promise_then(
+    env::promise_then(
         yield_promise,
         env::current_account_id(),
         "return_signature_on_finish",
         &[],
         NearToken::from_near(0),
         RETURN_SIGNATURE_ON_FINISH_CALL_GAS,
-    );
-    // The return value for this function call will be the value
-    // returned by the `sign_on_finish` callback.
-    env::promise_return(final_yield_promise);
+    )
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
@@ -130,8 +128,6 @@ impl SignatureStateHandler for MpcContractV1 {
     fn get_pending_request(&mut self, request: &SignatureRequest) -> Option<YieldIndex> {
         self.pending_requests.get(request)
     }
-}
-impl MpcContractV1 {
     fn remove_request(&mut self, request: SignatureRequest) -> Result<(), Error> {
         if self.pending_requests.remove(&request).is_some() {
             Ok(())
@@ -139,7 +135,8 @@ impl MpcContractV1 {
             Err(InvalidParameters::RequestNotFound.into())
         }
     }
-
+}
+impl MpcContractV1 {
     pub fn init(threshold: usize, candidates: BTreeMap<AccountId, CandidateInfo>) -> Self {
         MpcContractV1 {
             protocol_state: ProtocolContractState::Initializing(InitializingContractState {
@@ -161,6 +158,14 @@ pub struct MpcContract {
     config: Config,
 }
 impl SignatureStateHandler for MpcContract {
+    fn remove_request(&mut self, request: SignatureRequest) -> Result<(), Error> {
+        if self.pending_requests.remove(&request).is_some() {
+            self.request_counter -= 1;
+            Ok(())
+        } else {
+            Err(InvalidParameters::RequestNotFound.into())
+        }
+    }
     fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) {
         if self
             .pending_requests
@@ -175,15 +180,6 @@ impl SignatureStateHandler for MpcContract {
     }
 }
 impl MpcContract {
-    fn remove_request(&mut self, request: SignatureRequest) -> Result<(), Error> {
-        if self.pending_requests.remove(&request).is_some() {
-            self.request_counter -= 1;
-            Ok(())
-        } else {
-            Err(InvalidParameters::RequestNotFound.into())
-        }
-    }
-
     pub fn init(
         threshold: usize,
         candidates: BTreeMap<AccountId, CandidateInfo>,
@@ -764,7 +760,7 @@ impl VersionedMpcContract {
         match self {
             Self::V0(mpc_contract) => &mpc_contract.config,
             Self::V1(_) => {
-                panic!("V1 contract des not contain a config")
+                panic!("V1 contract does not contain a config")
             }
         }
     }
@@ -777,10 +773,16 @@ impl VersionedMpcContract {
     pub fn sign_helper(&mut self, contract_signature_request: ContractSignatureRequest) {
         match self {
             Self::V0(mpc_contract) => {
-                handle_signature_state(mpc_contract, contract_signature_request)
+                env::promise_return(update_contract_state_and_construct_signature_promise(
+                    mpc_contract,
+                    contract_signature_request,
+                ));
             }
             Self::V1(mpc_contract) => {
-                handle_signature_state(mpc_contract, contract_signature_request)
+                env::promise_return(update_contract_state_and_construct_signature_promise(
+                    mpc_contract,
+                    contract_signature_request,
+                ));
             }
         }
     }
