@@ -71,7 +71,8 @@ impl StartCmd {
 
         let root_future = async move {
             let root_task_handle = tracking::current_task();
-            let _web_server = start_web_server(root_task_handle, config.web_ui.clone()).await?;
+            let web_server = start_web_server(root_task_handle, config.web_ui.clone()).await?;
+            let _web_server = tracking::spawn_checked("web server", web_server);
 
             let secret_db = SecretDB::new(&home_dir, secrets.local_storage_aes_key)?;
 

@@ -63,6 +63,7 @@ pub async fn monitor_chain_state(
         match result {
             Ok(state) => {
                 if state != prev_state {
+                    tracing::info!("Contract state changed: {:?}", state);
                     contract_state_sender.send(state.clone()).unwrap();
                     prev_state = state;
                 }
@@ -83,15 +84,15 @@ async fn read_contract_state_from_chain(
 ) -> anyhow::Result<ContractState> {
     // We wait first to catch up to the chain to avoid reading the participants from an outdated state.
     // We currently assume the participant set is static and do not detect or support any updates.
-    tracing::info!(target: "mpc", "awaiting full sync to read mpc contract state");
+    tracing::debug!(target: "mpc_indexer", "awaiting full sync to read mpc contract state");
     wait_for_full_sync(&client).await;
 
     // In tests it is possible to catch up to the chain before the contract is even deployed.
-    tracing::info!(target: "mpc", "awaiting mpc contract state");
+    tracing::debug!(target: "mpc_indexer", "awaiting mpc contract state");
     wait_for_contract_code(mpc_contract_id.clone(), &view_client).await;
 
     let state = get_mpc_contract_state(mpc_contract_id.clone(), &view_client).await?;
-    tracing::info!(target: "mpc", "got mpc contract state {:?}", state);
+    tracing::debug!(target: "mpc_indexer", "got mpc contract state {:?}", state);
     let state = match state {
         ProtocolContractState::NotInitialized => ContractState::Invalid,
         ProtocolContractState::Initializing(state) => {
