@@ -74,6 +74,7 @@ variable "node_configs" {
     gcp_keyshare_secret_id             = string
     gcp_p2p_private_key_secret_id      = string
     gcp_account_sk_secret_id           = string
+    mpc_home_dir                       = string
   }))
 }
 

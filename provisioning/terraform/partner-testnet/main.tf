@@ -9,15 +9,47 @@ resource "google_compute_project_metadata_item" "project_logging" {
   key   = "google-logging-enabled"
   value = "true"
 }
+
 module "gce-container" {
   count   = length(var.node_configs)
   source  = "terraform-google-modules/container-vm/google"
   version = "~> 3.0"
 
+  volumes = [
+    {
+      name = "data-0"
+      hostPath = {
+        path = "/home/mpc/data"
+      }
+    }
+  ]
   container = {
+    name  = "mpc_node"
     image = var.image
-    args  = ["start"]
-    port  = "3000"
+    args  = ["/app/gcp-start.sh"]
+    restart_policy = "always"
+    ports = [
+      {
+        hostPort      = 80
+        containerPort = 80
+      },
+      {
+        hostPort      = 8008
+        containerPort = 8080
+      },
+      {
+        hostPort      = 3000
+        containerPort = 3030
+      },
+    ]
+
+    volumeMounts = [
+      {
+        name      = "data-0"
+        mountPath = "/data"
+        readOnly  = false
+      }
+    ]
 
     env = concat(var.static_env, [
       {
@@ -65,6 +97,10 @@ module "gce-container" {
         value = var.env
       },
       {
+        name  = "GCP_PROJECT_ID",
+        value = var.project_id
+      },
+      {
         name  = "GCP_KEYSHARE_SECRET_ID"
         value = var.node_configs["${count.index}"].gcp_keyshare_secret_id
       },
@@ -79,6 +115,10 @@ module "gce-container" {
       {
         name  = "GCP_ACCOUNT_SK_SECRET_ID"
         value = var.node_configs["${count.index}"].gcp_account_sk_secret_id
+      },
+      {
+        name  = "MPC_HOME_DIR"
+        value = var.node_configs["${count.index}"].mpc_home_dir
       },
     ])
   }
@@ -135,7 +175,18 @@ module "ig_template" {
   source_image_project = "cos-cloud"
   machine_type         = "n2d-standard-16"
 
-  startup_script = "docker rm watchtower ; docker run -d --name watchtower -v /var/run/docker.sock:/var/run/docker.sock containrrr/watchtower --debug --interval 30"
+  startup_script = file("${path.module}/../scripts/mpc_init.sh")
+
+  additional_disks = [{
+    description = "Main data disk"
+    disk_name       = "mpc-partner-testnet-${count.index}"
+    auto_delete     = false
+    boot            = false
+    disk_size_gb    = 500
+    disk_type       = "pd-ssd"
+    disk_labels     = {}
+    device_name     = ""
+  }]
 
   source_image = reverse(split("/", module.gce-container[count.index].source_image))[0]
   metadata     = merge(var.additional_metadata, { "gce-container-declaration" = module.gce-container["${count.index}"].metadata_value })
@@ -146,13 +197,12 @@ module "ig_template" {
   labels = {
     "container-vm" = module.gce-container[count.index].vm_container_label
   }
-
+  
   depends_on = [google_compute_global_address.external_ips]
 }
 
-
 module "instances" {
-  count      = var.scenario == "old" ? length(var.node_configs) : 0
+  count      = length(var.node_configs)
   source     = "../modules/instance-from-tpl"
   region     = var.region
   project_id = var.project_id
@@ -167,56 +217,6 @@ module "instances" {
 #####################################################################
 # Firewall and loadbalancer template
 #####################################################################
-# Old rule delete Once new is ok
-resource "google_compute_health_check" "multichain_healthcheck" {
-  count = var.scenario == "old" ? 1 : 0
-  name  = "multichain-testnet-partner-healthcheck"
-
-  http_health_check {
-    port         = 3000
-    request_path = "/"
-  }
-
-}
-
-# Old forwarding rule is done per node config
-# resource "google_compute_global_forwarding_rule" "default" {
-#   count                 = var.scenario == "old" ? length(var.node_configs) : 0
-#   name                  = "multichain-partner-rule-${count.index}"
-#   target                = google_compute_target_http_proxy.default[count.index].id
-#   port_range            = "80"
-#   load_balancing_scheme = "EXTERNAL"
-#   ip_address            = google_compute_global_address.external_ips[count.index].address
-# }
-
-# Old http proxy
-# resource "google_compute_target_http_proxy" "default" {
-#   count       = var.scenario == "old" ? length(var.node_configs) : 0
-#   name        = "multichain-partner-target-proxy-${count.index}"
-#   description = "a description"
-#   url_map     = google_compute_url_map.default[count.index].id
-# }
-
-# Old URL maps
-# resource "google_compute_url_map" "default" {
-#   count           = var.scenario == "old" ? length(var.node_configs) : 0
-#   name            = "multichain-partner-url-map-${count.index}"
-#   default_service = google_compute_backend_service.multichain_backend.id
-# }
-
-# Old Backend service
-# resource "google_compute_backend_service" "multichain_backend" {
-#   name                  = "multichain-partner-backend-service"
-#   load_balancing_scheme = "EXTERNAL"
-
-#   backend {
-#     group = google_compute_instance_group.multichain_group.id
-#   }
-
-#   health_checks = [google_compute_health_check.multichain_healthcheck.id]
-# }
-
-# Old instance group
 resource "google_compute_instance_group" "multichain_group" {
   name      = "multichain-partner-instance-group"
   instances = module.instances[*].self_links[0]
@@ -227,10 +227,7 @@ resource "google_compute_instance_group" "multichain_group" {
     port = 3000
   }
 }
-
-# Old firewall
 resource "google_compute_firewall" "app_port" {
-  count   = var.scenario == "old" ? 1 : 0
   name    = "allow-multichain-healthcheck-access"
   network = var.network
 
@@ -245,7 +242,7 @@ resource "google_compute_firewall" "app_port" {
 }
 
 #####################################################################
-# New LOAD BALANCER definition
+# LOAD BALANCER definition
 #####################################################################
 
 resource "google_compute_health_check" "multichain_tcp_healthcheck" {
@@ -258,7 +255,7 @@ resource "google_compute_health_check" "multichain_tcp_healthcheck" {
 
 resource "google_compute_backend_service" "multichain_backend" {
   name                  = "multichain-partner-backend-service"
-  load_balancing_scheme = "EXTERNAL"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
   protocol              = "TCP"
   port_name             = "http"
   timeout_sec           = 30
@@ -268,27 +265,6 @@ resource "google_compute_backend_service" "multichain_backend" {
 
   health_checks = [google_compute_health_check.multichain_tcp_healthcheck.id]
 }
-
-# resource "google_compute_url_map" "default" {
-#   count           = length(var.node_configs)
-#   name            = "multichain-partner-url-map-${count.index}"
-#   default_service = google_compute_backend_service.multichain_backend.id
-# }
-
-# resource "google_compute_target_http_proxy" "default" {
-#   count       = length(var.node_configs)
-#   name        = "multichain-partner-target-proxy-${count.index}"
-#   description = "a description"
-#   url_map     = google_compute_url_map.default[count.index].id
-# }
-
-# resource "google_compute_target_tcp_proxy" "default" {
-#   count           = length(var.node_configs)
-#   backend_service = "https://www.googleapis.com/compute/v1/projects/nearone-multichain/global/backendServices/testnet-lb"
-#   name            = "multichain-partner-target-tcp-proxy-${count.index}"
-#   project         = "nearone-multichain"
-#   proxy_header    = "NONE"
-# }
 
 resource "google_compute_target_tcp_proxy" "default" {
   count           = length(var.node_configs)
@@ -301,28 +277,8 @@ resource "google_compute_global_forwarding_rule" "default" {
   count                 = length(var.node_configs)
   name                  = "multichain-partner-rule-${count.index}"
   ip_protocol           = "TCP"
-  load_balancing_scheme = "EXTERNAL"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
   port_range            = "80"
   target                = google_compute_target_tcp_proxy.default[count.index].id
   ip_address            = google_compute_global_address.external_ips[count.index].address
 }
-
-# Current config
-# resource "google_compute_global_forwarding_rule" "fe" {
-#   ip_protocol           = "TCP"
-#   name                  = "fe"
-#   load_balancing_scheme = "EXTERNAL_MANAGED"
-#   port_range            = "80-80"
-#   project               = "nearone-multichain"
-#   target                = "https://www.googleapis.com/compute/beta/projects/nearone-multichain/global/targetTcpProxies/testnet-lb-target-proxy"
-#   ip_address            = "34.107.154.206"
-# }
-
-
-# resource "google_compute_target_tcp_proxy" "testnet_lb_target_proxy" {
-#   backend_service = "https://www.googleapis.com/compute/v1/projects/nearone-multichain/global/backendServices/testnet-lb"
-#   name            = "testnet-lb-target-proxy"
-#   project         = "nearone-multichain"
-#   proxy_header    = "NONE"
-# }
-# terraform import google_compute_target_tcp_proxy.testnet_lb_target_proxy projects/nearone-multichain/global/targetTcpProxies/testnet-lb-target-proxy
