@@ -21,11 +21,6 @@
 #
 # -------------------------------------------------------------------
 
-TEST_FILES=(
-    "index_signature_request.py"
-    # Add more test files here
-)
-
 LOG_FILE="output.log"
 log_output() {
     if [ "$VERBOSE" = true ]; then
@@ -69,8 +64,10 @@ echo "Git repository root: $GIT_ROOT"
 PYTEST_DIR="$GIT_ROOT/pytest"
 VENV_DIR="$PYTEST_DIR/venv"
 LIB_DIR="$GIT_ROOT/libs"
-REQ_DIR="$LIB_DIR/nearcore/pytest/requirements.txt"
 
+REQ_DIRS=(
+    "$PYTEST_DIR/requirements.txt"
+)
 RESET_SUBMODULES=false
 VERBOSE=false
 for arg in "$@"; do
@@ -149,18 +146,28 @@ if ! source "$VENV_DIR/bin/activate"; then
 fi
 
 printf "\nInstalling requirements"
-if ! log_output pip install -r "$REQ_DIR"; then
-    echo "Error: Failed to install requirements."
-    exit 1
-fi
-
-printf "\nExecuting tests"
-for test_file in "${TEST_FILES[@]}"; do
-    printf '\nRunning test: %s' "$test_file"
-    if ! log_output python "$PYTEST_DIR/$test_file"; then
-        printf '\nError: Test %s failed.' "$test_file"
+for req in "${REQ_DIRS[@]}"; do
+    printf '\nInstalling requirement: %s' "$req"
+    if ! log_output pip install -r "$req"; then
+        echo "Error: Failed to install requirements."
         exit 1
-    else
-        printf '\nSuccess: Test %s\n' "$test_file"
     fi
 done
+
+printf "\nExecuting tests"
+if ! cd "$PYTEST_DIR"; then
+    printf '\nFailed to change directory to  %s', "$PYTEST_DIR"
+    exit 1
+fi
+# Add -s flag if verbose is enabled
+PYTEST_FLAGS=""
+if $VERBOSE; then
+    PYTEST_FLAGS="-s"
+    printf "\nVerbose mode activated. Adding -s flag to pytest.\n"
+fi
+if ! log_output pytest $PYTEST_FLAGS; then
+    printf '\nError: one or more tests failed.\n'
+    exit 1
+else
+    printf '\nSuccess.\n'
+fi

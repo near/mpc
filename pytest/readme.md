@@ -2,6 +2,7 @@
 
 Simply run `exec_pytest.sh` (optinal flag `--verbose` and `--reset-submodules`) or execute the steps below with the current directory at root of the mpc git repo.
 
+## Run tests with python
 1. Ensure submodules are clean and point to the correct commit. Use the following commands at your own risk:
 ```bash
 git submodule foreach --recursive git reset --hard
@@ -31,11 +32,11 @@ cd pytest && python3 -m venv venv
 source venv/bin/activate
 
 # install requirements:
-pip install -r ../libs/nearcore/pytest/requirements.txt
+pip install -r requirements.txt
 ```
 
 4. Run pytest:
 ```bash
-python index_signature_request.py 
+pytest # -v -s optional flags for verbosity
 ```
 
