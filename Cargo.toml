@@ -14,7 +14,7 @@ ecdsa = { version = "0.16.8", features = ["digest", "hazmat"] }
 elliptic-curve = { version = "0.13.5", features = ["serde"] }
 event-listener = "2.5.3"
 futures = "0.3.31"
-k256 = { version = "0.13.1", features = ["sha256", "ecdsa", "serde"], optional = true }
+k256 = { version = "0.13.4", features = ["sha256", "ecdsa", "serde"], optional = true }
 magikitten = "0.2.0"
 rand_core = { version = "0.6.4", features = ["getrandom"] }
 rmp-serde = "1.1.2"
