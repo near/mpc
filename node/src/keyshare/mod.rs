@@ -44,3 +44,37 @@ pub trait KeyshareStorage: Send {
     /// keyshare didn't exist before or if the new data has a higher epoch.
     async fn store(&self, data: &RootKeyshareData) -> anyhow::Result<()>;
 }
+
+/// Factory to construct a KeyshareStorage implementation.
+pub enum KeyshareStorageFactory {
+    Gcp {
+        project_id: String,
+        secret_id: String,
+    },
+    Local {
+        home_dir: std::path::PathBuf,
+        encryption_key: [u8; 16],
+    },
+}
+
+impl KeyshareStorageFactory {
+    pub async fn create(&self) -> anyhow::Result<Box<dyn KeyshareStorage>> {
+        match self {
+            Self::Gcp {
+                project_id,
+                secret_id,
+            } => {
+                let storage =
+                    gcp::GcpKeyshareStorage::new(project_id.clone(), secret_id.clone()).await?;
+                Ok(Box::new(storage))
+            }
+            Self::Local {
+                home_dir,
+                encryption_key,
+            } => {
+                let storage = local::LocalKeyshareStorage::new(home_dir.clone(), *encryption_key);
+                Ok(Box::new(storage))
+            }
+        }
+    }
+}
