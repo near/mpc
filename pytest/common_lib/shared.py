@@ -252,6 +252,7 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
     nodes = start_cluster(
         num_validators, num_mpc_nodes, 1, None,
         [["epoch_length", 1000], ["block_producer_kickout_threshold", 80]], {})
+
     mpc_nodes = range(num_validators, num_validators + num_mpc_nodes)
     for i in mpc_nodes:
         nodes[i].kill(gentle=True)
