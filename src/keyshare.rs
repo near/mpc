@@ -8,11 +8,128 @@ use crate::crypto::{commit, hash, Digest};
 use crate::math::{GroupPolynomial, Polynomial};
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
 use crate::proofs::dlog;
-use crate::protocol::internal::{make_protocol, Context, SharedChannel};
+use crate::protocol::internal::{make_protocol, Context, SharedChannel, Waitpoint};
 use crate::protocol::{InitializationError, Participant, Protocol, ProtocolError};
 use crate::serde::encode;
 
 const LABEL: &[u8] = b"cait-sith v0.8.0 keygen";
+
+#[derive(Serialize, Deserialize, Debug)]
+enum MessageType {
+    Send(bool),
+    Echo(bool),
+    Ready(bool),
+}
+
+/// This reliable broadcast function is the echo-broadcast protocol from the sender side.
+/// It broadcasts either true or false and expects that the output of the broadcasts be the same as the input data
+/// This function is expected to be applied to ensure either all (honest) nodes succeed a specific protocol or they fail
+pub async fn reliable_broadcast_sender (
+    chan: &SharedChannel,
+    wait: Waitpoint,
+    participants: &ParticipantList,
+    me: &Participant,
+    data: bool,
+) -> Result<bool, ProtocolError> {
+    // Send vote to all participants
+    chan.send_many(wait,  &MessageType::Send(data)).await;
+
+    let vote = reliable_broadcast_receiver(chan, wait, participants, me).await;
+    // Something is wrong if I am the sender and the reliable broadcast output something different than what I sent
+    if data != vote {
+        let err = "The broadcast is faulty or there are more malicious adversaries than the assumed threshold".to_string();
+            return Err(ProtocolError::AssertionFailed(err));
+        };
+    return Ok(vote)
+}
+
+
+/// This reliable broadcast function is the echo-broadcast protocol from the sender receiver side.
+/// It broadcasts either true or false and expects that the output of the broadcasts be the same as the input data
+pub async fn reliable_broadcast_receiver (
+    chan: &SharedChannel,
+    wait: Waitpoint,
+    participants: &ParticipantList,
+    sender: &Participant,
+) -> bool {
+    let n = participants.len();
+    // we should always have n >= 3*threshold + 1
+    let broadcast_threshold = match n % 3 {
+        0 => n/3 - 1,
+        _ => (n - (n % 3))/ 3,
+    };
+
+    let echo_threshold = (n+broadcast_threshold)/2;
+    let ready_threshold = broadcast_threshold;
+
+    let mut fail_success_echo = [0, 0];
+    let mut fail_success_ready = [0, 0];
+    // no duplication: Every correct process "delivers" at most one message.
+    let mut seen_echo = ParticipantCounter::new(&participants);
+    let mut seen_ready = ParticipantCounter::new(&participants);
+
+    let mut finish_send = false;
+    let mut finish_echo = false;
+    let mut finish_ready = false;
+
+    loop {
+        // The recv should be failure-free and thus we skip if the sent message could not be
+        // deserialized properly
+        let (from, vote): (Participant, MessageType) = match chan.recv(wait).await{
+            Ok(value) => value,
+            _ => continue,
+        };
+
+        match vote {
+            // Receive send vote then echo to everybody
+            MessageType::Send(vote) => {
+                // if the sender is not the expected one
+                // or if the sender already sent the msg
+                // then skip
+                if from != *sender || finish_send == true {
+                    continue;
+                }
+                // upon receiving a send message, echo it
+                finish_send = true;
+                chan.send_many(wait, &MessageType::Echo(vote)).await;
+            },
+            // Receive send vote then echo to everybody
+            MessageType::Echo(vote) => {
+                // skip if I received echo message from the sender
+                // or if I had already passed to the ready phase
+                if !seen_echo.put(from) || finish_echo == true{
+                    continue;
+                }
+                fail_success_echo[vote as usize] += 1;
+                // upon gathering strictly more than (n+f)/2 votes
+                // for a result, deliver (READY, vote)
+                if fail_success_echo[vote as usize] > echo_threshold{
+                    chan.send_many(wait,  &MessageType::Ready(vote)).await;
+                    finish_echo = true
+                }
+            },
+            MessageType::Ready(vote) => {
+                // skip if I received echo message from the sender
+                if !seen_ready.put(from){
+                    continue;
+                }
+                fail_success_ready [vote as usize] += 1;
+
+                // upon gathering strictly more than f votes
+                // amplify the ready message
+                if fail_success_ready[vote as usize] > ready_threshold || finish_ready == true{
+                    chan.send_many(wait, &MessageType::Ready(vote)).await;
+                    finish_ready = true;
+                }
+                if fail_success_ready[vote as usize] > 2*ready_threshold{
+                    return vote
+                }
+            },
+        }
+    }
+}
+
+
 
 async fn do_keyshare<C: CSCurve>(
     mut chan: SharedChannel,
