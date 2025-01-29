@@ -12,6 +12,8 @@ use crate::protocol::internal::{make_protocol, Context, SharedChannel, Waitpoint
 use crate::protocol::{InitializationError, Participant, Protocol, ProtocolError};
 use crate::serde::encode;
 
+use tokio;
+
 const LABEL: &[u8] = b"cait-sith v0.8.0 keygen";
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -116,8 +118,9 @@ pub async fn reliable_broadcast_receiver (
                 fail_success_ready [vote as usize] += 1;
 
                 // upon gathering strictly more than f votes
-                // amplify the ready message
-                if fail_success_ready[vote as usize] > ready_threshold || finish_ready == true{
+                // and if I haven't already amplified ready then
+                // proceed to amplification of the ready message
+                if fail_success_ready[vote as usize] > ready_threshold && finish_ready == false{
                     chan.send_many(wait, &MessageType::Ready(vote)).await;
                     finish_ready = true;
                 }
@@ -329,36 +332,57 @@ async fn do_keyshare<C: CSCurve>(
         _ => {}
     };
 
-    let wait_reliable_broadcast_send = chan.next_waitpoint();
-
+    // create an array of many channel waitpoints
+    // each channel waitpoint is affiliated to a participant being the initial sender
+    let wait_broadcast_array: Vec<Waitpoint> = (0..participants.len()).map(|_| chan.next_waitpoint()).collect();
+    let index_me = participants.index(me);
     match err.is_empty() {
         // Need for consistent Broadcast to prevent adversary from sending
         // that it failed to some honest parties but not the others implying
         // that only some parties will drop out of the protocol but not others
         false => {
-            // everybody reliably broadcast their failures
-            // no need to wait for others outcomes as I will for sure fail
 
-
-            // reliable_broadcast_sender(&chan, wait_reliable_broadcast_send, &participants, &me, false).await?;
+            // broadcast node me failed
+            reliable_broadcast_sender(&chan, wait_broadcast_array[index_me], &participants, &me, false).await?;
+            // no need to wait for others outcomes as node me will stop
             return Err(ProtocolError::AssertionFailed(err));
         },
 
         true => {
-            // everybody echo broadcast their success
             // each party waits for every other party's echo broadcast message
+            // broadcast node me succeded
+            reliable_broadcast_sender(&chan, wait_broadcast_array[index_me], &participants, &me, true).await?;
 
-            // reliable_broadcast_sender(&chan, wait_reliable_broadcast_send, &participants, &me, true).await?;
-            // seen.clear();
-            // seen.put(me);
-            // let wait_reliable_broadcast_receive = chan.next_waitpoint();
-            // while !seen.full() {
-            //     if !seen.put(from) {
-            //         continue;
-            //     }
-            //     reliable_broadcast_sender(&chan, wait_reliable_broadcast_send, &participants, &me, true).await?;
-            // }
+            // collect the broadcast outputs from other parties who also echo broadcast their success/failure
+            // open parallel sessions
+            let mut tasks = Vec::new();
+            for sender in participants.others(me) {
+                let index_sender = participants.index(sender);
+                let task = tokio::spawn(async move {
+                    let is_success = reliable_broadcast_receiver(
+                                        &chan,
+                                        wait_broadcast_array[index_sender],
+                                        &participants,
+                                        &sender
+                                    ).await;
 
+                    if !is_success {
+                        return Err(ProtocolError::AssertionFailed(
+                            format!("Participant {sender:?} seems to have failed its checks. Aborting DKG!")
+                        ));
+                    }
+                    Ok(())
+                });
+                tasks.push(task);
+            }
+
+            // Wait for all the tasks to complete
+            for task in tasks {
+                task.await.map_err(|e|
+                    ProtocolError::AssertionFailed(
+                        format!("Task failed: {:?}", e)
+                    ))??; // Propagate any errors from the tasks
+            }
             return Ok((x_i, big_x.into()))
         },
     }
