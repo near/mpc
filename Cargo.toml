@@ -1,9 +1,7 @@
 [workspace]
-members = [
-    "node",
-]
+members = ["node"]
 resolver = "2"
-exclude = ["libs"]
+exclude = ["libs", "pytest"]
 
 [profile.dev-release]
 inherits = "release"
