@@ -1,10 +1,7 @@
 [workspace]
-members = [
-    "node",
-    "pytest/tests/test_contracts/parallel",
-]
+members = ["node"]
 resolver = "2"
-exclude = ["libs"]
+exclude = ["libs", "pytest"]
 
 [profile.dev-release]
 inherits = "release"
