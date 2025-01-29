@@ -1,7 +1,7 @@
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise};
 use serde::Serialize;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 #[derive(Serialize)]
 pub struct SignRequest {
@@ -21,7 +21,12 @@ pub struct TestContract;
 
 #[near_bindgen]
 impl TestContract {
-    pub fn make_parallel_sign_calls(&self, target_contract: AccountId, num_calls: u64, seed: u64) -> Promise {
+    pub fn make_parallel_sign_calls(
+        &self,
+        target_contract: AccountId,
+        num_calls: u64,
+        seed: u64,
+    ) -> Promise {
         // Construct `num_calls`-many sign function call promises
         let mut promises = (0..num_calls)
             .map(|i| {
