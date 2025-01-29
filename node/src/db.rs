@@ -1,6 +1,7 @@
 use aes_gcm::aead::generic_array::GenericArray;
 use aes_gcm::aead::Aead;
 use aes_gcm::{AeadCore, Aes128Gcm, AesGcm, KeyInit};
+use rocksdb::IteratorMode;
 use std::fmt::Display;
 use std::path::Path;
 use std::sync::Arc;
@@ -115,6 +116,30 @@ impl SecretDB {
             batch: rocksdb::WriteBatch::default(),
         }
     }
+
+    /// Returns ranges of keys in a given column family.
+    ///
+    /// In other words, returns the smallest and largest key in the column.  If
+    /// the column is empty, returns `None`.
+    fn get_cf_key_range(
+        &self,
+        col: DBCol,
+    ) -> anyhow::Result<Option<std::ops::RangeInclusive<Box<[u8]>>>> {
+        let range = {
+            let mut iter = self
+                .db
+                .iterator_cf(self.cf_handle(col), IteratorMode::Start);
+            let start = iter.next().transpose()?;
+            iter.set_mode(IteratorMode::End);
+            let end = iter.next().transpose()?;
+            (start, end)
+        };
+        match range {
+            (Some(start), Some(end)) => Ok(Some(start.0..=end.0)),
+            (None, None) => Ok(None),
+            _ => unreachable!(),
+        }
+    }
 }
 
 pub struct SecretDBUpdate {
@@ -132,6 +157,17 @@ impl SecretDBUpdate {
 
     pub fn delete(&mut self, col: DBCol, key: &[u8]) {
         self.batch.delete_cf(&self.db.cf_handle(col), key);
+    }
+
+    pub fn delete_all(&mut self, col: DBCol) -> anyhow::Result<()> {
+        let range = self.db.get_cf_key_range(col)?;
+        if let Some(range) = range {
+            self.batch
+                .delete_range_cf(self.db.cf_handle(col), range.start(), range.end());
+            // delete_range_cf deletes ["begin_key", "end_key"), so need one more delete
+            self.batch.delete_cf(self.db.cf_handle(col), range.end());
+        }
+        Ok(())
     }
 
     pub fn commit(self) -> anyhow::Result<()> {

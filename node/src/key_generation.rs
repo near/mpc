@@ -54,14 +54,17 @@ pub async fn run_key_generation_client(
     let channel = if is_leader {
         client.new_channel_for_task(MpcTaskId::KeyGeneration, client.all_participant_ids())?
     } else {
-        let channel = channel_receiver.recv().await.unwrap();
-        if channel.task_id != MpcTaskId::KeyGeneration {
-            anyhow::bail!(
-                "Received task ID is not key generation: {:?}",
-                channel.task_id
-            );
+        loop {
+            let channel = channel_receiver.recv().await.unwrap();
+            if channel.task_id != MpcTaskId::KeyGeneration {
+                tracing::info!(
+                    "Received task ID is not key generation: {:?}; ignoring.",
+                    channel.task_id
+                );
+                continue;
+            }
+            break channel;
         }
-        channel
     };
     let key = run_key_generation(
         channel,
@@ -74,10 +77,6 @@ pub async fn run_key_generation_client(
         .await?;
     tracing::info!("Key generation completed");
 
-    // TODO(#75): Send vote_pk transaction to vote for the public key on the contract.
-    // For now, just print it out so integration test can look at it.
-    let public_key = affine_point_to_public_key(key.public_key)?;
-    println!("Public key: {:?}", public_key);
     Ok(())
 }
 
@@ -94,6 +93,7 @@ mod tests {
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::MpcTaskId;
+    use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use cait_sith::KeygenOutput;
     use k256::Secp256k1;
@@ -103,7 +103,12 @@ mod tests {
     #[tokio::test]
     async fn test_key_generation() {
         start_root_task_with_periodic_dump(async move {
-            let results = run_test_clients(4, run_keygen_client).await.unwrap();
+            let results = run_test_clients(
+                TestGenerators::new(4, 3).participant_ids(),
+                run_keygen_client,
+            )
+            .await
+            .unwrap();
             println!("{:?}", results);
         })
         .await;

@@ -1,5 +1,7 @@
 use super::handler::ChainSignatureRequest;
-use super::participants::{ContractInitializingState, ContractRunningState, ContractState};
+use super::participants::{
+    ContractInitializingState, ContractResharingState, ContractRunningState, ContractState,
+};
 use super::response::{ChainRespondArgs, ChainSendTransactionRequest};
 use super::IndexerAPI;
 use crate::config::ParticipantsConfig;
@@ -7,29 +9,48 @@ use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use near_crypto::PublicKey;
 use near_sdk::AccountId;
 use near_time::{Clock, Duration};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
 /// A simplification of the real MPC contract state for testing.
 pub struct FakeMpcContractState {
-    pub config: ContractState,
+    pub state: ContractState,
 }
 
 impl FakeMpcContractState {
-    pub fn new_initializing(participants: ParticipantsConfig) -> FakeMpcContractState {
-        let config = ContractState::Initializing(ContractInitializingState {
+    pub fn new() -> FakeMpcContractState {
+        let config = ContractState::WaitingForSync;
+        FakeMpcContractState { state: config }
+    }
+
+    pub fn initialize(&mut self, participants: ParticipantsConfig) {
+        assert_eq!(self.state, ContractState::WaitingForSync);
+        let state = ContractState::Initializing(ContractInitializingState {
             participants,
             pk_votes: BTreeMap::new(),
         });
-        FakeMpcContractState { config }
+        self.state = state;
     }
 
-    // TODO(#43): Add manual transition to resharing state.
+    pub fn start_resharing(&mut self, new_participants: ParticipantsConfig) {
+        let running_state = match &self.state {
+            ContractState::Running(state) => state,
+            _ => panic!("Cannot start resharing from non-running state"),
+        };
+        let state = ContractState::Resharing(ContractResharingState {
+            old_epoch: running_state.epoch,
+            old_participants: running_state.participants.clone(),
+            public_key: running_state.root_public_key.clone(),
+            new_participants,
+            finished_votes: HashSet::new(),
+        });
+        self.state = state;
+    }
 
     pub fn vote_pk(&mut self, account_id: AccountId, pk: PublicKey) {
-        if let ContractState::Initializing(config) = &mut self.config {
+        if let ContractState::Initializing(config) = &mut self.state {
             config.pk_votes.entry(pk).or_default().insert(account_id);
             for (key, voters) in &config.pk_votes {
                 if voters.len() >= config.participants.participants.len() {
@@ -38,13 +59,43 @@ impl FakeMpcContractState {
                         participants: config.participants.clone(),
                         root_public_key: key.clone(),
                     });
-                    self.config = new_config;
+                    self.state = new_config;
                     return;
                 }
             }
         } else {
             tracing::warn!(
                 "vote_pk transaction ignored because the contract is not in initializing state"
+            );
+        }
+    }
+
+    pub fn vote_reshared(&mut self, account_id: AccountId, new_epoch: u64) {
+        if let ContractState::Resharing(config) = &mut self.state {
+            assert_eq!(new_epoch, config.old_epoch + 1);
+            if !config
+                .new_participants
+                .participants
+                .iter()
+                .any(|p| p.near_account_id == account_id)
+            {
+                panic!(
+                    "vote_reshared received from account {} that is not a participant",
+                    account_id
+                );
+            }
+            config.finished_votes.insert(account_id);
+            if config.finished_votes.len() == config.new_participants.participants.len() {
+                let new_config = ContractState::Running(ContractRunningState {
+                    epoch: config.old_epoch + 1,
+                    participants: config.new_participants.clone(),
+                    root_public_key: config.public_key.clone(),
+                });
+                self.state = new_config;
+            }
+        } else {
+            tracing::warn!(
+                "vote_reshared transaction ignored because the contract is not in resharing state"
             );
         }
     }
@@ -56,7 +107,7 @@ struct FakeIndexerCore {
     /// Delay from when a txn is submitted to when it affects the contract state.
     txn_delay: Duration,
     /// A fake contract state to emulate the real MPC contract but with much less complexity.
-    contract: FakeMpcContractState,
+    contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
     /// Receives transactions sent via the APIs of each node.
     txn_receiver: mpsc::UnboundedReceiver<(ChainSendTransactionRequest, AccountId)>,
     /// Broadcasts the contract state to each node.
@@ -71,7 +122,7 @@ struct FakeIndexerCore {
 impl FakeIndexerCore {
     pub async fn run(mut self) {
         let mut tasks = AutoAbortTaskCollection::new();
-        let contract = Arc::new(tokio::sync::Mutex::new(self.contract));
+        let contract = self.contract.clone();
         tasks.spawn_with_tokio({
             let contract = contract.clone();
             let clock = self.clock.clone();
@@ -80,7 +131,7 @@ impl FakeIndexerCore {
                 loop {
                     {
                         let state = contract.lock().await;
-                        let config = state.config.clone();
+                        let config = state.state.clone();
                         state_change_sender.send(config).ok();
                     }
                     clock.sleep(Duration::seconds(1)).await;
@@ -106,6 +157,10 @@ impl FakeIndexerCore {
                     }
                     ChainSendTransactionRequest::Respond(respond) => {
                         sign_response_sender.send(respond).unwrap();
+                    }
+                    ChainSendTransactionRequest::VoteReshared(reshared) => {
+                        let mut contract = contract.lock().await;
+                        contract.vote_reshared(account_id, reshared.epoch);
                     }
                     _ => {
                         panic!("Unexpected txn: {:?}", txn);
@@ -137,6 +192,8 @@ pub struct FakeIndexerManager {
 
     /// Allows nodes to be disabled during tests. See `disable()`.
     node_disabler: HashMap<AccountId, NodeDisabler>,
+    /// Allows modification of the contract.
+    contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 }
 
 /// Allows a node to be disabled during tests.
@@ -228,18 +285,17 @@ impl FakeIndexerOneNode {
 }
 
 impl FakeIndexerManager {
-    /// Creates a new fake indexer whose contract state begins with Initializing,
-    /// with the given participants.
-    pub fn new(clock: Clock, participants: ParticipantsConfig, txn_delay: Duration) -> Self {
+    /// Creates a new fake indexer whose contract state begins with WaitingForSync.
+    pub fn new(clock: Clock, txn_delay: Duration) -> Self {
         let (txn_sender, txn_receiver) = mpsc::unbounded_channel();
         let (state_change_sender, _) = broadcast::channel(1000);
         let (signature_request_sender, _) = broadcast::channel(1000);
         let (sign_response_sender, response_receiver) = mpsc::unbounded_channel();
-        let contract = FakeMpcContractState::new_initializing(participants);
+        let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
         let core = FakeIndexerCore {
             clock: clock.clone(),
             txn_delay,
-            contract,
+            contract: contract.clone(),
             txn_receiver,
             state_change_sender: state_change_sender.clone(),
             sign_response_sender,
@@ -252,6 +308,7 @@ impl FakeIndexerManager {
             response_receiver,
             signature_request_sender,
             node_disabler: HashMap::new(),
+            contract,
         }
     }
 
@@ -316,5 +373,9 @@ impl FakeIndexerManager {
             disable: disable.clone(),
             _guard: mutex.clone().lock_owned().await,
         }
+    }
+
+    pub async fn contract_mut(&self) -> tokio::sync::MutexGuard<'_, FakeMpcContractState> {
+        self.contract.lock().await
     }
 }

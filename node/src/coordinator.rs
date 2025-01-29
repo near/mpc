@@ -4,9 +4,12 @@ use crate::indexer::handler::ChainSignatureRequest;
 use crate::indexer::participants::{
     ContractInitializingState, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::response::{ChainSendTransactionRequest, ChainVotePkArgs};
+use crate::indexer::response::{
+    ChainSendTransactionRequest, ChainVotePkArgs, ChainVoteResharedArgs,
+};
 use crate::indexer::IndexerAPI;
 use crate::key_generation::{affine_point_to_public_key, run_key_generation_client};
+use crate::key_resharing::run_key_resharing_client;
 use crate::keyshare::{KeyshareStorage, KeyshareStorageFactory};
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
@@ -151,7 +154,6 @@ impl Coordinator {
                             "Resharing",
                             self.config_file.cores,
                             Self::run_key_resharing(
-                                self.clock.clone(),
                                 self.secret_db.clone(),
                                 self.secrets.clone(),
                                 self.config_file.clone(),
@@ -274,10 +276,14 @@ impl Coordinator {
             unreachable!();
         }
 
-        let mpc_config = MpcConfig::from_participants_with_near_account_id(
+        let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
             contract_state.participants,
             &config_file.my_near_account_id,
-        )?;
+        ) else {
+            tracing::info!("We are not a participant in the initial candidates list; doing nothing until contract state change");
+            futures::future::pending::<()>().await;
+            unreachable!()
+        };
         let (sender, receiver) =
             new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
 
@@ -314,21 +320,30 @@ impl Coordinator {
             mpsc::UnboundedReceiver<ChainSignatureRequest>,
         >,
     ) -> anyhow::Result<()> {
+        let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
+            contract_state.participants,
+            &config_file.my_near_account_id,
+        ) else {
+            // TODO(#150): Implement sending join txn.
+            tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
+            futures::future::pending::<()>().await;
+            unreachable!()
+        };
+
         let keyshare = keyshare_storage.load().await?;
         let keyshare = match keyshare {
             Some(keyshare) if keyshare.epoch == contract_state.epoch => keyshare,
             _ => {
-                // TODO(#150): Implement sending join txn.
-                tracing::error!("This node is not a participant in the current epoch. Doing nothing until contract state change.");
+                // This case can happen if a participant is misconfigured or lost its keyshare.
+                // We can't do anything. The only way to recover if the keyshare is truly lost
+                // is to leave and rejoin the network.
+                tracing::error!(
+                    "This node is a participant in the current epoch but is missing a keyshare."
+                );
                 futures::future::pending::<()>().await;
                 unreachable!()
             }
         };
-
-        let mpc_config = MpcConfig::from_participants_with_near_account_id(
-            contract_state.participants,
-            &config_file.my_near_account_id,
-        )?;
 
         let (sender, receiver) =
             new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
@@ -385,18 +400,109 @@ impl Coordinator {
     /// Entry point to handle the Resharing state of the contract.
     /// In this state, we perform key resharing and call vote_reshared.
     async fn run_key_resharing(
-        _clock: Clock,
-        _secret_db: Arc<SecretDB>,
-        _secrets: SecretsConfig,
-        _config_file: ConfigFile,
-        _keyshare_storage: Box<dyn KeyshareStorage>,
-        _contract_state: ContractResharingState,
-        _chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+        secret_db: Arc<SecretDB>,
+        secrets: SecretsConfig,
+        config_file: ConfigFile,
+        keyshare_storage: Box<dyn KeyshareStorage>,
+        contract_state: ContractResharingState,
+        chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     ) -> anyhow::Result<()> {
-        // TODO(#43): Implement key resharing.
-        tracing::error!("Key resharing is not implemented yet");
-        futures::future::pending::<()>().await;
-        unreachable!()
+        let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
+            contract_state.new_participants.clone(),
+            &config_file.my_near_account_id,
+        ) else {
+            tracing::info!("We are not a participant in the new epoch; doing nothing until contract state change");
+            futures::future::pending::<()>().await;
+            unreachable!()
+        };
+
+        let was_participant_last_epoch = contract_state
+            .old_participants
+            .participants
+            .iter()
+            .any(|p| p.near_account_id == config_file.my_near_account_id);
+
+        let existing_keyshare = match keyshare_storage.load().await? {
+            Some(existing_keyshare) => {
+                if existing_keyshare.epoch == contract_state.old_epoch + 1 {
+                    if contract_state
+                        .finished_votes
+                        .contains(&config_file.my_near_account_id)
+                    {
+                        tracing::info!(
+                            "We already performed key resharing for epoch {} and already performed vote_reshared; waiting for contract state to transition into Running",
+                            contract_state.old_epoch + 1);
+                    } else {
+                        tracing::info!(
+                            "We already performed key resharing for epoch {}; sending vote_reshared.",
+                            contract_state.old_epoch + 1
+                        );
+                        chain_txn_sender
+                            .send(ChainSendTransactionRequest::VoteReshared(
+                                ChainVoteResharedArgs {
+                                    epoch: contract_state.old_epoch + 1,
+                                },
+                            ))
+                            .await?;
+                        tracing::info!("Sent vote_reshared txn; waiting for contract state to transition into Running");
+                    }
+                    futures::future::pending::<()>().await;
+                    unreachable!()
+                }
+                if was_participant_last_epoch {
+                    anyhow::ensure!(
+                        existing_keyshare.epoch == contract_state.old_epoch,
+                        "We were a participant last epoch, but we somehow have a key of epoch #{}",
+                        existing_keyshare.epoch
+                    );
+                    Some(existing_keyshare)
+                } else {
+                    anyhow::ensure!(
+                        existing_keyshare.epoch < contract_state.old_epoch,
+                        "We were not a participant last epoch, but we somehow have a key of epoch #{}",
+                        existing_keyshare.epoch
+                    );
+                    None
+                }
+            }
+            None => {
+                if was_participant_last_epoch {
+                    anyhow::bail!("We were a participant last epoch, but we don't have a keyshare");
+                }
+                None
+            }
+        };
+
+        // Delete all presignatures from the previous epoch; they are no longer usable
+        // once we reshare keys.
+        tracing::info!("Deleting all presignatures...");
+        let mut update = secret_db.update();
+        update.delete_all(DBCol::Presignature)?;
+        update.commit()?;
+        tracing::info!("Deleted all presignatures");
+
+        let (sender, receiver) =
+            new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
+
+        // Must wait for all participants to be ready before starting key generation.
+        sender
+            .wait_for_ready(mpc_config.participants.participants.len())
+            .await?;
+        let (network_client, channel_receiver, _handle) =
+            run_network_client(Arc::new(sender), Box::new(receiver));
+        run_key_resharing_client(
+            mpc_config.clone().into(),
+            network_client,
+            contract_state,
+            existing_keyshare.map(|k| k.private_share),
+            keyshare_storage,
+            channel_receiver,
+        )
+        .await?;
+        tracing::info!("Key resharing complete; will call vote_reshared next");
+        // Exit; we'll immediately re-enter the same function and send vote_reshared.
+
+        Ok(())
     }
 }
 

@@ -149,6 +149,7 @@ mod tests_many {
 
     use super::{run_many_triple_generation, PairedTriple};
     use crate::assets::UniqueId;
+    use crate::tests::TestGenerators;
     use crate::tracking;
     use std::collections::HashMap;
 
@@ -162,9 +163,12 @@ mod tests_many {
     async fn test_many_triple_generation() {
         init_logging();
         tracking::testing::start_root_task_with_periodic_dump(async {
-            let all_triples = run_test_clients(NUM_PARTICIPANTS, run_triple_gen_client)
-                .await
-                .unwrap();
+            let all_triples = run_test_clients(
+                TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD).participant_ids(),
+                run_triple_gen_client,
+            )
+            .await
+            .unwrap();
 
             // Sanity check that we generated the right number of triples, and
             // each triple has THRESHOLD participants.

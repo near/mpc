@@ -41,22 +41,19 @@ pub struct MpcConfig {
 }
 
 impl MpcConfig {
+    /// Finds the participant ID of the local node from the participants config
+    /// and constructs the MpcConfig. Returns None if the local node is not
+    /// found in the participants config.
     pub fn from_participants_with_near_account_id(
         participants: ParticipantsConfig,
         my_near_account_id: &AccountId,
-    ) -> anyhow::Result<Self> {
+    ) -> Option<Self> {
         let my_participant_id = participants
             .participants
             .iter()
-            .find(|p| &p.near_account_id == my_near_account_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "My near account id {} not found in participants",
-                    my_near_account_id
-                )
-            })?
+            .find(|p| &p.near_account_id == my_near_account_id)?
             .id;
-        Ok(Self {
+        Some(Self {
             my_participant_id,
             participants,
         })
