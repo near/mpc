@@ -9,13 +9,12 @@ Calls the test function and ensures a successful response.
 import sys
 import time
 import base64
+import pytest
 import pathlib
 from utils import load_binary_file
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared, contracts, constants
-
-NUM_CALLS = 5
 
 
 def load_parallel_sign_contract() -> bytearray:
@@ -26,7 +25,8 @@ def load_parallel_sign_contract() -> bytearray:
     return load_binary_file(path)
 
 
-def test_parallel_sign_calls():
+@pytest.mark.parametrize("num_parallel_signatures", [5])
+def test_parallel_sign_calls(num_parallel_signatures):
     # start cluster and deploy mpc contract
     mpc_contract = contracts.load_mpc_contract()
     cluster = shared.start_cluster_with_mpc(2, 2, 1, mpc_contract)
@@ -40,7 +40,7 @@ def test_parallel_sign_calls():
             function_name='make_parallel_sign_calls',
             args={
                 'target_contract': cluster.mpc_contract_account(),
-                'num_calls': NUM_CALLS,
+                'num_calls': num_parallel_signatures,
                 'seed': 23,
             },
             nonce=30)
@@ -48,7 +48,4 @@ def test_parallel_sign_calls():
     # check the return value
     encoded_value = res['result']['status']['SuccessValue']
     decoded_value = base64.b64decode(encoded_value).decode("utf-8")
-    assert int(decoded_value) == NUM_CALLS
-
-if __name__ == '__main__':
-    test_parallel_sign_calls()
+    assert int(decoded_value) == num_parallel_signatures

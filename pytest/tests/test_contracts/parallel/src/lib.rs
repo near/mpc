@@ -1,5 +1,5 @@
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
-use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise};
+use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise, PromiseResult};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -71,6 +71,7 @@ impl TestContract {
         for i in 0..num_calls {
             let result = env::promise_result(i);
             env::log_str(&format!("sign #{i}: {:?}", result));
+            assert!(matches!(result, PromiseResult::Successful(_)));
         }
         num_calls
     }
