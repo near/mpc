@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "node",
+    "pytest/tests/test_contracts/parallel",
 ]
 resolver = "2"
 exclude = ["libs"]

@@ -25,7 +25,6 @@ from transaction import create_create_account_action, create_payment_action, \
 
 from key import Key
 
-#from .contracts import load_mpc_contract
 from .constants import NEAR_BASE, mpc_binary_path, TGAS, TIMEOUT
 from .contracts import ProposeUpdateArgs
 
@@ -55,7 +54,7 @@ class MpcCluster:
         self.nodes: List[BaseNode] = nodes
         self.num_mpc_nodes: int = num_mpc_nodes
 
-    def contract_account(self):
+    def mpc_contract_account(self):
         return self.nodes[0].signer_key.account_id
 
     def get_nonce(self, node_id):
@@ -64,12 +63,34 @@ class MpcCluster:
             self.nodes[node_id].signer_key.pk)
 
     """
+    Some tests need a second contract deployed.
+    The main mpc contract is deployed to node 0's account,
+    so we put the secondary contract on node 1's account.
+    """
+    def deploy_secondary_contract(self, contract):
+        last_block_hash = self.nodes[1].get_latest_block().hash_bytes
+        tx = sign_deploy_contract_tx(self.nodes[1].signer_key, contract, 10,
+                                     last_block_hash)
+        res = self.nodes[1].send_tx_and_wait(tx, 20)
+        assert ('SuccessValue' in res['result']['status']), res
+
+
+    def make_function_call_on_secondary_contract(self, function_name, args, nonce):
+        last_block_hash = self.nodes[1].get_latest_block().hash_bytes
+        tx = sign_function_call_tx(self.nodes[0].signer_key,
+                                   self.nodes[1].signer_key.account_id,
+                                   function_name,
+                                   json.dumps(args).encode('utf-8'),
+                                   300 * TGAS, 1, nonce, last_block_hash)
+        return self.nodes[0].send_tx_and_wait(tx, 20)
+
+
+    """
     creates on signature transaction for each payload in payloads.
     returns a list of signed transactions
     """
-
     def sign_request(self, payloads, signing_node_id, nonce_offset=0):
-        contract_account = self.contract_account()
+        contract_account = self.mpc_contract_account()
         last_block_hash = self.nodes[0].get_latest_block().hash_bytes
         nonce = self.get_nonce(signing_node_id) + nonce_offset
         txs = []
@@ -105,7 +126,7 @@ class MpcCluster:
     def send_and_await_signature_requests(self, num_requests):
         started = time.time()
         metrics = [MetricsTracker(node) for node in self.participants()]
-        contract_account = self.contract_account()
+        contract_account = self.mpc_contract_account()
 
         # Construct signature requests
         payloads = [[
@@ -171,7 +192,7 @@ class MpcCluster:
 
     def propose_update(self, code):
         participants = self.participants()
-        contract_account = self.contract_account()
+        contract_account = self.mpc_contract_account()
         participant = participants[0]
         last_block_hash = participant.get_latest_block().hash_bytes
 
@@ -189,7 +210,7 @@ class MpcCluster:
         assert ('SuccessValue' in res['result']['status'])
 
     def get_deployed_contract_hash(self, finality='optimistic'):
-        account_id = self.contract_account()
+        account_id = self.mpc_contract_account()
         node = self.nodes[0]
         query = {
             "request_type": "view_code",
@@ -205,7 +226,7 @@ class MpcCluster:
 
     def vote_update(self, node_id, update_id):
         vote_update_args = {'id': update_id}
-        contract_account = self.contract_account()
+        contract_account = self.mpc_contract_account()
         nodes = self.nodes
         last_block_hash = nodes[node_id].get_latest_block().hash_bytes
         ak_nonce = nodes[node_id].get_nonce_for_pk(
@@ -247,11 +268,17 @@ def sign_create_account_with_multiple_access_keys_tx(creator_key,
 
 def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
                            contract):
+    rpc_polling_config = { "rpc": { "polling_config": {
+            "polling_timeout": {"secs": 20, "nanos": 0 },
+            "polling_interval": {"secs": 1, "nanos": 0 },
+        }}}
+
     # Start a near network with extra observer nodes; we will use their
     # config.json, genesis.json, etc. to configure the mpc nodes' indexers
     nodes = start_cluster(
         num_validators, num_mpc_nodes, 1, None,
-        [["epoch_length", 1000], ["block_producer_kickout_threshold", 80]], {})
+        [["epoch_length", 1000], ["block_producer_kickout_threshold", 80]],
+        {0: rpc_polling_config, 1: rpc_polling_config})
 
     mpc_nodes = range(num_validators, num_validators + num_mpc_nodes)
     for i in mpc_nodes:
