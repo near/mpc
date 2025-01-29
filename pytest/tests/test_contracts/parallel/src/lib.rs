@@ -51,14 +51,12 @@ impl TestContract {
         }
 
         // Attach a callback to log the final results
-        let final_promise = combined_promise.then(Promise::new(env::current_account_id()).function_call(
+        combined_promise.then(Promise::new(env::current_account_id()).function_call(
             "handle_results".to_string(),
             vec![],
             NearToken::from_near(0),
             Gas::from_tgas(30),
-        ));
-
-        return final_promise;
+        ))
     }
 
     #[private]
@@ -69,6 +67,6 @@ impl TestContract {
             let result = env::promise_result(i);
             env::log_str(&format!("sign #{i}: {:?}", result));
         }
-        return num_calls;
+        num_calls
     }
 }
