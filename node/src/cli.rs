@@ -48,7 +48,7 @@ pub struct InitConfigArgs {
     #[arg(long)]
     pub test_seed: Option<String>,
     /// Number of shards to initialize the chain with
-    #[arg(long)]
+    #[arg(long, default_value = "1")]
     pub num_shards: u64,
     /// Makes block production fast (TESTING ONLY)
     #[arg(long)]
