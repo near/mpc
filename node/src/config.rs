@@ -204,24 +204,23 @@ pub fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
     ConfigFile::from_file(&config_path).context("Load config.yaml")
 }
 
-/// Credentials of the near account used to submit signature responses.
-/// It is recommended to use a separate dedicated account for this purpose.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RespondCredentials {
+    pub account_id: AccountId,
+    pub access_key: SecretKey,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RespondConfigFile {
-    /// It can be an arbitrary id because respond calls are not authenticated.
-    /// The account should have sufficient NEAR to pay for the function calls.
-    pub account_id: AccountId,
-    /// In production it is recommended to provide 50+ distinct access keys
-    /// to minimize incidence of nonce conflicts under heavy load.
-    pub access_keys: Vec<SecretKey>,
+    pub accounts: Vec<RespondCredentials>,
 }
 
 impl RespondConfigFile {
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
         let file = std::fs::read_to_string(path)?;
         let config: Self = serde_yaml::from_str(&file)?;
-        if config.access_keys.is_empty() {
-            anyhow::bail!("At least one access key must be provided");
+        if config.accounts.is_empty() {
+            anyhow::bail!("At least one NEAR account must be provided");
         }
         Ok(config)
     }

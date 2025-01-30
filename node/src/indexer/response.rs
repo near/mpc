@@ -282,12 +282,12 @@ pub(crate) async fn handle_sign_responses(
     indexer_state: Arc<IndexerState>,
 ) {
     let mut signers = config
-        .access_keys
+        .accounts
         .iter()
-        .map(|key| {
+        .map(|account| {
             Arc::new(TransactionSigner::from_key(
-                config.account_id.clone(),
-                key.clone(),
+                account.account_id.clone(),
+                account.access_key.clone(),
             ))
         })
         .collect::<Vec<_>>()
