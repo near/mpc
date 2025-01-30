@@ -750,14 +750,14 @@ pub mod testing {
 
     impl PortSeed {
         pub fn p2p_port(&self, node_index: usize) -> u16 {
-            (10000 as usize + self.0 as usize * 100 + node_index)
+            (10000_usize + self.0 as usize * 100 + node_index)
                 .try_into()
                 .unwrap()
         }
 
         #[cfg(test)]
         pub fn web_port(&self, node_index: usize) -> u16 {
-            (20000 as usize + self.0 as usize * 100 + node_index)
+            (20000_usize + self.0 as usize * 100 + node_index)
                 .try_into()
                 .unwrap()
         }
