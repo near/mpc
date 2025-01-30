@@ -1,4 +1,5 @@
 use crate::indexer::participants::ContractState;
+use crate::p2p::testing::PortSeed;
 use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
 use near_o11y::testonly::init_integration_logger;
@@ -18,7 +19,6 @@ async fn test_faulty_cluster() {
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
     const TXN_DELAY: Duration = Duration::seconds(1);
-    const PORT_SEED: u16 = 3;
     let temp_dir = tempfile::tempdir().unwrap();
     let accounts = (0..NUM_PARTICIPANTS)
         .map(|i| format!("test{}", i).parse().unwrap())
@@ -29,7 +29,7 @@ async fn test_faulty_cluster() {
         accounts.clone(),
         THRESHOLD,
         TXN_DELAY,
-        PORT_SEED,
+        PortSeed::FAULTY_CLUSTER_TEST,
     );
 
     setup

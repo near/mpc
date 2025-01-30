@@ -14,7 +14,7 @@ use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{ChainSignatureRequest, SignArgs};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::KeyshareStorageFactory;
-use crate::p2p::testing::generate_test_p2p_configs;
+use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::start_web_server;
@@ -227,7 +227,7 @@ impl IntegrationTestSetup {
         participant_accounts: Vec<AccountId>,
         threshold: usize,
         txn_delay: Duration,
-        port_seed: u16,
+        port_seed: PortSeed,
     ) -> IntegrationTestSetup {
         let p2p_configs =
             generate_test_p2p_configs(&participant_accounts, threshold, port_seed).unwrap();
@@ -263,9 +263,7 @@ impl IntegrationTestSetup {
                 },
                 web_ui: WebUIConfig {
                     host: "0.0.0.0".to_string(),
-                    port: (port_seed as u64 * 1000 + 20000 + i as u64)
-                        .try_into()
-                        .unwrap(),
+                    port: port_seed.web_port(i),
                 },
             };
             let secrets = SecretsConfig {

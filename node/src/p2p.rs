@@ -744,6 +744,39 @@ pub mod testing {
     use near_crypto::ED25519SecretKey;
     use near_sdk::AccountId;
 
+    /// A unique seed for each integration test to avoid port conflicts during testing.
+    #[derive(Copy, Clone)]
+    pub struct PortSeed(u16);
+
+    impl PortSeed {
+        pub fn p2p_port(&self, node_index: usize) -> u16 {
+            (10000 as usize + self.0 as usize * 100 + node_index)
+                .try_into()
+                .unwrap()
+        }
+
+        #[cfg(test)]
+        pub fn web_port(&self, node_index: usize) -> u16 {
+            (20000 as usize + self.0 as usize * 100 + node_index)
+                .try_into()
+                .unwrap()
+        }
+
+        pub const CLI_FOR_PYTEST: Self = Self(0);
+    }
+
+    #[cfg(test)]
+    impl PortSeed {
+        // Each place that passes a PortSeed in should define a unique one here.
+        pub const P2P_BASIC_TEST: Self = Self(1);
+        pub const P2P_WAIT_FOR_READY_TEST: Self = Self(2);
+        pub const BASIC_CLUSTER_TEST: Self = Self(3);
+        pub const FAULTY_CLUSTER_TEST: Self = Self(4);
+        pub const KEY_RESHARING_SIMPLE_TEST: Self = Self(5);
+        pub const KEY_RESHARING_MULTISTAGE_TEST: Self = Self(6);
+        pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: Self = Self(7);
+    }
+
     /// Converts a keypair to an ED25519 secret key, asserting that it is the
     /// exact kind of keypair we expect.
     pub fn keypair_to_raw_ed25519_secret_key(
@@ -783,7 +816,7 @@ pub mod testing {
         threshold: usize,
         // this is a hack to make sure that when tests run in parallel, they don't
         // collide on the same port.
-        seed: u16,
+        port_seed: PortSeed,
     ) -> anyhow::Result<Vec<(MpcConfig, ED25519SecretKey)>> {
         let mut participants = Vec::new();
         let mut keypairs = Vec::new();
@@ -792,7 +825,7 @@ pub mod testing {
             participants.push(ParticipantInfo {
                 id: ParticipantId::from_raw(rand::random()),
                 address: "127.0.0.1".to_string(),
-                port: 10000 + seed * 1000 + i as u16,
+                port: port_seed.p2p_port(i),
                 p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
                 near_account_id: participant_account.clone(),
             });
@@ -822,12 +855,11 @@ mod tests {
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::raw_ed25519_secret_key_to_keypair;
     use crate::p2p::testing::{
-        generate_keypair, generate_test_p2p_configs, keypair_to_raw_ed25519_secret_key,
+        generate_keypair, generate_test_p2p_configs, keypair_to_raw_ed25519_secret_key, PortSeed,
     };
     use crate::primitives::{MpcMessage, ParticipantId};
     use crate::tracing::init_logging;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use serial_test::serial;
     use std::time::Duration;
     use tokio::time::timeout;
 
@@ -840,12 +872,14 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_basic_tls_mesh_network() {
         init_logging();
-        let configs =
-            generate_test_p2p_configs(&["test0".parse().unwrap(), "test1".parse().unwrap()], 2, 0)
-                .unwrap();
+        let configs = generate_test_p2p_configs(
+            &["test0".parse().unwrap(), "test1".parse().unwrap()],
+            2,
+            PortSeed::P2P_BASIC_TEST,
+        )
+        .unwrap();
         let participant0 = configs[0].0.my_participant_id;
         let participant1 = configs[1].0.my_participant_id;
 
@@ -901,7 +935,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_wait_for_ready() {
         init_logging();
         let mut configs = generate_test_p2p_configs(
@@ -912,7 +945,7 @@ mod tests {
                 "test3".parse().unwrap(),
             ],
             4,
-            1,
+            PortSeed::P2P_WAIT_FOR_READY_TEST,
         )
         .unwrap();
         // Make node 3 use the wrong address for the 0th node. All connections should work
@@ -932,16 +965,19 @@ mod tests {
                 .await
                 .unwrap();
 
-            sender0.wait_for_ready(4).await.unwrap();
             sender1.wait_for_ready(4).await.unwrap();
             sender2.wait_for_ready(4).await.unwrap();
             // Node 3 should not be able to connect to node 0, so if we wait for 4,
-            // it should fail.
+            // it should fail. This goes both ways (3 to 0 and 0 to 3).
+            assert!(timeout(Duration::from_secs(1), sender0.wait_for_ready(4))
+                .await
+                .is_err());
             assert!(timeout(Duration::from_secs(1), sender3.wait_for_ready(4))
                 .await
                 .is_err());
 
             // But if we wait for 3, it should succeed.
+            sender0.wait_for_ready(3).await.unwrap();
             sender3.wait_for_ready(3).await.unwrap();
 
             let ids: Vec<_> = configs[0]
@@ -951,7 +987,10 @@ mod tests {
                 .iter()
                 .map(|p| p.id)
                 .collect();
-            assert_eq!(sender0.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(
+                sender0.all_alive_participant_ids(),
+                sorted(&[ids[0], ids[1], ids[2]]),
+            );
             assert_eq!(sender1.all_alive_participant_ids(), sorted(&ids));
             assert_eq!(sender2.all_alive_participant_ids(), sorted(&ids));
             assert_eq!(
@@ -964,7 +1003,7 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(2)).await;
             assert_eq!(
                 sender0.all_alive_participant_ids(),
-                sorted(&[ids[0], ids[2], ids[3]])
+                sorted(&[ids[0], ids[2]])
             );
             assert_eq!(
                 sender2.all_alive_participant_ids(),
@@ -979,11 +1018,14 @@ mod tests {
             let (sender1, _receiver1) = super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
                 .await
                 .unwrap();
-            sender0.wait_for_ready(4).await.unwrap();
+            sender0.wait_for_ready(3).await.unwrap();
             sender1.wait_for_ready(4).await.unwrap();
             sender2.wait_for_ready(4).await.unwrap();
             sender3.wait_for_ready(3).await.unwrap();
-            assert_eq!(sender0.all_alive_participant_ids(), sorted(&ids));
+            assert_eq!(
+                sender0.all_alive_participant_ids(),
+                sorted(&[ids[0], ids[1], ids[2]]),
+            );
             assert_eq!(sender1.all_alive_participant_ids(), sorted(&ids));
             assert_eq!(sender2.all_alive_participant_ids(), sorted(&ids));
             assert_eq!(

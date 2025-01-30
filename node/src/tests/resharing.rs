@@ -1,4 +1,5 @@
 use crate::indexer::participants::ContractState;
+use crate::p2p::testing::PortSeed;
 use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
 use near_o11y::testonly::init_integration_logger;
@@ -14,7 +15,6 @@ async fn test_key_resharing_simple() {
     const NUM_PARTICIPANTS: usize = 5;
     const THRESHOLD: usize = 3;
     const TXN_DELAY: Duration = Duration::seconds(1);
-    const PORT_SEED: u16 = 4;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
         Clock::real(),
@@ -24,7 +24,7 @@ async fn test_key_resharing_simple() {
             .collect(),
         THRESHOLD,
         TXN_DELAY,
-        PORT_SEED,
+        PortSeed::KEY_RESHARING_SIMPLE_TEST,
     );
 
     // Initialize the contract with one fewer participant.
@@ -87,7 +87,6 @@ async fn test_key_resharing_multistage() {
     const NUM_PARTICIPANTS: usize = 6;
     const THRESHOLD: usize = 3;
     const TXN_DELAY: Duration = Duration::seconds(1);
-    const PORT_SEED: u16 = 4;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
         Clock::real(),
@@ -97,7 +96,7 @@ async fn test_key_resharing_multistage() {
             .collect(),
         THRESHOLD,
         TXN_DELAY,
-        PORT_SEED,
+        PortSeed::KEY_RESHARING_MULTISTAGE_TEST,
     );
 
     // Initialize the contract with two fewer participants.
@@ -252,7 +251,6 @@ async fn test_key_resharing_signature_buffering() {
     const NUM_PARTICIPANTS: usize = 5;
     const THRESHOLD: usize = 3;
     const TXN_DELAY: Duration = Duration::seconds(1);
-    const PORT_SEED: u16 = 4;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
         Clock::real(),
@@ -262,7 +260,7 @@ async fn test_key_resharing_signature_buffering() {
             .collect(),
         THRESHOLD,
         TXN_DELAY,
-        PORT_SEED,
+        PortSeed::KEY_RESHARING_SIGNATURE_BUFFERING_TEST,
     );
 
     // Initialize the contract with one fewer participant.

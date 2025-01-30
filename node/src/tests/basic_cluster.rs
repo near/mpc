@@ -1,3 +1,4 @@
+use crate::p2p::testing::PortSeed;
 use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
 use near_o11y::testonly::init_integration_logger;
@@ -13,7 +14,6 @@ async fn test_basic_cluster() {
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
     const TXN_DELAY: Duration = Duration::seconds(1);
-    const PORT_SEED: u16 = 2;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
         Clock::real(),
@@ -23,7 +23,7 @@ async fn test_basic_cluster() {
             .collect(),
         THRESHOLD,
         TXN_DELAY,
-        PORT_SEED,
+        PortSeed::BASIC_CLUSTER_TEST,
     );
     setup
         .indexer

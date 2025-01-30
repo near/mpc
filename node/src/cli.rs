@@ -7,7 +7,7 @@ use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::real::spawn_real_indexer;
 use crate::keyshare::KeyshareStorageFactory;
-use crate::p2p::testing::generate_test_p2p_configs;
+use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::tracking::{self, start_root_task};
 use crate::web::start_web_server;
 use clap::Parser;
@@ -129,7 +129,8 @@ impl Cli {
                 participants,
                 threshold,
             } => {
-                let configs = generate_test_p2p_configs(&participants, threshold, 1)?;
+                let configs =
+                    generate_test_p2p_configs(&participants, threshold, PortSeed::CLI_FOR_PYTEST)?;
                 let participants_config = configs[0].0.participants.clone();
                 for (i, (_, p2p_private_key)) in configs.into_iter().enumerate() {
                     let subdir = format!("{}/{}", output_dir, i);
