@@ -49,7 +49,11 @@ pub(crate) async fn get_mpc_contract_state(
         block_reference: types::BlockReference::Finality(types::Finality::Final),
         request,
     };
-    let response = client.send(query.with_span_context()).await??;
+    let response = client.send(query.with_span_context()).await;
+    tracing::info!(target="mpc", "mpc contract state call result: {:?}", response);
+    let response = response?;
+    tracing::info!(target="mpc", "mpc contract state call result: {:?}", response);
+    let response = response?;
     tracing::info!(target="mpc", "mpc contract state call result: {:?}", response);
 
     match response.kind {
