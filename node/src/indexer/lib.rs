@@ -50,6 +50,7 @@ pub(crate) async fn get_mpc_contract_state(
         request,
     };
     let response = client.send(query.with_span_context()).await??;
+    tracing::info!(target="mpc", "mpc contract state call result: {:?}", response);
 
     match response.kind {
         CallResult(result) => Ok(serde_json::from_slice(&result.result)?),
@@ -71,5 +72,6 @@ pub(crate) async fn wait_for_contract_code(
         {
             return;
         }
+        tracing::info!(target="mpc", "awaiting contract code");
     }
 }
