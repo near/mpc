@@ -40,7 +40,7 @@ impl TransactionSigner {
         let action = FunctionCallAction {
             method_name,
             args,
-            gas: 300000000000000,
+            gas: 10000000000000,
             deposit: 0,
         };
         let signer_id = match &self.signer {
