@@ -20,7 +20,8 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 pub enum Cli {
     Start(StartCmd),
-
+    /// Generates required file for Near node to run
+    Init(InitConfigArgs),
     /// Generates a set of test configurations suitable for running MPC in
     /// an integration test.
     GenerateTestConfigs {
@@ -31,6 +32,51 @@ pub enum Cli {
         #[arg(long)]
         threshold: usize,
     },
+}
+
+#[derive(Parser, Debug)]
+pub struct InitConfigArgs {
+    #[arg(long, env("MPC_HOME_DIR"))]
+    pub dir: std::path::PathBuf,
+    /// chain/network id (localnet, testnet, devnet, betanet)
+    #[arg(long)]
+    pub chain_id: Option<String>,
+    /// Account ID for the validator key
+    #[arg(long)]
+    pub account_id: Option<String>,
+    /// Specify private key generated from seed (TESTING ONLY)
+    #[arg(long)]
+    pub test_seed: Option<String>,
+    /// Number of shards to initialize the chain with
+    #[arg(long)]
+    pub num_shards: u64,
+    /// Makes block production fast (TESTING ONLY)
+    #[arg(long)]
+    pub fast: bool,
+    /// Genesis file to use when initialize testnet (including downloading)
+    #[arg(long)]
+    pub genesis: Option<String>,
+    /// Download the verified NEAR config file automatically.
+    #[arg(long)]
+    pub download_config: bool,
+    #[arg(long)]
+    pub download_config_url: Option<String>,
+    /// Download the verified NEAR genesis file automatically.
+    #[arg(long)]
+    pub download_genesis: bool,
+    /// Specify a custom download URL for the genesis-file.
+    #[arg(long)]
+    pub download_genesis_url: Option<String>,
+    #[arg(long)]
+    pub donwload_genesis_records_url: Option<String>,
+    /// Customize max_gas_burnt_view runtime limit.  If not specified, value
+    /// from genesis configuration will be taken.
+    #[arg(long)]
+    pub max_gas_burnt_view: Option<u64>,
+    /// Initialize boots nodes in <node_key>@<ip_addr> format seperated by commas
+    /// to bootstrap the network and store them in config.json
+    #[arg(long)]
+    pub boot_nodes: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -124,6 +170,32 @@ impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self {
             Cli::Start(start) => start.run().await,
+            Cli::Init(config) => near_indexer::init_configs(
+                &config.dir,
+                config.chain_id,
+                config.account_id.map(|account_id_string| {
+                    near_indexer::near_primitives::types::AccountId::try_from(account_id_string)
+                        .expect("Received accound_id is not valid")
+                }),
+                config.test_seed.as_ref().map(AsRef::as_ref),
+                config.num_shards,
+                config.fast,
+                config.genesis.as_ref().map(AsRef::as_ref),
+                config.download_genesis,
+                config.download_genesis_url.as_ref().map(AsRef::as_ref),
+                config
+                    .donwload_genesis_records_url
+                    .as_ref()
+                    .map(AsRef::as_ref),
+                if config.download_config {
+                    Some(near_config_utils::DownloadConfigType::RPC)
+                } else {
+                    None
+                },
+                config.download_config_url.as_ref().map(AsRef::as_ref),
+                config.boot_nodes.as_ref().map(AsRef::as_ref),
+                config.max_gas_burnt_view,
+            ),
             Cli::GenerateTestConfigs {
                 output_dir,
                 participants,
