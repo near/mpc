@@ -147,3 +147,13 @@ lazy_static! {
     )
     .unwrap();
 }
+
+lazy_static! {
+    pub static ref MPC_CURRENT_JOB_STATE: prometheus::IntGaugeVec =
+        prometheus::register_int_gauge_vec!(
+            "mpc_current_job_state",
+            "Current state of the top-level MPC job",
+            &["state"],
+        )
+        .unwrap();
+}

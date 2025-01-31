@@ -24,7 +24,7 @@ use tokio::sync::mpsc;
 use tokio::time;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone, Copy)]
-struct SerializableScalar {
+pub struct SerializableScalar {
     pub scalar: Scalar,
 }
 
@@ -45,7 +45,7 @@ struct SerializableAffinePoint {
  * account id and the derivation path.
  */
 #[derive(Serialize, Debug, Clone)]
-struct ChainSignatureRequest {
+pub struct ChainSignatureRequest {
     pub epsilon: SerializableScalar,
     pub payload_hash: SerializableScalar,
 }
@@ -97,7 +97,7 @@ impl ChainSignatureResponse {
  */
 #[derive(Serialize, Debug)]
 pub struct ChainRespondArgs {
-    request: ChainSignatureRequest,
+    pub request: ChainSignatureRequest,
     response: ChainSignatureResponse,
 }
 

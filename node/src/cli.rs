@@ -16,6 +16,7 @@ use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 #[derive(Parser, Debug)]
 pub enum Cli {
@@ -98,6 +99,7 @@ impl StartCmd {
                 secret_db,
                 keyshare_storage_factory,
                 indexer: indexer_api,
+                currently_running_job_name: Arc::new(Mutex::new(String::new())),
             };
             coordinator.run().await
         };

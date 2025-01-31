@@ -601,9 +601,19 @@ fn verify_peer_identity(
 }
 
 /// Struct to track bidirectional connectivity between two nodes.
+/// A node has one ConnectivityIndicator for each other node in the network.
 #[derive(Clone)]
 struct ConnectivityIndicator {
+    /// A packed integer; the high 32 bits represents the number of incoming
+    /// connections currently active from the other node, and the low 32 bits
+    /// represents the number of outgoing connections currently active to the
+    /// other node. The latter is expected to never exceed 1.
+    ///
+    /// By looking at this integer we can determine if both directions are
+    /// connected.
     connected: Arc<AtomicU64>,
+    /// This is used to implement `wait_for_both_connected` by allowing the
+    /// waiter to asynchronously wait for the atomic to change.
     notify: Arc<tokio::sync::Notify>,
 }
 
@@ -653,12 +663,15 @@ impl ConnectivityIndicator {
         flag >= Self::INCOMING_COUNT && flag & (Self::INCOMING_COUNT - 1) >= 1
     }
 
-    // Should not be used concurrently from multiple tasks.
+    /// Only returns when both directions are connected.
+    /// This should not be used by two tasks concurrently.
     async fn wait_for_both_connected(&self) {
         loop {
             if self.is_connected_both_ways() {
                 return;
             }
+            // Should not be used concurrently from multiple tasks, because this
+            // notification pattern can miss notifications if there are two waiters.
             self.notify.notified().await;
         }
     }

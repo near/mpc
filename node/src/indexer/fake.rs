@@ -199,17 +199,35 @@ pub struct FakeIndexerManager {
 /// Allows a node to be disabled during tests.
 struct NodeDisabler {
     disable: Arc<AtomicBool>,
-    /// When the node is running it would grab a mutex of the signature receiver
-    /// in order to process signatures. So, while the node is disabled, we grab a
-    /// lock of this to ensure that the node is indeed not able to process
-    /// signatures.
-    mutex: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainSignatureRequest>>>,
+    /// For querying whether the node is running the Invalid job,
+    /// indicating it has been disabled.
+    currently_running_job_name: Arc<std::sync::Mutex<String>>,
 }
 
 /// While holding this, the node remains disabled.
 pub struct DisabledNode {
     disable: Arc<AtomicBool>,
-    _guard: tokio::sync::OwnedMutexGuard<mpsc::UnboundedReceiver<ChainSignatureRequest>>,
+    currently_running_job_name: Arc<std::sync::Mutex<String>>,
+}
+
+impl DisabledNode {
+    pub async fn reenable_and_wait_till_running(self) {
+        self.disable
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        loop {
+            {
+                let name = self.currently_running_job_name.lock().unwrap();
+                if &*name == "Running" {
+                    break;
+                }
+                tracing::info!(
+                    "Waiting for node to be reenabled and running; currently running job: {}",
+                    *name
+                );
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
 }
 
 impl Drop for DisabledNode {
@@ -250,6 +268,7 @@ impl FakeIndexerOneNode {
             api_state_sender,
             api_signature_request_sender,
             mut api_txn_receiver,
+            ..
         } = self;
         let monitor_state_changes = AutoAbortTask::from(tokio::spawn(async move {
             let mut last_state = ContractState::WaitingForSync;
@@ -322,9 +341,12 @@ impl FakeIndexerManager {
         self.signature_request_sender.send(request).ok();
     }
 
-    /// Adds a new node to the fake indexer. Returns the API for the node and a task that
-    /// runs the node's logic.
-    pub fn add_indexer_node(&mut self, account_id: AccountId) -> (IndexerAPI, AutoAbortTask<()>) {
+    /// Adds a new node to the fake indexer. Returns the API for the node, a task that
+    /// runs the node's logic, and the running job name to passed to the coordinator.
+    pub fn add_indexer_node(
+        &mut self,
+        account_id: AccountId,
+    ) -> (IndexerAPI, AutoAbortTask<()>, Arc<std::sync::Mutex<String>>) {
         let (api_state_sender, api_state_receiver) = watch::channel(ContractState::WaitingForSync);
         let (api_signature_request_sender, api_signature_request_receiver) =
             mpsc::unbounded_channel();
@@ -336,9 +358,10 @@ impl FakeIndexerManager {
             )),
             txn_sender: api_txn_sender,
         };
+        let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));
         let disabler = NodeDisabler {
             disable: Arc::new(AtomicBool::new(false)),
-            mutex: indexer.sign_request_receiver.clone(),
+            currently_running_job_name: currently_running_job_name.clone(),
         };
         let one_node = FakeIndexerOneNode {
             account_id: account_id.clone(),
@@ -351,7 +374,11 @@ impl FakeIndexerManager {
             api_txn_receiver,
         };
         self.node_disabler.insert(account_id, disabler);
-        (indexer, AutoAbortTask::from(tokio::spawn(one_node.run())))
+        (
+            indexer,
+            AutoAbortTask::from(tokio::spawn(one_node.run())),
+            currently_running_job_name,
+        )
     }
 
     /// Waits for the contract state to satisfy the given predicate.
@@ -367,11 +394,27 @@ impl FakeIndexerManager {
 
     /// Disables a node, in order to test resilience to node failures.
     pub async fn disable(&self, account_id: AccountId) -> DisabledNode {
-        let NodeDisabler { disable, mutex } = self.node_disabler.get(&account_id).unwrap();
+        let NodeDisabler {
+            disable,
+            currently_running_job_name,
+        } = self.node_disabler.get(&account_id).unwrap();
         disable.store(true, std::sync::atomic::Ordering::Relaxed);
+        loop {
+            {
+                let name = currently_running_job_name.lock().unwrap();
+                if &*name == "Invalid" {
+                    break;
+                }
+                tracing::info!(
+                    "Waiting for node to be disabled; currently running job: {}",
+                    *name
+                );
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
         DisabledNode {
             disable: disable.clone(),
-            _guard: mutex.clone().lock_owned().await,
+            currently_running_job_name: currently_running_job_name.clone(),
         }
     }
 

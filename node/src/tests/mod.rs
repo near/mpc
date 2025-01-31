@@ -23,6 +23,7 @@ use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::{Clock, Duration};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::time::timeout;
 
 mod basic_cluster;
@@ -168,6 +169,7 @@ pub struct OneNodeTestConfig {
     secrets: SecretsConfig,
     indexer: IndexerAPI,
     indexer_task: AutoAbortTask<()>,
+    currently_running_job_name: Arc<std::sync::Mutex<String>>,
 }
 
 impl OneNodeTestConfig {
@@ -179,12 +181,14 @@ impl OneNodeTestConfig {
             secrets,
             indexer,
             indexer_task: _indexer_task,
+            currently_running_job_name,
         } = self;
         std::fs::create_dir_all(&home_dir)?;
         async move {
             let root_future = async move {
                 let root_task_handle = tracking::current_task();
-                let _web_server = start_web_server(root_task_handle, config.web_ui.clone()).await?;
+                let web_server = start_web_server(root_task_handle, config.web_ui.clone()).await?;
+                let _web_server = tracking::spawn_checked("web server", web_server);
 
                 let secret_db = SecretDB::new(&home_dir, secrets.local_storage_aes_key)?;
 
@@ -200,6 +204,7 @@ impl OneNodeTestConfig {
                     secret_db,
                     keyshare_storage_factory,
                     indexer,
+                    currently_running_job_name,
                 };
                 coordinator.run().await
             };
@@ -270,7 +275,7 @@ impl IntegrationTestSetup {
                 local_storage_aes_key: rand::random(),
                 p2p_private_key: p2p_key,
             };
-            let (indexer_api, task) =
+            let (indexer_api, task, currently_running_job_name) =
                 indexer_manager.add_indexer_node(participant_accounts[i].clone());
             configs.push(OneNodeTestConfig {
                 clock: clock.clone(),
@@ -279,6 +284,7 @@ impl IntegrationTestSetup {
                 secrets,
                 indexer: indexer_api,
                 indexer_task: task,
+                currently_running_job_name,
             });
         }
         IntegrationTestSetup {
@@ -296,7 +302,6 @@ pub async fn request_signature_and_await_response(
     user: &str,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
-    tracing::info!("Sending signature request from user {}", user);
     let request = ChainSignatureRequest {
         entropy: rand::random(),
         request_id: rand::random(),
@@ -308,16 +313,37 @@ pub async fn request_signature_and_await_response(
             payload: Scalar::random(&mut rand::thread_rng()),
         },
     };
+    tracing::info!(
+        "Sending signature request from user {}, payload {:?}",
+        user,
+        request.request.payload
+    );
     indexer.request_signature(request.clone());
     let start_time = std::time::Instant::now();
-    match timeout(timeout_sec, indexer.next_response()).await {
-        Ok(_) => {
-            tracing::info!("Got signature response for user {}", user);
-            Some(start_time.elapsed())
-        }
-        Err(_) => {
-            tracing::info!("Timed out waiting for signature respnse for user {}", user);
-            None
+    loop {
+        match timeout(timeout_sec, indexer.next_response()).await {
+            Ok(signature) => {
+                if signature.request.payload_hash.scalar != request.request.payload {
+                    // This can legitimately happen when multiple nodes submit responses
+                    // for the same signature request. In tests this can happen if the
+                    // secondary leader thinks the primary leader is offline when in fact
+                    // the network just has not yet been fully established.
+                    tracing::info!(
+                        "Received signature is not for the signature request we sent (user {})
+                         Expected {:?}, actual {:?}",
+                        user,
+                        request.request.payload,
+                        signature.request.payload_hash.scalar
+                    );
+                    continue;
+                }
+                tracing::info!("Got signature response for user {}", user);
+                return Some(start_time.elapsed());
+            }
+            Err(_) => {
+                tracing::info!("Timed out waiting for signature respnse for user {}", user);
+                return None;
+            }
         }
     }
 }

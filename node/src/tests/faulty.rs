@@ -93,7 +93,7 @@ async fn test_faulty_cluster() {
     tracing::info!("Step 2 complete");
 
     // Third step: bring up the dropped node in step 2, and make sure signatures can be generated again
-    drop(disabled2);
+    disabled2.reenable_and_wait_till_running().await;
     assert!(
         request_signature_and_await_response(&mut setup.indexer, "user3", signature_delay * 2)
             .await

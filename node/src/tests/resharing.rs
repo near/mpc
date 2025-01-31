@@ -1,4 +1,5 @@
 use crate::indexer::participants::ContractState;
+use crate::metrics;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
@@ -308,7 +309,20 @@ async fn test_key_resharing_signature_buffering() {
         .start_resharing(setup.participants);
 
     // Give nodes some time to transition into resharing state.
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    for i in 0..20 {
+        // We're running with [serial] so querying metrics should be OK.
+        if let Ok(metric) =
+            metrics::MPC_CURRENT_JOB_STATE.get_metric_with_label_values(&["Resharing"])
+        {
+            if metric.get() == NUM_PARTICIPANTS as i64 - 1 {
+                break;
+            }
+        }
+        if i == 19 {
+            panic!("Timeout waiting for resharing to start");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
 
     // Send a request for signature. This should timeout.
     assert!(

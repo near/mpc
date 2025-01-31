@@ -11,6 +11,7 @@ use crate::indexer::IndexerAPI;
 use crate::key_generation::{affine_point_to_public_key, run_key_generation_client};
 use crate::key_resharing::run_key_resharing_client;
 use crate::keyshare::{KeyshareStorage, KeyshareStorageFactory};
+use crate::metrics;
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::new_tls_mesh_network;
@@ -24,7 +25,7 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use near_time::{Clock, Duration};
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 /// Main entry point for the MPC node logic. Assumes the existence of an
@@ -44,6 +45,9 @@ pub struct Coordinator {
 
     /// For interaction with the indexer.
     pub indexer: IndexerAPI,
+
+    /// For testing, to know what the current state is.
+    pub currently_running_job_name: Arc<Mutex<String>>,
 }
 
 /// Represents a top-level task that we run for the current contract state.
@@ -52,13 +56,31 @@ struct MpcJob {
     /// Friendly name for the currently running task.
     name: &'static str,
     /// The future for the MPC task (keygen, resharing, or normal run).
-    fut: BoxFuture<'static, anyhow::Result<()>>,
+    fut: BoxFuture<'static, anyhow::Result<MpcJobResult>>,
     /// a function that looks at a new contract state and returns true iff the
     /// current task should be killed.
     stop_fn: Box<dyn Fn(&ContractState) -> bool + Send>,
     /// a future that resolves when the current task exceeds the desired
     /// timeout.
     timeout_fut: BoxFuture<'static, ()>,
+}
+
+/// When an MpcJob future returns successfully, it returns one of the following.
+enum MpcJobResult {
+    /// This MpcJob has been completed successfully.
+    Done,
+    /// This MpcJob could not run because the contract is in a state that we
+    /// cannot handle (such as the contract being invalid or we're not a current
+    /// participant). If this is returned, the coordinator should do nothing
+    /// until either timeout or the contract state changed.
+    HaltUntilInterrupted {
+        /// If true, signature requests received during the time we halt are
+        /// buffered for the next Running state to handle. If false, signatures
+        /// received during this time are dropped.
+        /// In general, true should be used iff the node expects to become online
+        /// shortly (such as doing keygen or resharing).
+        buffer_signature_requests: bool,
+    },
 }
 
 impl Coordinator {
@@ -70,16 +92,23 @@ impl Coordinator {
                     // This is the initial state. We stop this state for any state changes.
                     MpcJob {
                         name: "WaitingForSync",
-                        fut: futures::future::pending().boxed(),
+                        fut: futures::future::ready(Ok(MpcJobResult::HaltUntilInterrupted {
+                            buffer_signature_requests: true,
+                        }))
+                        .boxed(),
                         stop_fn: Box::new(|_| true),
                         timeout_fut: futures::future::pending().boxed(),
                     }
                 }
                 ContractState::Invalid => {
-                    // Invalid state. Similar to initial state; we do nothing until the state changes.
+                    // Invalid state. Similar to initial state; we do nothing until the state changes,
+                    // but do not buffer signatures.
                     MpcJob {
                         name: "Invalid",
-                        fut: futures::future::pending().boxed(),
+                        fut: futures::future::ready(Ok(MpcJobResult::HaltUntilInterrupted {
+                            buffer_signature_requests: false,
+                        }))
+                        .boxed(),
                         stop_fn: Box::new(|_| true),
                         timeout_fut: futures::future::pending().boxed(),
                     }
@@ -177,19 +206,47 @@ impl Coordinator {
                 }
             };
             tracing::info!("[{}] Starting", job.name);
+            let _report_guard =
+                ReportCurrentJobGuard::new(job.name, self.currently_running_job_name.clone());
+
             loop {
                 tokio::select! {
                     res = &mut job.fut => {
-                        if let Err(e) = res {
-                            tracing::error!("[{}] failed: {:?}", job.name, e);
-                        } else {
-                            tracing::info!("[{}] finished successfully", job.name);
+                        match res {
+                            Err(e) => {
+                                tracing::error!("[{}] failed: {:?}", job.name, e);
+                                break;
+                            }
+                            Ok(MpcJobResult::Done) => {
+                                tracing::info!("[{}] finished successfully", job.name);
+                                break;
+                            }
+                            Ok(MpcJobResult::HaltUntilInterrupted{buffer_signature_requests}) => {
+                                tracing::info!("[{}] halted; waiting for state change or timeout", job.name);
+                                // Replace it with a never-completing future so next iteration we wait for
+                                // only state change or timeout.
+                                if !buffer_signature_requests {
+                                    let mut sign_request_receiver = self.indexer.sign_request_receiver.clone().lock_owned().await;
+                                    job.fut = async move {
+                                        while sign_request_receiver.recv().await.is_some() {
+                                            // drop the signature
+                                        }
+                                        futures::future::pending::<()>().await;
+                                        unreachable!()
+                                    }.boxed();
+                                } else {
+                                    job.fut = futures::future::pending().boxed();
+                                }
+                                continue;
+                            }
                         }
-                        break;
                     }
                     _ = self.indexer.contract_state_receiver.changed() => {
                         if (job.stop_fn)(&self.indexer.contract_state_receiver.borrow()) {
-                            tracing::info!("[{}] contract state changed incompatibly, stopping", job.name);
+                            tracing::info!(
+                                "[{}] contract state changed incompatibly, stopping",
+                                job.name
+                            );
                             break;
                         }
                     }
@@ -205,8 +262,8 @@ impl Coordinator {
     fn create_runtime_and_run(
         description: &str,
         cores: Option<usize>,
-        task: impl Future<Output = anyhow::Result<()>> + Send + 'static,
-    ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
+        task: impl Future<Output = anyhow::Result<MpcJobResult>> + Send + 'static,
+    ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<MpcJobResult>>> {
         let task_handle = tracking::current_task();
 
         // Create a separate runtime, as opposed to making a runtime when the
@@ -244,13 +301,17 @@ impl Coordinator {
         keyshare_storage: Box<dyn KeyshareStorage>,
         contract_state: ContractInitializingState,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<MpcJobResult> {
         let existing_key = keyshare_storage.load().await?;
         if let Some(existing_key) = existing_key {
             if existing_key.epoch != 0 {
-                anyhow::bail!(
+                tracing::error!(
                     "Contract is in initialization state. We already have a keyshare, but its epoch is not zero. Refusing to participate in initialization"
                 );
+                // This is an error situation; we can't recover from it so we just halt.
+                return Ok(MpcJobResult::HaltUntilInterrupted {
+                    buffer_signature_requests: false,
+                });
             }
 
             let my_public_key = affine_point_to_public_key(existing_key.public_key)?;
@@ -258,8 +319,9 @@ impl Coordinator {
                 if votes.contains(&config_file.my_near_account_id) {
                     tracing::info!("Initialization: we already voted for our public key; waiting for public key consensus");
                     // Wait indefinitely. We will be terminated when config changes, or when we timeout.
-                    futures::future::pending::<()>().await;
-                    unreachable!();
+                    return Ok(MpcJobResult::HaltUntilInterrupted {
+                        buffer_signature_requests: true,
+                    });
                 }
             }
 
@@ -272,8 +334,9 @@ impl Coordinator {
                 .await?;
 
             // Like above, just wait.
-            futures::future::pending::<()>().await;
-            unreachable!();
+            return Ok(MpcJobResult::HaltUntilInterrupted {
+                buffer_signature_requests: true,
+            });
         }
 
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
@@ -281,8 +344,9 @@ impl Coordinator {
             &config_file.my_near_account_id,
         ) else {
             tracing::info!("We are not a participant in the initial candidates list; doing nothing until contract state change");
-            futures::future::pending::<()>().await;
-            unreachable!()
+            return Ok(MpcJobResult::HaltUntilInterrupted {
+                buffer_signature_requests: false,
+            });
         };
         let (sender, receiver) =
             new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
@@ -301,7 +365,7 @@ impl Coordinator {
         )
         .await?;
         tracing::info!("Key generation complete");
-        anyhow::Ok(())
+        anyhow::Ok(MpcJobResult::Done)
     }
 
     /// Entry point to handle the Running state of the contract.
@@ -319,15 +383,16 @@ impl Coordinator {
         sign_request_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainSignatureRequest>,
         >,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<MpcJobResult> {
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
             contract_state.participants,
             &config_file.my_near_account_id,
         ) else {
             // TODO(#150): Implement sending join txn.
             tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
-            futures::future::pending::<()>().await;
-            unreachable!()
+            return Ok(MpcJobResult::HaltUntilInterrupted {
+                buffer_signature_requests: false,
+            });
         };
 
         let keyshare = keyshare_storage.load().await?;
@@ -340,8 +405,9 @@ impl Coordinator {
                 tracing::error!(
                     "This node is a participant in the current epoch but is missing a keyshare."
                 );
-                futures::future::pending::<()>().await;
-                unreachable!()
+                return Ok(MpcJobResult::HaltUntilInterrupted {
+                    buffer_signature_requests: false,
+                });
             }
         };
 
@@ -394,7 +460,7 @@ impl Coordinator {
             .run(channel_receiver, sign_request_receiver, chain_txn_sender)
             .await?;
 
-        Ok(())
+        Ok(MpcJobResult::Done)
     }
 
     /// Entry point to handle the Resharing state of the contract.
@@ -406,14 +472,15 @@ impl Coordinator {
         keyshare_storage: Box<dyn KeyshareStorage>,
         contract_state: ContractResharingState,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<MpcJobResult> {
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
             contract_state.new_participants.clone(),
             &config_file.my_near_account_id,
         ) else {
             tracing::info!("We are not a participant in the new epoch; doing nothing until contract state change");
-            futures::future::pending::<()>().await;
-            unreachable!()
+            return Ok(MpcJobResult::HaltUntilInterrupted {
+                buffer_signature_requests: false,
+            });
         };
 
         let was_participant_last_epoch = contract_state
@@ -446,8 +513,9 @@ impl Coordinator {
                             .await?;
                         tracing::info!("Sent vote_reshared txn; waiting for contract state to transition into Running");
                     }
-                    futures::future::pending::<()>().await;
-                    unreachable!()
+                    return Ok(MpcJobResult::HaltUntilInterrupted {
+                        buffer_signature_requests: true,
+                    });
                 }
                 if was_participant_last_epoch {
                     anyhow::ensure!(
@@ -502,7 +570,7 @@ impl Coordinator {
         tracing::info!("Key resharing complete; will call vote_reshared next");
         // Exit; we'll immediately re-enter the same function and send vote_reshared.
 
-        Ok(())
+        Ok(MpcJobResult::Done)
     }
 }
 
@@ -512,4 +580,34 @@ fn sleep(clock: &Clock, duration: Duration) -> BoxFuture<'static, ()> {
         clock.sleep(duration).await;
     }
     .boxed()
+}
+
+/// Simple RAII to export current job name to metrics and /debug/tasks.
+struct ReportCurrentJobGuard {
+    name: String,
+    currently_running_job_name: Arc<Mutex<String>>,
+}
+
+impl ReportCurrentJobGuard {
+    fn new(name: &str, currently_running_job_name: Arc<Mutex<String>>) -> Self {
+        metrics::MPC_CURRENT_JOB_STATE
+            .with_label_values(&[name])
+            .inc();
+        tracking::set_progress(name);
+        *currently_running_job_name.lock().unwrap() = name.to_string();
+        Self {
+            name: name.to_string(),
+            currently_running_job_name,
+        }
+    }
+}
+
+impl Drop for ReportCurrentJobGuard {
+    fn drop(&mut self) {
+        metrics::MPC_CURRENT_JOB_STATE
+            .with_label_values(&[&self.name])
+            .dec();
+        tracking::set_progress("Transitioning state");
+        *self.currently_running_job_name.lock().unwrap() = "".to_string();
+    }
 }
