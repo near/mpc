@@ -24,7 +24,7 @@ config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_thres
 # Track whichever shard the contract account is on.
 config['tracked_shards'] = []
 config['tracked_accounts'] = ["$MPC_CONTRACT_ID"]
-json.dump(config, open('/data/config.json', 'w'), indent=2)
+json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
 EOF
 }
 
