@@ -10,27 +10,35 @@ Verifies that the update was executed.
 import sys
 import time
 import pathlib
+import pytest
+from utils import load_binary_file
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared, contracts
 
 
-def test_propose_update():
-    # deploy v0
-    contract_v0 = contracts.load_mpc_contract_v0()
-    cluster = shared.start_cluster_with_mpc(2, 2, 1, contract_v0)
+@pytest.mark.parametrize(
+    "initial_contract_path,update_contract_path",
+    [(contracts.V0_CONTRACT_PATH, contracts.CURRENT_CONTRACT_PATH),
+     (contracts.V1_CONTRACT_PATH, contracts.CURRENT_CONTRACT_PATH),
+     (contracts.CURRENT_CONTRACT_PATH, contracts.MIGRATE_CURRENT_CONTRACT_PATH)
+     ],
+    ids=["v0 to current", "v1 to current", "current to v2_altered"])
+def test_contract_update(initial_contract_path, update_contract_path):
+    initial_contract = load_binary_file(initial_contract_path)
+    update_contract = load_binary_file(update_contract_path)
+    cluster = shared.start_cluster_with_mpc(2, 2, 1, initial_contract)
     # assert correct contract is deployed
-    cluster.assert_is_deployed(contract_v0)
+    cluster.assert_is_deployed(initial_contract)
     cluster.init_contract(threshold=2)
     # do some requests
     cluster.send_and_await_signature_requests(2)
     # propose v1
-    contract_v1 = contracts.load_mpc_contract_v1()
-    cluster.propose_update(contract_v1)
+    cluster.propose_update(update_contract)
     cluster.vote_update(0, 0)
     cluster.vote_update(1, 0)
     ## wait for the transaction to be included
     time.sleep(2)
     # assert v1 is now deployed
-    cluster.assert_is_deployed(contract_v1)
+    cluster.assert_is_deployed(update_contract)
     cluster.send_and_await_signature_requests(2)

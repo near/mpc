@@ -2,7 +2,7 @@
 
 Simply run `exec_pytest.sh` (optinal flag `--verbose` and `--reset-submodules`) or execute the steps below with the current directory at root of the mpc git repo.
 
-## Run tests with python
+## Run tests with pytest
 1. Ensure submodules are clean and point to the correct commit. Use the following commands at your own risk:
 ```bash
 git submodule foreach --recursive git reset --hard
@@ -15,11 +15,6 @@ git submodule update --init --recursive --force
 # build nearcore:
 cd libs/nearcore && cargo build -p neard --release
 
-# build the contract:
-cd ../chain-signatures && cargo build -p mpc-contract --target=wasm32-unknown-unknown --release
-
-# copy the contract:
-mkdir -p res && cd cp target/wasm32-unknown-unknown/release/mpc_contract.wasm chain-signatures/res/mpc_contract.wasm
 # build the main node
 cd ../.. && cargo build -p mpc-node --release
 ```
@@ -38,6 +33,6 @@ pip install -r requirements.txt
 4. Run pytest:
 ```bash
 export NEAR_PYTEST_CONFIG="config.json"
-pytest # -v -s optional flags for verbosity
+pytest # -v -s optional flags for verbosity and -m "not slow" to skip slow tests
 ```
 

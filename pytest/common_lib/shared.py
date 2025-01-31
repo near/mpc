@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import re
+from messages import tx
 import yaml
 import pathlib
 import subprocess
@@ -48,49 +49,89 @@ import hashlib
 
 
 class NearNode:
+
     def __init__(self, near_node: BaseNode):
         self.near_node = near_node
 
     def signer_key(self):
         return self.near_node.signer_key
-    
+
     def account_id(self):
         return self.signer_key().account_id
-    
+
     def last_block_hash(self):
         return self.near_node.get_latest_block().hash_bytes
-    
+
     def send_tx(self, txn):
         return self.near_node.send_tx(txn)
-    
+
     def get_tx(self, tx_hash):
         return self.near_node.get_tx(tx_hash, self.account_id())
-    
+
     def send_txn_and_check_success(self, txn, timeout=20):
         res = self.near_node.send_tx_and_wait(txn, timeout)
         assert 'result' in res, res
         assert 'status' in res['result'], res['result']
-        assert 'SuccessValue' in res['result']['status'], res['result']['status']
+        assert 'SuccessValue' in res['result']['status'], res['result'][
+            'status']
 
     def get_nonce(self):
         return self.near_node.get_nonce_for_pk(
-            self.near_node.signer_key.account_id,
-            self.near_node.signer_key.pk)
-    
-    def sign_tx(self, target_contract, function_name, args, nonce_offset=1, gas=150*TGAS, deposit=0):
+            self.near_node.signer_key.account_id, self.near_node.signer_key.pk)
+
+    def sign_tx(self,
+                target_contract,
+                function_name,
+                args,
+                nonce_offset=1,
+                gas=150 * TGAS,
+                deposit=0):
         last_block_hash = self.last_block_hash()
         nonce = self.get_nonce() + nonce_offset
-        encoded_args = args if type(args) == bytes else json.dumps(args).encode('utf-8')
-        tx = sign_function_call_tx(self.signer_key(), target_contract, function_name,
-                                   encoded_args, gas, deposit, nonce, last_block_hash)
+        encoded_args = args if type(args) == bytes else json.dumps(
+            args).encode('utf-8')
+        tx = sign_function_call_tx(self.signer_key(), target_contract,
+                                   function_name, encoded_args, gas, deposit,
+                                   nonce, last_block_hash)
         return tx
 
 
 class MpcNode(NearNode):
+
     def __init__(self, near_node: BaseNode, candidate):
         super().__init__(near_node)
         self.candidate = candidate
         assert candidate['account_id'] == near_node.signer_key.account_id
+
+
+def assert_signature_success(res):
+    try:
+        signature_base64 = res['result']['status']['SuccessValue']
+        while len(signature_base64) % 4 != 0:
+            signature_base64 += '='
+        signature = base64.b64decode(signature_base64)
+        signature = json.loads(signature)
+        print("SUCCESS! Signature:", signature)
+        assert True
+    except Exception as e:
+        print("Failed to get signature:", e)
+        print("Response:", json.dumps(res, indent=1))
+        assert False
+
+
+def assert_signature_failure(res):
+    try:
+        signature_base64 = res['result']['status']['SuccessValue']
+        while len(signature_base64) % 4 != 0:
+            signature_base64 += '='
+        signature = base64.b64decode(signature_base64)
+        signature = json.loads(signature)
+        print("Signature succeeded, but expected failure:", signature)
+        print("Response:", json.dumps(res, indent=1))
+        assert False
+    except Exception as e:
+        print("As exptected, failed to get signature:", e)
+        assert True
 
 
 class MpcCluster:
@@ -109,36 +150,37 @@ class MpcCluster:
     """
     Deploy the MPC contract.
     """
+
     def deploy_contract(self, contract):
         last_block_hash = self.contract_node.last_block_hash()
-        tx = sign_deploy_contract_tx(self.contract_node.signer_key(), contract, 10,
-                                     last_block_hash)
+        tx = sign_deploy_contract_tx(self.contract_node.signer_key(), contract,
+                                     10, last_block_hash)
         self.contract_node.send_txn_and_check_success(tx)
 
-    """
-    Some tests need a second contract deployed.
-    The main mpc contract is deployed to node 0's account,
-    so we put the secondary contract on node 1's account.
-    """
     def deploy_secondary_contract(self, contract):
+        """
+        Some tests need a second contract deployed.
+        The main mpc contract is deployed to node 0's account,
+        so we put the secondary contract on node 1's account.
+        """
         last_block_hash = self.secondary_contract_node.last_block_hash()
-        tx = sign_deploy_contract_tx(self.secondary_contract_node.signer_key(), contract, 10,
-                                     last_block_hash)
+        tx = sign_deploy_contract_tx(self.secondary_contract_node.signer_key(),
+                                     contract, 10, last_block_hash)
         self.secondary_contract_node.send_txn_and_check_success(tx)
-
 
     def make_function_call_on_secondary_contract(self, function_name, args):
         tx = self.secondary_contract_node.sign_tx(
-                                   self.secondary_contract_node.account_id(),
-                                   function_name,
-                                   args,
-                                gas=300*TGAS)
+            self.secondary_contract_node.account_id(),
+            function_name,
+            args,
+            gas=300 * TGAS)
         return self.secondary_contract_node.near_node.send_tx_and_wait(tx, 20)
 
     """
     Initializes the contract by calling init. This needs to be done before
     the contract is usable.
     """
+
     def init_contract(self, threshold):
         args = {
             'threshold': threshold,
@@ -147,15 +189,15 @@ class MpcCluster:
                 for node in self.mpc_nodes
             },
         }
-        tx = self.contract_node.sign_tx(
-                                   self.contract_node.account_id(), 'init',
-                                   args)
+        tx = self.contract_node.sign_tx(self.contract_node.account_id(),
+                                        'init', args)
         self.contract_node.send_txn_and_check_success(tx)
 
     """
     creates on signature transaction for each payload in payloads.
     returns a list of signed transactions
     """
+
     def make_sign_request_txns(self, payloads, nonce_offset=1):
         nonce_offset = 1
         txs = []
@@ -169,8 +211,11 @@ class MpcCluster:
             }
             nonce_offset += 1
 
-            tx = self.sign_request_node.sign_tx(self.mpc_contract_account(), 'sign',
-                                       sign_args, nonce_offset=nonce_offset, deposit=1)
+            tx = self.sign_request_node.sign_tx(self.mpc_contract_account(),
+                                                'sign',
+                                                sign_args,
+                                                nonce_offset=nonce_offset,
+                                                deposit=1)
             txs.append(tx)
         return txs
 
@@ -184,6 +229,25 @@ class MpcCluster:
         return tx_hashes
 
     def send_and_await_signature_requests(self, num_requests):
+        """
+            Sends signature requests and waits for the results.
+        
+            Each result is processed by the callback function `sig_verification`, which defaults to `assert_signature_success`.
+            If a failure is expected, use `assert_signature_failure` instead. Custom callback functions can also be provided.
+        
+            Args:
+                `num_requests` (int): The number of signature requests to send.
+                `sig_verification` (callable, optional): A callback function to process each signature result.
+                    Defaults to `assert_signature_success`.
+        
+            Returns:
+                None: The function processes the signature results via the callback but does not return a value.
+        
+            Raises:
+                AssertionError:
+                    - If the indexers fail to observe the signature requests before `constants.TIMEOUT` is reached.
+                    - If `sig_verification` raisese an AssertionError.
+        """
         started = time.time()
         metrics = [MetricsTracker(node.near_node) for node in self.mpc_nodes]
 
@@ -197,6 +261,7 @@ class MpcCluster:
         tx_hashes = self.send_sign_request_txns(txs)
         print("Sent signature requests, tx_hashes:", tx_hashes)
 
+        print("Sent signature requests, tx_hashes:", tx_hashes)
         # Wait for the indexers to observe the signature requests
         # In case num_requests > 1, some txs may not be included due to nonce conflicts
         while True:
@@ -228,22 +293,32 @@ class MpcCluster:
             except Exception as e:
                 print(e)
             time.sleep(1)
-
+        max_gas_used = 0
+        total_gas = 0
+        total_receipts = 0
+        num_txs = 0
         for res in results:
-            try:
-                signature_base64 = res['result']['status']['SuccessValue']
-                while len(signature_base64) % 4 != 0:
-                    signature_base64 += '='
-                signature = base64.b64decode(signature_base64)
-                signature = json.loads(signature)
-                print("SUCCESS! Signature:", signature)
-            except Exception as e:
-                print("Failed to get signature:", e)
-                print("Response:", res)
-                assert False
+            num_txs += 1
+            # Extract the gas burnt at transaction level
+            total_gas_used = res["result"]["transaction_outcome"]["outcome"][
+                "gas_burnt"]
 
+            # Add the gas burnt for each receipt
+            num_receipts = 0
+            for receipt in res["result"]["receipts_outcome"]:
+                total_gas_used += receipt["outcome"]["gas_burnt"]
+                num_receipts += 1
+            Tgas = 10**12  # 1 Tgas = 10^12 gas units
+            max_gas_used = max(max_gas_used, total_gas_used) / Tgas
+            total_gas += total_gas_used / Tgas
+
+            total_receipts += num_receipts
+            sig_verification(res)
+        print("max gas used (Tgas):", max_gas_used, "average receipts:",
+              total_receipts / num_txs, "average gas used (Tgas):",
+              total_gas / num_txs)
         res = [
-            metric.get_int_metric_value('mpc_num_sign_respnses_timed_out')
+            metric.get_int_metric_value('mpc_num_sign_responses_timed_out')
             for metric in metrics
         ]
         print("Number of nonce conflicts which occurred:", res)
@@ -255,8 +330,9 @@ class MpcCluster:
             'config': None,
         })
         tx = participant.sign_tx(self.mpc_contract_account(),
-                                   'propose_update', args,
-                                   deposit=8024860000000000000000000)
+                                 'propose_update',
+                                 args,
+                                 deposit=9124860000000000000000000)
         participant.send_txn_and_check_success(tx)
 
     def get_deployed_contract_hash(self, finality='optimistic'):
@@ -277,7 +353,7 @@ class MpcCluster:
         vote_update_args = {'id': update_id}
         node = self.mpc_nodes[node_id]
         tx = node.sign_tx(self.mpc_contract_account(), 'vote_update',
-            vote_update_args)
+                          vote_update_args)
         node.send_txn_and_check_success(tx)
 
     def propose_join(self, mpc_node):
@@ -288,21 +364,23 @@ class MpcCluster:
         }
         tx = mpc_node.sign_tx(self.mpc_contract_account(), 'join', join_args)
         mpc_node.send_txn_and_check_success(tx)
-    
+
     def vote_join(self, node_id, account_id):
         vote_join_args = {
             'candidate': account_id,
         }
         node = self.mpc_nodes[node_id]
-        tx = node.sign_tx(self.mpc_contract_account(), 'vote_join', vote_join_args)
+        tx = node.sign_tx(self.mpc_contract_account(), 'vote_join',
+                          vote_join_args)
         node.send_txn_and_check_success(tx)
-    
+
     def vote_leave(self, node_id, account_id):
         vote_leave_args = {
             'kick': account_id,
         }
         node = self.mpc_nodes[node_id]
-        tx = node.sign_tx(self.mpc_contract_account(), 'vote_leave', vote_leave_args)
+        tx = node.sign_tx(self.mpc_contract_account(), 'vote_leave',
+                          vote_leave_args)
         node.send_txn_and_check_success(tx)
 
     def assert_is_deployed(self, contract):
@@ -333,19 +411,34 @@ def sign_create_account_with_multiple_access_keys_tx(creator_key,
     return serialize_transaction(signed_tx)
 
 
-def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
-                           contract):
-    rpc_polling_config = { "rpc": { "polling_config": {
-            "polling_timeout": {"secs": 20, "nanos": 0 },
-            "polling_interval": {"secs": 1, "nanos": 0 },
-        }}}
+def start_cluster_with_mpc(num_validators,
+                           num_mpc_nodes,
+                           num_respond_aks,
+                           contract,
+                           additional_init_args=None):
+    rpc_polling_config = {
+        "rpc": {
+            "polling_config": {
+                "polling_timeout": {
+                    "secs": 20,
+                    "nanos": 0
+                },
+                "polling_interval": {
+                    "secs": 1,
+                    "nanos": 0
+                },
+            }
+        }
+    }
 
     # Start a near network with extra observer nodes; we will use their
     # config.json, genesis.json, etc. to configure the mpc nodes' indexers
     nodes = start_cluster(
         num_validators, num_mpc_nodes, 1, None,
-        [["epoch_length", 1000], ["block_producer_kickout_threshold", 80]],
-        {0: rpc_polling_config, 1: rpc_polling_config})
+        [["epoch_length", 1000], ["block_producer_kickout_threshold", 80]], {
+            0: rpc_polling_config,
+            1: rpc_polling_config
+        })
 
     mpc_node_indices = range(num_validators, num_validators + num_mpc_nodes)
     for i in mpc_node_indices:
@@ -373,13 +466,16 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
         my_port = p['port']
 
         candidates.append({
-            "account_id": near_account,
+            "account_id":
+            near_account,
             "cipher_pk": [
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
             ],
-            "sign_pk": my_pk,
-            "url": f"http://{my_addr}:{my_port}",
+            "sign_pk":
+            my_pk,
+            "url":
+            f"http://{my_addr}:{my_port}",
         })
     for i in mpc_node_indices:
         # Move the generated mpc configs
@@ -388,9 +484,11 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
             subprocess.run(('mv', os.path.join(mpc_config_dir,
                                                fname), nodes[i].node_dir))
 
-
     cluster = MpcCluster(near_nodes=[NearNode(node) for node in nodes],
-                         mpc_nodes=[MpcNode(nodes[i], candidates[i - num_validators]) for i in mpc_node_indices])
+                         mpc_nodes=[
+                             MpcNode(nodes[i], candidates[i - num_validators])
+                             for i in mpc_node_indices
+                         ])
 
     last_block_hash = cluster.contract_node.last_block_hash()
     # Set up the node's home directories
@@ -431,14 +529,16 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
         secret_store_key = str(chr(ord('A') + i) * 32)
         p2p_private_key = open(pathlib.Path(home_dir) / 'p2p_key').read()
         near_secret_key = json.loads(
-            open(pathlib.Path(home_dir) / 'validator_key.json').read())['secret_key']
+            open(pathlib.Path(home_dir) /
+                 'validator_key.json').read())['secret_key']
         # mpc-node produces way too much output if we run with debug logs
         mpc_node.near_node.run_cmd(cmd=cmd,
-                         extra_env={
-                             'RUST_LOG': 'INFO',
-                             'MPC_SECRET_STORE_KEY': secret_store_key,
-                             'MPC_P2P_PRIVATE_KEY': p2p_private_key,
-                             'MPC_ACCOUNT_SK': near_secret_key,
-                         })
+                                   extra_env={
+                                       'RUST_LOG': 'INFO',
+                                       'MPC_SECRET_STORE_KEY':
+                                       secret_store_key,
+                                       'MPC_P2P_PRIVATE_KEY': p2p_private_key,
+                                       'MPC_ACCOUNT_SK': near_secret_key,
+                                   })
 
     return cluster
