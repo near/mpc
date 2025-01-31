@@ -16,11 +16,11 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
 
-
 @pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
 def test_signature_lifecycle(num_requests, num_respond_access_keys):
     cluster = shared.start_cluster_with_mpc(2, 2, num_respond_access_keys,
                                             load_mpc_contract())
+    cluster.init_contract(threshold=2)
     cluster.send_and_await_signature_requests(num_requests)
 
 

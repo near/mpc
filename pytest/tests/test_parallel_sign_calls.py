@@ -30,6 +30,7 @@ def test_parallel_sign_calls(num_parallel_signatures):
     # start cluster and deploy mpc contract
     mpc_contract = contracts.load_mpc_contract()
     cluster = shared.start_cluster_with_mpc(2, 2, 1, mpc_contract)
+    cluster.init_contract(threshold=2)
 
     # deploy contract with function that makes parallel sign calls
     contract = load_parallel_sign_contract()
@@ -42,8 +43,7 @@ def test_parallel_sign_calls(num_parallel_signatures):
                 'target_contract': cluster.mpc_contract_account(),
                 'num_calls': num_parallel_signatures,
                 'seed': 23,
-            },
-            nonce=30)
+            })
 
     # check the return value
     encoded_value = res['result']['status']['SuccessValue']
