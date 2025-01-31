@@ -20,7 +20,8 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 pub enum Cli {
     Start(StartCmd),
-
+    /// Generates/downloads required files for Near node to run
+    Init(InitConfigArgs),
     /// Generates a set of test configurations suitable for running MPC in
     /// an integration test.
     GenerateTestConfigs {
@@ -31,6 +32,31 @@ pub enum Cli {
         #[arg(long)]
         threshold: usize,
     },
+}
+
+#[derive(Parser, Debug)]
+pub struct InitConfigArgs {
+    #[arg(long, env("MPC_HOME_DIR"))]
+    pub dir: std::path::PathBuf,
+    /// chain/network id (localnet, testnet, devnet, betanet)
+    #[arg(long)]
+    pub chain_id: Option<String>,
+    /// Genesis file to use when initialize testnet (including downloading)
+    #[arg(long)]
+    pub genesis: Option<String>,
+    /// Download the verified NEAR config file automatically.
+    #[arg(long)]
+    pub download_config: bool,
+    #[arg(long)]
+    pub download_config_url: Option<String>,
+    /// Download the verified NEAR genesis file automatically.
+    #[arg(long)]
+    pub download_genesis: bool,
+    /// Specify a custom download URL for the genesis-file.
+    #[arg(long)]
+    pub download_genesis_url: Option<String>,
+    #[arg(long)]
+    pub donwload_genesis_records_url: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -124,6 +150,25 @@ impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self {
             Cli::Start(start) => start.run().await,
+            Cli::Init(config) => near_indexer::init_configs(
+                &config.dir,
+                config.chain_id,
+                None,
+                None,
+                1,
+                false,
+                config.genesis.as_ref().map(AsRef::as_ref),
+                config.download_genesis,
+                config.download_genesis_url.as_ref().map(AsRef::as_ref),
+                config
+                    .donwload_genesis_records_url
+                    .as_ref()
+                    .map(AsRef::as_ref),
+                Some(near_config_utils::DownloadConfigType::RPC),
+                config.download_config_url.as_ref().map(AsRef::as_ref),
+                None,
+                None,
+            ),
             Cli::GenerateTestConfigs {
                 output_dir,
                 participants,
