@@ -1,6 +1,54 @@
 #!/bin/bash
-# This script is intended to be used for running nearone/mpc in a GCP environment where
-# near/mpc was previously running.
+set -eo pipefail
+
+
+# This script is intended to be used for running nearone/mpc in a GCP environment. 
+# It will initialize the Near node in case it is not initialized yet and start the MPC node.
+
+
+HOME_DIR="/data"
+MPC_NODE_CONFIG_FILE="$HOME_DIR/config.yaml"
+NEAR_NODE_CONFIG_FILE="$HOME_DIR/config.json"
+
+initialize_mpc_config() {
+  local CONFIG_FILE=$1
+  local MPC_ACCOUNT_ID=$2
+
+  cat <<EOF > "$CONFIG_FILE"
+# Configuration File
+my_near_account_id: $MPC_ACCOUNT_ID
+web_ui:
+  host: 0.0.0.0
+  port: 8080
+triple:
+  concurrency: 2
+  desired_triples_to_buffer: 1000000
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 16
+  desired_presignatures_to_buffer: 8192
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  concurrency: 1
+  mpc_contract_id: v1.signer-prod.testnet
+  port_override: 80
+  finality: optimistic
+cores: 12
+EOF
+}
+
+if [ -r "$NEAR_NODE_CONFIG_FILE" ] && [ -r "$MPC_NODE_CONFIG_FILE" ]; then
+    echo "Near and MPC nodes are already initialized"
+else
+    echo "Initializing Near and MPC nodes"
+    ./mpc-node init --dir $HOME_DIR --chain-id $MPC_ENV --download-genesis --download-config && echo "Near node initialized"
+    initialize_mpc_config $MPC_NODE_CONFIG_FILE $MPC_ACCOUNT_ID && echo "MPC node initialized"
+fi
 
 # GCP_PROJECT_ID: the project name (used to fetch secrets below).
 # Same as MPC_GCP_PROJECT_ID in the near/mpc deployment.

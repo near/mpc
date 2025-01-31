@@ -20,7 +20,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 pub enum Cli {
     Start(StartCmd),
-    /// Generates required file for Near node to run
+    /// Generates/downloads required files for Near node to run
     Init(InitConfigArgs),
     /// Generates a set of test configurations suitable for running MPC in
     /// an integration test.
