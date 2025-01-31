@@ -10,11 +10,26 @@ HOME_DIR="/data"
 MPC_NODE_CONFIG_FILE="$HOME_DIR/config.yaml"
 NEAR_NODE_CONFIG_FILE="$HOME_DIR/config.json"
 
-initialize_mpc_config() {
-  local CONFIG_FILE=$1
-  local MPC_ACCOUNT_ID=$2
+initialize_near_node() {
+    ./mpc-node init --dir $1 --chain-id $MPC_ENV --download-genesis --download-config && echo "Near node initialized"
+    python3 << EOF
+import json;
+config = json.load(open("$NEAR_NODE_CONFIG_FILE"))
 
-  cat <<EOF > "$CONFIG_FILE"
+# boot nodes must be filled in or else the node will not have any peers.
+config['network']['boot_nodes'] = "${NEAR_BOOT_NODES}"
+
+config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
+
+# Track whichever shard the contract account is on.
+config['tracked_shards'] = []
+config['tracked_accounts'] = ["$MPC_CONTRACT_ID"]
+json.dump(config, open('/data/config.json', 'w'), indent=2)
+EOF
+}
+
+initialize_mpc_config() {
+  cat <<EOF > "$1"
 # Configuration File
 my_near_account_id: $MPC_ACCOUNT_ID
 web_ui:
@@ -35,7 +50,7 @@ indexer:
   validate_genesis: false
   sync_mode: Latest
   concurrency: 1
-  mpc_contract_id: v1.signer-prod.testnet
+  mpc_contract_id: $MPC_CONTRACT_ID
   port_override: 80
   finality: optimistic
 cores: 12
@@ -46,8 +61,8 @@ if [ -r "$NEAR_NODE_CONFIG_FILE" ] && [ -r "$MPC_NODE_CONFIG_FILE" ]; then
     echo "Near and MPC nodes are already initialized"
 else
     echo "Initializing Near and MPC nodes"
-    ./mpc-node init --dir $HOME_DIR --chain-id $MPC_ENV --download-genesis --download-config && echo "Near node initialized"
-    initialize_mpc_config $MPC_NODE_CONFIG_FILE $MPC_ACCOUNT_ID && echo "MPC node initialized"
+    initialize_near_node $HOME_DIR && echo "Near node initialized"
+    initialize_mpc_config $MPC_NODE_CONFIG_FILE && echo "MPC node initialized"
 fi
 
 # GCP_PROJECT_ID: the project name (used to fetch secrets below).
