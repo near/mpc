@@ -5,18 +5,19 @@ pub mod handler;
 pub mod lib;
 pub mod participants;
 pub mod real;
-pub mod response;
 pub mod stats;
-pub mod transaction;
+pub mod tx_sender;
+pub mod tx_signer;
+pub mod types;
 
 use handler::ChainSignatureRequest;
 use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::types::Nonce;
 use participants::ContractState;
-use response::ChainSendTransactionRequest;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, watch};
+use types::ChainSendTransactionRequest;
 
 const RECENT_NONCES_CACHE_SIZE: usize = 10000;
 
