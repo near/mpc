@@ -166,7 +166,7 @@ if $VERBOSE; then
     printf "\nVerbose mode activated. Adding -s flag to pytest.\n"
 fi
 if ! log_output pytest $PYTEST_FLAGS; then
-    printf '\nError: one or more tests failed.\n'
+    printf '\nError: one or more tests failed. Check output.log for details.\n'
     exit 1
 else
     printf '\nSuccess.\n'

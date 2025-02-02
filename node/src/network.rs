@@ -453,7 +453,7 @@ pub mod testing {
     }
 
     pub async fn run_test_clients<T: 'static + Send, F, FR>(
-        num_participants: usize,
+        participants: Vec<ParticipantId>,
         client_runner: F,
     ) -> anyhow::Result<Vec<T>>
     where
@@ -463,9 +463,6 @@ pub mod testing {
         ) -> FR,
         FR: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
     {
-        let participants = (0..num_participants)
-            .map(|_| ParticipantId::from_raw(rand::random::<u32>()))
-            .collect::<Vec<_>>();
         let transports = new_test_transports(participants.clone());
         let join_handles = transports
             .into_iter()
@@ -494,6 +491,7 @@ mod tests {
     use crate::assets::UniqueId;
     use crate::network::testing::run_test_clients;
     use crate::primitives::{MpcTaskId, ParticipantId};
+    use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
@@ -507,7 +505,9 @@ mod tests {
     #[tokio::test]
     async fn test_network_basic() {
         start_root_task_with_periodic_dump(async move {
-            run_test_clients(4, run_test_client).await.unwrap();
+            run_test_clients(TestGenerators::new(4, 3).participant_ids(), run_test_client)
+                .await
+                .unwrap();
         })
         .await;
     }

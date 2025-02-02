@@ -95,6 +95,11 @@ impl MpcClient {
                                         "Key generation rejected in normal node operation"
                                     );
                                 }
+                                MpcTaskId::KeyResharing { .. } => {
+                                    anyhow::bail!(
+                                        "Key resharing rejected in normal node operation"
+                                    );
+                                }
                                 MpcTaskId::ManyTriples { start, count } => {
                                     if count as usize != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
                                         return Err(anyhow::anyhow!(
