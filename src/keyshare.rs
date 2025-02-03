@@ -12,8 +12,6 @@ use crate::protocol::internal::{make_protocol, Context, SharedChannel, Waitpoint
 use crate::protocol::{InitializationError, Participant, Protocol, ProtocolError};
 use crate::serde::encode;
 
-use tokio;
-
 const LABEL: &[u8] = b"cait-sith v0.8.0 keygen";
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -34,6 +32,8 @@ pub async fn reliable_broadcast_sender (
     data: bool,
 ) -> Result<bool, ProtocolError> {
     // Send vote to all participants
+    // CAREFUL: send_many seems to send to everybody but myself!
+    todo!("This must be addressed!");
     chan.send_many(wait,  &MessageType::Send(data)).await;
 
     let vote = reliable_broadcast_receiver(chan, wait, participants, me).await;
@@ -107,6 +107,8 @@ pub async fn reliable_broadcast_receiver (
                 // for a result, deliver (READY, vote)
                 if fail_success_echo[vote as usize] > echo_threshold{
                     chan.send_many(wait,  &MessageType::Ready(vote)).await;
+                    todo!("If send many does not send to myself then uncomment the next line")
+                    // fail_success_echo[vote as usize] += 1;
                     finish_echo = true
                 }
             },
@@ -342,8 +344,11 @@ async fn do_keyshare<C: CSCurve>(
         // that only some parties will drop out of the protocol but not others
         false => {
 
+            todo!("check whether the send_many sends to absolutely all participants or to all_but_me. I used it as send to all_including_me");
             // broadcast node me failed
             reliable_broadcast_sender(&chan, wait_broadcast_array[index_me], &participants, &me, false).await?;
+            todo!("check same for broadcast_receiver");
+
             // no need to wait for others outcomes as node me will stop
             return Err(ProtocolError::AssertionFailed(err));
         },
@@ -351,38 +356,27 @@ async fn do_keyshare<C: CSCurve>(
         true => {
             // each party waits for every other party's echo broadcast message
             // broadcast node me succeded
+
             reliable_broadcast_sender(&chan, wait_broadcast_array[index_me], &participants, &me, true).await?;
 
             // collect the broadcast outputs from other parties who also echo broadcast their success/failure
             // open parallel sessions
-            let mut tasks = Vec::new();
             for sender in participants.others(me) {
                 let index_sender = participants.index(sender);
-                let task = tokio::spawn(async move {
-                    let is_success = reliable_broadcast_receiver(
-                                        &chan,
-                                        wait_broadcast_array[index_sender],
-                                        &participants,
-                                        &sender
-                                    ).await;
+                let is_success = reliable_broadcast_receiver(
+                                    &chan,
+                                    wait_broadcast_array[index_sender],
+                                    &participants,
+                                    &sender
+                                ).await;
 
-                    if !is_success {
-                        return Err(ProtocolError::AssertionFailed(
-                            format!("Participant {sender:?} seems to have failed its checks. Aborting DKG!")
-                        ));
-                    }
-                    Ok(())
-                });
-                tasks.push(task);
+                if !is_success {
+                    return Err(ProtocolError::AssertionFailed(
+                        format!("Participant {sender:?} seems to have failed its checks. Aborting DKG!")
+                    ));
+                };
             }
-
             // Wait for all the tasks to complete
-            for task in tasks {
-                task.await.map_err(|e|
-                    ProtocolError::AssertionFailed(
-                        format!("Task failed: {:?}", e)
-                    ))??; // Propagate any errors from the tasks
-            }
             return Ok((x_i, big_x.into()))
         },
     }
