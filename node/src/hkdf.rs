@@ -113,10 +113,6 @@ pub fn derive_public_key(public_key: AffinePoint, tweak: k256::Scalar) -> Affine
 }
 
 mod frost {
-    use frost_core::Group;
-    use std::collections::BTreeMap;
-    type Tweak = [u8; 32];
-
     /// The only difference between cait_sith format kdf is that secret shares also have `frost_ed25519::keys::VerifiableSecretSharingCommitment`.
     /// Which is used inside frost to test the following invariant: 
     /// ```
@@ -129,6 +125,9 @@ mod frost {
     /// After adding a tweak, `f_result` is now `G * f(x_i) + G * tweak`.
     /// Thus, to hold the mentioned property we have to adjust the constant term of a polynomial:
     /// `VSSC[0] += G * tweak`
+    use frost_core::Group;
+    use std::collections::BTreeMap;
+    type Tweak = [u8; 32];
 
     pub fn derive_secret_share(
         secret_share: &frost_ed25519::keys::SecretShare,
@@ -136,8 +135,8 @@ mod frost {
     ) -> frost_ed25519::keys::SecretShare {
         let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(tweak);
         frost_ed25519::keys::SecretShare::new(
-            secret_share.identifier().clone(),
-            derive_signing_share(secret_share.signing_share().clone(), tweak),
+            *secret_share.identifier(),
+            derive_signing_share(*secret_share.signing_share(), tweak),
             derive_vssc(secret_share.commitment().clone(), tweak),
         )
     }
@@ -153,11 +152,11 @@ mod frost {
             frost_ed25519::keys::VerifyingShare,
         > = pubkey_package
             .verifying_shares()
-            .into_iter()
+            .iter()
             .map(|(&identifier, &share)| (identifier, derive_verifying_share(share, tweak)))
             .collect();
         let verifying_key: frost_ed25519::VerifyingKey =
-            derive_verifying_key(pubkey_package.verifying_key().clone(), tweak);
+            derive_verifying_key(*pubkey_package.verifying_key(), tweak);
         frost_ed25519::keys::PublicKeyPackage::new(verifying_shares, verifying_key)
     }
 
@@ -241,7 +240,6 @@ mod frost_kdf_tests {
             derived_key_packages.insert(identifier, key_package);
         }
 
-        ///
         let mut nonces_map = BTreeMap::new();
         let mut commitments_map = BTreeMap::new();
 
@@ -276,7 +274,6 @@ mod frost_kdf_tests {
             .is_ok();
         assert!(is_signature_valid);
 
-        ///
         assert_ne!(
             pubkey_package.verifying_key(),
             derived_pubkey_package.verifying_key()
