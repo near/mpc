@@ -72,7 +72,7 @@ impl SignRequestStorage {
                 }
             };
             if added_id == id {
-              break;
+                break;
             }
         }
         let request_ser = self.db.get(DBCol::SignRequest, &key)?.unwrap();
