@@ -157,3 +157,12 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref SIGN_REQUEST_CHANNEL_FAILED: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "sign_request_channel_failed",
+            "failed to send on channel in sign_request_channel",
+        )
+        .unwrap();
+}

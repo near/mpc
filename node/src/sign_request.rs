@@ -1,5 +1,6 @@
 use crate::config::MpcConfig;
 use crate::db::{DBCol, SecretDB};
+use crate::metrics;
 use crate::primitives::ParticipantId;
 
 use k256::sha2::{Digest, Sha256};
@@ -62,9 +63,16 @@ impl SignRequestStorage {
         if let Some(request_ser) = self.db.get(DBCol::SignRequest, &key)? {
             return Ok(serde_json::from_slice(&request_ser)?);
         }
-        while let Ok(added_id) = rx.recv().await {
+        loop {
+            let added_id = match rx.recv().await {
+                Ok(added_id) => added_id,
+                Err(e) => {
+                    metrics::SIGN_REQUEST_CHANNEL_FAILED.inc();
+                    return Err(anyhow::anyhow!("Error in sign_request channel recv, {}", e));
+                }
+            };
             if added_id == id {
-                break;
+              break;
             }
         }
         let request_ser = self.db.get(DBCol::SignRequest, &key)?.unwrap();
