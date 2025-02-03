@@ -153,7 +153,7 @@ impl FrostSignProtocolCoordinator {
         msg_hash: Vec<u8>,
     ) -> Self {
         let (nonces, commitments) =
-            frost_ed25519::round1::commit(&key_package.signing_share(), &mut rng);
+            frost_ed25519::round1::commit(key_package.signing_share(), &mut rng);
         let signing_commitments = commitments.serialize().expect(
             "Commitment is always expected to be serialized if used directly from round1::commit()",
         );
@@ -316,7 +316,7 @@ impl FrostSignProtocolParticipant {
         key_package: frost_ed25519::keys::KeyPackage,
     ) -> Self {
         let (my_signing_nonce, my_commitment) =
-            frost_ed25519::round1::commit(&key_package.signing_share(), &mut rng);
+            frost_ed25519::round1::commit(key_package.signing_share(), &mut rng);
 
         Self {
             key_package,
