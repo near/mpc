@@ -7,26 +7,33 @@ votes on the contract update.
 Verifies that the update was executed.
 """
 
+import json
 import sys
 import time
 import pathlib
 import pytest
-from utils import load_binary_file
+from utils import MetricsTracker, load_binary_file
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-from common_lib import shared, contracts
+from common_lib import shared
+from common_lib.contracts import V0_CONTRACT_PATH, CURRENT_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, UpdateArgsV0, UpdateArgsV1, ConfigV1
 
 
-@pytest.mark.parametrize(
-    "initial_contract_path,update_contract_path",
-    [(contracts.V0_CONTRACT_PATH, contracts.CURRENT_CONTRACT_PATH),
-     (contracts.V1_CONTRACT_PATH, contracts.CURRENT_CONTRACT_PATH),
-     (contracts.CURRENT_CONTRACT_PATH, contracts.MIGRATE_CURRENT_CONTRACT_PATH)
-     ],
-    ids=["v0 to current", "v1 to current", "current to v2_altered"])
-def test_contract_update(initial_contract_path, update_contract_path):
+@pytest.mark.parametrize("initial_contract_path,update_args", [
+    pytest.param(V0_CONTRACT_PATH,
+                 UpdateArgsV0(CURRENT_CONTRACT_PATH),
+                 id="update v0 to current"),
+    pytest.param(CURRENT_CONTRACT_PATH,
+                 UpdateArgsV1(code_path=MIGRATE_CURRENT_CONTRACT_PATH),
+                 id="update current code"),
+    pytest.param(CURRENT_CONTRACT_PATH,
+                 UpdateArgsV1(code_path=None,
+                              config=ConfigV1(max_num_requests_to_remove=2,
+                                              request_timeout_blocks=10)),
+                 id="update current config"),
+])
+def test_contract_update(initial_contract_path, update_args):
     initial_contract = load_binary_file(initial_contract_path)
-    update_contract = load_binary_file(update_contract_path)
     cluster = shared.start_cluster_with_mpc(2, 2, 1, initial_contract)
     # assert correct contract is deployed
     cluster.assert_is_deployed(initial_contract)
@@ -34,11 +41,82 @@ def test_contract_update(initial_contract_path, update_contract_path):
     # do some requests
     cluster.send_and_await_signature_requests(2)
     # propose v1
-    cluster.propose_update(update_contract)
+    cluster.propose_update(update_args.borsh_serialize())
     cluster.vote_update(0, 0)
     cluster.vote_update(1, 0)
     ## wait for the transaction to be included
     time.sleep(2)
     # assert v1 is now deployed
-    cluster.assert_is_deployed(update_contract)
+    if update_args.code is not None:
+        print("ensuring contract code is updated")
+        cluster.assert_is_deployed(update_args.code)
+    else:
+        print("ensuring config is updated")
+        expected_config = update_args.dump_json()
+        deployed_config = cluster.get_config()
+        assert deployed_config == expected_config
+    print("update completed")
     cluster.send_and_await_signature_requests(2)
+
+
+# In case a nonce conflict occurs during a vote_update call, rerun the test once.
+@pytest.mark.flaky(reruns=1, reruns_delay=2)
+@pytest.mark.parametrize("initial_contract_path,update_args", [
+    pytest.param(V0_CONTRACT_PATH,
+                 UpdateArgsV0(CURRENT_CONTRACT_PATH),
+                 id="update v0 to current"),
+])
+def test_contract_update_trailing_sigs(initial_contract_path, update_args):
+    """
+    Tests if signatures submitted to V1 that are a response to requests submitted to V0 are successully handled by the contract.
+    """
+    num_requests = 100
+    initial_contract = load_binary_file(initial_contract_path)
+    cluster = shared.start_cluster_with_mpc(2, 2, 1, initial_contract)
+
+    # assert correct contract is deployed
+    cluster.assert_is_deployed(initial_contract)
+    cluster.init_contract(threshold=2)
+    # propose and vote on contract update (avoid nonce conflicts)
+    time.sleep(2)
+    cluster.propose_update(update_args.borsh_serialize())
+    time.sleep(2)
+    cluster.vote_update(0, 0)
+    # do some requests
+    started = time.time()
+    metrics = [MetricsTracker(node.near_node) for node in cluster.mpc_nodes]
+    tx_hashes, tx_sent = cluster.generate_and_send_signature_requests(
+        num_requests)
+    print(f"sent {num_requests} signature requests")
+    cluster.observe_signature_requests(started, metrics, tx_sent)
+    cluster.vote_update(1, 0)
+    time.sleep(2)
+    if update_args.code is not None:
+        print("ensuring contract code is updated")
+        cluster.assert_is_deployed(update_args.code)
+    else:
+        print("ensuring config is updated")
+        expected_config = update_args.dump_json()
+        deployed_config = cluster.get_config()
+        assert deployed_config == expected_config
+    print("update completed")
+
+    class VerificationHelper:
+
+        def __init__(self):
+            self.num_trailing_sigs = 0
+
+        def verify(self, tx_res):
+            shared.assert_signature_success(tx_res)
+            target = "This function is deprecated and shall only be called to handle signature requests submitted to V0 contract"
+            if target in json.dumps(tx_res):
+                self.num_trailing_sigs += 1
+
+        def final_verification(self):
+            print(f"Found {self.num_trailing_sigs} trailing signatures")
+            assert self.num_trailing_sigs > 0, "failed to find trailing signatures"
+
+    results = cluster.await_signature_response(tx_hashes)
+    verif_helper = VerificationHelper()
+    shared.verify_txs(results, verif_helper.verify)
+    verif_helper.final_verification()

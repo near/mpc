@@ -20,10 +20,10 @@ class HandleTestResult():
 
     def handle_result(self, res):
         self.res.append(res)
-        if res.get('result', {}).get('status',
-                                     {}).get('SuccessValue') is not None:
+        try:
+            shared.assert_txn_success(res)
             self.num_successes += 1
-        else:
+        except:
             self.num_failures += 1
 
     def finalize(self):
@@ -49,12 +49,11 @@ def test_contract_state_cleanup(num_requests, num_respond_access_keys):
 
     Note that this test is slow.
     """
-    cluster = shared.start_cluster_with_mpc(
-        2,
-        2,
-        num_respond_access_keys,
-        load_mpc_contract(),
-        additional_init_args={'request_timeout': 0})
+
+    cluster = shared.start_cluster_with_mpc(2, 2, num_respond_access_keys,
+                                            load_mpc_contract())
+    init_args = {'init_config': {'request_timeout_blocks': 0}}
+    cluster.init_contract(threshold=2, additional_init_args=init_args)
     result_handler = HandleTestResult(num_requests=num_requests,
                                       expected_failures=num_requests - 1)
     cluster.send_and_await_signature_requests(

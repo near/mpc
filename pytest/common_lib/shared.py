@@ -27,7 +27,6 @@ from transaction import create_create_account_action, create_payment_action, \
 from key import Key
 
 from .constants import NEAR_BASE, mpc_binary_path, TGAS, TIMEOUT
-from .contracts import ProposeUpdateArgs
 
 import time
 
@@ -46,6 +45,13 @@ class SafeLoaderIgnoreUnknown(yaml.SafeLoader):
 SafeLoaderIgnoreUnknown.add_multi_constructor('!', ignore_unknown)
 
 import hashlib
+
+
+def assert_txn_success(res):
+    assert 'result' in res, json.dumps(res, indent=1)
+    assert 'status' in res['result'], json.dumps(res['result'], indent=1)
+    assert 'SuccessValue' in res['result']['status'], json.dumps(
+        res['result']['status'])
 
 
 class NearNode:
@@ -70,10 +76,8 @@ class NearNode:
 
     def send_txn_and_check_success(self, txn, timeout=20):
         res = self.near_node.send_tx_and_wait(txn, timeout)
-        assert 'result' in res, res
-        assert 'status' in res['result'], res['result']
-        assert 'SuccessValue' in res['result']['status'], res['result'][
-            'status']
+        assert_txn_success(res)
+        return res
 
     def get_nonce(self):
         return self.near_node.get_nonce_for_pk(
@@ -105,33 +109,13 @@ class MpcNode(NearNode):
 
 
 def assert_signature_success(res):
-    try:
-        signature_base64 = res['result']['status']['SuccessValue']
-        while len(signature_base64) % 4 != 0:
-            signature_base64 += '='
-        signature = base64.b64decode(signature_base64)
-        signature = json.loads(signature)
-        print("SUCCESS! Signature:", signature)
-        assert True
-    except Exception as e:
-        print("Failed to get signature:", e)
-        print("Response:", json.dumps(res, indent=1))
-        assert False
-
-
-def assert_signature_failure(res):
-    try:
-        signature_base64 = res['result']['status']['SuccessValue']
-        while len(signature_base64) % 4 != 0:
-            signature_base64 += '='
-        signature = base64.b64decode(signature_base64)
-        signature = json.loads(signature)
-        print("Signature succeeded, but expected failure:", signature)
-        print("Response:", json.dumps(res, indent=1))
-        assert False
-    except Exception as e:
-        print("As exptected, failed to get signature:", e)
-        assert True
+    assert_txn_success(res)
+    signature_base64 = res['result']['status']['SuccessValue']
+    while len(signature_base64) % 4 != 0:
+        signature_base64 += '='
+    signature = base64.b64decode(signature_base64)
+    signature = json.loads(signature)
+    print("SUCCESS! Signature:", signature)
 
 
 class MpcCluster:
@@ -181,7 +165,7 @@ class MpcCluster:
     the contract is usable.
     """
 
-    def init_contract(self, threshold):
+    def init_contract(self, threshold, additional_init_args=None):
         args = {
             'threshold': threshold,
             'candidates': {
@@ -189,6 +173,8 @@ class MpcCluster:
                 for node in self.mpc_nodes
             },
         }
+        if additional_init_args is not None:
+            args.update(additional_init_args)
         tx = self.contract_node.sign_tx(self.contract_node.account_id(),
                                         'init', args)
         self.contract_node.send_txn_and_check_success(tx)
@@ -228,9 +214,10 @@ class MpcCluster:
             tx_hashes = list(executor.map(send_tx, txs))
         return tx_hashes
 
-    def send_and_await_signature_requests(self, num_requests):
+    def send_and_await_signature_requests(
+            self, num_requests, sig_verification=assert_signature_success):
         """
-            Sends signature requests and waits for the results.
+            Sends `num_requests` signature requests and waits for the results.
         
             Each result is processed by the callback function `sig_verification`, which defaults to `assert_signature_success`.
             If a failure is expected, use `assert_signature_failure` instead. Custom callback functions can also be provided.
@@ -250,20 +237,35 @@ class MpcCluster:
         """
         started = time.time()
         metrics = [MetricsTracker(node.near_node) for node in self.mpc_nodes]
+        tx_hashes, tx_sent = self.generate_and_send_signature_requests(
+            num_requests)
+        print("Sent signature requests, tx_hashes:", tx_hashes)
 
-        # Construct signature requests
+        self.observe_signature_requests(started, metrics, tx_sent)
+        results = self.await_signature_response(tx_hashes)
+        verify_txs(results, sig_verification)
+        res = [
+            metric.get_int_metric_value('mpc_num_sign_responses_timed_out')
+            for metric in metrics
+        ]
+        print("Number of nonce conflicts which occurred:", res)
+
+    def generate_and_send_signature_requests(self, num_requests):
+        """
+            Sends signature requests and returns the transactions and the timestamp they were sent.
+        """
         payloads = [[
             i, 1, 2, 0, 4, 5, 6, 8, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
             19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 44
         ] for i in range(num_requests)]
         txs = self.make_sign_request_txns(payloads)
-        tx_sent = time.time()
-        tx_hashes = self.send_sign_request_txns(txs)
-        print("Sent signature requests, tx_hashes:", tx_hashes)
+        return self.send_sign_request_txns(txs), time.time()
 
-        print("Sent signature requests, tx_hashes:", tx_hashes)
-        # Wait for the indexers to observe the signature requests
-        # In case num_requests > 1, some txs may not be included due to nonce conflicts
+    def observe_signature_requests(self, started, metrics, tx_sent):
+        """
+        Wait for the indexers to observe the signature requests
+        In case num_requests > 1, some txs may not be included due to nonce conflicts
+        """
         while True:
             assert time.time() - started < TIMEOUT, "Waiting for mpc indexers"
             try:
@@ -272,8 +274,7 @@ class MpcCluster:
                     for metric in metrics
                 ]
                 print("Indexers num_signature_requests:", res)
-                if all(x and x >= 1 for x in res):
-                    #if res2 and res2 >= 1 and res3 and res3 >= 1:
+                if all(x and x >= 1 for x in res):  # todo: only request >= 1?
                     tx_indexed = time.time()
                     print("Indexer latency: ", tx_indexed - tx_sent)
                     break
@@ -281,7 +282,10 @@ class MpcCluster:
                 pass
             time.sleep(1)
 
-        # Wait for all of the transactions to have results
+    def await_signature_response(self, tx_hashes):
+        """
+        sends signature requests without waiting for the result
+        """
         for _ in range(20):
             try:
                 results = []
@@ -289,46 +293,13 @@ class MpcCluster:
                     res = self.contract_node.get_tx(tx_hash)
                     results.append(res)
                     time.sleep(0.1)
-                break
+                return results
             except Exception as e:
                 print(e)
             time.sleep(1)
-        max_gas_used = 0
-        total_gas = 0
-        total_receipts = 0
-        num_txs = 0
-        for res in results:
-            num_txs += 1
-            # Extract the gas burnt at transaction level
-            total_gas_used = res["result"]["transaction_outcome"]["outcome"][
-                "gas_burnt"]
 
-            # Add the gas burnt for each receipt
-            num_receipts = 0
-            for receipt in res["result"]["receipts_outcome"]:
-                total_gas_used += receipt["outcome"]["gas_burnt"]
-                num_receipts += 1
-            Tgas = 10**12  # 1 Tgas = 10^12 gas units
-            max_gas_used = max(max_gas_used, total_gas_used) / Tgas
-            total_gas += total_gas_used / Tgas
-
-            total_receipts += num_receipts
-            sig_verification(res)
-        print("max gas used (Tgas):", max_gas_used, "average receipts:",
-              total_receipts / num_txs, "average gas used (Tgas):",
-              total_gas / num_txs)
-        res = [
-            metric.get_int_metric_value('mpc_num_sign_responses_timed_out')
-            for metric in metrics
-        ]
-        print("Number of nonce conflicts which occurred:", res)
-
-    def propose_update(self, code):
+    def propose_update(self, args):
         participant = self.mpc_nodes[0]
-        args = ProposeUpdateArgs.build({
-            'code': code,
-            'config': None,
-        })
         tx = participant.sign_tx(self.mpc_contract_account(),
                                  'propose_update',
                                  args,
@@ -386,7 +357,48 @@ class MpcCluster:
     def assert_is_deployed(self, contract):
         hash_expected = hashlib.sha256(contract).hexdigest()
         hash_deployed = self.get_deployed_contract_hash()
-        assert (hash_expected == hash_deployed)
+        assert (hash_expected == hash_deployed), "invalid contract deployed"
+
+    # only works with V1
+    def get_config(self):
+        node_id = 0
+        contract_account = self.mpc_contract_account()
+        node = self.mpc_nodes[node_id]
+        tx = node.sign_tx(self.mpc_contract_account(), 'get_config_v1',
+                          json.dumps("").encode('utf-8'))
+        res = node.send_txn_and_check_success(tx)
+        return json.dumps(
+            json.loads(
+                base64.b64decode(
+                    res['result']['status']['SuccessValue']).decode('utf-8')))
+
+
+def verify_txs(results, verification_callback):
+    max_gas_used = 0
+    total_gas = 0
+    total_receipts = 0
+    num_txs = 0
+    for res in results:
+        num_txs += 1
+        # Extract the gas burnt at transaction level
+        total_gas_used = res["result"]["transaction_outcome"]["outcome"][
+            "gas_burnt"]
+
+        # Add the gas burnt for each receipt
+        num_receipts = 0
+        for receipt in res["result"]["receipts_outcome"]:
+            total_gas_used += receipt["outcome"]["gas_burnt"]
+            num_receipts += 1
+        Tgas = 10**12  # 1 Tgas = 10^12 gas units
+        max_gas_used = max(max_gas_used, total_gas_used) / Tgas
+        total_gas += total_gas_used / Tgas
+
+        total_receipts += num_receipts
+        verification_callback(res)
+
+    print(
+        f"number of txs: {num_txs}\n max gas used (Tgas):{max_gas_used}\n average receipts: {total_receipts / num_txs}\n average gas used (Tgas): {total_gas / num_txs}\n"
+    )
 
 
 # Output is deserializable into the rust type near_crypto::SecretKey
@@ -411,11 +423,8 @@ def sign_create_account_with_multiple_access_keys_tx(creator_key,
     return serialize_transaction(signed_tx)
 
 
-def start_cluster_with_mpc(num_validators,
-                           num_mpc_nodes,
-                           num_respond_aks,
-                           contract,
-                           additional_init_args=None):
+def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
+                           contract):
     rpc_polling_config = {
         "rpc": {
             "polling_config": {

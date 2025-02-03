@@ -12,6 +12,7 @@ pub mod hpke {
 #[derive(BorshSerialize, BorshDeserialize, BorshStorageKey, Hash, Clone, Debug, PartialEq, Eq)]
 #[borsh(crate = "near_sdk::borsh")]
 pub enum StorageKey {
+    // for backwards compatibility, ensure the order is preserved and only append to this list
     PendingRequests,
     ProposedUpdatesEntries,
     RequestsByTimestamp,
