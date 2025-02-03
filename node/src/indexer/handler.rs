@@ -75,7 +75,7 @@ async fn handle_message(
     mpc_contract_id: &AccountId,
     _account_public_key: &Option<PublicKey>,
     sign_request_sender: mpsc::UnboundedSender<ChainSignatureRequest>,
-    indexer_state: Arc<IndexerState>,
+    _indexer_state: Arc<IndexerState>,
 ) -> anyhow::Result<()> {
     let block_height = streamer_message.block.header.height;
     let mut stats_lock = stats.lock().await;
@@ -83,7 +83,6 @@ async fn handle_message(
     drop(stats_lock);
 
     let mut signature_requests = vec![];
-    let my_tx_nonces = vec![];
 
     for shard in streamer_message.shards {
         for outcome in shard.receipt_execution_outcomes {
@@ -102,19 +101,6 @@ async fn handle_message(
                 });
             }
         }
-
-        // TODO(#153): fix or remove this
-        /*if let Some(account_public_key) = account_public_key {
-            if let Some(chunk) = &shard.chunk {
-                for tx in &chunk.transactions {
-                    if tx.transaction.public_key == *account_public_key {
-                        let nonce = tx.transaction.nonce;
-                        metrics::MPC_ACCESS_KEY_NONCE.set(nonce as i64);
-                        my_tx_nonces.push(nonce);
-                    }
-                }
-            }
-        }*/
     }
 
     crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height as i64);
@@ -124,10 +110,6 @@ async fn handle_message(
         if let Err(err) = sign_request_sender.send(request) {
             tracing::error!(target: "mpc", %err, "error sending sign request to mpc node");
         }
-    }
-
-    for nonce in my_tx_nonces {
-        indexer_state.insert_nonce(nonce);
     }
 
     let mut stats_lock = stats.lock().await;

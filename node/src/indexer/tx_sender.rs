@@ -1,11 +1,15 @@
 use super::tx_signer::{TransactionSigner, TransactionSigners};
+use super::types::ChainGetPendingRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
-use super::Nonce;
 use crate::config::RespondConfigFile;
 use crate::metrics;
+use mpc_contract::primitives::YieldIndex;
+use near_client::Query;
 use near_crypto::SecretKey;
+use near_indexer_primitives::types::Gas;
 use near_indexer_primitives::types::{BlockReference, Finality};
+use near_indexer_primitives::views::{QueryRequest, QueryResponseKind};
 use near_o11y::WithSpanContextExt;
 use near_sdk::AccountId;
 use std::num::NonZeroUsize;
@@ -20,31 +24,33 @@ async fn submit_tx(
     indexer_state: Arc<IndexerState>,
     method: String,
     params_ser: String,
-) -> Option<Nonce> {
+    gas: Gas,
+) -> bool {
     let Ok(Ok(block)) = indexer_state
         .view_client
         .send(near_client::GetBlock(BlockReference::Finality(Finality::Final)).with_span_context())
         .await
     else {
         tracing::warn!(target = "mpc", "failed to get block hash to send tx");
-        return None;
+        return false;
     };
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),
         method,
         params_ser.into(),
+        gas,
         block.header.hash,
         block.header.height,
     );
 
-    let nonce = transaction.transaction.nonce();
+    let tx_hash = transaction.get_hash();
     tracing::info!(
         target = "mpc",
-        "sending tx {:?}with ak={} nonce={}",
-        transaction.get_hash(),
+        "sending tx {:?} with ak={} nonce={}",
+        tx_hash,
         tx_signer.public_key(),
-        nonce,
+        transaction.transaction.nonce(),
     );
 
     let result = indexer_state
@@ -64,7 +70,7 @@ async fn submit_tx(
             // We're not a validator, so we should always be routing the transaction.
             near_client::ProcessTxResponse::RequestRouted => {
                 metrics::MPC_NUM_SIGN_RESPONSES_SENT.inc();
-                Some(nonce)
+                true
             }
             _ => {
                 metrics::MPC_NUM_SIGN_RESPONSES_FAILED_TO_SEND_IMMEDIATELY.inc();
@@ -73,13 +79,65 @@ async fn submit_tx(
                     "Failed to send response tx: unexpected ProcessTxResponse: {:?}",
                     response
                 );
-                None
+                false
             }
         },
         Err(err) => {
             metrics::MPC_NUM_SIGN_RESPONSES_FAILED_TO_SEND_IMMEDIATELY.inc();
             tracing::error!(target: "mpc", "Failed to send response tx: {:?}", err);
-            None
+            false
+        }
+    }
+}
+
+/// Confirms whether the intended effect of the transaction request has been observed on chain.
+/// Used to decide whether to re-submit the transaction.
+async fn confirm_tx_result(
+    indexer_state: Arc<IndexerState>,
+    request: &ChainSendTransactionRequest,
+) -> anyhow::Result<bool> {
+    match request {
+        ChainSendTransactionRequest::Respond(respond_args) => {
+            // Confirm whether the respond call succeeded by checking whether the
+            // pending signature request still exists in the contract state
+            let get_pending_request_args: Vec<u8> =
+                serde_json::to_string(&ChainGetPendingRequestArgs {
+                    request: respond_args.request.clone(),
+                })
+                .unwrap()
+                .into_bytes();
+            let query_response = indexer_state
+                .view_client
+                .send(
+                    Query {
+                        block_reference: BlockReference::Finality(Finality::Final),
+                        request: QueryRequest::CallFunction {
+                            account_id: indexer_state.mpc_contract_id.clone(),
+                            method_name: "get_pending_request".to_string(),
+                            args: get_pending_request_args.into(),
+                        },
+                    }
+                    .with_span_context(),
+                )
+                .await??;
+            match query_response.kind {
+                QueryResponseKind::CallResult(call_result) => {
+                    let result = serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)?;
+                    Ok(result.is_none())
+                }
+                _ => {
+                    anyhow::bail!("Unexpected result from a view client function call");
+                }
+            }
+        }
+        ChainSendTransactionRequest::Join(_) => {
+            anyhow::bail!("not implemented");
+        }
+        ChainSendTransactionRequest::VotePk(_) => {
+            anyhow::bail!("not implemented");
+        }
+        ChainSendTransactionRequest::VoteReshared(_) => {
+            anyhow::bail!("not implemented");
         }
     }
 }
@@ -90,32 +148,43 @@ async fn submit_tx(
 async fn ensure_send_transaction(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
-    method: String,
+    request: ChainSendTransactionRequest,
     params_ser: String,
     timeout: Duration,
     num_attempts: NonZeroUsize,
 ) {
     for _ in 0..num_attempts.into() {
-        let Some(nonce) = submit_tx(
+        if !submit_tx(
             tx_signer.clone(),
             indexer_state.clone(),
-            method.clone(),
+            request.method().to_string(),
             params_ser.clone(),
+            request.gas_required(),
         )
         .await
-        else {
-            // If the response fails to send immediately, wait a short period and try again
+        {
+            // If the transaction fails to send immediately, wait a short period and try again
             time::sleep(Duration::from_secs(1)).await;
             continue;
         };
 
-        // If the transaction is sent, wait the full timeout then check if it got included
+        // Allow time for the transaction to be included
         time::sleep(timeout).await;
-        if indexer_state.has_nonce(nonce) {
-            metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
-            return;
+        // Then try to check whether it had the intended effect
+        match confirm_tx_result(indexer_state.clone(), &request).await {
+            Ok(true) => {
+                metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
+                return;
+            }
+            Ok(false) => {
+                metrics::MPC_NUM_SIGN_RESPONSES_TIMED_OUT.inc();
+                continue;
+            }
+            Err(err) => {
+                tracing::warn!(target:"mpc", %err, "encountered error trying to confirm result of transaction {:?}", request);
+                return;
+            }
         }
-        metrics::MPC_NUM_SIGN_RESPONSES_TIMED_OUT.inc();
     }
 }
 
@@ -141,11 +210,10 @@ pub(crate) async fn handle_txn_requests(
             ensure_send_transaction(
                 tx_signer.clone(),
                 indexer_state.clone(),
-                tx_request.method().to_string(),
+                tx_request,
                 txn_json,
                 Duration::from_secs(10),
-                // TODO(#153): until nonce detection is fixed, this *must* be 1
-                NonZeroUsize::new(1).unwrap(),
+                NonZeroUsize::new(3).unwrap(),
             )
             .await;
         });

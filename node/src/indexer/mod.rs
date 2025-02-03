@@ -12,14 +12,10 @@ pub mod types;
 
 use handler::ChainSignatureRequest;
 use near_indexer_primitives::types::AccountId;
-use near_indexer_primitives::types::Nonce;
 use participants::ContractState;
-use std::num::NonZeroUsize;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 use types::ChainSendTransactionRequest;
-
-const RECENT_NONCES_CACHE_SIZE: usize = 10000;
 
 pub(crate) struct IndexerState {
     /// ViewClientActor address
@@ -28,9 +24,6 @@ pub(crate) struct IndexerState {
     client: actix::Addr<near_client::ClientActor>,
     /// AccountId for the mpc contract
     mpc_contract_id: AccountId,
-    /// Nonces observed in on-chain transactions signed with
-    /// the local mpc node's near account access key
-    pub my_nonces: Mutex<lru::LruCache<Nonce, ()>>,
 }
 
 impl IndexerState {
@@ -43,20 +36,7 @@ impl IndexerState {
             view_client,
             client,
             mpc_contract_id,
-            my_nonces: Mutex::new(lru::LruCache::new(
-                NonZeroUsize::new(RECENT_NONCES_CACHE_SIZE).unwrap(),
-            )),
         }
-    }
-
-    pub fn insert_nonce(self: &Arc<Self>, nonce: Nonce) {
-        let mut cache = self.my_nonces.lock().expect("poisoned lock");
-        cache.put(nonce, ());
-    }
-
-    pub fn has_nonce(self: &Arc<Self>, nonce: Nonce) -> bool {
-        let cache = self.my_nonces.lock().expect("poisoned lock");
-        cache.contains(&nonce)
     }
 }
 
