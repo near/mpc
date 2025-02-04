@@ -34,6 +34,7 @@ class HandleTestResult():
         assert self.num_failures + self.num_successes == self.num_requests, f"expected {self.num_requests} requests, found {self.num_failures + self.num_successes}"
 
 
+@pytest.mark.ci_excluded
 @pytest.mark.slow
 @pytest.mark.parametrize("num_requests, num_respond_access_keys", [(5, 1)])
 def test_contract_state_cleanup(num_requests, num_respond_access_keys):

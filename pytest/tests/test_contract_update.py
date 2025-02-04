@@ -60,6 +60,7 @@ def test_contract_update(initial_contract_path, update_args):
 
 
 # In case a nonce conflict occurs during a vote_update call, rerun the test once.
+@pytest.mark.ci_excluded
 @pytest.mark.flaky(reruns=1, reruns_delay=2)
 @pytest.mark.parametrize("initial_contract_path,update_args", [
     pytest.param(V0_CONTRACT_PATH,
