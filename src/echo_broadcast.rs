@@ -111,7 +111,7 @@ pub async fn reliable_broadcast_receive_all (
                     continue;
                 }
                 // upon receiving a send message, echo it
-                chan.send_many(wait, &MessageType::Echo(data)).await;
+                chan.send_many(wait, &(&sid, &MessageType::Echo(data))).await;
                 finish_send[sid] = true;
                 // activate the boolean saying that *me* want to deliver echo
                 // to all participants including myself
@@ -125,10 +125,11 @@ pub async fn reliable_broadcast_receive_all (
                     continue;
                 }
                 fail_success_echo[sid][data as usize] += 1;
+
                 // upon gathering strictly more than (n+f)/2 votes
                 // for a result, deliver (READY, vote)
                 if fail_success_echo[sid][data as usize] > echo_t{
-                    chan.send_many(wait,  &MessageType::Ready(data)).await;
+                    chan.send_many(wait,   &(&sid, &MessageType::Ready(data))).await;
                     // state that the echo phase for session id (sid) is done
                     finish_echo[sid] = true;
                     // activate the boolean saying that *me* wants to deliver ready
@@ -137,6 +138,7 @@ pub async fn reliable_broadcast_receive_all (
                 }
             },
             MessageType::Ready(data) => {
+
                 // skip if I received echo message from the sender in session sid
                 if !seen_ready[sid].put(from) || finish_ready[sid] {
                     continue;
@@ -148,7 +150,7 @@ pub async fn reliable_broadcast_receive_all (
                 // and if I haven't already amplified ready vote in session sid then
                 // proceed to amplification of the ready message
                 if fail_success_ready[sid][data as usize] > ready_t && finish_amplification[sid] == false{
-                    chan.send_many(wait, &MessageType::Ready(data)).await;
+                    chan.send_many(wait,  &(&sid, &MessageType::Ready(data))).await;
                     finish_amplification[sid] = true;
                     // activate the boolean saying that *me* wants to deliver ready
                     // to all participants including myself
@@ -201,7 +203,7 @@ async fn prepare_vote(
                 *vote = MessageType::Send(data.clone());
             }
             _ => return Err(ProtocolError::AssertionFailed(
-                        format!("The function reliable_broadcast_receive_all is expected to be called reliable_broadcast_send")
+                        format!("The function reliable_broadcast_receive_all is expected to be called reliable_broadcast_send {me:?}")
                         )),
         }
     } else if *echo_activated {
@@ -210,7 +212,7 @@ async fn prepare_vote(
         *vote = match vote {
             MessageType::Send(data) =>  MessageType::Echo(*data),
             _ =>  return Err(ProtocolError::AssertionFailed(
-                format!("Message is not of type Send! Exiting.")
+                format!("Message is not of type Send! Exiting {me:?}.")
                 )),
         }
     } else if *ready_activated {
@@ -218,8 +220,9 @@ async fn prepare_vote(
         *from = me.clone();
         *vote = match vote {
             MessageType::Echo(data) =>  MessageType::Ready(*data),
+            MessageType::Ready(data) => MessageType::Ready(*data),
             _ => return Err(ProtocolError::AssertionFailed(
-                format!("Message is not of type Echo! Exiting.")
+                format!("Message is neither of type Echo nor Ready (amplify) ! Exiting {me:?}.")
                 )),
         }
     } else {
