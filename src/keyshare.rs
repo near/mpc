@@ -5,136 +5,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::compat::CSCurve;
 use crate::crypto::{commit, hash, Digest};
+use crate::echo_broadcast::{reliable_broadcast_send, reliable_broadcast_receive_all};
 use crate::math::{GroupPolynomial, Polynomial};
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
 use crate::proofs::dlog;
-use crate::protocol::internal::{make_protocol, Context, SharedChannel, Waitpoint};
+use crate::protocol::internal::{make_protocol, Context, SharedChannel};
 use crate::protocol::{InitializationError, Participant, Protocol, ProtocolError};
 use crate::serde::encode;
 
 const LABEL: &[u8] = b"cait-sith v0.8.0 keygen";
-
-#[derive(Serialize, Deserialize, Debug)]
-enum MessageType {
-    Send(bool),
-    Echo(bool),
-    Ready(bool),
-}
-
-/// This reliable broadcast function is the echo-broadcast protocol from the sender side.
-/// It broadcasts either true or false and expects that the output of the broadcasts be the same as the input data
-/// This function is expected to be applied to ensure either all (honest) nodes succeed a specific protocol or they fail
-pub async fn reliable_broadcast_sender (
-    chan: &SharedChannel,
-    wait: Waitpoint,
-    participants: &ParticipantList,
-    me: &Participant,
-    data: bool,
-) -> Result<bool, ProtocolError> {
-    // Send vote to all participants
-    // CAREFUL: send_many seems to send to everybody but myself!
-    todo!("This must be addressed!");
-    chan.send_many(wait,  &MessageType::Send(data)).await;
-
-    let vote = reliable_broadcast_receiver(chan, wait, participants, me).await;
-    // Something is wrong if I am the sender and the reliable broadcast output something different than what I sent
-    if data != vote {
-        let err = "The broadcast is faulty or there are more malicious adversaries than the assumed threshold".to_string();
-            return Err(ProtocolError::AssertionFailed(err));
-        };
-    return Ok(vote)
-}
-
-
-/// This reliable broadcast function is the echo-broadcast protocol from the sender receiver side.
-/// It broadcasts either true or false and expects that the output of the broadcasts be the same as the input data
-pub async fn reliable_broadcast_receiver (
-    chan: &SharedChannel,
-    wait: Waitpoint,
-    participants: &ParticipantList,
-    sender: &Participant,
-) -> bool {
-    let n = participants.len();
-    // we should always have n >= 3*threshold + 1
-    let broadcast_threshold = match n % 3 {
-        0 => n/3 - 1,
-        _ => (n - (n % 3))/ 3,
-    };
-
-    let echo_threshold = (n+broadcast_threshold)/2;
-    let ready_threshold = broadcast_threshold;
-
-    let mut fail_success_echo = [0, 0];
-    let mut fail_success_ready = [0, 0];
-    // no duplication: Every correct process "delivers" at most one message.
-    let mut seen_echo = ParticipantCounter::new(&participants);
-    let mut seen_ready = ParticipantCounter::new(&participants);
-
-    let mut finish_send = false;
-    let mut finish_echo = false;
-    let mut finish_ready = false;
-
-    loop {
-        // The recv should be failure-free and thus we skip if the sent message could not be
-        // deserialized properly
-        let (from, vote): (Participant, MessageType) = match chan.recv(wait).await{
-            Ok(value) => value,
-            _ => continue,
-        };
-
-        match vote {
-            // Receive send vote then echo to everybody
-            MessageType::Send(vote) => {
-                // if the sender is not the expected one
-                // or if the sender already sent the msg
-                // then skip
-                if from != *sender || finish_send == true {
-                    continue;
-                }
-                // upon receiving a send message, echo it
-                finish_send = true;
-                chan.send_many(wait, &MessageType::Echo(vote)).await;
-            },
-            // Receive send vote then echo to everybody
-            MessageType::Echo(vote) => {
-                // skip if I received echo message from the sender
-                // or if I had already passed to the ready phase
-                if !seen_echo.put(from) || finish_echo == true{
-                    continue;
-                }
-                fail_success_echo[vote as usize] += 1;
-                // upon gathering strictly more than (n+f)/2 votes
-                // for a result, deliver (READY, vote)
-                if fail_success_echo[vote as usize] > echo_threshold{
-                    chan.send_many(wait,  &MessageType::Ready(vote)).await;
-                    todo!("If send many does not send to myself then uncomment the next line")
-                    // fail_success_echo[vote as usize] += 1;
-                    finish_echo = true
-                }
-            },
-            MessageType::Ready(vote) => {
-                // skip if I received echo message from the sender
-                if !seen_ready.put(from){
-                    continue;
-                }
-                fail_success_ready [vote as usize] += 1;
-
-                // upon gathering strictly more than f votes
-                // and if I haven't already amplified ready then
-                // proceed to amplification of the ready message
-                if fail_success_ready[vote as usize] > ready_threshold && finish_ready == false{
-                    chan.send_many(wait, &MessageType::Ready(vote)).await;
-                    finish_ready = true;
-                }
-                if fail_success_ready[vote as usize] > 2*ready_threshold{
-                    return vote
-                }
-            },
-        }
-    }
-}
-
-
 
 async fn do_keyshare<C: CSCurve>(
     mut chan: SharedChannel,
@@ -336,46 +215,27 @@ async fn do_keyshare<C: CSCurve>(
 
     // create an array of many channel waitpoints
     // each channel waitpoint is affiliated to a participant being the initial sender
-    let wait_broadcast_array: Vec<Waitpoint> = (0..participants.len()).map(|_| chan.next_waitpoint()).collect();
-    let index_me = participants.index(me);
+    let wait_broadcast = chan.next_waitpoint();
     match err.is_empty() {
         // Need for consistent Broadcast to prevent adversary from sending
         // that it failed to some honest parties but not the others implying
         // that only some parties will drop out of the protocol but not others
         false => {
-
-            todo!("check whether the send_many sends to absolutely all participants or to all_but_me. I used it as send to all_including_me");
             // broadcast node me failed
-            reliable_broadcast_sender(&chan, wait_broadcast_array[index_me], &participants, &me, false).await?;
-            todo!("check same for broadcast_receiver");
-
-            // no need to wait for others outcomes as node me will stop
+            let send_vote = reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, false).await;
+            reliable_broadcast_receive_all (&chan, wait_broadcast, &participants, &me, send_vote).await?;
             return Err(ProtocolError::AssertionFailed(err));
         },
 
         true => {
-            // each party waits for every other party's echo broadcast message
             // broadcast node me succeded
-
-            reliable_broadcast_sender(&chan, wait_broadcast_array[index_me], &participants, &me, true).await?;
-
-            // collect the broadcast outputs from other parties who also echo broadcast their success/failure
-            // open parallel sessions
-            for sender in participants.others(me) {
-                let index_sender = participants.index(sender);
-                let is_success = reliable_broadcast_receiver(
-                                    &chan,
-                                    wait_broadcast_array[index_sender],
-                                    &participants,
-                                    &sender
-                                ).await;
-
-                if !is_success {
-                    return Err(ProtocolError::AssertionFailed(
-                        format!("Participant {sender:?} seems to have failed its checks. Aborting DKG!")
-                    ));
-                };
-            }
+            let send_vote = reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, true).await;
+            let is_success = reliable_broadcast_receive_all (&chan, wait_broadcast, &participants, &me, send_vote).await?;
+            if !is_success {
+                return Err(ProtocolError::AssertionFailed(
+                    format!("A participant seems to have failed its checks. Aborting DKG!")
+                ));
+            };
             // Wait for all the tasks to complete
             return Ok((x_i, big_x.into()))
         },
