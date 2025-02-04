@@ -39,10 +39,14 @@ pub(crate) async fn indexer_logger(
 
         let time_to_catch_the_tip_duration = if block_processing_speed > 0.0 {
             if let Ok(block_height) = fetch_latest_block(&view_client).await {
+                let blocks_behind = if block_height > stats_copy.last_processed_block_height {
+                    block_height - stats_copy.last_processed_block_height
+                } else {
+                    0 // We're ahead of the chain tip, no catching up needed
+                };
+
                 Some(std::time::Duration::from_millis(
-                    (((block_height - stats_copy.last_processed_block_height) as f64
-                        / block_processing_speed)
-                        * 1000f64) as u64,
+                    ((blocks_behind as f64 / block_processing_speed) * 1000f64) as u64,
                 ))
             } else {
                 None
@@ -58,7 +62,7 @@ pub(crate) async fn indexer_logger(
             stats_copy.block_heights_processing.len(),
             stats_copy.blocks_processed_count,
             block_processing_speed,
-            if let Some(duration) = time_to_catch_the_tip_duration {
+            if let Some(duration) = time_to_catch_the_tip_duration.filter(|d| d.as_secs() > 0) {
                 format!(
                     " | {} to catch up the tip",
                     humantime::format_duration(duration)
