@@ -44,6 +44,8 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     /// Returns the participant IDs of all nodes in the network that are currently alive.
     /// This is a subset of all_participant_ids, and includes our own participant ID.
     fn all_alive_participant_ids(&self) -> Vec<ParticipantId>;
+    /// Emits prometheus metrics regarding the state of connections to other MPC nodes
+    fn emit_metrics(&self);
 }
 
 /// The receiving side of the networking layer. It is expected that the node will run
@@ -148,6 +150,11 @@ impl MeshNetworkClient {
                 }
             }
         }
+    }
+
+    /// Emit network metrics through Prometheus counters
+    pub fn emit_metrics(&self) {
+        self.transport_sender.emit_metrics();
     }
 }
 
@@ -406,6 +413,10 @@ pub mod testing {
 
         fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
             self.all_participant_ids()
+        }
+
+        fn emit_metrics(&self) {
+            panic!("emit_metrics should not be called");
         }
     }
 
