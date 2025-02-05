@@ -36,7 +36,7 @@ use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 pub use state::{
     InitializingContractState, ProtocolContractState, ResharingContractState, RunningContractState,
 };
-const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(15);
+const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(50);
 
 // Register used to receive data id from `promise_await_data`.
 const DATA_ID_REGISTER: u64 = 0;
@@ -90,7 +90,7 @@ impl MpcContractV1 {
             i += 1;
         }
         let _ = self.request_by_block_height.drain(..i);
-        i
+        cmp::max(i, 1) - 1
     }
     fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) {
         self.request_by_block_height

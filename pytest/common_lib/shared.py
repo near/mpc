@@ -242,7 +242,7 @@ class MpcCluster:
         print("Sent signature requests, tx_hashes:", tx_hashes)
 
         self.observe_signature_requests(started, metrics, tx_sent)
-        results = self.await_signature_response(tx_hashes)
+        results = self.await_txs_responses(tx_hashes)
         verify_txs(results, sig_verification)
         res = [
             metric.get_int_metric_value('mpc_num_sign_responses_timed_out')
@@ -282,7 +282,7 @@ class MpcCluster:
                 pass
             time.sleep(1)
 
-    def await_signature_response(self, tx_hashes):
+    def await_txs_responses(self, tx_hashes):
         """
         sends signature requests without waiting for the result
         """
@@ -360,9 +360,7 @@ class MpcCluster:
         assert (hash_expected == hash_deployed), "invalid contract deployed"
 
     # only works with V1
-    def get_config(self):
-        node_id = 0
-        contract_account = self.mpc_contract_account()
+    def get_config(self, node_id=0):
         node = self.mpc_nodes[node_id]
         tx = node.sign_tx(self.mpc_contract_account(), 'config',
                           json.dumps("").encode('utf-8'))
@@ -372,32 +370,46 @@ class MpcCluster:
                 base64.b64decode(
                     res['result']['status']['SuccessValue']).decode('utf-8')))
 
+    def remove_timed_out_requests(self, node_id=0):
+        node = self.mpc_nodes[node_id]
+        tx = node.sign_tx(self.mpc_contract_account(),
+                          'remove_timed_out_requests',
+                          json.dumps("").encode('utf-8'))
+        res = node.send_txn_and_check_success(tx)
+        return res
+
+
+def extract_tx_costs(res):
+    """
+    returns `total_gas_used`, `num_receipts`
+    """
+    # Extract the gas burnt at transaction level
+    total_gas_used = res["result"]["transaction_outcome"]["outcome"][
+        "gas_burnt"]
+
+    # Add the gas burnt for each receipt
+    num_receipts = 0
+    for receipt in res["result"]["receipts_outcome"]:
+        total_gas_used += receipt["outcome"]["gas_burnt"]
+        num_receipts += 1
+    return total_gas_used, num_receipts
+
 
 def verify_txs(results, verification_callback):
-    max_gas_used = 0
-    total_gas = 0
+    max_tgas_used = 0
+    total_tgas = 0
     total_receipts = 0
     num_txs = 0
     for res in results:
         num_txs += 1
-        # Extract the gas burnt at transaction level
-        total_gas_used = res["result"]["transaction_outcome"]["outcome"][
-            "gas_burnt"]
-
-        # Add the gas burnt for each receipt
-        num_receipts = 0
-        for receipt in res["result"]["receipts_outcome"]:
-            total_gas_used += receipt["outcome"]["gas_burnt"]
-            num_receipts += 1
-        Tgas = 10**12  # 1 Tgas = 10^12 gas units
-        max_gas_used = max(max_gas_used, total_gas_used) / Tgas
-        total_gas += total_gas_used / Tgas
-
-        total_receipts += num_receipts
+        gas_tx, n_rcpts_tx = extract_tx_costs(res)
+        max_tgas_used = max(max_tgas_used, gas_tx) / TGAS
+        total_tgas += gas_tx / TGAS
+        total_receipts += n_rcpts_tx
         verification_callback(res)
 
     print(
-        f"number of txs: {num_txs}\n max gas used (Tgas):{max_gas_used}\n average receipts: {total_receipts / num_txs}\n average gas used (Tgas): {total_gas / num_txs}\n"
+        f"number of txs: {num_txs}\n max gas used (Tgas):{max_tgas_used}\n average receipts: {total_receipts / num_txs}\n average gas used (Tgas): {total_tgas / num_txs}\n"
     )
 
 
