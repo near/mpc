@@ -13,7 +13,7 @@ git submodule update --init --recursive --force
 2. Build nearcore and main node:
 ```bash
 # build nearcore:
-cd libs/nearcore && cargo build -p neard
+cd libs/nearcore && cargo build -p neard --release
 
 # build the contract:
 cd ../chain-signatures && cargo build -p mpc-contract --target=wasm32-unknown-unknown --release
@@ -37,6 +37,7 @@ pip install -r requirements.txt
 
 4. Run pytest:
 ```bash
+export NEAR_PYTEST_CONFIG="config.json"
 pytest # -v -s optional flags for verbosity
 ```
 

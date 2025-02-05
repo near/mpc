@@ -104,7 +104,7 @@ if [ $RESET_SUBMODULES == true ]; then
 fi
 
 printf "\nBuilding nearcore"
-if ! log_output bash -c "cd '$LIB_DIR/nearcore' && cargo build --quiet --color=always -p neard"; then
+if ! log_output bash -c "cd '$LIB_DIR/nearcore' && cargo build --quiet --color=always -p neard --release"; then
     echo "Cargo failed to complete nearcore compilation"
     exit 1
 fi
@@ -165,6 +165,10 @@ if $VERBOSE; then
     PYTEST_FLAGS="-s"
     printf "\nVerbose mode activated. Adding -s flag to pytest.\n"
 fi
+
+# set the NEAR config ensuring that the release version of nearcore is run.
+export NEAR_PYTEST_CONFIG="config.json"
+
 if ! log_output pytest $PYTEST_FLAGS; then
     printf '\nError: one or more tests failed. Check output.log for details.\n'
     exit 1
