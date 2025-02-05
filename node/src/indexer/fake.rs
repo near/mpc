@@ -2,7 +2,7 @@ use super::handler::ChainSignatureRequest;
 use super::participants::{
     ContractInitializingState, ContractResharingState, ContractRunningState, ContractState,
 };
-use super::response::{ChainRespondArgs, ChainSendTransactionRequest};
+use super::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use super::IndexerAPI;
 use crate::config::ParticipantsConfig;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};

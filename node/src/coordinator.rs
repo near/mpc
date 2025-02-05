@@ -4,9 +4,7 @@ use crate::indexer::handler::ChainSignatureRequest;
 use crate::indexer::participants::{
     ContractInitializingState, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::response::{
-    ChainSendTransactionRequest, ChainVotePkArgs, ChainVoteResharedArgs,
-};
+use crate::indexer::types::{ChainSendTransactionRequest, ChainVotePkArgs, ChainVoteResharedArgs};
 use crate::indexer::IndexerAPI;
 use crate::key_generation::{affine_point_to_public_key, run_key_generation_client};
 use crate::key_resharing::run_key_resharing_client;

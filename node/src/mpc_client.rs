@@ -1,6 +1,6 @@
 use crate::hkdf::derive_tweak;
 use crate::indexer::handler::ChainSignatureRequest;
-use crate::indexer::response::{ChainRespondArgs, ChainSendTransactionRequest};
+use crate::indexer::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};

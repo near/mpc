@@ -1,7 +1,7 @@
 use super::handler::listen_blocks;
 use super::participants::{monitor_chain_state, ContractState};
-use super::response::handle_txn_requests;
 use super::stats::{indexer_logger, IndexerStats};
+use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
 use crate::config::{load_respond_config_file, IndexerConfig};
 use near_crypto::SecretKey;
