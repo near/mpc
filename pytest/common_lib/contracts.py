@@ -2,12 +2,12 @@ import json
 from utils import load_binary_file
 
 from borsh_construct import Vec, U8, CStruct, U64, Option, U32
-from . import constants
+from .constants import MPC_REPO_DIR
 
-V0_CONTRACT_PATH = constants.mpc_repo_dir / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v0.wasm'
-V1_CONTRACT_PATH = constants.mpc_repo_dir / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v1.wasm'
-CURRENT_CONTRACT_PATH = constants.mpc_repo_dir / 'libs' / 'chain-signatures' / 'res' / 'mpc_contract.wasm'
-MIGRATE_CURRENT_CONTRACT_PATH = constants.mpc_repo_dir / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'migrate_from_v1.wasm'
+V0_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v0.wasm'
+V1_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v1.wasm'
+CURRENT_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'res' / 'mpc_contract.wasm'
+MIGRATE_CURRENT_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'migrate_from_v1.wasm'
 
 
 def load_mpc_contract() -> bytearray:

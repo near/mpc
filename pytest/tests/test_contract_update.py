@@ -117,7 +117,7 @@ def test_contract_update_trailing_sigs(initial_contract_path, update_args):
             print(f"Found {self.num_trailing_sigs} trailing signatures")
             assert self.num_trailing_sigs > 0, "failed to find trailing signatures"
 
-    results = cluster.await_signature_response(tx_hashes)
+    results = cluster.await_txs_responses(tx_hashes)
     verif_helper = VerificationHelper()
     shared.verify_txs(results, verif_helper.verify)
     verif_helper.final_verification()

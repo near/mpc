@@ -104,7 +104,7 @@ def test_remove_timed_out_requests(num_requests, num_respond_access_keys):
         num_requests)
     print(f"Sent {num_requests} signature requests")
     cluster.observe_signature_requests(started, metrics, tx_sent)
-    time.sleep(1)  # give the node a chance to update nonce
+    time.sleep(2)  # give the node a chance to update nonce
     res = cluster.remove_timed_out_requests()
     gas, _ = shared.extract_tx_costs(res)
     print("gas cost (Tgas)", gas / TGAS)

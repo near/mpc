@@ -12,6 +12,8 @@ from prometheus_client.parser import text_string_to_metric_families
 from multiprocessing import Pool
 from concurrent.futures import ThreadPoolExecutor
 
+from common_lib import constants
+
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 from cluster import BaseNode
@@ -26,7 +28,7 @@ from transaction import create_create_account_action, create_payment_action, \
 
 from key import Key
 
-from .constants import NEAR_BASE, mpc_binary_path, TGAS, TIMEOUT
+from .constants import NEAR_BASE, MPC_BINARY_PATH, TGAS, TIMEOUT
 
 import time
 
@@ -452,10 +454,14 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
         }
     }
 
+    def load_config():
+        with open(constants.CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+
     # Start a near network with extra observer nodes; we will use their
     # config.json, genesis.json, etc. to configure the mpc nodes' indexers
     nodes = start_cluster(
-        num_validators, num_mpc_nodes, 1, None,
+        num_validators, num_mpc_nodes, 1, load_config(),
         [["epoch_length", 1000], ["block_producer_kickout_threshold", 80]], {
             0: rpc_polling_config,
             1: rpc_polling_config
@@ -469,7 +475,7 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
     # Generate the mpc configs
     dot_near = pathlib.Path.home() / '.near'
     subprocess.run(
-        (mpc_binary_path, 'generate-test-configs', '--output-dir', dot_near,
+        (MPC_BINARY_PATH, 'generate-test-configs', '--output-dir', dot_near,
          '--participants', ','.join(f'test{i + num_validators}'
                                     for i in range(num_mpc_nodes)),
          '--threshold', str(num_mpc_nodes)))
@@ -546,7 +552,7 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
     # Start the mpc nodes
     for i, mpc_node in enumerate(cluster.mpc_nodes):
         home_dir = mpc_node.near_node.node_dir
-        cmd = (mpc_binary_path, 'start', '--home-dir', home_dir)
+        cmd = (MPC_BINARY_PATH, 'start', '--home-dir', home_dir)
         secret_store_key = str(chr(ord('A') + i) * 32)
         p2p_private_key = open(pathlib.Path(home_dir) / 'p2p_key').read()
         near_secret_key = json.loads(
