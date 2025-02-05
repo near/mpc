@@ -66,18 +66,18 @@ jobs:
 
           url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
 
-          mkdir -p target/debug
-          if ! curl -o target/debug/neard "${url}"; then
+          mkdir -p target/release
+          if ! curl -o target/release/neard "${url}"; then
             echo "curl failed with URL: ${url}"
             exit 1
           fi
-          chmod +x target/debug/neard
+          chmod +x target/release/neard
 
       - name: Build near core as fallback
         if: steps.download-neard.outcome != 'success'
         run: |
           cd libs/nearcore
-          cargo build -p neard
+          cargo build -p neard --release
 
       - name: Build mpc node
         run: cargo build -p mpc-node --release
