@@ -13,7 +13,7 @@ const MAX_EXPECTED_PARTICIPANTS: u32 = 32;
 /// that should be in the network.
 const NETWORK_MULTIPLIER: u32 = 128;
 
-// Default delay of five minutes, after that, request is removed from the contract state
+// Default delay of 200 blocks. After that, request is removed from the contract state
 const DEFAULT_REQUEST_TIMEOUT_BLOCKS: u64 = 200;
 
 // The maximum number of requests to remove during a call

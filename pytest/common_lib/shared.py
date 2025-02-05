@@ -364,7 +364,7 @@ class MpcCluster:
         node_id = 0
         contract_account = self.mpc_contract_account()
         node = self.mpc_nodes[node_id]
-        tx = node.sign_tx(self.mpc_contract_account(), 'get_config_v1',
+        tx = node.sign_tx(self.mpc_contract_account(), 'config',
                           json.dumps("").encode('utf-8'))
         res = node.send_txn_and_check_success(tx)
         return json.dumps(

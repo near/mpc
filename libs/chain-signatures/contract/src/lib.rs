@@ -70,7 +70,7 @@ impl Default for VersionedMpcContract {
 pub struct MpcContractV1 {
     protocol_state: ProtocolContractState,
     pending_requests: LookupMap<SignatureRequest, YieldIndex>,
-    request_by_timestamp: Vector<(u64, SignatureRequest)>,
+    request_by_block_height: Vector<(u64, SignatureRequest)>,
     proposed_updates: ProposedUpdates,
     config: ConfigV1,
 }
@@ -78,21 +78,22 @@ pub struct MpcContractV1 {
 impl MpcContractV1 {
     fn remove_timed_out_requests(&mut self) -> u32 {
         let max_to_remove = self.config.max_num_requests_to_remove;
-        let deadline = cmp::max(env::block_height(), self.config.request_timeout_blocks)
-            - self.config.request_timeout_blocks;
+        let min_pending_request_height =
+            cmp::max(env::block_height(), self.config.request_timeout_blocks)
+                - self.config.request_timeout_blocks;
         let mut i = 0;
-        for x in self.request_by_timestamp.iter() {
-            if (deadline <= x.0) || (i > max_to_remove) {
+        for x in self.request_by_block_height.iter() {
+            if (min_pending_request_height <= x.0) || (i > max_to_remove) {
                 break;
             }
             let _ = self.pending_requests.remove(&x.1);
             i += 1;
         }
-        let _ = self.request_by_timestamp.drain(..i);
+        let _ = self.request_by_block_height.drain(..i);
         i
     }
     fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) {
-        self.request_by_timestamp
+        self.request_by_block_height
             .push((env::block_height(), request.clone()));
         self.pending_requests
             .insert(request, &YieldIndex { data_id });
@@ -120,7 +121,7 @@ impl MpcContractV1 {
                 pk_votes: PkVotes::new(),
             }),
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
-            request_by_timestamp: Vector::new(StorageKey::RequestsByTimestamp),
+            request_by_block_height: Vector::new(StorageKey::RequestsByTimestamp),
             proposed_updates: ProposedUpdates::default(),
         }
     }
@@ -183,14 +184,6 @@ impl VersionedMpcContract {
             Self::V1(mpc_contract) => mpc_contract.remove_timed_out_requests(),
         }
     }
-    pub fn get_config_v1(&mut self) -> ConfigV1 {
-        match self {
-            Self::V1(mpc_contract) => mpc_contract.config.clone(),
-            _ => {
-                panic!("Not Supported. Other versions of this contract might require a different signature.")
-            }
-        }
-    }
     /// `key_version` must be less than or equal to the value at `latest_key_version`
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each signature request.
@@ -203,7 +196,7 @@ impl VersionedMpcContract {
             path,
             key_version,
         } = request;
-        // First, clear the state and check if there is space in the queue:
+        // First, clear the state.
         match self {
             Self::V0(_) => {}
             Self::V1(mpc_contract) => {
@@ -784,7 +777,7 @@ impl VersionedMpcContract {
                 join_votes: Votes::new(),
                 leave_votes: Votes::new(),
             }),
-            request_by_timestamp: Vector::new(StorageKey::RequestsByTimestamp),
+            request_by_block_height: Vector::new(StorageKey::RequestsByTimestamp),
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             proposed_updates: ProposedUpdates::default(),
         }))
@@ -808,7 +801,7 @@ impl VersionedMpcContract {
                     config: ConfigV1::default(),
                     protocol_state: mpc_contract_v0.protocol_state,
                     pending_requests: mpc_contract_v0.pending_requests,
-                    request_by_timestamp: Vector::new(StorageKey::RequestsByTimestamp),
+                    request_by_block_height: Vector::new(StorageKey::RequestsByTimestamp),
                     proposed_updates: ProposedUpdates::default(),
                 }))
             }
@@ -830,12 +823,10 @@ impl VersionedMpcContract {
         }
     }
 
-    pub fn config(&self) -> &Config {
+    pub fn config(&self) -> &ConfigV1 {
         match self {
-            Self::V0(mpc_contract) => &mpc_contract.config,
-            Self::V1(_) => {
-                panic!("This contract version does not contain a config")
-            }
+            Self::V0(_) => panic!("Deprecated, use V1"),
+            Self::V1(mpc_contract) => &mpc_contract.config,
         }
     }
 
