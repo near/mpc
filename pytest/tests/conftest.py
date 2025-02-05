@@ -11,8 +11,10 @@ import shutil
 from pathlib import Path
 import os
 
+from cluster import CONFIG_ENV_VAR
+
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from common_lib import contracts
+from common_lib import constants, contracts
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -25,6 +27,15 @@ def run_atexit_cleanup():
     """
     yield
     atexit._run_exitfuncs()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def set_config():
+    """
+    Sets the environment variable for the nearcore config if not already set.
+    """
+    if CONFIG_ENV_VAR not in os.environ:
+        os.environ[CONFIG_ENV_VAR] = constants.CONFIG_PATH
 
 
 @pytest.fixture(scope="session", autouse=True)

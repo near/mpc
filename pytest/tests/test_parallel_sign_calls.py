@@ -21,7 +21,7 @@ def load_parallel_sign_contract() -> bytearray:
     """
     returns test contract for parallel sign
     """
-    path = constants.mpc_repo_dir / 'pytest/tests/test_contracts/parallel/res/contract.wasm'
+    path = constants.MPC_REPO_DIR / 'pytest/tests/test_contracts/parallel/res/contract.wasm'
     return load_binary_file(path)
 
 
@@ -38,12 +38,12 @@ def test_parallel_sign_calls(num_parallel_signatures):
 
     # call `parallel_sign` and verify that it returns successfully
     res = cluster.make_function_call_on_secondary_contract(
-            function_name='make_parallel_sign_calls',
-            args={
-                'target_contract': cluster.mpc_contract_account(),
-                'num_calls': num_parallel_signatures,
-                'seed': 23,
-            })
+        function_name='make_parallel_sign_calls',
+        args={
+            'target_contract': cluster.mpc_contract_account(),
+            'num_calls': num_parallel_signatures,
+            'seed': 23,
+        })
 
     # check the return value
     encoded_value = res['result']['status']['SuccessValue']

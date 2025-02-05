@@ -36,7 +36,7 @@ use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 pub use state::{
     InitializingContractState, ProtocolContractState, ResharingContractState, RunningContractState,
 };
-const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(50);
+const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
 
 // Register used to receive data id from `promise_await_data`.
 const DATA_ID_REGISTER: u64 = 0;
@@ -76,14 +76,13 @@ pub struct MpcContractV1 {
 }
 
 impl MpcContractV1 {
-    fn remove_timed_out_requests(&mut self) -> u32 {
-        let max_to_remove = self.config.max_num_requests_to_remove;
+    fn remove_timed_out_requests(&mut self, max_num_to_remove: u32) -> u32 {
         let min_pending_request_height =
             cmp::max(env::block_height(), self.config.request_timeout_blocks)
                 - self.config.request_timeout_blocks;
         let mut i = 0;
         for x in self.request_by_block_height.iter() {
-            if (min_pending_request_height <= x.0) || (i > max_to_remove) {
+            if (min_pending_request_height <= x.0) || (i > max_num_to_remove) {
                 break;
             }
             let _ = self.pending_requests.remove(&x.1);
@@ -178,10 +177,12 @@ impl MpcContract {
 // User contract API
 #[near_bindgen]
 impl VersionedMpcContract {
-    pub fn remove_timed_out_requests(&mut self) -> u32 {
+    pub fn remove_timed_out_requests(&mut self, max_num_to_remove: Option<u32>) -> u32 {
         match self {
             Self::V0(_) => 0,
-            Self::V1(mpc_contract) => mpc_contract.remove_timed_out_requests(),
+            Self::V1(mpc_contract) => mpc_contract.remove_timed_out_requests(
+                max_num_to_remove.unwrap_or(mpc_contract.config.max_num_requests_to_remove),
+            ),
         }
     }
     /// `key_version` must be less than or equal to the value at `latest_key_version`
@@ -200,7 +201,8 @@ impl VersionedMpcContract {
         match self {
             Self::V0(_) => {}
             Self::V1(mpc_contract) => {
-                mpc_contract.remove_timed_out_requests();
+                mpc_contract
+                    .remove_timed_out_requests(mpc_contract.config.max_num_requests_to_remove);
             }
         }
         // It's important we fail here because the MPC nodes will fail in an identical way.
@@ -414,7 +416,9 @@ impl VersionedMpcContract {
                 match self {
                     Self::V0(_) => {}
                     Self::V1(mpc_contract) => {
-                        mpc_contract.remove_timed_out_requests();
+                        mpc_contract.remove_timed_out_requests(
+                            mpc_contract.config.max_num_requests_to_remove,
+                        );
                     }
                 }
                 // Finally, resolve the promise. This will have no effect if the request already timed.

@@ -17,7 +17,7 @@ const NETWORK_MULTIPLIER: u32 = 128;
 const DEFAULT_REQUEST_TIMEOUT_BLOCKS: u64 = 200;
 
 // The maximum number of requests to remove during a call
-const MAX_NUM_REQUESTS_TO_REMOVE: u32 = 100;
+const MAX_NUM_REQUESTS_TO_REMOVE: u32 = 1;
 
 impl Default for ConfigV1 {
     fn default() -> Self {

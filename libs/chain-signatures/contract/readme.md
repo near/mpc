@@ -45,8 +45,8 @@ add request to state, schedule yield promise |
 The following functions are public.
 
 ### User API
-- `remove_timed_out_requests()`:
-Removes expired signature requests from the contract.
+- `remove_timed_out_requests(max_num_to_remove)`:
+Removes at most `max_num_to_remove` timed out signature requests from the contract.
 - `sign(request: SignRequest)`:
 Submits a signature request, validating the request and ensuring necessary fees and gas are provided.
 - `public_key()`:

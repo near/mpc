@@ -51,53 +51,44 @@ class HandleTestResult():
 
 @pytest.mark.ci_excluded
 @pytest.mark.slow
-@pytest.mark.parametrize("num_requests, num_respond_access_keys", [(5, 1)])
-def test_contract_state_cleanup(num_requests, num_respond_access_keys):
+def test_sign_request_cleanup_logic():
     """
-    This test verifies that delayed signatures are correctly removed from the state.
-    
-    Starts 2 near validators and 2 mpc nodes.
-    Deploys the current mpc contract with a very small signature timeout.
-    Sends signature requests.
-    Verifies that the mpc nodes index the signature request.
-    Waits for the signature responses.
-    It is expected that all but one signature response fail.
-
+    This test verifies that a sign call removes exactly one delayed signature from the state.
     Note that this test is slow.
     """
-
-    cluster = shared.start_cluster_with_mpc(2, 2, num_respond_access_keys,
-                                            load_mpc_contract())
-    init_args = {'init_config': {'request_timeout_blocks': 0}}
+    cluster = shared.start_cluster_with_mpc(2, 2, 1, load_mpc_contract())
+    init_args = {'init_config': {'request_timeout_blocks': 1}}
     cluster.init_contract(threshold=2, additional_init_args=init_args)
-    result_handler = HandleTestResult(num_requests=num_requests,
-                                      expected_failures=num_requests - 1)
-    cluster.send_and_await_signature_requests(
-        num_requests=num_requests,
-        sig_verification=result_handler.handle_result,
-    )
+    hashes, _ = cluster.generate_and_send_signature_requests(1)
+    time.sleep(2)
+    hash_2, _ = cluster.generate_and_send_signature_requests(1)
+    time.sleep(2)
+    hashes.extend(hash_2)
+    results = cluster.await_txs_responses(hashes)
+
+    result_handler = HandleTestResult(num_requests=2, expected_failures=1)
+    shared.verify_txs(results, result_handler.handle_result)
     result_handler.finalize()
-
-
-def extract_success_val(tx_res):
-    return base64.b64decode(
-        tx_res["result"]["status"]["SuccessValue"]).decode('utf-8')
 
 
 @pytest.mark.ci_excluded
 @pytest.mark.slow
-@pytest.mark.parametrize("num_requests, num_respond_access_keys", [(150, 1)])
-def test_remove_timed_out_requests(num_requests, num_respond_access_keys):
+def test_remove_timed_out_requests():
     """
-    Tests if the remove_timed_out_requests function on the contract works correctly.
+    Tests if the remove_timed_out_requests function in the contract works as expected.
     """
-    result_handler = HandleTestResult(num_requests=num_requests,
-                                      expected_failures=num_requests - 1)
-    cluster = shared.start_cluster_with_mpc(2, 2, num_respond_access_keys,
-                                            load_mpc_contract())
+
+    def extract_success_val(tx_res):
+        return base64.b64decode(
+            tx_res["result"]["status"]["SuccessValue"]).decode('utf-8')
+
+    num_requests = 150
+    num_requests_to_remove = 100
+    cluster = shared.start_cluster_with_mpc(2, 2, 1, load_mpc_contract())
     init_args = {'init_config': {'request_timeout_blocks': 2}}
     cluster.init_contract(threshold=2, additional_init_args=init_args)
 
+    # Submit sigature requestst
     started = time.time()
     metrics = [MetricsTracker(node.near_node) for node in cluster.mpc_nodes]
     tx_hashes, tx_sent = cluster.generate_and_send_signature_requests(
@@ -105,39 +96,24 @@ def test_remove_timed_out_requests(num_requests, num_respond_access_keys):
     print(f"Sent {num_requests} signature requests")
     cluster.observe_signature_requests(started, metrics, tx_sent)
     time.sleep(2)  # give the node a chance to update nonce
-    res = cluster.remove_timed_out_requests()
+
+    # check if return value matches expectation
+    res = cluster.remove_timed_out_requests(num_requests_to_remove)
     gas, _ = shared.extract_tx_costs(res)
     print("gas cost (Tgas)", gas / TGAS)
-    assert 100 == int(extract_success_val(res))
+    total_removed = int(extract_success_val(res))
+    assert num_requests_to_remove == total_removed, "mismatch in number of signatures removed"
+
+    # now remove the remaining signatures
+    res = cluster.remove_timed_out_requests(num_requests)
+    total_removed += int(extract_success_val(res))
+    print("removed: ", total_removed)
+    gas, _ = shared.extract_tx_costs(res)
+    print("gas cost (Tgas)", gas / TGAS)
+
+    # and verify that none of the requests suceeded
     results = cluster.await_txs_responses(tx_hashes)
-    shared.verify_txs(results, result_handler.handle_result)
-    result_handler.finalize()
-
-
-@pytest.mark.ci_excluded
-@pytest.mark.slow
-@pytest.mark.parametrize("num_requests, num_respond_access_keys", [(150, 1)])
-def test_gas_limit_sign_call(num_requests, num_respond_access_keys):
-    """
-    Tests if the gas limit `constants.GAS_FOR_SIGN_CALL` is respected, even when maxing the number of removed signature requests
-    """
-    result_handler = HandleTestResult(num_requests=num_requests + 1,
+    result_handler = HandleTestResult(num_requests=num_requests,
                                       expected_failures=num_requests)
-    cluster = shared.start_cluster_with_mpc(2, 2, num_respond_access_keys,
-                                            load_mpc_contract())
-    init_args = {'init_config': {'request_timeout_blocks': 1}}
-    cluster.init_contract(threshold=2, additional_init_args=init_args)
-
-    started = time.time()
-    metrics = [MetricsTracker(node.near_node) for node in cluster.mpc_nodes]
-    tx_hashes, tx_sent = cluster.generate_and_send_signature_requests(
-        num_requests)
-    print(f"Sent {num_requests} signature requests")
-    cluster.observe_signature_requests(started, metrics, tx_sent)
-    time.sleep(1)  # give node a chance to update nonce
-    target_hash, tx_sent = cluster.generate_and_send_signature_requests(1)
-    tx_hashes.extend(target_hash)
-    results = cluster.await_txs_responses(tx_hashes)
     shared.verify_txs(results, result_handler.handle_result)
     result_handler.finalize()
-    assert result_handler.max_tgas < constants.GAS_FOR_SIGN_CALL, "exceeded expected gas limit"

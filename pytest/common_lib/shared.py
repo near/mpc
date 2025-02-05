@@ -16,7 +16,7 @@ from common_lib import constants
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
-from cluster import BaseNode
+from cluster import CONFIG_ENV_VAR, BaseNode
 from typing import List
 
 from cluster import start_cluster
@@ -186,9 +186,12 @@ class MpcCluster:
     returns a list of signed transactions
     """
 
-    def make_sign_request_txns(self, payloads, nonce_offset=1):
+    def make_sign_request_txns(self, payloads, nonce_offset=1, add_gas=None):
         nonce_offset = 1
         txs = []
+        gas = constants.GAS_FOR_SIGN_CALL * TGAS
+        if add_gas is not None:
+            gas += add_gas
         for payload in payloads:
             sign_args = {
                 'request': {
@@ -203,7 +206,8 @@ class MpcCluster:
                                                 'sign',
                                                 sign_args,
                                                 nonce_offset=nonce_offset,
-                                                deposit=1)
+                                                deposit=1,
+                                                gas=gas)
             txs.append(tx)
         return txs
 
@@ -217,7 +221,10 @@ class MpcCluster:
         return tx_hashes
 
     def send_and_await_signature_requests(
-            self, num_requests, sig_verification=assert_signature_success):
+            self,
+            num_requests,
+            sig_verification=assert_signature_success,
+            add_gas=None):
         """
             Sends `num_requests` signature requests and waits for the results.
         
@@ -240,7 +247,7 @@ class MpcCluster:
         started = time.time()
         metrics = [MetricsTracker(node.near_node) for node in self.mpc_nodes]
         tx_hashes, tx_sent = self.generate_and_send_signature_requests(
-            num_requests)
+            num_requests, add_gas)
         print("Sent signature requests, tx_hashes:", tx_hashes)
 
         self.observe_signature_requests(started, metrics, tx_sent)
@@ -252,7 +259,7 @@ class MpcCluster:
         ]
         print("Number of nonce conflicts which occurred:", res)
 
-    def generate_and_send_signature_requests(self, num_requests):
+    def generate_and_send_signature_requests(self, num_requests, add_gas=None):
         """
             Sends signature requests and returns the transactions and the timestamp they were sent.
         """
@@ -260,7 +267,7 @@ class MpcCluster:
             i, 1, 2, 0, 4, 5, 6, 8, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
             19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 44
         ] for i in range(num_requests)]
-        txs = self.make_sign_request_txns(payloads)
+        txs = self.make_sign_request_txns(payloads, add_gas=add_gas)
         return self.send_sign_request_txns(txs), time.time()
 
     def observe_signature_requests(self, started, metrics, tx_sent):
@@ -364,19 +371,18 @@ class MpcCluster:
     # only works with V1
     def get_config(self, node_id=0):
         node = self.mpc_nodes[node_id]
-        tx = node.sign_tx(self.mpc_contract_account(), 'config',
-                          json.dumps("").encode('utf-8'))
+        tx = node.sign_tx(self.mpc_contract_account(), 'config', {})
         res = node.send_txn_and_check_success(tx)
         return json.dumps(
             json.loads(
                 base64.b64decode(
                     res['result']['status']['SuccessValue']).decode('utf-8')))
 
-    def remove_timed_out_requests(self, node_id=0):
+    def remove_timed_out_requests(self, max_num_to_remove, node_id=0):
         node = self.mpc_nodes[node_id]
         tx = node.sign_tx(self.mpc_contract_account(),
                           'remove_timed_out_requests',
-                          json.dumps("").encode('utf-8'))
+                          {'max_num_to_remove': max_num_to_remove})
         res = node.send_txn_and_check_success(tx)
         return res
 
@@ -454,14 +460,11 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
         }
     }
 
-    def load_config():
-        with open(constants.CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-
     # Start a near network with extra observer nodes; we will use their
     # config.json, genesis.json, etc. to configure the mpc nodes' indexers
+
     nodes = start_cluster(
-        num_validators, num_mpc_nodes, 1, load_config(),
+        num_validators, num_mpc_nodes, 1, None,
         [["epoch_length", 1000], ["block_producer_kickout_threshold", 80]], {
             0: rpc_polling_config,
             1: rpc_polling_config
