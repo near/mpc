@@ -85,7 +85,7 @@ impl MpcContractV1 {
             if (min_pending_request_height <= x.0) || (i > max_num_to_remove) {
                 break;
             }
-            let _ = self.pending_requests.remove(&x.1);
+            self.pending_requests.remove(&x.1);
             i += 1;
         }
         let _ = self.request_by_block_height.drain(..i);
