@@ -88,7 +88,7 @@ impl MpcContractV1 {
             self.pending_requests.remove(&x.1);
             i += 1;
         }
-        let _ = self.request_by_block_height.drain(..i);
+        self.request_by_block_height.drain(..i);
         cmp::max(i, 1) - 1
     }
     fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) {
