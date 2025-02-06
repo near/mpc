@@ -1,15 +1,13 @@
 # MPC Contract
 
 This folder contains the code for the **MPC Contract**, which is deployed on the NEAR blockchain.
-The contract handles signature requests submitted by users and signature responses submitted by participants of the MPC network.
-Besides handling signature requests and responses, this contract allows participants to join or leave the mpc network, to initiate key resharings or to propose and vote on updates to this contract.
 
-## Contract Version
+The contract aims to reflect the current state of the MPC-Network and allows users to submit signature requests via the `sign` [endpoint](#user-api).
+
 The currently deployed version of the contract is `V0`, with `V1` expected to be deployed in Q1 of 2025. Contract `V1` will introduce several efficiency improvements:
 
 - **Lower gas costs**: Signature requests in `V1` will consume approximately half the gas compared to `V0`, mainly due to optimizations in state handling and reducing the number of receipts required per request. T
 - **Removal of the signature request limit**: `V0` imposed a hard limit on the number of signature requests, which `V1` removes. This limit was necessary for [previous MPC nodes](https://github.com/near/mpc/releases/tag/1.0.0-rc.5), but is no longer required due to performance improvements by the [current release](https://github.com/Near-One/mpc/releases/tag/testnet-upgrade) (currently on testnet). 
-
 
 **Benchmarks:**
 
@@ -18,16 +16,12 @@ The currently deployed version of the contract is `V0`, with `V1` expected to be
 | V0  | 8  |11.30479597562405|
 | V1  | 4  |6.131075775468398 |
 
-**Migration Considerations:**
+**Migration Considerations:** Migration from `V0` to `V1` will not affect how users interact with the contract.
 
-Migration from `V0` to `V1` will not affect how users interact with the contract.
-
-
-
-## `V1` Contract
+## `V1` Contract Details
 ### State and Lifecycle
 
-The contract state consists of the following data:
+The contract state tracks pending signature requests, the current configuartion of the contract as well as any updates to the contract that are proposed by Participants of the MPC-Network via the `update` [endpoint](#participants-api).
 
 ```Rust
 pub struct MpcContractV1 {
@@ -39,22 +33,18 @@ pub struct MpcContractV1 {
 }
 ```
 
-The contract does not have a default state and needs to be initialized through a call to [`init`](#developer-api).
-
-**Protocol State:**
-
-The struct `ProtocolContractState` informs about the current state of the protocol. Below table depicts valid state changes.
-
-| ProtocolContractState | Previous State | Triggerd by |  
-| --- | --- | --- | 
-| `NotInitialized` | | |
-|  `Initializing` | | call to  `init`| 
-| `Running` | `Initializing` | call to `vote_pk` | 
-| `Resharing`| `Running` | call to `vote_join`, `vote_leave` |
-| `Running` | `Resharing` | call to `vote_reshared` | 
+The **Protocol State** of the contract should reflect the state of the MPC-Network:
+```mermaid
+stateDiagram-v2
+    [*] --> NotInitialized : deploy
+    NotInitialized --> Initializing : init
+    Initializing --> Running : vote_pk
+    Running --> Resharing : vote_join
+    Resharing --> Running : vote_reshared
+    Running --> Resharing : vote_leave
+```
 
 ### Contract API
-
 #### User API
 
 | Function | Behavior |  Return Value | Gas requirement | Effective Gas Cost |
@@ -93,22 +83,4 @@ These functions require the caller to be a participant or candidate.
 | `update_config(config: ConfigV1)` | Updates the contract configuration for `V1`. | `()` | TBD | TBD |
 
 
-### Further Details:
-Signature requests spawn promises. Each non-empty row is a promise.
 
-| V0  | V1 |
-| ------------- | ------------- |
-| do some checks | do some checks, add request to state, schedule yield promise
-| add request to state, schedule yield promise |  |
-| remove signature request from state | clean state & return signature or error 
-| return signature or error | |
-
-**Congestion Considerations for `V1`**
-
-Assuming:
-- 300 signature requests per second,
-- A block time of over 1 second, and
-- An estimated signature request cost of ~6 TGas,
-
-The **chunk size limit of 1000 TGas** is expected to provide a natural cap on the number of pending requests, ensuring that the mpc-nodes will not be overwhelmed.
-In case any of above assumptions change or fail, a hard limit might need to be re-introduced in a future version of the contract.
