@@ -2,7 +2,7 @@
 
 # -------------------------------------------------------------------
 # Script Name: exec_pytest.sh
-# Description: Compiles nearcore, smart contract and mpc node,
+# Description: Compiles nearcore and mpc node,
 #              activates a virtual environment with the required python dependencies,
 #              saves output to `output.log`.
 #
@@ -106,18 +106,6 @@ fi
 printf "\nBuilding nearcore"
 if ! log_output bash -c "cd '$LIB_DIR/nearcore' && cargo build --quiet --color=always -p neard --release"; then
     echo "Cargo failed to complete nearcore compilation"
-    exit 1
-fi
-
-printf "\nBuilding contract"
-if ! log_output bash -c "cd '$LIB_DIR/chain-signatures' && cargo build --quiet --color=always -p mpc-contract --target=wasm32-unknown-unknown --release"; then
-    echo "Cargo failed to compile contract"
-    exit 1
-fi
-
-printf "\nCopying contract"
-if ! log_output bash -c "mkdir -p '$LIB_DIR/chain-signatures/res' && cp '$LIB_DIR/chain-signatures/target/wasm32-unknown-unknown/release/mpc_contract.wasm' '$LIB_DIR/chain-signatures/res/mpc_contract.wasm'"; then
-    echo "Failed to copy the contract"
     exit 1
 fi
 

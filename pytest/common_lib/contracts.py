@@ -1,35 +1,89 @@
+import json
 from utils import load_binary_file
 
 from borsh_construct import Vec, U8, CStruct, U64, Option, U32
-from . import constants
+from .constants import MPC_REPO_DIR
 
-
-def load_mpc_contract_v0() -> bytearray:
-    """
-    returns v0 contract
-    """
-    path = constants.mpc_repo_dir / 'libs/chain-signatures/compiled-contracts/v0.wasm'
-    return load_binary_file(path)
-
-
-def load_mpc_contract_v1() -> bytearray:
-    path = constants.mpc_repo_dir / 'libs/chain-signatures/res/mpc_contract.wasm'
-    return load_binary_file(path)
+V0_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v0.wasm'
+V1_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v1.wasm'
+CURRENT_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'res' / 'mpc_contract.wasm'
+MIGRATE_CURRENT_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'migrate_from_v1.wasm'
 
 
 def load_mpc_contract() -> bytearray:
     """
-    this returns the current contract
+    Returns the current contract.
     """
-    #return load_mpc_contract_v0()
-    path = constants.mpc_repo_dir / 'libs/chain-signatures/res/mpc_contract.wasm'
-    return load_binary_file(path)
+    return load_binary_file(CURRENT_CONTRACT_PATH)
+
+
+class ConfigV1:
+    """
+    Helper class to json-serialize `Config` for mpc-contract v1.
+    """
+
+    def __init__(self, max_num_requests_to_remove, request_timeout_blocks):
+        self.max_num_requests_to_remove = max_num_requests_to_remove
+        self.request_timeout_blocks = request_timeout_blocks
+
+    def dump_json(self):
+        return json.dumps({
+            "max_num_requests_to_remove": self.max_num_requests_to_remove,
+            "request_timeout_blocks": self.request_timeout_blocks
+        })
+
+    def get(self):
+        return {
+            "max_num_requests_to_remove": self.max_num_requests_to_remove,
+            "request_timeout_blocks": self.request_timeout_blocks
+        }
+
+
+ConfigV1Borsh = CStruct("max_num_requests_to_remove" / U32,
+                        "request_timeout_blocks" / U64)
+ProposeUpdateArgsV1 = CStruct("code" / Option(Vec(U8)),
+                              "config" / Option(ConfigV1Borsh))
+
+
+class UpdateArgsV1:
+    """
+    Helper class to borsh-serialize `InitConfig` for mpc-contract v1.
+    """
+
+    def __init__(self, code_path=None, config=None):
+        self.code = load_binary_file(
+            code_path) if code_path is not None else None
+        self.config = config
+
+    def borsh_serialize(self):
+        return ProposeUpdateArgsV1.build({
+            'code':
+            self.code,
+            'config':
+            self.config.get() if self.config is not None else None
+        })
+
+    def dump_json(self):
+        assert self.config is not None
+        return self.config.dump_json()
+
+
+class UpdateArgsV0:
+    """
+    Helper class to borsh serialize update args for V0 contract
+    """
+
+    def __init__(self, code_path):
+        self.code = load_binary_file(code_path)
+
+    def borsh_serialize(self):
+        return ProposeUpdateArgsV0.build({'code': self.code, 'config': None})
 
 
 """
 config for smart contract. DOES NOT WORK - still getting a serialization error.
 use it as :
-    contract_v0.ProposeUpdateArgs.build({
+    ProposeUpdateArgsV0.build({
         'code': code,
         'config': {
             'protocol': {
@@ -78,6 +132,6 @@ ProtocolConfig = CStruct(
     "presignature" / PresignatureConfig,
     "signature" / SignatureConfig,
 )
-Config = CStruct("protocol" / ProtocolConfig, )
-ProposeUpdateArgs = CStruct("code" / Option(Vec(U8)),
-                            "config" / Option(Config))
+ConfigV0 = CStruct("protocol" / ProtocolConfig, )
+ProposeUpdateArgsV0 = CStruct("code" / Option(Vec(U8)),
+                              "config" / Option(ConfigV0))

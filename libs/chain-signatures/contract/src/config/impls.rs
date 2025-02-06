@@ -1,7 +1,8 @@
 use borsh::{self, BorshDeserialize, BorshSerialize};
 
 use super::{
-    Config, DynamicValue, PresignatureConfig, ProtocolConfig, SignatureConfig, TripleConfig,
+    Config, ConfigV1, DynamicValue, InitConfigV1, PresignatureConfig, ProtocolConfig,
+    SignatureConfig, TripleConfig,
 };
 
 /// This is maximum expected participants we aim to support right now. This can be different
@@ -12,6 +13,35 @@ const MAX_EXPECTED_PARTICIPANTS: u32 = 32;
 /// that should be in the network.
 const NETWORK_MULTIPLIER: u32 = 128;
 
+// Default delay of 200 blocks. After that, request is removed from the contract state
+const DEFAULT_REQUEST_TIMEOUT_BLOCKS: u64 = 200;
+
+// The maximum number of requests to remove during a call
+const MAX_NUM_REQUESTS_TO_REMOVE: u32 = 1;
+
+impl Default for ConfigV1 {
+    fn default() -> Self {
+        ConfigV1 {
+            max_num_requests_to_remove: MAX_NUM_REQUESTS_TO_REMOVE,
+            request_timeout_blocks: DEFAULT_REQUEST_TIMEOUT_BLOCKS,
+        }
+    }
+}
+impl From<Option<InitConfigV1>> for ConfigV1 {
+    fn from(value: Option<InitConfigV1>) -> Self {
+        match value {
+            None => ConfigV1::default(),
+            Some(init_config) => ConfigV1 {
+                max_num_requests_to_remove: init_config
+                    .max_num_requests_to_remove
+                    .unwrap_or(MAX_NUM_REQUESTS_TO_REMOVE),
+                request_timeout_blocks: init_config
+                    .request_timeout_blocks
+                    .unwrap_or(DEFAULT_REQUEST_TIMEOUT_BLOCKS),
+            },
+        }
+    }
+}
 impl Config {
     pub fn get(&self, key: &str) -> Option<serde_json::Value> {
         match key {
