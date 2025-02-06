@@ -166,3 +166,13 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref NETWORK_LIVE_CONNECTIONS: prometheus::IntGaugeVec =
+        prometheus::register_int_gauge_vec!(
+            "sign_request_channel_failed",
+            "failed to send on channel in sign_request_channel",
+            &["source_participant_id", "target_participant_id"],
+        )
+        .unwrap();
+}

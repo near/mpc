@@ -1,4 +1,5 @@
 use crate::config::MpcConfig;
+use crate::metrics;
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
@@ -8,7 +9,7 @@ use borsh::BorshDeserialize;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use rustls::server::danger::ClientCertVerifier;
 use rustls::{ClientConfig, CommonState, ServerConfig};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -737,6 +738,21 @@ impl MeshNetworkTransportSender for TlsMeshSender {
             .collect::<Vec<_>>();
         ids.sort();
         ids
+    }
+
+    fn emit_metrics(&self) {
+        let my_participant_id = self.my_participant_id();
+        let live_participants: HashSet<ParticipantId> =
+            self.all_alive_participant_ids().into_iter().collect();
+
+        metrics::NETWORK_LIVE_CONNECTIONS.reset();
+
+        for id in self.all_participant_ids() {
+            let is_live_participant = live_participants.contains(&id);
+            metrics::NETWORK_LIVE_CONNECTIONS
+                .with_label_values(&[&my_participant_id.to_string(), &id.to_string()])
+                .set(is_live_participant.into());
+        }
     }
 }
 

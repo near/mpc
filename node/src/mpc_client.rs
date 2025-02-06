@@ -75,7 +75,19 @@ impl MpcClient {
             let presignature_store = self.presignature_store.clone();
             let sign_request_store = self.sign_request_store.clone();
             let root_keyshare = self.root_keyshare.clone();
+
+            let client_metrics = client.clone();
+            let auto_abort = tracking::spawn("periodically emits metrics", async move {
+                loop {
+                    client_metrics.emit_metrics();
+
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                }
+            });
+
+            // Task for executing the main MPC loop
             tracking::spawn("monitor passive channels", async move {
+                let _auto_abort_metrics = auto_abort;
                 let mut tasks = AutoAbortTaskCollection::new();
                 loop {
                     let channel = channel_receiver.recv().await.unwrap();
