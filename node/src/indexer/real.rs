@@ -60,9 +60,7 @@ pub fn spawn_real_indexer(
                 indexer_config.concurrency,
                 Arc::clone(&stats),
                 indexer_config.mpc_contract_id,
-                Some(account_secret_key.public_key()),
                 sign_request_sender,
-                indexer_state,
             )
             .await;
         });

@@ -1,9 +1,7 @@
 use crate::hkdf::ScalarExt;
 use crate::indexer::stats::IndexerStats;
-use crate::indexer::IndexerState;
 use crate::metrics;
 use k256::Scalar;
-use near_crypto::PublicKey;
 use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
@@ -49,9 +47,7 @@ pub(crate) async fn listen_blocks(
     concurrency: std::num::NonZeroU16,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
-    account_public_key: Option<PublicKey>,
     sign_request_sender: mpsc::UnboundedSender<ChainSignatureRequest>,
-    indexer_state: Arc<IndexerState>,
 ) {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
@@ -59,9 +55,7 @@ pub(crate) async fn listen_blocks(
                 streamer_message,
                 Arc::clone(&stats),
                 &mpc_contract_id,
-                &account_public_key,
                 sign_request_sender.clone(),
-                indexer_state.clone(),
             )
         })
         .buffer_unordered(usize::from(concurrency.get()));
@@ -73,9 +67,7 @@ async fn handle_message(
     streamer_message: near_indexer_primitives::StreamerMessage,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: &AccountId,
-    _account_public_key: &Option<PublicKey>,
     sign_request_sender: mpsc::UnboundedSender<ChainSignatureRequest>,
-    _indexer_state: Arc<IndexerState>,
 ) -> anyhow::Result<()> {
     let block_height = streamer_message.block.header.height;
     let mut stats_lock = stats.lock().await;

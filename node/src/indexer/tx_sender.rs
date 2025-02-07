@@ -25,15 +25,11 @@ async fn submit_tx(
     method: String,
     params_ser: String,
     gas: Gas,
-) -> bool {
-    let Ok(Ok(block)) = indexer_state
+) -> anyhow::Result<()> {
+    let block = indexer_state
         .view_client
         .send(near_client::GetBlock(BlockReference::Finality(Finality::Final)).with_span_context())
-        .await
-    else {
-        tracing::warn!(target = "mpc", "failed to get block hash to send tx");
-        return false;
-    };
+        .await??;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),
@@ -53,7 +49,7 @@ async fn submit_tx(
         transaction.transaction.nonce(),
     );
 
-    let result = indexer_state
+    let response = indexer_state
         .client
         .send(
             near_client::ProcessTxRequest {
@@ -63,34 +59,27 @@ async fn submit_tx(
             }
             .with_span_context(),
         )
-        .await;
-    // TODO(#43): Fix the metrics: we no longer send only signature response transactions now.
-    match result {
-        Ok(response) => match response {
-            // We're not a validator, so we should always be routing the transaction.
-            near_client::ProcessTxResponse::RequestRouted => true,
-            _ => {
-                tracing::error!(
-                    target: "mpc",
-                    "Failed to send response tx: unexpected ProcessTxResponse: {:?}",
-                    response
-                );
-                false
-            }
-        },
-        Err(err) => {
-            tracing::error!(target: "mpc", "Failed to send response tx: {:?}", err);
-            false
+        .await?;
+    match response {
+        // We're not a validator, so we should always be routing the transaction.
+        near_client::ProcessTxResponse::RequestRouted => Ok(()),
+        _ => {
+            anyhow::bail!("unexpected ProcessTxResponse: {:?}", response);
         }
     }
 }
 
+enum ChainTransactionState {
+    Executed,
+    NotExecuted,
+    Unknown,
+}
+
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
-/// Used to decide whether to re-submit the transaction.
-async fn confirm_tx_result(
+async fn observe_tx_result(
     indexer_state: Arc<IndexerState>,
     request: &ChainSendTransactionRequest,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<ChainTransactionState> {
     match request {
         ChainSendTransactionRequest::Respond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
@@ -117,8 +106,12 @@ async fn confirm_tx_result(
                 .await??;
             match query_response.kind {
                 QueryResponseKind::CallResult(call_result) => {
-                    let result = serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)?;
-                    Ok(result.is_none())
+                    let pending_request = serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)?;
+                    Ok(if pending_request.is_none() {
+                        ChainTransactionState::Executed
+                    } else {
+                        ChainTransactionState::NotExecuted
+                    })
                 }
                 _ => {
                     anyhow::bail!("Unexpected result from a view client function call");
@@ -126,13 +119,13 @@ async fn confirm_tx_result(
             }
         }
         ChainSendTransactionRequest::Join(_) => {
-            anyhow::bail!("not implemented");
+            Ok(ChainTransactionState::Unknown) // not implemented
         }
         ChainSendTransactionRequest::VotePk(_) => {
-            anyhow::bail!("not implemented");
+            Ok(ChainTransactionState::Unknown) // not implemented
         }
         ChainSendTransactionRequest::VoteReshared(_) => {
-            anyhow::bail!("not implemented");
+            Ok(ChainTransactionState::Unknown) // not implemented
         }
     }
 }
@@ -149,7 +142,7 @@ async fn ensure_send_transaction(
     num_attempts: NonZeroUsize,
 ) {
     for _ in 0..num_attempts.into() {
-        if !submit_tx(
+        if let Err(err) = submit_tx(
             tx_signer.clone(),
             indexer_state.clone(),
             request.method().to_string(),
@@ -162,6 +155,7 @@ async fn ensure_send_transaction(
             metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
                 .with_label_values(&[request.method(), "local_error"])
                 .inc();
+            tracing::error!(%err, "Failed to forward transaction {:?}", request);
             time::sleep(Duration::from_secs(1)).await;
             continue;
         };
@@ -169,22 +163,28 @@ async fn ensure_send_transaction(
         // Allow time for the transaction to be included
         time::sleep(timeout).await;
         // Then try to check whether it had the intended effect
-        match confirm_tx_result(indexer_state.clone(), &request).await {
-            Ok(true) => {
+        match observe_tx_result(indexer_state.clone(), &request).await {
+            Ok(ChainTransactionState::Executed) => {
                 metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
                     .with_label_values(&[request.method(), "succeeded"])
                     .inc();
                 return;
             }
-            Ok(false) => {
+            Ok(ChainTransactionState::NotExecuted) => {
                 metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
                     .with_label_values(&[request.method(), "timed_out"])
                     .inc();
                 continue;
             }
-            Err(err) => {
+            Ok(ChainTransactionState::Unknown) => {
                 metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
                     .with_label_values(&[request.method(), "unknown"])
+                    .inc();
+                return;
+            }
+            Err(err) => {
+                metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+                    .with_label_values(&[request.method(), "unknown_err"])
                     .inc();
                 tracing::warn!(target:"mpc", %err, "encountered error trying to confirm result of transaction {:?}", request);
                 return;
