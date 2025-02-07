@@ -10,29 +10,33 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub static ref MPC_TRIPLES_GENERATION_TIME_MS: prometheus::IntGauge =
-        prometheus::register_int_gauge!(
+    pub static ref MPC_TRIPLES_GENERATION_TIME_MS: prometheus::IntGaugeVec =
+        prometheus::register_int_gauge_vec!(
             "mpc_triples_generation_time_ms",
-            "Time take to generate a batch of triples"
+            "Time take to generate a batch of triples",
+            &["type"],
         )
         .unwrap();
 }
 
 lazy_static! {
-    pub static ref MPC_PRE_SIGNATURE_TIME_MS: prometheus::IntGauge =
-        prometheus::register_int_gauge!(
+    pub static ref MPC_PRE_SIGNATURE_TIME_MS: prometheus::IntGaugeVec =
+        prometheus::register_int_gauge_vec!(
             "mpc_num_pre_signature_time_ms",
-            "Time take to create a pre signature"
+            "Time take to create a pre signature",
+            &["type"],
         )
         .unwrap();
 }
 
 lazy_static! {
-    pub static ref MPC_SIGNATURE_TIME_MS: prometheus::IntGauge = prometheus::register_int_gauge!(
-        "mpc_num_signature_time_ms",
-        "Time take to create a signature"
-    )
-    .unwrap();
+    pub static ref MPC_SIGNATURE_TIME_MS: prometheus::IntGaugeVec =
+        prometheus::register_int_gauge_vec!(
+            "mpc_num_signature_time_ms",
+            "Time take to create a signature",
+            &["type"],
+        )
+        .unwrap();
 }
 
 lazy_static! {

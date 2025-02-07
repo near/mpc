@@ -50,7 +50,12 @@ pub async fn pre_sign(
     let presignature = run_protocol("presign", channel, me, protocol).await?;
 
     let duration = start.elapsed()?.as_millis();
-    metrics::MPC_PRE_SIGNATURE_TIME_MS.set(duration as i64);
+    metrics::MPC_PRE_SIGNATURE_TIME_MS
+        .with_label_values(&[&"instance".to_string()])
+        .set(duration as i64);
+    metrics::MPC_PRE_SIGNATURE_TIME_MS
+        .with_label_values(&[&"cumulative".to_string()])
+        .add(duration as i64);
     metrics::MPC_NUM_PRESIGNATURES_GENERATED.inc();
     Ok(presignature)
 }
@@ -125,7 +130,12 @@ pub async fn sign(
     let signature = run_protocol("sign", channel, me, protocol).await?;
 
     let duration = start.elapsed()?.as_millis();
-    metrics::MPC_SIGNATURE_TIME_MS.set(duration as i64);
+    metrics::MPC_SIGNATURE_TIME_MS
+        .with_label_values(&[&"instance".to_string()])
+        .set(duration as i64);
+    metrics::MPC_SIGNATURE_TIME_MS
+        .with_label_values(&[&"cumulative".to_string()])
+        .add(duration as i64);
     metrics::MPC_NUM_SIGNATURES_GENERATED.inc();
     Ok((signature, public_key))
 }
