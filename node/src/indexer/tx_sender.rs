@@ -106,7 +106,8 @@ async fn observe_tx_result(
                 .await??;
             match query_response.kind {
                 QueryResponseKind::CallResult(call_result) => {
-                    let pending_request = serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)?;
+                    let pending_request =
+                        serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)?;
                     Ok(if pending_request.is_none() {
                         ChainTransactionState::Executed
                     } else {
