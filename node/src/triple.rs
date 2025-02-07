@@ -9,7 +9,6 @@ use crate::tracking::AutoAbortTaskCollection;
 use crate::{network::NetworkTaskChannel, primitives::ParticipantId};
 use cait_sith::protocol::Participant;
 use k256::Secp256k1;
-use std::i64;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::time::timeout;
@@ -43,7 +42,7 @@ pub async fn run_many_triple_generation<const N: usize>(
     let triples = run_protocol("many triple gen", channel, me, protocol).await?;
 
     let duration = start.elapsed()?.as_millis();
-    metrics::MPC_NUM_TRIPLES_GENERATION_TIME_MS.set(i64::try_from(duration).unwrap_or(i64::MAX));
+    metrics::MPC_NUM_TRIPLES_GENERATION_TIME_MS.set(duration as i64);
     metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);
     assert_eq!(
         N,
