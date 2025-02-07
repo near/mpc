@@ -28,12 +28,11 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub static ref MPC_SIGNATURE_TIME_MS: prometheus::IntGauge =
-        prometheus::register_int_gauge!(
-            "mpc_num_signature_time_ms",
-            "Time take to create a signature"
-        )
-        .unwrap();
+    pub static ref MPC_SIGNATURE_TIME_MS: prometheus::IntGauge = prometheus::register_int_gauge!(
+        "mpc_num_signature_time_ms",
+        "Time take to create a signature"
+    )
+    .unwrap();
 }
 
 lazy_static! {
