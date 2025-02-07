@@ -10,7 +10,7 @@ use crate::{network::NetworkTaskChannel, primitives::ParticipantId};
 use cait_sith::protocol::Participant;
 use k256::Secp256k1;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use tokio::time::timeout;
 
 /// Generates many cait-sith triples at once. This can significantly save the
@@ -36,18 +36,8 @@ pub async fn run_many_triple_generation<const N: usize>(
         me.into(),
         threshold,
     )?;
-
-    let start = SystemTime::now();
-
+    let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
     let triples = run_protocol("many triple gen", channel, me, protocol).await?;
-
-    let duration = start.elapsed()?.as_millis();
-    metrics::MPC_TRIPLES_GENERATION_TIME_MS
-        .with_label_values(&["instance"])
-        .set(duration as i64);
-    metrics::MPC_TRIPLES_GENERATION_TIME_MS
-        .with_label_values(&["cumulative"])
-        .add(duration as i64);
     metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);
     assert_eq!(
         N,
