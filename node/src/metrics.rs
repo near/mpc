@@ -10,6 +10,15 @@ lazy_static! {
 }
 
 lazy_static! {
+    pub static ref MPC_NUM_TRIPLES_GENERATION_TIME_MS: prometheus::IntGauge =
+        prometheus::register_int_gauge!(
+            "mpc_num_triples_generation_time_ms",
+            "Time take to generate a batch of triples"
+        )
+        .unwrap();
+}
+
+lazy_static! {
     pub static ref MPC_OWNED_NUM_TRIPLES_AVAILABLE: prometheus::IntGauge =
         prometheus::register_int_gauge!(
             "mpc_owned_num_triples_available",
