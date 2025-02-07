@@ -43,10 +43,10 @@ pub async fn run_many_triple_generation<const N: usize>(
 
     let duration = start.elapsed()?.as_millis();
     metrics::MPC_TRIPLES_GENERATION_TIME_MS
-        .with_label_values(&[&"instance".to_string()])
+        .with_label_values(&["instance"])
         .set(duration as i64);
     metrics::MPC_TRIPLES_GENERATION_TIME_MS
-        .with_label_values(&[&"cumulative".to_string()])
+        .with_label_values(&["cumulative"])
         .add(duration as i64);
     metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);
     assert_eq!(
