@@ -68,12 +68,8 @@ async fn submit_tx(
     match result {
         Ok(response) => match response {
             // We're not a validator, so we should always be routing the transaction.
-            near_client::ProcessTxResponse::RequestRouted => {
-                metrics::MPC_NUM_SIGN_RESPONSES_SENT.inc();
-                true
-            }
+            near_client::ProcessTxResponse::RequestRouted => true,
             _ => {
-                metrics::MPC_NUM_SIGN_RESPONSES_FAILED_TO_SEND_IMMEDIATELY.inc();
                 tracing::error!(
                     target: "mpc",
                     "Failed to send response tx: unexpected ProcessTxResponse: {:?}",
@@ -83,7 +79,6 @@ async fn submit_tx(
             }
         },
         Err(err) => {
-            metrics::MPC_NUM_SIGN_RESPONSES_FAILED_TO_SEND_IMMEDIATELY.inc();
             tracing::error!(target: "mpc", "Failed to send response tx: {:?}", err);
             false
         }
@@ -164,6 +159,9 @@ async fn ensure_send_transaction(
         .await
         {
             // If the transaction fails to send immediately, wait a short period and try again
+            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+                .with_label_values(&[request.method(), "local_error"])
+                .inc();
             time::sleep(Duration::from_secs(1)).await;
             continue;
         };
@@ -173,14 +171,21 @@ async fn ensure_send_transaction(
         // Then try to check whether it had the intended effect
         match confirm_tx_result(indexer_state.clone(), &request).await {
             Ok(true) => {
-                metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
+                metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+                    .with_label_values(&[request.method(), "succeeded"])
+                    .inc();
                 return;
             }
             Ok(false) => {
-                metrics::MPC_NUM_SIGN_RESPONSES_TIMED_OUT.inc();
+                metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+                    .with_label_values(&[request.method(), "timed_out"])
+                    .inc();
                 continue;
             }
             Err(err) => {
+                metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+                    .with_label_values(&[request.method(), "unknown"])
+                    .inc();
                 tracing::warn!(target:"mpc", %err, "encountered error trying to confirm result of transaction {:?}", request);
                 return;
             }
