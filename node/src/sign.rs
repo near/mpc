@@ -14,7 +14,7 @@ use cait_sith::{FullSignature, KeygenOutput, PresignArguments, PresignOutput};
 use k256::{AffinePoint, Scalar, Secp256k1};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::time::timeout;
 
 /// Performs an MPC presignature operation. This is shared for the initiator
@@ -45,7 +45,12 @@ pub async fn pre_sign(
             threshold,
         },
     )?;
+    let start = SystemTime::now();
+
     let presignature = run_protocol("presign", channel, me, protocol).await?;
+
+    let duration = start.elapsed()?.as_millis();
+    metrics::MPC_PRE_SIGNATURE_TIME_MS.set(i64::try_from(duration).unwrap_or_else(|_| i64::MAX));
     metrics::MPC_NUM_PRESIGNATURES_GENERATED.inc();
     Ok(presignature)
 }
@@ -115,7 +120,12 @@ pub async fn sign(
         presign_out,
         msg_hash,
     )?;
+    let start = SystemTime::now();
+
     let signature = run_protocol("sign", channel, me, protocol).await?;
+
+    let duration = start.elapsed()?.as_millis();
+    metrics::MPC_SIGNATURE_TIME_MS.set(i64::try_from(duration).unwrap_or_else(|_| i64::MAX));
     metrics::MPC_NUM_SIGNATURES_GENERATED.inc();
     Ok((signature, public_key))
 }

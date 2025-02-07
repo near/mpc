@@ -26,8 +26,6 @@ pub async fn run_many_triple_generation<const N: usize>(
         0,
         "Expected to generate even number of triples in a batch"
     );
-    let start = SystemTime::now();
-
     let cs_participants = channel
         .participants
         .iter()
@@ -39,7 +37,14 @@ pub async fn run_many_triple_generation<const N: usize>(
         me.into(),
         threshold,
     )?;
+
+    let start = SystemTime::now();
+
     let triples = run_protocol("many triple gen", channel, me, protocol).await?;
+
+    let duration = start.elapsed()?.as_millis();
+    metrics::MPC_NUM_TRIPLES_GENERATION_TIME_MS
+        .set(i64::try_from(duration).unwrap_or_else(|_| i64::MAX));
     metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);
     assert_eq!(
         N,
@@ -49,24 +54,14 @@ pub async fn run_many_triple_generation<const N: usize>(
         triples.len()
     );
     let iter = triples.into_iter();
-    let pairs = iter
-        .clone()
-        .step_by(2)
-        .zip(iter.skip(1).step_by(2))
-        .collect();
-
-    let duration = start.elapsed()?.as_millis();
-    metrics::MPC_NUM_TRIPLES_GENERATION_TIME_MS
-        .set(i64::try_from(duration).unwrap_or_else(|_| i64::MAX));
-
-    Ok(pairs)
+    let pairs = iter.clone().step_by(2).zip(iter.skip(1).step_by(2));
+    Ok(pairs.collect())
 }
 
 pub type TripleStorage = DistributedAssetStorage<PairedTriple>;
 
 pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
 
-// NOTE: this is the code that is running triple generation!!!
 /// Continuously runs triple generation in the background, using the number of threads
 /// specified in the config, trying to maintain some number of available triples all the
 /// time as specified in the config. Generated triples will be written to `triple_store`
