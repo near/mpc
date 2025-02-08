@@ -33,13 +33,14 @@ pub(crate) fn sign_internal<RNG: CryptoRng + RngCore + 'static + Send>(
         Box::new(make_protocol(ctx, fut))
     } else {
         let fut = do_sign_participant(ctx.shared_channel(), rng, key_package, msg_hash);
-
         Box::new(make_protocol(ctx, fut))
     };
-
     Ok(protocol)
 }
 
+/// Coordinator sends this message to other participants to:
+///     (a) indicate the start of the protocol
+///     (b) claim `Coordinator` role
 #[derive(serde::Serialize, serde::Deserialize)]
 struct InitMessage();
 
@@ -58,7 +59,9 @@ async fn do_sign_coordinator<RNG: CryptoRng + RngCore + 'static + Send>(
     let mut signature_shares: BTreeMap<frost_ed25519::Identifier, round2::SignatureShare> =
         BTreeMap::new();
 
-    // ---
+    // --- Round 1.
+    // * Send acknowledgment to other participants.
+    // * Wait for their commitments.
 
     let r1_wait_point = chan.next_waitpoint();
     {
@@ -79,7 +82,10 @@ async fn do_sign_coordinator<RNG: CryptoRng + RngCore + 'static + Send>(
 
     let signing_package = frost_ed25519::SigningPackage::new(commitments_map, message.as_slice());
 
-    // ---
+    // --- Round 2.
+    // * Convert collected commitments into the signing package.
+    // * Send it to all participants.
+    // * Wait for each other's signature share
 
     let r2_wait_point = chan.next_waitpoint();
     {
@@ -100,12 +106,13 @@ async fn do_sign_coordinator<RNG: CryptoRng + RngCore + 'static + Send>(
         signature_shares.insert(to_frost_identifier(from), signature_share);
     }
 
-    // ---
+    // --- Signature aggregation.
+    // * Converted collected signature shares into the signature.
+    // * Signature is verified internally during `aggregate()` call.
 
     let signature = frost_ed25519::aggregate(&signing_package, &signature_shares, &pubkeys)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
-    // Signature has been verified during the aggregation
     Ok(SignatureOutput::Coordinator(signature))
 }
 
@@ -117,14 +124,18 @@ async fn do_sign_participant<RNG: CryptoRng + RngCore + 'static>(
 ) -> Result<SignatureOutput, ProtocolError> {
     let (nonces, commitments) = round1::commit(key_package.signing_share(), &mut rng);
 
-    // ---
+    // --- Round 1.
+    // * Wait for an initial message from a coordinator.
+    // * Send coordinator our commitment.
 
     let r1_wait_point = chan.next_waitpoint();
     let (coordinator, _): (_, InitMessage) = chan.recv(r1_wait_point).await?;
     chan.send_private(r1_wait_point, coordinator, &commitments)
         .await;
 
-    // ---
+    // --- Round 2.
+    // * Wait for a signing package.
+    // * Send our signature share.
 
     let r2_wait_point = chan.next_waitpoint();
     let signing_package = loop {
@@ -150,6 +161,8 @@ async fn do_sign_participant<RNG: CryptoRng + RngCore + 'static>(
         chan.send_private(r2_wait_point, coordinator, &signature_share)
             .await;
     }
+    
+    // ---
 
     Ok(SignatureOutput::Participant {})
 }
@@ -285,7 +298,8 @@ mod tests {
         let coordinators = 1;
         for min_signers in 2..max_signers {
             for actual_signers in min_signers..=max_signers {
-                let mut protocols = build_protocols(max_signers, min_signers, actual_signers, coordinators);
+                let mut protocols =
+                    build_protocols(max_signers, min_signers, actual_signers, coordinators);
 
                 let mut rng = thread_rng();
                 protocols.shuffle(&mut rng);
