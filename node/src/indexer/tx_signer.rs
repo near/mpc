@@ -5,7 +5,7 @@ use near_indexer::near_primitives::account::AccessKey;
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
 };
-use near_indexer_primitives::types::AccountId;
+use near_indexer_primitives::types::{AccountId, Gas};
 use near_indexer_primitives::CryptoHash;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -37,13 +37,14 @@ impl TransactionSigner {
         receiver_id: AccountId,
         method_name: String,
         args: Vec<u8>,
+        gas: Gas,
         block_hash: CryptoHash,
         block_height: u64,
     ) -> SignedTransaction {
         let action = FunctionCallAction {
             method_name,
             args,
-            gas: 300000000000000,
+            gas,
             deposit: 0,
         };
         let signer_id = match &self.signer {

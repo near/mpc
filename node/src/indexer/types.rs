@@ -8,7 +8,10 @@ use k256::{
 };
 use mpc_contract::primitives;
 use near_crypto::PublicKey;
+use near_indexer_primitives::types::Gas;
 use serde::Serialize;
+
+const TGAS: u64 = 1_000_000_000_000;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone, Copy)]
 pub struct SerializableScalar {
@@ -89,6 +92,11 @@ pub struct ChainRespondArgs {
 }
 
 #[derive(Serialize, Debug)]
+pub struct ChainGetPendingRequestArgs {
+    pub request: ChainSignatureRequest,
+}
+
+#[derive(Serialize, Debug)]
 pub struct ChainJoinArgs {
     pub url: String,
     pub cipher_pk: primitives::hpke::PublicKey,
@@ -126,6 +134,14 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::Join(_) => "join",
             ChainSendTransactionRequest::VotePk(_) => "vote_pk",
             ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
+        }
+    }
+
+    pub fn gas_required(&self) -> Gas {
+        match self {
+            Self::Respond(_) | Self::Join(_) | Self::VotePk(_) | Self::VoteReshared(_) => {
+                300 * TGAS
+            }
         }
     }
 }
