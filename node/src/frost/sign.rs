@@ -7,7 +7,6 @@ use frost_ed25519::{round1, round2};
 use rand::{CryptoRng, RngCore};
 use std::collections::BTreeMap;
 
-
 pub(crate) fn sign_internal<RNG: CryptoRng + RngCore + 'static + Send>(
     rng: RNG,
     is_coordinator: bool,
@@ -16,12 +15,12 @@ pub(crate) fn sign_internal<RNG: CryptoRng + RngCore + 'static + Send>(
     key_package: frost_ed25519::keys::KeyPackage,
     pubkeys: frost_ed25519::keys::PublicKeyPackage,
     msg_hash: Vec<u8>,
-) -> anyhow::Result<Box<dyn Protocol<Output =SignatureOutput>>> {
+) -> anyhow::Result<Box<dyn Protocol<Output = SignatureOutput>>> {
     let Some(participants) = ParticipantList::new(&participants) else {
         anyhow::bail!("Participants list contains duplicates")
     };
     let ctx = Context::new();
-    let protocol: Box<dyn Protocol<Output =SignatureOutput>> = if is_coordinator {
+    let protocol: Box<dyn Protocol<Output = SignatureOutput>> = if is_coordinator {
         let fut = do_sign_coordinator(
             ctx.shared_channel(),
             rng,
@@ -157,25 +156,22 @@ async fn do_sign_participant<RNG: CryptoRng + RngCore + 'static>(
 
 #[cfg(test)]
 mod tests {
+    use crate::frost::sign::sign_internal;
     use crate::frost::{to_frost_identifier, SignatureOutput};
-    use cait_sith::protocol::{
-        run_protocol, Participant, Protocol,
-    };
+    use cait_sith::protocol::{run_protocol, Participant, Protocol};
     use frost_ed25519::rand_core::SeedableRng;
     use frost_ed25519::Identifier;
     use near_indexer::near_primitives::hash::hash;
     use rand::prelude::{SliceRandom, StdRng};
     use rand::thread_rng;
     use std::collections::BTreeMap;
-    use crate::frost::sign::sign_internal;
 
     fn build_protocols(
         max_signers: usize,
         min_signers: usize,
+        actual_signers: usize,
         coordinators: usize,
-    ) -> Vec<(Participant, Box<dyn Protocol<Output =SignatureOutput>>)> {
-        assert!(max_signers >= min_signers);
-
+    ) -> Vec<(Participant, Box<dyn Protocol<Output = SignatureOutput>>)> {
         let mut identifiers = Vec::with_capacity(max_signers);
         for i in 0..max_signers {
             // from 1 to avoid assigning 0 to a ParticipantId
@@ -209,16 +205,16 @@ mod tests {
         let msg = "hello_near";
         let msg_hash = hash(msg.as_bytes());
 
-        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output =SignatureOutput>>)> =
+        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = SignatureOutput>>)> =
             Vec::with_capacity(max_signers);
 
-        for i in 0..min_signers {
+        for i in 0..actual_signers {
             protocols.push((
                 identifiers[i].into(),
                 sign_internal(
                     rng.clone(),
-                    i >= min_signers - coordinators,
-                    identifiers.iter().take(min_signers).cloned().collect(),
+                    i >= actual_signers - coordinators,
+                    identifiers.iter().take(actual_signers).cloned().collect(),
                     identifiers[i],
                     key_packages[&frost_identifiers[i]].clone(),
                     pubkey_package.clone(),
@@ -232,11 +228,16 @@ mod tests {
     }
 
     fn assert_single_coordinator_result(data: Vec<(Participant, SignatureOutput)>) {
-        let count = data.iter().filter(|(_, output)| {
-            if let SignatureOutput::Coordinator(_) = output {
-                true
-            } else { false }
-        }).count();
+        let count = data
+            .iter()
+            .filter(|(_, output)| {
+                if let SignatureOutput::Coordinator(_) = output {
+                    true
+                } else {
+                    false
+                }
+            })
+            .count();
         assert_eq!(count, 1);
     }
 
@@ -244,9 +245,10 @@ mod tests {
     fn basic_two_participants() {
         let max_signers = 2;
         let min_signers = 2;
+        let actual_signers = 2;
         let coordinators = 1;
 
-        let protocols = build_protocols(max_signers, min_signers, coordinators);
+        let protocols = build_protocols(max_signers, min_signers, actual_signers, coordinators);
         let data = run_protocol(protocols).unwrap();
         assert_single_coordinator_result(data);
     }
@@ -256,9 +258,23 @@ mod tests {
     fn multiple_coordinators() {
         let max_signers = 3;
         let min_signers = 2;
+        let actual_signers = 2;
         let coordinators = 2;
 
-        let protocols = build_protocols(max_signers, min_signers, coordinators);
+        let protocols = build_protocols(max_signers, min_signers, actual_signers, coordinators);
+        let data = run_protocol(protocols).unwrap();
+        assert_single_coordinator_result(data);
+    }
+
+    #[test]
+    #[should_panic]
+    fn threshold_not_met() {
+        let max_signers = 3;
+        let min_signers = 2;
+        let actual_signers = 1;
+        let coordinators = 1;
+
+        let protocols = build_protocols(max_signers, min_signers, actual_signers, coordinators);
         let data = run_protocol(protocols).unwrap();
         assert_single_coordinator_result(data);
     }
@@ -268,13 +284,15 @@ mod tests {
         let max_signers = 7;
         let coordinators = 1;
         for min_signers in 2..max_signers {
-            let mut protocols = build_protocols(max_signers, min_signers, coordinators);
+            for actual_signers in min_signers..=max_signers {
+                let mut protocols = build_protocols(max_signers, min_signers, actual_signers, coordinators);
 
-            let mut rng = thread_rng();
-            protocols.shuffle(&mut rng);
+                let mut rng = thread_rng();
+                protocols.shuffle(&mut rng);
 
-            let data = run_protocol(protocols).unwrap();
-            assert_single_coordinator_result(data);
+                let data = run_protocol(protocols).unwrap();
+                assert_single_coordinator_result(data);
+            }
         }
     }
 
