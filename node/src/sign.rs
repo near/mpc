@@ -45,8 +45,8 @@ pub async fn pre_sign(
             threshold,
         },
     )?;
+    let _timer = metrics::MPC_PRE_SIGNATURE_TIME_ELAPSED.start_timer();
     let presignature = run_protocol("presign", channel, me, protocol).await?;
-    metrics::MPC_NUM_PRESIGNATURES_GENERATED.inc();
     Ok(presignature)
 }
 
@@ -115,8 +115,8 @@ pub async fn sign(
         presign_out,
         msg_hash,
     )?;
+    let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
     let signature = run_protocol("sign", channel, me, protocol).await?;
-    metrics::MPC_NUM_SIGNATURES_GENERATED.inc();
     Ok((signature, public_key))
 }
 
