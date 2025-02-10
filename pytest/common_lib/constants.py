@@ -10,3 +10,4 @@ NEAR_BASE = 10**24
 TGAS = 10**12
 # Tgas required by the contract for a sign call.
 GAS_FOR_SIGN_CALL = 10
+SIGNATURE_DEPOSIT = 0

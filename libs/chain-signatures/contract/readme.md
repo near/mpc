@@ -8,6 +8,7 @@ The currently deployed version of the contract is `V0`, with `V1` expected to be
 
 - **Lower gas costs**: Signature requests in `V1` will consume approximately half the gas compared to `V0`, mainly due to optimizations in state handling and reducing the number of receipts required per request. T
 - **Removal of the signature request limit**: `V0` imposed a hard limit on the number of signature requests, which `V1` removes. This limit was necessary for [previous MPC nodes](https://github.com/near/mpc/releases/tag/1.0.0-rc.5), but is no longer required due to performance improvements by the [current release](https://github.com/Near-One/mpc/releases/tag/testnet-upgrade) (currently on testnet). 
+- **No deposit**: `V1` does no longer require a deposit for signature requests.
 
 **Benchmarks:**
 

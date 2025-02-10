@@ -186,12 +186,19 @@ class MpcCluster:
     returns a list of signed transactions
     """
 
-    def make_sign_request_txns(self, payloads, nonce_offset=1, add_gas=None):
+    def make_sign_request_txns(self,
+                               payloads,
+                               nonce_offset=1,
+                               add_gas=None,
+                               add_deposit=None):
         nonce_offset = 1
         txs = []
         gas = constants.GAS_FOR_SIGN_CALL * TGAS
+        deposit = constants.SIGNATURE_DEPOSIT
         if add_gas is not None:
             gas += add_gas
+        if add_deposit is not None:
+            deposit += add_deposit
         for payload in payloads:
             sign_args = {
                 'request': {
@@ -206,7 +213,7 @@ class MpcCluster:
                                                 'sign',
                                                 sign_args,
                                                 nonce_offset=nonce_offset,
-                                                deposit=1,
+                                                deposit=deposit,
                                                 gas=gas)
             txs.append(tx)
         return txs
@@ -224,7 +231,8 @@ class MpcCluster:
             self,
             num_requests,
             sig_verification=assert_signature_success,
-            add_gas=None):
+            add_gas=None,
+            add_deposit=None):
         """
             Sends `num_requests` signature requests and waits for the results.
         
@@ -247,7 +255,7 @@ class MpcCluster:
         started = time.time()
         metrics = [MetricsTracker(node.near_node) for node in self.mpc_nodes]
         tx_hashes, tx_sent = self.generate_and_send_signature_requests(
-            num_requests, add_gas)
+            num_requests, add_gas, add_deposit)
         print("Sent signature requests, tx_hashes:", tx_hashes)
 
         self.observe_signature_requests(started, metrics, tx_sent)
@@ -259,7 +267,10 @@ class MpcCluster:
         ]
         print("Number of nonce conflicts which occurred:", res)
 
-    def generate_and_send_signature_requests(self, num_requests, add_gas=None):
+    def generate_and_send_signature_requests(self,
+                                             num_requests,
+                                             add_gas=None,
+                                             add_deposit=None):
         """
             Sends signature requests and returns the transactions and the timestamp they were sent.
         """
@@ -267,7 +278,9 @@ class MpcCluster:
             i, 1, 2, 0, 4, 5, 6, 8, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
             19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 44
         ] for i in range(num_requests)]
-        txs = self.make_sign_request_txns(payloads, add_gas=add_gas)
+        txs = self.make_sign_request_txns(payloads,
+                                          add_gas=add_gas,
+                                          add_deposit=add_deposit)
         return self.send_sign_request_txns(txs), time.time()
 
     def observe_signature_requests(self, started, metrics, tx_sent):
