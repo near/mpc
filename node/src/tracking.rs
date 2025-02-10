@@ -118,16 +118,16 @@ pub fn set_progress(progress: &str) {
 /// Starts a root task. This is the entry point for tracking tasks.
 /// All other futures must be spawned with `tracking::spawn`, rather than
 /// `tokio::spawn`.
-pub fn start_root_task<F, R>(f: F) -> (impl Future<Output = R>, Arc<TaskHandle>)
+pub fn start_root_task<F, R>(name: &str, f: F) -> (impl Future<Output = R>, Arc<TaskHandle>)
 where
     F: Future<Output = R> + Send + 'static,
     R: Send + 'static,
 {
     let handle = Arc::new(TaskHandle {
-        _parent: None,
+        parent: None,
         children: Mutex::new(WeakCollection::new()),
-        _description: "root".to_string(),
-        _start_time: Instant::now(),
+        description: name.to_string(),
+        start_time: Instant::now(),
         progress: Mutex::new(("".to_string(), Instant::now())),
         finished: AtomicBool::new(false),
     });
@@ -197,10 +197,10 @@ impl<T> WeakCollection<T> {
 ///  - Weakly, by its parent's children collection. This is used to locate all
 ///    the currently running tasks for debugging purposes.
 pub struct TaskHandle {
-    _parent: Option<Arc<TaskHandle>>, // This is needed to keep the parent alive
+    parent: Option<Arc<TaskHandle>>, // This is needed to keep the parent alive
     children: Mutex<WeakCollection<TaskHandle>>,
-    _description: String,
-    _start_time: Instant,
+    description: String,
+    start_time: Instant,
     progress: Mutex<(String, Instant)>,
     finished: AtomicBool,
 }
@@ -231,10 +231,10 @@ impl TaskHandle {
         let description = description.to_string();
         let progress = Mutex::new(("".to_string(), Instant::now()));
         let handle = Arc::new(TaskHandle {
-            _parent: Some(self.clone()),
+            parent: Some(self.clone()),
             children: Mutex::new(WeakCollection::new()),
-            _description: description,
-            _start_time: Instant::now(),
+            description,
+            start_time: Instant::now(),
             progress,
             finished: AtomicBool::new(false),
         });
@@ -268,17 +268,26 @@ impl TaskHandle {
         R: Send + 'static,
     {
         let child = self.new_child(description);
-        let description_clone = description.to_string();
-        let child_clone = child.clone();
-        CURRENT_TASK.scope(Arc::new(TaskHandleScoped(child)), async move {
+        CURRENT_TASK.scope(Arc::new(TaskHandleScoped(child.clone())), async move {
             let result = f.await;
             if let Err(err) = result {
-                tracing::error!(
-                    "Task failed: {}: {}; last status: {}",
-                    description_clone,
-                    err,
-                    child_clone.progress.lock().unwrap().0
-                );
+                let mut task_trace = Vec::new();
+                let mut current_task = Some(child.clone());
+                while let Some(task) = current_task {
+                    let (progress, progress_since) = {
+                        let progress_lock = task.progress.lock().unwrap();
+                        (progress_lock.0.clone(), progress_lock.1)
+                    };
+                    task_trace.push(format!(
+                        "\n  from {:>3} {}: {} (for {})",
+                        format_duration(task.start_time.elapsed()),
+                        task.description,
+                        progress,
+                        format_short_duration(progress_since.elapsed()),
+                    ));
+                    current_task = task.parent.clone();
+                }
+                tracing::error!("Task failed: {}; trace:{}", err, task_trace.join(""));
             }
         })
     }
@@ -294,10 +303,10 @@ impl TaskHandle {
         let progress_elapsed = progress.1.elapsed();
         drop(progress);
         TaskStatusReport {
-            description: self._description.clone(),
+            description: self.description.clone(),
             progress: progress_string,
             progress_elapsed,
-            elapsed: self._start_time.elapsed(),
+            elapsed: self.start_time.elapsed(),
             finished: self.finished.load(std::sync::atomic::Ordering::Relaxed),
             children: children_reports,
         }
@@ -314,26 +323,28 @@ pub struct TaskStatusReport {
     children: Vec<TaskStatusReport>,
 }
 
+fn format_duration(duration: std::time::Duration) -> String {
+    if duration.as_secs() > 60 {
+        format!("{}m", duration.as_secs() / 60)
+    } else if duration.as_secs() >= 1 {
+        format!("{}s", duration.as_secs())
+    } else {
+        "<1s".to_string()
+    }
+}
+
+fn format_short_duration(duration: std::time::Duration) -> String {
+    if duration.as_secs() > 60 {
+        format!("{}m", duration.as_secs() / 60)
+    } else if duration.as_secs() >= 1 {
+        format!("{}s", duration.as_secs())
+    } else {
+        format!("{}ms", duration.as_millis())
+    }
+}
+
 impl Debug for TaskStatusReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn format_duration(duration: std::time::Duration) -> String {
-            if duration.as_secs() > 60 {
-                format!("{}m", duration.as_secs() / 60)
-            } else if duration.as_secs() >= 1 {
-                format!("{}s", duration.as_secs())
-            } else {
-                "<1s".to_string()
-            }
-        }
-        fn format_short_duration(duration: std::time::Duration) -> String {
-            if duration.as_secs() > 60 {
-                format!("{}m", duration.as_secs() / 60)
-            } else if duration.as_secs() >= 1 {
-                format!("{}s", duration.as_secs())
-            } else {
-                format!("{}ms", duration.as_millis())
-            }
-        }
         fn fmt_inner(
             report: &TaskStatusReport,
             f: &mut std::fmt::Formatter<'_>,
@@ -367,7 +378,7 @@ pub mod testing {
         F: std::future::Future<Output = R> + Send + 'static,
         R: Send + 'static,
     {
-        let (future, handle) = super::start_root_task(f);
+        let (future, handle) = super::start_root_task("root", f);
         let handle_clone = handle.clone();
         tokio::spawn(async move {
             loop {

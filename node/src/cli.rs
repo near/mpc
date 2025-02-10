@@ -138,12 +138,22 @@ impl StartCmd {
             .worker_threads(1)
             .build()?;
 
-        let root_task = root_runtime.spawn(start_root_task(root_future).0);
-        // TODO(#156): It is not ideal to perform a blocking join here.
-        indexer_handle
-            .join()
-            .map_err(|_| anyhow::anyhow!("Indexer thread panicked!"))?;
-        root_task.await??;
+        let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
+        let indexer_handle = tokio::task::spawn_blocking(move || {
+            if let Err(e) = indexer_handle.join() {
+                anyhow::bail!("Indexer thread failed: {:?}", e);
+            }
+            anyhow::Ok(())
+        });
+        // If either fails, the whole program fails.
+        tokio::select! {
+            res = root_task => {
+                res??;
+            }
+            res = indexer_handle => {
+                res??;
+            }
+        }
         Ok(())
     }
 }

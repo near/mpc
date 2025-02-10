@@ -183,6 +183,7 @@ impl OneNodeTestConfig {
             indexer_task: _indexer_task,
             currently_running_job_name,
         } = self;
+        let my_account_id = config.my_near_account_id.clone();
         std::fs::create_dir_all(&home_dir)?;
         async move {
             let root_future = async move {
@@ -208,7 +209,9 @@ impl OneNodeTestConfig {
                 };
                 coordinator.run().await
             };
-            start_root_task(root_future).0.await?;
+            start_root_task(&format!("root for {}", my_account_id), root_future)
+                .0
+                .await?;
             Ok(())
         }
         .await

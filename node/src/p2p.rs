@@ -244,44 +244,26 @@ impl PersistentConnection {
 
     /// Sends a message over the connection. If the connection was reset, fail.
     async fn send_message(&self, expected_version: usize, msg: Vec<u8>) -> anyhow::Result<()> {
-        let (expected_version, version, conn) = if expected_version == 0 {
-            // This means that the connection was never established when the computation
-            // started. This is possible when someone else initiated the computation,
-            // before we've got a chance to establish an outgoing connection to the
-            // involved participants yet. So in this case, we shall wait for a connection.
-            let current_conn = self.current.borrow().clone();
-            match current_conn {
-                Some((version, conn)) => (1, version, conn),
-                None => {
-                    let (version, conn) = self
-                        .current
-                        .clone()
-                        .wait_for(|conn| conn.is_some())
-                        .await?
-                        .clone()
-                        .unwrap();
-                    (1, version, conn)
-                }
-            }
+        let (cur_version, cur_conn) = self.current.borrow().clone().unwrap_or((0, Weak::new()));
+        let (cur_version, cur_conn) = if cur_version + 1 == expected_version {
+            // If we're waiting for the next version, that means we want to wait for a
+            // new connection to be established.
+            self.current
+                .clone()
+                .wait_for(|item| item.as_ref().is_some_and(|(v, _)| v >= &expected_version))
+                .await?
+                .clone()
+                .unwrap()
         } else {
-            match self.current.borrow().clone() {
-                Some((version, conn)) => (expected_version, version, conn),
-                None => {
-                    anyhow::bail!(
-                        "Programming error: Connection to {} is missing",
-                        self.target_participant_id
-                    );
-                }
-            }
+            (cur_version, cur_conn)
         };
-
-        if version != expected_version {
+        if cur_version != expected_version {
             anyhow::bail!(
                 "Connection to {} is not the original connection expected",
                 self.target_participant_id
             );
         }
-        let Some(conn) = conn.upgrade() else {
+        let Some(conn) = cur_conn.upgrade() else {
             anyhow::bail!("Connection to {} was dropped", self.target_participant_id);
         };
         conn.send(msg)?;
@@ -691,7 +673,15 @@ impl MeshNetworkTransportSender for TlsMeshSender {
     fn connection_version(&self, participant_id: ParticipantId) -> usize {
         self.connections
             .get(&participant_id)
-            .map(|conn| conn.current.borrow().clone().map(|(v, _)| v).unwrap_or(0))
+            .map(|conn| {
+                // If the current connection is alive, then the version we use is the current version.
+                // Otherwise, the version we use is the next version, whenever the new connection is established.
+                conn.current
+                    .borrow()
+                    .clone()
+                    .map(|(v, conn)| if conn.upgrade().is_some() { v } else { v + 1 })
+                    .unwrap_or(1)
+            })
             .unwrap_or(0)
     }
 
