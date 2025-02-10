@@ -1,17 +1,18 @@
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::collections::HashMap;
+use std::hash::Hash;
 use crate::participants::{ParticipantCounter, ParticipantList};
 use crate::protocol::{
     internal::{SharedChannel, Waitpoint},
     Participant,
 };
 use crate::protocol::ProtocolError;
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum MessageType {
-    Send(bool),
-    Echo(bool),
-    Ready(bool),
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum MessageType<T> {
+    Send(T),
+    Echo(T),
+    Ready(T),
 }
 
 fn echo_ready_thresholds(n: usize) -> (usize, usize){
@@ -29,13 +30,14 @@ fn echo_ready_thresholds(n: usize) -> (usize, usize){
 /// This reliable broadcast function is the echo-broadcast protocol from the sender side.
 /// It broadcasts either true or false and expects that the output of the broadcasts be the same as the input data
 /// This function is expected to be applied to ensure either all (honest) nodes succeed a specific protocol or they fail
-pub async fn reliable_broadcast_send (
+pub async fn reliable_broadcast_send<T> (
     chan: &SharedChannel,
     wait: Waitpoint,
     participants: &ParticipantList,
     me: &Participant,
-    data: bool,
-) -> MessageType {
+    data: T,
+) -> MessageType<T>
+where T: Serialize + Copy {
     let vote  = MessageType::Send(data);
     let sid = participants.index(me.clone());
     // Send vote to all participants but for myself
@@ -48,20 +50,24 @@ pub async fn reliable_broadcast_send (
 /// This reliable broadcast function is the echo-broadcast protocol from the sender receiver side.
 /// It broadcasts either true or false and expects that the output of the broadcasts be the same as the input data
 /// If vote is Some, then reliable_broadcast_receive_all is expected to be called right after reliable_broadcast_send
-pub async fn reliable_broadcast_receive_all (
+pub async fn reliable_broadcast_receive_all<T>(
     chan: &SharedChannel,
     wait: Waitpoint,
     participants: &ParticipantList,
     me: &Participant,
-    send_vote: MessageType,
-) -> Result<bool, ProtocolError> {
-
+    send_vote: MessageType<T>,
+) -> Result<Vec<T>, ProtocolError>
+where T:Serialize + Clone + DeserializeOwned + Eq + Hash + Copy
+{
     let n = participants.len();
     let (echo_t, ready_t) = echo_ready_thresholds(n);
+
+    let mut vote_output: Vec<T> = Vec::new();
     // first dimension determines the session
-    // second dimension contains the counter for success/failure
-    let mut fail_success_echo =  vec![vec![0; 2]; n];
-    let mut fail_success_ready =  vec![vec![0; 2]; n];
+    // second dimension contains the counter for success/failure of the received strings
+    let mut fail_success_echo =  vec![HashMap::new(); n];
+    let mut fail_success_ready =  vec![HashMap::new(); n];
+
     // first dimension determines the session
     // second dimension helps prevent duplication: correct processes should deliver at most one message
     let mut seen_echo = vec![ParticipantCounter::new(&participants); n];
@@ -124,11 +130,13 @@ pub async fn reliable_broadcast_receive_all (
                 if !seen_echo[sid].put(from) || finish_echo[sid]{
                     continue;
                 }
-                fail_success_echo[sid][data as usize] += 1;
+                *(fail_success_echo[sid]).entry(data)
+                                        .and_modify(|counter| *counter += 1)
+                                        .or_insert(1) += 1;
 
                 // upon gathering strictly more than (n+f)/2 votes
                 // for a result, deliver (READY, vote)
-                if fail_success_echo[sid][data as usize] > echo_t{
+                if fail_success_echo[sid][&data] > echo_t{
                     chan.send_many(wait,   &(&sid, &MessageType::Ready(data))).await;
                     // state that the echo phase for session id (sid) is done
                     finish_echo[sid] = true;
@@ -138,38 +146,44 @@ pub async fn reliable_broadcast_receive_all (
                 }
             },
             MessageType::Ready(data) => {
-
                 // skip if I received echo message from the sender in session sid
                 if !seen_ready[sid].put(from) || finish_ready[sid] {
                     continue;
                 }
                 // increment the number of collected ready success or failure votes
-                fail_success_ready[sid][data as usize] += 1;
+                *(fail_success_ready[sid]).entry(data)
+                                        .and_modify(|counter| *counter += 1)
+                                        .or_insert(1) += 1;
 
                 // upon gathering strictly more than f votes
                 // and if I haven't already amplified ready vote in session sid then
                 // proceed to amplification of the ready message
-                if fail_success_ready[sid][data as usize] > ready_t && finish_amplification[sid] == false{
+                if fail_success_ready[sid][&data] > ready_t && finish_amplification[sid] == false{
                     chan.send_many(wait,  &(&sid, &MessageType::Ready(data))).await;
                     finish_amplification[sid] = true;
                     // activate the boolean saying that *me* wants to deliver ready
                     // to all participants including myself
                     ready_activated = true;
                 }
-                if fail_success_ready[sid][data as usize] > 2*ready_t{
+                if fail_success_ready[sid][&data] > 2*ready_t{
                     // skip all types of messages sent for session sid from now on
                     finish_send[sid] = true;
                     finish_echo[sid] = true;
                     finish_ready[sid] = true;
-                    // fail on first failure
-                    if data == false {
-                        return Ok(false);
-                    }
-                    // if all the ready slots are set to true
-                    // then all sessions have ended successfully
-                    // we can thus output that the n instances of the broadcast protocols have succeeded
+
+                    // return an array of data
+                    // make a list of data and return them
+                    vote_output.push(data);
+
+                    // // fail on first failure
+                    // if data == false {
+                    //     return Ok(false);
+                    // }
+                    // // if all the ready slots are set to true
+                    // // then all sessions have ended successfully
+                    // // we can thus output that the n instances of the broadcast protocols have succeeded
                     if finish_ready.iter().all(|&x| x) {
-                        return Ok(true);
+                        return Ok(vote_output);
                     }
                 }
             },
@@ -181,26 +195,27 @@ pub async fn reliable_broadcast_receive_all (
 /// or simulates the reception of a vote when running send_many
 /// (function send_many does not seem to deliver a message to the sender
 /// which, if not taken care of, could cause problems in BFT vote count)
-async fn prepare_vote(
+async fn prepare_vote<T>(
     send_activated: &mut bool,
     echo_activated: &mut bool,
     ready_activated: &mut bool,
     from: &mut Participant,
     sid: &mut usize,
-    vote: &mut MessageType,
+    vote: &mut MessageType<T>,
     chan: &SharedChannel,
     wait: Waitpoint,
     participants: &ParticipantList,
     me: &Participant,
-    send_vote: &MessageType,
-) -> Result<bool, ProtocolError>{
+    send_vote: &MessageType<T>,
+) -> Result<bool, ProtocolError>
+where T: DeserializeOwned + Clone + Copy {
     if *send_activated {
         *send_activated = false;
         match send_vote {
             MessageType::Send(data) => {
                 *from = me.clone();
                 *sid = participants.index(me.clone());
-                *vote = MessageType::Send(data.clone());
+                *vote = MessageType::Send(*data);
             }
             _ => return Err(ProtocolError::AssertionFailed(
                         format!("The function reliable_broadcast_receive_all is expected to be called reliable_broadcast_send {me:?}")

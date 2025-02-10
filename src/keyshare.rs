@@ -230,8 +230,9 @@ async fn do_keyshare<C: CSCurve>(
         true => {
             // broadcast node me succeded
             let send_vote = reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, true).await;
-            let is_success = reliable_broadcast_receive_all (&chan, wait_broadcast, &participants, &me, send_vote).await?;
-            if !is_success {
+            let vote_list = reliable_broadcast_receive_all (&chan, wait_broadcast, &participants, &me, send_vote).await?;
+            // go through all the list of votes and check if any is fail
+            if vote_list.contains(&false) {
                 return Err(ProtocolError::AssertionFailed(
                     format!("A participant seems to have failed its checks. Aborting DKG!")
                 ));
