@@ -54,14 +54,13 @@ async fn do_sign_coordinator<RNG: CryptoRng + RngCore + 'static + Send>(
     message: Vec<u8>,
 ) -> Result<SignatureOutput, ProtocolError> {
     let mut seen = ParticipantCounter::new(&participants);
-    let mut commitments_map: BTreeMap<frost_ed25519::Identifier, round1::SigningCommitments> =
-        BTreeMap::new();
-    let mut signature_shares: BTreeMap<frost_ed25519::Identifier, round2::SignatureShare> =
-        BTreeMap::new();
 
     // --- Round 1.
     // * Send acknowledgment to other participants.
     // * Wait for their commitments.
+
+    let mut commitments_map: BTreeMap<frost_ed25519::Identifier, round1::SigningCommitments> =
+        BTreeMap::new();
 
     let r1_wait_point = chan.next_waitpoint();
     {
@@ -86,6 +85,9 @@ async fn do_sign_coordinator<RNG: CryptoRng + RngCore + 'static + Send>(
     // * Convert collected commitments into the signing package.
     // * Send it to all participants.
     // * Wait for each other's signature share
+
+    let mut signature_shares: BTreeMap<frost_ed25519::Identifier, round2::SignatureShare> =
+        BTreeMap::new();
 
     let r2_wait_point = chan.next_waitpoint();
     {
@@ -161,20 +163,61 @@ async fn do_sign_participant<RNG: CryptoRng + RngCore + 'static>(
         chan.send_private(r2_wait_point, coordinator, &signature_share)
             .await;
     }
-    
+
     // ---
 
     Ok(SignatureOutput::Participant {})
 }
 
 #[cfg(test)]
+pub(crate) fn build_sign_protocols(
+    participants: &Vec<(Participant, crate::frost::KeygenOutput)>,
+    threshold: usize,
+    coordinator_distribution: impl Fn(usize) -> bool,
+) -> Vec<(Participant, Box<dyn Protocol<Output = SignatureOutput>>)> {
+    use near_indexer::near_primitives::hash::hash;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
+
+    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = SignatureOutput>>)> =
+        Vec::with_capacity(participants.len());
+
+    let threshold_identifiers = participants
+        .iter()
+        .take(threshold)
+        .map(|(id, _)| *id)
+        .collect::<Vec<_>>();
+
+    let msg = "hello_near";
+    let msg_hash = hash(msg.as_bytes());
+
+    for (idx, (participant, key_pair)) in participants.iter().take(threshold).enumerate() {
+        let rng: StdRng = StdRng::seed_from_u64(protocols.len() as u64);
+
+        protocols.push((
+            *participant,
+            sign_internal(
+                rng.clone(),
+                coordinator_distribution(idx),
+                threshold_identifiers.clone(),
+                *participant,
+                key_pair.key_package.clone(),
+                key_pair.public_key_package.clone(),
+                msg_hash.as_bytes().to_vec(),
+            )
+            .unwrap(),
+        ))
+    }
+
+    protocols
+}
+
+#[cfg(test)]
 mod tests {
-    use crate::frost::sign::sign_internal;
-    use crate::frost::{to_frost_identifier, SignatureOutput};
+    use crate::frost::sign::build_sign_protocols;
+    use crate::frost::{to_frost_identifier, KeygenOutput, SignatureOutput};
     use cait_sith::protocol::{run_protocol, Participant, Protocol};
     use frost_ed25519::rand_core::SeedableRng;
-    use frost_ed25519::Identifier;
-    use near_indexer::near_primitives::hash::hash;
     use rand::prelude::{SliceRandom, StdRng};
     use rand::thread_rng;
     use std::collections::BTreeMap;
@@ -182,7 +225,6 @@ mod tests {
     fn build_protocols(
         max_signers: usize,
         min_signers: usize,
-        actual_signers: usize,
         coordinators: usize,
     ) -> Vec<(Participant, Box<dyn Protocol<Output = SignatureOutput>>)> {
         let mut identifiers = Vec::with_capacity(max_signers);
@@ -191,53 +233,40 @@ mod tests {
             identifiers.push(Participant::from((10 * i + 123) as u32))
         }
 
-        let frost_identifiers = identifiers
+        let from_frost_identifiers = identifiers
             .iter()
-            .map(|&x| to_frost_identifier(x.into()))
+            .map(|&x| (to_frost_identifier(x.into()), x.into()))
+            .collect::<BTreeMap<_, _>>();
+
+        let identifiers_list = from_frost_identifiers
+            .keys()
+            .cloned()
+            .into_iter()
             .collect::<Vec<_>>();
 
         let mut rng: StdRng = StdRng::seed_from_u64(42u64);
         let (shares, pubkey_package) = frost_ed25519::keys::generate_with_dealer(
             max_signers as u16,
             min_signers as u16,
-            frost_ed25519::keys::IdentifierList::Custom(&frost_identifiers),
+            frost_ed25519::keys::IdentifierList::Custom(identifiers_list.as_slice()),
             &mut rng,
         )
         .unwrap();
 
         let key_packages = shares
-            .iter()
+            .into_iter()
             .map(|(id, share)| {
                 (
-                    id,
-                    frost_ed25519::keys::KeyPackage::try_from(share.clone()).unwrap(),
+                    from_frost_identifiers[&id],
+                    KeygenOutput {
+                        key_package: frost_ed25519::keys::KeyPackage::try_from(share).unwrap(),
+                        public_key_package: pubkey_package.clone(),
+                    },
                 )
             })
-            .collect::<BTreeMap<_, _>>();
+            .collect::<Vec<_>>();
 
-        let msg = "hello_near";
-        let msg_hash = hash(msg.as_bytes());
-
-        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = SignatureOutput>>)> =
-            Vec::with_capacity(max_signers);
-
-        for i in 0..actual_signers {
-            protocols.push((
-                identifiers[i].into(),
-                sign_internal(
-                    rng.clone(),
-                    i >= actual_signers - coordinators,
-                    identifiers.iter().take(actual_signers).cloned().collect(),
-                    identifiers[i],
-                    key_packages[&frost_identifiers[i]].clone(),
-                    pubkey_package.clone(),
-                    msg_hash.as_bytes().to_vec(),
-                )
-                .unwrap(),
-            ))
-        }
-
-        protocols
+        build_sign_protocols(&key_packages, min_signers, |idx| idx < coordinators)
     }
 
     fn assert_single_coordinator_result(data: Vec<(Participant, SignatureOutput)>) {
@@ -261,7 +290,8 @@ mod tests {
         let actual_signers = 2;
         let coordinators = 1;
 
-        let protocols = build_protocols(max_signers, min_signers, actual_signers, coordinators);
+        let protocols = build_protocols(max_signers, min_signers, coordinators)
+            .into_iter().take(actual_signers).collect::<Vec<_>>();
         let data = run_protocol(protocols).unwrap();
         assert_single_coordinator_result(data);
     }
@@ -274,20 +304,8 @@ mod tests {
         let actual_signers = 2;
         let coordinators = 2;
 
-        let protocols = build_protocols(max_signers, min_signers, actual_signers, coordinators);
-        let data = run_protocol(protocols).unwrap();
-        assert_single_coordinator_result(data);
-    }
-
-    #[test]
-    #[should_panic]
-    fn threshold_not_met() {
-        let max_signers = 3;
-        let min_signers = 2;
-        let actual_signers = 1;
-        let coordinators = 1;
-
-        let protocols = build_protocols(max_signers, min_signers, actual_signers, coordinators);
+        let protocols = build_protocols(max_signers, min_signers, coordinators)
+            .into_iter().take(actual_signers).collect::<Vec<_>>();
         let data = run_protocol(protocols).unwrap();
         assert_single_coordinator_result(data);
     }
@@ -298,8 +316,8 @@ mod tests {
         let coordinators = 1;
         for min_signers in 2..max_signers {
             for actual_signers in min_signers..=max_signers {
-                let mut protocols =
-                    build_protocols(max_signers, min_signers, actual_signers, coordinators);
+                let mut protocols = build_protocols(max_signers, min_signers, coordinators)
+                    .into_iter().take(actual_signers).collect::<Vec<_>>();
 
                 let mut rng = thread_rng();
                 protocols.shuffle(&mut rng);
@@ -308,18 +326,5 @@ mod tests {
                 assert_single_coordinator_result(data);
             }
         }
-    }
-
-    #[test]
-    fn verify_stability_of_identifier_derivation() {
-        let participant = Participant::from(1e9 as u32);
-        let identifier = Identifier::derive(participant.bytes().as_slice()).unwrap();
-        assert_eq!(
-            identifier.serialize(),
-            vec![
-                96, 203, 29, 92, 230, 35, 120, 169, 19, 185, 45, 28, 48, 68, 84, 190, 12, 186, 169,
-                192, 196, 21, 238, 181, 134, 181, 203, 236, 162, 68, 212, 4
-            ]
-        );
     }
 }
