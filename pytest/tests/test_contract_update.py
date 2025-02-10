@@ -41,7 +41,9 @@ def test_contract_update(initial_contract_path, update_args):
     cluster.assert_is_deployed(initial_contract)
     cluster.init_contract(threshold=2)
     # do some requests
-    cluster.send_and_await_signature_requests(2, add_gas=150 * TGAS)
+    cluster.send_and_await_signature_requests(2,
+                                              add_gas=150 * TGAS,
+                                              add_deposit=10)
     # propose v1
     cluster.propose_update(update_args.borsh_serialize())
     cluster.vote_update(0, 0)
@@ -58,12 +60,13 @@ def test_contract_update(initial_contract_path, update_args):
         deployed_config = cluster.get_config()
         assert deployed_config == expected_config
     print("update completed")
-    cluster.send_and_await_signature_requests(2, add_gas=150 * TGAS)
+    # add deposit and gas for contract in MIGRATE_CURRENT_CONTRACT_PATH
+    cluster.send_and_await_signature_requests(2,
+                                              add_gas=150 * TGAS,
+                                              add_deposit=10)
 
 
 # In case a nonce conflict occurs during a vote_update call, rerun the test once.
-@pytest.mark.ci_excluded
-@pytest.mark.flaky(reruns=1, reruns_delay=2)
 @pytest.mark.parametrize("initial_contract_path,update_args", [
     pytest.param(V0_CONTRACT_PATH,
                  UpdateArgsV0(CURRENT_CONTRACT_PATH),
@@ -83,16 +86,25 @@ def test_contract_update_trailing_sigs(initial_contract_path, update_args):
     # propose and vote on contract update (avoid nonce conflicts)
     time.sleep(2)
     cluster.propose_update(update_args.borsh_serialize())
+
     time.sleep(2)
     cluster.vote_update(0, 0)
     # do some requests
     started = time.time()
     metrics = [MetricsTracker(node.near_node) for node in cluster.mpc_nodes]
     tx_hashes, tx_sent = cluster.generate_and_send_signature_requests(
-        num_requests, add_gas=150 * TGAS)
+        num_requests, add_gas=150 * TGAS, add_deposit=10)
     print(f"sent {num_requests} signature requests")
     cluster.observe_signature_requests(started, metrics, tx_sent)
-    cluster.vote_update(1, 0)
+    n_tries = 0
+    while n_tries < 5:
+        try:
+            cluster.vote_update(1, 0)
+        except:
+            time.sleep(1)
+            n_tries += 1
+        else:
+            break
     time.sleep(2)
     if update_args.code is not None:
         print("ensuring contract code is updated")

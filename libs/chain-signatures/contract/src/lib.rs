@@ -357,7 +357,7 @@ impl VersionedMpcContract {
         const CHEAP_REQUESTS: u32 = 3;
         let pending_requests = match self {
             Self::V0(mpc_contract) => mpc_contract.request_counter,
-            Self::V1(_) => return U128::from(1),
+            Self::V1(_) => return U128::from(0),
         };
         match pending_requests {
             0..=CHEAP_REQUESTS => U128::from(1),

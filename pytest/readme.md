@@ -32,7 +32,7 @@ pip install -r requirements.txt
 
 4. Run pytest:
 ```bash
-export NEAR_PYTEST_CONFIG="config.json"
 pytest # -v -s optional flags for verbosity and -m "not slow" to skip slow tests
 ```
 
+Run individual tests with e.g. `pytest tests/test_contract_update.py::test_code_update`
