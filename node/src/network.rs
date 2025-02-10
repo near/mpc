@@ -5,7 +5,6 @@ use futures_util::FutureExt;
 use lru::LruCache;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
-use std::future::Future;
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -317,40 +316,41 @@ impl NetworkTaskChannel {
     ///
     /// This future may never resolve if the MPC computation fails to progress (i.e. all clients
     /// decide they need to receive a message before sending one). It is up to the caller to
-    /// implement a timeout mechanism.
+    /// implement a timeout mechanism. However, if we notice that not all participants of the
+    /// computation are online anymore, this method will return an error soon.
     pub async fn receive(&mut self) -> anyhow::Result<MpcPeerMessage> {
-        let result = self.receiver.recv().await;
-        let Some(result) = result else {
-            anyhow::bail!("Channel closed");
-        };
-        tracing::debug!(
-            target: "network",
-            "[{}] [Task {:?}] Received message: {:?}",
-            self.my_participant_id, self.task_id, result
-        );
-        Ok(result)
-    }
-
-    /// Returns a future that only resolves if some participant is no longer alive.
-    /// The purpose of this is to abort some computation when that happens.
-    pub fn wait_for_some_participant_to_be_dead(&self) -> impl Future<Output = ()> + 'static {
-        let sender = self.sender.clone();
-        let participants = self.participants.clone();
-        async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                let still_alive = sender
-                    .all_alive_participant_ids()
-                    .into_iter()
-                    .collect::<HashSet<_>>();
-                let all_alive = participants
-                    .iter()
-                    .all(|participant_id| still_alive.contains(participant_id));
-                if !all_alive {
-                    return;
+        loop {
+            let timer = tokio::time::sleep(Duration::from_secs(1));
+            tokio::select! {
+                _ = timer => {
+                    if !self.all_participants_still_alive() {
+                        anyhow::bail!("Computation cannot succeed as not all participants are alive anymore");
+                    }
+                }
+                result = self.receiver.recv() => {
+                    let Some(result) = result else {
+                        anyhow::bail!("Channel closed");
+                    };
+                    tracing::debug!(
+                        target: "network",
+                        "[{}] [Task {:?}] Received message: {:?}",
+                        self.my_participant_id, self.task_id, result
+                    );
+                    return Ok(result);
                 }
             }
         }
+    }
+
+    fn all_participants_still_alive(&self) -> bool {
+        let still_alive = self
+            .sender
+            .all_alive_participant_ids()
+            .into_iter()
+            .collect::<HashSet<_>>();
+        self.participants
+            .iter()
+            .all(|participant_id| still_alive.contains(participant_id))
     }
 }
 

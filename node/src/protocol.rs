@@ -2,7 +2,7 @@ use crate::primitives::{BatchedMessages, ParticipantId};
 use crate::tracking;
 use crate::{network::NetworkTaskChannel, tracking::TaskHandle};
 use cait_sith::protocol::{Action, Protocol};
-use futures::{pin_mut, TryFutureExt};
+use futures::TryFutureExt;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{atomic::AtomicUsize, Arc};
 use tokio::sync::mpsc;
@@ -29,8 +29,6 @@ pub async fn run_protocol<T>(
         queue_senders.insert(*p, send);
         queue_receivers.insert(*p, recv);
     }
-
-    let participants_dead = channel.wait_for_some_participant_to_be_dead();
 
     // We split the protocol into two tasks: one dedicated to sending messages, and one dedicated
     // to computation and receiving messages. There are two reasons for this:
@@ -137,20 +135,8 @@ pub async fn run_protocol<T>(
             }
         }
     };
-
-    let result_fut = futures::future::try_join(computation_handle, sending_handle);
-
-    pin_mut!(result_fut);
-    pin_mut!(participants_dead);
-    tokio::select! {
-        result = result_fut => {
-            let (computation_result, _) = result?;
-            Ok(computation_result)
-        }
-        _ = participants_dead => {
-            Err(anyhow::anyhow!("Computation cannot succeed because some participants are no longer alive"))
-        }
-    }
+    let (computation_result, _) = futures::try_join!(computation_handle, sending_handle)?;
+    Ok(computation_result)
 }
 
 /// Debugging counters to be used to export progress for tracking::set_progress, while

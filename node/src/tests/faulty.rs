@@ -77,7 +77,7 @@ async fn test_faulty_cluster() {
         // participants, and then times 10 to be extra safe.
         // so (4 presigs) * (4 nodes) * (10 extra factor) = 160 generated presignatures
         // observed by each node, thus let's wait for 640.
-        let current_total = metrics::MPC_NUM_PRESIGNATURES_GENERATED.get();
+        let current_total = metrics::MPC_PRE_SIGNATURE_TIME_ELAPSED.get_sample_count();
         if current_total >= TOTAL_PRESIGNATURE_METRIC_WANTED {
             break;
         }
