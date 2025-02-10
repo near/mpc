@@ -237,3 +237,10 @@ pub(crate) fn run_two_party_protocol<T0: fmt::Debug, T1: fmt::Debug>(
 }
 
 pub(crate) mod internal;
+
+#[cfg(feature = "internals")]
+pub use internal::make_protocol;
+#[cfg(feature = "internals")]
+pub use internal::Context;
+#[cfg(feature = "internals")]
+pub use internal::SharedChannel;
