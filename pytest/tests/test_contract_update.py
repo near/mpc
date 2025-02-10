@@ -85,10 +85,26 @@ def test_contract_update_trailing_sigs(initial_contract_path, update_args):
     cluster.init_contract(threshold=2)
     # propose and vote on contract update (avoid nonce conflicts)
     time.sleep(2)
-    cluster.propose_update(update_args.borsh_serialize())
+    n_tries = 0
+    while n_tries < 5:
+        try:
+            cluster.propose_update(update_args.borsh_serialize())
+        except:
+            time.sleep(1)
+            n_tries += 1
+        else:
+            break
 
     time.sleep(2)
-    cluster.vote_update(0, 0)
+    n_tries = 0
+    while n_tries < 5:
+        try:
+            cluster.vote_update(0, 0)
+        except:
+            time.sleep(1)
+            n_tries += 1
+        else:
+            break
     # do some requests
     started = time.time()
     metrics = [MetricsTracker(node.near_node) for node in cluster.mpc_nodes]
