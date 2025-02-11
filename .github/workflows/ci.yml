@@ -72,6 +72,7 @@ jobs:
             exit 1
           fi
           chmod +x target/release/neard
+          exit 1
 
       - name: Build near core as fallback
         if: steps.download-neard.outcome != 'success'
