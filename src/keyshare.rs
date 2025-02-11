@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::compat::CSCurve;
 use crate::crypto::{commit, hash};
-use crate::echo_broadcast::{reliable_broadcast_send, reliable_broadcast_receive_all};
+use crate::echo_broadcast::do_broadcast;
 use crate::math::{GroupPolynomial, Polynomial};
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
 use crate::proofs::dlog;
@@ -153,13 +153,8 @@ async fn do_keyshare<C: CSCurve>(
 
     let my_transcript_hash = hash(&transcript);
 
-    // send hash of transcript
-    let wait_transcript = chan.next_waitpoint();
-    // chan.send_many(wait4, &my_transcript_hash).await;
-    // broadcast transcript and collect all broadcasted transcripts
-    let send_transcript = reliable_broadcast_send(&chan, wait_transcript, &participants, &me, my_transcript_hash).await;
-    let transcript_list = reliable_broadcast_receive_all (&chan, wait_transcript, &participants, &me, send_transcript).await?;
-
+    // broadcast hash of transcript and collect all broadcasted transcripts
+    let transcript_list = do_broadcast(&mut chan, &participants, &me, my_transcript_hash).await?;
 
     let mut err = String::new();
 
@@ -221,22 +216,19 @@ async fn do_keyshare<C: CSCurve>(
 
     // create an array of many channel waitpoints
     // each channel waitpoint is affiliated to a participant being the initial sender
-    let wait_broadcast = chan.next_waitpoint();
     match err.is_empty() {
         // Need for consistent Broadcast to prevent adversary from sending
         // that it failed to some honest parties but not the others implying
         // that only some parties will drop out of the protocol but not others
         false => {
             // broadcast node me failed
-            let send_vote = reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, false).await;
-            reliable_broadcast_receive_all (&chan, wait_broadcast, &participants, &me, send_vote).await?;
+            do_broadcast(&mut chan, &participants, &me, false).await?;
             return Err(ProtocolError::AssertionFailed(err));
         },
 
         true => {
             // broadcast node me succeded
-            let send_vote = reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, true).await;
-            let vote_list = reliable_broadcast_receive_all (&chan, wait_broadcast, &participants, &me, send_vote).await?;
+            let vote_list = do_broadcast(&mut chan, &participants, &me, true).await?;
             // go through all the list of votes and check if any is fail
             if vote_list.contains(&false) {
                 return Err(ProtocolError::AssertionFailed(

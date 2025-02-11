@@ -220,6 +220,20 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
     }
 }
 
+pub async fn do_broadcast <T>(
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
+    me: &Participant,
+    data: T,
+) ->  Result<Vec<T>, ProtocolError>
+where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
+{
+    let wait_broadcast = chan.next_waitpoint();
+    let send_vote = reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, data).await;
+    let vote_list = reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, send_vote).await?;
+    Ok(vote_list)
+}
+
 /// Prepares a vote either received in a communication
 /// or simulates the reception of a vote when running send_many
 /// (function send_many does not seem to deliver a message to the sender
