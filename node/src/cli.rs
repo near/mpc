@@ -139,7 +139,7 @@ impl StartCmd {
             .build()?;
 
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
-        let indexer_handle = tokio::task::spawn_blocking(move || {
+        let indexer_handle = root_runtime.spawn_blocking(move || {
             if let Err(e) = indexer_handle.join() {
                 anyhow::bail!("Indexer thread failed: {:?}", e);
             }
