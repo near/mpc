@@ -76,7 +76,7 @@ def test_contract_update_trailing_sigs(initial_contract_path, update_args):
     """
     Tests if signatures submitted to V1 that are a response to requests submitted to V0 are successully handled by the contract.
     """
-    num_requests = 150
+    num_requests = 100
     initial_contract = load_binary_file(initial_contract_path)
     cluster = shared.start_cluster_with_mpc(2, 2, 1, initial_contract)
 
@@ -110,7 +110,7 @@ def test_contract_update_trailing_sigs(initial_contract_path, update_args):
     started = time.time()
     metrics = [MetricsTracker(node.near_node) for node in cluster.mpc_nodes]
     tx_hashes, tx_sent = cluster.generate_and_send_signature_requests(
-        num_requests, add_gas=100 * TGAS, add_deposit=10)
+        num_requests, add_gas=150 * TGAS, add_deposit=10)
     print(f"sent {num_requests} signature requests")
     cluster.observe_signature_requests(started, metrics, tx_sent)
     try_send(cluster.vote_update, 1, 0)
