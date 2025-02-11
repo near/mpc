@@ -94,6 +94,7 @@ async fn do_keyshare<C: CSCurve>(
     let mut all_big_f = ParticipantMap::new(&participants);
     let mut all_randomizer = ParticipantMap::new(&participants);
     let mut all_proof = ParticipantMap::new(&participants);
+    let mut all_secret_evaluations = ParticipantMap::new(&participants);
     let mut seen = ParticipantCounter::new(&participants);
 
     all_big_f.put(me, my_big_f);
@@ -126,7 +127,9 @@ async fn do_keyshare<C: CSCurve>(
         if !seen.put(from) {
             continue;
         }
-        x_i += C::Scalar::from(x_j_i);
+        let x_j_i = C::Scalar::from(x_j_i);
+        all_secret_evaluations.put(from, x_j_i);
+        x_i += x_j_i;
     }
 
 
@@ -194,6 +197,11 @@ async fn do_keyshare<C: CSCurve>(
         if my_transcript_hash != their_transcript_hash {
             err = format!("transcript hash from {from:?} did not match expectation");
             break;
+        }
+
+        // check the validity of the received secret evaluations
+        if all_big_f[from].evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * all_secret_evaluations[from]{
+            err = format!("Party {from:?} is acting maliciously: the check of validity of the private polynomial evaluation did not pass")
         }
     }
 
