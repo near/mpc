@@ -69,14 +69,14 @@ async fn test_faulty_cluster() {
     // extra presignatures to be generated before shutting down nodes, so that with high
     // likelihood, as we FIFO them for signatures, we will use presignatures that are
     // persisted by all participants properly.
-    const RETRIES: usize = 20;
-    const TOTAL_PRESIGNATURE_METRIC_WANTED: u64 = 4 * 4 * 10 * 4;
+    const RETRIES: usize = 60;
+    const TOTAL_PRESIGNATURE_METRIC_WANTED: u64 = 4 * 4 * 5 * 4;
     for i in 0..RETRIES {
         // We're going to be generating 4 signatures, so to be safe let's have 4 owned
         // presignatures per node, times 4 because each presignature is for 3 specific
-        // participants, and then times 10 to be extra safe.
-        // so (4 presigs) * (4 nodes) * (10 extra factor) = 160 generated presignatures
-        // observed by each node, thus let's wait for 640.
+        // participants, and then times 5 to be extra safe.
+        // so (4 presigs) * (4 nodes) * (5 extra factor) = 80 generated presignatures
+        // observed by each node, thus let's wait for 320.
         let current_total = metrics::MPC_PRE_SIGNATURE_TIME_ELAPSED.get_sample_count();
         if current_total >= TOTAL_PRESIGNATURE_METRIC_WANTED {
             break;
