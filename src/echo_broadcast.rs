@@ -1,13 +1,15 @@
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::collections::HashMap;
-use std::hash::Hash;
 use crate::participants::{ParticipantCounter, ParticipantList};
 use crate::protocol::{
     internal::{SharedChannel, Waitpoint},
     Participant,
 };
 use crate::protocol::ProtocolError;
+
+/// This structure is essential for the reliable broadcast protocol
+/// Send is used in the first phase, Echo in the second, and Ready
+/// in the third.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MessageType<T> {
     Send(T),
@@ -15,6 +17,35 @@ pub enum MessageType<T> {
     Ready(T),
 }
 
+/// A homemade sturcture that allows counting the number of
+/// votes gathered during the reliable-broadcast protocol
+/// only requiring from votes to have trait PartialEq
+#[derive(Clone)]
+struct CounterList<T> {
+    list: Vec<(T, usize)>,
+}
+
+impl<T: PartialEq> CounterList<T> {
+    fn new() -> Self {
+        Self { list: Vec::new() }
+    }
+
+    fn insert_or_increase_counter(&mut self, item: T) {
+        if let Some((_, count)) = self.list.iter_mut().find(|(e, _)| *e == item) {
+            *count += 1;
+        } else {
+            self.list.push((item, 1));
+        }
+    }
+
+    fn get(&self, item: &T) -> Option<usize> {
+        self.list.iter().find(|(e, _)| e == item).map(|(_, count)| *count)
+    }
+}
+
+
+/// Outputs the necessary Echo-Broadcast thresholds based on the
+/// total number of participants.
 fn echo_ready_thresholds(n: usize) -> (usize, usize){
     // we should always have n >= 3*threshold + 1
     let broadcast_threshold = match n % 3 {
@@ -57,7 +88,7 @@ pub async fn reliable_broadcast_receive_all<T>(
     me: &Participant,
     send_vote: MessageType<T>,
 ) -> Result<Vec<T>, ProtocolError>
-where T:Serialize + Clone + DeserializeOwned + Eq + Hash + Copy
+where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
 {
     let n = participants.len();
     let (echo_t, ready_t) = echo_ready_thresholds(n);
@@ -65,8 +96,8 @@ where T:Serialize + Clone + DeserializeOwned + Eq + Hash + Copy
     let mut vote_output: Vec<T> = Vec::new();
     // first dimension determines the session
     // second dimension contains the counter for success/failure of the received strings
-    let mut fail_success_echo =  vec![HashMap::new(); n];
-    let mut fail_success_ready =  vec![HashMap::new(); n];
+    let mut fail_success_echo =  vec![CounterList::new(); n];
+    let mut fail_success_ready =  vec![CounterList::new(); n];
 
     // first dimension determines the session
     // second dimension helps prevent duplication: correct processes should deliver at most one message
@@ -130,13 +161,12 @@ where T:Serialize + Clone + DeserializeOwned + Eq + Hash + Copy
                 if !seen_echo[sid].put(from) || finish_echo[sid]{
                     continue;
                 }
-                *(fail_success_echo[sid]).entry(data)
-                                        .and_modify(|counter| *counter += 1)
-                                        .or_insert(1) += 1;
+                // insert or increment the number of collected echo of a specific vote
+                fail_success_echo[sid].insert_or_increase_counter(data);
 
                 // upon gathering strictly more than (n+f)/2 votes
                 // for a result, deliver (READY, vote)
-                if fail_success_echo[sid][&data] > echo_t{
+                if fail_success_echo[sid].get(&data).unwrap() > echo_t{
                     chan.send_many(wait,   &(&sid, &MessageType::Ready(data))).await;
                     // state that the echo phase for session id (sid) is done
                     finish_echo[sid] = true;
@@ -150,22 +180,21 @@ where T:Serialize + Clone + DeserializeOwned + Eq + Hash + Copy
                 if !seen_ready[sid].put(from) || finish_ready[sid] {
                     continue;
                 }
-                // increment the number of collected ready success or failure votes
-                *(fail_success_ready[sid]).entry(data)
-                                        .and_modify(|counter| *counter += 1)
-                                        .or_insert(1) += 1;
+
+                // insert or increment the number of collected ready of a specific vote
+                fail_success_ready[sid].insert_or_increase_counter(data);
 
                 // upon gathering strictly more than f votes
                 // and if I haven't already amplified ready vote in session sid then
                 // proceed to amplification of the ready message
-                if fail_success_ready[sid][&data] > ready_t && finish_amplification[sid] == false{
+                if fail_success_ready[sid].get(&data).unwrap() > ready_t && finish_amplification[sid] == false{
                     chan.send_many(wait,  &(&sid, &MessageType::Ready(data))).await;
                     finish_amplification[sid] = true;
                     // activate the boolean saying that *me* wants to deliver ready
                     // to all participants including myself
                     ready_activated = true;
                 }
-                if fail_success_ready[sid][&data] > 2*ready_t{
+                if fail_success_ready[sid].get(&data).unwrap() > 2*ready_t{
                     // skip all types of messages sent for session sid from now on
                     finish_send[sid] = true;
                     finish_echo[sid] = true;

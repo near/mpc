@@ -4,7 +4,7 @@ use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 
 use crate::compat::CSCurve;
-use crate::crypto::{commit, hash, Digest};
+use crate::crypto::{commit, hash};
 use crate::echo_broadcast::{reliable_broadcast_send, reliable_broadcast_receive_all};
 use crate::math::{GroupPolynomial, Polynomial};
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
@@ -154,19 +154,16 @@ async fn do_keyshare<C: CSCurve>(
     let my_transcript_hash = hash(&transcript);
 
     // send hash of transcript
-    let wait4 = chan.next_waitpoint();
-    chan.send_many(wait4, &my_transcript_hash).await;
+    let wait_transcript = chan.next_waitpoint();
+    // chan.send_many(wait4, &my_transcript_hash).await;
+    // broadcast transcript and collect all broadcasted transcripts
+    let send_transcript = reliable_broadcast_send(&chan, wait_transcript, &participants, &me, my_transcript_hash).await;
+    let transcript_list = reliable_broadcast_receive_all (&chan, wait_transcript, &participants, &me, send_transcript).await?;
 
-    seen.clear();
-    seen.put(me);
+
     let mut err = String::new();
-    while !seen.full() {
-        // Spec 3.3
-        let (from, their_transcript_hash): (_, Digest) = chan.recv(wait4).await?;
-        if !seen.put(from) {
-            continue;
-        }
 
+    for from in participants.others(me){
         // Spec 3.4
         // verify that the big_f is of order threshold - 1
         if all_big_f[from].len() != threshold {
@@ -193,15 +190,17 @@ async fn do_keyshare<C: CSCurve>(
             break;
         }
 
-        // check transcript hashes
-        if my_transcript_hash != their_transcript_hash {
-            err = format!("transcript hash from {from:?} did not match expectation");
-            break;
-        }
-
         // check the validity of the received secret evaluations
         if all_big_f[from].evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * all_secret_evaluations[from]{
             err = format!("Party {from:?} is acting maliciously: the check of validity of the private polynomial evaluation did not pass")
+        }
+    }
+
+    // check transcript hashes
+    for their_transcript_hash in transcript_list{
+        if my_transcript_hash != their_transcript_hash {
+            err = format!("transcript hash did not match expectation");
+            break;
         }
     }
 
@@ -217,7 +216,6 @@ async fn do_keyshare<C: CSCurve>(
     match big_s {
         Some(big_s) if big_s != big_x =>
             err = "new public key does not match old public key".to_string(),
-
         _ => {}
     };
 
