@@ -1,10 +1,13 @@
+pub mod conn;
+
 use crate::primitives::{BatchedMessages, MpcMessage, MpcPeerMessage, MpcTaskId, ParticipantId};
 use crate::tracking::{self, AutoAbortTask};
+use conn::ConnectionVersion;
 use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
 use lru::LruCache;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -22,9 +25,15 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     fn my_participant_id(&self) -> ParticipantId;
     /// Returns the participant IDs of all nodes in the network, including the current node.
     fn all_participant_ids(&self) -> Vec<ParticipantId>;
-    /// Returns an identifier for the current persistent connection to the participant. This
-    /// identifier should change whenever the connection is reset.
-    fn connection_version(&self, participant_id: ParticipantId) -> usize;
+    /// Returns a connection version to be used to tell if the connection becomes outdated.
+    fn connection_version(&self, participant_id: ParticipantId) -> ConnectionVersion;
+    /// Returns if the connection to this participant has been reset or dropped since the
+    /// call to connection_version (the result of which is passed in here).
+    fn was_connection_interrupted(
+        &self,
+        participant_id: ParticipantId,
+        connection_version: ConnectionVersion,
+    ) -> bool;
     /// Sends a message to the specified recipient.
     /// It is not expected to really block. It's only async because messages may be congested.
     /// Returns an error if something serious goes wrong so that the task that expects the
@@ -36,7 +45,7 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
         &self,
         recipient_id: ParticipantId,
         message: MpcMessage,
-        connection_version: usize,
+        connection_version: ConnectionVersion,
     ) -> anyhow::Result<()>;
     /// Waits until at least `threshold` nodes in the network have been connected to initially,
     /// the threshold includes ourselves.
@@ -240,7 +249,7 @@ pub struct NetworkTaskChannel {
     pub task_id: MpcTaskId,
     my_participant_id: ParticipantId, // for debugging
     pub participants: Vec<ParticipantId>,
-    connection_versions: Arc<HashMap<ParticipantId, usize>>,
+    connection_versions: Arc<HashMap<ParticipantId, ConnectionVersion>>,
     sender: Arc<dyn MeshNetworkTransportSender>,
     receiver: tokio::sync::mpsc::Receiver<MpcPeerMessage>,
     drop: Option<Box<dyn FnOnce() + Send + Sync>>,
@@ -297,7 +306,12 @@ impl NetworkTaskChannel {
                                 data: message,
                                 participants,
                             },
-                            connection_versions.get(&recipient_id).copied().unwrap_or(0),
+                            connection_versions
+                                .get(&recipient_id)
+                                .copied()
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!("No connection version for recipient")
+                                })?,
                         )
                         .await?;
                     Ok(())
@@ -323,7 +337,9 @@ impl NetworkTaskChannel {
             let timer = tokio::time::sleep(Duration::from_secs(1));
             tokio::select! {
                 _ = timer => {
-                    if !self.all_participants_still_alive() {
+                    if self.connection_versions.iter().any(|(id, version)| {
+                        self.sender.was_connection_interrupted(*id, *version)
+                    }) {
                         anyhow::bail!("Computation cannot succeed as not all participants are alive anymore");
                     }
                 }
@@ -341,21 +357,11 @@ impl NetworkTaskChannel {
             }
         }
     }
-
-    fn all_participants_still_alive(&self) -> bool {
-        let still_alive = self
-            .sender
-            .all_alive_participant_ids()
-            .into_iter()
-            .collect::<HashSet<_>>();
-        self.participants
-            .iter()
-            .all(|participant_id| still_alive.contains(participant_id))
-    }
 }
 
 #[cfg(test)]
 pub mod testing {
+    use super::conn::ConnectionVersion;
     use super::MeshNetworkTransportSender;
     use crate::primitives::{MpcPeerMessage, ParticipantId};
     use crate::tracking;
@@ -386,15 +392,26 @@ pub mod testing {
             self.transport.participant_ids.clone()
         }
 
-        fn connection_version(&self, _participant_id: ParticipantId) -> usize {
-            0
+        fn connection_version(&self, _participant_id: ParticipantId) -> ConnectionVersion {
+            ConnectionVersion {
+                incoming: 0,
+                outgoing: 0,
+            }
+        }
+
+        fn was_connection_interrupted(
+            &self,
+            _participant_id: ParticipantId,
+            _connection_version: ConnectionVersion,
+        ) -> bool {
+            false
         }
 
         async fn send(
             &self,
             recipient_id: ParticipantId,
             message: crate::primitives::MpcMessage,
-            _connection_version: usize,
+            _connection_version: ConnectionVersion,
         ) -> anyhow::Result<()> {
             self.transport
                 .senders
