@@ -218,12 +218,14 @@ pub fn run_network_client(
     AutoAbortTask<()>,
 ) {
     // TODO: read duration from config
+    const LRU_CAPACITY: usize = 10000;
+    const CHANNEL_SIZE: usize = 1000;
     let client = Arc::new(MeshNetworkClient {
         transport_sender,
         senders_for_tasks: Arc::new(Mutex::new(HashMap::new())),
-        deleted_channels: Arc::new(Mutex::new(LruCache::new(10000.try_into().unwrap()))),
+        deleted_channels: Arc::new(Mutex::new(LruCache::new(LRU_CAPACITY.try_into().unwrap()))),
     });
-    let (new_channel_sender, new_channel_receiver) = mpsc::channel(1000);
+    let (new_channel_sender, new_channel_receiver) = mpsc::channel(CHANNEL_SIZE);
     let handle = tracking::spawn_checked(
         "Network receive message loop",
         run_receive_messages_loop(client.clone(), transport_receiver, new_channel_sender),
