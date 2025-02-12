@@ -416,15 +416,17 @@ fn configure_tls(
     // a custom verifier or else the certificate will not even be propagated to us
     // when we handle the connection. Later we'll check that the client provided a
     // valid public key in the certificate.
-    let server_config = rustls::ServerConfig::builder()
-        .with_client_cert_verifier(Arc::new(DummyClientCertVerifier))
-        .with_single_cert(vec![p2p_cert.der().clone()], p2p_key_der.clone_key())?;
+    let server_config =
+        rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
+            .with_client_cert_verifier(Arc::new(DummyClientCertVerifier))
+            .with_single_cert(vec![p2p_cert.der().clone()], p2p_key_der.clone_key())?;
     // As a client, we verify that the server has a valid certificate signed by the
     // dummy issuer (this is required by rustls). When making the connection we also
     // check that the server has the right public key.
-    let client_config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_cert_store)
-        .with_client_auth_cert(vec![p2p_cert.der().clone()], p2p_key_der.clone_key())?;
+    let client_config =
+        rustls::ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
+            .with_root_certificates(root_cert_store)
+            .with_client_auth_cert(vec![p2p_cert.der().clone()], p2p_key_der.clone_key())?;
 
     Ok((server_config.into(), client_config.into()))
 }
