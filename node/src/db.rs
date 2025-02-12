@@ -54,8 +54,8 @@ pub fn decrypt(cipher: &Aes128Gcm, ciphertext: &[u8]) -> anyhow::Result<Vec<u8>>
     if ciphertext.len() < NONCE_LEN {
         return Err(anyhow::anyhow!("ciphertext is too short"));
     }
-    let nonce = &ciphertext[..12];
-    let ciphertext = &ciphertext[12..];
+    let nonce = &ciphertext[..NONCE_LEN];
+    let ciphertext = &ciphertext[NONCE_LEN..];
     let data = cipher
         .decrypt(GenericArray::from_slice(nonce), ciphertext)
         .map_err(|_| anyhow::anyhow!("decryption failed"))?;
