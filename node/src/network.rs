@@ -66,6 +66,9 @@ pub struct MeshNetworkClient {
     deleted_channels: Arc<Mutex<LruCache<MpcTaskId, ()>>>,
 }
 
+const LRU_CAPACITY: usize = 10000;
+const CHANNEL_SIZE: usize = 10000;
+
 impl MeshNetworkClient {
     /// Primary functionality for the MeshNetworkClient: returns a channel for the given
     /// new MPC task. It is expected that the caller is the leader of this MPC task, and that the
@@ -120,7 +123,7 @@ impl MeshNetworkClient {
         match senders_for_tasks.entry(task_id) {
             Entry::Occupied(entry) => SenderOrNewChannel::Existing(entry.get().clone()),
             Entry::Vacant(entry) => {
-                let (sender, receiver) = mpsc::channel(10000);
+                let (sender, receiver) = mpsc::channel(CHANNEL_SIZE);
                 entry.insert(sender.clone());
                 drop(senders_for_tasks); // release lock
 
@@ -218,8 +221,6 @@ pub fn run_network_client(
     AutoAbortTask<()>,
 ) {
     // TODO: read duration from config
-    const LRU_CAPACITY: usize = 10000;
-    const CHANNEL_SIZE: usize = 1000;
     let client = Arc::new(MeshNetworkClient {
         transport_sender,
         senders_for_tasks: Arc::new(Mutex::new(HashMap::new())),
