@@ -1,5 +1,6 @@
 use crate::config::MpcConfig;
 use crate::metrics;
+use crate::network::conn::{AllNodeConnectivities, ConnectionVersion, NodeConnectivity};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
@@ -11,12 +12,10 @@ use rustls::server::danger::ClientCertVerifier;
 use rustls::{ClientConfig, CommonState, ServerConfig};
 use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, Receiver, UnboundedSender};
-use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 use x509_parser::prelude::{FromDer, X509Certificate};
@@ -28,7 +27,7 @@ pub struct TlsMeshSender {
     my_id: ParticipantId,
     participants: Vec<ParticipantId>,
     connections: HashMap<ParticipantId, Arc<PersistentConnection>>,
-    connectivities: Arc<HashMap<ParticipantId, ConnectivityIndicator>>,
+    connectivities: Arc<AllNodeConnectivities<TlsConnection, ()>>,
 }
 
 /// Implements MeshNetworkTransportReceiver.
@@ -93,12 +92,7 @@ impl ClientCertVerifier for DummyClientCertVerifier {
 /// connection is broken.
 struct PersistentConnection {
     target_participant_id: ParticipantId,
-    // Current connection and version. The connection is an Option because it
-    // can be None if the connection was never established. It is a Weak
-    // because the connection is owned by the loop-to-connect task (see the
-    // `new` method) and when the connection is closed it is dropped. The
-    // version is incremented every time the connection is re-established.
-    current: tokio::sync::watch::Receiver<Option<(usize, Weak<TlsConnection>)>>,
+    connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
     // The task that loops to connect to the target. When `PersistentConnection`
     // is dropped, this task is aborted. The task owns any active connection,
     // so dropping it also frees any connection currently alive.
@@ -243,48 +237,17 @@ impl PersistentConnection {
     const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
     /// Sends a message over the connection. If the connection was reset, fail.
-    async fn send_message(&self, expected_version: usize, msg: Vec<u8>) -> anyhow::Result<()> {
-        let (expected_version, version, conn) = if expected_version == 0 {
-            // This means that the connection was never established when the computation
-            // started. This is possible when someone else initiated the computation,
-            // before we've got a chance to establish an outgoing connection to the
-            // involved participants yet. So in this case, we shall wait for a connection.
-            let current_conn = self.current.borrow().clone();
-            match current_conn {
-                Some((version, conn)) => (1, version, conn),
-                None => {
-                    let (version, conn) = self
-                        .current
-                        .clone()
-                        .wait_for(|conn| conn.is_some())
-                        .await?
-                        .clone()
-                        .unwrap();
-                    (1, version, conn)
-                }
-            }
-        } else {
-            match self.current.borrow().clone() {
-                Some((version, conn)) => (expected_version, version, conn),
-                None => {
-                    anyhow::bail!(
-                        "Programming error: Connection to {} is missing",
-                        self.target_participant_id
-                    );
-                }
-            }
-        };
-
-        if version != expected_version {
-            anyhow::bail!(
-                "Connection to {} is not the original connection expected",
-                self.target_participant_id
-            );
-        }
-        let Some(conn) = conn.upgrade() else {
-            anyhow::bail!("Connection to {} was dropped", self.target_participant_id);
-        };
-        conn.send(msg)?;
+    async fn send_message(
+        &self,
+        expected_version: ConnectionVersion,
+        msg: Vec<u8>,
+    ) -> anyhow::Result<()> {
+        self.connectivity
+            .wait_for_outgoing_connection(expected_version)
+            .await
+            .with_context(|| format!("Cannot send message to {}", self.target_participant_id))?
+            .send(msg)
+            .with_context(|| format!("Cannot send message to {}", self.target_participant_id))?;
         Ok(())
     }
 
@@ -294,14 +257,12 @@ impl PersistentConnection {
         target_address: String,
         target_participant_id: ParticipantId,
         participant_identities: Arc<ParticipantIdentities>,
-        connectivity_indicator: ConnectivityIndicator,
+        connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
     ) -> anyhow::Result<PersistentConnection> {
-        let (current_sender, current_receiver) = tokio::sync::watch::channel(None);
-
+        let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
-                let mut connection_version = 1;
                 loop {
                     let new_conn = match TlsConnection::new(
                         client_config.clone(),
@@ -333,21 +294,14 @@ impl PersistentConnection {
                         }
                     };
                     let new_conn = Arc::new(new_conn);
-                    if current_sender
-                        .send(Some((connection_version, Arc::downgrade(&new_conn))))
-                        .is_err()
-                    {
-                        break;
-                    }
-                    connection_version += 1;
-                    let _indicator_guard = connectivity_indicator.mark_connected_outgoing();
+                    connectivity.set_outgoing_connection(&new_conn);
                     new_conn.wait_for_close().await;
                 }
             },
         );
         Ok(PersistentConnection {
             target_participant_id,
-            current: current_receiver,
+            connectivity: connectivity_clone,
             _task: task,
         })
     }
@@ -452,7 +406,15 @@ pub async fn new_tls_mesh_network(
     // Prepare participant data.
     let mut participant_identities = ParticipantIdentities::default();
     let mut connections = HashMap::new();
-    let mut connectivities = HashMap::new();
+    let connectivities = Arc::new(AllNodeConnectivities::new(
+        config.my_participant_id,
+        &config
+            .participants
+            .participants
+            .iter()
+            .map(|p| p.id)
+            .collect::<Vec<_>>(),
+    ));
     for participant in &config.participants.participants {
         if participant.id == config.my_participant_id {
             continue;
@@ -460,9 +422,7 @@ pub async fn new_tls_mesh_network(
         participant_identities
             .key_to_participant_id
             .insert(participant.p2p_public_key.clone(), participant.id);
-        connectivities.insert(participant.id, ConnectivityIndicator::new());
     }
-    let connectivities = Arc::new(connectivities);
     let participant_identities = Arc::new(participant_identities);
     for participant in &config.participants.participants {
         if participant.id == config.my_participant_id {
@@ -476,7 +436,7 @@ pub async fn new_tls_mesh_network(
                 format!("{}:{}", participant.address, participant.port),
                 participant.id,
                 participant_identities.clone(),
-                connectivities.get(&participant.id).unwrap().clone(),
+                connectivities.get(participant.id)?,
             )?),
         );
     }
@@ -507,10 +467,10 @@ pub async fn new_tls_mesh_network(
                 let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                 tracking::set_progress(&format!("Authenticated as {}", peer_id));
                 tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
-                let _indicator_guard = connectivities
-                    .get(&peer_id)
-                    .unwrap()
-                    .mark_connected_incoming();
+                let incoming_conn = Arc::new(());
+                connectivities
+                    .get(peer_id)?
+                    .set_incoming_connection(&incoming_conn);
                 let mut received_bytes: u64 = 0;
                 loop {
                     let tag = stream.read_u8().await?;
@@ -603,83 +563,6 @@ fn verify_peer_identity(
     Ok(*peer_id)
 }
 
-/// Struct to track bidirectional connectivity between two nodes.
-/// A node has one ConnectivityIndicator for each other node in the network.
-#[derive(Clone)]
-struct ConnectivityIndicator {
-    /// A packed integer; the high 32 bits represents the number of incoming
-    /// connections currently active from the other node, and the low 32 bits
-    /// represents the number of outgoing connections currently active to the
-    /// other node. The latter is expected to never exceed 1.
-    ///
-    /// By looking at this integer we can determine if both directions are
-    /// connected.
-    connected: Arc<AtomicU64>,
-    /// This is used to implement `wait_for_both_connected` by allowing the
-    /// waiter to asynchronously wait for the atomic to change.
-    notify: Arc<tokio::sync::Notify>,
-}
-
-struct DropToDisconnectOutgoing(ConnectivityIndicator);
-impl Drop for DropToDisconnectOutgoing {
-    fn drop(&mut self) {
-        self.0.connected.fetch_sub(1, Ordering::Relaxed);
-        self.0.notify.notify_waiters();
-    }
-}
-
-struct DropToDisconnectIncoming(ConnectivityIndicator);
-impl Drop for DropToDisconnectIncoming {
-    fn drop(&mut self) {
-        self.0
-            .connected
-            .fetch_sub(ConnectivityIndicator::INCOMING_COUNT, Ordering::Relaxed);
-        self.0.notify.notify_waiters();
-    }
-}
-
-impl ConnectivityIndicator {
-    const INCOMING_COUNT: u64 = 1 << 32;
-
-    fn new() -> Self {
-        Self {
-            connected: Arc::new(AtomicU64::new(0)),
-            notify: Arc::new(tokio::sync::Notify::new()),
-        }
-    }
-
-    fn mark_connected_outgoing(&self) -> DropToDisconnectOutgoing {
-        self.connected.fetch_add(1, Ordering::Relaxed);
-        self.notify.notify_waiters();
-        DropToDisconnectOutgoing(self.clone())
-    }
-
-    fn mark_connected_incoming(&self) -> DropToDisconnectIncoming {
-        self.connected
-            .fetch_add(Self::INCOMING_COUNT, Ordering::Relaxed);
-        self.notify.notify_waiters();
-        DropToDisconnectIncoming(self.clone())
-    }
-
-    fn is_connected_both_ways(&self) -> bool {
-        let flag = self.connected.load(Ordering::Relaxed);
-        flag >= Self::INCOMING_COUNT && flag & (Self::INCOMING_COUNT - 1) >= 1
-    }
-
-    /// Only returns when both directions are connected.
-    /// This should not be used by two tasks concurrently.
-    async fn wait_for_both_connected(&self) {
-        loop {
-            if self.is_connected_both_ways() {
-                return;
-            }
-            // Should not be used concurrently from multiple tasks, because this
-            // notification pattern can miss notifications if there are two waiters.
-            self.notify.notified().await;
-        }
-    }
-}
-
 #[async_trait]
 impl MeshNetworkTransportSender for TlsMeshSender {
     fn my_participant_id(&self) -> ParticipantId {
@@ -690,18 +573,29 @@ impl MeshNetworkTransportSender for TlsMeshSender {
         self.participants.clone()
     }
 
-    fn connection_version(&self, participant_id: ParticipantId) -> usize {
-        self.connections
-            .get(&participant_id)
-            .map(|conn| conn.current.borrow().clone().map(|(v, _)| v).unwrap_or(0))
-            .unwrap_or(0)
+    fn connection_version(&self, participant_id: ParticipantId) -> ConnectionVersion {
+        self.connectivities
+            .get(participant_id)
+            .map(|c| c.connection_version())
+            .unwrap_or_default()
+    }
+
+    fn was_connection_interrupted(
+        &self,
+        participant_id: ParticipantId,
+        version: ConnectionVersion,
+    ) -> bool {
+        self.connectivities
+            .get(participant_id)
+            .map(|c| c.was_connection_interrupted(version))
+            .unwrap_or_default()
     }
 
     async fn send(
         &self,
         recipient_id: ParticipantId,
         message: MpcMessage,
-        connection_version: usize,
+        connection_version: ConnectionVersion,
     ) -> anyhow::Result<()> {
         self.connections
             .get(&recipient_id)
@@ -712,34 +606,12 @@ impl MeshNetworkTransportSender for TlsMeshSender {
     }
 
     async fn wait_for_ready(&self, threshold: usize) -> anyhow::Result<()> {
-        assert!(threshold - 1 <= self.connections.len());
-        let mut join_set = JoinSet::new();
-        for (participant_id, indicator) in &*self.connectivities {
-            let participant_id = *participant_id;
-            let my_id = self.my_id;
-            let indicator = indicator.clone();
-            join_set.spawn(async move {
-                indicator.wait_for_both_connected().await;
-                tracing::info!("Bidrectional {} <--> {} connected", my_id, participant_id);
-                anyhow::Ok(())
-            });
-        }
-        for _ in 1..threshold {
-            join_set.join_next().await.unwrap()??;
-        }
+        self.connectivities.wait_for_ready(threshold).await;
         Ok(())
     }
 
     fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
-        let mut ids = self
-            .connectivities
-            .iter()
-            .filter(|(_, indicator)| indicator.is_connected_both_ways())
-            .map(|(id, _)| *id)
-            .chain([self.my_id])
-            .collect::<Vec<_>>();
-        ids.sort();
-        ids
+        self.connectivities.all_alive_participant_ids()
     }
 
     fn emit_metrics(&self) {
@@ -936,7 +808,7 @@ mod tests {
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
                             participants: vec![],
                         },
-                        1,
+                        sender0.connection_version(participant1),
                     )
                     .await
                     .unwrap();
@@ -952,7 +824,7 @@ mod tests {
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
                             participants: vec![],
                         },
-                        1,
+                        sender1.connection_version(participant0),
                     )
                     .await
                     .unwrap();
