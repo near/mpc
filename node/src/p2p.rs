@@ -445,7 +445,6 @@ pub async fn new_tls_mesh_network(
 
     // TODO: what should the channel size be? What's our flow control strategy in general?
     let (message_sender, message_receiver) = mpsc::channel(1000000);
-    // let endpoint_for_listener = server.clone();
     let tcp_listener = TcpListener::bind(SocketAddr::V4(SocketAddrV4::new(
         Ipv4Addr::new(0, 0, 0, 0),
         my_port,
