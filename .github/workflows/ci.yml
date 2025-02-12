@@ -66,9 +66,9 @@ jobs:
 
           url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
 
-          mkdir -p target/release
-          if ! curl -o target/release/neard "${url}"; then
-            echo "curl failed with URL: ${url}"
+          status_code=$(curl -v -o target/release/neard -w "%{http_code}" "${url}")
+          if [ "$status_code" -ne 200 ]; then
+            echo "curl failed with URL: ${url}, Status Code: ${status_code}"
             exit 1
           fi
           chmod +x target/release/neard
