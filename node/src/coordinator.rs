@@ -346,6 +346,17 @@ impl Coordinator {
                 buffer_signature_requests: false,
             });
         };
+
+        tracking::set_progress(&format!(
+            "Generating key as participant {}",
+            mpc_config.my_participant_id
+        ));
+
+        // TODO(#195): We do not have proper retry or failure handling for key generation.
+        // To lower the risk of test flakiness, we will sleep 2 seconds to avoid repeated
+        // failures like the scenario described in #151.
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
         let (sender, receiver) =
             new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
 
@@ -408,6 +419,11 @@ impl Coordinator {
                 });
             }
         };
+
+        tracking::set_progress(&format!(
+            "Running epoch {} as participant {}",
+            contract_state.epoch, mpc_config.my_participant_id
+        ));
 
         let (sender, receiver) =
             new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
@@ -539,6 +555,12 @@ impl Coordinator {
             }
         };
 
+        tracking::set_progress(&format!(
+            "Resharing for epoch {} as participant {}",
+            contract_state.old_epoch + 1,
+            mpc_config.my_participant_id
+        ));
+
         // Delete all presignatures from the previous epoch; they are no longer usable
         // once we reshare keys.
         tracing::info!("Deleting all presignatures...");
@@ -546,6 +568,11 @@ impl Coordinator {
         update.delete_all(DBCol::Presignature)?;
         update.commit()?;
         tracing::info!("Deleted all presignatures");
+
+        // TODO(#195): We do not have proper retry or failure handling for key resharing.
+        // To lower the risk of test flakiness, we will sleep 2 seconds to avoid repeated
+        // failures like the scenario described in #151.
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
         let (sender, receiver) =
             new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;

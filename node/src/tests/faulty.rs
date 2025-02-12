@@ -1,4 +1,5 @@
 use crate::indexer::participants::ContractState;
+use crate::metrics;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
@@ -61,11 +62,47 @@ async fn test_faulty_cluster() {
         panic!("Timed out generating the first signature");
     };
 
+    // TODO(#169): As we shutdown nodes, some nodes can lose their shares of presignatures
+    // before they are persisted to disk. And that can cause subsequent signing
+    // computations to fail. During regular node operation, this would need to be handled
+    // by properly retrying signing computations. But before that is in place, we wait for
+    // extra presignatures to be generated before shutting down nodes, so that with high
+    // likelihood, as we FIFO them for signatures, we will use presignatures that are
+    // persisted by all participants properly.
+    const RETRIES: usize = 60;
+    const TOTAL_PRESIGNATURE_METRIC_WANTED: u64 = 4 * 4 * 5 * 4;
+    for i in 0..RETRIES {
+        // We're going to be generating 4 signatures, so to be safe let's have 4 owned
+        // presignatures per node, times 4 because each presignature is for 3 specific
+        // participants, and then times 5 to be extra safe.
+        // so (4 presigs) * (4 nodes) * (5 extra factor) = 80 generated presignatures
+        // observed by each node, thus let's wait for 320.
+        let current_total = metrics::MPC_PRE_SIGNATURE_TIME_ELAPSED.get_sample_count();
+        if current_total >= TOTAL_PRESIGNATURE_METRIC_WANTED {
+            break;
+        }
+        if i == RETRIES - 1 {
+            panic!(
+                "Failed to generate enough presignatures in time: {}; want {}",
+                current_total, TOTAL_PRESIGNATURE_METRIC_WANTED
+            );
+        }
+        tracing::info!(
+            "Waiting for more presignatures to be generated: {}; want {}",
+            current_total,
+            TOTAL_PRESIGNATURE_METRIC_WANTED
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
     // first step: drop one node, and make sure signatures can still be generated
     let mut rng = rand::thread_rng();
     let to_drop: usize = rng.gen_range(0..NUM_PARTICIPANTS);
     tracing::info!("Bringing down one node #{}", to_drop);
     let disabled1 = setup.indexer.disable(accounts[to_drop].clone()).await;
+    // TODO(#169): This sleep is to avoid flakiness in the case the downed node is the primary
+    // leader, but the secondary leader has not learned that the primary is down yet.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     assert!(
         request_signature_and_await_response(&mut setup.indexer, "user1", signature_delay * 2)
             .await
