@@ -39,7 +39,7 @@ fi
 
 # Run the new container
 echo "🚀 Starting new container..."
-docker run -d --name "$CONTAINER_NAME" --net host -v "$VOLUME_PATH" --env-file "$ENV_FILE" "$IMAGE_NAME"
+docker run -d --name "$CONTAINER_NAME" -p 8080:8080 -p 80:80 -p 3000:3030 --restart always -v "$VOLUME_PATH" --env-file "$ENV_FILE" "$IMAGE_NAME"
 
 # Check if the container is running
 if docker ps -q -f name="$CONTAINER_NAME"; then
