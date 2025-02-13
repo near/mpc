@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# Exit immediately if a command fails, print commands, and ensure pipelines fail properly
-set -xo pipefail
-
 CONTAINER_NAME="mpc-node"
 IMAGE_NAME="nearone/mpc-node-gcp:testnet-standalone"
 ENV_FILE=".env"
