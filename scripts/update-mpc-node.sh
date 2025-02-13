@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Exit immediately if a command fails, print commands, and ensure pipelines fail properly
-set -exo pipefail
+set -xo pipefail
 
 CONTAINER_NAME="mpc-node"
 IMAGE_NAME="nearone/mpc-node-gcp:testnet-standalone"
 ENV_FILE=".env"
-VOLUME_PATH="/home/mpc:/data"
+VOLUME_PATH="/home/mpc/data:/data"
 
 # Get currently running container image ID (if exists)
 RUNNING_IMAGE_ID=$(docker inspect --format "{{.Image}}" "$CONTAINER_NAME" 2>/dev/null || echo "")
@@ -26,16 +26,13 @@ fi
 
 echo "🔄 New image detected. Proceeding with update..."
 
-# Stop and remove existing container if running
-if docker ps -q -f name="$CONTAINER_NAME"; then
-    echo "🛑 Stopping existing container..."
-    docker stop "$CONTAINER_NAME"
-fi
+# Stop and remove existing container if such exist
+echo "🛑 Stopping existing container..."
+docker stop "$CONTAINER_NAME"
 
-if docker ps -aq -f name="$CONTAINER_NAME"; then
-    echo "🗑 Removing existing container..."
-    docker rm "$CONTAINER_NAME"
-fi
+echo "🗑 Removing existing container..."
+docker rm "$CONTAINER_NAME"
+
 
 # Run the new container
 echo "🚀 Starting new container..."
