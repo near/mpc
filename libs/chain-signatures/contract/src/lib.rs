@@ -675,6 +675,12 @@ impl VersionedMpcContract {
                 .message("Cannot propose update due to incorrect parameters."));
         };
 
+        log!(
+            "propose_update: signer={}, id={:?}",
+            env::signer_account_id(),
+            id,
+        );
+
         // Refund the difference if the propser attached more than required.
         if let Some(diff) = attached.checked_sub(required) {
             if diff > NearToken::from_yoctonear(0) {
