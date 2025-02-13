@@ -294,3 +294,103 @@ where T: DeserializeOwned + Clone + Copy {
     }
     Ok(true)
 }
+
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::protocol::internal::{make_protocol, Context};
+    use std::error::Error;
+    use crate::protocol::{run_protocol, Protocol};
+    use crate::protocol::ProtocolError;
+
+    /// This function is similar to do_broadcast except it is tailored to
+    /// consume the inputs instead of borrowing and become suitable for make_protocol
+    /// function
+    pub async fn do_broadcast_consume(
+        mut chan: SharedChannel,
+        participants: ParticipantList,
+        me: Participant,
+        data: bool,
+    ) ->  Result<Vec<bool>, ProtocolError>
+    {
+        let wait_broadcast = chan.next_waitpoint();
+        let send_vote = reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, data).await;
+        let vote_list = reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, send_vote).await?;
+        Ok(vote_list)
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn do_broadcast_honest(
+        participants: &[Participant],
+        me: Participant,
+        data: bool,
+    ) -> Result<impl Protocol<Output = Vec<bool>> , ProtocolError> {
+        let participants = ParticipantList::new(participants).unwrap();
+
+        if !participants.contains(me){
+            return Err(ProtocolError::AssertionFailed(format!("Does not contain me")))
+        }
+        let ctx = Context::new();
+        let chan = ctx.shared_channel();
+        let fut = do_broadcast_consume(chan, participants, me, data);
+
+        Ok(make_protocol(ctx, fut))
+    }
+
+    /// All participants are assumed to be honest here
+    fn broadcast_honest(
+        participants: &[Participant],
+        votes: &[bool]
+    ) -> Result<Vec<(Participant, Vec<bool>)>, Box<dyn Error>> {
+
+        assert_eq!(participants.len(), votes.len());
+
+        let mut protocols: Vec<(
+            Participant,
+            Box<dyn Protocol<Output = Vec<bool>>>
+        )> = Vec::with_capacity(participants.len());
+
+
+        for (p,b) in participants.iter().zip(votes.iter()) {
+            let protocol = do_broadcast_honest(participants, *p, *b)?;
+            protocols.push((*p, Box::new(protocol)));
+        }
+
+        let result = run_protocol(protocols)?;
+        Ok(result)
+    }
+
+    #[test]
+    fn test_five_honest_participants()
+    -> Result<(), Box<dyn Error>> {
+        let participants = vec![
+            Participant::from(0u32),
+            Participant::from(1u32),
+            Participant::from(2u32),
+            Participant::from(3u32),
+            Participant::from(4u32),
+        ];
+
+        let mut votes = vec![
+            true,
+            true,
+            true,
+            true,
+            true
+        ];
+
+        // change everytime a party voting false
+        for i in  0.. votes.len() {
+            let result = broadcast_honest(&participants, &votes)?;
+            for (_,vec_b) in result.iter(){
+                let false_count = vec_b.iter().filter(|&&b| !b).count();
+                assert_eq!(false_count, i);
+            }
+            votes[i] = false;
+        }
+
+        Ok(())
+    }
+}
