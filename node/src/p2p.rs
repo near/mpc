@@ -7,8 +7,8 @@ use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
-use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
-use rustls::server::danger::ClientCertVerifier;
+use rustls::pki_types::PrivatePkcs8KeyDer;
+use rustls::server::WebPkiClientVerifier;
 use rustls::{ClientConfig, CommonState, ServerConfig};
 use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -40,52 +40,6 @@ pub struct TlsMeshReceiver {
 #[derive(Default)]
 struct ParticipantIdentities {
     key_to_participant_id: HashMap<near_crypto::PublicKey, ParticipantId>,
-}
-
-/// A always-allowing client certificate verifier for the TLS layer.
-/// Note that in general, verifying the certificate simply means that the
-/// other party's public key has been correctly signed by a certificate
-/// authority. In this case, we don't need that, because we already know
-/// the exact public key we're expecting from each peer. So don't bother
-/// verifying the certificate itself.
-#[derive(Debug)]
-struct DummyClientCertVerifier;
-
-impl ClientCertVerifier for DummyClientCertVerifier {
-    fn root_hint_subjects(&self) -> &[rustls::DistinguishedName] {
-        &[]
-    }
-
-    fn verify_client_cert(
-        &self,
-        _end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _now: rustls::pki_types::UnixTime,
-    ) -> std::result::Result<rustls::server::danger::ClientCertVerified, rustls::Error> {
-        Ok(rustls::server::danger::ClientCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        vec![rustls::SignatureScheme::ED25519]
-    }
 }
 
 /// A retrying connection that will automatically reconnect if the TCP
@@ -366,13 +320,12 @@ fn configure_tls(
     let mut root_cert_store = rustls::RootCertStore::empty();
     root_cert_store.add(issuer_cert.der().clone())?;
 
-    // As the server, we do not verify the client's certificate, but we still need
-    // a custom verifier or else the certificate will not even be propagated to us
-    // when we handle the connection. Later we'll check that the client provided a
-    // valid public key in the certificate.
+    let client_verifier =
+        WebPkiClientVerifier::builder(Arc::new(root_cert_store.clone())).build()?;
+
     let server_config =
         rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
-            .with_client_cert_verifier(Arc::new(DummyClientCertVerifier))
+            .with_client_cert_verifier(client_verifier)
             .with_single_cert(vec![p2p_cert.der().clone()], p2p_key_der.clone_key())?;
     // As a client, we verify that the server has a valid certificate signed by the
     // dummy issuer (this is required by rustls). When making the connection we also
