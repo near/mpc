@@ -4,7 +4,7 @@
 set -exo pipefail
 
 CONTAINER_NAME="mpc-node"
-IMAGE_NAME="nearone/mpc-node-gcp:mainnet-standalone"
+IMAGE_NAME="nearone/mpc-node-gcp:testnet-standalone"
 ENV_FILE=".env"
 VOLUME_PATH="/home/mpc:/data"
 
