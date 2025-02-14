@@ -356,10 +356,9 @@ where T: DeserializeOwned + Clone + Copy {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::protocol::internal::{make_protocol, Context};
     use std::error::Error;
-    use crate::protocol::{run_protocol, Protocol};
-    use crate::protocol::ProtocolError;
+    use crate::protocol::{run_protocol, Protocol,ProtocolError};
+    use crate::protocol::internal::{make_protocol, Context};
 
     /// This function is similar to do_broadcast except it is tailored to
     /// consume the inputs instead of borrowing and become suitable for make_protocol
@@ -418,6 +417,80 @@ mod test {
         Ok(result)
     }
 
+    pub async fn do_broadcast_dishonest_consume_version_1(
+        mut chan: SharedChannel,
+        participants: ParticipantList,
+        me: Participant,
+    ) ->  Result<Vec<bool>, ProtocolError>
+    {
+        let wait_broadcast = chan.next_waitpoint();
+        let sid = participants.index(me.clone());
+
+        // malicious reliable broadcast send
+        let vote_true  = MessageType::Send(true);
+        let vote_false  = MessageType::Send(false);
+
+        let mut cnt = 0;
+        for p in participants.others(me) {
+            if cnt >=  participants.len()/2 {
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_false)).await;
+            } else {
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_true)).await;
+            }
+            cnt += 1;
+        }
+
+        let vote_list = reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, vote_false).await?;
+        Ok(vote_list)
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn do_broadcast_dishonest_version_1(
+        participants: &[Participant],
+        me: Participant,
+    ) -> Result<impl Protocol<Output = Vec<bool>> , ProtocolError> {
+        // the idea is that the dishonest party is going to send one 2 true and two false
+        let participants = ParticipantList::new(participants).unwrap();
+
+        if !participants.contains(me){
+            return Err(ProtocolError::AssertionFailed(format!("Does not contain me")))
+        }
+        let ctx = Context::new();
+        let chan = ctx.shared_channel();
+        let fut = do_broadcast_dishonest_consume_version_1(chan, participants, me);
+
+        Ok(make_protocol(ctx, fut))
+    }
+
+    fn broadcast_dishonest_version_1(
+        honest_participants: &[Participant],
+        dishonest_participant: &Participant,
+        honest_votes:&[bool],
+    ) -> Result<Vec<(Participant, Vec<bool>)>, Box<dyn Error>>  {
+        assert_eq!(honest_participants.len(), honest_votes.len());
+
+        let mut participants = honest_participants.to_vec();
+        participants.push(dishonest_participant.clone());
+
+        let mut protocols: Vec<(
+            Participant,
+            Box<dyn Protocol<Output = Vec<bool>>>
+        )> = Vec::with_capacity(participants.len());
+
+        // we run the protocol for all honest parties
+        for (p,b) in honest_participants.iter().zip(honest_votes.iter()) {
+            let protocol = do_broadcast_honest(&participants, *p, *b)?;
+            protocols.push((*p, Box::new(protocol)));
+        }
+
+        // we run the protocol for the dishonest party
+        let protocol = do_broadcast_dishonest_version_1(&participants, *dishonest_participant)?;
+        protocols.push((*dishonest_participant, Box::new(protocol)));
+
+        let result = run_protocol(protocols)?;
+        Ok(result)
+    }
+
     #[test]
     fn test_five_honest_participants()
     -> Result<(), Box<dyn Error>> {
@@ -447,6 +520,33 @@ mod test {
             votes[i] = false;
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_three_honest_one_dihonest()
+    -> Result<(), Box<dyn Error>> {
+        // threshold is assumed to be n >= 3*threshold + 1
+        let honest_participants = vec![
+            Participant::from(0u32),
+            Participant::from(1u32),
+            Participant::from(2u32),
+        ];
+
+        let dishonest_participant = Participant::from(3u32);
+
+        let honest_votes = vec![
+            true,
+            true,
+            true,
+        ];
+
+        let result = broadcast_dishonest_version_1(
+            &honest_participants,
+            &dishonest_participant,
+            &honest_votes
+        );
+        assert!(result.is_err());
         Ok(())
     }
 }
