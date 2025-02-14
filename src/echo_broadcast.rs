@@ -1,11 +1,10 @@
-
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use crate::participants::{ParticipantCounter, ParticipantList};
+use crate::protocol::ProtocolError;
 use crate::protocol::{
     internal::{SharedChannel, Waitpoint},
     Participant,
 };
-use crate::protocol::ProtocolError;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// This structure is essential for the reliable broadcast protocol
 /// Send is used in the first phase, Echo in the second, and Ready
@@ -39,45 +38,43 @@ impl<T: PartialEq> CounterList<T> {
     }
 
     fn get(&self, item: &T) -> Option<usize> {
-        self.list.iter().find(|(e, _)| e == item).map(|(_, count)| *count)
+        self.list
+            .iter()
+            .find(|(e, _)| e == item)
+            .map(|(_, count)| *count)
     }
 
     fn get_sum_counters(&self) -> usize {
         let mut sum = 0;
-        for (_, cnt) in self.list.iter(){
+        for (_, cnt) in self.list.iter() {
             sum += cnt
-        };
+        }
         sum
     }
 
-    fn iter(&self) -> std::slice::Iter<'_, (T, usize)>{
+    fn iter(&self) -> std::slice::Iter<'_, (T, usize)> {
         self.list.iter()
     }
 }
 
-
 /// Outputs the necessary Echo-Broadcast thresholds based on the
 /// total number of participants.
-fn echo_ready_thresholds(n: usize) -> (usize, usize){
-    let n:usize = if n < 2 {
-        3
-    } else {
-        n
-    };
+fn echo_ready_thresholds(n: usize) -> (usize, usize) {
+    let n: usize = if n < 2 { 3 } else { n };
     // we should always have n >= 3*threshold + 1
     let mut broadcast_threshold = match n % 3 {
-        0 => n/3 - 1,
-        _ => (n - (n % 3))/ 3,
+        0 => n / 3 - 1,
+        _ => (n - (n % 3)) / 3,
     };
 
-    let echo_threshold =  if broadcast_threshold == 0 {
+    let echo_threshold = if broadcast_threshold == 0 {
         // case where no malicious parties are assumed: when n <= 3/
         // In this case the echo and ready thresholds are both 0
         // later we compare if we have collected more votes than these thresholds
         broadcast_threshold = 0;
         0
     } else {
-        (n+broadcast_threshold)/2
+        (n + broadcast_threshold) / 2
     };
 
     let ready_threshold = broadcast_threshold;
@@ -87,22 +84,23 @@ fn echo_ready_thresholds(n: usize) -> (usize, usize){
 /// This reliable broadcast function is the echo-broadcast protocol from the sender side.
 /// It broadcasts either true or false and expects that the output of the broadcasts be the same as the input data
 /// This function is expected to be applied to ensure either all (honest) nodes succeed a specific protocol or they fail
-pub async fn reliable_broadcast_send<T> (
+pub async fn reliable_broadcast_send<T>(
     chan: &SharedChannel,
     wait: Waitpoint,
     participants: &ParticipantList,
     me: &Participant,
     data: T,
 ) -> MessageType<T>
-where T: Serialize + Copy {
-    let vote  = MessageType::Send(data);
+where
+    T: Serialize + Copy,
+{
+    let vote = MessageType::Send(data);
     let sid = participants.index(me.clone());
     // Send vote to all participants but for myself
-    chan.send_many(wait,  &(&sid, &vote)).await;
+    chan.send_many(wait, &(&sid, &vote)).await;
     // the vote is returned to be taken into consideration as received
     vote
 }
-
 
 /// This reliable broadcast function is the echo-broadcast protocol from the sender receiver side.
 /// It broadcasts either true or false and expects that the output of the broadcasts be the same as the input data
@@ -114,7 +112,8 @@ pub async fn reliable_broadcast_receive_all<T>(
     me: &Participant,
     send_vote: MessageType<T>,
 ) -> Result<Vec<T>, ProtocolError>
-where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
+where
+    T: Serialize + Clone + DeserializeOwned + Copy + PartialEq,
 {
     let n = participants.len();
     let (echo_t, ready_t) = echo_ready_thresholds(n);
@@ -122,8 +121,8 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
     let mut vote_output: Vec<T> = Vec::new();
     // first dimension determines the session
     // second dimension contains the counter for success/failure of the received strings
-    let mut data_echo =  vec![CounterList::new(); n];
-    let mut data_ready =  vec![CounterList::new(); n];
+    let mut data_echo = vec![CounterList::new(); n];
+    let mut data_ready = vec![CounterList::new(); n];
 
     // first dimension determines the session
     // second dimension helps prevent duplication: correct processes should deliver at most one message
@@ -160,7 +159,9 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
             participants,
             me,
             &send_vote,
-        ).await? {
+        )
+        .await?
+        {
             continue;
         }
 
@@ -172,21 +173,22 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
                 // then skip
                 // the second condition prevent a malicious party starting the protocol
                 // on behalf on someone else
-                if finish_send[sid] || sid != participants.index(from.clone()){
+                if finish_send[sid] || sid != participants.index(from.clone()) {
                     continue;
                 }
                 // upon receiving a send message, echo it
-                chan.send_many(wait, &(&sid, &MessageType::Echo(data))).await;
+                chan.send_many(wait, &(&sid, &MessageType::Echo(data)))
+                    .await;
                 finish_send[sid] = true;
                 // activate the boolean saying that *me* want to deliver echo
                 // to all participants including myself
                 echo_activated = true
-            },
+            }
             // Receive send vote then echo to everybody
             MessageType::Echo(data) => {
                 // skip if I received echo message from the sender in a specific session (sid)
                 // or if I had already passed to the ready phase in this same session
-                if !seen_echo[sid].put(from) || finish_echo[sid]{
+                if !seen_echo[sid].put(from) || finish_echo[sid] {
                     continue;
                 }
                 // insert or increment the number of collected echo of a specific vote
@@ -194,8 +196,9 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
 
                 // upon gathering strictly more than (n+f)/2 votes
                 // for a result, deliver (READY, vote)
-                if data_echo[sid].get(&data).unwrap() > echo_t{
-                    chan.send_many(wait,   &(&sid, &MessageType::Ready(data))).await;
+                if data_echo[sid].get(&data).unwrap() > echo_t {
+                    chan.send_many(wait, &(&sid, &MessageType::Ready(data)))
+                        .await;
                     // state that the echo phase for session id (sid) is done
                     finish_echo[sid] = true;
                     // activate the boolean saying that *me* wants to deliver ready
@@ -211,13 +214,13 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
                     // calculate the total number of echos already collected
                     let received_echo_cnt = data_echo[sid].get_sum_counters();
                     // calculate the number of echo to be received
-                    let non_received_echo_cnt = n-received_echo_cnt;
+                    let non_received_echo_cnt = n - received_echo_cnt;
                     // iterate over the data_echo[sid] array
                     let mut is_enough = false;
-                    for (_, cnt) in data_echo[sid].iter(){
+                    for (_, cnt) in data_echo[sid].iter() {
                         // verify whether there is enough votes in at
                         // least one slot to exceed the threshold
-                        if cnt + non_received_echo_cnt > echo_t{
+                        if cnt + non_received_echo_cnt > echo_t {
                             is_enough = true;
                             break;
                         }
@@ -225,12 +228,13 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
                     // if not enough echo votes left for hitting the threshold
                     // then we know that the sender is malicious
                     if !is_enough {
-                        return Err(ProtocolError::AssertionFailed(
-                            format!("The original sender in session {sid:?} is malicious!
-                            Could not collect enough echo votes to meet the threshold")))
+                        return Err(ProtocolError::AssertionFailed(format!(
+                            "The original sender in session {sid:?} is malicious!
+                            Could not collect enough echo votes to meet the threshold"
+                        )));
                     }
                 }
-            },
+            }
             MessageType::Ready(data) => {
                 // skip if I received echo message from the sender in session sid
                 if !seen_ready[sid].put(from) || finish_ready[sid] {
@@ -243,14 +247,17 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
                 // upon gathering strictly more than f votes
                 // and if I haven't already amplified ready vote in session sid then
                 // proceed to amplification of the ready message
-                if data_ready[sid].get(&data).unwrap() > ready_t && finish_amplification[sid] == false{
-                    chan.send_many(wait,  &(&sid, &MessageType::Ready(data))).await;
+                if data_ready[sid].get(&data).unwrap() > ready_t
+                    && finish_amplification[sid] == false
+                {
+                    chan.send_many(wait, &(&sid, &MessageType::Ready(data)))
+                        .await;
                     finish_amplification[sid] = true;
                     // activate the boolean saying that *me* wants to deliver ready
                     // to all participants including myself
                     ready_activated = true;
                 }
-                if data_ready[sid].get(&data).unwrap() > 2*ready_t{
+                if data_ready[sid].get(&data).unwrap() > 2 * ready_t {
                     // skip all types of messages sent for session sid from now on
                     finish_send[sid] = true;
                     finish_echo[sid] = true;
@@ -271,22 +278,25 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
                         return Ok(vote_output);
                     }
                 }
-            },
+            }
         }
     }
 }
 
-pub async fn do_broadcast <T>(
+pub async fn do_broadcast<T>(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
     me: &Participant,
     data: T,
-) ->  Result<Vec<T>, ProtocolError>
-where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
+) -> Result<Vec<T>, ProtocolError>
+where
+    T: Serialize + Clone + DeserializeOwned + Copy + PartialEq,
 {
     let wait_broadcast = chan.next_waitpoint();
     let send_vote = reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, data).await;
-    let vote_list = reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, send_vote).await?;
+    let vote_list =
+        reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, send_vote)
+            .await?;
     Ok(vote_list)
 }
 
@@ -307,7 +317,9 @@ async fn prepare_vote<T>(
     me: &Participant,
     send_vote: &MessageType<T>,
 ) -> Result<bool, ProtocolError>
-where T: DeserializeOwned + Clone + Copy {
+where
+    T: DeserializeOwned + Clone + Copy,
+{
     if *send_activated {
         *send_activated = false;
         match send_vote {
@@ -324,20 +336,24 @@ where T: DeserializeOwned + Clone + Copy {
         *echo_activated = false;
         *from = me.clone();
         *vote = match vote {
-            MessageType::Send(data) =>  MessageType::Echo(*data),
-            _ =>  return Err(ProtocolError::AssertionFailed(
-                format!("Message is not of type Send! Exiting {me:?}.")
-                )),
+            MessageType::Send(data) => MessageType::Echo(*data),
+            _ => {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "Message is not of type Send! Exiting {me:?}."
+                )))
+            }
         }
     } else if *ready_activated {
         *ready_activated = false;
         *from = me.clone();
         *vote = match vote {
-            MessageType::Echo(data) =>  MessageType::Ready(*data),
+            MessageType::Echo(data) => MessageType::Ready(*data),
             MessageType::Ready(data) => MessageType::Ready(*data),
-            _ => return Err(ProtocolError::AssertionFailed(
-                format!("Message is neither of type Echo nor Ready (amplify) ! Exiting {me:?}.")
-                )),
+            _ => {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "Message is neither of type Echo nor Ready (amplify) ! Exiting {me:?}."
+                )))
+            }
         }
     } else {
         // The recv should be failure-free
@@ -351,14 +367,12 @@ where T: DeserializeOwned + Clone + Copy {
     Ok(true)
 }
 
-
-
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::error::Error;
-    use crate::protocol::{run_protocol, Protocol,ProtocolError};
     use crate::protocol::internal::{make_protocol, Context};
+    use crate::protocol::{run_protocol, Protocol, ProtocolError};
+    use std::error::Error;
 
     /// This function is similar to do_broadcast except it is tailored to
     /// consume the inputs instead of borrowing and become suitable for make_protocol
@@ -368,11 +382,13 @@ mod test {
         participants: ParticipantList,
         me: Participant,
         data: bool,
-    ) ->  Result<Vec<bool>, ProtocolError>
-    {
+    ) -> Result<Vec<bool>, ProtocolError> {
         let wait_broadcast = chan.next_waitpoint();
-        let send_vote = reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, data).await;
-        let vote_list = reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, send_vote).await?;
+        let send_vote =
+            reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, data).await;
+        let vote_list =
+            reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, send_vote)
+                .await?;
         Ok(vote_list)
     }
 
@@ -381,11 +397,13 @@ mod test {
         participants: &[Participant],
         me: Participant,
         data: bool,
-    ) -> Result<impl Protocol<Output = Vec<bool>> , ProtocolError> {
+    ) -> Result<impl Protocol<Output = Vec<bool>>, ProtocolError> {
         let participants = ParticipantList::new(participants).unwrap();
 
-        if !participants.contains(me){
-            return Err(ProtocolError::AssertionFailed(format!("Does not contain me")))
+        if !participants.contains(me) {
+            return Err(ProtocolError::AssertionFailed(format!(
+                "Does not contain me"
+            )));
         }
         let ctx = Context::new();
         let chan = ctx.shared_channel();
@@ -397,18 +415,14 @@ mod test {
     /// All participants are assumed to be honest here
     fn broadcast_honest(
         participants: &[Participant],
-        votes: &[bool]
+        votes: &[bool],
     ) -> Result<Vec<(Participant, Vec<bool>)>, Box<dyn Error>> {
-
         assert_eq!(participants.len(), votes.len());
 
-        let mut protocols: Vec<(
-            Participant,
-            Box<dyn Protocol<Output = Vec<bool>>>
-        )> = Vec::with_capacity(participants.len());
+        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = Vec<bool>>>)> =
+            Vec::with_capacity(participants.len());
 
-
-        for (p,b) in participants.iter().zip(votes.iter()) {
+        for (p, b) in participants.iter().zip(votes.iter()) {
             let protocol = do_broadcast_honest(participants, *p, *b)?;
             protocols.push((*p, Box::new(protocol)));
         }
@@ -421,26 +435,29 @@ mod test {
         mut chan: SharedChannel,
         participants: ParticipantList,
         me: Participant,
-    ) ->  Result<Vec<bool>, ProtocolError>
-    {
+    ) -> Result<Vec<bool>, ProtocolError> {
         let wait_broadcast = chan.next_waitpoint();
         let sid = participants.index(me.clone());
 
         // malicious reliable broadcast send
-        let vote_true  = MessageType::Send(true);
-        let vote_false  = MessageType::Send(false);
+        let vote_true = MessageType::Send(true);
+        let vote_false = MessageType::Send(false);
 
         let mut cnt = 0;
         for p in participants.others(me) {
-            if cnt >=  participants.len()/2 {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_false)).await;
+            if cnt >= participants.len() / 2 {
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_false))
+                    .await;
             } else {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_true)).await;
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_true))
+                    .await;
             }
             cnt += 1;
         }
 
-        let vote_list = reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, vote_false).await?;
+        let vote_list =
+            reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, vote_false)
+                .await?;
         Ok(vote_list)
     }
 
@@ -448,26 +465,29 @@ mod test {
         mut chan: SharedChannel,
         participants: ParticipantList,
         me: Participant,
-    ) ->  Result<Vec<bool>, ProtocolError>
-    {
+    ) -> Result<Vec<bool>, ProtocolError> {
         let wait_broadcast = chan.next_waitpoint();
         let sid = participants.index(me.clone());
 
         // malicious reliable broadcast send
-        let vote_true  = MessageType::Send(true);
-        let vote_false  = MessageType::Send(false);
+        let vote_true = MessageType::Send(true);
+        let vote_false = MessageType::Send(false);
 
         let mut cnt = 0;
         for p in participants.others(me) {
-            if cnt >=  participants.len()/2 {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_false)).await;
+            if cnt >= participants.len() / 2 {
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_false))
+                    .await;
             } else {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_true)).await;
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_true))
+                    .await;
             }
             cnt += 1;
         }
 
-        let vote_list = reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, vote_true).await?;
+        let vote_list =
+            reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, vote_true)
+                .await?;
         Ok(vote_list)
     }
 
@@ -475,12 +495,14 @@ mod test {
     pub fn do_broadcast_dishonest_v1(
         participants: &[Participant],
         me: Participant,
-    ) -> Result<impl Protocol<Output = Vec<bool>> , ProtocolError> {
+    ) -> Result<impl Protocol<Output = Vec<bool>>, ProtocolError> {
         // the idea is that the dishonest party is going to send one 2 true and two false
         let participants = ParticipantList::new(participants).unwrap();
 
-        if !participants.contains(me){
-            return Err(ProtocolError::AssertionFailed(format!("Does not contain me")))
+        if !participants.contains(me) {
+            return Err(ProtocolError::AssertionFailed(format!(
+                "Does not contain me"
+            )));
         }
         let ctx = Context::new();
         let chan = ctx.shared_channel();
@@ -494,12 +516,14 @@ mod test {
     pub fn do_broadcast_dishonest_v2(
         participants: &[Participant],
         me: Participant,
-    ) -> Result<impl Protocol<Output = Vec<bool>> , ProtocolError> {
+    ) -> Result<impl Protocol<Output = Vec<bool>>, ProtocolError> {
         // the idea is that the dishonest party is going to send one 2 true and two false
         let participants = ParticipantList::new(participants).unwrap();
 
-        if !participants.contains(me){
-            return Err(ProtocolError::AssertionFailed(format!("Does not contain me")))
+        if !participants.contains(me) {
+            return Err(ProtocolError::AssertionFailed(format!(
+                "Does not contain me"
+            )));
         }
         let ctx = Context::new();
         let chan = ctx.shared_channel();
@@ -512,20 +536,18 @@ mod test {
     fn broadcast_dishonest_v1(
         honest_participants: &[Participant],
         dishonest_participant: &Participant,
-        honest_votes:&[bool],
-    ) -> Result<Vec<(Participant, Vec<bool>)>, Box<dyn Error>>  {
+        honest_votes: &[bool],
+    ) -> Result<Vec<(Participant, Vec<bool>)>, Box<dyn Error>> {
         assert_eq!(honest_participants.len(), honest_votes.len());
 
         let mut participants = honest_participants.to_vec();
         participants.push(dishonest_participant.clone());
 
-        let mut protocols: Vec<(
-            Participant,
-            Box<dyn Protocol<Output = Vec<bool>>>
-        )> = Vec::with_capacity(participants.len());
+        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = Vec<bool>>>)> =
+            Vec::with_capacity(participants.len());
 
         // we run the protocol for all honest parties
-        for (p,b) in honest_participants.iter().zip(honest_votes.iter()) {
+        for (p, b) in honest_participants.iter().zip(honest_votes.iter()) {
             let protocol = do_broadcast_honest(&participants, *p, *b)?;
             protocols.push((*p, Box::new(protocol)));
         }
@@ -539,24 +561,21 @@ mod test {
         Ok(result)
     }
 
-
     fn broadcast_dishonest_v2(
         honest_participants: &[Participant],
         dishonest_participant: &Participant,
-        honest_votes:&[bool],
-    ) -> Result<Vec<(Participant, Vec<bool>)>, Box<dyn Error>>  {
+        honest_votes: &[bool],
+    ) -> Result<Vec<(Participant, Vec<bool>)>, Box<dyn Error>> {
         assert_eq!(honest_participants.len(), honest_votes.len());
 
         let mut participants = honest_participants.to_vec();
         participants.push(dishonest_participant.clone());
 
-        let mut protocols: Vec<(
-            Participant,
-            Box<dyn Protocol<Output = Vec<bool>>>
-        )> = Vec::with_capacity(participants.len());
+        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = Vec<bool>>>)> =
+            Vec::with_capacity(participants.len());
 
         // we run the protocol for all honest parties
-        for (p,b) in honest_participants.iter().zip(honest_votes.iter()) {
+        for (p, b) in honest_participants.iter().zip(honest_votes.iter()) {
             let protocol = do_broadcast_honest(&participants, *p, *b)?;
             protocols.push((*p, Box::new(protocol)));
         }
@@ -571,8 +590,7 @@ mod test {
     }
 
     #[test]
-    fn test_five_honest_participants()
-    -> Result<(), Box<dyn Error>> {
+    fn test_five_honest_participants() -> Result<(), Box<dyn Error>> {
         let participants = vec![
             Participant::from(0u32),
             Participant::from(1u32),
@@ -581,18 +599,12 @@ mod test {
             Participant::from(4u32),
         ];
 
-        let mut votes = vec![
-            true,
-            true,
-            true,
-            true,
-            true
-        ];
+        let mut votes = vec![true, true, true, true, true];
 
         // change everytime a party voting false
-        for i in  0.. votes.len() {
+        for i in 0..votes.len() {
             let result = broadcast_honest(&participants, &votes)?;
-            for (_,vec_b) in result.iter(){
+            for (_, vec_b) in result.iter() {
                 let false_count = vec_b.iter().filter(|&&b| !b).count();
                 assert_eq!(false_count, i);
             }
@@ -603,8 +615,7 @@ mod test {
     }
 
     #[test]
-    fn test_three_honest_one_dihonest()
-    -> Result<(), Box<dyn Error>> {
+    fn test_three_honest_one_dihonest() -> Result<(), Box<dyn Error>> {
         // threshold is assumed to be n >= 3*threshold + 1
         let honest_participants = vec![
             Participant::from(0u32),
@@ -614,28 +625,18 @@ mod test {
 
         let dishonest_participant = Participant::from(3u32);
 
-        let honest_votes = vec![
-            true,
-            true,
-            true,
-        ];
+        let honest_votes = vec![true, true, true];
 
         // version 1
-        let result = broadcast_dishonest_v1(
-            &honest_participants,
-            &dishonest_participant,
-            &honest_votes,
-        );
+        let result =
+            broadcast_dishonest_v1(&honest_participants, &dishonest_participant, &honest_votes);
         assert!(result.is_err());
 
         // version 2
-        let result = broadcast_dishonest_v2(
-            &honest_participants,
-            &dishonest_participant,
-            &honest_votes,
-        )?;
+        let result =
+            broadcast_dishonest_v2(&honest_participants, &dishonest_participant, &honest_votes)?;
 
-        for (_,vec_b) in result.iter(){
+        for (_, vec_b) in result.iter() {
             let false_count = vec_b.iter().filter(|&&b| !b).count();
             assert_eq!(false_count, 0);
         }

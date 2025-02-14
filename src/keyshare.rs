@@ -54,12 +54,11 @@ async fn do_keyshare<C: CSCurve>(
     transcript.extend_from_slice(b"participants");
     transcript.extend_from_slice(&encode(&participants));
     transcript.extend_from_slice(b"threshold");
-    transcript.extend_from_slice(&u64::try_from(threshold).unwrap().to_be_bytes(),);
+    transcript.extend_from_slice(&u64::try_from(threshold).unwrap().to_be_bytes());
     transcript.extend_from_slice(b"all commitments");
     transcript.extend_from_slice(hash(&all_commitments).as_ref());
 
     zkp_transcript.message(b"ZKPoK transcript", &transcript);
-
 
     // Spec 2.5
     let statement = dlog::Statement::<C> {
@@ -132,7 +131,6 @@ async fn do_keyshare<C: CSCurve>(
         x_i += x_j_i;
     }
 
-
     // Round 3: make necessary checks and broadcast success or failure
     // compute transcript hash
     // transcript contains:
@@ -158,7 +156,7 @@ async fn do_keyshare<C: CSCurve>(
 
     let mut err = String::new();
 
-    for from in participants.others(me){
+    for from in participants.others(me) {
         // Spec 3.4
         // verify that the big_f is of order threshold - 1
         if all_big_f[from].len() != threshold {
@@ -186,13 +184,15 @@ async fn do_keyshare<C: CSCurve>(
         }
 
         // check the validity of the received secret evaluations
-        if all_big_f[from].evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * all_secret_evaluations[from]{
+        if all_big_f[from].evaluate(&me.scalar::<C>())
+            != C::ProjectivePoint::generator() * all_secret_evaluations[from]
+        {
             err = format!("Party {from:?} is acting maliciously: the check of validity of the private polynomial evaluation did not pass")
         }
     }
 
     // check transcript hashes
-    for their_transcript_hash in transcript_list{
+    for their_transcript_hash in transcript_list {
         if my_transcript_hash != their_transcript_hash {
             err = format!("transcript hash did not match expectation");
             break;
@@ -209,8 +209,9 @@ async fn do_keyshare<C: CSCurve>(
     // only applies to key resharing where big_s is the public key before resharing
     let big_x = big_f.evaluate_zero();
     match big_s {
-        Some(big_s) if big_s != big_x =>
-            err = "new public key does not match old public key".to_string(),
+        Some(big_s) if big_s != big_x => {
+            err = "new public key does not match old public key".to_string()
+        }
         _ => {}
     };
 
@@ -224,20 +225,20 @@ async fn do_keyshare<C: CSCurve>(
             // broadcast node me failed
             do_broadcast(&mut chan, &participants, &me, false).await?;
             return Err(ProtocolError::AssertionFailed(err));
-        },
+        }
 
         true => {
             // broadcast node me succeded
             let vote_list = do_broadcast(&mut chan, &participants, &me, true).await?;
             // go through all the list of votes and check if any is fail
             if vote_list.contains(&false) {
-                return Err(ProtocolError::AssertionFailed(
-                    format!("A participant seems to have failed its checks. Aborting DKG!")
-                ));
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "A participant seems to have failed its checks. Aborting DKG!"
+                )));
             };
             // Wait for all the tasks to complete
-            return Ok((x_i, big_x.into()))
-        },
+            return Ok((x_i, big_x.into()));
+        }
     }
 }
 
