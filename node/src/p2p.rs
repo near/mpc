@@ -610,7 +610,6 @@ pub mod testing {
                 .unwrap()
         }
 
-        #[cfg(test)]
         pub fn web_port(&self, node_index: usize) -> u16 {
             (20000_usize + self.0 as usize * 100 + node_index)
                 .try_into()

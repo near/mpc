@@ -62,6 +62,7 @@ pub async fn start_web_server(
     let router = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics))
         .route("/debug/tasks", axum::routing::get(debug_tasks))
+        .route("/health", axum::routing::get(|| async { "OK" }))
         .with_state(WebServerState { root_task_handle });
 
     let tcp_listener = TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;
