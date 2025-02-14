@@ -61,7 +61,7 @@ jobs:
           os_and_arch=${os}-${arch}
           cd libs/nearcore
 
-          branch_name=master #$(git branch -r --contains HEAD | grep -o 'origin/[^ ]*' | sed 's|origin/||' | head -n 1 || echo "no-branch")
+          branch_name=$(git branch -r --contains HEAD | grep -o 'origin/[^ ]*' | sed 's|origin/||' | head -n 1 || echo "no-branch")
           commit_hash=$(git rev-parse HEAD || echo "no-commit")
 
           url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
