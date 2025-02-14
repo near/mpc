@@ -47,18 +47,26 @@ impl<T: PartialEq> CounterList<T> {
 /// Outputs the necessary Echo-Broadcast thresholds based on the
 /// total number of participants.
 fn echo_ready_thresholds(n: usize) -> (usize, usize){
+    let n:usize = if n < 2 {
+        3
+    } else {
+        n
+    };
     // we should always have n >= 3*threshold + 1
     let mut broadcast_threshold = match n % 3 {
         0 => n/3 - 1,
         _ => (n - (n % 3))/ 3,
     };
 
-    let echo_threshold =  if broadcast_threshold <= 0 {
-        broadcast_threshold = 0;
-        0
+    let echo_threshold =  if broadcast_threshold == 0 {
+        // case where no malicious parties are assumed: when n <= 3
+        // In this case the echo and ready thresholds are both 1
+        broadcast_threshold = 1;
+        1
     } else {
         (n+broadcast_threshold)/2
     };
+
     let ready_threshold = broadcast_threshold;
     (echo_threshold, ready_threshold)
 }
