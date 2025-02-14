@@ -59,10 +59,11 @@ fn echo_ready_thresholds(n: usize) -> (usize, usize){
     };
 
     let echo_threshold =  if broadcast_threshold == 0 {
-        // case where no malicious parties are assumed: when n <= 3
-        // In this case the echo and ready thresholds are both 1
-        broadcast_threshold = 1;
-        1
+        // case where no malicious parties are assumed: when n <= 3/
+        // In this case the echo and ready thresholds are both 0
+        // later we compare if we have collected more votes than these thresholds
+        broadcast_threshold = 0;
+        0
     } else {
         (n+broadcast_threshold)/2
     };
