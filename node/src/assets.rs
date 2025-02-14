@@ -636,13 +636,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{DoubleQueue, UniqueId};
+    use super::{ColdQueue, DoubleQueue, UniqueId};
     use crate::async_testing::{run_future_once, MaybeReady};
     use crate::primitives::{HasParticipants, ParticipantId};
     use borsh::BorshDeserialize;
     use futures::FutureExt;
     use near_time::FakeClock;
     use serde::{Deserialize, Serialize};
+    use std::cmp::Eq;
+    use std::default::Default;
     use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
@@ -653,6 +655,89 @@ mod tests {
         fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
             self.0.iter().all(|p| active_participants.contains(p))
         }
+    }
+
+    fn verify_cold_queue_internal_consistency<T, CondVal: Default + Eq>(
+        queue: &ColdQueue<T, CondVal>,
+        expected_len: usize,
+    ) {
+        assert!(queue.cold_ready <= queue.cold_available);
+        assert!(queue.cold_available <= queue.cold_queue.len());
+        assert_eq!(expected_len, queue.cold_queue.len());
+        for (i, (_id, val)) in queue.cold_queue.iter().enumerate() {
+            let satisfies = (queue.condition)(&queue.last_condition_value, val);
+            if i < queue.cold_ready {
+                assert!(satisfies);
+            }
+            if queue.cold_available <= i {
+                assert!(!satisfies);
+            }
+        }
+    }
+
+    #[test]
+    fn test_cold_queue() {
+        let clock = FakeClock::default();
+        let cond_value = Arc::new(AtomicI32::new(0));
+        let mut queue = ColdQueue::new(clock.clock(), |cond, val| val % 2 == *cond, {
+            let cond_value = cond_value.clone();
+            Arc::new(move || cond_value.load(Ordering::Relaxed))
+        });
+
+        // Operations on empty
+        verify_cold_queue_internal_consistency(&queue, 0);
+        queue.discard();
+        verify_cold_queue_internal_consistency(&queue, 0);
+        queue.take();
+        verify_cold_queue_internal_consistency(&queue, 0);
+        cond_value.store(1, Ordering::Relaxed);
+        queue.update_condition_value();
+        verify_cold_queue_internal_consistency(&queue, 0);
+
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 1, 0);
+        let id2 = id1.add_to_counter(1).unwrap();
+
+        // Insert and remove
+        queue.add_if_condition_not_satisfied(id1, 1);
+        verify_cold_queue_internal_consistency(&queue, 0);
+        queue.add_if_condition_satisfied(id1, 1);
+        verify_cold_queue_internal_consistency(&queue, 1);
+        queue.discard();
+        verify_cold_queue_internal_consistency(&queue, 1);
+        queue.add_if_condition_not_satisfied(id2, 2);
+        verify_cold_queue_internal_consistency(&queue, 2);
+        queue.take();
+        verify_cold_queue_internal_consistency(&queue, 1);
+        queue.discard();
+        verify_cold_queue_internal_consistency(&queue, 0);
+
+        // Reset then discard
+        queue.add_if_condition_satisfied(id1, 1);
+        cond_value.store(0, Ordering::Relaxed);
+        queue.update_condition_value();
+        queue.take();
+        verify_cold_queue_internal_consistency(&queue, 1);
+        queue.discard();
+        verify_cold_queue_internal_consistency(&queue, 0);
+        // Reset then take
+        queue.add_if_condition_not_satisfied(id1, 1);
+        cond_value.store(1, Ordering::Relaxed);
+        queue.update_condition_value();
+        queue.discard();
+        verify_cold_queue_internal_consistency(&queue, 1);
+        queue.take();
+        verify_cold_queue_internal_consistency(&queue, 0);
+
+        // Take from known satisfying
+        queue.add_if_condition_satisfied(id1, 1);
+        verify_cold_queue_internal_consistency(&queue, 1);
+        queue.take();
+        verify_cold_queue_internal_consistency(&queue, 0);
+        // Discard from known non-satisfying
+        queue.add_if_condition_not_satisfied(id2, 2);
+        verify_cold_queue_internal_consistency(&queue, 1);
+        queue.discard();
+        verify_cold_queue_internal_consistency(&queue, 0);
     }
 
     #[test]
