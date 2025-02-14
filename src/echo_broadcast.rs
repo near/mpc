@@ -48,12 +48,17 @@ impl<T: PartialEq> CounterList<T> {
 /// total number of participants.
 fn echo_ready_thresholds(n: usize) -> (usize, usize){
     // we should always have n >= 3*threshold + 1
-    let broadcast_threshold = match n % 3 {
+    let mut broadcast_threshold = match n % 3 {
         0 => n/3 - 1,
         _ => (n - (n % 3))/ 3,
     };
 
-    let echo_threshold = (n+broadcast_threshold)/2;
+    let echo_threshold =  if broadcast_threshold <= 0 {
+        broadcast_threshold = 0;
+        0
+    } else {
+        (n+broadcast_threshold)/2
+    };
     let ready_threshold = broadcast_threshold;
     (echo_threshold, ready_threshold)
 }
