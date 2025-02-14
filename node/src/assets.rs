@@ -413,8 +413,17 @@ where
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn available(&self) -> usize {
         self.hot_receiver.len() + self.cold_queue.lock().unwrap().cold_available
+    }
+
+    pub fn ready(&self) -> usize {
+        self.cold_queue.lock().unwrap().cold_ready
+    }
+
+    pub fn offline(&self) -> usize {
+        let cold_queue = self.cold_queue.lock().unwrap();
+        cold_queue.cold_queue.len() - cold_queue.cold_available
     }
 }
 
@@ -509,8 +518,21 @@ where
     }
 
     /// Returns the current number of owned assets in the database.
+    /// Excludes assets which are known to have offline participants.
     pub fn num_owned(&self) -> usize {
-        self.owned_queue.len()
+        self.owned_queue.available()
+    }
+
+    /// Returns the current number of owned assets in the database which
+    /// are known to have all participants alive.
+    pub fn num_owned_ready(&self) -> usize {
+        self.owned_queue.ready()
+    }
+
+    /// Returns the current number of owned assets in the database which
+    /// are known to have some participant offline.
+    pub fn num_owned_offline(&self) -> usize {
+        self.owned_queue.offline()
     }
 
     pub async fn take_owned(&self) -> (UniqueId, T) {
@@ -765,25 +787,25 @@ mod tests {
         queue.add_owned(id1, 1);
         queue.add_owned(id2, 2);
         queue.add_owned(id3, 3);
-        assert_eq!(queue.len(), 3);
+        assert_eq!(queue.available(), 3);
 
         queue.maybe_discard_owned(1).now_or_never().unwrap();
-        assert_eq!(queue.len(), 2);
+        assert_eq!(queue.available(), 2);
 
         assert_eq!(queue.take_owned().now_or_never().unwrap(), (id2, 2));
-        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.available(), 1);
 
         queue.maybe_discard_owned(1).now_or_never().unwrap();
-        assert_eq!(queue.len(), 0);
+        assert_eq!(queue.available(), 0);
 
         queue.add_owned(id4, 4);
-        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.available(), 1);
 
         queue.maybe_discard_owned(1).now_or_never().unwrap();
-        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.available(), 1);
 
         assert_eq!(queue.take_owned().now_or_never().unwrap(), (id4, 4));
-        assert_eq!(queue.len(), 0);
+        assert_eq!(queue.available(), 0);
     }
 
     // This test covers tricky cases around updates to the condition value

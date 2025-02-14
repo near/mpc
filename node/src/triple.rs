@@ -73,6 +73,9 @@ pub async fn run_background_triple_generation(
     let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
     let mut tasks = AutoAbortTaskCollection::new();
     loop {
+        metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(triple_store.num_owned_ready() as i64);
+        metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT
+            .set(triple_store.num_owned_offline() as i64);
         let my_triples_count = triple_store.num_owned();
         metrics::MPC_OWNED_NUM_TRIPLES_AVAILABLE.set(my_triples_count as i64);
         let should_generate = my_triples_count + in_flight_generations.num_in_flight()
