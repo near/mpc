@@ -41,6 +41,18 @@ impl<T: PartialEq> CounterList<T> {
     fn get(&self, item: &T) -> Option<usize> {
         self.list.iter().find(|(e, _)| e == item).map(|(_, count)| *count)
     }
+
+    fn get_sum_counters(&self) -> usize {
+        let mut sum = 0;
+        for (_, cnt) in self.list.iter(){
+            sum += cnt
+        };
+        sum
+    }
+
+    fn iter(&self) -> std::slice::Iter<'_, (T, usize)>{
+        self.list.iter()
+    }
 }
 
 
@@ -110,8 +122,8 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
     let mut vote_output: Vec<T> = Vec::new();
     // first dimension determines the session
     // second dimension contains the counter for success/failure of the received strings
-    let mut fail_success_echo =  vec![CounterList::new(); n];
-    let mut fail_success_ready =  vec![CounterList::new(); n];
+    let mut data_echo =  vec![CounterList::new(); n];
+    let mut data_ready =  vec![CounterList::new(); n];
 
     // first dimension determines the session
     // second dimension helps prevent duplication: correct processes should deliver at most one message
@@ -158,6 +170,8 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
                 // if the sender is not the one identified by the session id (sid)
                 // or if the sender have already delivered a MessageType::Send message
                 // then skip
+                // the second condition prevent a malicious party starting the protocol
+                // on behalf on someone else
                 if finish_send[sid] || sid != participants.index(from.clone()){
                     continue;
                 }
@@ -176,17 +190,45 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
                     continue;
                 }
                 // insert or increment the number of collected echo of a specific vote
-                fail_success_echo[sid].insert_or_increase_counter(data);
+                data_echo[sid].insert_or_increase_counter(data);
 
                 // upon gathering strictly more than (n+f)/2 votes
                 // for a result, deliver (READY, vote)
-                if fail_success_echo[sid].get(&data).unwrap() > echo_t{
+                if data_echo[sid].get(&data).unwrap() > echo_t{
                     chan.send_many(wait,   &(&sid, &MessageType::Ready(data))).await;
                     // state that the echo phase for session id (sid) is done
                     finish_echo[sid] = true;
                     // activate the boolean saying that *me* wants to deliver ready
                     // to all participants including myself
                     ready_activated = true;
+                }
+
+                // suppose you receive not enough echo votes but the amount of votes
+                // left to receive is not sufficient to proceed to the ready phase
+                // then deduce that the sender is malicious and stop
+                // this is better than letting the timeout stop the process
+                if !ready_activated {
+                    // calculate the total number of echos already collected
+                    let received_echo_cnt = data_echo[sid].get_sum_counters();
+                    // calculate the number of echo to be received
+                    let non_received_echo_cnt = n-received_echo_cnt;
+                    // iterate over the data_echo[sid] array
+                    let mut is_enough = false;
+                    for (_, cnt) in data_echo[sid].iter(){
+                        // verify whether there is enough votes in at
+                        // least one slot to exceed the threshold
+                        if cnt + non_received_echo_cnt > echo_t{
+                            is_enough = true;
+                            break;
+                        }
+                    }
+                    // if not enough echo votes left for hitting the threshold
+                    // then we know that the sender is malicious
+                    if !is_enough {
+                        return Err(ProtocolError::AssertionFailed(
+                            format!("The original sender in session {sid:?} is malicious!
+                            Could not collect enough echo votes to meet the threshold")))
+                    }
                 }
             },
             MessageType::Ready(data) => {
@@ -196,19 +238,19 @@ where T:Serialize + Clone + DeserializeOwned + Copy + PartialEq
                 }
 
                 // insert or increment the number of collected ready of a specific vote
-                fail_success_ready[sid].insert_or_increase_counter(data);
+                data_ready[sid].insert_or_increase_counter(data);
 
                 // upon gathering strictly more than f votes
                 // and if I haven't already amplified ready vote in session sid then
                 // proceed to amplification of the ready message
-                if fail_success_ready[sid].get(&data).unwrap() > ready_t && finish_amplification[sid] == false{
+                if data_ready[sid].get(&data).unwrap() > ready_t && finish_amplification[sid] == false{
                     chan.send_many(wait,  &(&sid, &MessageType::Ready(data))).await;
                     finish_amplification[sid] = true;
                     // activate the boolean saying that *me* wants to deliver ready
                     // to all participants including myself
                     ready_activated = true;
                 }
-                if fail_success_ready[sid].get(&data).unwrap() > 2*ready_t{
+                if data_ready[sid].get(&data).unwrap() > 2*ready_t{
                     // skip all types of messages sent for session sid from now on
                     finish_send[sid] = true;
                     finish_echo[sid] = true;
