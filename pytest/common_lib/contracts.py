@@ -51,17 +51,24 @@ class UpdateArgsV1:
     """
 
     def __init__(self, code_path=None, config=None):
-        self.code = load_binary_file(
-            code_path) if code_path is not None else None
+        self.code_path = code_path
         self.config = config
+        self._code = None
 
     def borsh_serialize(self):
         return ProposeUpdateArgsV1.build({
             'code':
-            self.code,
+            self.code(),
             'config':
             self.config.get() if self.config is not None else None
         })
+
+    def code(self):
+        if self.code_path == None:
+            return None
+        if self._code is None:
+            self._code = load_binary_file(self.code_path)
+        return self._code
 
     def dump_json(self):
         assert self.config is not None
@@ -74,10 +81,18 @@ class UpdateArgsV0:
     """
 
     def __init__(self, code_path):
-        self.code = load_binary_file(code_path)
+        self.code_path = code_path
+        self._code = None
+
+    def code(self):
+        if self.code_path == None:
+            return None
+        if self._code is None:
+            self._code = load_binary_file(self.code_path)
+        return self._code
 
     def borsh_serialize(self):
-        return ProposeUpdateArgsV0.build({'code': self.code, 'config': None})
+        return ProposeUpdateArgsV0.build({'code': self.code(), 'config': None})
 
 
 """
