@@ -6,15 +6,16 @@ from .constants import MPC_REPO_DIR
 
 V0_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v0.wasm'
 V1_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v1.wasm'
-CURRENT_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'res' / 'mpc_contract.wasm'
+COMPILED_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'res' / 'mpc_contract.wasm'
 MIGRATE_CURRENT_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'migrate_from_v1.wasm'
+CURRENT_CONTRACT_VERSION = V1_CONTRACT_PATH  # update once V1 is deployed
 
 
 def load_mpc_contract() -> bytearray:
     """
     Returns the current contract.
     """
-    return load_binary_file(CURRENT_CONTRACT_PATH)
+    return load_binary_file(COMPILED_CONTRACT_PATH)
 
 
 class ConfigV1:
