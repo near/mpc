@@ -1,9 +1,6 @@
 use crate::hkdf::derive_tweak;
-use crate::indexer::{
-    handler::ChainSignatureRequest,
-    types::{ChainRespondArgs, ChainSendTransactionRequest},
-};
-
+use crate::indexer::handler::ChainSignatureRequest;
+use crate::indexer::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
@@ -23,8 +20,10 @@ use crate::config::{ConfigFile, MpcConfig};
 use crate::keyshare::RootKeyshareData;
 use cait_sith::FullSignature;
 use k256::{AffinePoint, Secp256k1};
-use std::{sync::Arc, time::Duration};
-use tokio::{sync::mpsc, time::timeout};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio::time::timeout;
 
 #[derive(Clone)]
 pub struct MpcClient {

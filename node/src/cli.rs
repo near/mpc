@@ -1,27 +1,22 @@
-use crate::{
-    config::{
-        load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, ParticipantsConfig,
-        PresignatureConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
-    },
-    coordinator::Coordinator,
-    db::SecretDB,
-    indexer::{real::spawn_real_indexer, IndexerAPI},
-    keyshare::KeyshareStorageFactory,
-    p2p::testing::{generate_test_p2p_configs, PortSeed},
-    tracking::{self, start_root_task},
-    web::start_web_server,
+use crate::config::{
+    load_config_file, BlockArgs, KeygenConfig, PresignatureConfig, SecretsConfig, SignatureConfig,
+    SyncMode, TripleConfig, WebUIConfig,
 };
+use crate::config::{ConfigFile, IndexerConfig};
+use crate::coordinator::Coordinator;
+use crate::db::SecretDB;
+use crate::indexer::{real::spawn_real_indexer, IndexerAPI};
+use crate::keyshare::KeyshareStorageFactory;
+use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
+use crate::tracking::{self, start_root_task};
+use crate::web::start_web_server;
 use clap::Parser;
 use near_crypto::SecretKey;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
-use std::{
-    future::Future,
-    path::PathBuf,
-    pin::Pin,
-    sync::{Arc, Mutex},
-};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 #[derive(Parser, Debug)]
 pub enum Cli {
@@ -102,11 +97,13 @@ impl StartCmd {
             self.account_secret_key.clone(),
         );
 
-        let root_future = self.create_root_future(
+        let root_future = Self::create_root_future(
             home_dir.clone(),
             config.clone(),
             secrets.clone(),
             indexer_api,
+            self.gcp_keyshare_secret_id.clone(),
+            self.gcp_project_id.clone(),
         );
 
         let root_runtime = tokio::runtime::Builder::new_multi_thread()
@@ -133,51 +130,45 @@ impl StartCmd {
         Ok(())
     }
 
-    fn create_root_future(
-        &self,
+    async fn create_root_future(
         home_dir: PathBuf,
         config: ConfigFile,
         secrets: SecretsConfig,
         indexer_api: IndexerAPI,
-    ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> {
-        let gcp_keyshare_secret_id = self.gcp_keyshare_secret_id.clone();
-        let gcp_project_id = self.gcp_project_id.clone();
+        gcp_keyshare_secret_id: Option<String>,
+        gcp_project_id: Option<String>,
+    ) -> anyhow::Result<()> {
+        let root_task_handle = tracking::current_task();
+        let web_server = start_web_server(root_task_handle, config.web_ui.clone()).await?;
+        let _web_server = tracking::spawn_checked("web server", web_server);
 
-        Box::pin(async move {
-            let root_task_handle = tracking::current_task();
-            let web_server = start_web_server(root_task_handle, config.web_ui.clone()).await?;
-            let _web_server = tracking::spawn_checked("web server", web_server);
+        let secret_db = SecretDB::new(&home_dir, secrets.local_storage_aes_key)?;
 
-            let secret_db = SecretDB::new(&home_dir, secrets.local_storage_aes_key)?;
+        let keyshare_storage_factory = if let Some(secret_id) = gcp_keyshare_secret_id {
+            let project_id = gcp_project_id.ok_or_else(|| {
+                anyhow::anyhow!("GCP_PROJECT_ID must be specified to use GCP_KEYSHARE_SECRET_ID")
+            })?;
+            KeyshareStorageFactory::Gcp {
+                project_id,
+                secret_id,
+            }
+        } else {
+            KeyshareStorageFactory::Local {
+                home_dir: home_dir.clone(),
+                encryption_key: secrets.local_storage_aes_key,
+            }
+        };
 
-            let keyshare_storage_factory = if let Some(secret_id) = gcp_keyshare_secret_id {
-                let project_id = gcp_project_id.ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "GCP_PROJECT_ID must be specified to use GCP_KEYSHARE_SECRET_ID"
-                    )
-                })?;
-                KeyshareStorageFactory::Gcp {
-                    project_id,
-                    secret_id,
-                }
-            } else {
-                KeyshareStorageFactory::Local {
-                    home_dir: home_dir.clone(),
-                    encryption_key: secrets.local_storage_aes_key,
-                }
-            };
-
-            let coordinator = Coordinator {
-                clock: Clock::real(),
-                config_file: config,
-                secrets,
-                secret_db,
-                keyshare_storage_factory,
-                indexer: indexer_api,
-                currently_running_job_name: Arc::new(Mutex::new(String::new())),
-            };
-            coordinator.run().await
-        })
+        let coordinator = Coordinator {
+            clock: Clock::real(),
+            config_file: config,
+            secrets,
+            secret_db,
+            keyshare_storage_factory,
+            indexer: indexer_api,
+            currently_running_job_name: Arc::new(Mutex::new(String::new())),
+        };
+        coordinator.run().await
     }
 }
 
@@ -228,9 +219,16 @@ impl Cli {
             std::fs::create_dir_all(&subdir)?;
             let file_config = self.create_file_config(&participants[i], i)?;
             let secret_key = SecretKey::ED25519(p2p_private_key.clone());
-            self.write_config_files(&subdir, &file_config, &secret_key)?;
+            std::fs::write(format!("{}/p2p_key", subdir), secret_key.to_string())?;
+            std::fs::write(
+                format!("{}/config.yaml", subdir),
+                serde_yaml::to_string(&file_config)?,
+            )?;
         }
-        self.write_participants_config(output_dir, &participants_config)?;
+        std::fs::write(
+            format!("{}/participants.json", output_dir),
+            serde_json::to_string(&participants_config)?,
+        )?;
         Ok(())
     }
 
@@ -268,32 +266,5 @@ impl Cli {
             keygen: KeygenConfig { timeout_sec: 60 },
             cores: Some(4),
         })
-    }
-
-    fn write_config_files(
-        &self,
-        subdir: &str,
-        file_config: &ConfigFile,
-        p2p_private_key: &SecretKey,
-    ) -> anyhow::Result<()> {
-        std::fs::write(format!("{}/p2p_key", subdir), p2p_private_key.to_string())?;
-        std::fs::write(
-            format!("{}/config.yaml", subdir),
-            serde_yaml::to_string(file_config)?,
-        )?;
-        Ok(())
-    }
-
-    fn write_participants_config(
-        &self,
-        output_dir: &str,
-        participants_config: &ParticipantsConfig,
-        // participants_config: &Vec<AccountId>,
-    ) -> anyhow::Result<()> {
-        std::fs::write(
-            format!("{}/participants.json", output_dir),
-            serde_json::to_string(participants_config)?,
-        )?;
-        Ok(())
     }
 }
