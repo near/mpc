@@ -29,7 +29,12 @@ pub struct SignatureConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeygenConfig {
+    #[serde(default = "keygen_timeout_default")]
     pub timeout_sec: u64,
+}
+
+const fn keygen_timeout_default() -> u64 {
+    60
 }
 
 /// Configuration about the MPC protocol. It can come from either the contract

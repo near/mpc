@@ -36,32 +36,18 @@ impl GcpKeyshareStorage {
 #[async_trait::async_trait]
 impl KeyshareStorage for GcpKeyshareStorage {
     async fn load(&self) -> anyhow::Result<Option<RootKeyshareData>> {
-        let secret_name = format!("projects/{}/secrets/{}", self.project_id, self.secret_id);
-        let versions = self
-            .secrets_client
-            .get()
-            .list_secret_versions(ListSecretVersionsRequest {
-                parent: secret_name,
-                ..Default::default()
-            })
-            .await
-            .context("Failed to list secret versions")?
-            .into_inner();
+        let secret_name = format!(
+            "projects/{}/secrets/{}/versions/latest",
+            self.project_id, self.secret_id
+        );
 
-        let Some(latest_version) = versions
-            .versions
-            .into_iter()
-            .find(|version| version.state() == State::Enabled)
-        else {
-            return Ok(None);
-        };
-        let secret = self
+        let result = self
             .secrets_client
             .get()
-            .access_secret_version(AccessSecretVersionRequest {
-                name: latest_version.name,
-            })
-            .await
+            .access_secret_version(AccessSecretVersionRequest { name: secret_name })
+            .await;
+
+        let secret = result
             .context("Failed to access secret version")?
             .into_inner()
             .payload
