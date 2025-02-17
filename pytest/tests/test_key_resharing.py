@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Starts 2 near validators and 2 mpc nodes.
-Deploys mpc contract in 'libs/chain-signatures/res/mpc_contract.wasm'
-Sends signature requests.
-Verifies that the mpc nodes index the signature request.
-Waits for the signature responses. Fails if timeout is reached.
+Tests key resharing (adding and removing nodes).
+Starts 2 nodes, have node #3 join, then #4 join,
+then #1 leaves, and finally #2 leaves.
+At every step we check that signatures can still be produced.
 """
 
 import sys
