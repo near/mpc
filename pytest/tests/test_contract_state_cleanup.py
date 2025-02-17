@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 
 import base64
-import json
 import sys
 import pathlib
 import time
 import pytest
 from utils import MetricsTracker
 
-from common_lib import constants
 from common_lib.constants import TGAS
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
