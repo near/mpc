@@ -1,9 +1,8 @@
 use super::{KeyshareStorage, RootKeyshareData};
 use anyhow::Context;
 use gcloud_sdk::google::cloud::secretmanager::v1::secret_manager_service_client::SecretManagerServiceClient;
-use gcloud_sdk::google::cloud::secretmanager::v1::secret_version::State;
 use gcloud_sdk::google::cloud::secretmanager::v1::{
-    AccessSecretVersionRequest, AddSecretVersionRequest, ListSecretVersionsRequest,
+    AccessSecretVersionRequest, AddSecretVersionRequest,
 };
 use gcloud_sdk::proto_ext::secretmanager::SecretPayload;
 use gcloud_sdk::{GoogleApi, GoogleAuthMiddleware, SecretValue};
