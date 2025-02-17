@@ -4,6 +4,10 @@ members = [
 ]
 resolver = "2"
 
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
 [patch.crates-io]
 # TODO: trigger Cargo.lock update for x25519-dalek once they release.
 # This fixes https://rustsec.org/advisories/RUSTSEC-2024-0344 by pointing to a commit that includes the fix.
