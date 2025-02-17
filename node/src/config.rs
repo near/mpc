@@ -29,7 +29,7 @@ pub struct SignatureConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeygenConfig {
-    #[serde(default = "keygen_timeout_default")] // 60 seconds
+    #[serde(default = "keygen_timeout_default")]
     pub timeout_sec: u64,
 }
 
