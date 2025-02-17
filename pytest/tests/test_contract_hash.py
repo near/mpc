@@ -2,11 +2,13 @@ import hashlib
 import sys
 import pathlib
 from utils import load_binary_file
+import pytest
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib.contracts import CURRENT_CONTRACT_VERSION, COMPILED_CONTRACT_PATH
 
 
+@pytest.mark.ci_excluded  #compilation is platform specific
 def test_current_contract_hash():
     """
     Checks if the sha256 hash of the file in `COMPILED_CONTRACT_PATH` matches the hash of the `CURRENT_CONTRACT_VERSION`
