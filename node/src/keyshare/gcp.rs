@@ -41,13 +41,11 @@ impl KeyshareStorage for GcpKeyshareStorage {
             self.project_id, self.secret_id
         );
 
-        let result = self
+        let secret = self
             .secrets_client
             .get()
             .access_secret_version(AccessSecretVersionRequest { name: secret_name })
-            .await;
-
-        let secret = result
+            .await
             .context("Failed to access secret version")?
             .into_inner()
             .payload
