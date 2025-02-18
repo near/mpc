@@ -89,6 +89,7 @@ for i in $(seq $START_INDEX $((START_INDEX + PARTICIPANTS - 1))); do
       account_sk: .near_account_secret_key,
       cipher_pk: .cipher_public_key,
       cipher_sk: .cipher_private_key,
+      sign_pk: .sign_public_key,
       sign_sk: .sign_secret_key,
       url: .url
     }')
@@ -132,7 +133,7 @@ for i in $(seq $START_INDEX $((START_INDEX + PARTICIPANTS - 1))); do
     }" prepaid-gas '50.0 Tgas' attached-deposit '0 NEAR' sign-as "$MPC_NAME" network-config testnet sign-with-plaintext-private-key --signer-public-key "$ACCOUNT_PK" --signer-private-key "$ACCOUNT_SK" send
 done
 
-echo "Successfully added $PARTICIPANTS new node(s) to the cluster."
+echo "Successfully added $PARTICIPANTS new node(s) to the cluster and issues join requests."
 echo "Updated nodes.tfvars.json with new nodes."
 echo "To deploy the new nodes, run:"
-echo "tf apply -var-file=\$path_to_nodes.tfvars.json" 
+echo "tf apply -var-file=\$path_to_nodes.tfvars.json for both infra and Nomad jobs." 
