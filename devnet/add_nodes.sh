@@ -121,13 +121,15 @@ for i in $(seq $START_INDEX $((START_INDEX + PARTICIPANTS - 1))); do
     CIPHER_PK=$(hex_public_key_to_json_byte_array $(echo "$KEY_DATA" | jq -r '.cipher_public_key'))
     SIGN_PK=$(echo "$KEY_DATA" | jq -r '.sign_public_key')
     URL=$(echo "$KEY_DATA" | jq -r '.url')
+    ACCOUNT_PK=$(echo "$KEY_DATA" | jq -r '.near_account_public_key')
     ACCOUNT_SK=$(echo "$KEY_DATA" | jq -r '.near_account_secret_key')
+    
     
     near contract call-function as-transaction "$SIGNER" join json-args "{
         \"url\": \"$URL\",
         \"cipher_pk\": $CIPHER_PK,
         \"sign_pk\": \"$SIGN_PK\"
-    }" prepaid-gas '50.0 Tgas' attached-deposit '0 NEAR' sign-as "$MPC_NAME" network-config testnet sign-with-plaintext-private-key "$ACCOUNT_SK" send
+    }" prepaid-gas '50.0 Tgas' attached-deposit '0 NEAR' sign-as "$MPC_NAME" network-config testnet sign-with-plaintext-private-key --signer-public-key "$ACCOUNT_PK" --signer-private-key "$ACCOUNT_SK" send
 done
 
 echo "Successfully added $PARTICIPANTS new node(s) to the cluster."
