@@ -27,9 +27,14 @@ pub struct SignatureConfig {
     pub timeout_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeygenConfig {
+    #[serde(default = "keygen_timeout_default")]
     pub timeout_sec: u64,
+}
+
+const fn keygen_timeout_default() -> u64 {
+    60
 }
 
 /// Configuration about the MPC protocol. It can come from either the contract
@@ -115,6 +120,7 @@ pub struct ConfigFile {
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
     pub signature: SignatureConfig,
+    #[serde(default)]
     pub keygen: KeygenConfig,
     /// This value is only considered when the node is run in normal node. It defines the number of
     /// working threads for the runtime.
