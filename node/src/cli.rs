@@ -32,6 +32,10 @@ pub enum Cli {
         participants: Vec<AccountId>,
         #[arg(long)]
         threshold: usize,
+        #[arg(long, default_value = "65536")]
+        desired_triples_to_buffer: usize,
+        #[arg(long, default_value = "8192")]
+        desired_presignatures_to_buffer: usize,
     },
 }
 
@@ -185,6 +189,8 @@ impl Cli {
                 output_dir,
                 participants,
                 threshold,
+                desired_triples_to_buffer,
+                desired_presignatures_to_buffer,
             } => {
                 let configs =
                     generate_test_p2p_configs(&participants, threshold, PortSeed::CLI_FOR_PYTEST)?;
@@ -208,13 +214,13 @@ impl Cli {
                         },
                         triple: TripleConfig {
                             concurrency: 2,
-                            desired_triples_to_buffer: 65536,
+                            desired_triples_to_buffer,
                             timeout_sec: 60,
                             parallel_triple_generation_stagger_time_sec: 1,
                         },
                         presignature: PresignatureConfig {
                             concurrency: 2,
-                            desired_presignatures_to_buffer: 8192,
+                            desired_presignatures_to_buffer,
                             timeout_sec: 60,
                         },
                         signature: SignatureConfig { timeout_sec: 60 },

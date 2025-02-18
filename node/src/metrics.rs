@@ -190,7 +190,7 @@ lazy_static! {
 lazy_static! {
     pub static ref NETWORK_LIVE_CONNECTIONS: prometheus::IntGaugeVec =
         prometheus::register_int_gauge_vec!(
-            "sign_request_channel_failed",
+            "mpc_network_live_connections",
             "failed to send on channel in sign_request_channel",
             &["source_participant_id", "target_participant_id"],
         )
