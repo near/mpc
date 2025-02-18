@@ -110,7 +110,7 @@ pub async fn run_protocol<T>(
             // to send many messages at once to the same recipient.
             // TODO(#21): maybe we can fix the cait-sith protocol to not ask us to send so many
             // messages in the first place.
-            for (p, messages) in messages_to_send.into_iter() {
+            for (p, messages) in messages_to_send {
                 if messages.is_empty() {
                     continue;
                 }

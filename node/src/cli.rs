@@ -202,7 +202,7 @@ impl Cli {
                         my_near_account_id: participants[i].clone(),
                         web_ui: WebUIConfig {
                             host: "127.0.0.1".to_owned(),
-                            port: 21000 + i as u16,
+                            port: PortSeed::CLI_FOR_PYTEST.web_port(i),
                         },
                         indexer: IndexerConfig {
                             validate_genesis: true,
