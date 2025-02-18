@@ -1,21 +1,23 @@
 use crate::config::MpcConfig;
 use crate::metrics;
 use crate::network::conn::{AllNodeConnectivities, ConnectionVersion, NodeConnectivity};
+use crate::network::seq::{MessageWithSeq, ReliableReceiverHandshake, ReliableSenderState};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
+use futures::pin_mut;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use rustls::server::danger::ClientCertVerifier;
 use rustls::{ClientConfig, CommonState, ServerConfig};
 use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::{self, Receiver, UnboundedSender};
+use tokio::sync::mpsc::{self, Receiver};
 use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 use x509_parser::prelude::{FromDer, X509Certificate};
@@ -93,6 +95,7 @@ impl ClientCertVerifier for DummyClientCertVerifier {
 struct PersistentConnection {
     target_participant_id: ParticipantId,
     connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
+    reliable_sender_state: Arc<Mutex<ReliableSenderState>>,
     // The task that loops to connect to the target. When `PersistentConnection`
     // is dropped, this task is aborted. The task owns any active connection,
     // so dropping it also frees any connection currently alive.
@@ -103,16 +106,8 @@ struct PersistentConnection {
 /// messages through this connection, so there is nothing to handle receiving.
 /// Dropping this struct will automatically close the connection.
 struct TlsConnection {
-    /// Used to send messages via the connection.
-    sender: UnboundedSender<Packet>,
-    /// Task that reads messages from the channel (other side of `sender`) and
-    /// sends it over the TLS connection. This task owns the connection, so
-    /// dropping it closes the connection.
-    _sender_task: AutoAbortTask<()>,
-    /// Task that periodically sends a Ping message to the other side. It does
-    /// not expect a Pong, it simply keeps the connection alive (so we can
-    /// quickly detect if the connection is broken).
-    _keepalive_task: AutoAbortTask<()>,
+    /// TODO: doc
+    _conn_task: AutoAbortTask<()>,
     /// This is cancelled when the connection is closed. Used to wait for the
     /// connection to close.
     closed: CancellationToken,
@@ -141,6 +136,7 @@ impl TlsConnection {
         target_address: &str,
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
+        reliable_sender_state: Arc<Mutex<ReliableSenderState>>,
     ) -> anyhow::Result<TlsConnection> {
         let conn = TcpStream::connect(target_address)
             .await
@@ -160,65 +156,96 @@ impl TlsConnection {
             );
         }
 
-        let (sender, mut receiver) = mpsc::unbounded_channel::<Packet>();
+        let (sender, mut receiver) = mpsc::unbounded_channel::<MessageWithSeq>();
         let closed = CancellationToken::new();
         let closed_clone = closed.clone();
         let sender_task = tracking::spawn_checked(
             &format!("TLS connection to {}", target_participant_id),
             async move {
-                let _drop_to_cancel = DropToCancel(closed_clone);
+                let _drop_to_cancel = closed_clone.drop_guard();
+                let reliable_sender_handshake = reliable_sender_state.lock().unwrap().handshake();
+                tls_conn
+                    .write(&borsh::to_vec(&reliable_sender_handshake)?)
+                    .await?;
+                let mut receiver_handshake_buf =
+                    [0u8; std::mem::size_of::<ReliableReceiverHandshake>()];
+                tls_conn.read_exact(&mut receiver_handshake_buf).await?;
+                let receiver_handshake =
+                    ReliableReceiverHandshake::try_from_slice(&receiver_handshake_buf)?;
+                reliable_sender_state
+                    .lock()
+                    .unwrap()
+                    .on_new_connection(&receiver_handshake, sender)?;
                 let mut sent_bytes: u64 = 0;
-                loop {
-                    tokio::select! {
-                        data = receiver.recv() => {
-                            let Some(data) = data else {
-                                break;
-                            };
-                            match data {
-                                Packet::Ping => {
-                                    tls_conn.write_u8(0).await?;
-                                    sent_bytes += 1;
+                let (stream, _conn) = tls_conn.into_inner();
+                let (mut read_half, mut write_half) = stream.into_split();
+
+                let ack_receiving_task: AutoAbortTask<anyhow::Result<()>> = {
+                    let reliable_sender_state = reliable_sender_state.clone();
+                    tracking::spawn("ack receiver", async move {
+                        loop {
+                            let tag = read_half.read_u8().await?;
+                            match tag {
+                                0 => {
+                                    // Pong
                                 }
-                                Packet::Data(vec) => {
-                                    tls_conn.write_u8(1).await?;
-                                    tls_conn.write_u32(vec.len() as u32).await?;
-                                    tls_conn.write_all(&vec).await?;
-                                    sent_bytes += 5 + vec.len() as u64;
+                                1 => {
+                                    let mut ack_buf = [0u8; std::mem::size_of::<u64>()];
+                                    read_half.read_exact(&mut ack_buf).await?;
+                                    let ack = u64::from_be_bytes(ack_buf);
+                                    reliable_sender_state.lock().unwrap().on_ack(ack)?;
+                                }
+                                _ => {
+                                    anyhow::bail!("Invalid tag received");
                                 }
                             }
-                            tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                         }
-                        _ = tls_conn.read_u8() => {
-                            // We do not expect any data from the other side. However,
-                            // selecting on it will quickly return error if the connection
-                            // is broken before we have data to send. That way we can
-                            // immediately quit the loop as soon as the connection is broken
-                            // (so we can reconnect).
-                            break;
+                    })
+                };
+
+                let sending_task = async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+                    loop {
+                        tokio::select! {
+                            data = receiver.recv() => {
+                                let Some(data) = data else {
+                                    break;
+                                };
+
+                                write_half.write_u8(2).await?;
+                                write_half.write_u64(data.seq).await?;
+                                write_half.write_u32(data.msg.len() as u32).await?;
+                                write_half.write_all(&data.msg).await?;
+                                sent_bytes += 1 + 8 + 4 + data.msg.len() as u64;
+                                tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
+                            }
+                            _ = interval.tick() => {
+                                // Send ping
+                                write_half.write_u8(0).await?;
+                                sent_bytes += 1;
+                                tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
+                            }
                         }
                     }
-                }
-                anyhow::Ok(())
-            },
-        );
-        let sender_clone = sender.clone();
-        let keepalive_task = tracking::spawn(
-            &format!("TCP keepalive for {}", target_participant_id),
-            async move {
-                loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    if sender_clone.send(Packet::Ping).is_err() {
-                        // The receiver side will be dropped when the sender task is
-                        // dropped (i.e. connection is closed).
-                        break;
+                    anyhow::Ok(())
+                };
+
+                pin_mut!(ack_receiving_task);
+                pin_mut!(sending_task);
+
+                tokio::select! {
+                    res = ack_receiving_task => {
+                        res??;
+                    }
+                    res = sending_task => {
+                        res?;
                     }
                 }
+                Ok(())
             },
         );
         Ok(TlsConnection {
-            sender,
-            _sender_task: sender_task,
-            _keepalive_task: keepalive_task,
+            _conn_task: sender_task,
             closed,
         })
     }
@@ -226,29 +253,13 @@ impl TlsConnection {
     async fn wait_for_close(&self) {
         self.closed.cancelled().await;
     }
-
-    fn send(&self, data: Vec<u8>) -> anyhow::Result<()> {
-        self.sender.send(Packet::Data(data))?;
-        Ok(())
-    }
 }
 
 impl PersistentConnection {
     const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
-    /// Sends a message over the connection. If the connection was reset, fail.
-    async fn send_message(
-        &self,
-        expected_version: ConnectionVersion,
-        msg: Vec<u8>,
-    ) -> anyhow::Result<()> {
-        self.connectivity
-            .wait_for_outgoing_connection(expected_version)
-            .await
-            .with_context(|| format!("Cannot send message to {}", self.target_participant_id))?
-            .send(msg)
-            .with_context(|| format!("Cannot send message to {}", self.target_participant_id))?;
-        Ok(())
+    fn send_message(&self, msg: Vec<u8>) {
+        self.reliable_sender_state.lock().unwrap().send(msg);
     }
 
     pub fn new(
@@ -259,6 +270,8 @@ impl PersistentConnection {
         participant_identities: Arc<ParticipantIdentities>,
         connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
     ) -> anyhow::Result<PersistentConnection> {
+        let reliable_sender_state = Arc::new(Mutex::new(ReliableSenderState::new()));
+        let reliable_sender_state_clone = reliable_sender_state.clone();
         let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
@@ -269,6 +282,7 @@ impl PersistentConnection {
                         &target_address,
                         target_participant_id,
                         &participant_identities,
+                        reliable_sender_state.clone(),
                     )
                     .await
                     {
@@ -302,6 +316,7 @@ impl PersistentConnection {
         Ok(PersistentConnection {
             target_participant_id,
             connectivity: connectivity_clone,
+            reliable_sender_state: reliable_sender_state_clone,
             _task: task,
         })
     }
@@ -491,6 +506,7 @@ pub async fn new_tls_mesh_network(
                             message_sender.send(message).await?;
                             received_bytes += 5 + len as u64;
                         }
+                        2 => {}
                         _ => {
                             anyhow::bail!("Invalid tag");
                         }
@@ -590,17 +606,11 @@ impl MeshNetworkTransportSender for TlsMeshSender {
             .unwrap_or_default()
     }
 
-    async fn send(
-        &self,
-        recipient_id: ParticipantId,
-        message: MpcMessage,
-        connection_version: ConnectionVersion,
-    ) -> anyhow::Result<()> {
+    fn send(&self, recipient_id: ParticipantId, message: MpcMessage) -> anyhow::Result<()> {
         self.connections
             .get(&recipient_id)
             .ok_or_else(|| anyhow!("Recipient not found"))?
-            .send_message(connection_version, borsh::to_vec(&message)?)
-            .await?;
+            .send_message(borsh::to_vec(&message)?);
         Ok(())
     }
 
@@ -807,9 +817,7 @@ mod tests {
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
                             participants: vec![],
                         },
-                        sender0.connection_version(participant1),
                     )
-                    .await
                     .unwrap();
                 let msg = receiver1.receive().await.unwrap();
                 assert_eq!(msg.from, participant0);
@@ -823,9 +831,7 @@ mod tests {
                             task_id: crate::primitives::MpcTaskId::KeyGeneration,
                             participants: vec![],
                         },
-                        sender1.connection_version(participant0),
                     )
-                    .await
                     .unwrap();
 
                 let msg = receiver0.receive().await.unwrap();

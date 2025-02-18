@@ -1,4 +1,6 @@
 pub mod conn;
+pub mod reliable;
+pub mod seq;
 
 use crate::primitives::{BatchedMessages, MpcMessage, MpcPeerMessage, MpcTaskId, ParticipantId};
 use crate::tracking::{self, AutoAbortTask};
@@ -12,6 +14,7 @@ use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 /// Abstraction of the networking layer, from the view of one client, the sender side.
 /// For a running node, there should be only one such instance that handles all
@@ -41,12 +44,7 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     /// message is sent doesn't guarantee that the recipient will receive it; that is up to
     /// the user of the networking layer to deal with. This method should fail if the current
     /// connection version is different from the one supplied (i.e. the connection was reset).
-    async fn send(
-        &self,
-        recipient_id: ParticipantId,
-        message: MpcMessage,
-        connection_version: ConnectionVersion,
-    ) -> anyhow::Result<()>;
+    fn send(&self, recipient_id: ParticipantId, message: MpcMessage) -> anyhow::Result<()>;
     /// Waits until at least `threshold` nodes in the network have been connected to initially,
     /// the threshold includes ourselves.
     async fn wait_for_ready(&self, threshold: usize) -> anyhow::Result<()>;
@@ -148,12 +146,7 @@ impl MeshNetworkClient {
                     channel: NetworkTaskChannel {
                         task_id,
                         my_participant_id: self.my_participant_id(),
-                        connection_versions: Arc::new(
-                            participants
-                                .iter()
-                                .map(|id| (*id, self.transport_sender.connection_version(*id)))
-                                .collect(),
-                        ),
+                        reliability_tokens: self.transport_sender.reliability_tokens(),
                         sender: self.transport_sender.clone(),
                         receiver,
                         drop: Some(Box::new(drop_fn)),
@@ -252,21 +245,15 @@ pub struct NetworkTaskChannel {
     pub task_id: MpcTaskId,
     my_participant_id: ParticipantId, // for debugging
     pub participants: Vec<ParticipantId>,
-    connection_versions: Arc<HashMap<ParticipantId, ConnectionVersion>>,
+    reliability_token: CancellationToken,
+    reliability_break_detector_task: AutoAbortTask<()>,
     sender: Arc<dyn MeshNetworkTransportSender>,
     receiver: tokio::sync::mpsc::Receiver<MpcPeerMessage>,
     drop: Option<Box<dyn FnOnce() + Send + Sync>>,
 }
 
-type SendFnForTaskChannel = Arc<
-    dyn Fn(
-            ParticipantId,
-            BatchedMessages,
-            Vec<ParticipantId>,
-        ) -> BoxFuture<'static, anyhow::Result<()>>
-        + Send
-        + Sync,
->;
+type SendFnForTaskChannel =
+    Arc<dyn Fn(ParticipantId, BatchedMessages, Vec<ParticipantId>) -> anyhow::Result<()>>;
 
 impl Drop for NetworkTaskChannel {
     fn drop(&mut self) {
@@ -294,32 +281,18 @@ impl NetworkTaskChannel {
     /// i.e. can only be decrypted by the recipient.
     pub fn sender(&self) -> SendFnForTaskChannel {
         let transport_sender = self.sender.clone();
-        let connection_versions = self.connection_versions.clone();
         let task_id = self.task_id;
         Arc::new(
             move |recipient_id, message, participants: Vec<ParticipantId>| {
                 let transport_sender = transport_sender.clone();
-                let connection_versions = connection_versions.clone();
-                async move {
-                    transport_sender
-                        .send(
-                            recipient_id,
-                            MpcMessage {
-                                task_id,
-                                data: message,
-                                participants,
-                            },
-                            connection_versions
-                                .get(&recipient_id)
-                                .copied()
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!("No connection version for recipient")
-                                })?,
-                        )
-                        .await?;
-                    Ok(())
-                }
-                .boxed()
+                transport_sender.send(
+                    recipient_id,
+                    MpcMessage {
+                        task_id,
+                        data: message,
+                        participants,
+                    },
+                )
             },
         )
     }
@@ -337,14 +310,9 @@ impl NetworkTaskChannel {
     /// computation are online anymore, this method will return an error soon.
     pub async fn receive(&mut self) -> anyhow::Result<MpcPeerMessage> {
         loop {
-            let timer = tokio::time::sleep(Duration::from_secs(1));
             tokio::select! {
-                _ = timer => {
-                    if self.connection_versions.iter().any(|(id, version)| {
-                        self.sender.was_connection_interrupted(*id, *version)
-                    }) {
-                        anyhow::bail!("Computation cannot succeed as not all participants are alive anymore");
-                    }
+                _ = self.reliability_token.cancelled() => {
+                    anyhow::bail!("Computation cannot succeed as not all participants are alive anymore");
                 }
                 result = self.receiver.recv() => {
                     let Some(result) = result else {
@@ -410,11 +378,10 @@ pub mod testing {
             false
         }
 
-        async fn send(
+        fn send(
             &self,
             recipient_id: ParticipantId,
             message: crate::primitives::MpcMessage,
-            _connection_version: ConnectionVersion,
         ) -> anyhow::Result<()> {
             self.transport
                 .senders
@@ -614,8 +581,7 @@ mod tests {
                 })
                 .unwrap()],
                 channel.participants.clone(),
-            )
-            .await?;
+            )?;
         }
         let mut total = 0;
         let mut heard_from = HashSet::new();
@@ -643,8 +609,7 @@ mod tests {
                     })
                     .unwrap()],
                     channel.participants.clone(),
-                )
-                .await?;
+                )?;
 
                 Ok(())
             }
