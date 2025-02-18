@@ -58,27 +58,21 @@ impl<T: PartialEq> CounterList<T> {
 }
 
 /// Outputs the necessary Echo-Broadcast thresholds based on the
-/// total number of participants.
+/// total number of participants. The  threshold in echo-broadcast
+/// should be exceeded to continue with the next phase (it is not
+/// sufficient to only hit the threshold but this should be exceeded).
+/// The threshold are taken from the book:
+/// "Introduction to Reliable and Secure Distributed Programming,
+/// by C. Cachin, R. Guerraoui, and L. Rodrigues"
 fn echo_ready_thresholds(n: usize) -> (usize, usize) {
-    let n: usize = if n < 2 { 3 } else { n };
+    // case where no malicious parties are assumed: when n <= 3/
+    // In this case the echo and ready thresholds are both 0
+    // later we compare if we have collected more votes than these thresholds
+    if n <= 3 { return (0,0); }
     // we should always have n >= 3*threshold + 1
-    let mut broadcast_threshold = match n % 3 {
-        0 => n / 3 - 1,
-        _ => (n - (n % 3)) / 3,
-    };
-
-    let echo_threshold = if broadcast_threshold == 0 {
-        // case where no malicious parties are assumed: when n <= 3/
-        // In this case the echo and ready thresholds are both 0
-        // later we compare if we have collected more votes than these thresholds
-        broadcast_threshold = 0;
-        0
-    } else {
-        (n + broadcast_threshold) / 2
-    };
-
-    let ready_threshold = broadcast_threshold;
-    (echo_threshold, ready_threshold)
+    let broadcast_threshold = (n-1)/3;
+    let echo_threshold = (n+broadcast_threshold)/2;
+    (echo_threshold, broadcast_threshold)
 }
 
 /// This reliable broadcast function is the echo-broadcast protocol from the sender side.
