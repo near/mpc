@@ -108,11 +108,10 @@ def test_contract_update_trailing_sigs(initial_contract_path, update_args):
 
     # do some requests
     started = time.time()
-    metrics = [MetricsTracker(node.near_node) for node in cluster.mpc_nodes]
     tx_hashes, tx_sent = cluster.generate_and_send_signature_requests(
         num_requests, add_gas=150 * TGAS, add_deposit=10)
     print(f"sent {num_requests} signature requests")
-    cluster.observe_signature_requests(started, metrics, tx_sent)
+    cluster.observe_signature_requests(num_requests, started, tx_sent)
     try_send(cluster.vote_update, 1, 0)
     time.sleep(2)
     if update_args.code() is not None:
