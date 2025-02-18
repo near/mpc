@@ -1,4 +1,5 @@
 pub mod conn;
+pub mod handshake;
 
 use crate::primitives::{BatchedMessages, MpcMessage, MpcPeerMessage, MpcTaskId, ParticipantId};
 use crate::tracking::{self, AutoAbortTask};
