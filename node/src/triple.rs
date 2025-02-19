@@ -140,9 +140,9 @@ pub async fn run_background_triple_generation(
             continue;
         }
 
-        if !should_generate {
-            // After the store is full, slowly discard triples which cannot be used right now
-            triple_store.maybe_discard_owned(10).await;
+        // If the store is full, try to discard some triples which cannot be used right now
+        if my_triples_count == config.desired_triples_to_buffer {
+            triple_store.maybe_discard_owned(32).await;
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
