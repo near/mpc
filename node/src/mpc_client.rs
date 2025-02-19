@@ -19,7 +19,6 @@ use crate::triple::{
 };
 use cait_sith::FullSignature;
 use k256::{AffinePoint, Secp256k1};
-use mpc_contract::errors::JoinError;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -67,24 +66,18 @@ impl MpcClient {
         >,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     ) -> anyhow::Result<()> {
+        let client = self.client.clone();
+        let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
+            loop {
+                client.emit_metrics();
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
+        });
+
         let monitor_passive_channels = {
-            let client = self.client.clone();
-            let client_metrics = client.clone();
-            let auto_abort = tracking::spawn("periodically emits metrics", async move {
-                loop {
-                    client_metrics.emit_metrics();
-
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                }
-            });
-
             tracking::spawn(
                 "monitor passive channels",
-                MpcClient::monitor_passive_channels_inner(
-                    channel_receiver,
-                    self.clone(),
-                    auto_abort,
-                ),
+                MpcClient::monitor_passive_channels_inner(channel_receiver, self.clone()),
             )
         };
 
@@ -192,6 +185,7 @@ impl MpcClient {
         );
 
         let _ = monitor_passive_channels.await?;
+        metrics_emitter.await?;
         monitor_chain.await?;
         generate_triples.await??;
         generate_presignatures.await??;
@@ -199,12 +193,10 @@ impl MpcClient {
         Ok(())
     }
 
-    async fn monitor_passive_channels_inner<T>(
+    async fn monitor_passive_channels_inner(
         mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
         mpc_client: MpcClient,
-        auto_abort: tracking::AutoAbortTask<T>,
-    ) -> anyhow::Result<(), JoinError> {
-        let _auto_abort_metrics = auto_abort;
+    ) -> anyhow::Result<()> {
         let mut tasks = AutoAbortTaskCollection::new();
         loop {
             let channel = channel_receiver.recv().await.unwrap();
