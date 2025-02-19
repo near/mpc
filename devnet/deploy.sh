@@ -1,9 +1,16 @@
 #!/bin/bash
 set -exo pipefail
 
-##########################################################################################
-# Variable definition block
-##########################################################################################
+# This script deploys and initializes a Multi-Party Computation contract on NEAR testnet.
+# It performs the following tasks:
+# 1. Creates a signer account
+# 2. Compiles and deploys the MPC contract
+# 3. Generates cryptographic keys for each participant
+# 4. Creates participant accounts on testnet
+# 5. Initializes the contract with participant data and threshold
+# 6. Generates a nodes.tfvars.json file for infrastructure deployment
+#
+# Usage: ./deploy.sh [-t threshold] [-p participants]
 
 # Default values
 THRESHOLD=2
@@ -12,9 +19,6 @@ SUFFIX=$(uuidgen | tr '[:upper:]' '[:lower:]')
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 SIGNER="signer-$SUFFIX.testnet"
 
-##########################################################################################
-# Function to display help
-##########################################################################################
 
 show_help() {
     echo "Usage: $0 [options]"
@@ -23,9 +27,6 @@ show_help() {
     echo "  -t, --threshold      Specify a threshold for signing contract. (default: $THRESHOLD)"
     echo "  -p, --participants   Number of participants to generate. (default: $PARTICIPANTS)"
 }
-##########################################################################################
-# Variable parsing block
-##########################################################################################
 
 while [ ! -z "$1" ]; do
     if [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
@@ -45,9 +46,6 @@ while [ ! -z "$1" ]; do
     shift
 done
 
-##########################################################################################
-# Functions block
-##########################################################################################
 
 compile_contract() {
     cd "$SCRIPT_DIR/../libs/chain-signatures"

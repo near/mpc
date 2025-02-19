@@ -1,9 +1,20 @@
 #!/bin/bash
 set -exo pipefail
 
-##########################################################################################
-# Variable definition block
-##########################################################################################
+# This script automates the process of adding multiple new nodes to an MPC Dev cluster.
+# It performs two main operations:
+# 1. Generates cryptographic keys and updates the deployment configuration for each new node
+# 2. Creates NEAR accounts and issues join requests for each new node
+#
+# Usage: ./add_nodes.sh <number_of_nodes>
+# Where number_of_nodes is how many new nodes to add to the cluster
+#
+# Prerequisites:
+# - Requires an existing deployment (nodes.tfvars.json must exist)
+# - The near CLI must be configured and available
+# - jq must be installed for JSON parsing
+# - Rust toolchain for key generation
+
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
