@@ -67,7 +67,6 @@ generate_key() {
     NEAR_ACCOUNT_PUBLIC_KEY=$(echo "$KEYGEN_OUTPUT" | sed -n 's/.*near account public key: //p')
     NEAR_ACCOUNT_SECRET_KEY=$(echo "$KEYGEN_OUTPUT" | sed -n 's/.*near account secret key: //p')
 
-    # Return the key data as a JSON object
     echo "{
         \"cipher_public_key\": \"$CIPHER_PUBLIC_KEY\",
         \"cipher_private_key\": \"$CIPHER_PRIVATE_KEY\",
