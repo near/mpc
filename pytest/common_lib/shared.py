@@ -106,8 +106,66 @@ class MpcNode(NearNode):
 
     def __init__(self, near_node: BaseNode, candidate):
         super().__init__(near_node)
-        self.candidate = candidate
         assert candidate['account_id'] == near_node.signer_key.account_id
+        self.candidate = candidate
+        self.is_running = False
+        self.metrics = MetricsTracker(near_node)
+
+    def set_secret_store_key(self, secret_store_key):
+        self.secret_store_key = secret_store_key
+
+    def reset_mpc_data(self):
+        assert not self.is_running
+        home_dir = self.near_node.node_dir
+        patterns = [
+            'CURRENT',
+            'IDENTITY'
+            'LOCK',
+            'LOG',
+            'MANIFEST-.*',
+            'OPTIONS-.*',
+            '*.log',
+            '*.sst',
+        ]
+        for pattern in patterns:
+            for file_path in pathlib.Path(home_dir).glob(pattern):
+                file_path.unlink()
+
+    def run(self):
+        assert not self.is_running
+        self.is_running = True
+
+        home_dir = self.near_node.node_dir
+        p2p_private_key = open(pathlib.Path(home_dir) / 'p2p_key').read()
+        near_secret_key = json.loads(
+            open(pathlib.Path(home_dir) /
+                 'validator_key.json').read())['secret_key']
+        extra_env = {
+            'RUST_LOG': 'INFO', # mpc-node produces way too much output on DEBUG
+            'MPC_SECRET_STORE_KEY': self.secret_store_key,
+            'MPC_P2P_PRIVATE_KEY': p2p_private_key,
+            'MPC_ACCOUNT_SK': near_secret_key,
+        }
+        cmd = (MPC_BINARY_PATH, 'start', '--home-dir', home_dir)
+        self.near_node.run_cmd(cmd=cmd, extra_env=extra_env)
+
+    def kill(self, gentle):
+        self.near_node.kill(gentle=gentle)
+        self.is_running = False
+
+    def wait_for_connection_count(self, awaited_count):
+        started = time.time()
+        while True:
+            assert time.time() - started < TIMEOUT, "Waiting for connection count"
+            try:
+                conns = self.metrics.get_metric_all_values("mpc_network_live_connections")
+                print("mpc_network_live_connections", conns)
+                connection_count = int(sum([kv[1] for kv in conns]))
+                if connection_count == awaited_count:
+                    break
+            except requests.exceptions.ConnectionError:
+                pass
+            time.sleep(1)
 
 
 def assert_signature_success(res):
@@ -132,6 +190,15 @@ class MpcCluster:
 
     def mpc_contract_account(self):
         return self.contract_node.account_id()
+
+    def get_int_metric_value(self, metric_name):
+        return [
+            node.metrics.get_int_metric_value(metric_name)
+            for node in self.mpc_nodes
+        ]
+
+    def get_int_metric_value_for_node(self, metric_name, node_index):
+        return self.mpc_nodes[node_index].metrics.get_int_metric_value(metric_name)
 
     """
     Deploy the MPC contract.
@@ -235,37 +302,33 @@ class MpcCluster:
             add_deposit=None):
         """
             Sends `num_requests` signature requests and waits for the results.
-        
+
             Each result is processed by the callback function `sig_verification`, which defaults to `assert_signature_success`.
             If a failure is expected, use `assert_signature_failure` instead. Custom callback functions can also be provided.
-        
+
             Args:
                 `num_requests` (int): The number of signature requests to send.
                 `sig_verification` (callable, optional): A callback function to process each signature result.
                     Defaults to `assert_signature_success`.
-        
+
             Returns:
                 None: The function processes the signature results via the callback but does not return a value.
-        
+
             Raises:
                 AssertionError:
                     - If the indexers fail to observe the signature requests before `constants.TIMEOUT` is reached.
                     - If `sig_verification` raisese an AssertionError.
         """
         started = time.time()
-        metrics = [MetricsTracker(node.near_node) for node in self.mpc_nodes]
         tx_hashes, tx_sent = self.generate_and_send_signature_requests(
             num_requests, add_gas, add_deposit)
         print("Sent signature requests, tx_hashes:", tx_hashes)
 
-        self.observe_signature_requests(started, metrics, tx_sent)
         results = self.await_txs_responses(tx_hashes)
         verify_txs(results, sig_verification)
-        res = [
-            metric.get_int_metric_value('mpc_num_sign_responses_timed_out')
-            for metric in metrics
-        ]
-        print("Number of nonce conflicts which occurred:", res)
+
+        respond_timeouts = self.get_int_metric_value("mpc_num_sign_responses_timed_out")
+        print("Number of respond txs which had to be resubmitted:", respond_timeouts)
 
     def generate_and_send_signature_requests(self,
                                              num_requests,
@@ -283,7 +346,7 @@ class MpcCluster:
                                           add_deposit=add_deposit)
         return self.send_sign_request_txns(txs), time.time()
 
-    def observe_signature_requests(self, started, metrics, tx_sent):
+    def observe_signature_requests(self, num_requests, started, tx_sent):
         """
         Wait for the indexers to observe the signature requests
         In case num_requests > 1, some txs may not be included due to nonce conflicts
@@ -291,12 +354,9 @@ class MpcCluster:
         while True:
             assert time.time() - started < TIMEOUT, "Waiting for mpc indexers"
             try:
-                res = [
-                    metric.get_int_metric_value('mpc_num_signature_requests')
-                    for metric in metrics
-                ]
-                print("Indexers num_signature_requests:", res)
-                if all(x and x >= 1 for x in res):  # todo: only request >= 1?
+                indexed_request_count = self.get_int_metric_value("mpc_num_signature_requests")
+                print("Indexers num_signature_requests:", indexed_request_count)
+                if all(x and x == num_requests for x in indexed_request_count):
                     tx_indexed = time.time()
                     print("Indexer latency: ", tx_indexed - tx_sent)
                     break
@@ -457,7 +517,7 @@ def sign_create_account_with_multiple_access_keys_tx(creator_key,
 
 
 def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
-                           contract):
+                           contract, presignatures_to_buffer=None):
     rpc_polling_config = {
         "rpc": {
             "polling_config": {
@@ -490,11 +550,13 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
 
     # Generate the mpc configs
     dot_near = pathlib.Path.home() / '.near'
-    subprocess.run(
-        (MPC_BINARY_PATH, 'generate-test-configs', '--output-dir', dot_near,
+    cmd = (MPC_BINARY_PATH, 'generate-test-configs', '--output-dir', dot_near,
          '--participants', ','.join(f'test{i + num_validators}'
                                     for i in range(num_mpc_nodes)),
-         '--threshold', str(num_mpc_nodes)))
+         '--threshold', str(num_mpc_nodes))
+    if presignatures_to_buffer:
+        cmd = cmd + ('--desired-presignatures-to-buffer', str(presignatures_to_buffer),)
+    subprocess.run(cmd)
 
     # Get the participant set from the mpc configs.
     candidates = []
@@ -567,21 +629,7 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
 
     # Start the mpc nodes
     for i, mpc_node in enumerate(cluster.mpc_nodes):
-        home_dir = mpc_node.near_node.node_dir
-        cmd = (MPC_BINARY_PATH, 'start', '--home-dir', home_dir)
-        secret_store_key = str(chr(ord('A') + i) * 32)
-        p2p_private_key = open(pathlib.Path(home_dir) / 'p2p_key').read()
-        near_secret_key = json.loads(
-            open(pathlib.Path(home_dir) /
-                 'validator_key.json').read())['secret_key']
-        # mpc-node produces way too much output if we run with debug logs
-        mpc_node.near_node.run_cmd(cmd=cmd,
-                                   extra_env={
-                                       'RUST_LOG': 'INFO',
-                                       'MPC_SECRET_STORE_KEY':
-                                       secret_store_key,
-                                       'MPC_P2P_PRIVATE_KEY': p2p_private_key,
-                                       'MPC_ACCOUNT_SK': near_secret_key,
-                                   })
+        mpc_node.set_secret_store_key(str(chr(ord('A') + i) * 32))
+        mpc_node.run()
 
     return cluster

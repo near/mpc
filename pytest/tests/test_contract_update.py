@@ -18,17 +18,17 @@ from common_lib.constants import TGAS
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
-from common_lib.contracts import V0_CONTRACT_PATH, CURRENT_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, UpdateArgsV0, UpdateArgsV1, ConfigV1
+from common_lib.contracts import V0_CONTRACT_PATH, COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, UpdateArgsV0, UpdateArgsV1, ConfigV1
 
 
 @pytest.mark.parametrize("initial_contract_path,update_args", [
     pytest.param(V0_CONTRACT_PATH,
-                 UpdateArgsV0(CURRENT_CONTRACT_PATH),
+                 UpdateArgsV0(COMPILED_CONTRACT_PATH),
                  id="update v0 to current"),
-    pytest.param(CURRENT_CONTRACT_PATH,
+    pytest.param(COMPILED_CONTRACT_PATH,
                  UpdateArgsV1(code_path=MIGRATE_CURRENT_CONTRACT_PATH),
                  id="update current code"),
-    pytest.param(CURRENT_CONTRACT_PATH,
+    pytest.param(COMPILED_CONTRACT_PATH,
                  UpdateArgsV1(code_path=None,
                               config=ConfigV1(max_num_requests_to_remove=2,
                                               request_timeout_blocks=10)),
@@ -69,7 +69,7 @@ def test_contract_update(initial_contract_path, update_args):
 # In case a nonce conflict occurs during a vote_update call, rerun the test once.
 @pytest.mark.parametrize("initial_contract_path,update_args", [
     pytest.param(V0_CONTRACT_PATH,
-                 UpdateArgsV0(CURRENT_CONTRACT_PATH),
+                 UpdateArgsV0(COMPILED_CONTRACT_PATH),
                  id="update v0 to current"),
 ])
 def test_contract_update_trailing_sigs(initial_contract_path, update_args):
@@ -108,11 +108,10 @@ def test_contract_update_trailing_sigs(initial_contract_path, update_args):
 
     # do some requests
     started = time.time()
-    metrics = [MetricsTracker(node.near_node) for node in cluster.mpc_nodes]
     tx_hashes, tx_sent = cluster.generate_and_send_signature_requests(
         num_requests, add_gas=150 * TGAS, add_deposit=10)
     print(f"sent {num_requests} signature requests")
-    cluster.observe_signature_requests(started, metrics, tx_sent)
+    cluster.observe_signature_requests(num_requests, started, tx_sent)
     try_send(cluster.vote_update, 1, 0)
     time.sleep(2)
     if update_args.code() is not None:

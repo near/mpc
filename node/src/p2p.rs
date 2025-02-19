@@ -1,6 +1,7 @@
 use crate::config::MpcConfig;
 use crate::metrics;
 use crate::network::conn::{AllNodeConnectivities, ConnectionVersion, NodeConnectivity};
+use crate::network::handshake::p2p_handshake;
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
@@ -88,6 +89,10 @@ enum Packet {
 }
 
 impl TlsConnection {
+    /// Both sides of the connection must complete handshake within this time, or else
+    /// the connection is considered not successful.
+    const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
     /// Makes a TLS/TCP connection to the given address, authenticating the
     /// other side as the given participant.
     async fn new(
@@ -113,6 +118,10 @@ impl TlsConnection {
                 peer_id
             );
         }
+
+        p2p_handshake(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
+            .await
+            .context("p2p handshake")?;
 
         let (sender, mut receiver) = mpsc::unbounded_channel::<Packet>();
         let closed = CancellationToken::new();
@@ -418,6 +427,9 @@ pub async fn new_tls_mesh_network(
                 let mut stream = tls_acceptor.accept(tcp_stream).await?;
                 let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                 tracking::set_progress(&format!("Authenticated as {}", peer_id));
+                p2p_handshake(&mut stream, TlsConnection::HANDSHAKE_TIMEOUT)
+                    .await
+                    .context("p2p handshake")?;
                 tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
                 let incoming_conn = Arc::new(());
                 connectivities

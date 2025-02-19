@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 
 import base64
-import json
 import sys
 import pathlib
 import time
 import pytest
 from utils import MetricsTracker
 
-from common_lib import constants
 from common_lib.constants import TGAS
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -90,11 +88,10 @@ def test_remove_timed_out_requests():
 
     # Submit sigature requestst
     started = time.time()
-    metrics = [MetricsTracker(node.near_node) for node in cluster.mpc_nodes]
     tx_hashes, tx_sent = cluster.generate_and_send_signature_requests(
         num_requests)
     print(f"Sent {num_requests} signature requests")
-    cluster.observe_signature_requests(started, metrics, tx_sent)
+    cluster.observe_signature_requests(num_requests, started, tx_sent)
     time.sleep(2)  # give the node a chance to update nonce
 
     # check if return value matches expectation

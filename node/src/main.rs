@@ -20,6 +20,7 @@ mod network;
 mod p2p;
 mod primitives;
 mod protocol;
+mod protocol_version;
 mod runtime;
 mod sign;
 mod sign_request;

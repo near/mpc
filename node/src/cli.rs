@@ -32,6 +32,10 @@ pub enum Cli {
         participants: Vec<AccountId>,
         #[arg(long)]
         threshold: usize,
+        #[arg(long, default_value = "65536")]
+        desired_triples_to_buffer: usize,
+        #[arg(long, default_value = "8192")]
+        desired_presignatures_to_buffer: usize,
     },
 }
 
@@ -199,9 +203,17 @@ impl Cli {
                 ref output_dir,
                 ref participants,
                 threshold,
+                desired_triples_to_buffer,
+                desired_presignatures_to_buffer,
             } => {
-                self.run_generate_test_configs(output_dir, participants, threshold)
-                    .await
+                self.run_generate_test_configs(
+                    output_dir,
+                    participants,
+                    threshold,
+                    desired_triples_to_buffer,
+                    desired_presignatures_to_buffer,
+                )
+                .await
             }
         }
     }
@@ -211,13 +223,20 @@ impl Cli {
         output_dir: &str,
         participants: &[AccountId],
         threshold: usize,
+        desired_triples_to_buffer: usize,
+        desired_presignatures_to_buffer: usize,
     ) -> anyhow::Result<()> {
         let configs = generate_test_p2p_configs(participants, threshold, PortSeed::CLI_FOR_PYTEST)?;
         let participants_config = configs[0].0.participants.clone();
         for (i, (_, p2p_private_key)) in configs.into_iter().enumerate() {
             let subdir = format!("{}/{}", output_dir, i);
             std::fs::create_dir_all(&subdir)?;
-            let file_config = self.create_file_config(&participants[i], i)?;
+            let file_config = self.create_file_config(
+                &participants[i],
+                i,
+                desired_triples_to_buffer,
+                desired_presignatures_to_buffer,
+            )?;
             let secret_key = SecretKey::ED25519(p2p_private_key.clone());
             std::fs::write(format!("{}/p2p_key", subdir), secret_key.to_string())?;
             std::fs::write(
@@ -236,6 +255,8 @@ impl Cli {
         &self,
         participant: &AccountId,
         index: usize,
+        desired_triples_to_buffer: usize,
+        desired_presignatures_to_buffer: usize,
     ) -> anyhow::Result<ConfigFile> {
         Ok(ConfigFile {
             my_near_account_id: participant.clone(),
@@ -253,13 +274,13 @@ impl Cli {
             },
             triple: TripleConfig {
                 concurrency: 2,
-                desired_triples_to_buffer: 65536,
+                desired_triples_to_buffer,
                 timeout_sec: 60,
                 parallel_triple_generation_stagger_time_sec: 1,
             },
             presignature: PresignatureConfig {
                 concurrency: 2,
-                desired_presignatures_to_buffer: 8192,
+                desired_presignatures_to_buffer,
                 timeout_sec: 60,
             },
             signature: SignatureConfig { timeout_sec: 60 },

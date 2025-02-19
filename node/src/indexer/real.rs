@@ -3,7 +3,7 @@ use super::participants::{monitor_chain_state, ContractState};
 use super::stats::{indexer_logger, IndexerStats};
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
-use crate::config::{load_respond_config_file, IndexerConfig};
+use crate::config::{load_respond_config_file, IndexerConfig, RespondConfigFile};
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
@@ -29,7 +29,13 @@ pub fn spawn_real_indexer(
             let indexer =
                 near_indexer::Indexer::new(indexer_config.to_near_indexer_config(home_dir.clone()))
                     .expect("Failed to initialize the Indexer");
-            let respond_config = load_respond_config_file(&home_dir).unwrap();
+            let respond_config = load_respond_config_file(&home_dir).unwrap_or_else(|err| {
+                tracing::warn!("Could not load respond.yaml: {err}. Using the node's main account to send respond transactions.");
+                RespondConfigFile {
+                    account_id: my_near_account_id.clone(),
+                    access_keys: vec![account_secret_key.clone()],
+                }
+            });
             let stream = indexer.streamer();
             let (view_client, client) = indexer.client_actors();
             let indexer_state = Arc::new(IndexerState::new(

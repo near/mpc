@@ -7,7 +7,6 @@ Calls the test function and ensures a successful response.
 """
 
 import sys
-import time
 import base64
 import pytest
 import pathlib
