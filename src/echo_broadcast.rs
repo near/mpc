@@ -76,8 +76,7 @@ fn echo_ready_thresholds(n: usize) -> (usize, usize) {
 }
 
 /// This reliable broadcast function is the echo-broadcast protocol from the sender side.
-/// It broadcasts either true or false and expects that the output of the broadcasts be the same as the input data
-/// This function is expected to be applied to ensure either all (honest) nodes succeed a specific protocol or they fail
+/// It broadcasts some data in a vote
 pub async fn reliable_broadcast_send<T>(
     chan: &SharedChannel,
     wait: Waitpoint,
@@ -97,8 +96,8 @@ where
 }
 
 /// This reliable broadcast function is the echo-broadcast protocol from the sender receiver side.
-/// It broadcasts either true or false and expects that the output of the broadcasts be the same as the input data
-/// If vote is Some, then reliable_broadcast_receive_all is expected to be called right after reliable_broadcast_send
+/// It broadcasts a vote and expects that the output of the broadcasts be the same as the input vote.
+/// reliable_broadcast_receive_all is expected to be called right after reliable_broadcast_send
 pub async fn reliable_broadcast_receive_all<T>(
     chan: &SharedChannel,
     wait: Waitpoint,
@@ -114,7 +113,7 @@ where
 
     let mut vote_output: Vec<T> = Vec::new();
     // first dimension determines the session
-    // second dimension contains the counter for success/failure of the received strings
+    // second dimension contains the counter for the received data
     let mut data_echo = vec![CounterList::new(); n];
     let mut data_ready = vec![CounterList::new(); n];
 
@@ -135,7 +134,7 @@ where
     let mut ready_activated = false;
 
     let mut from = me.clone();
-    let mut sid = 0;
+    let mut sid = participants.index(me.clone());
     let mut vote = send_vote.clone();
     loop {
         // this function is allowed to return an error and stop the protocol
@@ -189,7 +188,7 @@ where
                 data_echo[sid].insert_or_increase_counter(data);
 
                 // upon gathering strictly more than (n+f)/2 votes
-                // for a result, deliver (READY, vote)
+                // for a result, deliver Ready
                 if data_echo[sid].get(&data).unwrap() > echo_t {
                     chan.send_many(wait, &(&sid, &MessageType::Ready(data)))
                         .await;
@@ -203,8 +202,9 @@ where
                 // suppose you receive not enough echo votes but the amount of votes
                 // left to receive is not sufficient to proceed to the ready phase
                 // then deduce that the sender is malicious and stop
-                // this is better than letting the timeout stop the process
-                if !ready_activated {
+                // this is better than letting the timeout stop the process.
+                // This check has to be done after counting the simulated value.
+                else if !finish_amplification[sid] {
                     // calculate the total number of echos already collected
                     let received_echo_cnt = data_echo[sid].get_sum_counters();
                     // calculate the number of echo to be received
@@ -261,13 +261,10 @@ where
                     // make a list of data and return them
                     vote_output.push(data);
 
-                    // // fail on first failure
-                    // if data == false {
-                    //     return Ok(false);
-                    // }
-                    // // if all the ready slots are set to true
-                    // // then all sessions have ended successfully
-                    // // we can thus output that the n instances of the broadcast protocols have succeeded
+
+                    // if all the ready slots are set to true
+                    // then all sessions have ended successfully
+                    // we can thus output that the n instances of the broadcast protocols have succeeded
                     if finish_ready.iter().all(|&x| x) {
                         return Ok(vote_output);
                     }
@@ -277,6 +274,8 @@ where
     }
 }
 
+/// The reliable echo-broadcast protocol that party me is supposed
+/// to run with all the other parties
 pub async fn do_broadcast<T>(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
