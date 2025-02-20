@@ -202,17 +202,26 @@ pub struct RespondConfigFile {
 }
 
 impl RespondConfigFile {
-    pub fn from_file(path: &Path) -> anyhow::Result<Self> {
-        let file = std::fs::read_to_string(path)?;
+    pub fn from_file(path: &Path) -> anyhow::Result<Option<Self>> {
+        let file = match std::fs::read_to_string(path) {
+            Ok(contents) => contents,
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::NotFound {
+                    return Ok(None);
+                } else {
+                    return Err(err.into());
+                }
+            }
+        };
         let config: Self = serde_yaml::from_str(&file)?;
         if config.access_keys.is_empty() {
             anyhow::bail!("At least one access key must be provided");
         }
-        Ok(config)
+        Ok(Some(config))
     }
 }
 
-pub fn load_respond_config_file(home_dir: &Path) -> anyhow::Result<RespondConfigFile> {
+pub fn load_respond_config_file(home_dir: &Path) -> anyhow::Result<Option<RespondConfigFile>> {
     let config_path = home_dir.join("respond.yaml");
     RespondConfigFile::from_file(&config_path).context("Load respond.yaml")
 }

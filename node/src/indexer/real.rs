@@ -29,13 +29,19 @@ pub fn spawn_real_indexer(
             let indexer =
                 near_indexer::Indexer::new(indexer_config.to_near_indexer_config(home_dir.clone()))
                     .expect("Failed to initialize the Indexer");
-            let respond_config = load_respond_config_file(&home_dir).unwrap_or_else(|err| {
-                tracing::warn!("Could not load respond.yaml: {err}. Using the node's main account to send respond transactions.");
-                RespondConfigFile {
-                    account_id: my_near_account_id.clone(),
-                    access_keys: vec![account_secret_key.clone()],
+            let respond_config = match load_respond_config_file(&home_dir) {
+                Ok(Some(respond_config)) => respond_config,
+                Ok(None) => {
+                    tracing::warn!("No respond.yaml provided. Using the node's main account to send respond transactions.");
+                    RespondConfigFile {
+                        account_id: my_near_account_id.clone(),
+                        access_keys: vec![account_secret_key.clone()],
+                    }
                 }
-            });
+                Err(err) => {
+                    panic!("respond.yaml is provided but failed to parse: {err}");
+                }
+            };
             let stream = indexer.streamer();
             let (view_client, client) = indexer.client_actors();
             let indexer_state = Arc::new(IndexerState::new(
