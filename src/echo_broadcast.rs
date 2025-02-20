@@ -127,36 +127,25 @@ where
     let mut finish_amplification = vec![false; n];
     let mut finish_ready = vec![false; n];
 
-    // since send_many sends to everybody but the sender,
-    // we introduce these variable to fake the sender receiving a vote from itself
-    let mut send_activated = true;
-    let mut echo_activated = false;
-    let mut ready_activated = false;
+    let mut is_simulated_vote = true;
 
     let mut from = me.clone();
     let mut sid = participants.index(me.clone());
     let mut vote = send_vote.clone();
+
     loop {
-        // this function is allowed to return an error and stop the protocol
-        // if prepare_vote returns an error, it means that the implementation logic is wrong.
-        // if prepare_vote returns false, it means that a party sent a trash message so the loop continues
-        if !prepare_vote(
-            &mut send_activated,
-            &mut echo_activated,
-            &mut ready_activated,
-            &mut from,
-            &mut sid,
-            &mut vote,
-            chan,
-            wait,
-            participants,
-            me,
-            &send_vote,
-        )
-        .await?
-        {
-            continue;
-        }
+        // Am I handling a simulated vote sent by me to myself?
+        if !is_simulated_vote {
+            // The recv should be failure-free
+            // This translates to ignoring the received message when deemed wrong
+            // types of the received answers are (Participant, (usize, MessageType))
+            match chan.recv(wait).await {
+                Ok(value) => (from, (sid, vote)) = value,
+                _ => continue,
+            };
+        };
+
+        is_simulated_vote = false;
 
         match vote {
             // Receive send vote then echo to everybody
@@ -169,13 +158,14 @@ where
                 if finish_send[sid] || sid != participants.index(from.clone()) {
                     continue;
                 }
+                vote = MessageType::Echo(data);
                 // upon receiving a send message, echo it
-                chan.send_many(wait, &(&sid, &MessageType::Echo(data)))
-                    .await;
+                chan.send_many(wait, &(&sid, &vote)).await;
                 finish_send[sid] = true;
-                // activate the boolean saying that *me* want to deliver echo
-                // to all participants including myself
-                echo_activated = true
+
+                // simulate an echo vote sent by me
+                is_simulated_vote = true;
+                from = me.clone();
             }
             // Receive send vote then echo to everybody
             MessageType::Echo(data) => {
@@ -190,13 +180,15 @@ where
                 // upon gathering strictly more than (n+f)/2 votes
                 // for a result, deliver Ready
                 if data_echo[sid].get(&data).unwrap() > echo_t {
-                    chan.send_many(wait, &(&sid, &MessageType::Ready(data)))
+                    vote = MessageType::Ready(data);
+                    chan.send_many(wait, &(&sid, &vote))
                         .await;
                     // state that the echo phase for session id (sid) is done
                     finish_echo[sid] = true;
-                    // activate the boolean saying that *me* wants to deliver ready
-                    // to all participants including myself
-                    ready_activated = true;
+
+                    // simulate a ready vote sent by me
+                    is_simulated_vote = true;
+                    from = me.clone();
                 }
 
                 // suppose you receive not enough echo votes but the amount of votes
@@ -219,6 +211,7 @@ where
                             break;
                         }
                     }
+
                     // if not enough echo votes left for hitting the threshold
                     // then we know that the sender is malicious
                     if !is_enough {
@@ -244,12 +237,14 @@ where
                 if data_ready[sid].get(&data).unwrap() > ready_t
                     && finish_amplification[sid] == false
                 {
-                    chan.send_many(wait, &(&sid, &MessageType::Ready(data)))
+                    vote = MessageType::Ready(data);
+                    chan.send_many(wait, &(&sid, &vote))
                         .await;
                     finish_amplification[sid] = true;
-                    // activate the boolean saying that *me* wants to deliver ready
-                    // to all participants including myself
-                    ready_activated = true;
+
+                    // simulate a ready vote sent by me
+                    is_simulated_vote = true;
+                    from = me.clone();
                 }
                 if data_ready[sid].get(&data).unwrap() > 2 * ready_t {
                     // skip all types of messages sent for session sid from now on
@@ -291,73 +286,6 @@ where
         reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, send_vote)
             .await?;
     Ok(vote_list)
-}
-
-/// Prepares a vote either received in a communication
-/// or simulates the reception of a vote when running send_many
-/// (function send_many does not seem to deliver a message to the sender
-/// which, if not taken care of, could cause problems in BFT vote count)
-async fn prepare_vote<T>(
-    send_activated: &mut bool,
-    echo_activated: &mut bool,
-    ready_activated: &mut bool,
-    from: &mut Participant,
-    sid: &mut usize,
-    vote: &mut MessageType<T>,
-    chan: &SharedChannel,
-    wait: Waitpoint,
-    participants: &ParticipantList,
-    me: &Participant,
-    send_vote: &MessageType<T>,
-) -> Result<bool, ProtocolError>
-where
-    T: DeserializeOwned + Clone + Copy,
-{
-    if *send_activated {
-        *send_activated = false;
-        match send_vote {
-            MessageType::Send(data) => {
-                *from = me.clone();
-                *sid = participants.index(me.clone());
-                *vote = MessageType::Send(*data);
-            }
-            _ => return Err(ProtocolError::AssertionFailed(
-                        format!("The function reliable_broadcast_receive_all is expected to be called reliable_broadcast_send {me:?}")
-                        )),
-        }
-    } else if *echo_activated {
-        *echo_activated = false;
-        *from = me.clone();
-        *vote = match vote {
-            MessageType::Send(data) => MessageType::Echo(*data),
-            _ => {
-                return Err(ProtocolError::AssertionFailed(format!(
-                    "Message is not of type Send! Exiting {me:?}."
-                )))
-            }
-        }
-    } else if *ready_activated {
-        *ready_activated = false;
-        *from = me.clone();
-        *vote = match vote {
-            MessageType::Echo(data) => MessageType::Ready(*data),
-            MessageType::Ready(data) => MessageType::Ready(*data),
-            _ => {
-                return Err(ProtocolError::AssertionFailed(format!(
-                    "Message is neither of type Echo nor Ready (amplify) ! Exiting {me:?}."
-                )))
-            }
-        }
-    } else {
-        // The recv should be failure-free
-        // This translates to ignoring the received message when deemed wrong
-        // types of the received answers are (Participant, (usize, MessageType))
-        (*from, (*sid, *vote)) = match chan.recv(wait).await {
-            Ok(value) => value,
-            _ => return Ok(false),
-        };
-    }
-    Ok(true)
 }
 
 #[cfg(test)]
@@ -624,7 +552,6 @@ mod test {
         let result =
             broadcast_dishonest_v1(&honest_participants, &dishonest_participant, &honest_votes);
         assert!(result.is_err());
-
         // version 2
         let result =
             broadcast_dishonest_v2(&honest_participants, &dishonest_participant, &honest_votes)?;
