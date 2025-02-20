@@ -9,7 +9,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 /// This structure is essential for the reliable broadcast protocol
 /// Send is used in the first phase, Echo in the second, and Ready
 /// in the third.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum MessageType<T> {
     Send(T),
     Echo(T),
@@ -95,9 +95,11 @@ where
     vote
 }
 
-/// This reliable broadcast function is the echo-broadcast protocol from the sender receiver side.
-/// It broadcasts a vote and expects that the output of the broadcasts be the same as the input vote.
-/// reliable_broadcast_receive_all is expected to be called right after reliable_broadcast_send
+/// This reliable broadcast function is the echo-broadcast protocol from the sender side.
+/// It broadcasts a vote of type MessageType::Send and expects that the output
+/// of the broadcasts be the same as the input vote.
+/// Reliable_broadcast_receive_all is expected to be called right after reliable_broadcast_send.
+///
 pub async fn reliable_broadcast_receive_all<T>(
     chan: &SharedChannel,
     wait: Waitpoint,
@@ -127,11 +129,16 @@ where
     let mut finish_amplification = vec![false; n];
     let mut finish_ready = vec![false; n];
 
-    let mut is_simulated_vote = true;
-
+    // receive simulated vote
     let mut from = me.clone();
     let mut sid = participants.index(me.clone());
-    let mut vote = send_vote.clone();
+    let mut vote = match send_vote{
+        MessageType::Send(_) => send_vote.clone(),
+        _ => return Err(ProtocolError::AssertionFailed(format!(
+            "Function reliable_broadcast_receive_all MUST take a vote of type send_vote as input"
+        ))),
+    };
+    let mut is_simulated_vote = true;
 
     loop {
         // Am I handling a simulated vote sent by me to myself?
@@ -153,8 +160,8 @@ where
                 // if the sender is not the one identified by the session id (sid)
                 // or if the sender have already delivered a MessageType::Send message
                 // then skip
-                // the second condition prevent a malicious party starting the protocol
-                // on behalf on someone else
+                // the second condition prevents a malicious party starting the protocol
+                // on behalf on somebody else
                 if finish_send[sid] || sid != participants.index(from.clone()) {
                     continue;
                 }
@@ -256,6 +263,17 @@ where
                     // make a list of data and return them
                     vote_output.push(data);
 
+                    // Output error if the received vote after broadcast is not
+                    // the same as the one originally sent
+                    if sid == participants.index(me.clone()){
+                        if MessageType::Send(data) != send_vote{
+                            return Err(ProtocolError::AssertionFailed(format!(
+                                "Too many malicious parties, way above the assumed threshold:
+                                The message output after the broadcast protocol is not the same as
+                                the one originally sent by me"
+                            )));
+                        }
+                    }
 
                     // if all the ready slots are set to true
                     // then all sessions have ended successfully
