@@ -57,11 +57,19 @@ cores: 12
 EOF
 }
 
-if [ -r "$NEAR_NODE_CONFIG_FILE" ] && [ -r "$MPC_NODE_CONFIG_FILE" ]; then
-    echo "Near and MPC nodes are already initialized"
+# Check and initialize Near node config if needed
+if [ -r "$NEAR_NODE_CONFIG_FILE" ]; then
+    echo "Near node is already initialized"
 else
-    echo "Initializing Near and MPC nodes"
+    echo "Initializing Near node"
     initialize_near_node $HOME_DIR && echo "Near node initialized"
+fi
+
+# Check and initialize MPC config if needed
+if [ -r "$MPC_NODE_CONFIG_FILE" ]; then
+    echo "MPC node is already initialized"
+else
+    echo "Initializing MPC node"
     initialize_mpc_config $MPC_NODE_CONFIG_FILE && echo "MPC node initialized"
 fi
 
