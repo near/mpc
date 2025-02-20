@@ -108,6 +108,7 @@ class MpcNode(NearNode):
         super().__init__(near_node)
         assert candidate['account_id'] == near_node.signer_key.account_id
         self.candidate = candidate
+        self.home_dir = self.near_node.node_dir
         self.is_running = False
         self.metrics = MetricsTracker(near_node)
 
@@ -116,7 +117,6 @@ class MpcNode(NearNode):
 
     def reset_mpc_data(self):
         assert not self.is_running
-        home_dir = self.near_node.node_dir
         patterns = [
             'CURRENT',
             'IDENTITY'
@@ -128,17 +128,16 @@ class MpcNode(NearNode):
             '*.sst',
         ]
         for pattern in patterns:
-            for file_path in pathlib.Path(home_dir).glob(pattern):
+            for file_path in pathlib.Path(self.home_dir).glob(pattern):
                 file_path.unlink()
 
     def run(self):
         assert not self.is_running
         self.is_running = True
 
-        home_dir = self.near_node.node_dir
-        p2p_private_key = open(pathlib.Path(home_dir) / 'p2p_key').read()
+        p2p_private_key = open(pathlib.Path(self.home_dir) / 'p2p_key').read()
         near_secret_key = json.loads(
-            open(pathlib.Path(home_dir) /
+            open(pathlib.Path(self.home_dir) /
                  'validator_key.json').read())['secret_key']
         extra_env = {
             'RUST_LOG': 'INFO', # mpc-node produces way too much output on DEBUG
@@ -146,7 +145,7 @@ class MpcNode(NearNode):
             'MPC_P2P_PRIVATE_KEY': p2p_private_key,
             'MPC_ACCOUNT_SK': near_secret_key,
         }
-        cmd = (MPC_BINARY_PATH, 'start', '--home-dir', home_dir)
+        cmd = (MPC_BINARY_PATH, 'start', '--home-dir', self.home_dir)
         self.near_node.run_cmd(cmd=cmd, extra_env=extra_env)
 
     def kill(self, gentle):
@@ -608,21 +607,22 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
         print(f"Wrote {fname} as config for node {mpc_node.account_id()}")
 
         # Create respond.yaml with credentials for sending responses
-        account_id = f"respond.{mpc_node.account_id()}"
-        access_keys = [
-            Key.from_seed_testonly(account_id, seed=f"{s}")
-            for s in range(0, num_respond_aks)
-        ]
-        tx = sign_create_account_with_multiple_access_keys_tx(
-            mpc_node.signer_key(), account_id, access_keys, 1, last_block_hash)
-        cluster.contract_node.send_txn_and_check_success(tx)
-        respond_cfg = {
-            'account_id': account_id,
-            'access_keys': list(map(serialize_key, access_keys)),
-        }
-        fname = os.path.join(mpc_node.near_node.node_dir, 'respond.yaml')
-        with open(fname, "w") as file:
-            yaml.dump(respond_cfg, file, default_flow_style=False)
+        if num_respond_aks > 0:
+            account_id = f"respond.{mpc_node.account_id()}"
+            access_keys = [
+                Key.from_seed_testonly(account_id, seed=f"{s}")
+                for s in range(0, num_respond_aks)
+            ]
+            tx = sign_create_account_with_multiple_access_keys_tx(
+                mpc_node.signer_key(), account_id, access_keys, 1, last_block_hash)
+            cluster.contract_node.send_txn_and_check_success(tx)
+            respond_cfg = {
+                'account_id': account_id,
+                'access_keys': list(map(serialize_key, access_keys)),
+            }
+            fname = os.path.join(mpc_node.near_node.node_dir, 'respond.yaml')
+            with open(fname, "w") as file:
+                yaml.dump(respond_cfg, file, default_flow_style=False)
 
     # Deploy the mpc contract
     cluster.deploy_contract(contract)
