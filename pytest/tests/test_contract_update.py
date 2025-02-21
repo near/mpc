@@ -18,13 +18,16 @@ from common_lib.constants import TGAS
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
-from common_lib.contracts import V0_CONTRACT_PATH, COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, UpdateArgsV0, UpdateArgsV1, ConfigV1
+from common_lib.contracts import V0_CONTRACT_PATH, COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, V1_CONTRACT_PATH, UpdateArgsV0, UpdateArgsV1, ConfigV1
 
 
 @pytest.mark.parametrize("initial_contract_path,update_args", [
     pytest.param(V0_CONTRACT_PATH,
                  UpdateArgsV0(COMPILED_CONTRACT_PATH),
                  id="update v0 to current"),
+    pytest.param(V1_CONTRACT_PATH,
+                 UpdateArgsV0(COMPILED_CONTRACT_PATH),
+                 id="update v1 to current"),
     pytest.param(COMPILED_CONTRACT_PATH,
                  UpdateArgsV1(code_path=MIGRATE_CURRENT_CONTRACT_PATH),
                  id="update current code"),

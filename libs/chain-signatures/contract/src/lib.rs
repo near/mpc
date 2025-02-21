@@ -221,6 +221,7 @@ impl VersionedMpcContract {
         // Check deposit
         let deposit = env::attached_deposit();
         let required_deposit: u128 = self.experimental_signature_deposit().into();
+
         if deposit.as_yoctonear() < required_deposit {
             env::panic_str(
                 &InvalidParameters::InsufficientDeposit
@@ -262,11 +263,13 @@ impl VersionedMpcContract {
                 "sign: predecessor={predecessor}, payload={payload:?}, path={path:?}, key_version={key_version}",
             );
         env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
+
+        let required_deposit = NearToken::from_yoctonear(required_deposit);
         let contract_signature_request = ContractSignatureRequest {
             request,
             requester: predecessor,
             deposit,
-            required_deposit: NearToken::from_yoctonear(required_deposit),
+            required_deposit,
         };
 
         let promise_index = match self {
@@ -308,6 +311,7 @@ impl VersionedMpcContract {
             }
             Self::V1(mpc_contract) => {
                 mpc_contract.add_request(&contract_signature_request.request, return_sig_id);
+                Self::refund_on_success(&contract_signature_request);
             }
         }
         env::promise_return(promise_index);
@@ -354,18 +358,21 @@ impl VersionedMpcContract {
     /// The fee is volatile and depends on the number of pending requests.
     /// If used on a client side, it can give outdate results.
     pub fn experimental_signature_deposit(&self) -> U128 {
-        const CHEAP_REQUESTS: u32 = 3;
-        let pending_requests = match self {
-            Self::V0(mpc_contract) => mpc_contract.request_counter,
-            Self::V1(_) => return U128::from(0),
-        };
-        match pending_requests {
-            0..=CHEAP_REQUESTS => U128::from(1),
-            _ => {
-                let expensive_requests = (pending_requests - CHEAP_REQUESTS) as u128;
-                let price = expensive_requests * NearToken::from_millinear(50).as_yoctonear();
-                U128::from(price)
+        match self {
+            Self::V0(mpc_contract) => {
+                const CHEAP_REQUESTS: u32 = 3;
+                let pending_requests = mpc_contract.request_counter;
+                match pending_requests {
+                    0..=CHEAP_REQUESTS => U128::from(1),
+                    _ => {
+                        let expensive_requests = (pending_requests - CHEAP_REQUESTS) as u128;
+                        let price =
+                            expensive_requests * NearToken::from_millinear(50).as_yoctonear();
+                        U128::from(price)
+                    }
+                }
             }
+            Self::V1(_) => U128::from(1),
         }
     }
 }
@@ -863,6 +870,7 @@ impl VersionedMpcContract {
         }
     }
 
+    /// DEPRECATED this function can be removed after update to V1
     fn refund_on_fail(request: &ContractSignatureRequest) {
         let amount = request.deposit;
         let to = request.requester.clone();

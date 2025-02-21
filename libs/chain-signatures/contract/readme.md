@@ -8,7 +8,7 @@ The currently deployed version of the contract is `V0`, with `V1` expected to be
 
 - **Lower gas costs**: Signature requests in `V1` will consume approximately half the gas compared to `V0`, mainly due to optimizations in state handling and reducing the number of receipts required per request. T
 - **Removal of the signature request limit**: `V0` imposed a hard limit on the number of signature requests, which `V1` removes. This limit was necessary for [previous MPC nodes](https://github.com/near/mpc/releases/tag/1.0.0-rc.5), but is no longer required due to performance improvements by the [current release](https://github.com/Near-One/mpc/releases/tag/testnet-upgrade) (currently on testnet). 
-- **No deposit**: `V1` does no longer require a deposit for signature requests.
+- **Lowered deposit**: `V1` requires a deposit of only 1 yoctonear.
 
 **Benchmarks:**
 
@@ -37,6 +37,7 @@ pub struct MpcContractV1 {
 The **Protocol State** of the contract should reflect the state of the MPC-Network:
 ```mermaid
 stateDiagram-v2
+    direction LR
     [*] --> NotInitialized : deploy
     NotInitialized --> Initializing : init
     Initializing --> Running : vote_pk
@@ -51,7 +52,7 @@ stateDiagram-v2
 | Function | Behavior |  Return Value | Gas requirement | Effective Gas Cost |
 | ---- | --- | --- | --- | --- |
 | `remove_timed_out_requests(max_num_to_remove: Option<u32>)` | Removes at most `max_num_to_remove` timed out signature requests from the contract state (defaulting to the value defined in the config). | `32`: number of signature requests that have been removed from the state. | - | `~0.4 Tgas` per removed request |
-| `sign(request: SignRequest)` | Submits a signature request to the contract. | deferred to promise | `10 Tgas` | `~6 Tgas` | 
+| `sign(request: SignRequest)` | Submits a signature request to the contract. Requires a deposit of 1 yoctonear | deferred to promise | `10 Tgas` | `~6 Tgas` | 
 | `public_key()` | | the aggregated public key used by all participants in the network. | `Result<PublicKey, Error>` | |
 | `derived_public_key(path: String, predecessor: Option<AccountId>)` | Generates a derived public key for a given path and account. | `Result<PublicKey, Error>` | |
 | `experimental_signature_deposit()` |  | `U128`: the required deposit for a signature request | |  |
