@@ -1,3 +1,4 @@
+pub mod computation;
 pub mod conn;
 pub mod constants;
 pub mod handshake;
@@ -10,12 +11,10 @@ use crate::primitives::{
 };
 use crate::tracking::{self, AutoAbortTask};
 use conn::{ConnectionVersion, NodeConnectivityInterface};
-use futures::future::BoxFuture;
 use indexer_heights::IndexerHeightTracker;
 use lru::LruCache;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -71,6 +70,8 @@ pub struct MeshNetworkClient {
     indexer_heights: Arc<IndexerHeightTracker>,
 }
 
+/// Manages currently active channels as well as buffering messages for channels that are waiting
+/// for the Start message.
 struct NetworkTaskChannelManager {
     senders: HashMap<MpcTaskId, mpsc::UnboundedSender<MpcPeerMessage>>,
     channels_waiting_for_start: LruCache<MpcTaskId, IncompleteNetworkTaskChannel>,
@@ -96,7 +97,7 @@ impl MeshNetworkClient {
         &self,
         task_id: MpcTaskId,
         participants: Vec<ParticipantId>,
-    ) -> anyhow::Result<NetworkTaskChannelWrapper> {
+    ) -> anyhow::Result<NetworkTaskChannel> {
         tracing::debug!(
             target: "network",
             "[{}] Creating new channel for task {:?}",
@@ -123,7 +124,7 @@ impl MeshNetworkClient {
                 },
             )?;
         }
-        Ok(NetworkTaskChannelWrapper(channel))
+        Ok(channel)
     }
 
     pub fn my_participant_id(&self) -> ParticipantId {
@@ -155,23 +156,24 @@ impl MeshNetworkClient {
         result
     }
 
-    /// Internal function shared between new_channel_for_task and MeshNetworkClientDriver::run.
-    /// Returns an existing sender for the MPC task, or creates a new one if it doesn't exist.
-    /// This is used to determine whether an incoming network message belongs to an existing
-    /// MPC task, or if it should trigger the creation of a new MPC task that this node passively
-    /// participates in.
+    /// Internal function to either return a new channel or a sender for the existing channel.
+    /// A new channel is created only when the Start message is received for the first time.
+    /// Otherwise, returns a Sender that'll send to the existing channel, or, if we receive
+    /// a message for a task before its Start message, we'll still return a Sender that will
+    /// buffer the messages and deliver them to the channel, once a Start message is received.
     fn sender_for(
         &self,
         task_id: MpcTaskId,
         start: Option<&MpcStartMessage>,
         originator: ParticipantId,
     ) -> SenderOrNewChannel {
-        let drop_fn = {
-            let channels = self.channels.clone();
-            move || {
-                channels.lock().unwrap().senders.remove(&task_id);
-            }
-        };
+        // INVARIANT: For each key in the `senders` map, exactly one of the following is true:
+        //  - It is in the channels_waiting_for_start LruCache.
+        //    - This is maintained when we insert an entry into the LruCache, where if an
+        //      entry is evicted, we also remove the corresponding entry from the senders map.
+        //  - There is a NetworkTaskChannel object alive for this MpcTaskId.
+        //    - This is maintained by the drop_fn we give to NetworkTaskChannel, which is called
+        //      when the NetworkTaskChannel is destroyed.
         let mut channels = self.channels.lock().unwrap();
         let sender = match channels.senders.entry(task_id) {
             Entry::Occupied(entry) => entry.get().clone(),
@@ -183,8 +185,10 @@ impl MeshNetworkClient {
                     .channels_waiting_for_start
                     .push(task_id, incomplete_channel)
                 {
+                    // If k != task_id, that means the LruCache evicted some other entry.
+                    // That means that other channel never received Start and is old enough,
+                    // so we also remove it from the senders map. See the above invariant.
                     if k != task_id {
-                        // Keep channels_waiting_for_start a subset of senders.
                         channels.senders.remove(&k);
                     }
                 }
@@ -192,8 +196,20 @@ impl MeshNetworkClient {
             }
         };
         if let Some(start) = start {
+            // Note: It's possible that the channel is NOT in channels_waiting_for_start:
+            //  - It's possible the channel was buffered but the Start message arrived way too late.
+            //    In this case, we unfortunately never start the channel, but that is OK.
+            //  - It's possible that we received Start message twice. That's erroneous, but we'll
+            //    just deliver the second Start message to the channel, where the channel handling
+            //    code will fail.
             if let Some(incomplete_channel) = channels.channels_waiting_for_start.pop(&task_id) {
                 drop(channels); // release lock
+                let drop_fn = {
+                    let channels = self.channels.clone();
+                    move || {
+                        channels.lock().unwrap().senders.remove(&task_id);
+                    }
+                };
                 let channel = NetworkTaskChannel {
                     sender: Arc::new(NetworkTaskChannelSender {
                         task_id,
@@ -273,7 +289,7 @@ enum SenderOrNewChannel {
 async fn run_receive_messages_loop(
     client: Arc<MeshNetworkClient>,
     mut receiver: Box<dyn MeshNetworkTransportReceiver>,
-    new_channel_sender: mpsc::UnboundedSender<NetworkTaskChannelWrapper>,
+    new_channel_sender: mpsc::UnboundedSender<NetworkTaskChannel>,
     indexer_heights: Arc<IndexerHeightTracker>,
 ) -> anyhow::Result<()> {
     loop {
@@ -290,7 +306,7 @@ async fn run_receive_messages_loop(
                         sender.send(message)?;
                     }
                     SenderOrNewChannel::NewChannel(channel) => {
-                        new_channel_sender.send(NetworkTaskChannelWrapper(channel))?;
+                        new_channel_sender.send(channel)?;
                     }
                 }
             }
@@ -309,7 +325,7 @@ pub fn run_network_client(
     transport_receiver: Box<dyn MeshNetworkTransportReceiver>,
 ) -> (
     Arc<MeshNetworkClient>,
-    mpsc::UnboundedReceiver<NetworkTaskChannelWrapper>,
+    mpsc::UnboundedReceiver<NetworkTaskChannel>,
     AutoAbortTask<()>,
 ) {
     let indexer_heights = Arc::new(IndexerHeightTracker::new(
@@ -363,17 +379,6 @@ pub struct NetworkTaskChannelSender {
     connection_versions: HashMap<ParticipantId, ConnectionVersion>,
     /// The underlying transport layer.
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
-}
-
-/// A wrapper around NetworkTaskChannel,
-pub struct NetworkTaskChannelWrapper(NetworkTaskChannel);
-
-impl Deref for NetworkTaskChannelWrapper {
-    type Target = NetworkTaskChannel;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
 }
 
 /// A computation data message received from a participant.
@@ -457,78 +462,64 @@ impl NetworkTaskChannelSender {
         Ok(())
     }
 
-    /// This is called at the end of a leader-centric computation to communicate the result to
-    /// other parties. For leaders, only failures are communicated to followers; for followers,
-    /// failures are communicated to the leader, and if leader waits for success, also
-    /// communicate successes to the leader.
-    fn communicate_result<T>(
-        &self,
-        result: &anyhow::Result<T>,
-        leader_waits_for_success: bool,
-    ) -> anyhow::Result<()> {
-        match result {
-            Ok(_) => {
-                if !self.is_leader() && leader_waits_for_success {
-                    tracing::debug!(
-                        target: "network",
-                        "[{}] [Task {:?}] Sending Success message to leader {}",
-                        self.my_participant_id,
-                        self.task_id,
-                        self.leader
-                    );
-                    self.send_raw(
-                        self.leader,
-                        MpcMessage {
-                            task_id: self.task_id,
-                            kind: MpcMessageKind::Success,
-                        },
-                    )?;
-                }
-            }
-            Err(err) => {
-                let err_msg = err.to_string();
-                if self.is_leader() {
-                    for participant in &self.participants {
-                        if participant == &self.my_participant_id {
-                            continue;
-                        }
-
-                        tracing::debug!(
-                            target: "network",
-                            "[{}] [Task {:?}] Sending Abort message to participant {}",
-                            self.my_participant_id,
-                            self.task_id,
-                            participant
-                        );
-                        // Don't fail just because we cannot send an abort message.
-                        let _ = self.send_raw(
-                            *participant,
-                            MpcMessage {
-                                task_id: self.task_id,
-                                kind: MpcMessageKind::Abort(err_msg.clone()),
-                            },
-                        );
-                    }
-                } else {
-                    tracing::debug!(
-                        target: "network",
-                        "[{}] [Task {:?}] Sending Abort message to leader {}",
-                        self.my_participant_id,
-                        self.task_id,
-                        self.leader
-                    );
-                    // Don't fail just because we cannot send an abort message.
-                    let _ = self.send_raw(
-                        self.leader,
-                        MpcMessage {
-                            task_id: self.task_id,
-                            kind: MpcMessageKind::Abort(err_msg),
-                        },
-                    );
-                }
-            }
+    /// Communicates the success result to the leader of the computation.
+    fn communicate_success(&self) -> anyhow::Result<()> {
+        if self.is_leader() {
+            anyhow::bail!("Only followers can communicate success");
         }
+        self.send_raw(
+            self.leader,
+            MpcMessage {
+                task_id: self.task_id,
+                kind: MpcMessageKind::Success,
+            },
+        )?;
         Ok(())
+    }
+
+    /// Sends an Abort message to other parties in the computation. For leader, this is
+    /// communicated to all followers; for a follower, this is communicated only to the leader.
+    fn communicate_failure(&self, err: &anyhow::Error) {
+        let err_msg = err.to_string();
+        if self.is_leader() {
+            for participant in &self.participants {
+                if participant == &self.my_participant_id {
+                    continue;
+                }
+
+                tracing::debug!(
+                    target: "network",
+                    "[{}] [Task {:?}] Sending Abort message to participant {}",
+                    self.my_participant_id,
+                    self.task_id,
+                    participant
+                );
+                // Don't fail just because we cannot send an abort message.
+                let _ = self.send_raw(
+                    *participant,
+                    MpcMessage {
+                        task_id: self.task_id,
+                        kind: MpcMessageKind::Abort(err_msg.clone()),
+                    },
+                );
+            }
+        } else {
+            tracing::debug!(
+                target: "network",
+                "[{}] [Task {:?}] Sending Abort message to leader {}",
+                self.my_participant_id,
+                self.task_id,
+                self.leader
+            );
+            // Don't fail just because we cannot send an abort message.
+            let _ = self.send_raw(
+                self.leader,
+                MpcMessage {
+                    task_id: self.task_id,
+                    kind: MpcMessageKind::Abort(err_msg),
+                },
+            );
+        }
     }
 }
 
@@ -658,48 +649,6 @@ impl NetworkTaskChannel {
         }
         tracking::set_progress("All followers succeeded");
         Ok(())
-    }
-}
-
-impl NetworkTaskChannelWrapper {
-    /// Perform the given computation in a leader-centric way:
-    ///  - If any follower's computation returns error, it automatically sends an Abort message to
-    ///    the leader, causing the leader to fail as well.
-    ///  - If the leader's computation returns error, it automatically sends an Abort message to
-    ///    all followers, causing their computation to fail as well.
-    ///
-    /// If leader_waits_for_success is true, then additionally:
-    ///  - Followers who succeed send a Success message to the leader.
-    ///  - The leader will wait for all Success messages before returning.
-    pub async fn perform_leader_centric_computation<R: Send + 'static>(
-        self,
-        leader_waits_for_success: bool,
-        f: impl for<'a> FnOnce(&'a mut NetworkTaskChannel) -> BoxFuture<'a, anyhow::Result<R>>
-            + Send
-            + 'static,
-    ) -> anyhow::Result<R> {
-        let mut channel = self.0;
-        let sender = channel.sender();
-        if !sender.is_leader() {
-            sender.wait_for_all_participants_connected().await?;
-        }
-        let result = f(&mut channel).await;
-        let result = match result {
-            Ok(result) => result,
-            err @ Err(_) => {
-                sender.communicate_result(&err, leader_waits_for_success)?;
-                return err;
-            }
-        };
-        if leader_waits_for_success && sender.is_leader() {
-            if let err @ Err(_) = channel.wait_for_followers_to_succeed().await {
-                sender.communicate_result(&err, leader_waits_for_success)?;
-                err?;
-            }
-        }
-        sender.communicate_result(&Ok(()), leader_waits_for_success)?;
-        tracking::set_progress("Computation complete");
-        Ok(result)
     }
 }
 
@@ -843,7 +792,7 @@ pub mod testing {
     where
         F: Fn(
             Arc<super::MeshNetworkClient>,
-            tokio::sync::mpsc::UnboundedReceiver<super::NetworkTaskChannelWrapper>,
+            tokio::sync::mpsc::UnboundedReceiver<super::NetworkTaskChannel>,
         ) -> FR,
         FR: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
     {
@@ -871,15 +820,16 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::{MeshNetworkClient, NetworkTaskChannel, NetworkTaskChannelWrapper};
+    use super::computation::MpcLeaderCentricComputation;
+    use super::{MeshNetworkClient, NetworkTaskChannel};
     use crate::assets::UniqueId;
+    use crate::network::computation::MpcLeaderCentricComputationExt;
     use crate::network::testing::run_test_clients;
     use crate::primitives::MpcTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
-    use futures::FutureExt;
     use std::collections::HashSet;
     use std::sync::Arc;
     use tokio::sync::mpsc;
@@ -899,7 +849,7 @@ mod tests {
 
     async fn run_test_client(
         client: Arc<MeshNetworkClient>,
-        mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannelWrapper>,
+        mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
     ) -> anyhow::Result<()> {
         let _passive_handle = tracking::spawn("monitor passive channels", async move {
             let mut tasks = AutoAbortTaskCollection::new();
@@ -909,9 +859,10 @@ mod tests {
                 };
                 tasks.spawn_checked(
                     &format!("passive task {:?}", channel.task_id()),
-                    channel.perform_leader_centric_computation(true, move |channel| {
-                        task_follower(channel).boxed()
-                    }),
+                    TaskFollower.perform_leader_centric_computation(
+                        channel,
+                        std::time::Duration::from_secs(10),
+                    ),
                 );
             }
         });
@@ -935,9 +886,10 @@ mod tests {
             )?;
             handles.push(tracking::spawn(
                 &format!("task {}", seed),
-                channel.perform_leader_centric_computation(true, move |channel| {
-                    task_leader(channel, seed).boxed()
-                }),
+                TaskLeader { seed }.perform_leader_centric_computation(
+                    channel,
+                    std::time::Duration::from_secs(10),
+                ),
             ));
 
             let expected_total: u64 = other_participant_ids
@@ -959,47 +911,66 @@ mod tests {
         Ok(())
     }
 
-    async fn task_leader(channel: &mut NetworkTaskChannel, seed: u64) -> anyhow::Result<u64> {
-        for other_participant_id in channel.participants() {
-            if other_participant_id == &channel.my_participant_id() {
-                continue;
-            }
-            channel.sender().send(
-                *other_participant_id,
-                vec![borsh::to_vec(&TestTripleMessage {
-                    data: other_participant_id.raw() as u64 + seed,
-                })
-                .unwrap()],
-            )?;
-        }
-        let mut total = 0;
-        let mut heard_from = HashSet::new();
-        for _ in 1..channel.participants().len() {
-            let msg = channel.receive().await?;
-            assert!(heard_from.insert(msg.from));
-            let inner: TestTripleMessage = borsh::from_slice(&msg.data[0])?;
-            total += inner.data;
-        }
-        Ok(total)
+    struct TaskLeader {
+        seed: u64,
     }
 
-    async fn task_follower(channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
-        println!("Task follower started: task id: {:?}", channel.task_id());
-        match channel.task_id() {
-            MpcTaskId::ManyTriples { .. } => {
-                let msg = channel.receive().await?;
-                let inner: TestTripleMessage = borsh::from_slice(&msg.data[0])?;
+    #[async_trait::async_trait]
+    impl MpcLeaderCentricComputation<u64> for TaskLeader {
+        async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<u64> {
+            for other_participant_id in channel.participants() {
+                if other_participant_id == &channel.my_participant_id() {
+                    continue;
+                }
                 channel.sender().send(
-                    msg.from,
+                    *other_participant_id,
                     vec![borsh::to_vec(&TestTripleMessage {
-                        data: (inner.data * inner.data) % MOD,
+                        data: other_participant_id.raw() as u64 + self.seed,
                     })
                     .unwrap()],
                 )?;
             }
-            _ => unreachable!(),
+            let mut total = 0;
+            let mut heard_from = HashSet::new();
+            for _ in 1..channel.participants().len() {
+                let msg = channel.receive().await?;
+                assert!(heard_from.insert(msg.from));
+                let inner: TestTripleMessage = borsh::from_slice(&msg.data[0])?;
+                total += inner.data;
+            }
+            Ok(total)
         }
-        Ok(())
+
+        fn leader_waits_for_success(&self) -> bool {
+            true
+        }
+    }
+
+    struct TaskFollower;
+
+    #[async_trait::async_trait]
+    impl MpcLeaderCentricComputation<()> for TaskFollower {
+        async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+            match channel.task_id() {
+                MpcTaskId::ManyTriples { .. } => {
+                    let msg = channel.receive().await?;
+                    let inner: TestTripleMessage = borsh::from_slice(&msg.data[0])?;
+                    channel.sender().send(
+                        msg.from,
+                        vec![borsh::to_vec(&TestTripleMessage {
+                            data: (inner.data * inner.data) % MOD,
+                        })
+                        .unwrap()],
+                    )?;
+                }
+                _ => unreachable!(),
+            }
+            Ok(())
+        }
+
+        fn leader_waits_for_success(&self) -> bool {
+            true
+        }
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -1010,13 +981,13 @@ mod tests {
 
 #[cfg(test)]
 mod fault_handling_tests {
-    use super::{MeshNetworkClient, NetworkTaskChannel, NetworkTaskChannelWrapper};
+    use super::computation::{MpcLeaderCentricComputation, MpcLeaderCentricComputationExt};
+    use super::{MeshNetworkClient, NetworkTaskChannel};
     use crate::assets::UniqueId;
     use crate::network::testing::run_test_clients;
     use crate::primitives::{MpcTaskId, ParticipantId};
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use futures::FutureExt;
     use near_o11y::testonly::init_integration_logger;
     use std::sync::Arc;
     use tokio::sync::mpsc;
@@ -1032,6 +1003,9 @@ mod fault_handling_tests {
             FaultTestCase::Slow(ParticipantId::from_raw(0), CancellationToken::new()),
             FaultTestCase::Slow(ParticipantId::from_raw(3), CancellationToken::new()),
             FaultTestCase::SlowNoWaitSuccess(ParticipantId::from_raw(1), CancellationToken::new()),
+            FaultTestCase::Timeout(ParticipantId::from_raw(0)),
+            FaultTestCase::Timeout(ParticipantId::from_raw(3)),
+            FaultTestCase::AllTimeout,
         ];
         for test_case in test_cases {
             tracing::info!("Running test case: {:?}", test_case);
@@ -1064,11 +1038,15 @@ mod fault_handling_tests {
         Slow(ParticipantId, CancellationToken),
         /// One party is slow, but the leader does not wait for successes.
         SlowNoWaitSuccess(ParticipantId, CancellationToken),
+        /// One party times out before the others (contrived case).
+        Timeout(ParticipantId),
+        /// All parties time out at the same time.
+        AllTimeout,
     }
 
     async fn run_fault_handling_test_client(
         client: Arc<MeshNetworkClient>,
-        mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannelWrapper>,
+        mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
         test_case: Arc<FaultTestCase>,
     ) -> anyhow::Result<()> {
         let me = client.my_participant_id();
@@ -1086,16 +1064,18 @@ mod fault_handling_tests {
             channel_receiver.recv().await.unwrap()
         };
 
-        let leader_waits_for_success =
-            !matches!(test_case.as_ref(), FaultTestCase::SlowNoWaitSuccess(_, _));
-        let result = {
-            let test_case = test_case.clone();
-            channel
-                .perform_leader_centric_computation(leader_waits_for_success, move |channel| {
-                    task(channel, test_case).boxed()
-                })
-                .await
+        let timeout = match test_case.as_ref() {
+            FaultTestCase::Timeout(participant_id) if me == *participant_id => {
+                std::time::Duration::from_secs(1)
+            }
+            FaultTestCase::AllTimeout => std::time::Duration::from_secs(1),
+            _ => std::time::Duration::from_secs(10),
         };
+        let result = Task {
+            test_case: test_case.clone(),
+        }
+        .perform_leader_centric_computation(channel, timeout)
+        .await;
 
         match test_case.as_ref() {
             FaultTestCase::NoFault => {
@@ -1132,6 +1112,26 @@ mod fault_handling_tests {
                     assert!(!cancellation_token.is_cancelled());
                 }
             }
+            FaultTestCase::Timeout(participant_id) => {
+                assert!(result.is_err());
+                let err_string = result.as_ref().unwrap_err().to_string();
+                assert!(err_string.contains("Timeout"), "{}", err_string);
+                if participant_id == &client.my_participant_id() {
+                } else if me.raw() == 0 {
+                    assert!(
+                        err_string.contains(&format!("Aborted by participant {}", participant_id)),
+                        "{}",
+                        err_string
+                    );
+                } else {
+                    assert!(err_string.contains("Aborted by leader"), "{}", err_string);
+                }
+            }
+            FaultTestCase::AllTimeout => {
+                assert!(result.is_err());
+                let err_string = result.as_ref().unwrap_err().to_string();
+                assert!(err_string.contains("Timeout"), "{}", err_string);
+            }
         }
         Ok(())
     }
@@ -1150,30 +1150,54 @@ mod fault_handling_tests {
         Ok(())
     }
 
-    async fn task(
-        channel: &mut NetworkTaskChannel,
+    struct Task {
         test_case: Arc<FaultTestCase>,
-    ) -> anyhow::Result<()> {
-        match test_case.as_ref() {
-            FaultTestCase::NoFault => {
-                send_recv_all(channel).await?;
-            }
-            FaultTestCase::Crash(participant_id) => {
-                if channel.my_participant_id() == *participant_id {
-                    anyhow::bail!("Crashed");
-                } else {
+    }
+
+    #[async_trait::async_trait]
+    impl MpcLeaderCentricComputation<()> for Task {
+        async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+            match self.test_case.as_ref() {
+                FaultTestCase::NoFault => {
                     send_recv_all(channel).await?;
                 }
-            }
-            FaultTestCase::Slow(participant_id, cancellation_token)
-            | FaultTestCase::SlowNoWaitSuccess(participant_id, cancellation_token) => {
-                send_recv_all(channel).await?;
-                if channel.my_participant_id() == *participant_id {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                    cancellation_token.cancel();
+                FaultTestCase::Crash(participant_id) => {
+                    if channel.my_participant_id() == *participant_id {
+                        anyhow::bail!("Crashed");
+                    } else {
+                        send_recv_all(channel).await?;
+                    }
+                }
+                FaultTestCase::Slow(participant_id, cancellation_token)
+                | FaultTestCase::SlowNoWaitSuccess(participant_id, cancellation_token) => {
+                    send_recv_all(channel).await?;
+                    if channel.my_participant_id() == *participant_id {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        cancellation_token.cancel();
+                    }
+                }
+                FaultTestCase::Timeout(participant_id) => {
+                    if channel.my_participant_id() == *participant_id {
+                        // This will timeout (the timeout is set at 1 sec).
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                        // Shouldn't be reached.
+                        send_recv_all(channel).await?;
+                    } else {
+                        send_recv_all(channel).await?;
+                    }
+                }
+                FaultTestCase::AllTimeout => {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 }
             }
+            Ok(())
         }
-        Ok(())
+
+        fn leader_waits_for_success(&self) -> bool {
+            !matches!(
+                self.test_case.as_ref(),
+                FaultTestCase::SlowNoWaitSuccess(_, _)
+            )
+        }
     }
 }

@@ -2,54 +2,63 @@ use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
 use crate::config::TripleConfig;
 use crate::metrics;
+use crate::network::computation::{MpcLeaderCentricComputation, MpcLeaderCentricComputationExt};
 use crate::network::MeshNetworkClient;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{choose_random_participants, PairedTriple};
 use crate::protocol::run_protocol;
 use crate::tracking::AutoAbortTaskCollection;
 use cait_sith::protocol::Participant;
-use futures::FutureExt;
 use k256::Secp256k1;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::timeout;
 
 /// Generates many cait-sith triples at once. This can significantly save the
 /// *number* of network messages.
-pub async fn run_many_triple_generation<const N: usize>(
-    channel: &mut NetworkTaskChannel,
-    threshold: usize,
-) -> anyhow::Result<Vec<PairedTriple>> {
-    assert_eq!(
-        N % 2,
-        0,
-        "Expected to generate even number of triples in a batch"
-    );
-    let cs_participants = channel
-        .participants()
-        .iter()
-        .copied()
-        .map(Participant::from)
-        .collect::<Vec<_>>();
-    let me = channel.my_participant_id();
-    let protocol = cait_sith::triples::generate_triple_many::<Secp256k1, N>(
-        &cs_participants,
-        me.into(),
-        threshold,
-    )?;
-    let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
-    let triples = run_protocol("many triple gen", channel, protocol).await?;
-    metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);
-    assert_eq!(
-        N,
-        triples.len(),
-        "Unexpected triples len: expected {}, got {}",
-        N,
-        triples.len()
-    );
-    let iter = triples.into_iter();
-    let pairs = iter.clone().step_by(2).zip(iter.skip(1).step_by(2));
-    Ok(pairs.collect())
+pub struct ManyTripleGenerationComputation<const N: usize> {
+    pub threshold: usize,
+}
+
+#[async_trait::async_trait]
+impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
+    for ManyTripleGenerationComputation<N>
+{
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<Vec<PairedTriple>> {
+        assert_eq!(
+            N % 2,
+            0,
+            "Expected to generate even number of triples in a batch"
+        );
+        let cs_participants = channel
+            .participants()
+            .iter()
+            .copied()
+            .map(Participant::from)
+            .collect::<Vec<_>>();
+        let me = channel.my_participant_id();
+        let protocol = cait_sith::triples::generate_triple_many::<Secp256k1, N>(
+            &cs_participants,
+            me.into(),
+            self.threshold,
+        )?;
+        let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
+        let triples = run_protocol("many triple gen", channel, protocol).await?;
+        metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);
+        assert_eq!(
+            N,
+            triples.len(),
+            "Unexpected triples len: expected {}, got {}",
+            N,
+            triples.len()
+        );
+        let iter = triples.into_iter();
+        let pairs = iter.clone().step_by(2).zip(iter.skip(1).step_by(2));
+        Ok(pairs.collect())
+    }
+
+    fn leader_waits_for_success(&self) -> bool {
+        true
+    }
 }
 
 pub type TripleStorage = DistributedAssetStorage<PairedTriple>;
@@ -113,16 +122,15 @@ pub async fn run_background_triple_generation(
             tasks.spawn_checked(&format!("{:?}", task_id), async move {
                 let _in_flight = in_flight;
                 let _semaphore_guard = parallelism_limiter.acquire().await?;
-                let triples = timeout(
-                    Duration::from_secs(config_clone.timeout_sec),
-                    channel.perform_leader_centric_computation(true, move |channel| {
-                        run_many_triple_generation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE>(
-                            channel, threshold,
-                        )
-                        .boxed()
-                    }),
-                )
-                .await??;
+                let triples =
+                    (ManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
+                        threshold,
+                    })
+                    .perform_leader_centric_computation(
+                        channel,
+                        Duration::from_secs(config_clone.timeout_sec),
+                    )
+                    .await?;
 
                 for (i, paired_triple) in triples.into_iter().enumerate() {
                     triple_store.add_owned(id_start.add_to_counter(i as u32)?, paired_triple);
@@ -153,15 +161,16 @@ pub async fn run_background_triple_generation(
 #[cfg(test)]
 mod tests_many {
     use crate::network::testing::run_test_clients;
-    use crate::network::{MeshNetworkClient, NetworkTaskChannelWrapper};
+    use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::MpcTaskId;
     use crate::tracing::init_logging;
-    use futures::{stream, FutureExt, StreamExt};
+    use futures::{stream, StreamExt};
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
-    use super::{run_many_triple_generation, PairedTriple};
+    use super::{ManyTripleGenerationComputation, PairedTriple};
     use crate::assets::UniqueId;
+    use crate::network::computation::MpcLeaderCentricComputationExt;
     use crate::tests::TestGenerators;
     use crate::tracking;
     use std::collections::HashMap;
@@ -205,7 +214,7 @@ mod tests_many {
 
     async fn run_triple_gen_client(
         client: Arc<MeshNetworkClient>,
-        mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannelWrapper>,
+        mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
     ) -> anyhow::Result<HashMap<UniqueId, PairedTriple>> {
         let passive_triples = tracking::spawn("monitor passive channels", async move {
             let mut tasks = Vec::new();
@@ -217,13 +226,15 @@ mod tests_many {
                         let MpcTaskId::ManyTriples { start, .. } = channel.task_id() else {
                             panic!("Unexpected task id");
                         };
-                        let triples = channel
-                            .perform_leader_centric_computation(true, move |channel| {
-                                run_many_triple_generation::<TRIPLES_PER_BATCH>(channel, THRESHOLD)
-                                    .boxed()
-                            })
-                            .await
-                            .unwrap();
+                        let triples = ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
+                            threshold: THRESHOLD,
+                        }
+                        .perform_leader_centric_computation(
+                            channel,
+                            std::time::Duration::from_secs(60),
+                        )
+                        .await
+                        .unwrap();
                         triples
                             .into_iter()
                             .enumerate()
@@ -263,10 +274,13 @@ mod tests_many {
                     let channel = client.new_channel_for_task(task_id, participants).unwrap();
                     let result = tracking::spawn(
                         &format!("task {:?}", task_id),
-                        channel.perform_leader_centric_computation(true, move |channel| {
-                            run_many_triple_generation::<TRIPLES_PER_BATCH>(channel, THRESHOLD)
-                                .boxed()
-                        }),
+                        ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
+                            threshold: THRESHOLD,
+                        }
+                        .perform_leader_centric_computation(
+                            channel,
+                            std::time::Duration::from_secs(60),
+                        ),
                     )
                     .await
                     .unwrap()
