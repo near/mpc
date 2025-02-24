@@ -2,7 +2,7 @@ use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
 use crate::config::TripleConfig;
 use crate::metrics;
-use crate::network::computation::{MpcLeaderCentricComputation, MpcLeaderCentricComputationExt};
+use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::MeshNetworkClient;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{choose_random_participants, PairedTriple};
@@ -160,20 +160,19 @@ pub async fn run_background_triple_generation(
 
 #[cfg(test)]
 mod tests_many {
+    use super::{ManyTripleGenerationComputation, PairedTriple};
+    use crate::assets::UniqueId;
+    use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::MpcTaskId;
+    use crate::tests::TestGenerators;
     use crate::tracing::init_logging;
+    use crate::tracking;
     use futures::{stream, StreamExt};
+    use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::mpsc;
-
-    use super::{ManyTripleGenerationComputation, PairedTriple};
-    use crate::assets::UniqueId;
-    use crate::network::computation::MpcLeaderCentricComputationExt;
-    use crate::tests::TestGenerators;
-    use crate::tracking;
-    use std::collections::HashMap;
 
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;

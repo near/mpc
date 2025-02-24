@@ -1,6 +1,6 @@
 use crate::config::MpcConfig;
 use crate::keyshare::{KeyshareStorage, RootKeyshareData};
-use crate::network::computation::{MpcLeaderCentricComputation, MpcLeaderCentricComputationExt};
+use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::protocol::run_protocol;
@@ -105,7 +105,7 @@ pub fn affine_point_to_public_key(point: AffinePoint) -> anyhow::Result<near_cry
 #[cfg(test)]
 mod tests {
     use crate::key_generation::KeyGenerationComputation;
-    use crate::network::computation::MpcLeaderCentricComputationExt;
+    use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::MpcTaskId;

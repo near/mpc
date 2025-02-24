@@ -1,7 +1,7 @@
 use crate::config::MpcConfig;
 use crate::indexer::participants::ContractResharingState;
 use crate::keyshare::{KeyshareStorage, RootKeyshareData};
-use crate::network::computation::{MpcLeaderCentricComputation, MpcLeaderCentricComputationExt};
+use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::protocol::run_protocol;
@@ -154,7 +154,7 @@ pub fn public_key_to_affine_point(key: near_crypto::PublicKey) -> anyhow::Result
 #[cfg(test)]
 mod tests {
     use crate::key_resharing::KeyResharingComputation;
-    use crate::network::computation::MpcLeaderCentricComputationExt;
+    use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::{MpcTaskId, ParticipantId};

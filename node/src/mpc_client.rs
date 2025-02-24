@@ -4,7 +4,7 @@ use crate::indexer::handler::ChainSignatureRequest;
 use crate::indexer::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use crate::keyshare::RootKeyshareData;
 use crate::metrics;
-use crate::network::computation::MpcLeaderCentricComputationExt;
+use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
 use crate::sign::{

@@ -824,7 +824,6 @@ mod tests {
     use super::computation::MpcLeaderCentricComputation;
     use super::{MeshNetworkClient, NetworkTaskChannel};
     use crate::assets::UniqueId;
-    use crate::network::computation::MpcLeaderCentricComputationExt;
     use crate::network::testing::run_test_clients;
     use crate::primitives::MpcTaskId;
     use crate::tests::TestGenerators;
@@ -982,7 +981,7 @@ mod tests {
 
 #[cfg(test)]
 mod fault_handling_tests {
-    use super::computation::{MpcLeaderCentricComputation, MpcLeaderCentricComputationExt};
+    use super::computation::MpcLeaderCentricComputation;
     use super::{MeshNetworkClient, NetworkTaskChannel};
     use crate::assets::UniqueId;
     use crate::network::testing::run_test_clients;

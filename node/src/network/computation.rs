@@ -15,22 +15,13 @@ use std::future::Future;
 /// The leader_waits_for_success is for asset generation, where the owner of the asset wants
 /// to only mark it as completed when all followers have persisted their share of the asset.
 #[async_trait::async_trait]
-pub trait MpcLeaderCentricComputation<T>: 'static {
+pub trait MpcLeaderCentricComputation<T>: Sized + 'static {
     /// Performs the computation itself, without worrying about failure propagation or
     /// waiting for success of followers.
     async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<T>;
     fn leader_waits_for_success(&self) -> bool;
-}
 
-pub trait MpcLeaderCentricComputationExt<T> {
-    fn perform_leader_centric_computation(
-        self,
-        channel: NetworkTaskChannel,
-        timeout: std::time::Duration,
-    ) -> impl Future<Output = anyhow::Result<T>> + 'static;
-}
-
-impl<T, C: MpcLeaderCentricComputation<T>> MpcLeaderCentricComputationExt<T> for C {
+    /// Performs the computation. DO NOT override this function.
     fn perform_leader_centric_computation(
         self,
         mut channel: NetworkTaskChannel,
