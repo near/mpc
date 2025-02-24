@@ -230,7 +230,7 @@ where
                 }
             }
             MessageType::Ready(data) => {
-                // skip if I received echo message from the sender in session sid
+                // skip if I received ready message from the sender in session sid
                 if !seen_ready[sid].put(from) || finish_ready[sid] {
                     continue;
                 }
