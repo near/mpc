@@ -1,6 +1,7 @@
 use crate::config::MpcConfig;
 use crate::indexer::participants::ContractResharingState;
 use crate::keyshare::{KeyshareStorage, RootKeyshareData};
+use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::protocol::run_protocol;
@@ -19,38 +20,45 @@ use tokio::sync::mpsc;
 ///     - the number of participants common between old and new is smaller than
 ///       the old threshold; or
 ///     - the threshold is larger than the number of participants.
-pub async fn run_key_resharing(
-    channel: NetworkTaskChannel,
-    me: ParticipantId,
+pub struct KeyResharingComputation {
     threshold: usize,
-    old_participants: &[ParticipantId],
+    old_participants: Vec<ParticipantId>,
     old_threshold: usize,
     my_share: Option<Scalar>,
     public_key: AffinePoint,
-) -> anyhow::Result<Scalar> {
-    let new_participants = channel
-        .participants
-        .iter()
-        .copied()
-        .map(Participant::from)
-        .collect::<Vec<_>>();
+}
 
-    let old_participants = old_participants
-        .iter()
-        .copied()
-        .map(Participant::from)
-        .collect::<Vec<_>>();
+#[async_trait::async_trait]
+impl MpcLeaderCentricComputation<Scalar> for KeyResharingComputation {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<Scalar> {
+        let me = channel.my_participant_id();
+        let new_participants = channel
+            .participants()
+            .iter()
+            .copied()
+            .map(Participant::from)
+            .collect::<Vec<_>>();
 
-    let protocol = cait_sith::reshare::<Secp256k1>(
-        &old_participants,
-        old_threshold,
-        &new_participants,
-        threshold,
-        me.into(),
-        my_share,
-        public_key,
-    )?;
-    run_protocol("key resharing", channel, me, protocol).await
+        let old_participants = self
+            .old_participants
+            .into_iter()
+            .map(Participant::from)
+            .collect::<Vec<_>>();
+
+        let protocol = cait_sith::reshare::<Secp256k1>(
+            &old_participants,
+            self.old_threshold,
+            &new_participants,
+            self.threshold,
+            me.into(),
+            self.my_share,
+            self.public_key,
+        )?;
+        run_protocol("key resharing", channel, protocol).await
+    }
+    fn leader_waits_for_success(&self) -> bool {
+        false
+    }
 }
 
 /// Performs the key resharing protocol. Retrieves the current keyshare
@@ -63,7 +71,7 @@ pub async fn run_key_resharing_client(
     state: ContractResharingState,
     my_share: Option<Scalar>,
     keyshare_storage: Box<dyn KeyshareStorage>,
-    mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>,
+    mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
 ) -> anyhow::Result<()> {
     let my_participant_id = client.my_participant_id();
     let is_leader = my_participant_id
@@ -83,10 +91,10 @@ pub async fn run_key_resharing_client(
     } else {
         loop {
             let channel = channel_receiver.recv().await.unwrap();
-            if channel.task_id != task_id {
+            if channel.task_id() != task_id {
                 tracing::info!(
                     "Received task ID is not key resharing: {:?}; ignoring.",
-                    channel.task_id
+                    channel.task_id()
                 );
                 continue;
             }
@@ -94,19 +102,22 @@ pub async fn run_key_resharing_client(
         }
     };
     let public_key = public_key_to_affine_point(state.public_key)?;
-    let new_keyshare = run_key_resharing(
-        channel,
-        my_participant_id,
-        config.participants.threshold as usize,
-        &state
+    let new_keyshare = KeyResharingComputation {
+        threshold: config.participants.threshold as usize,
+        old_participants: state
             .old_participants
             .participants
             .iter()
             .map(|p| p.id)
-            .collect::<Vec<_>>(),
-        state.old_participants.threshold as usize,
+            .collect(),
+        old_threshold: state.old_participants.threshold as usize,
         my_share,
         public_key,
+    }
+    .perform_leader_centric_computation(
+        channel,
+        // TODO(#195): Move timeout here instead of in Coordinator.
+        std::time::Duration::from_secs(60),
     )
     .await?;
     keyshare_storage
@@ -142,7 +153,8 @@ pub fn public_key_to_affine_point(key: near_crypto::PublicKey) -> anyhow::Result
 
 #[cfg(test)]
 mod tests {
-    use super::run_key_resharing;
+    use crate::key_resharing::KeyResharingComputation;
+    use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::{MpcTaskId, ParticipantId};
@@ -164,7 +176,7 @@ mod tests {
 
         let key_resharing_client_runner =
             move |client: Arc<MeshNetworkClient>,
-                  mut channel_receiver: mpsc::Receiver<NetworkTaskChannel>| {
+                  mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>| {
                 let client = client.clone();
                 let participant_id = client.my_participant_id();
                 let all_participant_ids = client.all_participant_ids();
@@ -184,15 +196,14 @@ mod tests {
                             .await
                             .ok_or_else(|| anyhow::anyhow!("No channel"))?
                     };
-                    let key = run_key_resharing(
-                        channel,
-                        participant_id,
-                        THRESHOLD,
-                        &old_participants,
-                        THRESHOLD,
-                        keyshare,
-                        pubkey,
-                    )
+                    let key = KeyResharingComputation {
+                        threshold: THRESHOLD,
+                        old_participants,
+                        old_threshold: THRESHOLD,
+                        my_share: keyshare,
+                        public_key: pubkey,
+                    }
+                    .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
                     .await?;
 
                     anyhow::Ok(key)
