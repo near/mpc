@@ -17,6 +17,7 @@
 //! There's no identifiable aborts, i.e. you might see an Err(_) with e.g. "incorrect number of shares supplied",
 //! or "Participant X supplied incorrect data", but pragmatically you will not be able to do anything with this info.
 
+mod kdf;
 mod sign;
 mod tests;
 
@@ -64,7 +65,14 @@ pub struct KeygenOutput {
     pub public_key_package: PublicKeyPackage,
 }
 
+/// Do key derivation from the main key-pair
+#[allow(dead_code)] // TODO(#119): remove this compiler directive when this will be actually used.
+pub fn derive_keygen_output(keygen_output: &KeygenOutput, tweak: [u8; 32]) -> KeygenOutput {
+    kdf::derive_keygen_output(keygen_output, tweak)
+}
+
 /// Derive Frost identifier (ed25519 scalar) from u32
+#[allow(dead_code)] // TODO(#119): remove this compiler directive when this will be actually used.
 pub fn to_frost_identifier(participant: Participant) -> frost_ed25519::Identifier {
     frost_ed25519::Identifier::derive(participant.bytes().as_slice())
         .expect("Identifier derivation must succeed: cipher suite is guaranteed to be implemented")
