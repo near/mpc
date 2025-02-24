@@ -6,7 +6,7 @@ use crate::keyshare::RootKeyshareData;
 use crate::metrics;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{MpcTaskId, PresignOutputWithParticipants};
+use crate::primitives::MpcTaskId;
 use crate::sign::{
     run_background_presignature_generation, FollowerPresignComputation, FollowerSignComputation,
     PresignatureStorage, SignComputation,
@@ -16,7 +16,7 @@ use crate::sign_request::{
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::triple::{
-    run_background_triple_generation, ManyTripleGenerationComputation, TripleStorage,
+    run_background_triple_generation, FollowerManyTripleGenerationComputation, TripleStorage,
     SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
 };
 use cait_sith::FullSignature;
@@ -236,45 +236,34 @@ impl MpcClient {
                         "Unsupported batch size for triple generation"
                     ));
                 }
-                let pending_paired_triples = (0..count / 2)
-                    .map(|i| Ok(triple_store.prepare_unowned(start.add_to_counter(i)?)))
-                    .collect::<anyhow::Result<Vec<_>>>()?;
-                let triples =
-                    ManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
-                        threshold: mpc_config.participants.threshold as usize,
-                    }
-                    .perform_leader_centric_computation(
-                        channel,
-                        Duration::from_secs(config.triple.timeout_sec),
-                    )
-                    .await?;
-                for (pending_triple, paired_triple) in
-                    pending_paired_triples.into_iter().zip(triples.into_iter())
-                {
-                    pending_triple.commit(paired_triple);
+                FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
+                    threshold: mpc_config.participants.threshold as usize,
+                    out_triple_id_start: start,
+                    out_triple_store: triple_store.clone(),
                 }
+                .perform_leader_centric_computation(
+                    channel,
+                    Duration::from_secs(config.triple.timeout_sec),
+                )
+                .await?;
             }
             MpcTaskId::Presignature {
                 id,
                 paired_triple_id,
             } => {
-                let pending_asset = presignature_store.prepare_unowned(id);
-                let participants = channel.participants().to_vec();
-                let presignature = FollowerPresignComputation {
+                FollowerPresignComputation {
                     threshold: mpc_config.participants.threshold as usize,
                     keygen_out: root_keyshare.keygen_output(),
                     triple_store: triple_store.clone(),
                     paired_triple_id,
+                    out_presignature_store: presignature_store.clone(),
+                    out_presignature_id: id,
                 }
                 .perform_leader_centric_computation(
                     channel,
                     Duration::from_secs(config.presignature.timeout_sec),
                 )
                 .await?;
-                pending_asset.commit(PresignOutputWithParticipants {
-                    presignature,
-                    participants,
-                });
             }
             MpcTaskId::Signature {
                 id,
