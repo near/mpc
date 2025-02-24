@@ -120,7 +120,12 @@ mod constants;
 mod crypto;
 mod keyshare;
 mod math;
+
+#[cfg(feature = "internals")]
+pub mod participants;
+#[cfg(not(feature = "internals"))]
 mod participants;
+
 mod presign;
 mod proofs;
 pub mod protocol;

@@ -36,6 +36,9 @@ required-features = ["k256"]
 
 [features]
 k256 = ["dep:k256"]
+## Expose internal types. This is an advanced feature which can be useful
+## if you need to build a modified version of protocol.
+internals = []
 
 [[example]]
 name = "network-benches"
