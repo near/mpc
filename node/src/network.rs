@@ -245,16 +245,17 @@ impl MeshNetworkClient {
         metrics::NETWORK_LIVE_CONNECTIONS.reset();
 
         for id in self.all_participant_ids() {
+            let metric = metrics::NETWORK_LIVE_CONNECTIONS
+                .with_label_values(&[&my_participant_id.to_string(), &id.to_string()]);
             if id == my_participant_id {
-                continue;
+                metric.set(1);
+            } else {
+                let is_live_participant = self
+                    .transport_sender
+                    .connectivity(id)
+                    .is_bidirectionally_connected();
+                metric.set(is_live_participant.into());
             }
-            let is_live_participant = self
-                .transport_sender
-                .connectivity(id)
-                .is_bidirectionally_connected();
-            metrics::NETWORK_LIVE_CONNECTIONS
-                .with_label_values(&[&my_participant_id.to_string(), &id.to_string()])
-                .set(is_live_participant.into());
         }
     }
 
