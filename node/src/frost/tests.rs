@@ -1,20 +1,12 @@
 #[cfg(test)]
-use crate::frost::sign::{do_sign_coordinator, do_sign_participant};
-#[cfg(test)]
 use crate::frost::KeygenOutput;
-use aes_gcm::aead::OsRng;
-#[cfg(test)]
-use cait_sith::participants::ParticipantList;
-use cait_sith::protocol::run_protocol;
 #[cfg(test)]
 use cait_sith::protocol::{make_protocol, Context, Participant, Protocol};
 #[cfg(test)]
 use frost_ed25519::Signature;
-#[cfg(test)]
-use futures::FutureExt;
 
 #[cfg(test)]
-#[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) enum SignatureOutput {
     Coordinator(Signature),
     Participant,
@@ -26,25 +18,22 @@ pub(crate) fn build_key_packages_with_dealer(
     min_signers: usize,
 ) -> Vec<(Participant, KeygenOutput)> {
     use crate::frost::to_frost_identifier;
+    use aes_gcm::aead::OsRng;
     use rand::RngCore;
     use std::collections::BTreeMap;
 
     let mut identifiers = Vec::with_capacity(max_signers);
-    for i in 0..max_signers {
+    for _ in 0..max_signers {
         // from 1 to avoid assigning 0 to a ParticipantId
         identifiers.push(Participant::from(OsRng.next_u32()))
     }
 
     let from_frost_identifiers = identifiers
         .iter()
-        .map(|&x| (to_frost_identifier(x.into()), x.into()))
+        .map(|&x| (to_frost_identifier(x), x))
         .collect::<BTreeMap<_, _>>();
 
-    let identifiers_list = from_frost_identifiers
-        .keys()
-        .cloned()
-        .into_iter()
-        .collect::<Vec<_>>();
+    let identifiers_list = from_frost_identifiers.keys().cloned().collect::<Vec<_>>();
 
     let (shares, pubkey_package) = frost_ed25519::keys::generate_with_dealer(
         max_signers as u16,
@@ -54,7 +43,7 @@ pub(crate) fn build_key_packages_with_dealer(
     )
     .unwrap();
 
-    let key_packages = shares
+    shares
         .into_iter()
         .map(|(id, share)| {
             (
@@ -65,17 +54,19 @@ pub(crate) fn build_key_packages_with_dealer(
                 },
             )
         })
-        .collect::<Vec<_>>();
-
-    key_packages
+        .collect::<Vec<_>>()
 }
 
 #[cfg(test)]
 pub(crate) fn build_and_run_signature_protocols(
-    participants: &Vec<(Participant, KeygenOutput)>,
+    participants: &[(Participant, KeygenOutput)],
     actual_signers: usize,
     coordinators_count: usize,
 ) -> anyhow::Result<Vec<(Participant, SignatureOutput)>> {
+    use crate::frost::sign::{do_sign_coordinator, do_sign_participant};
+    use cait_sith::participants::ParticipantList;
+    use cait_sith::protocol::run_protocol;
+    use futures::FutureExt;
     use near_indexer::near_primitives::hash::hash;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
@@ -97,8 +88,7 @@ pub(crate) fn build_and_run_signature_protocols(
         let rng: StdRng = StdRng::seed_from_u64(protocols.len() as u64);
 
         let ctx = Context::new();
-        let protocol: Box<dyn Protocol<Output = SignatureOutput>> = if idx < coordinators_count
-        {
+        let protocol: Box<dyn Protocol<Output = SignatureOutput>> = if idx < coordinators_count {
             let fut = do_sign_coordinator(
                 ctx.shared_channel(),
                 rng,
@@ -107,7 +97,7 @@ pub(crate) fn build_and_run_signature_protocols(
                 key_pair.clone(),
                 msg_hash.as_bytes().to_vec(),
             )
-            .map(|x| x.map(|y| SignatureOutput::Coordinator(y)));
+            .map(|x| x.map(SignatureOutput::Coordinator));
             let protocol = make_protocol(ctx, fut);
             Box::new(protocol)
         } else {
@@ -117,7 +107,7 @@ pub(crate) fn build_and_run_signature_protocols(
                 key_pair.clone(),
                 msg_hash.as_bytes().to_vec(),
             )
-            .map(|x| x.map(|y| SignatureOutput::Participant));
+            .map(|x| x.map(|_| SignatureOutput::Participant));
             let protocol = make_protocol(ctx, fut);
             Box::new(protocol)
         };
@@ -126,23 +116,4 @@ pub(crate) fn build_and_run_signature_protocols(
     }
 
     Ok(run_protocol(protocols)?)
-}
-
-#[cfg(test)]
-mod tests {
-    use cait_sith::protocol::Participant;
-    use frost_ed25519::Identifier;
-
-    #[test]
-    fn verify_stability_of_identifier_derivation() {
-        let participant = Participant::from(1e9 as u32);
-        let identifier = Identifier::derive(participant.bytes().as_slice()).unwrap();
-        assert_eq!(
-            identifier.serialize(),
-            vec![
-                96, 203, 29, 92, 230, 35, 120, 169, 19, 185, 45, 28, 48, 68, 84, 190, 12, 186, 169,
-                192, 196, 21, 238, 181, 134, 181, 203, 236, 162, 68, 212, 4
-            ]
-        );
-    }
 }

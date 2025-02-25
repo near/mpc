@@ -34,6 +34,7 @@ use rand::{CryptoRng, RngCore};
 /// If a party is included in `participants` set, then it has to supply their share to the coordinator
 /// in order for a protocol to succeed. Even if the set size is greater than the required `threshold`.
 /// It is up to the application to construct such a set.
+#[allow(dead_code)] // TODO(#119): remove the directive when this will be actually used.
 pub fn sign_coordinator<RNG: CryptoRng + RngCore + 'static + Send>(
     rng: RNG,
     participants: Vec<Participant>,
@@ -41,26 +42,17 @@ pub fn sign_coordinator<RNG: CryptoRng + RngCore + 'static + Send>(
     keygen_output: KeygenOutput,
     msg_hash: Vec<u8>,
 ) -> anyhow::Result<impl Protocol<Output = Signature>> {
-    sign::sign_internal_coordinator(
-        rng,
-        participants,
-        me,
-        keygen_output,
-        msg_hash,
-    )
+    sign::sign_internal_coordinator(rng, participants, me, keygen_output, msg_hash)
 }
 
-/// Build a signature protocol for `participant`.
+/// Build a signature protocol for a passive `participant`.
+#[allow(dead_code)] // TODO(#119): remove the directive when this will be actually used.
 pub fn sign_passive<RNG: CryptoRng + RngCore + 'static + Send>(
     rng: RNG,
     keygen_output: KeygenOutput,
     msg_hash: Vec<u8>,
 ) -> anyhow::Result<impl Protocol<Output = ()>> {
-    sign::sign_internal_passive(
-        rng,
-        keygen_output,
-        msg_hash,
-    )
+    sign::sign_internal_passive(rng, keygen_output, msg_hash)
 }
 
 /// Participant's key-pair in Frost

@@ -9,6 +9,7 @@ mod cli;
 mod config;
 mod coordinator;
 mod db;
+mod frost;
 mod hkdf;
 mod indexer;
 mod key_generation;
@@ -30,7 +31,6 @@ mod tracing;
 mod tracking;
 mod triple;
 mod web;
-mod frost;
 
 fn main() -> anyhow::Result<()> {
     init_logging();

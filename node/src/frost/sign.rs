@@ -15,7 +15,10 @@ pub(crate) fn sign_internal_coordinator<RNG: CryptoRng + RngCore + 'static + Sen
     msg_hash: Vec<u8>,
 ) -> anyhow::Result<impl Protocol<Output = Signature>> {
     if participants.len() < 2 {
-        anyhow::bail!("participant count cannot be < 2, found: {}", participants.len());
+        anyhow::bail!(
+            "participant count cannot be < 2, found: {}",
+            participants.len()
+        );
     };
     let Some(participants) = ParticipantList::new(&participants) else {
         anyhow::bail!("Participants list contains duplicates")
@@ -73,10 +76,7 @@ pub(crate) async fn do_sign_coordinator<RNG: CryptoRng + RngCore + 'static + Sen
         chan.send_many(r1_wait_point, &InitMessage()).await;
     }
 
-    let (nonces, commitments) = round1::commit(
-        keygen_output.key_package.signing_share(),
-        &mut rng,
-    );
+    let (nonces, commitments) = round1::commit(keygen_output.key_package.signing_share(), &mut rng);
     commitments_map.insert(to_frost_identifier(me), commitments);
     seen.put(me);
 
@@ -121,8 +121,12 @@ pub(crate) async fn do_sign_coordinator<RNG: CryptoRng + RngCore + 'static + Sen
     // * Converted collected signature shares into the signature.
     // * Signature is verified internally during `aggregate()` call.
 
-    let signature = frost_ed25519::aggregate(&signing_package, &signature_shares, &keygen_output.public_key_package)
-        .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
+    let signature = frost_ed25519::aggregate(
+        &signing_package,
+        &signature_shares,
+        &keygen_output.public_key_package,
+    )
+    .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
     Ok(signature)
 }
@@ -133,10 +137,7 @@ pub(crate) async fn do_sign_participant<RNG: CryptoRng + RngCore + 'static>(
     keygen_output: KeygenOutput,
     message: Vec<u8>,
 ) -> Result<(), ProtocolError> {
-    let (nonces, commitments) = round1::commit(
-        keygen_output.key_package.signing_share(),
-        &mut rng,
-    );
+    let (nonces, commitments) = round1::commit(keygen_output.key_package.signing_share(), &mut rng);
 
     // --- Round 1.
     // * Wait for an initial message from a coordinator.
@@ -183,18 +184,17 @@ pub(crate) async fn do_sign_participant<RNG: CryptoRng + RngCore + 'static>(
 
 #[cfg(test)]
 mod tests {
-    use crate::frost::tests::{build_and_run_signature_protocols, build_key_packages_with_dealer, SignatureOutput};
+    use crate::frost::tests::{
+        build_and_run_signature_protocols, build_key_packages_with_dealer, SignatureOutput,
+    };
     use cait_sith::protocol::Participant;
 
     fn assert_single_coordinator_result(data: Vec<(Participant, SignatureOutput)>) {
         let count = data
             .iter()
-            .filter(|(_, output)| {
-                if let SignatureOutput::Coordinator(_) = output {
-                    true
-                } else {
-                    false
-                }
+            .filter(|(_, output)| match output {
+                SignatureOutput::Coordinator(_) => true,
+                SignatureOutput::Participant => false,
             })
             .count();
         assert_eq!(count, 1);
@@ -208,7 +208,8 @@ mod tests {
         let coordinators = 1;
 
         let key_packages = build_key_packages_with_dealer(max_signers, min_signers);
-        let data = build_and_run_signature_protocols(&key_packages, min_signers, coordinators).unwrap();
+        let data =
+            build_and_run_signature_protocols(&key_packages, actual_signers, coordinators).unwrap();
         assert_single_coordinator_result(data);
     }
 
@@ -221,7 +222,8 @@ mod tests {
         let coordinators = 2;
 
         let key_packages = build_key_packages_with_dealer(max_signers, min_signers);
-        let data = build_and_run_signature_protocols(&key_packages, min_signers, coordinators).unwrap();
+        let data =
+            build_and_run_signature_protocols(&key_packages, actual_signers, coordinators).unwrap();
         assert_single_coordinator_result(data);
     }
 
@@ -232,7 +234,9 @@ mod tests {
         for min_signers in 2..max_signers {
             for actual_signers in min_signers..=max_signers {
                 let key_packages = build_key_packages_with_dealer(max_signers, min_signers);
-                let data = build_and_run_signature_protocols(&key_packages, actual_signers, coordinators).unwrap();
+                let data =
+                    build_and_run_signature_protocols(&key_packages, actual_signers, coordinators)
+                        .unwrap();
                 assert_single_coordinator_result(data);
             }
         }
