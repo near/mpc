@@ -24,6 +24,7 @@ mod protocol_version;
 mod runtime;
 mod sign;
 mod sign_request;
+pub mod signing;
 #[cfg(test)]
 mod tests;
 mod tracing;
