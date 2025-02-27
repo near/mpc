@@ -1,6 +1,6 @@
 use crate::config::{ConfigFile, MpcConfig};
 use crate::hkdf::derive_tweak;
-use crate::indexer::handler::ChainSignatureRequest;
+use crate::indexer::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use crate::indexer::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use crate::keyshare::RootKeyshareData;
 use crate::metrics;
@@ -11,9 +11,8 @@ use crate::sign::{
     run_background_presignature_generation, FollowerPresignComputation, FollowerSignComputation,
     PresignatureStorage, SignComputation,
 };
-use crate::sign_request::{
-    compute_leaders_for_signing, SignRequestStorage, SignatureId, SignatureRequest,
-};
+use crate::sign_request::{SignRequestStorage, SignatureId, SignatureRequest};
+use crate::signing::queue::{PendingSignatureRequests, CHECK_EACH_SIGNATURE_REQUEST_INTERVAL};
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::triple::{
     run_background_triple_generation, FollowerManyTripleGenerationComputation, TripleStorage,
@@ -21,6 +20,7 @@ use crate::triple::{
 };
 use cait_sith::FullSignature;
 use k256::{AffinePoint, Secp256k1};
+use near_time::Clock;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -63,8 +63,8 @@ impl MpcClient {
     pub async fn run(
         self,
         channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-        mut sign_request_receiver: tokio::sync::OwnedMutexGuard<
-            mpsc::UnboundedReceiver<ChainSignatureRequest>,
+        mut block_update_receiver: tokio::sync::OwnedMutexGuard<
+            mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     ) -> anyhow::Result<()> {
@@ -86,63 +86,91 @@ impl MpcClient {
         let monitor_chain = {
             let this = Arc::new(self.clone());
             let config = self.config.clone();
-            let mpc_config = self.mpc_config.clone();
             let network_client = self.client.clone();
             tracking::spawn("monitor chain", async move {
                 let mut tasks = AutoAbortTaskCollection::new();
+                let mut pending_signatures = PendingSignatureRequests::new(
+                    Clock::real(),
+                    network_client.all_participant_ids(),
+                    network_client.my_participant_id(),
+                    network_client.clone(),
+                );
+
                 loop {
                     let this = this.clone();
                     let config = config.clone();
-                    let mpc_config = mpc_config.clone();
                     let sign_request_store = self.sign_request_store.clone();
                     let chain_tx_sender = chain_txn_sender.clone();
 
-                    let Some(ChainSignatureRequest {
-                        request_id,
-                        request,
-                        predecessor_id,
-                        entropy,
-                        timestamp_nanosec,
-                    }) = sign_request_receiver.recv().await
-                    else {
-                        // If this branch hits, it means the channel is closed, meaning the
-                        // indexer is being shutdown. So just quit this task.
-                        break;
-                    };
+                    match tokio::time::timeout(
+                        CHECK_EACH_SIGNATURE_REQUEST_INTERVAL.unsigned_abs(),
+                        block_update_receiver.recv(),
+                    )
+                    .await
+                    {
+                        Ok(Some(block_update)) => {
+                            network_client.update_indexer_height(block_update.block.height);
+                            let signature_requests = block_update
+                                .signature_requests
+                                .into_iter()
+                                .map(|signature_request| {
+                                    let SignatureRequestFromChain {
+                                        request_id,
+                                        request,
+                                        predecessor_id,
+                                        entropy,
+                                        timestamp_nanosec,
+                                    } = signature_request;
+                                    SignatureRequest {
+                                        id: request_id,
+                                        msg_hash: request.payload,
+                                        tweak: derive_tweak(&predecessor_id, &request.path),
+                                        entropy,
+                                        timestamp_nanosec,
+                                    }
+                                })
+                                .collect::<Vec<_>>();
 
-                    let alive_participants = network_client.all_alive_participant_ids();
-
-                    tasks.spawn_checked(
-                        &format!("indexed sign request {:?}", request_id),
-                        async move {
-                            let request = SignatureRequest {
-                                id: request_id,
-                                msg_hash: request.payload,
-                                tweak: derive_tweak(&predecessor_id, &request.path),
-                                entropy,
-                                timestamp_nanosec,
-                            };
-
-                            // Check if we've already seen this request
-                            if !sign_request_store.add(&request) {
-                                return anyhow::Ok(());
+                            // Index the signature requests as soon as we see them. We'll decide
+                            // whether to *process* them after.
+                            for signature_request in &signature_requests {
+                                sign_request_store.add(signature_request);
                             }
+                            pending_signatures.notify_new_block(
+                                signature_requests,
+                                block_update.completed_signatures,
+                                &block_update.block,
+                            );
+                        }
+                        Ok(None) => {
+                            // If this branch hits, it means the channel is closed, meaning the
+                            // indexer is being shutdown. So just quit this task.
+                            break;
+                        }
+                        Err(_) => {
+                            // Timeout; just continue the iteration.
+                        }
+                    }
 
-                            let (primary_leader, secondary_leader) =
-                                compute_leaders_for_signing(&mpc_config, &request);
-                            // start the signing process if we are the primary leader or if we are the secondary leader
-                            // and the primary leader is not alive
-                            if mpc_config.my_participant_id == primary_leader
-                                || (mpc_config.my_participant_id == secondary_leader
-                                    && !alive_participants.contains(&primary_leader))
-                            {
+                    let signature_attempts = pending_signatures.get_signatures_to_attempt();
+
+                    for signature_attempt in signature_attempts {
+                        let this = this.clone();
+                        let config = config.clone();
+                        let chain_tx_sender = chain_tx_sender.clone();
+                        tasks.spawn_checked(
+                            &format!(
+                                "leader for signature request {:?}",
+                                signature_attempt.request.id
+                            ),
+                            async move {
                                 metrics::MPC_NUM_SIGN_REQUESTS_LEADER
                                     .with_label_values(&["total"])
                                     .inc();
 
                                 let (signature, public_key) = timeout(
                                     Duration::from_secs(config.signature.timeout_sec),
-                                    this.clone().make_signature(request.id),
+                                    this.clone().make_signature(signature_attempt.request.id),
                                 )
                                 .await??;
 
@@ -150,16 +178,19 @@ impl MpcClient {
                                     .with_label_values(&["succeeded"])
                                     .inc();
 
-                                let response =
-                                    ChainRespondArgs::new(&request, &signature, &public_key)?;
+                                let response = ChainRespondArgs::new(
+                                    &signature_attempt.request,
+                                    &signature,
+                                    &public_key,
+                                )?;
                                 let _ = chain_tx_sender
                                     .send(ChainSendTransactionRequest::Respond(response))
                                     .await;
-                            }
 
-                            anyhow::Ok(())
-                        },
-                    );
+                                anyhow::Ok(())
+                            },
+                        );
+                    }
                 }
             })
         };

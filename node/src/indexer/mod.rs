@@ -10,7 +10,7 @@ pub mod tx_sender;
 pub mod tx_signer;
 pub mod types;
 
-use handler::ChainSignatureRequest;
+use handler::ChainBlockUpdate;
 use near_indexer_primitives::types::AccountId;
 use participants::ContractState;
 use std::sync::Arc;
@@ -48,14 +48,14 @@ impl IndexerState {
 pub struct IndexerAPI {
     /// Provides the current contract state as well as updates to it.
     pub contract_state_receiver: watch::Receiver<ContractState>,
-    /// Provides signature requests. It is in a mutex, because the logical
-    /// "owner" of this receiver can change over time (specifically, when we
-    /// transition from the Running state to a Resharing state to the Running
-    /// state again, two different tasks would successively "own" the receiver).
+    /// Provides block updates (signature requests and other relevant receipts).
+    /// It is in a mutex, because the logical "owner" of this receiver can
+    /// change over time (specifically, when we transition from the Running
+    /// state to a Resharing state to the Running state again, two different
+    /// tasks would successively "own" the receiver).
     /// We do not want to re-create the channel, because while resharing is
     /// happening we want to buffer the signature requests.
-    pub sign_request_receiver:
-        Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainSignatureRequest>>>,
+    pub chain_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
     /// Sender to request transactions be signed (by a TransactionSigner that
     /// the indexer is initialized with) and sent to the chain.
     pub txn_sender: mpsc::Sender<ChainSendTransactionRequest>,

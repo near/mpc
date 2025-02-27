@@ -9,11 +9,11 @@ use k256::{
 use mpc_contract::primitives;
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const TGAS: u64 = 1_000_000_000_000;
 
-#[derive(Debug, PartialEq, Eq, Serialize, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 pub struct SerializableScalar {
     pub scalar: Scalar,
 }
@@ -24,7 +24,7 @@ impl From<Scalar> for SerializableScalar {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 struct SerializableAffinePoint {
     pub affine_point: AffinePoint,
 }
@@ -34,7 +34,7 @@ struct SerializableAffinePoint {
  * is used to refer to the (serializable) tweak derived from the caller's
  * account id and the derivation path.
  */
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainSignatureRequest {
     pub epsilon: SerializableScalar,
     pub payload_hash: SerializableScalar,
@@ -56,7 +56,7 @@ impl ChainSignatureRequest {
 /* The format in which the chain signatures contract expects
  * to receive the completed signature.
  */
-#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 struct ChainSignatureResponse {
     pub big_r: SerializableAffinePoint,
     pub s: SerializableScalar,
@@ -85,7 +85,7 @@ impl ChainSignatureResponse {
  * original request and the completed signature, then verifies
  * that the signature matches the requested key and payload.
  */
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Deserialize, Clone)]
 pub struct ChainRespondArgs {
     pub request: ChainSignatureRequest,
     response: ChainSignatureResponse,

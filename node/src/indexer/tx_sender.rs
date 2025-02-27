@@ -219,7 +219,10 @@ pub(crate) async fn handle_txn_requests(
                 tx_request,
                 txn_json,
                 Duration::from_secs(10),
-                NonZeroUsize::new(3).unwrap(),
+                // TODO(#226): We no longer need retries. However, the metrics from querying the
+                // tx results appear useful. We should probably export some metrics from the
+                // signature processing pipeline instead, and remove this retry.
+                NonZeroUsize::new(1).unwrap(),
             )
             .await;
         });

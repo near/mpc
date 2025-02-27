@@ -1,15 +1,18 @@
-use super::handler::ChainSignatureRequest;
+use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::participants::{
     ContractInitializingState, ContractResharingState, ContractRunningState, ContractState,
 };
 use super::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use super::IndexerAPI;
 use crate::config::ParticipantsConfig;
+use crate::sign_request::SignatureId;
+use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
+use k256::Scalar;
 use near_crypto::PublicKey;
 use near_sdk::AccountId;
 use near_time::{Clock, Duration};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -17,12 +20,18 @@ use tokio::sync::{broadcast, mpsc, watch};
 /// A simplification of the real MPC contract state for testing.
 pub struct FakeMpcContractState {
     pub state: ContractState,
+    // Not a real MPC contract; here we only index by the payload.
+    // We don't test signatures with the same payload anyway.
+    pub pending_signatures: BTreeMap<Scalar, SignatureId>,
 }
 
 impl FakeMpcContractState {
     pub fn new() -> FakeMpcContractState {
         let config = ContractState::WaitingForSync;
-        FakeMpcContractState { state: config }
+        FakeMpcContractState {
+            state: config,
+            pending_signatures: BTreeMap::new(),
+        }
     }
 
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
@@ -104,14 +113,19 @@ impl FakeMpcContractState {
 /// Runs the fake indexer's shared state and logic. There's one instance of this per test.
 struct FakeIndexerCore {
     clock: Clock,
-    /// Delay from when a txn is submitted to when it affects the contract state.
-    txn_delay: Duration,
+    /// Delay (in number of blocks) from when a txn is submitted to when it affects the contract
+    /// state.
+    txn_delay_blocks: u64,
     /// A fake contract state to emulate the real MPC contract but with much less complexity.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
     /// Receives transactions sent via the APIs of each node.
     txn_receiver: mpsc::UnboundedReceiver<(ChainSendTransactionRequest, AccountId)>,
+    /// Receives signature requests from the FakeIndexerManager.
+    signature_request_receiver: mpsc::UnboundedReceiver<SignatureRequestFromChain>,
     /// Broadcasts the contract state to each node.
     state_change_sender: broadcast::Sender<ContractState>,
+    /// Broadcasts block updates to each node.
+    block_update_sender: broadcast::Sender<ChainBlockUpdate>,
 
     /// When the core receives signature response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
@@ -139,24 +153,88 @@ impl FakeIndexerCore {
             }
         });
 
+        let block_maker = TestBlockMaker::new();
+        let mut current_block = block_maker.block(1);
+        let mut pending_transactions = VecDeque::new();
         loop {
-            let txn = self.txn_receiver.recv().await;
-            let Some((txn, account_id)) = txn else {
-                break;
+            loop {
+                match self.txn_receiver.try_recv() {
+                    Ok((txn, account_id)) => {
+                        pending_transactions.push_back((
+                            current_block.height() + self.txn_delay_blocks,
+                            txn,
+                            account_id,
+                        ));
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        return;
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => {
+                        break;
+                    }
+                }
+            }
+
+            let block = current_block.child(current_block.height() + 1);
+
+            let mut transactions_to_process = Vec::new();
+            while let Some((height, _, _)) = pending_transactions.front() {
+                if *height <= block.height() {
+                    let (_, txn, account_id) = pending_transactions.pop_front().unwrap();
+                    transactions_to_process.push((txn, account_id));
+                } else {
+                    break;
+                }
+            }
+
+            let mut signature_requests = Vec::new();
+            loop {
+                match self.signature_request_receiver.try_recv() {
+                    Ok(request) => {
+                        signature_requests.push(request);
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        return;
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => {
+                        break;
+                    }
+                }
+            }
+
+            for signature_request in &signature_requests {
+                let mut contract = contract.lock().await;
+                let signature_id = signature_request.request_id;
+                contract
+                    .pending_signatures
+                    .insert(signature_request.request.payload, signature_id);
+            }
+
+            let mut block_update = ChainBlockUpdate {
+                block: block.to_block_view(),
+                signature_requests,
+                completed_signatures: Vec::new(),
             };
-            let clock = self.clock.clone();
-            let txn_delay = self.txn_delay;
-            let sign_response_sender = self.sign_response_sender.clone();
-            let contract = contract.clone();
-            tasks.spawn_with_tokio(async move {
-                clock.sleep(txn_delay).await;
+            for (txn, account_id) in transactions_to_process {
                 match txn {
                     ChainSendTransactionRequest::VotePk(vote_pk) => {
                         let mut contract = contract.lock().await;
                         contract.vote_pk(account_id, vote_pk.public_key);
                     }
                     ChainSendTransactionRequest::Respond(respond) => {
-                        sign_response_sender.send(respond).unwrap();
+                        let mut contract = contract.lock().await;
+                        let signature_id = contract
+                            .pending_signatures
+                            .remove(&respond.request.payload_hash.scalar);
+                        if let Some(signature_id) = signature_id {
+                            self.sign_response_sender.send(respond.clone()).unwrap();
+                            block_update.completed_signatures.push(signature_id);
+                        } else {
+                            tracing::warn!(
+                                "Ignoring respond transaction for unknown (possibly already-responded-to) signature: {:?}",
+                                respond.request.payload_hash.scalar
+                            );
+                        }
                     }
                     ChainSendTransactionRequest::VoteReshared(reshared) => {
                         let mut contract = contract.lock().await;
@@ -166,7 +244,10 @@ impl FakeIndexerCore {
                         panic!("Unexpected txn: {:?}", txn);
                     }
                 }
-            });
+            }
+            self.block_update_sender.send(block_update).ok();
+            current_block = block;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     }
 }
@@ -180,15 +261,16 @@ pub struct FakeIndexerManager {
     /// Used to call .subscribe() so that each node can receive changes to the
     /// contract state.
     core_state_change_sender: broadcast::Sender<ContractState>,
+    /// Used to call .subscribe() so that each node can receive block updates.
+    core_block_update_sender: broadcast::Sender<ChainBlockUpdate>,
     /// Task that runs the core logic.
     _core_task: AutoAbortTask<()>,
 
     /// Collects signature responses from the core. When the core processes signature
     /// response transactions, it sends them to this receiver. See `next_response()`.
     response_receiver: mpsc::UnboundedReceiver<ChainRespondArgs>,
-    /// Used to call .subscribe() so that each node can receive signature requests
-    /// sent by the core.
-    signature_request_sender: broadcast::Sender<ChainSignatureRequest>,
+    /// Used to send signature requests to the core.
+    signature_request_sender: mpsc::UnboundedSender<SignatureRequestFromChain>,
 
     /// Allows nodes to be disabled during tests. See `disable()`.
     node_disabler: HashMap<AccountId, NodeDisabler>,
@@ -245,7 +327,7 @@ struct FakeIndexerOneNode {
     // The following are counterparts of the core channels.
     core_txn_sender: mpsc::UnboundedSender<(ChainSendTransactionRequest, AccountId)>,
     core_state_change_receiver: broadcast::Receiver<ContractState>,
-    signature_request_receiver: broadcast::Receiver<ChainSignatureRequest>,
+    block_update_receiver: broadcast::Receiver<ChainBlockUpdate>,
 
     /// Whether the node should yield ContractState::Invalid to artificially simulate bringing the
     /// node down.
@@ -253,7 +335,7 @@ struct FakeIndexerOneNode {
 
     // The following are counterparts of the API channels.
     api_state_sender: watch::Sender<ContractState>,
-    api_signature_request_sender: mpsc::UnboundedSender<ChainSignatureRequest>,
+    api_block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
     api_txn_receiver: mpsc::Receiver<ChainSendTransactionRequest>,
 }
 
@@ -263,10 +345,10 @@ impl FakeIndexerOneNode {
             account_id,
             core_txn_sender,
             mut core_state_change_receiver,
-            mut signature_request_receiver,
+            mut block_update_receiver,
             disable: shutdown,
             api_state_sender,
-            api_signature_request_sender,
+            api_block_update_sender,
             mut api_txn_receiver,
             ..
         } = self;
@@ -288,8 +370,8 @@ impl FakeIndexerOneNode {
         }));
         let monitor_signature_requests = AutoAbortTask::from(tokio::spawn(async move {
             loop {
-                let request = signature_request_receiver.recv().await.unwrap();
-                api_signature_request_sender.send(request).unwrap();
+                let request = block_update_receiver.recv().await.unwrap();
+                api_block_update_sender.send(request).unwrap();
             }
         }));
         let forward_txn_requests = AutoAbortTask::from(tokio::spawn(async move {
@@ -305,24 +387,28 @@ impl FakeIndexerOneNode {
 
 impl FakeIndexerManager {
     /// Creates a new fake indexer whose contract state begins with WaitingForSync.
-    pub fn new(clock: Clock, txn_delay: Duration) -> Self {
+    pub fn new(clock: Clock, txn_delay_blocks: u64) -> Self {
         let (txn_sender, txn_receiver) = mpsc::unbounded_channel();
         let (state_change_sender, _) = broadcast::channel(1000);
-        let (signature_request_sender, _) = broadcast::channel(1000);
+        let (block_update_sender, _) = broadcast::channel(1000);
+        let (signature_request_sender, signature_request_receiver) = mpsc::unbounded_channel();
         let (sign_response_sender, response_receiver) = mpsc::unbounded_channel();
         let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
         let core = FakeIndexerCore {
             clock: clock.clone(),
-            txn_delay,
+            txn_delay_blocks,
+            signature_request_receiver,
             contract: contract.clone(),
             txn_receiver,
             state_change_sender: state_change_sender.clone(),
+            block_update_sender: block_update_sender.clone(),
             sign_response_sender,
         };
         let core_task = AutoAbortTask::from(tokio::spawn(async move { core.run().await }));
         Self {
             core_txn_sender: txn_sender,
             core_state_change_sender: state_change_sender,
+            core_block_update_sender: block_update_sender,
             _core_task: core_task,
             response_receiver,
             signature_request_sender,
@@ -337,8 +423,8 @@ impl FakeIndexerManager {
     }
 
     /// Sends a signature request to the fake blockchain.
-    pub fn request_signature(&self, request: ChainSignatureRequest) {
-        self.signature_request_sender.send(request).ok();
+    pub fn request_signature(&self, request: SignatureRequestFromChain) {
+        self.signature_request_sender.send(request).unwrap();
     }
 
     /// Adds a new node to the fake indexer. Returns the API for the node, a task that
@@ -353,7 +439,7 @@ impl FakeIndexerManager {
         let (api_txn_sender, api_txn_receiver) = mpsc::channel(1000);
         let indexer = IndexerAPI {
             contract_state_receiver: api_state_receiver,
-            sign_request_receiver: Arc::new(tokio::sync::Mutex::new(
+            chain_update_receiver: Arc::new(tokio::sync::Mutex::new(
                 api_signature_request_receiver,
             )),
             txn_sender: api_txn_sender,
@@ -367,10 +453,10 @@ impl FakeIndexerManager {
             account_id: account_id.clone(),
             core_txn_sender: self.core_txn_sender.clone(),
             core_state_change_receiver: self.core_state_change_sender.subscribe(),
-            signature_request_receiver: self.signature_request_sender.subscribe(),
+            block_update_receiver: self.core_block_update_sender.subscribe(),
             disable: disabler.disable.clone(),
             api_state_sender,
-            api_signature_request_sender,
+            api_block_update_sender: api_signature_request_sender,
             api_txn_receiver,
         };
         self.node_disabler.insert(account_id, disabler);

@@ -4,7 +4,7 @@ use crate::p2p::testing::PortSeed;
 use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
 use near_o11y::testonly::init_integration_logger;
-use near_time::{Clock, Duration};
+use near_time::Clock;
 use serial_test::serial;
 use tokio::time::timeout;
 
@@ -15,7 +15,7 @@ async fn test_key_resharing_simple() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 5;
     const THRESHOLD: usize = 3;
-    const TXN_DELAY: Duration = Duration::seconds(1);
+    const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
         Clock::real(),
@@ -24,7 +24,7 @@ async fn test_key_resharing_simple() {
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
         THRESHOLD,
-        TXN_DELAY,
+        TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_SIMPLE_TEST,
     );
 
@@ -87,7 +87,7 @@ async fn test_key_resharing_multistage() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 6;
     const THRESHOLD: usize = 3;
-    const TXN_DELAY: Duration = Duration::seconds(1);
+    const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
         Clock::real(),
@@ -96,7 +96,7 @@ async fn test_key_resharing_multistage() {
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
         THRESHOLD,
-        TXN_DELAY,
+        TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_MULTISTAGE_TEST,
     );
 
@@ -248,17 +248,10 @@ async fn test_key_resharing_multistage() {
 #[tokio::test]
 #[serial]
 async fn test_key_resharing_signature_buffering() {
-    if true {
-        // TODO(#169): this test is flaky 1/5 of the time because the
-        // signature request during the downtime of the 5th node may
-        // be ignored if its leader is the 5th node. So disabling it
-        // for now.
-        return;
-    }
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 5;
     const THRESHOLD: usize = 3;
-    const TXN_DELAY: Duration = Duration::seconds(1);
+    const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
         Clock::real(),
@@ -267,7 +260,7 @@ async fn test_key_resharing_signature_buffering() {
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
         THRESHOLD,
-        TXN_DELAY,
+        TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_SIGNATURE_BUFFERING_TEST,
     );
 

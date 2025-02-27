@@ -1,6 +1,6 @@
 use crate::config::{ConfigFile, MpcConfig, SecretsConfig};
 use crate::db::{DBCol, SecretDB};
-use crate::indexer::handler::ChainSignatureRequest;
+use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractInitializingState, ContractResharingState, ContractRunningState, ContractState,
 };
@@ -160,7 +160,7 @@ impl Coordinator {
                                 state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer
-                                    .sign_request_receiver
+                                    .chain_update_receiver
                                     .clone()
                                     .lock_owned()
                                     .await,
@@ -224,7 +224,7 @@ impl Coordinator {
                                 // Replace it with a never-completing future so next iteration we wait for
                                 // only state change or timeout.
                                 if !buffer_signature_requests {
-                                    let mut sign_request_receiver = self.indexer.sign_request_receiver.clone().lock_owned().await;
+                                    let mut sign_request_receiver = self.indexer.chain_update_receiver.clone().lock_owned().await;
                                     job.fut = async move {
                                         while sign_request_receiver.recv().await.is_some() {
                                             // drop the signature
@@ -389,8 +389,8 @@ impl Coordinator {
         keyshare_storage: Box<dyn KeyshareStorage>,
         contract_state: ContractRunningState,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
-        sign_request_receiver: tokio::sync::OwnedMutexGuard<
-            mpsc::UnboundedReceiver<ChainSignatureRequest>,
+        block_update_receiver: tokio::sync::OwnedMutexGuard<
+            mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
     ) -> anyhow::Result<MpcJobResult> {
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
@@ -471,7 +471,7 @@ impl Coordinator {
         );
         mpc_client
             .clone()
-            .run(channel_receiver, sign_request_receiver, chain_txn_sender)
+            .run(channel_receiver, block_update_receiver, chain_txn_sender)
             .await?;
 
         Ok(MpcJobResult::Done)
