@@ -54,7 +54,7 @@ variable "node_configs" {
 }
 
 variable "env" {
-  type    = string
+  type = string
 }
 
 variable "create_network" {

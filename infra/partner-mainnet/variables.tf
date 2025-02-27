@@ -64,7 +64,7 @@ variable "node_configs" {
 }
 
 variable "env" {
-  type    = string
+  type = string
 }
 
 variable "near_boot_nodes" {

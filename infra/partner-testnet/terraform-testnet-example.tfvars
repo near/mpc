@@ -19,9 +19,3 @@ node_configs = [
     gcp_account_sk_secret_id           = "multichain-account-sk-testnet-0"
   },
 ]
-
-
-multichain-local-encryption-key-mainnet-0
-multichain-sk-share-mainnet-0
-multichain-sign-sk-mainnet-0
-multichain-account-sk-mainnet-0
