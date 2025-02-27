@@ -118,6 +118,7 @@
 mod compat;
 mod constants;
 mod crypto;
+mod echo_broadcast;
 mod keyshare;
 mod math;
 

@@ -4,7 +4,8 @@ use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 
 use crate::compat::CSCurve;
-use crate::crypto::{commit, hash, Digest};
+use crate::crypto::{commit, hash};
+use crate::echo_broadcast::do_broadcast;
 use crate::math::{GroupPolynomial, Polynomial};
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
 use crate::proofs::dlog;
@@ -23,25 +24,15 @@ async fn do_keyshare<C: CSCurve>(
     big_s: Option<C::ProjectivePoint>,
 ) -> Result<(C::Scalar, C::AffinePoint), ProtocolError> {
     let mut rng = OsRng;
-    let mut transcript = Transcript::new(LABEL);
-
-    // Spec 1.2
-    transcript.message(b"group", C::NAME);
-    transcript.message(b"participants", &encode(&participants));
-    // To allow interop between platforms where usize is different!
-    transcript.message(
-        b"threshold",
-        &u64::try_from(threshold).unwrap().to_be_bytes(),
-    );
-
+    let mut zkp_transcript = Transcript::new(LABEL);
     // Spec 1.3
     let f: Polynomial<C> = Polynomial::extend_random(&mut rng, threshold, &s_i);
 
     // Spec 1.4
-    let mut big_f = f.commit();
+    let my_big_f = f.commit();
 
     // Spec 1.5
-    let (my_commitment, my_randomizer) = commit(&mut rng, &big_f);
+    let (my_commitment, my_randomizer) = commit(&mut rng, &my_big_f);
 
     // Spec 1.6
     let wait0 = chan.next_waitpoint();
@@ -55,33 +46,38 @@ async fn do_keyshare<C: CSCurve>(
         all_commitments.put(from, commitment);
     }
 
-    // Spec 2.2
-    let my_confirmation = hash(&all_commitments);
+    // start creating the transcript
+    let mut transcript = Vec::new();
+    transcript.extend_from_slice(LABEL);
+    transcript.extend_from_slice(b"group");
+    transcript.extend_from_slice(C::NAME);
+    transcript.extend_from_slice(b"participants");
+    transcript.extend_from_slice(&encode(&participants));
+    transcript.extend_from_slice(b"threshold");
+    transcript.extend_from_slice(&u64::try_from(threshold).unwrap().to_be_bytes());
+    transcript.extend_from_slice(b"all commitments");
+    transcript.extend_from_slice(hash(&all_commitments).as_ref());
 
-    // Spec 2.3
-    transcript.message(b"confirmation", my_confirmation.as_ref());
-
-    // Spec 2.4
-    let wait1 = chan.next_waitpoint();
-    chan.send_many(wait1, &my_confirmation).await;
+    zkp_transcript.message(b"ZKPoK transcript", &transcript);
 
     // Spec 2.5
     let statement = dlog::Statement::<C> {
-        public: &big_f.evaluate_zero(),
+        public: &my_big_f.evaluate_zero(),
     };
     let witness = dlog::Witness::<C> {
         x: &f.evaluate_zero(),
     };
     let my_phi_proof = dlog::prove(
         &mut rng,
-        &mut transcript.forked(b"dlog0", &me.bytes()),
+        &mut zkp_transcript.forked(b"dlog0", &me.bytes()),
         statement,
         witness,
     );
 
     // Spec 2.6
     let wait2 = chan.next_waitpoint();
-    chan.send_many(wait2, &(&big_f, &my_randomizer, my_phi_proof))
+
+    chan.send_many(wait2, &(&my_big_f, &my_randomizer, &my_phi_proof))
         .await;
 
     // Spec 2.7
@@ -92,56 +88,34 @@ async fn do_keyshare<C: CSCurve>(
     }
     let mut x_i = f.evaluate(&me.scalar::<C>());
 
-    // Spec 3.1 + 3.2
-    let mut seen = ParticipantCounter::new(&participants);
-    seen.put(me);
-    while !seen.full() {
-        let (from, confirmation): (_, Digest) = chan.recv(wait1).await?;
-        if !seen.put(from) {
-            continue;
-        }
-        if confirmation != my_confirmation {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "confirmation from {from:?} did not match expectation"
-            )));
-        }
-    }
-
     // Spec 3.3 + 3.4, and also part of 3.6, for summing up the Fs.
-    seen.clear();
+    let mut big_f = my_big_f.clone();
+    let mut all_big_f = ParticipantMap::new(&participants);
+    let mut all_randomizer = ParticipantMap::new(&participants);
+    let mut all_proof = ParticipantMap::new(&participants);
+    let mut all_secret_evaluations = ParticipantMap::new(&participants);
+    let mut seen = ParticipantCounter::new(&participants);
+
+    all_big_f.put(me, my_big_f);
+    all_randomizer.put(me, my_randomizer);
+    all_proof.put(me, my_phi_proof);
     seen.put(me);
     while !seen.full() {
         let (from, (their_big_f, their_randomizer, their_phi_proof)): (
             _,
             (GroupPolynomial<C>, _, _),
         ) = chan.recv(wait2).await?;
+
         if !seen.put(from) {
             continue;
         }
 
-        if their_big_f.len() != threshold {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "polynomial from {from:?} has the wrong length"
-            )));
-        }
-        if !all_commitments[from].check(&their_big_f, &their_randomizer) {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "commitment from {from:?} did not match revealed F"
-            )));
-        }
-        let statement = dlog::Statement::<C> {
-            public: &their_big_f.evaluate_zero(),
-        };
-        if !dlog::verify(
-            &mut transcript.forked(b"dlog0", &from.bytes()),
-            statement,
-            &their_phi_proof,
-        ) {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "dlog proof from {from:?} failed to verify"
-            )));
-        }
         big_f += &their_big_f;
+
+        // collect their_big_f, their_randomizer, their_phi_proof
+        all_big_f.put(from, their_big_f);
+        all_randomizer.put(from, their_randomizer);
+        all_proof.put(from, their_phi_proof);
     }
 
     // Spec 3.5 + 3.6
@@ -152,29 +126,120 @@ async fn do_keyshare<C: CSCurve>(
         if !seen.put(from) {
             continue;
         }
-        x_i += C::Scalar::from(x_j_i);
+        let x_j_i = C::Scalar::from(x_j_i);
+        all_secret_evaluations.put(from, x_j_i);
+        x_i += x_j_i;
+    }
+
+    // Round 3: make necessary checks and broadcast success or failure
+    // compute transcript hash
+    // transcript contains:
+    //      groupname
+    //      participants
+    //      threshold
+    //      commitments
+    //      big_f values
+    //      randomizers
+    //      zk proofs
+    // we do not need to include mvk := Sum big_f(0) as we include big_f themselves
+    transcript.extend_from_slice(b"commitment opening: big_f");
+    transcript.extend_from_slice(hash(&all_big_f).as_ref());
+    transcript.extend_from_slice(b"commitment opening: randomizers");
+    transcript.extend_from_slice(hash(&all_randomizer).as_ref());
+    transcript.extend_from_slice(b"zk proofs");
+    transcript.extend_from_slice(hash(&all_proof).as_ref());
+
+    let my_transcript_hash = hash(&transcript);
+
+    // broadcast hash of transcript and collect all broadcasted transcripts
+    let transcript_list = do_broadcast(&mut chan, &participants, &me, my_transcript_hash).await?;
+
+    let mut err = String::new();
+
+    for from in participants.others(me) {
+        // Spec 3.4
+        // verify that the big_f is of order threshold - 1
+        if all_big_f[from].len() != threshold {
+            err = format!("polynomial from {from:?} has the wrong length");
+            break;
+        }
+
+        // verify the validity of the received commitments
+        if !all_commitments[from].check(&all_big_f[from], &all_randomizer[from]) {
+            err = format!("commitment from {from:?} did not match revealed F");
+            break;
+        }
+
+        // verify validity of received zk proofs
+        let statement = dlog::Statement::<C> {
+            public: &all_big_f[from].evaluate_zero(),
+        };
+        if !dlog::verify(
+            &mut &mut zkp_transcript.forked(b"dlog0", &from.bytes()),
+            statement,
+            &all_proof[from],
+        ) {
+            err = format!("dlog proof from {from:?} failed to verify");
+            break;
+        }
+
+        // check the validity of the received secret evaluations
+        if all_big_f[from].evaluate(&me.scalar::<C>())
+            != C::ProjectivePoint::generator() * all_secret_evaluations[from]
+        {
+            err = format!("Party {from:?} is acting maliciously: the check of validity of the private polynomial evaluation did not pass")
+        }
+    }
+
+    // check transcript hashes
+    for their_transcript_hash in transcript_list {
+        if my_transcript_hash != their_transcript_hash {
+            err = format!("transcript hash did not match expectation");
+            break;
+        }
     }
 
     // Spec 3.7
+    // check that the sum of private evaluations times G equals the evalutation of the sum of public F = f * G
     if big_f.evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * x_i {
-        return Err(ProtocolError::AssertionFailed(
-            "received bad private share".to_string(),
-        ));
+        err = "received bad private share".to_string();
     }
 
     // Spec 3.8
+    // only applies to key resharing where big_s is the public key before resharing
     let big_x = big_f.evaluate_zero();
     match big_s {
         Some(big_s) if big_s != big_x => {
-            return Err(ProtocolError::AssertionFailed(
-                "new public key does not match old public key".to_string(),
-            ))
+            err = "new public key does not match old public key".to_string()
         }
         _ => {}
     };
 
-    // Spec 3.9
-    Ok((x_i, big_x.into()))
+    // create an array of many channel waitpoints
+    // each channel waitpoint is affiliated to a participant being the initial sender
+    match err.is_empty() {
+        // Need for consistent Broadcast to prevent adversary from sending
+        // that it failed to some honest parties but not the others implying
+        // that only some parties will drop out of the protocol but not others
+        false => {
+            // broadcast node me failed
+            do_broadcast(&mut chan, &participants, &me, false).await?;
+            return Err(ProtocolError::AssertionFailed(err));
+        }
+
+        true => {
+            // broadcast node me succeded
+            let vote_list = do_broadcast(&mut chan, &participants, &me, true).await?;
+            // go through all the list of votes and check if any is fail
+            if vote_list.contains(&false) {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "A participant seems to have failed its checks. Aborting DKG!"
+                )));
+            };
+            // Wait for all the tasks to complete
+            return Ok((x_i, big_x.into()));
+        }
+    }
 }
 
 /// Represents the output of the key generation protocol.
