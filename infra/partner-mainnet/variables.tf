@@ -17,13 +17,6 @@ variable "mig_name" {
 variable "image" {
   description = "The Docker image to deploy to GCE instances. Note: This is a public image repository used for updating your nodes, please do not change this"
   type        = string
-  default     = "us-east1-docker.pkg.dev/pagoda-discovery-platform-prod/multichain-public/multichain-mainnet:latest"
-}
-
-variable "image_port" {
-  description = "The port the image exposes for HTTP requests"
-  type        = number
-  default     = 3000
 }
 
 variable "region" {
@@ -59,11 +52,6 @@ variable "service_account" {
   }
 }
 
-variable "env_variables" {
-  type    = map(any)
-  default = null
-}
-
 variable "node_configs" {
   type = list(object({
     account                            = string
@@ -77,60 +65,10 @@ variable "node_configs" {
 
 variable "env" {
   type    = string
-  default = "mainnet"
 }
 
 variable "near_boot_nodes" {
   type = string
-}
-
-variable "static_env" {
-  type = list(object({
-    name  = string
-    value = string
-  }))
-  default = [
-    {
-      name  = "MPC_NEAR_RPC"
-      value = "https://rpc.mainnet.near.org"
-    },
-    {
-      name  = "MPC_CONTRACT_ID"
-      value = "v1.signer"
-    },
-    {
-      name  = "MPC_INDEXER_S3_BUCKET"
-      value = "near-lake-data-mainnet"
-    },
-    {
-      name  = "MPC_INDEXER_START_BLOCK_HEIGHT"
-      value = 124647189
-    },
-    {
-      name  = "AWS_DEFAULT_REGION"
-      value = "eu-central-1"
-    },
-    {
-      name  = "MPC_GCP_PROJECT_ID"
-      value = "<your-project-id>"
-    },
-    {
-      name  = "MPC_WEB_PORT"
-      value = "3000"
-    },
-    {
-      name  = "RUST_LOG"
-      value = "mpc_node=info"
-    },
-    {
-      name  = "MPC_INDEXER_S3_REGION"
-      value = "eu-central-1"
-    },
-    {
-      name  = "MPC_CLIENT_HEADER_REFERER"
-      value = "https://multichain-partner-mainnet-pagoda.api.pagoda.co"
-    }
-  ]
 }
 
 variable "create_network" {
@@ -140,5 +78,4 @@ variable "create_network" {
 
 variable "domain" {
   description = "DNS name for your node"
-  default     = ""
 }

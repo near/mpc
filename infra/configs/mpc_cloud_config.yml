@@ -2,7 +2,7 @@
 
 # Execute on every boot: mound file systems and start container
 runcmd:
-  - mount -o discard,defaults /dev/sdb /home/mpc/
+  - mount -o discard,defaults /dev/sdb ${data_dir}
   - systemctl daemon-reload
   - systemctl start mpc-node.service
   - iptables -A INPUT -p tcp -j ACCEPT
