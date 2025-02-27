@@ -2,7 +2,7 @@ use crate::p2p::testing::PortSeed;
 use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
 use near_o11y::testonly::init_integration_logger;
-use near_time::{Clock, Duration};
+use near_time::Clock;
 use serial_test::serial;
 
 // Make a cluster of four nodes, test that we can generate keyshares
@@ -13,7 +13,7 @@ async fn test_basic_cluster() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
-    const TXN_DELAY: Duration = Duration::seconds(1);
+    const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
         Clock::real(),
@@ -22,7 +22,7 @@ async fn test_basic_cluster() {
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
         THRESHOLD,
-        TXN_DELAY,
+        TXN_DELAY_BLOCKS,
         PortSeed::BASIC_CLUSTER_TEST,
     );
     setup
