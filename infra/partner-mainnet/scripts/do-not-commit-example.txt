@@ -1,4 +1,0 @@
-mpc-local-encryption-key-mainnet-0=REPLACE_WITH_KEY
-mpc-sk-share-mainnet-0=REPLACE_WITH_KEY
-mpc-sign-sk-mainnet-0=REPLACE_WITH_KEY
-mpc-account-sk-mainnet-0=REPLACE_WITH_KEY

@@ -1,0 +1,4 @@
+multichain-local-encryption-key-mainnet-0=REPLACE_WITH_KEY
+multichain-sk-share-mainnet-0=REPLACE_WITH_KEY
+multichain-sign-sk-mainnet-0=REPLACE_WITH_KEY
+multichain-account-sk-mainnet-0=REPLACE_WITH_KEY
