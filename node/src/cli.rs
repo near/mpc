@@ -143,7 +143,13 @@ impl StartCmd {
         gcp_project_id: Option<String>,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
-        let web_server = start_web_server(root_task_handle, config.web_ui.clone()).await?;
+        let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+        let web_server = start_web_server(
+            root_task_handle,
+            signature_debug_request_sender.clone(),
+            config.web_ui.clone(),
+        )
+        .await?;
         let _web_server = tracking::spawn_checked("web server", web_server);
 
         let secret_db = SecretDB::new(&home_dir, secrets.local_storage_aes_key)?;
@@ -171,6 +177,7 @@ impl StartCmd {
             keyshare_storage_factory,
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
+            signature_debug_request_sender,
         };
         coordinator.run().await
     }

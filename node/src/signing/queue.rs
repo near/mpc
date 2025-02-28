@@ -1,5 +1,6 @@
-use super::progress::SignatureComputationProgress;
+use super::debug::CompletedSignatureRequest;
 use super::recent_blocks_tracker::{BlockViewLite, CheckBlockResult, RecentBlocksTracker};
+use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::sign_request::{SignatureId, SignatureRequest};
 use k256::sha2::Sha256;
@@ -7,50 +8,167 @@ use near_indexer_primitives::types::NumBlocks;
 use near_indexer_primitives::CryptoHash;
 use near_time::Duration;
 use sha3::Digest;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex, Weak};
 
+/// The minimum time that must elapse before we'll consider each signature for another attempt.
 pub const CHECK_EACH_SIGNATURE_REQUEST_INTERVAL: Duration = Duration::seconds(1);
+/// A participant is considered stale if its indexer's highest height is this many blocks behind
+/// the highest height of all participants.
 const STALE_PARTICIPANT_THRESHOLD: NumBlocks = 10;
+/// The number of blocks after which a signature request is assumed to have timed out.
+/// This is equal to the yield-resume timeout on the blockchain.
 const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
+/// The maximum time we'll wait, after a transaction is submitted to the chain, before we decide
+/// that the transaction is lost and that we should retry.
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
+/// Maximum attempts we should make for each signature when we are the leader.
 const MAX_ATTEMPTS_PER_SIGNATURE_AS_LEADER: u64 = 10;
 
+/// Manages the queue of signature requests that still need to be handled.
+/// The inputs to this queue are:
+///  - Every block that comes from the indexer. For each block, we need the list of signature
+///    requests as well as the list of completed signature requests (i.e. responses).
+///  - The set of alive participants (nodes that we're currently connected to).
+///  - The height of the indexer of each participant.
+///
+/// What this queue then provides, via `get_signatures_to_attempt`, is a list of signature requests
+/// that we should attempt to generate a signature for. The list will be generated based on the
+/// following goals:
+///  - Assuming the network state is stable and nodes have consistent views of the connectivity and
+///    indexer heights, each signature request will be attempted by exactly one node ("leader").
+///  - Each signature request will be retried (by the current leader) if it has not been
+///    successfully responded to on chain.
+///  - If network state fluctuates (nodes going down or back up, or indexers falling behind),
+///    the queue will adapt to the new state and attempt to find new leaders for the requests.
+///  - If a signature request is too old so that it would have timed out on chain, it will be
+///    discarded.
 pub struct PendingSignatureRequests {
-    clock: near_time::Clock,
+    pub(super) clock: near_time::Clock,
 
-    all_participants: Vec<ParticipantId>,
-    my_participant_id: ParticipantId,
-    requests: HashMap<SignatureId, QueuedSignatureRequest>,
+    /// All participants in the network, regardless of whether they are online.
+    pub(super) all_participants: Vec<ParticipantId>,
+    pub(super) my_participant_id: ParticipantId,
+
+    /// Map from signature request ID to the request. Successful and expired requests are removed
+    /// from this map. This is the "queue".
+    pub(super) requests: HashMap<SignatureId, QueuedSignatureRequest>,
+
+    /// See `RecentBlocksTracker`; allows us to decide what to do with each signature request in
+    /// the queue, as well as provide us a stream of finalized blocks from which we determine
+    /// which signature requests has been responded to.
     recent_blocks: RecentBlocksTracker<BufferedBlockData>,
-    network_api: Arc<dyn NetworkAPIForSigning>,
+
+    /// Provides information about connectivity and indexer heights.
+    pub(super) network_api: Arc<dyn NetworkAPIForSigning>,
+
+    /// Recently completed signature requests, for debugging purposes only.
+    pub(super) recently_completed_requests: BinaryHeap<CompletedSignatureRequest>,
 }
 
 /// Block data to be buffered until the block is final.
 #[derive(Clone)]
 struct BufferedBlockData {
+    signature_requests: Vec<SignatureId>,
     completed_requests: Vec<SignatureId>,
 }
 
+fn ellipsified_shortened_hash_list(hashes: &[CryptoHash]) -> String {
+    let mut result = String::new();
+    for (i, hash) in hashes.iter().take(3).enumerate() {
+        let hash = format!("{:?}", hash);
+        result.push_str(&hash[..6]);
+        if i < hashes.len() - 1 {
+            result.push_str(", ");
+        }
+    }
+    if hashes.len() > 3 {
+        result.push_str("...");
+    }
+    result
+}
+
+impl Debug for BufferedBlockData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if !self.signature_requests.is_empty() {
+            write!(
+                f,
+                "{} sign reqs: {}",
+                self.signature_requests.len(),
+                ellipsified_shortened_hash_list(&self.signature_requests)
+            )?;
+        }
+        if !self.completed_requests.is_empty() {
+            write!(
+                f,
+                "{} signs completed: {}",
+                self.completed_requests.len(),
+                ellipsified_shortened_hash_list(&self.completed_requests)
+            )?;
+        }
+        Ok(())
+    }
+}
+
+/// Thin API that need from the network.
 pub trait NetworkAPIForSigning: Send + Sync + 'static {
+    /// Returns the participants that are currently connected to us.
     fn alive_participants(&self) -> HashSet<ParticipantId>;
+    /// Returns the height of each indexer, including us. This must return all
+    /// participants, even those who are never connected.
     fn indexer_heights(&self) -> HashMap<ParticipantId, u64>;
 }
 
-struct QueuedSignatureRequest {
-    request: SignatureRequest,
+/// The state of a single signature request in the queue.
+pub(super) struct QueuedSignatureRequest {
+    pub request: SignatureRequest,
+
+    /// The block hash the request was received in.
     block_hash: CryptoHash,
-    block_height: u64,
-    leader_selection_order: Vec<ParticipantId>,
+    pub block_height: u64,
+
+    /// A pre-computed order of participants that we consider for leader selection.
+    /// The leader for the request would be the first in this list that is eligible
+    /// (online and indexer not stale).
+    pub leader_selection_order: Vec<ParticipantId>,
+
+    /// A throttling mechanism to prevent doing too much computation on each request.
+    /// This allows `get_signatures_to_attempt` to be called as frequently as desired.
     next_check_due: near_time::Instant,
-    computation_progress: Arc<Mutex<SignatureComputationProgress>>,
-    active_attempt: Weak<SignatureGenerationAttempt>,
+
+    /// Progress of the computation of the signature. Serves multiple purposes:
+    ///  - As a way to allow multiple attempts to keep some persistent state to prevent unnecessary
+    ///    recomputations;
+    ///  - To determine when to retry after the response is submitted to chain;
+    ///  - For debugging and monitoring.
+    pub computation_progress: Arc<Mutex<SignatureComputationProgress>>,
+
+    /// The current attempt to generate the signature. This is weak to detect if the attempt has
+    /// completed.
+    pub active_attempt: Weak<SignatureGenerationAttempt>,
 }
 
+/// Struct given to the signature generation code.
 pub struct SignatureGenerationAttempt {
+    /// The signature request we should attempt to generate for.
     pub request: SignatureRequest,
-    pub block_hash: CryptoHash,
+    /// The progress of the computation. Writable and survives multiple attempts.
     pub computation_progress: Arc<Mutex<SignatureComputationProgress>>,
+}
+
+/// Progress that persists across attempts.
+#[derive(Default)]
+pub struct SignatureComputationProgress {
+    /// Number of attempts that have been made to generate the signature.
+    /// This is used to abort after too many attempts.
+    pub attempts: u64,
+    /// The computed response, if any. This is used to prevent unnecessary recomputation,
+    /// if all that's needed is to submit the response to chain.
+    pub computed_response: Option<ChainRespondArgs>,
+    /// The time and when the last response was submitted to chain.
+    /// This is used to delay the next retry as well as debugging.
+    pub last_response_submission: Option<near_time::Instant>,
 }
 
 impl QueuedSignatureRequest {
@@ -62,6 +180,7 @@ impl QueuedSignatureRequest {
         all_participants: &[ParticipantId],
     ) -> Self {
         let leader_selection_order = Self::leader_selection_order(all_participants, request.id);
+        tracing::debug!(target: "signing", "Leader selection order for request {:?} from block {}: {:?}", request.id, block_height, leader_selection_order);
 
         Self {
             request,
@@ -74,6 +193,8 @@ impl QueuedSignatureRequest {
         }
     }
 
+    /// Computes the leader selection order for a given signature request.
+    /// This will be a different pseudorandom order for each signature request.
     fn leader_selection_order(
         participants: &[ParticipantId],
         signature_request_id: CryptoHash,
@@ -100,6 +221,7 @@ impl QueuedSignatureRequest {
         u64::from_le_bytes(hash[0..8].try_into().unwrap())
     }
 
+    /// Selects the leader given the current state of the network.
     fn current_leader(&self, eligible_leaders: &HashSet<ParticipantId>) -> Option<ParticipantId> {
         for candidate_leader in &self.leader_selection_order {
             if eligible_leaders.contains(candidate_leader) {
@@ -124,19 +246,26 @@ impl PendingSignatureRequests {
             requests: HashMap::new(),
             recent_blocks: RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS),
             network_api,
+            recently_completed_requests: BinaryHeap::new(),
         }
     }
 
+    /// This must be called for every block that comes from the indexer.
+    /// The requests are the signature requests successfully submitted in the block, and the
+    /// completed_requests are the signatures whose responses are included in the block.
     pub fn notify_new_block(
         &mut self,
-        request: Vec<SignatureRequest>,
+        requests: Vec<SignatureRequest>,
         completed_requests: Vec<SignatureId>,
         block: &BlockViewLite,
     ) {
-        let add_result = match self
-            .recent_blocks
-            .add_block(block, BufferedBlockData { completed_requests })
-        {
+        let add_result = match self.recent_blocks.add_block(
+            block,
+            BufferedBlockData {
+                signature_requests: requests.iter().map(|r| r.id).collect(),
+                completed_requests,
+            },
+        ) {
             Ok(add_result) => add_result,
             Err(err) => {
                 // block already exists.
@@ -150,7 +279,7 @@ impl PendingSignatureRequests {
                 self.requests.remove(request_id);
             }
         }
-        for request in request {
+        for request in requests {
             self.requests
                 .entry(request.id)
                 .or_insert(QueuedSignatureRequest::new(
@@ -163,9 +292,9 @@ impl PendingSignatureRequests {
         }
     }
 
-    pub fn get_signatures_to_attempt(&mut self) -> Vec<Arc<SignatureGenerationAttempt>> {
-        let now = self.clock.now();
-
+    /// Returns the set of participants that are eligible to be leaders for the signature requests,
+    /// as well as the maximum height available.
+    pub(super) fn eligible_leaders_and_maximum_height(&self) -> (HashSet<ParticipantId>, u64) {
         // Collect the indexer heights and alive participants. Calculate maximum available height
         // from the alive nodes. Then, filter out the participants that are not alive or are too
         // stale.
@@ -176,8 +305,6 @@ impl PendingSignatureRequests {
             .map(|p| indexer_heights.get(p).copied().unwrap_or(0))
             .max()
             .unwrap_or(0);
-        self.recent_blocks
-            .notify_maximum_height_availble(maximum_height);
         let eligible_leaders = self
             .all_participants
             .iter()
@@ -188,6 +315,24 @@ impl PendingSignatureRequests {
             })
             .copied()
             .collect::<HashSet<_>>();
+        (eligible_leaders, maximum_height)
+    }
+
+    /// Returns the list of signature requests that we should attempt to generate a signature for,
+    /// right now, as the leader.
+    ///
+    /// The returned objects should only be dropped if:
+    ///  - The signature generation has failed. A retry can be issued immediately after that,
+    ///    subject to a throttle of once per CHECK_EACH_SIGNATURE_REQUEST_INTERVAL.
+    ///  - The signature generation is successful, and the time that the response is submitted to
+    ///    the chain has been written to the `SignatureComputationProgress`.
+    pub fn get_signatures_to_attempt(&mut self) -> Vec<Arc<SignatureGenerationAttempt>> {
+        let now = self.clock.now();
+
+        let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
+        tracing::debug!(target: "signing", "Eligible leaders: {:?}", eligible_leaders);
+        self.recent_blocks
+            .notify_maximum_height_available(maximum_height);
 
         let mut result = Vec::new();
 
@@ -205,7 +350,7 @@ impl PendingSignatureRequests {
             }
             match self
                 .recent_blocks
-                .check_block(request.block_hash, request.block_height)
+                .classify_block(request.block_hash, request.block_height)
             {
                 CheckBlockResult::RecentAndFinal
                 | CheckBlockResult::OptimisticAndCanonical
@@ -230,7 +375,6 @@ impl PendingSignatureRequests {
                             }
                             let attempt = Arc::new(SignatureGenerationAttempt {
                                 request: request.request.clone(),
-                                block_hash: request.block_hash,
                                 computation_progress: request.computation_progress.clone(),
                             });
                             request.active_attempt = Arc::downgrade(&attempt);
@@ -255,6 +399,10 @@ impl PendingSignatureRequests {
         }
         result
     }
+
+    pub fn debug_print_recent_blocks(&self) -> String {
+        format!("{:?}", self.recent_blocks)
+    }
 }
 
 #[cfg(test)]
@@ -263,7 +411,8 @@ mod tests {
     use crate::primitives::ParticipantId;
     use crate::sign_request::SignatureRequest;
     use crate::signing::queue::{
-        CHECK_EACH_SIGNATURE_REQUEST_INTERVAL, MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE,
+        CHECK_EACH_SIGNATURE_REQUEST_INTERVAL, MAX_ATTEMPTS_PER_SIGNATURE_AS_LEADER,
+        MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE,
     };
     use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
     use crate::tests::TestGenerators;
@@ -274,6 +423,8 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
 
+    /// Generates a signature request for testing, brute-forcing the signature ID until the leader
+    /// selection order starts with the given.
     fn test_sign_request(
         participants: &[ParticipantId],
         desired_leader_order: &[usize],
@@ -284,8 +435,9 @@ mod tests {
             .collect::<Vec<_>>();
         loop {
             let request = SignatureRequest {
-                id: CryptoHash(rand::random::<[u8; 32]>()),
+                id: CryptoHash(rand::random()),
                 // All other fields are irrelevant for the test.
+                receipt_id: CryptoHash([0; 32]),
                 entropy: [0; 32],
                 msg_hash: Scalar::ZERO,
                 timestamp_nanosec: 0,
@@ -309,7 +461,7 @@ mod tests {
 
     struct TestNetworkAPI {
         alive: Mutex<HashSet<ParticipantId>>,
-        heights: Mutex<HashSet<(ParticipantId, u64)>>,
+        heights: Mutex<HashMap<ParticipantId, u64>>,
     }
 
     impl NetworkAPIForSigning for TestNetworkAPI {
@@ -318,7 +470,7 @@ mod tests {
         }
 
         fn indexer_heights(&self) -> HashMap<ParticipantId, u64> {
-            self.heights.lock().unwrap().iter().cloned().collect()
+            self.heights.lock().unwrap().clone()
         }
     }
 
@@ -339,7 +491,7 @@ mod tests {
         }
 
         fn set_height(&self, participant: ParticipantId, height: u64) {
-            self.heights.lock().unwrap().insert((participant, height));
+            self.heights.lock().unwrap().insert(participant, height);
         }
     }
 
@@ -373,6 +525,7 @@ mod tests {
             &b1.to_block_view(),
         );
 
+        // req1 is not attempted because we're not the leader. req2 is attempted.
         let to_attempt1 = pending_requests.get_signatures_to_attempt();
         assert_eq!(to_attempt1.len(), 1);
         assert_eq!(to_attempt1[0].request.id, req2.id);
@@ -390,6 +543,8 @@ mod tests {
             &b2.to_block_view(),
         );
 
+        // More signature requests came in while we're attempting the first. req3 should be
+        // attempted, because we're the leader as well. req4 is not attempted as we're not leader.
         let to_attempt2 = pending_requests.get_signatures_to_attempt();
         assert_eq!(to_attempt2.len(), 1);
         assert_eq!(to_attempt2[0].request.id, req3.id);
@@ -435,6 +590,43 @@ mod tests {
         pending_requests.notify_new_block(vec![], vec![], &b4.to_block_view());
         pending_requests.notify_new_block(vec![], vec![], &b5.to_block_view());
         clock.advance(CHECK_EACH_SIGNATURE_REQUEST_INTERVAL);
+        assert_eq!(pending_requests.get_signatures_to_attempt().len(), 0);
+    }
+
+    #[test]
+    fn test_pending_signature_requests_abort_after_maximum_attempts() {
+        init_logging();
+        let clock = FakeClock::default();
+        let participants = TestGenerators::new_contiguous_participant_ids(4, 3).participant_ids();
+        let my_participant_id = participants[1];
+        let network_api = Arc::new(TestNetworkAPI::new(&participants));
+
+        let mut pending_requests = PendingSignatureRequests::new(
+            clock.clock(),
+            participants.clone(),
+            my_participant_id,
+            network_api.clone(),
+        );
+
+        for participant in &participants {
+            network_api.set_height(*participant, 100);
+        }
+
+        let t = TestBlockMaker::new();
+        let req1 = test_sign_request(&participants, &[1]);
+        let b1 = t.block(100);
+        pending_requests.notify_new_block(vec![req1.clone()], vec![], &b1.to_block_view());
+        for i in 0..MAX_ATTEMPTS_PER_SIGNATURE_AS_LEADER {
+            let to_attempt = pending_requests.get_signatures_to_attempt();
+            assert_eq!(to_attempt.len(), 1);
+            assert_eq!(to_attempt[0].request.id, req1.id);
+            assert_eq!(
+                to_attempt[0].computation_progress.lock().unwrap().attempts,
+                i + 1
+            );
+            drop(to_attempt);
+            clock.advance(CHECK_EACH_SIGNATURE_REQUEST_INTERVAL);
+        }
         assert_eq!(pending_requests.get_signatures_to_attempt().len(), 0);
     }
 
@@ -511,10 +703,10 @@ mod tests {
 
         let to_attempt4 = pending_requests.get_signatures_to_attempt();
         assert_eq!(to_attempt4.len(), 2);
-        assert_eq!(
-            to_attempt4.iter().map(|a| a.request.id).collect::<Vec<_>>(),
+        assert!(set_equals(
+            &to_attempt4.iter().map(|a| a.request.id).collect::<Vec<_>>(),
             &[req3.id, req5.id]
-        );
+        ));
     }
 
     #[test]

@@ -9,6 +9,7 @@ use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
+use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -36,7 +37,8 @@ pub struct SignArgs {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SignatureRequestFromChain {
-    pub request_id: SignatureId,
+    pub signature_id: SignatureId,
+    pub receipt_id: CryptoHash,
     pub request: SignArgs,
     pub predecessor_id: AccountId,
     pub entropy: [u8; 32],
@@ -94,7 +96,8 @@ async fn handle_message(
                 maybe_get_sign_args(&receipt, &execution_outcome, mpc_contract_id)
             {
                 signature_requests.push(SignatureRequestFromChain {
-                    request_id: signature_id,
+                    signature_id,
+                    receipt_id: receipt.receipt_id,
                     request: sign_args,
                     predecessor_id: receipt.predecessor_id.clone(),
                     entropy: streamer_message.block.header.random_value.into(),
