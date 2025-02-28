@@ -97,10 +97,12 @@ else
   echo "Using provided ACCOUNT_SK from environment"
 fi
 
+# Export environment variables if they exist and are not empty
+[ -n "${GCP_PROJECT_ID}" ] && export GCP_PROJECT_ID="${GCP_PROJECT_ID}"
+[ -n "${GCP_KEYSHARE_SECRET_ID}" ] && export GCP_KEYSHARE_SECRET_ID="${GCP_KEYSHARE_SECRET_ID}"
+[ -n "${LOCAL_ENCRYPTION_KEY}" ] && export MPC_SECRET_STORE_KEY="${LOCAL_ENCRYPTION_KEY}"
+[ -n "${P2P_PRIVATE_KEY}" ] && export MPC_P2P_PRIVATE_KEY="${P2P_PRIVATE_KEY}"
+[ -n "${ACCOUNT_SK}" ] && export MPC_ACCOUNT_SK="${ACCOUNT_SK}"
+
 echo "Starting mpc node..."
-GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
-GCP_KEYSHARE_SECRET_ID="${GCP_KEYSHARE_SECRET_ID}" \
-MPC_SECRET_STORE_KEY=${LOCAL_ENCRYPTION_KEY} \
-MPC_P2P_PRIVATE_KEY=${P2P_PRIVATE_KEY} \
-MPC_ACCOUNT_SK=${ACCOUNT_SK} \
 /app/mpc-node start
