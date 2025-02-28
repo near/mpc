@@ -1,0 +1,424 @@
+//! Wrapper for Frost `repair` algorithm: 
+//! Any subset of `>= threshold` participants can generate a secret share for another participant.
+//! It's useful when: 
+//!     (a) participant lost their share
+//!     (b) a new participant is introduced to the set (which after all the same as (a))
+//!
+//! Participants who help generate a share we call `helpers`.
+//! Participant whose share is being repaired we call `target_participant`.
+//!
+//! As a result `target_participant` receives an instance of `KeygenOutput`.
+//! As a result `helpers` receive updated `PublicKeyPackage`. Group's public key stays the same,
+//!  but we have to update internally stored `verifying_shares` mapping which is updated with the new entry.  
+//!
+//! You have to update `PublicKeyPackage` on other participants too, who weren't participating in repairing.
+
+use crate::frost::refresh::wait_for_packages;
+use crate::frost::{to_frost_identifier, KeygenOutput};
+use cait_sith::participants::{ParticipantCounter, ParticipantList};
+use cait_sith::protocol::{make_protocol, Context, Participant, Protocol, ProtocolError, SharedChannel};
+use frost_core::serialization::SerializableScalar;
+use frost_core::Field;
+use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare, VerifyingShare};
+use frost_ed25519::{Group, Identifier};
+use rand::{CryptoRng, RngCore};
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Public function for the target role in the repair protocol.
+/// The target (i.e. the participant whose share is lost) collects
+/// sigma values from helpers to reconstruct its share.
+pub(crate) fn repair_internal_target<RNG: CryptoRng + RngCore + 'static + Send>(
+    helpers: Vec<Participant>,
+    me: Participant,
+    public_key_package: PublicKeyPackage,
+    threshold: usize,
+) -> anyhow::Result<impl Protocol<Output=KeygenOutput>> {
+    if helpers.is_empty() {
+        anyhow::bail!("Helpers list cannot be empty");
+    }
+    let Some(helpers) = ParticipantList::new(&helpers) else {
+        anyhow::bail!("Helpers list contains duplicates")
+    };
+
+    let ctx = Context::new();
+    let fut = do_repair_target(
+        ctx.shared_channel(),
+        me,
+        helpers,
+        public_key_package,
+        threshold
+    );
+    Ok(make_protocol(ctx, fut))
+}
+
+/// Public function for the helper role in the repair protocol.
+/// Helpers compute and exchange delta values
+/// (to derive a sigma), and then send their sigma privately to the target.
+pub(crate) fn repair_internal_helper<RNG: CryptoRng + RngCore + 'static + Send>(
+    rng: RNG,
+    helpers: ParticipantList,
+    me: Participant,
+    target_participant: Participant,
+    keygen_output: KeygenOutput,
+) -> anyhow::Result<impl Protocol<Output=PublicKeyPackage>> {
+    let ctx = Context::new();
+    let fut = do_repair_helper(
+        ctx.shared_channel(),
+        rng,
+        helpers,
+        me,
+        target_participant,
+        keygen_output,
+    );
+    Ok(make_protocol(ctx, fut))
+}
+
+
+/// We have to verify, that repaired secret share lies on the secret polynomial.
+/// In the frost library `VerifiableSecretSharingCommitment` is used. Which is coefficients of `Big_f = f(x) * G`.
+/// We don't have that object, since it is not returned from DKG (it can be fixed though).
+/// Instead, we take each participant's verifying share (s_i * G), and interpolate those values.
+/// Point of evaluation – participant's identifier, whose share is being repaired.
+/// Then we validate that actual and expected values match.
+fn verify_share_consistency(
+    identifier: Identifier,
+    verifying_share: VerifyingShare,
+    other_verifying_shares: &BTreeMap<Identifier, VerifyingShare>,
+) -> anyhow::Result<()> {
+    let mut expected = frost_ed25519::Ed25519Group::identity();
+
+    let x_set = other_verifying_shares.keys().cloned().collect::<BTreeSet<_>>();
+    for (&other_identifier, other_verifying_share) in other_verifying_shares {
+        let phi_i = frost_core::compute_lagrange_coefficient(
+            &x_set,
+            Some(identifier),
+            other_identifier,
+        )?;
+        expected += phi_i * other_verifying_share.to_element()
+    }
+
+    if verifying_share.to_element() != expected {
+        anyhow::bail!("Verifying share does not match expected value");
+    }
+
+    Ok(())
+}
+
+async fn do_repair_target(
+    mut chan: SharedChannel,
+    me: Participant,
+    helpers: ParticipantList,
+    public_key_package: PublicKeyPackage,
+    threshold: usize,
+) -> Result<KeygenOutput, ProtocolError> {
+    let frost_identifier_me = to_frost_identifier(me);
+
+    let _ = chan.next_waitpoint();
+    let wait_point = chan.next_waitpoint();
+
+    let mut seen = ParticipantCounter::new(&helpers);
+    let sigmas: BTreeMap<Identifier, SerializableScalar<frost_ed25519::Ed25519Sha512>> =
+        wait_for_packages(&mut chan, &mut seen, wait_point).await?;
+
+    let mut share = frost_ed25519::Ed25519ScalarField::zero();
+    for &s in sigmas.values() {
+        share = share + s.0;
+    }
+    let signing_share = SigningShare::new(share);
+
+    let verifying_share = VerifyingShare::from(signing_share);
+
+    verify_share_consistency(
+        frost_identifier_me,
+        verifying_share,
+        public_key_package.verifying_shares(),
+    ).map_err(|e| ProtocolError::AssertionFailed(format!("verify_share_consistency: {:?}", e)))?;
+
+    let public_key_package = update_verifying_shares(
+        public_key_package,
+        frost_identifier_me,
+        verifying_share,
+    );
+
+    let verifying_key = *public_key_package.verifying_key();
+    let key_package = KeyPackage::new(
+        frost_identifier_me,
+        signing_share,
+        verifying_share,
+        verifying_key,
+        threshold as u16,
+    );
+
+    chan.send_many(wait_point, &verifying_share).await;
+
+    Ok(KeygenOutput {
+        key_package,
+        public_key_package,
+    })
+}
+
+fn update_verifying_shares(public_key_package: PublicKeyPackage,
+                           identifier: Identifier,
+                           verifying_share: VerifyingShare) -> PublicKeyPackage {
+    let mut verifying_shares = public_key_package.verifying_shares().clone();
+    verifying_shares.insert(identifier, verifying_share);
+    PublicKeyPackage::new(
+        verifying_shares,
+        *public_key_package.verifying_key(),
+    )
+}
+
+async fn do_repair_helper<RNG: CryptoRng + RngCore + 'static + Send>(
+    mut chan: SharedChannel,
+    mut rng: RNG,
+    helpers: ParticipantList,
+    me: Participant,
+    target_participant: Participant,
+    keygen_output: KeygenOutput,
+) -> Result<PublicKeyPackage, ProtocolError> {
+
+    // Round 1.
+
+    let round1_packages = handle_round1(
+        &mut chan,
+        &helpers,
+        me,
+        target_participant,
+        &keygen_output,
+        &mut rng,
+    ).await.map_err(|e| ProtocolError::AssertionFailed(format!("repair:round1: {:?}", e)))?;
+
+
+    // Round 2.
+
+    let target_verifying_share = handle_round2(
+        &mut chan,
+        &round1_packages,
+        target_participant,
+    ).await.map_err(|e| ProtocolError::AssertionFailed(format!("repair:round2: {:?}", e)))?;
+
+    //
+
+    let frost_identifier_me = to_frost_identifier(me);
+
+    verify_share_consistency(
+        to_frost_identifier(target_participant),
+        target_verifying_share,
+        keygen_output.public_key_package.verifying_shares(),
+    ).map_err(|e| ProtocolError::AssertionFailed(format!("verify_share_consistency: {:?}", e)))?;
+
+    let public_key_package = update_verifying_shares(
+        keygen_output.public_key_package,
+        frost_identifier_me,
+        target_verifying_share,
+    );
+
+    Ok(public_key_package)
+}
+
+async fn handle_round1<RNG: CryptoRng + RngCore + 'static + Send>(
+    chan: &mut SharedChannel,
+    helpers: &ParticipantList,
+    me: Participant,
+    target_participant: Participant,
+    keygen_output: &KeygenOutput,
+    rng: &mut RNG,
+) -> anyhow::Result<BTreeMap<Identifier, SerializableScalar<frost_ed25519::Ed25519Sha512>>> {
+    let from_frost_identifiers = Vec::from(helpers.clone())
+        .iter()
+        .map(|&p| (to_frost_identifier(p), p))
+        .collect::<BTreeMap<_, _>>();
+
+    let frost_identifier_me = to_frost_identifier(me);
+
+    let packages = frost_core::keys::repairable::repair_share_step_1(
+        from_frost_identifiers.keys().copied().collect::<Vec<_>>().as_slice(),
+        frost_identifier_me,
+        keygen_output.key_package.signing_share(),
+        rng,
+        to_frost_identifier(target_participant),
+    )?;
+
+    let round1_wait_point = chan.next_waitpoint();
+
+    for (identifier, package) in packages.iter() {
+        chan.send_private(
+            round1_wait_point,
+            from_frost_identifiers[&identifier],
+            &SerializableScalar::<frost_ed25519::Ed25519Sha512>(*package),
+        )
+            .await;
+    }
+
+    let mut seen = ParticipantCounter::new(helpers);
+    seen.put(me);
+    let mut round1_packages: BTreeMap<_, _> =
+        wait_for_packages(chan, &mut seen, round1_wait_point).await?;
+    round1_packages.insert(
+        frost_identifier_me,
+        SerializableScalar::<frost_ed25519::Ed25519Sha512>(packages[&frost_identifier_me]),
+    );
+    assert_eq!(round1_packages.len(), helpers.len());
+
+    Ok(round1_packages)
+}
+
+async fn handle_round2(
+    chan: &mut SharedChannel,
+    round1_packages: &BTreeMap<Identifier, SerializableScalar<frost_ed25519::Ed25519Sha512>>,
+    target_participant: Participant,
+) -> anyhow::Result<VerifyingShare> {
+    let deltas =
+        round1_packages.values().copied().map(|s| s.0).collect::<Vec<_>>();
+    let sigma = frost_core::keys::repairable::repair_share_step_2::<frost_ed25519::Ed25519Sha512>(
+        deltas.as_slice()
+    );
+
+    let round2_wait_point = chan.next_waitpoint();
+
+    chan.send_private(
+        round2_wait_point,
+        target_participant,
+        &SerializableScalar::<frost_ed25519::Ed25519Sha512>(sigma)
+    ).await;
+
+    let (from, verifying_share): (_, VerifyingShare) = chan.recv(round2_wait_point).await?;
+
+    if from != target_participant {
+        anyhow::bail!("Received a message from an unexpected participant");
+    }
+
+    Ok(verifying_share)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::frost::repair::{do_repair_helper, do_repair_target};
+    use crate::frost::tests::{build_key_packages_with_dealer, reconstruct_signing_key};
+    use crate::frost::KeygenOutput;
+    use aes_gcm::aead::OsRng;
+    use cait_sith::participants::ParticipantList;
+    use cait_sith::protocol::{make_protocol, Context, Participant, Protocol};
+    use frost_ed25519::keys::PublicKeyPackage;
+    use itertools::Itertools;
+    use rand::RngCore;
+    use std::collections::BTreeMap;
+    use std::iter;
+
+
+    #[derive(Clone)]
+    pub(crate) enum RepairOutput {
+        Target(KeygenOutput),
+        Helper(PublicKeyPackage),
+    }
+
+    pub(crate) fn build_and_run_repair_protocols(
+        helpers: &[(Participant, KeygenOutput)],
+        target_participant: Participant,
+        threshold: usize,
+    ) -> anyhow::Result<Vec<(Participant, RepairOutput)>> {
+        use cait_sith::protocol::run_protocol;
+        use futures::FutureExt;
+
+        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output=RepairOutput>>)> =
+            Vec::with_capacity(helpers.len() + 1);
+
+        let helpers_list = helpers.iter().map(|(x, _)| *x).collect::<Vec<_>>();
+        let helpers_list = ParticipantList::new(helpers_list.as_slice()).unwrap();
+
+        for (participant, key_pair) in helpers {
+            let ctx = Context::new();
+            let fut = do_repair_helper(
+                ctx.shared_channel(),
+                OsRng,
+                helpers_list.clone(),
+                *participant,
+                target_participant,
+                key_pair.clone(),
+            ).
+                map(|x| x.map(RepairOutput::Helper));
+            let protocol = make_protocol(ctx, fut);
+            let protocol: Box<dyn Protocol<Output=RepairOutput>> = Box::new(protocol);
+            protocols.push((*participant, protocol));
+        }
+
+        {
+            let ctx = Context::new();
+            let fut = do_repair_target(
+                ctx.shared_channel(),
+                target_participant,
+                helpers_list,
+                helpers.first().unwrap().1.public_key_package.clone(),
+                threshold,
+            ).
+                map(|x| x.map(RepairOutput::Target));
+            let protocol = make_protocol(ctx, fut);
+            let protocol: Box<dyn Protocol<Output=RepairOutput>> = Box::new(protocol);
+            protocols.push((target_participant, protocol));
+        }
+
+        Ok(run_protocol(protocols)?)
+    }
+
+
+    #[test]
+    fn foo() {
+        let participants_count = 5;
+        let threshold = 3;
+        let helpers_count = 4;
+
+        let participants = build_key_packages_with_dealer(participants_count, threshold);
+        let expected_signing_key = reconstruct_signing_key(participants.as_slice()).unwrap();
+
+        let helpers = participants.iter().take(helpers_count).cloned().collect::<Vec<_>>();
+        let target_participant = Participant::from(OsRng.next_u32());
+
+        let result = build_and_run_repair_protocols(&helpers, target_participant, threshold).unwrap();
+        let result = result.into_iter().collect::<BTreeMap<_, _>>();
+        let result = result[&target_participant].clone();
+
+        let target_participant = {
+            let RepairOutput::Target(keygen_output) = result else {
+                panic!("Target participant not found");
+            };
+
+            (target_participant, keygen_output)
+        };
+
+        for subset in participants.iter().cloned().combinations(2) {
+            let subset = subset.into_iter().chain(iter::once(target_participant.clone())).collect::<Vec<_>>();
+            let actual_signing_key = reconstruct_signing_key(subset.as_slice()).unwrap();
+            assert_eq!(expected_signing_key, actual_signing_key);
+        }
+    }
+
+    #[test]
+    fn stress() {
+        let max_participants = 15;
+        let participants_count = 5;
+        let threshold = 3;
+
+        let mut participants = build_key_packages_with_dealer(participants_count, threshold);
+        let expected_signing_key = reconstruct_signing_key(participants.as_slice()).unwrap();
+
+        for _ in 0..max_participants - participants_count {
+            let target_participant = {
+                let target_participant = Participant::from(OsRng.next_u32());
+                let result = build_and_run_repair_protocols(&participants, target_participant, threshold).unwrap();
+                let result = result.into_iter().collect::<BTreeMap<_, _>>();
+                let result = result[&target_participant].clone();
+
+                let RepairOutput::Target(keygen_output) = result else {
+                    panic!("Target participant not found");
+                };
+
+                (target_participant, keygen_output)
+            };
+
+            participants = participants.into_iter().chain(iter::once(target_participant)).collect::<Vec<_>>();
+
+            let actual_signing_key = reconstruct_signing_key(participants.as_slice()).unwrap();
+            assert_eq!(expected_signing_key, actual_signing_key);
+        }
+    }
+}

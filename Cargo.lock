@@ -2409,8 +2409,7 @@ dependencies = [
 [[package]]
 name = "frost-core"
 version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1858230cabb6792a5020daf4b0074f57b7d1e2a520ac544c77f102babee62ff4"
+source = "git+https://github.com/kuksag/frost?rev=5807812176b7b7b220286bc4ec7c080da72c04b8#5807812176b7b7b220286bc4ec7c080da72c04b8"
 dependencies = [
  "byteorder",
  "const-crc32-nostd",
@@ -2432,8 +2431,7 @@ dependencies = [
 [[package]]
 name = "frost-ed25519"
 version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c350ac3d0463a009a061aba12b67920acee94338951c849bb4c492d55223dece"
+source = "git+https://github.com/kuksag/frost?rev=5807812176b7b7b220286bc4ec7c080da72c04b8#5807812176b7b7b220286bc4ec7c080da72c04b8"
 dependencies = [
  "curve25519-dalek",
  "document-features",
@@ -2446,8 +2444,7 @@ dependencies = [
 [[package]]
 name = "frost-rerandomized"
 version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8a3b10d9c1e9f298522510940b5b8c3d55040420517ec8d2bb86c4c2d1ae3ee"
+source = "git+https://github.com/kuksag/frost?rev=5807812176b7b7b220286bc4ec7c080da72c04b8#5807812176b7b7b220286bc4ec7c080da72c04b8"
 dependencies = [
  "derive-getters",
  "document-features",
@@ -3824,7 +3821,6 @@ dependencies = [
  "borsh",
  "cait-sith",
  "clap",
- "curve25519-dalek",
  "flume",
  "frost-core",
  "frost-ed25519",
@@ -3835,6 +3831,7 @@ dependencies = [
  "hex-literal",
  "hkdf",
  "humantime",
+ "itertools 0.12.1",
  "k256",
  "lazy_static",
  "lru 0.12.5",

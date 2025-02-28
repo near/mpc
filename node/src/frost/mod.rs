@@ -5,6 +5,7 @@ use rand::{CryptoRng, RngCore};
 
 mod refresh;
 mod tests;
+mod repair;
 
 /// Participant's key-pair in Frost
 #[derive(Debug, Clone)]
