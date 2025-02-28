@@ -170,7 +170,7 @@ impl BlockNode {
         }
         write!(
             f,
-            "[{}] {} {} {:?} ",
+            "[{}] {} {} {:<44} ",
             self.height,
             if self.canonical.load(Ordering::Relaxed) {
                 "C"
@@ -182,7 +182,7 @@ impl BlockNode {
             } else {
                 " "
             },
-            self.hash
+            format!("{:?}", self.hash),
         )?;
         content_printer(&self.hash, f)?;
         writeln!(f)?;

@@ -1,14 +1,15 @@
-use super::debug::CompletedSignatureRequest;
+use super::debug::{CompletedSignatureRequest, CompletedSignatureRequests};
 use super::recent_blocks_tracker::{BlockViewLite, CheckBlockResult, RecentBlocksTracker};
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::sign_request::{SignatureId, SignatureRequest};
+use crate::signing::metrics;
 use k256::sha2::Sha256;
 use near_indexer_primitives::types::NumBlocks;
 use near_indexer_primitives::CryptoHash;
 use near_time::Duration;
 use sha3::Digest;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, Weak};
 
@@ -64,7 +65,7 @@ pub struct PendingSignatureRequests {
     pub(super) network_api: Arc<dyn NetworkAPIForSigning>,
 
     /// Recently completed signature requests, for debugging purposes only.
-    pub(super) recently_completed_requests: BinaryHeap<CompletedSignatureRequest>,
+    pub(super) recently_completed_requests: CompletedSignatureRequests,
 }
 
 /// Block data to be buffered until the block is final.
@@ -246,7 +247,7 @@ impl PendingSignatureRequests {
             requests: HashMap::new(),
             recent_blocks: RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS),
             network_api,
-            recently_completed_requests: BinaryHeap::new(),
+            recently_completed_requests: CompletedSignatureRequests::default(),
         }
     }
 
@@ -273,12 +274,27 @@ impl PendingSignatureRequests {
                 return;
             }
         };
+        metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED.inc();
         for (_, buffered_block_data) in add_result.new_final_blocks {
+            metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED.inc();
+            metrics::MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED
+                .inc_by(buffered_block_data.completed_requests.len() as u64);
             for request_id in &buffered_block_data.completed_requests {
                 tracing::debug!(target: "signing", "Removing completed request {:?}", request_id);
-                self.requests.remove(request_id);
+                if let Some(request) = self.requests.remove(request_id) {
+                    metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED.inc();
+                    self.recently_completed_requests.add_completed_request(
+                        CompletedSignatureRequest {
+                            indexed_block_height: request.block_height,
+                            request: request.request,
+                            progress: request.computation_progress,
+                            completed_block_height: Some(block.height),
+                        },
+                    );
+                }
             }
         }
+        metrics::MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED.inc_by(requests.len() as u64);
         for request in requests {
             self.requests
                 .entry(request.id)
@@ -395,8 +411,17 @@ impl PendingSignatureRequests {
             }
         }
         for id in signatures_to_remove {
-            self.requests.remove(&id);
+            if let Some(request) = self.requests.remove(&id) {
+                self.recently_completed_requests
+                    .add_completed_request(CompletedSignatureRequest {
+                        indexed_block_height: request.block_height,
+                        request: request.request,
+                        progress: request.computation_progress,
+                        completed_block_height: None,
+                    });
+            }
         }
+        metrics::MPC_PENDING_SIGNATURES_QUEUE_SIZE.set(self.requests.len() as i64);
         result
     }
 

@@ -3,16 +3,27 @@ use super::queue::{
 };
 use crate::primitives::ParticipantId;
 use crate::sign_request::SignatureRequest;
-use std::collections::HashSet;
+use std::collections::{BinaryHeap, HashSet};
 use std::fmt::Debug;
 use std::fmt::Write;
 use std::sync::{Arc, Mutex};
 
+const NUM_COMPLETED_REQUESTS_TO_KEEP: usize = 100;
+
+/// A completed signature request, for exporting to /debug/signatures.
 pub(super) struct CompletedSignatureRequest {
-    request: SignatureRequest,
-    progress: Arc<Mutex<SignatureComputationProgress>>,
-    indexed_block_height: u64,
-    completed_block_height: Option<u64>,
+    pub request: SignatureRequest,
+    pub progress: Arc<Mutex<SignatureComputationProgress>>,
+    pub indexed_block_height: u64,
+    pub completed_block_height: Option<u64>,
+}
+
+/// A buffer of completed signature requests, for exporting to /debug/signatures.
+/// Keeps the most recent `NUM_COMPLETED_REQUESTS_TO_KEEP` requests.
+#[derive(Default)]
+pub(super) struct CompletedSignatureRequests {
+    /// Min-heap, so that the oldest requests are at the front to be removed.
+    requests: BinaryHeap<CompletedSignatureRequest>,
 }
 
 impl PartialEq for CompletedSignatureRequest {
@@ -34,6 +45,17 @@ impl Ord for CompletedSignatureRequest {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (self.indexed_block_height, self.request.id)
             .cmp(&(other.indexed_block_height, other.request.id))
+            // Reverse to invert max heap to min heap.
+            .reverse()
+    }
+}
+
+impl CompletedSignatureRequests {
+    pub fn add_completed_request(&mut self, request: CompletedSignatureRequest) {
+        self.requests.push(request);
+        if self.requests.len() > NUM_COMPLETED_REQUESTS_TO_KEEP {
+            self.requests.pop();
+        }
     }
 }
 
@@ -41,7 +63,7 @@ impl Debug for CompletedSignatureRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[completed] blk {:>10} -> {:>16} id: {} rx: {:>44?} tries: {:>2}",
+            "  [completed] blk {:>10} -> {:<16} id: {} rx: {:<44} tries: {:<2}",
             self.indexed_block_height,
             self.completed_block_height
                 .map(|h| format!(
@@ -51,7 +73,7 @@ impl Debug for CompletedSignatureRequest {
                 ))
                 .unwrap_or("?".to_string()),
             &format!("{:?}", self.request.id)[0..6],
-            self.request.receipt_id,
+            format!("{:?}", self.request.receipt_id),
             self.progress.lock().unwrap().attempts,
         )
     }
@@ -74,7 +96,7 @@ impl QueuedSignatureRequest {
         }
         write!(
             &mut output,
-            "{:>11} blk {:>10} -> {:>16} id: {} rx: {:>44?} tries: {:>2}",
+            "  {:>11} blk {:>10} -> {:<16} id: {} rx: {:<44} tries: {:<2}",
             if leader_selection.last() == Some(&me) {
                 "[leader]"
             } else {
@@ -83,7 +105,7 @@ impl QueuedSignatureRequest {
             self.block_height,
             "?",
             &format!("{:?}", self.request.id)[0..6],
-            self.request.receipt_id,
+            format!("{:?}", self.request.receipt_id),
             self.computation_progress.lock().unwrap().attempts,
         )
         .unwrap();
@@ -127,7 +149,7 @@ impl Debug for PendingSignatureRequests {
             signature_lines.push((request.block_height, request.request.id, debug_line));
         }
 
-        for completed in &self.recently_completed_requests {
+        for completed in &self.recently_completed_requests.requests {
             let debug_line = format!("{:?}", completed);
             signature_lines.push((
                 completed.indexed_block_height,
@@ -144,7 +166,7 @@ impl Debug for PendingSignatureRequests {
             writeln!(
                 f,
                 "  {:>11}: [{}] eligible leader  [{}] online   index height: {:>10}",
-                participant,
+                format!("{}", participant),
                 if eligible_leaders.contains(participant) {
                     "🗸"
                 } else {
@@ -167,5 +189,47 @@ impl Debug for PendingSignatureRequests {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CompletedSignatureRequest;
+    use crate::sign_request::SignatureRequest;
+    use crate::signing::debug::CompletedSignatureRequests;
+    use near_indexer_primitives::CryptoHash;
+    use rand::seq::SliceRandom;
+
+    #[test]
+    fn test_completed_requests() {
+        let mut completed = CompletedSignatureRequests::default();
+        let mut indices = (0..200).collect::<Vec<_>>();
+        indices.shuffle(&mut rand::thread_rng());
+        for i in indices {
+            completed.add_completed_request(CompletedSignatureRequest {
+                request: SignatureRequest {
+                    id: CryptoHash(rand::random()),
+                    receipt_id: CryptoHash(rand::random()),
+                    msg_hash: Default::default(),
+                    tweak: Default::default(),
+                    entropy: Default::default(),
+                    timestamp_nanosec: Default::default(),
+                },
+                progress: Default::default(),
+                indexed_block_height: i,
+                completed_block_height: if rand::random::<bool>() {
+                    None
+                } else {
+                    Some(i + rand::random::<u64>() % 100)
+                },
+            });
+        }
+        let mut kept_indices = completed
+            .requests
+            .iter()
+            .map(|r| r.indexed_block_height)
+            .collect::<Vec<_>>();
+        kept_indices.sort_unstable();
+        assert_eq!(kept_indices, (100..200).collect::<Vec<_>>());
     }
 }

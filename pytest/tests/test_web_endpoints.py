@@ -28,3 +28,12 @@ def test_web_endpoints():
 
         response = requests.get(f'http://localhost:{port}/debug/tasks')
         assert 'root:' in response.text, response.text
+
+        response = requests.get(f'http://localhost:{port}/debug/blocks')
+        assert 'Recent blocks:' in response.text, response.text
+        assert '1 sign reqs:' in response.text, response.text
+        assert '1 signs completed:' in response.text, response.text
+
+        response = requests.get(f'http://localhost:{port}/debug/signatures')
+        assert 'Recent Signatures:' in response.text, response.text
+        assert 'id:' in response.text, response.text
