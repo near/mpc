@@ -10,7 +10,10 @@ pub type SignatureId = CryptoHash;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SignatureRequest {
+    /// The unique ID that identifies the signature, and can also uniquely identify the response.
     pub id: SignatureId,
+    /// The receipt that generated the signature request, which can be used to look up on chain.
+    pub receipt_id: CryptoHash,
     pub msg_hash: Scalar,
     pub tweak: Scalar,
     pub entropy: [u8; 32],

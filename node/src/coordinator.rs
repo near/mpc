@@ -19,12 +19,13 @@ use crate::sign::PresignatureStorage;
 use crate::sign_request::SignRequestStorage;
 use crate::tracking::{self};
 use crate::triple::TripleStorage;
+use crate::web::SignatureDebugRequest;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use near_time::{Clock, Duration};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 
 /// Main entry point for the MPC node logic. Assumes the existence of an
 /// indexer. Queries and monitors the contract for state transitions, and act
@@ -46,6 +47,9 @@ pub struct Coordinator {
 
     /// For testing, to know what the current state is.
     pub currently_running_job_name: Arc<Mutex<String>>,
+
+    /// For debug UI to send us debug requests.
+    pub signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
 }
 
 /// Represents a top-level task that we run for the current contract state.
@@ -164,6 +168,7 @@ impl Coordinator {
                                     .clone()
                                     .lock_owned()
                                     .await,
+                                self.signature_debug_request_sender.subscribe(),
                             ),
                         )?,
                         stop_fn: Box::new(move |new_state| match new_state {
@@ -392,6 +397,7 @@ impl Coordinator {
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
+        signature_debug_request_receiver: broadcast::Receiver<SignatureDebugRequest>,
     ) -> anyhow::Result<MpcJobResult> {
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
             contract_state.participants,
@@ -460,7 +466,7 @@ impl Coordinator {
 
         let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
 
-        let mpc_client = MpcClient::new(
+        let mpc_client = Arc::new(MpcClient::new(
             config_file.clone().into(),
             mpc_config.clone().into(),
             network_client,
@@ -468,10 +474,14 @@ impl Coordinator {
             presignature_store,
             sign_request_store,
             keyshare,
-        );
+        ));
         mpc_client
-            .clone()
-            .run(channel_receiver, block_update_receiver, chain_txn_sender)
+            .run(
+                channel_receiver,
+                block_update_receiver,
+                chain_txn_sender,
+                signature_debug_request_receiver,
+            )
             .await?;
 
         Ok(MpcJobResult::Done)

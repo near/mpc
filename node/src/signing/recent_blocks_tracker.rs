@@ -6,60 +6,118 @@ use std::ops::Add;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-// TODO: Document.
-// Note: The use of Arc is a little unfortunate. Logically we only need Rc, but this code needs
-// to work in futures, and Rc is not Send. So we use Arc instead.
+/// Tracks the topology of the recent blocks, using the blocks given by the indexer.
+///
+/// This class provides two important functionalities:
+///  - For any given block, it classifies it into one of the categories in `CheckBlockResult`.
+///    See the documentation of that enum for the classifications.
+///  - Converts a stream of optimistic blocks from the indexer into a stream of finalized
+///    blocks. The content of each block in the finalized stream is specified via the `T`
+///    type parameter.
+///
+/// We have certain expectations of the order of blocks that come from the indexer.
+///   First, let's define a partial order for blocks. For any two blocks A and B:
+///    - If A is a strict ancestor of B then A < B;
+///    - If B is a strict ancestor of A then B < A;
+///    - If A is the same block as B then A = B;
+///    - Otherwise, A and B are not ordered.
+///   We expect that the blocks given by the indexer:
+///    - Respects partial order. That is, if A is given before B, it must not happen that A > B.
+///    - Furthermore, if A < B and B < C, and both A and C are given, then B must also be given.
+///      In other words there should not be any gaps.
+///   That being said, the following is fair game:
+///    - The indexer gives blocks of different forks in any order, i.e. it can give a block of
+///      height 12 and then another block of height 10 that belongs to a different fork.
+///    - The indexer, upon startup, may start giving blocks from any position in the blockchain,
+///      including giving blocks from multiple forks without giving us any common parents.
+///
+/// Given these expectations, we provide the aforementioned functionalities by tracking the
+/// following:
+///  - We keep a fixed-sized window of recent blocks, i.e. all blocks with height >= H - W + 1,
+///    where H is the height of the latest block we have *heard of*, and W is the window size.
+///    - "Heard of" means the maximum of what we have seen, as well as what others have told us.
+///  - We keep track of the canonical chain as well as the final chain.
+///
+/// Despite the assumptions we make on the indexer's behavior, this class guarantees not to panic
+/// even if the indexer violates these assumptions in arbitrary ways.
+///
+/// Note: The use of Arc is a little unfortunate. Logically we only need Rc, but this code needs
+/// to work in futures, and Rc is not Send. So we use Arc instead.
 pub struct RecentBlocksTracker<T: Clone + 'static> {
     window_size: u64,
+    /// By "root", we mean the blocks whose parents we don't know or are older than the window.
+    /// The children of the root are the earliest blocks we are keeping who do not have any order
+    /// with each other.
     root_children: Vec<Arc<BlockNode>>,
+    /// The head of the canonical chain. This is the chain of the highest-height block we've seen.
+    /// This may be None if we have no block at all.
     canonical_head: Option<Arc<BlockNode>>,
+    /// The head of the final chain. This is determined by recovering information from the
+    /// last_final_block fields of the block headers given to us. This may be None if we have not
+    /// seen any final blocks yet.
     final_head: Option<Arc<BlockNode>>,
+    /// The maximum height available to us. This is the maximum height of the blocks we have seen,
+    /// or have heard of.
     maximum_height_available: BlockHeight,
+    /// Maps block hashes to their nodes in the tree.
     hash_to_node: HashMap<CryptoHash, Arc<BlockNode>>,
+    /// Maps block hashes to their content; this is to provide the stream of finalized blocks.
+    /// Technically, instead of a hashmap we could put this in the node, but that would clutter
+    /// the code by requiring the T type parameter everywhere.
     node_to_content: HashMap<CryptoHash, T>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CheckBlockResult {
+    /// The block is older than the recent window of blocks we keep.
+    OlderThanRecentWindow,
     /// The block is within the recent window, and also finalized by the blockchain
     /// (it is an ancestor (including self) of the latest final block).
     RecentAndFinal,
     /// The block is recent enough, but belongs to a different fork so has no chance
-    /// of being included in the blockchain.
+    /// of being included in any canonical chain from this point on.
     NotIncluded,
     /// The block is optimistically included in the chain, and it is on the canonical chain,
-    /// but it is not yet part of the final chain.
-    /// Note: If such a block is older than the recent window but still not finalized, this
-    /// will still be returned instead of returning OlderThanRecentWindow.
+    /// but it is not yet part of the final chain. It is also recent enough.
     OptimisticAndCanonical,
     /// The block is optimistically included in the chain, but it is not on the canonical chain.
-    /// Note: If such a block is older than the recent window but still not finalized, this
-    /// will still be returned instead of returning OlderThanRecentWindow.
+    /// It is also recent enough.
     OptimisticButNotCanonical,
-    /// The block is older than the recent window of blocks we keep.
-    OlderThanRecentWindow,
-    /// We have not seen the block yet.
+    /// We have not seen the block yet, but it appears recent, judging from the height.
     Unknown,
 }
 
 pub struct AddBlockResult<T> {
+    /// The list of newly finalized blocks, in ascending height order.
+    /// It is guaranteed that the new final blocks returned from multiple calls to add_block are
+    /// contiguous, thus forming the stream of finalized blocks.
     pub new_final_blocks: Vec<(CryptoHash, T)>,
 }
 
-// TODO: Document.
-// Note: We're not using the thread-safe functionality of Mutex here because we only access
-// it from at most one thread. But these need to work in futures, and RefCell is not Send,
-// so we use Mutex instead. Same story with AtomicBool vs Cell<bool>.
+/// Represents a block in the recent blockchain.
+///
+/// Note: We're not using the thread-safe functionality of Mutex here because we only access
+/// it from at most one thread. But these need to work in futures, and RefCell is not Send,
+/// so we use Mutex instead. Same story with AtomicBool vs Cell<bool>.
 struct BlockNode {
     hash: CryptoHash,
     height: u64,
+    /// Whether this block is currently on the canonical chain.
     canonical: AtomicBool,
+    /// Whether this block is on the final chain. This only ever goes from false to true.
     is_final: AtomicBool,
+    /// The parent block, if we're aware of it. This may be None if we either have never
+    /// heard of the parent or the parent has been pruned (too old).
     parent: Mutex<Option<Arc<BlockNode>>>,
+    /// The children blocks; there can be multiple if there are forks. The children are
+    /// kept in no specific order.
     children: Mutex<Vec<Arc<BlockNode>>>,
 }
 
 impl BlockNode {
+    /// Find the closest descendants of this node (including itself), whose height is at least
+    /// `height`. These descendants are appended to `descendants_output`. The nodes from the
+    /// subtree that are lower than the height are appended to `old_nodes`.
     fn closest_descendants_with_height_at_least(
         self: &Arc<BlockNode>,
         height: u64,
@@ -87,6 +145,7 @@ impl BlockNode {
         indents: &mut Vec<u8>,
         final_head: Option<CryptoHash>,
         canonical_head: Option<CryptoHash>,
+        content_printer: &impl Fn(&CryptoHash, &mut std::fmt::Formatter<'_>) -> std::fmt::Result,
     ) -> std::fmt::Result {
         if Some(self.hash) == final_head {
             write!(f, "FH ")?;
@@ -107,9 +166,9 @@ impl BlockNode {
         if indents.last().is_some_and(|indent| *indent >= 2) {
             *indents.last_mut().unwrap() -= 2;
         }
-        writeln!(
+        write!(
             f,
-            "[{}] {} {} {:?}",
+            "[{}] {} {} {:?} ",
             self.height,
             if self.canonical.load(Ordering::Relaxed) {
                 "C"
@@ -123,14 +182,16 @@ impl BlockNode {
             },
             self.hash
         )?;
+        content_printer(&self.hash, f)?;
+        writeln!(f)?;
         let children = self.children.lock().unwrap();
         for (i, child) in children.iter().enumerate() {
             if children.len() == 1 {
-                child.debug_print(f, indents, final_head, canonical_head)?;
+                child.debug_print(f, indents, final_head, canonical_head, content_printer)?;
             } else {
                 let indent = if i + 1 == children.len() { 2 } else { 3 };
                 indents.push(indent);
-                child.debug_print(f, indents, final_head, canonical_head)?;
+                child.debug_print(f, indents, final_head, canonical_head, content_printer)?;
                 indents.pop();
             }
         }
@@ -138,6 +199,7 @@ impl BlockNode {
     }
 }
 
+/// A view of a block that is sufficient for the RecentBlocksTracker.
 #[derive(Clone)]
 pub struct BlockViewLite {
     pub hash: CryptoHash,
@@ -147,9 +209,9 @@ pub struct BlockViewLite {
 }
 
 impl<T: Clone> RecentBlocksTracker<T> {
-    pub fn new(heights_to_keep: u64) -> Self {
+    pub fn new(window_size: u64) -> Self {
         Self {
-            window_size: heights_to_keep,
+            window_size,
             root_children: Vec::new(),
             canonical_head: None,
             final_head: None,
@@ -159,6 +221,9 @@ impl<T: Clone> RecentBlocksTracker<T> {
         }
     }
 
+    /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
+    /// indexer (whether or not it is interesting). The content is whatever content that we want
+    /// to buffer for the stream of final blocks.
     pub fn add_block(
         &mut self,
         block: &BlockViewLite,
@@ -184,7 +249,14 @@ impl<T: Clone> RecentBlocksTracker<T> {
             self.root_children.push(node.clone());
         }
 
-        let new_final_blocks = self.update_final_head(block.last_final_block);
+        let new_final_blocks = self.maybe_update_final_head(block.last_final_block);
+        // We must do this lookup before calling prune_old_blocks or else we may no longer have
+        // some of the blocks. Note: filter_map should not really filter anything out, but we're
+        // doing this defensively to not crash just in case we have a bug.
+        let new_final_blocks = new_final_blocks
+            .into_iter()
+            .filter_map(|hash| Some((hash, self.node_to_content.get(&hash)?.clone())))
+            .collect();
         match self.canonical_head.as_ref() {
             None => {
                 self.update_canonical_head(&node);
@@ -199,15 +271,13 @@ impl<T: Clone> RecentBlocksTracker<T> {
             self.maximum_height_available = block.height;
         }
         self.prune_old_blocks();
-        Ok(AddBlockResult {
-            new_final_blocks: new_final_blocks
-                .into_iter()
-                .filter_map(|hash| Some((hash, self.node_to_content.get(&hash)?.clone())))
-                .collect(),
-        })
+        Ok(AddBlockResult { new_final_blocks })
     }
 
-    pub fn notify_maximum_height_availble(&mut self, height: u64) {
+    /// Notifies the tracker that we have heard of the given height being available.
+    /// This may move the window forward and cause older blocks to return
+    /// `CheckBlockResult::OlderThanRecentWindow`.
+    pub fn notify_maximum_height_available(&mut self, height: u64) {
         if height > self.maximum_height_available {
             self.maximum_height_available = height;
             self.prune_old_blocks();
@@ -216,7 +286,7 @@ impl<T: Clone> RecentBlocksTracker<T> {
 
     /// Update the final head if the new final head received from a block is newer.
     /// Returns the list of newly finalized blocks in increasing height order.
-    fn update_final_head(&mut self, potential_final_head: CryptoHash) -> Vec<CryptoHash> {
+    fn maybe_update_final_head(&mut self, potential_final_head: CryptoHash) -> Vec<CryptoHash> {
         let final_head_node = self.hash_to_node.get(&potential_final_head);
         let mut new_final_blocks = Vec::new();
         if let Some(final_head_node) = final_head_node {
@@ -244,6 +314,9 @@ impl<T: Clone> RecentBlocksTracker<T> {
         new_final_blocks
     }
 
+    /// Updates the canonical chain to the chain of the given block.
+    /// Nodes on the existing canonical chain that are not in the new canonical chain
+    /// will be marked as no longer canonical.
     fn update_canonical_head(&mut self, new_canonical_head: &Arc<BlockNode>) {
         let mut node = Some(new_canonical_head.clone());
 
@@ -272,8 +345,8 @@ impl<T: Clone> RecentBlocksTracker<T> {
 
     /// Calculates the minimum height of blocks that we need to keep.
     /// This is typically canonical_head.height - window_size + 1, but in case of delayed finality,
-    /// we ensure that the final head is not pruned. Otherwise we may have a situation where we
-    /// pruned all final blocks and have to reset the final head to None, which is a bit messy.
+    /// we ensure that the final head is not pruned. Otherwise, not only would the logic be very
+    /// messy, but also we would not be able to provide a contiguous stream of finalized blocks.
     fn minimum_height_to_keep(&self) -> Option<u64> {
         let Some(final_head) = &self.final_head else {
             return None;
@@ -286,17 +359,20 @@ impl<T: Clone> RecentBlocksTracker<T> {
         )
     }
 
+    /// Remove old blocks that are neither needed for the `classify_block` query or for providing
+    /// the stream of finalized blocks.
     fn prune_old_blocks(&mut self) {
         let Some(minimum_height_to_keep) = self.minimum_height_to_keep() else {
             return;
         };
-        // Note: unwrap() cannot fail because we have at least one block in the tree.
+        // Note: unwrap_or cannot fail because if we have a minimum height then we have at least one
+        // block. Still, we'll program defensively.
         if self
             .root_children
             .iter()
             .map(|child| child.height)
             .min()
-            .unwrap()
+            .unwrap_or(0)
             >= minimum_height_to_keep
         {
             return;
@@ -321,7 +397,8 @@ impl<T: Clone> RecentBlocksTracker<T> {
         }
     }
 
-    pub fn check_block(&self, block_hash: CryptoHash, block_height: u64) -> CheckBlockResult {
+    /// Classifies a block into one of the categories in `CheckBlockResult`.
+    pub fn classify_block(&self, block_hash: CryptoHash, block_height: u64) -> CheckBlockResult {
         if self
             .maximum_height_available
             .saturating_sub(self.window_size)
@@ -355,16 +432,17 @@ impl<T: Clone> RecentBlocksTracker<T> {
     }
 }
 
-impl<T: Clone> Debug for RecentBlocksTracker<T> {
+impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.minimum_height_to_keep() {
-            Some(height) => {
-                writeln!(f, "   Recent blocks (keeping blocks >= height {}):", height)?;
-            }
-            None => {
-                writeln!(f, "   Recent blocks (not enough information yet to calculate minimum height to keep):")?;
-            }
-        }
+        writeln!(
+            f,
+            "   Recent blocks: (Window = {} to {}, GC limit {})",
+            self.maximum_height_available
+                .saturating_sub(self.window_size)
+                .add(1),
+            self.maximum_height_available,
+            self.minimum_height_to_keep().unwrap_or(0)
+        )?;
         let final_head = self.final_head.as_ref().map(|n| n.hash);
         let canonical_head = self.canonical_head.as_ref().map(|n| n.hash);
 
@@ -378,6 +456,13 @@ impl<T: Clone> Debug for RecentBlocksTracker<T> {
                 }],
                 final_head,
                 canonical_head,
+                &|hash, f| {
+                    if let Some(content) = self.node_to_content.get(hash) {
+                        write!(f, "{:?}", content)
+                    } else {
+                        write!(f, "")
+                    }
+                },
             )?;
         }
         Ok(())
@@ -539,7 +624,7 @@ pub mod tests {
         }
 
         pub fn check(&self, block: &Arc<TestBlock>) -> CheckBlockResult {
-            self.tracker.check_block(block.hash, block.height)
+            self.tracker.classify_block(block.hash, block.height)
         }
 
         pub fn add(&mut self, block: &Arc<TestBlock>, name: &str) -> String {
@@ -563,7 +648,7 @@ pub mod tests {
         }
 
         pub fn avail(&mut self, height: u64) -> &mut Self {
-            self.tracker.notify_maximum_height_availble(height);
+            self.tracker.notify_maximum_height_available(height);
             self
         }
 
@@ -588,6 +673,11 @@ pub mod tests {
         assert_eq!(&tester.add(&b13, "13"), "11");
         assert_eq!(&tester.add(&b14, "14"), "12");
         assert_eq!(&tester.add(&b15, "15"), "13");
+        //    Recent blocks: (Window = 12 to 15, GC limit 12)
+        //    └─[12] C F 7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG "12"
+        // FH   [13] C F DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "13"
+        //      [14] C   4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA "14"
+        // CH   [15] C   7inNzFR4mz4TRu9CSajNQnWxwhKDcYzTYubtM6zFri7Y "15"
         tester.print();
 
         // At this point, the tracker should keep blocks 12, 13, 14, 15.
@@ -601,6 +691,10 @@ pub mod tests {
 
         // We received announcement that block 17 is already available.
         tester.avail(17);
+        //    Recent blocks: (Window = 14 to 17, GC limit 13)
+        // FH └─[13] C F DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "13"
+        //      [14] C   4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA "14"
+        // CH   [15] C   7inNzFR4mz4TRu9CSajNQnWxwhKDcYzTYubtM6zFri7Y "15"
         tester.print();
         assert_eq!(tester.check(&b10), CheckBlockResult::OlderThanRecentWindow);
         assert_eq!(tester.check(&b11), CheckBlockResult::OlderThanRecentWindow);
@@ -631,13 +725,13 @@ pub mod tests {
         assert_eq!(&t.add(&b16, "16"), "");
         assert_eq!(&t.add(&b15, "15"), "");
 
-        // Recent blocks (keeping blocks >= height 11):
-        // FH └─[11] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA
-        //      [12] C   7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG
-        //      ├─[13]     DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt
-        //      │ [15]     4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA
-        //      ├─[14]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz
-        // CH   └─[16] C   81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG
+        //    Recent blocks: (Window = 12 to 16, GC limit 11)
+        // FH └─[11] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA "11"
+        //      [12] C   7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG "12"
+        //      ├─[13]     DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "13"
+        //      │ [15]     4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA "15"
+        //      ├─[14]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz "14"
+        // CH   └─[16] C   81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG "16"
         t.print();
 
         assert_eq!(t.check(&b10), CheckBlockResult::OlderThanRecentWindow);
@@ -653,14 +747,14 @@ pub mod tests {
 
         let b18 = b14.child(18);
         assert_eq!(&t.add(&b18, "18"), "");
-        // Recent blocks (keeping blocks >= height 11):
-        // FH └─[11] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA
-        //      [12] C   7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG
-        //      ├─[13]     DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt
-        //      │ [15]     4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA
-        //      ├─[14] C   DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz
-        // CH   │ [18] C   GHjy91467tR3nyE2ycq9JM4MH22ZoBZCrkXSEFnT7Vhp
-        //      └─[16]     81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG
+        //    Recent blocks: (Window = 14 to 18, GC limit 11)
+        // FH └─[11] C F F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA "11"
+        //      [12] C   7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG "12"
+        //      ├─[13]     DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "13"
+        //      │ [15]     4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA "15"
+        //      ├─[14] C   DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz "14"
+        // CH   │ [18] C   GHjy91467tR3nyE2ycq9JM4MH22ZoBZCrkXSEFnT7Vhp "18"
+        //      └─[16]     81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG "16"
         t.print();
 
         assert_eq!(t.check(&b13), CheckBlockResult::OlderThanRecentWindow);
@@ -673,11 +767,11 @@ pub mod tests {
         assert_eq!(&t.add(&b19, "19"), "");
         assert_eq!(&t.add(&b20, "20"), "12,14,18");
 
-        // Recent blocks (keeping blocks >= height 16):
-        // FH ├─[18] C F GHjy91467tR3nyE2ycq9JM4MH22ZoBZCrkXSEFnT7Vhp
-        //    │ [19] C   DtoqtibWnNxpvqwgXUXDMrawHNQPP2AC8p3fjdiZvtKg
-        // CH │ [20] C   24aEbuUrHRACVS8Ty27pbWnBygML7QBttQo44trWLen7
-        //    └─[16]     81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG
+        //    Recent blocks: (Window = 16 to 20, GC limit 16)
+        // FH ├─[18] C F GHjy91467tR3nyE2ycq9JM4MH22ZoBZCrkXSEFnT7Vhp "18"
+        //    │ [19] C   DtoqtibWnNxpvqwgXUXDMrawHNQPP2AC8p3fjdiZvtKg "19"
+        // CH │ [20] C   24aEbuUrHRACVS8Ty27pbWnBygML7QBttQo44trWLen7 "20"
+        //    └─[16]     81v6keTjdkVp8RgTdWQE2vx7E7nof7NxtZNaYFh3oVpG "16"
         t.print();
 
         assert_eq!(t.check(&b14), CheckBlockResult::OlderThanRecentWindow);
@@ -717,21 +811,6 @@ pub mod tests {
         let b110 = b11.child(9);
         let b111 = b11.child(10);
 
-        //         Recent blocks (not enough information yet to calculate minimum height to keep):
-        // b0      ├─[4] C   F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA
-        // b00     │ ├─[6]     7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG
-        // b000    │ │ ├─[8]     DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt
-        // b001    │ │ └─[9]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz
-        // b01     │ └─[7] C   8FoDbEfMuYmtr7SXRPiscHR4mQ6m5nCyuca43eAopktY
-        // b010    │   ├─[9]     8jRJjsyqjoAbyWbjLXTjFNiKTwT8s4xspouvRaZGfh6R
-        // b011 CH │   └─[10] C   CnbxNBi2SVDZo9z8V8kwrmE3pUkozpDvpCCg9Tq25rY3
-        // b1      └─[5]     FsmQgeGtsztQh7aaRtaj59JToK91VqiRyRqXXRN85ZAA
-        // b10       ├─[6]     6s7VNQLN9b4SpwUdEq8LqKwBjf8SqUuutACcMtHwULu8
-        // b100      │ ├─[8]     GounuZUfMmxdVequL65iUm7D94sKYg67Q34Z5cjRjZ71
-        // b101      │ └─[8]     7aXqE7cPZt6FnVcpytqW3oy5y2E17X9Gpgs6C7praap5
-        // b11       └─[7]     2xhND7PwiNZckwCnXFa25wMG1G8JWfKN2Sinmbz3W6xK
-        // b110        ├─[9]     6E2vqjZLbuUY2y6VK571Ai3pk43EUHXuNxibJuBGh44T
-        // b111        └─[10]     Cq9uMZqNZr6zuF7nT6yfGms1ptaVVu5dAdiRJ6pqCTN8
         assert_eq!(&t.add(&b0, "b0"), "");
         assert_eq!(&t.add(&b00, "b00"), "");
         assert_eq!(&t.add(&b000, "b000"), "");
@@ -747,6 +826,21 @@ pub mod tests {
         assert_eq!(&t.add(&b110, "b110"), "");
         assert_eq!(&t.add(&b111, "b111"), "");
 
+        //    Recent blocks: (Window = 6 to 10, GC limit 0)
+        //    ├─[4] C   F1BKWCCxzv7PtiVZxLMx3HQuuxDGcrtPRT2FaGgRggpA "b0"
+        //    │ ├─[6]     7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG "b00"
+        //    │ │ ├─[8]     DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "b000"
+        //    │ │ └─[9]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz "b001"
+        //    │ └─[7] C   8FoDbEfMuYmtr7SXRPiscHR4mQ6m5nCyuca43eAopktY "b01"
+        //    │   ├─[9]     8jRJjsyqjoAbyWbjLXTjFNiKTwT8s4xspouvRaZGfh6R "b010"
+        // CH │   └─[10] C   CnbxNBi2SVDZo9z8V8kwrmE3pUkozpDvpCCg9Tq25rY3 "b011"
+        //    └─[5]     FsmQgeGtsztQh7aaRtaj59JToK91VqiRyRqXXRN85ZAA "b1"
+        //      ├─[6]     6s7VNQLN9b4SpwUdEq8LqKwBjf8SqUuutACcMtHwULu8 "b10"
+        //      │ ├─[8]     GounuZUfMmxdVequL65iUm7D94sKYg67Q34Z5cjRjZ71 "b100"
+        //      │ └─[8]     7aXqE7cPZt6FnVcpytqW3oy5y2E17X9Gpgs6C7praap5 "b101"
+        //      └─[7]     2xhND7PwiNZckwCnXFa25wMG1G8JWfKN2Sinmbz3W6xK "b11"
+        //        ├─[9]     6E2vqjZLbuUY2y6VK571Ai3pk43EUHXuNxibJuBGh44T "b110"
+        //        └─[10]     Cq9uMZqNZr6zuF7nT6yfGms1ptaVVu5dAdiRJ6pqCTN8 "b111"
         t.print();
         assert_eq!(t.check(&b0), CheckBlockResult::OlderThanRecentWindow);
         assert_eq!(t.check(&b00), CheckBlockResult::OptimisticButNotCanonical);
@@ -765,23 +859,23 @@ pub mod tests {
         // with Near blockchain's behavior. Still, we want reasonable behavior and no crashes.
         let b102 = b10.child(7);
         let b1020 = b102.child(8);
-        assert_eq!(t.add(&b102, "b102"), "");
-        assert_eq!(t.add(&b1020, "b1020"), "b1,b10");
-        //         Recent blocks (keeping blocks >= height 6):
-        // b00     ├─[6]     7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG
-        // b000    │ ├─[8]     DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt
-        // b001    │ └─[9]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz
-        // b01     ├─[7] C   8FoDbEfMuYmtr7SXRPiscHR4mQ6m5nCyuca43eAopktY
-        // b010    │ ├─[9]     8jRJjsyqjoAbyWbjLXTjFNiKTwT8s4xspouvRaZGfh6R
-        // b011 CH │ └─[10] C   CnbxNBi2SVDZo9z8V8kwrmE3pUkozpDvpCCg9Tq25rY3
-        // b10  FH ├─[6]   F 6s7VNQLN9b4SpwUdEq8LqKwBjf8SqUuutACcMtHwULu8
-        // b100    │ ├─[8]     GounuZUfMmxdVequL65iUm7D94sKYg67Q34Z5cjRjZ71
-        // b101    │ ├─[8]     7aXqE7cPZt6FnVcpytqW3oy5y2E17X9Gpgs6C7praap5
-        // b102    │ └─[7]     FK5PX18pxwwtaB6AvYjNkWZ4Jvnn2HeNx4tknkM5g7VP
-        // b1020   │   [8]     AQif6GckVVDt4L4rUeAN43PNComjsa7fPYAF5NHW7oX8
-        // b11     └─[7]     2xhND7PwiNZckwCnXFa25wMG1G8JWfKN2Sinmbz3W6xK
-        // b110      ├─[9]     6E2vqjZLbuUY2y6VK571Ai3pk43EUHXuNxibJuBGh44T
-        // b111      └─[10]     Cq9uMZqNZr6zuF7nT6yfGms1ptaVVu5dAdiRJ6pqCTN8
+        assert_eq!(t.add(&b102, "b102"), "b1");
+        assert_eq!(t.add(&b1020, "b1020"), "b10");
+        //    Recent blocks: (Window = 6 to 10, GC limit 6)
+        //    ├─[6]     7wk1ewkZKmCNLRRhCrjFuoYy1K94dis9qAUv7JUKzCkG "b00"
+        //    │ ├─[8]     DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "b000"
+        //    │ └─[9]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz "b001"
+        //    ├─[7] C   8FoDbEfMuYmtr7SXRPiscHR4mQ6m5nCyuca43eAopktY "b01"
+        //    │ ├─[9]     8jRJjsyqjoAbyWbjLXTjFNiKTwT8s4xspouvRaZGfh6R "b010"
+        // CH │ └─[10] C   CnbxNBi2SVDZo9z8V8kwrmE3pUkozpDvpCCg9Tq25rY3 "b011"
+        // FH ├─[6]   F 6s7VNQLN9b4SpwUdEq8LqKwBjf8SqUuutACcMtHwULu8 "b10"
+        //    │ ├─[8]     GounuZUfMmxdVequL65iUm7D94sKYg67Q34Z5cjRjZ71 "b100"
+        //    │ ├─[8]     7aXqE7cPZt6FnVcpytqW3oy5y2E17X9Gpgs6C7praap5 "b101"
+        //    │ └─[7]     FK5PX18pxwwtaB6AvYjNkWZ4Jvnn2HeNx4tknkM5g7VP "b102"
+        //    │   [8]     AQif6GckVVDt4L4rUeAN43PNComjsa7fPYAF5NHW7oX8 "b1020"
+        //    └─[7]     2xhND7PwiNZckwCnXFa25wMG1G8JWfKN2Sinmbz3W6xK "b11"
+        //      ├─[9]     6E2vqjZLbuUY2y6VK571Ai3pk43EUHXuNxibJuBGh44T "b110"
+        //      └─[10]     Cq9uMZqNZr6zuF7nT6yfGms1ptaVVu5dAdiRJ6pqCTN8 "b111"
         //
         // Note above: the canonical head is not a descendant of final head. This can't happen in
         // the real blockchain, but here we fed in a pathological scenario.
@@ -809,15 +903,15 @@ pub mod tests {
         assert_eq!(&t.add(&b102000, "b102000"), "");
         assert_eq!(&t.add(&b1020000, "b1020000"), "b102,b1020,b10200");
 
-        //             Recent blocks (keeping blocks >= height 9):
-        // b001        ├─[9]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz
-        // b010        ├─[9]     8jRJjsyqjoAbyWbjLXTjFNiKTwT8s4xspouvRaZGfh6R
-        // b011        ├─[10]     CnbxNBi2SVDZo9z8V8kwrmE3pUkozpDvpCCg9Tq25rY3
-        // b10200   FH ├─[11] C F NW4CWxr6ptWa9tsV2gMhGPdE7ecNWfCrnJDfJwx9yv9
-        // b102000     │ [12] C   4Vwtcagaq6fi5j82suG4j8HiaU3SMbqotrZzT3bjqwcP
-        // b1020000 CH │ [13] C   GktyudcCf3dBkWCdjq9dFssY7KZRRZQJ1TZH3ZMw8LWk
-        // b110        ├─[9]     6E2vqjZLbuUY2y6VK571Ai3pk43EUHXuNxibJuBGh44T
-        // b111        └─[10]     Cq9uMZqNZr6zuF7nT6yfGms1ptaVVu5dAdiRJ6pqCTN8
+        //    Recent blocks: (Window = 9 to 13, GC limit 9)
+        //    ├─[9]     DC88XsXQdWZXipUU4vRHQqYo22nwtGVnp3rHptw44mJz "b001"
+        //    ├─[9]     8jRJjsyqjoAbyWbjLXTjFNiKTwT8s4xspouvRaZGfh6R "b010"
+        //    ├─[10]     CnbxNBi2SVDZo9z8V8kwrmE3pUkozpDvpCCg9Tq25rY3 "b011"
+        // FH ├─[11] C F NW4CWxr6ptWa9tsV2gMhGPdE7ecNWfCrnJDfJwx9yv9 "b10200"
+        //    │ [12] C   4Vwtcagaq6fi5j82suG4j8HiaU3SMbqotrZzT3bjqwcP "b102000"
+        // CH │ [13] C   GktyudcCf3dBkWCdjq9dFssY7KZRRZQJ1TZH3ZMw8LWk "b1020000"
+        //    ├─[9]     6E2vqjZLbuUY2y6VK571Ai3pk43EUHXuNxibJuBGh44T "b110"
+        //    └─[10]     Cq9uMZqNZr6zuF7nT6yfGms1ptaVVu5dAdiRJ6pqCTN8 "b111"
         t.print();
         assert_eq!(t.check(&b001), CheckBlockResult::NotIncluded);
         assert_eq!(t.check(&b010), CheckBlockResult::NotIncluded);
@@ -830,6 +924,10 @@ pub mod tests {
 
         // We receive announcement that block 15 is already available.
         t.avail(15);
+        //    Recent blocks: (Window = 11 to 15, GC limit 11)
+        // FH └─[11] C F NW4CWxr6ptWa9tsV2gMhGPdE7ecNWfCrnJDfJwx9yv9 "b10200"
+        //      [12] C   4Vwtcagaq6fi5j82suG4j8HiaU3SMbqotrZzT3bjqwcP "b102000"
+        // CH   [13] C   GktyudcCf3dBkWCdjq9dFssY7KZRRZQJ1TZH3ZMw8LWk "b1020000"
         t.print();
         assert_eq!(t.check(&b001), CheckBlockResult::OlderThanRecentWindow);
         assert_eq!(t.check(&b010), CheckBlockResult::OlderThanRecentWindow);

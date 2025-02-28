@@ -204,7 +204,7 @@ impl FakeIndexerCore {
 
             for signature_request in &signature_requests {
                 let mut contract = contract.lock().await;
-                let signature_id = signature_request.request_id;
+                let signature_id = signature_request.signature_id;
                 contract
                     .pending_signatures
                     .insert(signature_request.request.payload, signature_id);
