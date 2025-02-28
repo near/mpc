@@ -55,7 +55,7 @@ pub struct IndexerAPI {
     /// tasks would successively "own" the receiver).
     /// We do not want to re-create the channel, because while resharing is
     /// happening we want to buffer the signature requests.
-    pub chain_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
+    pub block_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
     /// Sender to request transactions be signed (by a TransactionSigner that
     /// the indexer is initialized with) and sent to the chain.
     pub txn_sender: mpsc::Sender<ChainSendTransactionRequest>,

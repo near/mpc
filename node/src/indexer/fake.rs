@@ -439,7 +439,7 @@ impl FakeIndexerManager {
         let (api_txn_sender, api_txn_receiver) = mpsc::channel(1000);
         let indexer = IndexerAPI {
             contract_state_receiver: api_state_receiver,
-            chain_update_receiver: Arc::new(tokio::sync::Mutex::new(
+            block_update_receiver: Arc::new(tokio::sync::Mutex::new(
                 api_signature_request_receiver,
             )),
             txn_sender: api_txn_sender,

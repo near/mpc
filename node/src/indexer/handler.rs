@@ -57,7 +57,7 @@ pub(crate) async fn listen_blocks(
     concurrency: std::num::NonZeroU16,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
-    sign_request_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
+    block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
 ) {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
@@ -65,7 +65,7 @@ pub(crate) async fn listen_blocks(
                 streamer_message,
                 Arc::clone(&stats),
                 &mpc_contract_id,
-                sign_request_sender.clone(),
+                block_update_sender.clone(),
             )
         })
         .buffer_unordered(usize::from(concurrency.get()));

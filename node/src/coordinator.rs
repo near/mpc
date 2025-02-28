@@ -151,7 +151,7 @@ impl Coordinator {
                                 state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer
-                                    .chain_update_receiver
+                                    .block_update_receiver
                                     .clone()
                                     .lock_owned()
                                     .await,
