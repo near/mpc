@@ -26,8 +26,7 @@ impl Eq for CompletedSignatureRequest {}
 
 impl PartialOrd for CompletedSignatureRequest {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (self.indexed_block_height, self.request.id)
-            .partial_cmp(&(other.indexed_block_height, other.request.id))
+        Some(self.cmp(other))
     }
 }
 
@@ -95,7 +94,6 @@ impl QueuedSignatureRequest {
             .lock()
             .unwrap()
             .last_response_submission
-            .clone()
         {
             write!(
                 &mut output,
@@ -123,7 +121,7 @@ impl Debug for PendingSignatureRequests {
         let online_participants = self.network_api.alive_participants();
         let indexer_heights = self.network_api.indexer_heights();
 
-        for (_, request) in &self.requests {
+        for request in self.requests.values() {
             let debug_line =
                 request.debug_print(&self.clock, self.my_participant_id, &eligible_leaders);
             signature_lines.push((request.block_height, request.request.id, debug_line));
@@ -147,17 +145,17 @@ impl Debug for PendingSignatureRequests {
                 f,
                 "  {:>11}: [{}] eligible leader  [{}] online   index height: {:>10}",
                 participant,
-                if eligible_leaders.contains(&participant) {
+                if eligible_leaders.contains(participant) {
                     "🗸"
                 } else {
                     " "
                 },
-                if online_participants.contains(&participant) {
+                if online_participants.contains(participant) {
                     "🗸"
                 } else {
                     " "
                 },
-                indexer_heights.get(&participant).copied().unwrap_or(0),
+                indexer_heights.get(participant).copied().unwrap_or(0),
             )?;
         }
 

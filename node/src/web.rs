@@ -77,7 +77,7 @@ async fn debug_request_from_node(
         kind: request,
         responder: sender,
     };
-    if let Err(_) = state.signature_debug_request_sender.send(request) {
+    if state.signature_debug_request_sender.send(request).is_err() {
         return Err(anyhow::anyhow!("Error: node not in the Running state").into());
     }
     let Some(response) = receiver.recv().await else {
