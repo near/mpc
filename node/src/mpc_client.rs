@@ -27,6 +27,13 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
+/// A one-time delay before processing signature requests on startup. This is to prevent the case
+/// where we have not yet connected to all participants, and the signature processing code thinks
+/// that others are offline, leading to signature requests having multiple leaders and unnecessarily
+/// responded to multiple times. It doesn't affect correctness, but can make tests less flaky and
+/// production runs experience fewer redundant signatures.
+const INITIAL_STARTUP_SIGNATURE_PROCESSING_DELAY: Duration = Duration::from_secs(2);
+
 #[derive(Clone)]
 pub struct MpcClient {
     config: Arc<ConfigFile>,
@@ -143,6 +150,7 @@ impl MpcClient {
             self.client.clone(),
         );
 
+        let start_time = Clock::real().now();
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(CHECK_EACH_SIGNATURE_REQUEST_INTERVAL.unsigned_abs()) => {
@@ -204,6 +212,9 @@ impl MpcClient {
                 }
             }
 
+            if start_time.elapsed() < INITIAL_STARTUP_SIGNATURE_PROCESSING_DELAY {
+                continue;
+            }
             let signature_attempts = pending_signatures.get_signatures_to_attempt();
 
             for signature_attempt in signature_attempts {

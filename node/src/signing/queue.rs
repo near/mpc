@@ -422,6 +422,7 @@ impl PendingSignatureRequests {
             }
         }
         metrics::MPC_PENDING_SIGNATURES_QUEUE_SIZE.set(self.requests.len() as i64);
+        metrics::MPC_PENDING_SIGNATURES_QUEUE_ATTEMPTS_GENERATED.inc_by(result.len() as u64);
         result
     }
 
