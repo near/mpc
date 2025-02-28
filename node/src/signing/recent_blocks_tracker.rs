@@ -16,20 +16,22 @@ use std::sync::{Arc, Mutex};
 ///    type parameter.
 ///
 /// We have certain expectations of the order of blocks that come from the indexer.
-///   First, let's define a partial order for blocks. For any two blocks A and B:
-///    - If A is a strict ancestor of B then A < B;
-///    - If B is a strict ancestor of A then B < A;
-///    - If A is the same block as B then A = B;
-///    - Otherwise, A and B are not ordered.
-///   We expect that the blocks given by the indexer:
-///    - Respects partial order. That is, if A is given before B, it must not happen that A > B.
-///    - Furthermore, if A < B and B < C, and both A and C are given, then B must also be given.
-///      In other words there should not be any gaps.
-///   That being said, the following is fair game:
-///    - The indexer gives blocks of different forks in any order, i.e. it can give a block of
-///      height 12 and then another block of height 10 that belongs to a different fork.
-///    - The indexer, upon startup, may start giving blocks from any position in the blockchain,
-///      including giving blocks from multiple forks without giving us any common parents.
+/// First, let's define a partial order for blocks. For any two blocks A and B:
+///  - If A is a strict ancestor of B then A < B;
+///  - If B is a strict ancestor of A then B < A;
+///  - If A is the same block as B then A = B;
+///  - Otherwise, A and B are not ordered.
+///
+/// We expect that the blocks given by the indexer:
+///  - Respects partial order. That is, if A is given before B, it must not happen that A > B.
+///  - Furthermore, if A < B and B < C, and both A and C are given, then B must also be given.
+///    In other words there should not be any gaps.
+///
+/// That being said, the following is fair game:
+///  - The indexer gives blocks of different forks in any order, i.e. it can give a block of
+///    height 12 and then another block of height 10 that belongs to a different fork.
+///  - The indexer, upon startup, may start giving blocks from any position in the blockchain,
+///    including giving blocks from multiple forks without giving us any common parents.
 ///
 /// Given these expectations, we provide the aforementioned functionalities by tracking the
 /// following:
