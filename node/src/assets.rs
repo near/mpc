@@ -6,11 +6,10 @@ use futures::FutureExt;
 use near_time::Clock;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
-use tokio::sync::oneshot;
 
 /// A unique ID representing an asset (a triple, a presignature, or a signature).
 /// The ID shall be globally unique across all participants and across time.
@@ -447,7 +446,6 @@ where
     my_participant_id: ParticipantId,
     owned_queue: DoubleQueue<T, Vec<ParticipantId>>,
     last_id: Mutex<Option<UniqueId>>,
-    pending_unowned_assets: Arc<Mutex<HashMap<UniqueId, oneshot::Receiver<()>>>>,
 }
 
 impl<T> DistributedAssetStorage<T>
@@ -488,7 +486,6 @@ where
             my_participant_id,
             owned_queue,
             last_id: Mutex::new(last_id),
-            pending_unowned_assets: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -567,39 +564,20 @@ where
             .await;
     }
 
-    /// For unowned assets, this should be called first before participating
-    /// (passively) in the MPC computation for this asset. This is because the
-    /// owner of the asset may see the computation as completed, and start using
-    /// this asset, before we (as a passive participant) see the computation as
-    /// completed. If the owner then starts using this asset in another
-    /// computation, we would need to know that this asset is not yet available
-    /// but is going to be. That's why this method marks the unowned asset as
-    /// pending until the asset's computation is complete (successfully or not).
-    pub fn prepare_unowned(&self, id: UniqueId) -> PendingUnownedAsset<T> {
-        let (sender, receiver) = oneshot::channel();
-        self.pending_unowned_assets
-            .lock()
-            .unwrap()
-            .insert(id, receiver);
-        PendingUnownedAsset {
-            id,
-            _done: sender,
-            all_pending_unowned_assets: self.pending_unowned_assets.clone(),
-            db: self.db.clone(),
-            col: self.col,
-            _phantom_data: std::marker::PhantomData,
-        }
+    /// Adds an unowned asset to the storage.
+    pub fn add_unowned(&self, id: UniqueId, value: T) {
+        let key = borsh::to_vec(&id).unwrap();
+        let value_ser = serde_json::to_vec(&value).unwrap();
+        let mut update = self.db.update();
+        update.put(self.col, &key, &value_ser);
+        update
+            .commit()
+            .expect("Unrecoverable error writing to database");
     }
 
-    /// Removes an unowned asset from the storage and returns it. It blocks if
-    /// the asset is pending, waiting for the computation to complete. It
-    /// returns an error if we do not have the asset in our database.
-    pub async fn take_unowned(&self, id: UniqueId) -> anyhow::Result<T> {
-        let pending = self.pending_unowned_assets.lock().unwrap().remove(&id);
-        if let Some(pending) = pending {
-            // We aren't receiving anything, just waiting for the sender to be dropped.
-            pending.await.ok();
-        }
+    /// Removes an unowned asset from the storage and returns it. Returns
+    /// an error if we do not have the asset in our database.
+    pub fn take_unowned(&self, id: UniqueId) -> anyhow::Result<T> {
         let key = borsh::to_vec(&id).unwrap();
         let value_ser = self.db.get(self.col, &key)?.ok_or_else(|| {
             anyhow::anyhow!("Unowned {} not found in the database: {:?}", self.col, id)
@@ -610,49 +588,6 @@ where
             .commit()
             .expect("Unrecoverable error writing to database");
         Ok(serde_json::from_slice(&value_ser)?)
-    }
-}
-
-/// Dropping this marks the unowned asset as no longer pending.
-/// Also provides a way to write the unowned asset to the db.
-pub struct PendingUnownedAsset<T>
-where
-    T: Serialize + DeserializeOwned + Send + 'static,
-{
-    id: UniqueId,
-    _done: oneshot::Sender<()>,
-    all_pending_unowned_assets: Arc<Mutex<HashMap<UniqueId, oneshot::Receiver<()>>>>,
-    db: Arc<SecretDB>,
-    col: DBCol,
-    _phantom_data: std::marker::PhantomData<fn() -> T>,
-}
-
-impl<T> Drop for PendingUnownedAsset<T>
-where
-    T: Serialize + DeserializeOwned + Send + 'static,
-{
-    fn drop(&mut self) {
-        self.all_pending_unowned_assets
-            .lock()
-            .unwrap()
-            .remove(&self.id);
-    }
-}
-
-impl<T> PendingUnownedAsset<T>
-where
-    T: Serialize + DeserializeOwned + Send + 'static,
-{
-    /// Writes the unowned asset to the db, marking the asset as no longer
-    /// pending.
-    pub fn commit(self, value: T) {
-        let key = borsh::to_vec(&self.id).unwrap();
-        let value_ser = serde_json::to_vec(&value).unwrap();
-        let mut update = self.db.update();
-        update.put(self.col, &key, &value_ser);
-        update
-            .commit()
-            .expect("Unrecoverable error writing to database");
     }
 }
 
@@ -1163,39 +1098,19 @@ mod tests {
 
         let other = ParticipantId::from_raw(43);
         let id1 = UniqueId::new(other, 1, 0);
-
-        // Put an unowned asset in, take it right after.
-        store.prepare_unowned(id1).commit(123);
-        assert_eq!(store.num_owned(), 0); // does not affect owned
-        let asset1 = store.take_unowned(id1).now_or_never().unwrap().unwrap();
-        assert_eq!(asset1, 123);
-        // Taking it again would fail.
-        assert!(store.take_unowned(id1).now_or_never().unwrap().is_err());
-
-        // Taking an asset that never existed would immediately fail.
         let id2 = UniqueId::new(other, 2, 0);
-        assert!(store.take_unowned(id2).now_or_never().unwrap().is_err());
-
-        // Make an unowned asset pending, then take it. It should block
-        // until we either commit or abandon it.
         let id3 = UniqueId::new(other, 3, 0);
-        let id4 = UniqueId::new(other, 4, 0);
-        let pending3 = store.prepare_unowned(id3);
-        let pending4 = store.prepare_unowned(id4);
-        let take3_fut = store.take_unowned(id3);
-        let take4_fut = store.take_unowned(id4);
-        let MaybeReady::Future(take3_fut) = run_future_once(take3_fut) else {
-            panic!("id3 should not be ready");
-        };
-        let MaybeReady::Future(take4_fut) = run_future_once(take4_fut) else {
-            panic!("id4 should not be ready");
-        };
-        pending3.commit(456);
-        drop(pending4);
-        let asset3 = take3_fut.now_or_never().unwrap().unwrap();
-        let asset4 = take4_fut.now_or_never().unwrap();
-        assert_eq!(asset3, 456);
-        assert!(asset4.is_err());
+        store.add_unowned(id1, 123);
+        store.add_unowned(id2, 234);
+        assert_eq!(store.num_owned(), 0); // does not affect owned
+
+        assert_eq!(store.take_unowned(id1).unwrap(), 123);
+        assert!(store.take_unowned(id1).is_err());
+
+        assert!(store.take_unowned(id3).is_err());
+        assert_eq!(store.take_unowned(id2).unwrap(), 234);
+        assert!(store.take_unowned(id2).is_err());
+        assert!(store.take_unowned(id1).is_err());
     }
 
     #[test]
@@ -1220,10 +1135,10 @@ mod tests {
         store.add_owned(id1.add_to_counter(3).unwrap(), 4);
 
         let other = ParticipantId::from_raw(43);
-        store.prepare_unowned(UniqueId::new(other, 1, 0)).commit(5);
-        store.prepare_unowned(UniqueId::new(other, 2, 0)).commit(6);
-        store.prepare_unowned(UniqueId::new(other, 3, 0)).commit(7);
-        store.prepare_unowned(UniqueId::new(other, 4, 0)).commit(8);
+        store.add_unowned(UniqueId::new(other, 1, 0), 5);
+        store.add_unowned(UniqueId::new(other, 2, 0), 6);
+        store.add_unowned(UniqueId::new(other, 3, 0), 7);
+        store.add_unowned(UniqueId::new(other, 4, 0), 8);
 
         drop(store);
         let store = super::DistributedAssetStorage::<u32>::new(
@@ -1250,13 +1165,6 @@ mod tests {
             (id1.add_to_counter(3).unwrap(), 4)
         );
 
-        assert_eq!(
-            store
-                .take_unowned(UniqueId::new(other, 1, 0))
-                .now_or_never()
-                .unwrap()
-                .unwrap(),
-            5
-        );
+        assert_eq!(store.take_unowned(UniqueId::new(other, 1, 0)).unwrap(), 5);
     }
 }

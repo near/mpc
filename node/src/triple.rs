@@ -1,4 +1,4 @@
-use crate::assets::DistributedAssetStorage;
+use crate::assets::{DistributedAssetStorage, UniqueId};
 use crate::background::InFlightGenerationTracker;
 use crate::config::TripleConfig;
 use crate::metrics;
@@ -54,6 +54,38 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
         let iter = triples.into_iter();
         let pairs = iter.clone().step_by(2).zip(iter.skip(1).step_by(2));
         Ok(pairs.collect())
+    }
+
+    fn leader_waits_for_success(&self) -> bool {
+        true
+    }
+}
+
+/// The follower version of the triple generation. The difference is that the follower will only
+/// complete the computation after successfully persisting the triples to storage.
+pub struct FollowerManyTripleGenerationComputation<const N: usize> {
+    pub threshold: usize,
+    pub out_triple_store: Arc<TripleStorage>,
+    pub out_triple_id_start: UniqueId,
+}
+
+#[async_trait::async_trait]
+impl<const N: usize> MpcLeaderCentricComputation<()>
+    for FollowerManyTripleGenerationComputation<N>
+{
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+        let triples = ManyTripleGenerationComputation::<N> {
+            threshold: self.threshold,
+        }
+        .compute(channel)
+        .await?;
+        for (i, paired_triple) in triples.into_iter().enumerate() {
+            self.out_triple_store.add_unowned(
+                self.out_triple_id_start.add_to_counter(i as u32)?,
+                paired_triple,
+            );
+        }
+        Ok(())
     }
 
     fn leader_waits_for_success(&self) -> bool {

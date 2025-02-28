@@ -62,31 +62,38 @@ impl MpcLeaderCentricComputation<PresignOutput<Secp256k1>> for PresignComputatio
 }
 
 /// Performs an MPC presignature operation as a follower.
+/// The difference is: we need to read the triples from the triple store (which may fail),
+/// and we need to write the presignature to the presignature store before completing.
 pub struct FollowerPresignComputation {
     pub threshold: usize,
     pub paired_triple_id: UniqueId,
     pub keygen_out: KeygenOutput<Secp256k1>,
     pub triple_store: Arc<TripleStorage>,
+
+    pub out_presignature_store: Arc<PresignatureStorage>,
+    pub out_presignature_id: UniqueId,
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<PresignOutput<Secp256k1>> for FollowerPresignComputation {
-    async fn compute(
-        self,
-        channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<PresignOutput<Secp256k1>> {
-        let (triple0, triple1) = self
-            .triple_store
-            .take_unowned(self.paired_triple_id)
-            .await?;
-        PresignComputation {
+impl MpcLeaderCentricComputation<()> for FollowerPresignComputation {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+        let (triple0, triple1) = self.triple_store.take_unowned(self.paired_triple_id)?;
+        let presignature = PresignComputation {
             threshold: self.threshold,
             triple0,
             triple1,
             keygen_out: self.keygen_out,
         }
         .compute(channel)
-        .await
+        .await?;
+        self.out_presignature_store.add_unowned(
+            self.out_presignature_id,
+            PresignOutputWithParticipants {
+                presignature,
+                participants: channel.participants().to_vec(),
+            },
+        );
+        Ok(())
     }
 
     fn leader_waits_for_success(&self) -> bool {
@@ -162,6 +169,8 @@ impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, AffinePoint)> for Si
 
 pub type PresignatureStorage = DistributedAssetStorage<PresignOutputWithParticipants>;
 
+/// Performs an MPC signature operation as a follower.
+/// The difference is that the follower needs to look up the presignature, which may fail.
 pub struct FollowerSignComputation {
     pub keygen_out: KeygenOutput<Secp256k1>,
     pub presignature_id: UniqueId,
@@ -172,17 +181,11 @@ pub struct FollowerSignComputation {
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, AffinePoint)>
-    for FollowerSignComputation
-{
-    async fn compute(
-        self,
-        channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<(FullSignature<Secp256k1>, AffinePoint)> {
+impl MpcLeaderCentricComputation<()> for FollowerSignComputation {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
         let presign_out = self
             .presignature_store
-            .take_unowned(self.presignature_id)
-            .await?
+            .take_unowned(self.presignature_id)?
             .presignature;
         SignComputation {
             keygen_out: self.keygen_out,
@@ -192,7 +195,8 @@ impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, AffinePoint)>
             entropy: self.entropy,
         }
         .compute(channel)
-        .await
+        .await?;
+        Ok(())
     }
 
     fn leader_waits_for_success(&self) -> bool {
