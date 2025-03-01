@@ -1,11 +1,9 @@
-use cait_sith::protocol::{Participant, Protocol};
+use cait_sith::protocol::Participant;
 use frost_ed25519::keys::{KeyPackage, PublicKeyPackage};
-use frost_ed25519::Signature;
-use rand::{CryptoRng, RngCore};
 
 mod refresh;
-mod tests;
 mod repair;
+mod tests;
 
 /// Participant's key-pair in Frost
 #[derive(Debug, Clone)]

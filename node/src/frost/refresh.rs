@@ -1,3 +1,9 @@
+//! Wrapper for Frost `refresh` algorithm:
+//! Any subset of `>= threshold` participants can generate new secret shares, with the same group's public key.
+//! This can be useful when we want to exclude a participant from a signing schema.
+//!
+//! As a result each participant of the protocol receives new instance of `KeygenOutput`.
+
 use crate::frost::{to_frost_identifier, KeygenOutput};
 use aes_gcm::aead::rand_core::{CryptoRng, RngCore};
 use cait_sith::participants::{ParticipantCounter, ParticipantList};
@@ -5,7 +11,7 @@ use cait_sith::protocol::{
     make_protocol, Context, Participant, Protocol, ProtocolError, SharedChannel,
 };
 use frost_ed25519::keys::dkg::{round1, round2};
-use frost_ed25519::{Group, Identifier};
+use frost_ed25519::Identifier;
 use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
 

@@ -1,6 +1,6 @@
-//! Wrapper for Frost `repair` algorithm: 
+//! Wrapper for Frost `repair` algorithm:
 //! Any subset of `>= threshold` participants can generate a secret share for another participant.
-//! It's useful when: 
+//! It's useful when:
 //!     (a) participant lost their share
 //!     (b) a new participant is introduced to the set (which after all the same as (a))
 //!
@@ -9,7 +9,7 @@
 //!
 //! As a result `target_participant` receives an instance of `KeygenOutput`.
 //! As a result `helpers` receive updated `PublicKeyPackage`. Group's public key stays the same,
-//!  but we have to update internally stored `verifying_shares` mapping which is updated with the new entry.  
+//!  but we have to update internally stored `verifying_shares` mapping which is updated with the new entry.
 //!
 //! You have to update `PublicKeyPackage` on other participants too, who weren't participating in repairing.
 
@@ -27,7 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Public function for the target role in the repair protocol.
 /// The target (i.e. the participant whose share is lost) collects
 /// sigma values from helpers to reconstruct its share.
-pub(crate) fn repair_internal_target<RNG: CryptoRng + RngCore + 'static + Send>(
+pub(crate) fn repair_internal_target(
     helpers: Vec<Participant>,
     me: Participant,
     public_key_package: PublicKeyPackage,
@@ -122,7 +122,7 @@ async fn do_repair_target(
 
     let mut share = frost_ed25519::Ed25519ScalarField::zero();
     for &s in sigmas.values() {
-        share = share + s.0;
+        share += s.0;
     }
     let signing_share = SigningShare::new(share);
 
@@ -244,7 +244,7 @@ async fn handle_round1<RNG: CryptoRng + RngCore + 'static + Send>(
     for (identifier, package) in packages.iter() {
         chan.send_private(
             round1_wait_point,
-            from_frost_identifiers[&identifier],
+            from_frost_identifiers[identifier],
             &SerializableScalar::<frost_ed25519::Ed25519Sha512>(*package),
         )
             .await;
@@ -307,6 +307,7 @@ mod tests {
 
 
     #[derive(Clone)]
+    #[allow(dead_code)]
     pub(crate) enum RepairOutput {
         Target(KeygenOutput),
         Helper(PublicKeyPackage),
