@@ -108,12 +108,9 @@ pub(crate) async fn do_repair_target(
     helpers: Vec<Participant>,
     threshold: usize,
 ) -> Result<KeygenOutput, ProtocolError> {
-
-    let kek = ParticipantList::new(helpers.as_slice()).unwrap(); // todo
-    let mut seen = ParticipantCounter::new(&kek);
     let sigmas: BTreeMap<Identifier, SerializableScalar<frost_ed25519::Ed25519Sha512>> = {
         let waitpoint = channel.next_waitpoint();
-        collect_packages(&mut channel, &mut seen, waitpoint).await?
+        collect_packages(&mut channel, helpers.as_slice(), waitpoint).await?
     };
 
     let mut share = frost_ed25519::Ed25519ScalarField::zero();
@@ -172,13 +169,9 @@ async fn collect_public_keys(
     participants: &[Participant],
 ) -> Result<PublicKeyPackage, ProtocolError> {
     let wait_point = channel.next_waitpoint();
-    let Some(helpers) = ParticipantList::new(participants) else {
-        return Err(ProtocolError::AssertionFailed("Helpers list contains duplicates".to_string()));
-    };
-    let mut seen = ParticipantCounter::new(&helpers);
 
     let public_keys: BTreeMap<_, PublicKeyPackage> =
-        collect_packages(&channel, &mut seen, wait_point).await?;
+        collect_packages(&channel, participants, wait_point).await?;
 
     let Some((_, public_key)) = public_keys.first_key_value() else {
         return Err(ProtocolError::AssertionFailed("No public keys received".to_string()));
@@ -212,16 +205,12 @@ pub(crate) async fn do_repair_helper<RNG: CryptoRng + RngCore + 'static + Send>(
     target_participant: Participant,
     mut keygen_output: KeygenOutput,
 ) -> Result<KeygenOutput, ProtocolError> {
-    let Some(helpers) = ParticipantList::new(&helpers) else {
-        return Err(ProtocolError::AssertionFailed("Helpers list contains duplicates".to_string()));
-    };
-
     // Round 1.
     // In first round only helpers communicate between each other, sharing their deltas.
 
     let round1_packages = handle_round1(
         &mut chan.child(0), // TODO: is it safe to use 0?, Create sub-channel for helpers only, `id` doesn't matter.
-        &helpers,
+        helpers.as_slice(),
         me,
         target_participant,
         &keygen_output,
@@ -265,7 +254,7 @@ pub(crate) async fn do_repair_helper<RNG: CryptoRng + RngCore + 'static + Send>(
 
 async fn handle_round1<RNG: CryptoRng + RngCore + 'static + Send>(
     chan: &mut SharedChannel,
-    helpers: &ParticipantList,
+    helpers: &[Participant],
     me: Participant,
     target_participant: Participant,
     keygen_output: &KeygenOutput,
@@ -297,10 +286,8 @@ async fn handle_round1<RNG: CryptoRng + RngCore + 'static + Send>(
             .await;
     }
 
-    let mut seen = ParticipantCounter::new(helpers);
-    seen.put(me);
     let mut round1_packages: BTreeMap<_, _> =
-        collect_packages(chan, &mut seen, round1_wait_point).await?;
+        collect_packages(chan, helpers, round1_wait_point).await?;
     round1_packages.insert(
         frost_identifier_me,
         SerializableScalar::<frost_ed25519::Ed25519Sha512>(packages[&frost_identifier_me]),

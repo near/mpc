@@ -25,15 +25,6 @@ pub fn refresh_internal<RNG: CryptoRng + RngCore + 'static + Send>(
     if participants.len() < threshold {
         anyhow::bail!("Threshold must be less than or equal to number of participants");
     }
-    {
-        let Some(participants) = ParticipantList::new(&participants) else {
-            anyhow::bail!("Participants list contains duplicates")
-        };
-
-        if !participants.contains(me) {
-            anyhow::bail!("Participant list must contain this participant");
-        }
-    }
 
     let ctx = Context::new();
     let fut = do_refresh(
@@ -55,21 +46,33 @@ pub(crate) async fn do_refresh<RNG: CryptoRng + RngCore + 'static + Send>(
     keygen_output: KeygenOutput,
     threshold: usize,
 ) -> Result<KeygenOutput, ProtocolError> {
-    let participants = ParticipantList::new(&participants).unwrap(); // TODO;
+    let other_participants = {
+        let Some(participants) = ParticipantList::new(&participants) else {
+            return Err(ProtocolError::AssertionFailed("Participant list must not be empty".to_string()))
+        };
+
+        if !participants.contains(me) {
+            return Err(ProtocolError::AssertionFailed("Participant list must contain this participant".to_string()));
+        }
+        participants.others(me).collect::<Vec<_>>()
+    };
 
     // --- Round 1
-    let (round1_secret, round1_packages) =
-        handle_round1(&mut chan, &participants, threshold, me, rng).await?;
+    let (round1_secret, round1_packages) = handle_round1(
+        &mut chan,
+        other_participants.as_slice(),
+        me,
+        threshold,
+        rng,
+    ).await?;
 
     // --- Round 2
     let (round2_secret, round2_packages) = handle_round2(
         &mut chan,
-        &participants,
+        other_participants.as_slice(),
         round1_secret,
         &round1_packages,
-        me,
-    )
-        .await?;
+    ).await?;
 
     // --- Final Key Package Generation
     let (key_package, public_key_package) = frost_core::keys::refresh::refresh_dkg_shares(
@@ -78,8 +81,7 @@ pub(crate) async fn do_refresh<RNG: CryptoRng + RngCore + 'static + Send>(
         &round2_packages,
         keygen_output.public_key_package,
         keygen_output.key_package,
-    )
-        .map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part3: {:?}", e)))?;
+    ).map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part3: {:?}", e)))?;
 
     Ok(KeygenOutput {
         key_package,
@@ -89,39 +91,35 @@ pub(crate) async fn do_refresh<RNG: CryptoRng + RngCore + 'static + Send>(
 
 async fn handle_round1<RNG: CryptoRng + RngCore + 'static + Send>(
     chan: &mut SharedChannel,
-    participants: &ParticipantList,
-    threshold: usize,
+    other_participants: &[Participant],
     me: Participant,
+    threshold: usize,
     rng: RNG,
 ) -> Result<(round1::SecretPackage, BTreeMap<Identifier, round1::Package>), ProtocolError> {
     let (round1_secret, my_round1_package) = frost_core::keys::refresh::refresh_dkg_part_1(
         to_frost_identifier(me),
-        participants.len() as u16,
+        other_participants.len() as u16 + 1,
         threshold as u16,
         rng,
-    )
-    .map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part1: {:?}", e)))?;
+    ).map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part1: {:?}", e)))?;
 
     let round1_wait_point = chan.next_waitpoint();
 
     chan.send_many(round1_wait_point, &my_round1_package).await;
 
-    let mut seen = ParticipantCounter::new(participants);
-    seen.put(me);
     let round1_packages: BTreeMap<Identifier, round1::Package> =
-        collect_packages(chan, &mut seen, round1_wait_point).await?;
+        collect_packages(chan, other_participants, round1_wait_point).await?;
 
     Ok((round1_secret, round1_packages))
 }
 
 async fn handle_round2(
     chan: &mut SharedChannel,
-    participants: &ParticipantList,
+    other_participants: &[Participant],
     round1_secret: round1::SecretPackage,
     round1_packages: &BTreeMap<Identifier, round1::Package>,
-    me: Participant,
 ) -> Result<(round2::SecretPackage, BTreeMap<Identifier, round2::Package>), ProtocolError> {
-    let from_frost_identifiers = Vec::from(participants.clone())
+    let from_frost_identifiers = Vec::from(other_participants.clone())
         .iter()
         .map(|&p| (to_frost_identifier(p), p))
         .collect::<BTreeMap<_, _>>();
@@ -141,19 +139,22 @@ async fn handle_round2(
         .await;
     }
 
-    let mut seen = ParticipantCounter::new(participants);
-    seen.put(me);
     let round2_packages: BTreeMap<Identifier, round2::Package> =
-        collect_packages(chan, &mut seen, round2_wait_point).await?;
+        collect_packages(chan, other_participants, round2_wait_point).await?;
 
     Ok((round2_secret, round2_packages))
 }
 
 pub(crate) async fn collect_packages<P: Clone + DeserializeOwned>(
     chan: &SharedChannel,
-    seen: &mut ParticipantCounter<'_>,
+    participants: &[Participant],
     wait_point: u64,
 ) -> Result<BTreeMap<Identifier, P>, ProtocolError> {
+    let participants_list = ParticipantList::new(participants)
+        .ok_or(ProtocolError::AssertionFailed("Participants contain duplicates".to_string()))?;
+    let mut seen = {
+        ParticipantCounter::new(&participants_list)
+    };
     let mut packages = BTreeMap::new();
     while !seen.full() {
         let (from, package): (_, P) = chan.recv(wait_point).await?;
