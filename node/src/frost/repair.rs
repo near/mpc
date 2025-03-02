@@ -15,9 +15,8 @@
 //!
 //! TODO: Deviation from VSS
 
-use crate::frost::refresh::collect_packages;
+use crate::frost::common::{collect_packages, distribute_packages};
 use crate::frost::{to_frost_identifier, KeygenOutput};
-use cait_sith::participants::{ParticipantCounter, ParticipantList};
 use cait_sith::protocol::{make_protocol, Context, Participant, Protocol, ProtocolError, SharedChannel};
 use frost_core::serialization::SerializableScalar;
 use frost_core::Field;
@@ -260,41 +259,48 @@ async fn handle_round1<RNG: CryptoRng + RngCore + 'static + Send>(
     keygen_output: &KeygenOutput,
     rng: &mut RNG,
 ) -> anyhow::Result<BTreeMap<Identifier, SerializableScalar<frost_ed25519::Ed25519Sha512>>> {
-    let from_frost_identifiers = Vec::from(helpers.clone())
-        .iter()
-        .map(|&p| (to_frost_identifier(p), p))
-        .collect::<BTreeMap<_, _>>();
-
     let frost_identifier_me = to_frost_identifier(me);
+    let frost_identifiers = helpers.iter().map(|&p| to_frost_identifier(p)).collect::<Vec<_>>();
 
-    let packages = frost_core::keys::repairable::repair_share_step_1(
-        from_frost_identifiers.keys().copied().collect::<Vec<_>>().as_slice(),
+    let mut packages_to_send = frost_core::keys::repairable::repair_share_step_1(
+        frost_identifiers.as_slice(),
         frost_identifier_me,
         keygen_output.key_package.signing_share(),
         rng,
         to_frost_identifier(target_participant),
-    )?;
+    )?.iter().map(|(identifier, delta)| (
+        *identifier,
+        SerializableScalar::<frost_ed25519::Ed25519Sha512>(*delta),
+    )).collect::<BTreeMap<_, _>>();
 
-    let round1_wait_point = chan.next_waitpoint();
+    let my_package = packages_to_send.remove(&frost_identifier_me).ok_or(
+        anyhow::anyhow!(
+            "Missing package for me"
+        ))?;
 
-    for (identifier, package) in packages.iter() {
-        chan.send_private(
-            round1_wait_point,
-            from_frost_identifiers[identifier],
-            &SerializableScalar::<frost_ed25519::Ed25519Sha512>(*package),
-        )
-            .await;
+    let mut received_packages: BTreeMap<_, _> = {
+        let waitpoint = chan.next_waitpoint();
+        let other_helpers = helpers.iter().filter(|&&x| x != me).cloned().collect::<Vec<_>>();
+
+        distribute_packages(
+            chan,
+            other_helpers.as_slice(),
+            &packages_to_send,
+            waitpoint,
+        ).await;
+
+        collect_packages(chan, other_helpers.as_slice(), waitpoint).await?
+    };
+
+    received_packages.insert(
+        frost_identifier_me,
+        my_package,
+    );
+    if received_packages.len() != helpers.len() {
+        anyhow::bail!("Expected {} packages, got {}", helpers.len(), received_packages.len());
     }
 
-    let mut round1_packages: BTreeMap<_, _> =
-        collect_packages(chan, helpers, round1_wait_point).await?;
-    round1_packages.insert(
-        frost_identifier_me,
-        SerializableScalar::<frost_ed25519::Ed25519Sha512>(packages[&frost_identifier_me]),
-    );
-    assert_eq!(round1_packages.len(), helpers.len());
-
-    Ok(round1_packages)
+    Ok(received_packages)
 }
 
 async fn handle_round2(

@@ -14,6 +14,8 @@ use frost_ed25519::keys::dkg::{round1, round2};
 use frost_ed25519::Identifier;
 use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
+use serde::Serialize;
+use crate::frost::common::{collect_packages, distribute_packages};
 
 pub fn refresh_internal<RNG: CryptoRng + RngCore + 'static + Send>(
     rng: RNG,
@@ -119,50 +121,23 @@ async fn handle_round2(
     round1_secret: round1::SecretPackage,
     round1_packages: &BTreeMap<Identifier, round1::Package>,
 ) -> Result<(round2::SecretPackage, BTreeMap<Identifier, round2::Package>), ProtocolError> {
-    let from_frost_identifiers = Vec::from(other_participants.clone())
-        .iter()
-        .map(|&p| (to_frost_identifier(p), p))
-        .collect::<BTreeMap<_, _>>();
-
     let (round2_secret, my_round2_packages) =
         frost_core::keys::refresh::refresh_dkg_part2(round1_secret, round1_packages)
             .map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part2: {:?}", e)))?;
 
-    let round2_wait_point = chan.next_waitpoint();
+    let waitpoint = chan.next_waitpoint();
 
-    for (identifier, round2_package) in my_round2_packages {
-        chan.send_private(
-            round2_wait_point,
-            from_frost_identifiers[&identifier],
-            &round2_package,
-        )
-        .await;
-    }
+    distribute_packages(
+        chan,
+        other_participants,
+        &my_round2_packages,
+        waitpoint,
+    ).await;
 
     let round2_packages: BTreeMap<Identifier, round2::Package> =
-        collect_packages(chan, other_participants, round2_wait_point).await?;
+        collect_packages(chan, other_participants, waitpoint).await?;
 
     Ok((round2_secret, round2_packages))
-}
-
-pub(crate) async fn collect_packages<P: Clone + DeserializeOwned>(
-    chan: &SharedChannel,
-    participants: &[Participant],
-    wait_point: u64,
-) -> Result<BTreeMap<Identifier, P>, ProtocolError> {
-    let participants_list = ParticipantList::new(participants)
-        .ok_or(ProtocolError::AssertionFailed("Participants contain duplicates".to_string()))?;
-    let mut seen = {
-        ParticipantCounter::new(&participants_list)
-    };
-    let mut packages = BTreeMap::new();
-    while !seen.full() {
-        let (from, package): (_, P) = chan.recv(wait_point).await?;
-        if seen.put(from) {
-            packages.insert(to_frost_identifier(from), package);
-        }
-    }
-    Ok(packages)
 }
 
 #[cfg(test)]

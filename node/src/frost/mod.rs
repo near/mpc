@@ -5,6 +5,7 @@ mod refresh;
 mod repair;
 mod tests;
 mod reshare;
+mod common;
 
 /// Participant's key-pair in Frost
 #[derive(Debug, Clone)]
