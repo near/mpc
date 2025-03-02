@@ -4,6 +4,7 @@ use frost_ed25519::keys::{KeyPackage, PublicKeyPackage};
 mod refresh;
 mod repair;
 mod tests;
+mod reshare;
 
 /// Participant's key-pair in Frost
 #[derive(Debug, Clone)]

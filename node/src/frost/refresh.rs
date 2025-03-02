@@ -25,13 +25,14 @@ pub fn refresh_internal<RNG: CryptoRng + RngCore + 'static + Send>(
     if participants.len() < threshold {
         anyhow::bail!("Threshold must be less than or equal to number of participants");
     }
+    {
+        let Some(participants) = ParticipantList::new(&participants) else {
+            anyhow::bail!("Participants list contains duplicates")
+        };
 
-    let Some(participants) = ParticipantList::new(&participants) else {
-        anyhow::bail!("Participants list contains duplicates")
-    };
-
-    if !participants.contains(me) {
-        anyhow::bail!("Participant list must contain this participant");
+        if !participants.contains(me) {
+            anyhow::bail!("Participant list must contain this participant");
+        }
     }
 
     let ctx = Context::new();
@@ -46,14 +47,16 @@ pub fn refresh_internal<RNG: CryptoRng + RngCore + 'static + Send>(
     Ok(make_protocol(ctx, fut))
 }
 
-async fn do_refresh<RNG: CryptoRng + RngCore + 'static + Send>(
+pub(crate) async fn do_refresh<RNG: CryptoRng + RngCore + 'static + Send>(
     mut chan: SharedChannel,
     rng: RNG,
-    participants: ParticipantList,
+    participants: Vec<Participant>,
     me: Participant,
     keygen_output: KeygenOutput,
     threshold: usize,
 ) -> Result<KeygenOutput, ProtocolError> {
+    let participants = ParticipantList::new(&participants).unwrap(); // TODO;
+
     // --- Round 1
     let (round1_secret, round1_packages) =
         handle_round1(&mut chan, &participants, threshold, me, rng).await?;
@@ -66,7 +69,7 @@ async fn do_refresh<RNG: CryptoRng + RngCore + 'static + Send>(
         &round1_packages,
         me,
     )
-    .await?;
+        .await?;
 
     // --- Final Key Package Generation
     let (key_package, public_key_package) = frost_core::keys::refresh::refresh_dkg_shares(
@@ -76,7 +79,7 @@ async fn do_refresh<RNG: CryptoRng + RngCore + 'static + Send>(
         keygen_output.public_key_package,
         keygen_output.key_package,
     )
-    .map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part3: {:?}", e)))?;
+        .map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part3: {:?}", e)))?;
 
     Ok(KeygenOutput {
         key_package,
@@ -106,7 +109,7 @@ async fn handle_round1<RNG: CryptoRng + RngCore + 'static + Send>(
     let mut seen = ParticipantCounter::new(participants);
     seen.put(me);
     let round1_packages: BTreeMap<Identifier, round1::Package> =
-        wait_for_packages(chan, &mut seen, round1_wait_point).await?;
+        collect_packages(chan, &mut seen, round1_wait_point).await?;
 
     Ok((round1_secret, round1_packages))
 }
@@ -141,13 +144,13 @@ async fn handle_round2(
     let mut seen = ParticipantCounter::new(participants);
     seen.put(me);
     let round2_packages: BTreeMap<Identifier, round2::Package> =
-        wait_for_packages(chan, &mut seen, round2_wait_point).await?;
+        collect_packages(chan, &mut seen, round2_wait_point).await?;
 
     Ok((round2_secret, round2_packages))
 }
 
-pub(crate) async fn wait_for_packages<P: Clone + DeserializeOwned>(
-    chan: &mut SharedChannel,
+pub(crate) async fn collect_packages<P: Clone + DeserializeOwned>(
+    chan: &SharedChannel,
     seen: &mut ParticipantCounter<'_>,
     wait_point: u64,
 ) -> Result<BTreeMap<Identifier, P>, ProtocolError> {
@@ -164,10 +167,8 @@ pub(crate) async fn wait_for_packages<P: Clone + DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frost::tests::{build_key_packages_with_dealer, reconstruct_signing_key};
-    use frost_ed25519::VerifyingKey;
+    use crate::frost::tests::{assert_public_key_invariant, assert_signing_schema_threshold_holds, build_key_packages_with_dealer, reconstruct_signing_key};
 
-    #[cfg(test)]
     pub(crate) fn build_and_run_refresh_protocol(
         participants: &[(Participant, KeygenOutput)],
         threshold: usize,
@@ -199,85 +200,91 @@ mod tests {
         Ok(run_protocol(protocols)?)
     }
 
-    #[test]
-    fn test_refresh() {
-        let participants_count = 5;
-        let threshold = 3;
+    /// Validate that refresh protocol is indeed refresh secret shares.
+    fn assert_secret_shares_updated(
+        old_participants: &[(Participant, KeygenOutput)],
+        new_participants: &[(Participant, KeygenOutput)]
+    ) -> anyhow::Result<()> {
+        let old_secret_shares = old_participants.iter().cloned().collect::<BTreeMap<_, _>>();
 
-        let participants_old = build_key_packages_with_dealer(participants_count, threshold);
-        let verifying_key_expected = *participants_old
-            .first()
-            .unwrap()
-            .1
-            .public_key_package
-            .verifying_key();
+        for (participant, key_pair) in new_participants {
+            if let Some(old_secret_share) = old_secret_shares.get(participant) {
+                if old_secret_share.key_package.signing_share() == key_pair.key_package.signing_share() {
+                    anyhow::bail!("secret share is the same for participant");
+                }
+            }
+        }
 
-        let participants_new =
-            build_and_run_refresh_protocol(&participants_old, threshold).unwrap();
-        let signing_key = reconstruct_signing_key(&participants_new).unwrap();
-        let verifying_key_actual = VerifyingKey::from(&signing_key);
-
-        assert_eq!(verifying_key_expected, verifying_key_actual);
-
-        participants_old
-            .iter()
-            .zip(participants_new)
-            .for_each(|(old, new)| {
-                assert_ne!(
-                    old.1.key_package.signing_share(),
-                    new.1.key_package.signing_share()
-                );
-            })
+        Ok(())
     }
 
-    #[test]
-    fn exclude_one() {
-        let participants_count = 5;
-        let threshold = 3;
+    /// Do refresh, validate result and return to be able to chain up computations.
+    fn do_test(
+        participants_old: Option<Vec<(Participant, KeygenOutput)>>,
+        participants_count: usize,
+        threshold: usize,
+        to_exclude: usize,
+    ) -> anyhow::Result<Vec<(Participant, KeygenOutput)>> {
+        let participants_old = participants_old.unwrap_or_else(|| build_key_packages_with_dealer(participants_count, threshold));
+        let signing_key = reconstruct_signing_key(&participants_old)?;
 
-        let participants = build_key_packages_with_dealer(participants_count, threshold);
-        let verifying_key_expected = *participants
-            .first()
-            .unwrap()
-            .1
-            .public_key_package
-            .verifying_key();
-
-        let participants_new = build_and_run_refresh_protocol(
-            participants
+        let new_participants = build_and_run_refresh_protocol(
+            participants_old
                 .iter()
-                .take(participants_count - 1)
+                .take(participants_count - to_exclude)
                 .cloned()
                 .collect::<Vec<_>>()
                 .as_slice(),
             threshold,
-        )
-        .unwrap();
-        let signing_key = reconstruct_signing_key(&participants_new).unwrap();
-        let verifying_key_actual = VerifyingKey::from(&signing_key);
+        )?;
 
-        assert_eq!(verifying_key_expected, verifying_key_actual);
+        assert_public_key_invariant(new_participants.as_slice())?;
+        assert_signing_schema_threshold_holds(signing_key, threshold, new_participants.as_slice())?;
+        assert_secret_shares_updated(participants_old.as_slice(), new_participants.as_slice())?;
+
+        Ok(new_participants)
     }
 
     #[test]
-    fn stress() {
+    fn test_refresh() -> anyhow::Result<()> {
+        let participants_count = 4;
+        let threshold = 3;
+        let to_exclude = 0;
+        do_test(None, participants_count, threshold, to_exclude)?;
+        Ok(())
+    }
+
+    #[test]
+    fn exclude_one() -> anyhow::Result<()> {
+        let participants_count = 4;
+        let threshold = 3;
+        let to_exclude = 1;
+        do_test(None, participants_count, threshold, to_exclude)?;
+        Ok(())
+    }
+
+    #[test]
+    fn exclude_three() -> anyhow::Result<()> {
+        let participants_count = 6;
+        let threshold = 3;
+        let to_exclude = 3;
+        do_test(None, participants_count, threshold, to_exclude)?;
+        Ok(())
+    }
+
+
+    #[test]
+    fn exclude_by_one_sequentially() -> anyhow::Result<()> {
         let participants_count = 5;
         let threshold = 3;
 
-        let mut participants = build_key_packages_with_dealer(participants_count, threshold);
-        let verifying_key_expected = *participants
-            .first()
-            .unwrap()
-            .1
-            .public_key_package
-            .verifying_key();
+        let mut participants = None;
 
         for _ in 0..participants_count - threshold {
-            participants = participants.iter().skip(1).cloned().collect::<Vec<_>>();
-            participants = build_and_run_refresh_protocol(&participants, threshold).unwrap();
-            let signing_key = reconstruct_signing_key(&participants).unwrap();
-            let verifying_key_actual = VerifyingKey::from(&signing_key);
-            assert_eq!(verifying_key_expected, verifying_key_actual);
+            let new_participants = do_test(participants, participants_count, threshold, 1)?;
+            participants = Some(new_participants);
         }
+
+        Ok(())
     }
 }
