@@ -42,10 +42,10 @@ pub(crate) mod target {
         helpers: Vec<Participant>,
         threshold: usize,
     ) -> Result<KeygenOutput, ProtocolError> {
-
         // Round 2.
 
-        let (signing_share, verifying_share) = handle_round2(&mut channel, helpers.as_slice()).await?;
+        let (signing_share, verifying_share) =
+            handle_round2(&mut channel, helpers.as_slice()).await?;
 
         // Round 3.
 
@@ -62,9 +62,9 @@ pub(crate) mod target {
             verifying_share,
             public_key_package.verifying_shares(),
         )
-            .map_err(|e| {
-                ProtocolError::AssertionFailed(format!("verify_share_consistency: {:?}", e))
-            })?;
+        .map_err(|e| {
+            ProtocolError::AssertionFailed(format!("verify_share_consistency: {:?}", e))
+        })?;
 
         public_key_package = build_pubkey_with_updated_verifying_shares(
             &public_key_package,
@@ -128,7 +128,6 @@ pub(crate) mod helper {
         let round1_packages = handle_round1(
             // Create sub-channel for helpers only. `child(0)` is safe to use since there is no `Participant(0)`
             &mut channel.child(0),
-            
             helpers.as_slice(),
             me,
             target_participant,
@@ -217,7 +216,13 @@ pub(crate) mod helper {
                 .cloned()
                 .collect::<Vec<_>>();
 
-            distribute_packages(channel, other_helpers.as_slice(), &packages_to_send, waitpoint).await;
+            distribute_packages(
+                channel,
+                other_helpers.as_slice(),
+                &packages_to_send,
+                waitpoint,
+            )
+            .await;
 
             collect_packages(channel, other_helpers.as_slice(), waitpoint).await?
         };
@@ -250,12 +255,13 @@ pub(crate) mod helper {
 
         let waitpoint = channel.next_waitpoint();
 
-        channel.send_private(
-            waitpoint,
-            target_participant,
-            &SerializableScalar::<frost_ed25519::Ed25519Sha512>(sigma),
-        )
-        .await;
+        channel
+            .send_private(
+                waitpoint,
+                target_participant,
+                &SerializableScalar::<frost_ed25519::Ed25519Sha512>(sigma),
+            )
+            .await;
 
         Ok(())
     }
@@ -267,7 +273,8 @@ pub(crate) mod helper {
     ) -> anyhow::Result<VerifyingShare> {
         {
             let waitpoint = channel.next_waitpoint();
-            channel.send_private(waitpoint, target_participant, &public_key_package)
+            channel
+                .send_private(waitpoint, target_participant, &public_key_package)
                 .await;
         }
 

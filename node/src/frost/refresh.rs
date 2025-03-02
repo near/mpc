@@ -10,7 +10,7 @@ use aes_gcm::aead::rand_core::{CryptoRng, RngCore};
 use cait_sith::participants::ParticipantList;
 #[cfg(test)]
 use cait_sith::protocol::{make_protocol, Context, Protocol};
-use cait_sith::protocol::{Participant, ProtocolError, SharedChannel, };
+use cait_sith::protocol::{Participant, ProtocolError, SharedChannel};
 use frost_ed25519::keys::dkg::{round1, round2};
 use frost_ed25519::Identifier;
 use std::collections::BTreeMap;
@@ -25,23 +25,22 @@ pub(crate) async fn do_refresh<RNG: CryptoRng + RngCore + 'static + Send>(
 ) -> Result<KeygenOutput, ProtocolError> {
     let other_participants = {
         let Some(participants) = ParticipantList::new(&participants) else {
-            return Err(ProtocolError::AssertionFailed("Participant list must not be empty".to_string()))
+            return Err(ProtocolError::AssertionFailed(
+                "Participant list must not be empty".to_string(),
+            ));
         };
 
         if !participants.contains(me) {
-            return Err(ProtocolError::AssertionFailed("Participant list must contain this participant".to_string()));
+            return Err(ProtocolError::AssertionFailed(
+                "Participant list must contain this participant".to_string(),
+            ));
         }
         participants.others(me).collect::<Vec<_>>()
     };
 
     // --- Round 1
-    let (round1_secret, round1_packages) = handle_round1(
-        &mut chan,
-        other_participants.as_slice(),
-        me,
-        threshold,
-        rng,
-    ).await?;
+    let (round1_secret, round1_packages) =
+        handle_round1(&mut chan, other_participants.as_slice(), me, threshold, rng).await?;
 
     // --- Round 2
     let (round2_secret, round2_packages) = handle_round2(
@@ -49,7 +48,8 @@ pub(crate) async fn do_refresh<RNG: CryptoRng + RngCore + 'static + Send>(
         other_participants.as_slice(),
         round1_secret,
         &round1_packages,
-    ).await?;
+    )
+    .await?;
 
     // --- Final Key Package Generation
     let (key_package, public_key_package) = frost_core::keys::refresh::refresh_dkg_shares(
@@ -58,7 +58,8 @@ pub(crate) async fn do_refresh<RNG: CryptoRng + RngCore + 'static + Send>(
         &round2_packages,
         keygen_output.public_key_package,
         keygen_output.key_package,
-    ).map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part3: {:?}", e)))?;
+    )
+    .map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part3: {:?}", e)))?;
 
     Ok(KeygenOutput {
         key_package,
@@ -78,7 +79,8 @@ async fn handle_round1<RNG: CryptoRng + RngCore + 'static + Send>(
         other_participants.len() as u16 + 1,
         threshold as u16,
         rng,
-    ).map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part1: {:?}", e)))?;
+    )
+    .map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part1: {:?}", e)))?;
 
     let received_packages: BTreeMap<Identifier, round1::Package> = {
         let waitpoint = chan.next_waitpoint();
@@ -101,12 +103,7 @@ async fn handle_round2(
 
     let round2_packages: BTreeMap<Identifier, round2::Package> = {
         let waitpoint = chan.next_waitpoint();
-        distribute_packages(
-            chan,
-            other_participants,
-            &my_round2_packages,
-            waitpoint,
-        ).await;
+        distribute_packages(chan, other_participants, &my_round2_packages, waitpoint).await;
         collect_packages(chan, other_participants, waitpoint).await?
     };
 
@@ -116,7 +113,10 @@ async fn handle_round2(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frost::tests::{assert_public_key_invariant, assert_signing_schema_threshold_holds, build_key_packages_with_dealer, reconstruct_signing_key};
+    use crate::frost::tests::{
+        assert_public_key_invariant, assert_signing_schema_threshold_holds,
+        build_key_packages_with_dealer, reconstruct_signing_key,
+    };
 
     pub(crate) fn build_and_run_refresh_protocol(
         participants: &[(Participant, KeygenOutput)],
@@ -154,13 +154,15 @@ mod tests {
     /// Validate that refresh protocol is indeed refresh secret shares.
     fn assert_secret_shares_updated(
         old_participants: &[(Participant, KeygenOutput)],
-        new_participants: &[(Participant, KeygenOutput)]
+        new_participants: &[(Participant, KeygenOutput)],
     ) -> anyhow::Result<()> {
         let old_secret_shares = old_participants.iter().cloned().collect::<BTreeMap<_, _>>();
 
         for (participant, key_pair) in new_participants {
             if let Some(old_secret_share) = old_secret_shares.get(participant) {
-                if old_secret_share.key_package.signing_share() == key_pair.key_package.signing_share() {
+                if old_secret_share.key_package.signing_share()
+                    == key_pair.key_package.signing_share()
+                {
                     anyhow::bail!("secret share is the same for participant");
                 }
             }
@@ -176,7 +178,8 @@ mod tests {
         threshold: usize,
         to_exclude: usize,
     ) -> anyhow::Result<Vec<(Participant, KeygenOutput)>> {
-        let participants_old = participants_old.unwrap_or_else(|| build_key_packages_with_dealer(participants_count, threshold));
+        let participants_old = participants_old
+            .unwrap_or_else(|| build_key_packages_with_dealer(participants_count, threshold));
         let signing_key = reconstruct_signing_key(&participants_old)?;
 
         let new_participants = build_and_run_refresh_protocol(
@@ -222,7 +225,6 @@ mod tests {
         do_test(None, participants_count, threshold, to_exclude)?;
         Ok(())
     }
-
 
     #[test]
     fn exclude_by_one_sequentially() -> anyhow::Result<()> {

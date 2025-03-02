@@ -202,7 +202,6 @@ async fn do_reshare_old_participant<RNG: CryptoRng + RngCore + 'static + Send + 
     keygen_output = do_refresh(
         // Create sub-channel for refresh part only. `child(0)` is safe to use since there is no `Participant(0)`
         ctx.shared_channel().child(0),
-
         rng.clone(),
         old_subset.clone(),
         me,
