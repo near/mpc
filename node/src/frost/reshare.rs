@@ -1,8 +1,22 @@
+//! Partial implementation of keyshare, only for the case `old_threshold == new_threshold`.
+//! Temporary solution, refer to #119.
 //!
-//! Composition of `repair ∘ refresh`
+//! In general case, algorithm updates the set of participants,
+//!  the schema threshold, each participant's secret share, but preserves group's public key.
 //!
+//! Formally:
+//!     old_participants               -> new_participants
+//!     old_threshold                  -> new_threshold
+//!     (secret_key_i, old_public_key) -> (new_secret_key_i, old_public_key)
 //!
-
+//! "Enough old participants" has to be provided.
+//! Formally: let `old_subset = old_participants \cap new_participants`,
+//!           then `|old_subset| >= old_threshold` has to be met.
+//!
+//! We implement keyshare as composition `repair ∘ refresh`, which means:
+//!     1. We do refresh operation for `old_subset`
+//!     2. For each item (ordered by `ParticipantId(u32)`) from `new_participant \ old_participant` we do repair operation.
+//!        `helpers` for each operation denoted as `old_subset + "all_repaired_participants at the moment"`
 use crate::frost::refresh::do_refresh;
 use crate::frost::repair::{helper, target};
 use crate::frost::KeygenOutput;
@@ -13,6 +27,7 @@ use cait_sith::protocol::{
 };
 use itertools::Itertools;
 
+/// Get keyshare protocol for a newcomer.
 pub(crate) fn reshare_old_participant_internal<
     RNG: CryptoRng + RngCore + 'static + Send + Clone,
 >(
@@ -51,6 +66,7 @@ pub(crate) fn reshare_old_participant_internal<
     Ok(protocol)
 }
 
+/// Get keyshare protocol for an old participant (the one who has key pair).
 pub(crate) fn reshare_new_participant_internal<
     RNG: CryptoRng + RngCore + 'static + Send + Clone,
 >(
@@ -81,7 +97,7 @@ pub(crate) fn reshare_new_participant_internal<
     Ok(protocol)
 }
 
-/// TODO: explain
+/// Returns `old_participants \cap new_participants` and `new_participants \ old_participants` respectively.
 fn get_subsets(
     old_participants: &[Participant],
     old_threshold: usize,
@@ -146,6 +162,7 @@ async fn do_reshare_new_participant<RNG: CryptoRng + RngCore + 'static + Send + 
     threshold: usize,
     me: Participant,
 ) -> Result<KeygenOutput, ProtocolError> {
+    // Every new participant with `id < me` is a helper from our standpoint.
     let mut helpers = new_subset
         .iter()
         .sorted()
@@ -158,8 +175,7 @@ async fn do_reshare_new_participant<RNG: CryptoRng + RngCore + 'static + Send + 
 
     let keygen_output = target::do_repair(channel, me, helpers.clone(), threshold).await?;
 
-    //
-
+    // Now we become a helper for every new participant with `id > me`
     helpers.push(me);
     let targets = new_subset
         .iter()
@@ -185,8 +201,8 @@ async fn do_reshare_old_participant<RNG: CryptoRng + RngCore + 'static + Send + 
 ) -> Result<KeygenOutput, ProtocolError> {
     keygen_output = do_refresh(
         // Create sub-channel for refresh part only. `child(0)` is safe to use since there is no `Participant(0)`
-        ctx.shared_channel().child(0), 
-        
+        ctx.shared_channel().child(0),
+
         rng.clone(),
         old_subset.clone(),
         me,
@@ -236,7 +252,7 @@ mod tests {
     use rand::Rng;
     use std::collections::BTreeMap;
 
-    pub(crate) fn build_and_run_reshare_protocols(
+    pub(crate) fn build_and_run_keyshare_protocols(
         old_participants: &[(Participant, KeygenOutput)],
         old_threshold: usize,
         new_participants: &[Participant],
@@ -304,7 +320,7 @@ mod tests {
             .chain((0..added_participant_count).map(|_| Participant::from(OsRng.next_u32())))
             .collect::<Vec<_>>();
 
-        let result = build_and_run_reshare_protocols(
+        let result = build_and_run_keyshare_protocols(
             old_participants.as_slice(),
             old_threshold,
             new_participants.as_slice(),
@@ -372,7 +388,7 @@ mod tests {
     }
 
     #[test]
-    fn sequential_reshare() -> Result<(), anyhow::Error> {
+    fn sequential_keyshare() -> Result<(), anyhow::Error> {
         let old_participant_count = 4;
         let old_threshold = 3;
         let new_threshold = old_threshold;

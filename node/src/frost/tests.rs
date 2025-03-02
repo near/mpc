@@ -1,12 +1,7 @@
-use anyhow::Context;
 #[cfg(test)]
 use crate::frost::KeygenOutput;
 #[cfg(test)]
 use cait_sith::protocol::Participant;
-use frost_core::Group;
-use frost_ed25519::keys::VerifyingShare;
-use itertools::Itertools;
-use crate::frost::to_frost_identifier;
 
 #[cfg(test)]
 pub(crate) fn build_key_packages_with_dealer(
@@ -37,7 +32,7 @@ pub(crate) fn build_key_packages_with_dealer(
         frost_ed25519::keys::IdentifierList::Custom(identifiers_list.as_slice()),
         OsRng,
     )
-        .unwrap();
+    .unwrap();
 
     shares
         .into_iter()
@@ -77,15 +72,27 @@ pub(crate) fn reconstruct_signing_key(
 ///     4. For each participant their `verifying_share = secret_share * G`
 ///     5. For each participant their `verifying_share` is the same across `KeyPackage` and `PublicKeyPackage`
 #[cfg(test)]
-pub(crate) fn assert_public_key_invariant(participants: &[(Participant, KeygenOutput)]) -> anyhow::Result<()> {
+pub(crate) fn assert_public_key_invariant(
+    participants: &[(Participant, KeygenOutput)],
+) -> anyhow::Result<()> {
+    use crate::frost::to_frost_identifier;
+    use anyhow::Context;
+    use frost_core::Group;
+    use frost_ed25519::keys::VerifyingShare;
+
     let public_key_package = participants.first().unwrap().1.public_key_package.clone();
 
-    if participants.iter().any(|(_, key_pair)| key_pair.public_key_package != public_key_package) {
+    if participants
+        .iter()
+        .any(|(_, key_pair)| key_pair.public_key_package != public_key_package)
+    {
         anyhow::bail!("public key package is not the same for all participants");
     }
 
     if public_key_package.verifying_shares().len() != participants.len() {
-        anyhow::bail!("public key package has different number of verifying shares than participants");
+        anyhow::bail!(
+            "public key package has different number of verifying shares than participants"
+        );
     }
 
     for (participant, key_pair) in participants {
@@ -106,7 +113,9 @@ pub(crate) fn assert_public_key_invariant(participants: &[(Participant, KeygenOu
                 .get(&to_frost_identifier(*participant))
                 .context("participant not found in `PublicKeyPackage` verifying shares")?;
             if actual_verifying_share != *expected_verifying_share {
-                anyhow::bail!("verifying share in `PublicKeyPackage` is not equal to secret share * G");
+                anyhow::bail!(
+                    "verifying share in `PublicKeyPackage` is not equal to secret share * G"
+                );
             }
         }
     }
@@ -123,26 +132,34 @@ pub(crate) fn assert_signing_schema_threshold_holds(
     threshold: usize,
     participants: &[(Participant, KeygenOutput)],
 ) -> anyhow::Result<()> {
+    use itertools::Itertools;
     for actual_signers_count in 1..=participants.len() {
         participants
             .iter()
             .cloned()
             .combinations(actual_signers_count)
-            .map(|signers| {
+            .try_for_each(|signers| {
                 if actual_signers_count < threshold {
-                    if !reconstruct_signing_key(signers.as_slice()).is_err() {
-                        anyhow::bail!("signing key should not be reconstructed \
-                        for subset of size {}", actual_signers_count);
+                    if reconstruct_signing_key(signers.as_slice()).is_ok() {
+                        anyhow::bail!(
+                            "signing key should not be reconstructed \
+                        for subset of size {}",
+                            actual_signers_count
+                        );
                     }
                 } else {
                     let actual_signing_key = reconstruct_signing_key(signers.as_slice())?;
                     if actual_signing_key != expected_signing_key {
-                        anyhow::bail!("signing key should be reconstructed for subset of size {},\
-                     which is greater or equal to threshold: {}", actual_signers_count, threshold);
+                        anyhow::bail!(
+                            "signing key should be reconstructed for subset of size {},\
+                     which is greater or equal to threshold: {}",
+                            actual_signers_count,
+                            threshold
+                        );
                     }
                 }
                 Ok(())
-            }).collect::<anyhow::Result<()>>()?;
+            })?;
     }
     Ok(())
 }

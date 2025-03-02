@@ -1,11 +1,52 @@
-use cait_sith::protocol::Participant;
+use aes_gcm::aead::rand_core::{CryptoRng, RngCore};
+use cait_sith::protocol::{Participant, Protocol};
 use frost_ed25519::keys::{KeyPackage, PublicKeyPackage};
 
+mod common;
 mod refresh;
 mod repair;
-mod tests;
 mod reshare;
-mod common;
+mod tests;
+
+#[allow(dead_code)] // TODO(#119): remove the directive when this will be actually used.
+pub(crate) fn reshare_old_participant<RNG: CryptoRng + RngCore + 'static + Send + Clone>(
+    rng: RNG,
+    old_participants: &[Participant],
+    old_threshold: usize,
+    new_participants: &[Participant],
+    new_threshold: usize,
+    me: Participant,
+    my_share: KeygenOutput,
+) -> anyhow::Result<impl Protocol<Output = KeygenOutput>> {
+    reshare::reshare_old_participant_internal(
+        rng,
+        old_participants,
+        old_threshold,
+        new_participants,
+        new_threshold,
+        me,
+        my_share,
+    )
+}
+
+#[allow(dead_code)] // TODO(#119): remove the directive when this will be actually used.
+pub(crate) fn reshare_new_participant<RNG: CryptoRng + RngCore + 'static + Send + Clone>(
+    rng: RNG,
+    old_participants: &[Participant],
+    old_threshold: usize,
+    new_participants: &[Participant],
+    new_threshold: usize,
+    me: Participant,
+) -> anyhow::Result<impl Protocol<Output = KeygenOutput>> {
+    reshare::reshare_new_participant_internal(
+        rng,
+        old_participants,
+        old_threshold,
+        new_participants,
+        new_threshold,
+        me,
+    )
+}
 
 /// Participant's key-pair in Frost
 #[derive(Debug, Clone)]

@@ -26,7 +26,7 @@
 
 use crate::frost::common::{collect_packages, distribute_packages};
 use crate::frost::{to_frost_identifier, KeygenOutput};
-use cait_sith::protocol::{Participant, Protocol, ProtocolError, SharedChannel};
+use cait_sith::protocol::{Participant, ProtocolError, SharedChannel};
 use frost_core::serialization::SerializableScalar;
 use frost_core::Field;
 use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare, VerifyingShare};
@@ -291,7 +291,7 @@ async fn collect_public_keys(
     let wait_point = channel.next_waitpoint();
 
     let public_keys: BTreeMap<_, PublicKeyPackage> =
-        collect_packages(&channel, participants, wait_point).await?;
+        collect_packages(channel, participants, wait_point).await?;
 
     let Some((_, public_key)) = public_keys.first_key_value() else {
         return Err(ProtocolError::AssertionFailed(
@@ -301,7 +301,7 @@ async fn collect_public_keys(
 
     if public_keys
         .iter()
-        .any(|(_, public_key)| public_key != public_key)
+        .any(|(_, other_public_key)| other_public_key != public_key)
     {
         return Err(ProtocolError::AssertionFailed(
             "Received different public key packages".to_string(),

@@ -22,7 +22,7 @@ pub(crate) async fn distribute_packages<T>(
     for (identifier, package) in packages {
         chan.send_private(
             waitpoint,
-            from_frost_identifiers[&identifier],
+            from_frost_identifiers[identifier],
             &package,
         ).await;
     }
