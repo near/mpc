@@ -4,7 +4,7 @@
 //!
 
 use crate::frost::refresh::do_refresh;
-use crate::frost::repair::{do_repair_helper, do_repair_target};
+use crate::frost::repair::{helper, target};
 use crate::frost::KeygenOutput;
 use aes_gcm::aead::rand_core::{CryptoRng, RngCore};
 use cait_sith::participants::ParticipantList;
@@ -156,7 +156,7 @@ async fn do_reshare_new_participant<RNG: CryptoRng + RngCore + 'static + Send + 
 
     let channel = ctx.shared_channel().child(u32::from(me) as u64);
 
-    let keygen_output = do_repair_target(channel, me, helpers.clone(), threshold).await?;
+    let keygen_output = target::do_repair(channel, me, helpers.clone(), threshold).await?;
 
     //
 
@@ -184,7 +184,9 @@ async fn do_reshare_old_participant<RNG: CryptoRng + RngCore + 'static + Send + 
     mut keygen_output: KeygenOutput,
 ) -> Result<KeygenOutput, ProtocolError> {
     keygen_output = do_refresh(
-        ctx.shared_channel().child(0), // TODO: use of zero safety?
+        // Create sub-channel for refresh part only. `child(0)` is safe to use since there is no `Participant(0)`
+        ctx.shared_channel().child(0), 
+        
         rng.clone(),
         old_subset.clone(),
         me,
@@ -208,7 +210,7 @@ async fn repair_for_targets<RNG: CryptoRng + RngCore + 'static + Send + Clone>(
 ) -> Result<KeygenOutput, ProtocolError> {
     for &target in targets.iter().sorted() {
         let chan = ctx.shared_channel().child(u32::from(target) as u64);
-        keygen_output = do_repair_helper(
+        keygen_output = helper::do_repair(
             chan,
             rng.clone(),
             helpers.clone(),
@@ -377,7 +379,8 @@ mod tests {
         let max_number_of_participants = 7;
         let iterations = 10;
 
-        let mut old_participants = build_key_packages_with_dealer(old_participant_count, old_threshold);
+        let mut old_participants =
+            build_key_packages_with_dealer(old_participant_count, old_threshold);
 
         for _ in 0..iterations {
             let removed_participants = OsRng.gen_range(0..=old_participants.len() - old_threshold);

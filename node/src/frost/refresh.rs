@@ -4,41 +4,16 @@
 //!
 //! As a result each participant of the protocol receives new instance of `KeygenOutput`.
 
+use crate::frost::common::{collect_packages, distribute_packages};
 use crate::frost::{to_frost_identifier, KeygenOutput};
 use aes_gcm::aead::rand_core::{CryptoRng, RngCore};
-use cait_sith::participants::{ParticipantCounter, ParticipantList};
-use cait_sith::protocol::{
-    make_protocol, Context, Participant, Protocol, ProtocolError, SharedChannel,
-};
+use cait_sith::participants::ParticipantList;
+#[cfg(test)]
+use cait_sith::protocol::{make_protocol, Context, Protocol};
+use cait_sith::protocol::{Participant, ProtocolError, SharedChannel, };
 use frost_ed25519::keys::dkg::{round1, round2};
 use frost_ed25519::Identifier;
-use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
-use serde::Serialize;
-use crate::frost::common::{collect_packages, distribute_packages};
-
-pub fn refresh_internal<RNG: CryptoRng + RngCore + 'static + Send>(
-    rng: RNG,
-    participants: Vec<Participant>,
-    threshold: usize,
-    me: Participant,
-    keygen_output: KeygenOutput,
-) -> anyhow::Result<impl Protocol<Output = KeygenOutput>> {
-    if participants.len() < threshold {
-        anyhow::bail!("Threshold must be less than or equal to number of participants");
-    }
-
-    let ctx = Context::new();
-    let fut = do_refresh(
-        ctx.shared_channel(),
-        rng,
-        participants,
-        me,
-        keygen_output,
-        threshold,
-    );
-    Ok(make_protocol(ctx, fut))
-}
 
 pub(crate) async fn do_refresh<RNG: CryptoRng + RngCore + 'static + Send>(
     mut chan: SharedChannel,
@@ -98,21 +73,20 @@ async fn handle_round1<RNG: CryptoRng + RngCore + 'static + Send>(
     threshold: usize,
     rng: RNG,
 ) -> Result<(round1::SecretPackage, BTreeMap<Identifier, round1::Package>), ProtocolError> {
-    let (round1_secret, my_round1_package) = frost_core::keys::refresh::refresh_dkg_part_1(
+    let (my_package, packages_to_send) = frost_core::keys::refresh::refresh_dkg_part_1(
         to_frost_identifier(me),
         other_participants.len() as u16 + 1,
         threshold as u16,
         rng,
     ).map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part1: {:?}", e)))?;
 
-    let round1_wait_point = chan.next_waitpoint();
+    let received_packages: BTreeMap<Identifier, round1::Package> = {
+        let waitpoint = chan.next_waitpoint();
+        chan.send_many(waitpoint, &packages_to_send).await;
+        collect_packages(chan, other_participants, waitpoint).await?
+    };
 
-    chan.send_many(round1_wait_point, &my_round1_package).await;
-
-    let round1_packages: BTreeMap<Identifier, round1::Package> =
-        collect_packages(chan, other_participants, round1_wait_point).await?;
-
-    Ok((round1_secret, round1_packages))
+    Ok((my_package, received_packages))
 }
 
 async fn handle_round2(
@@ -125,17 +99,16 @@ async fn handle_round2(
         frost_core::keys::refresh::refresh_dkg_part2(round1_secret, round1_packages)
             .map_err(|e| ProtocolError::AssertionFailed(format!("keyshare::part2: {:?}", e)))?;
 
-    let waitpoint = chan.next_waitpoint();
-
-    distribute_packages(
-        chan,
-        other_participants,
-        &my_round2_packages,
-        waitpoint,
-    ).await;
-
-    let round2_packages: BTreeMap<Identifier, round2::Package> =
-        collect_packages(chan, other_participants, waitpoint).await?;
+    let round2_packages: BTreeMap<Identifier, round2::Package> = {
+        let waitpoint = chan.next_waitpoint();
+        distribute_packages(
+            chan,
+            other_participants,
+            &my_round2_packages,
+            waitpoint,
+        ).await;
+        collect_packages(chan, other_participants, waitpoint).await?
+    };
 
     Ok((round2_secret, round2_packages))
 }
@@ -160,14 +133,16 @@ mod tests {
 
         for (participant, key_pair) in participants {
             let rng: StdRng = StdRng::seed_from_u64(protocols.len() as u64);
-
-            let protocol = refresh_internal(
+            let ctx = Context::new();
+            let protocol = do_refresh(
+                ctx.shared_channel(),
                 rng,
                 participants_list.clone(),
-                threshold,
                 *participant,
                 key_pair.clone(),
-            )?;
+                threshold,
+            );
+            let protocol = make_protocol(ctx, protocol);
             let protocol = Box::new(protocol);
 
             protocols.push((*participant, protocol))
