@@ -72,9 +72,7 @@ pub(crate) async fn do_sign_coordinator<RNG: CryptoRng + RngCore + 'static + Sen
         BTreeMap::new();
 
     let r1_wait_point = chan.next_waitpoint();
-    {
-        chan.send_many(r1_wait_point, &InitMessage()).await;
-    }
+    chan.send_many(r1_wait_point, &InitMessage()).await;
 
     let (nonces, commitments) = round1::commit(keygen_output.key_package.signing_share(), &mut rng);
     commitments_map.insert(to_frost_identifier(me), commitments);
@@ -99,9 +97,7 @@ pub(crate) async fn do_sign_coordinator<RNG: CryptoRng + RngCore + 'static + Sen
         BTreeMap::new();
 
     let r2_wait_point = chan.next_waitpoint();
-    {
-        chan.send_many(r2_wait_point, &signing_package).await;
-    }
+    chan.send_many(r2_wait_point, &signing_package).await;
 
     let signature_share = round2::sign(&signing_package, &nonces, &keygen_output.key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
@@ -172,10 +168,8 @@ pub(crate) async fn do_sign_participant<RNG: CryptoRng + RngCore + 'static>(
     let signature_share = round2::sign(&signing_package, &nonces, &keygen_output.key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
-    {
-        chan.send_private(r2_wait_point, coordinator, &signature_share)
-            .await;
-    }
+    chan.send_private(r2_wait_point, coordinator, &signature_share)
+        .await;
 
     // ---
 
