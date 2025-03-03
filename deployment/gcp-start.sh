@@ -91,18 +91,15 @@ fi
 
 # Check if ACCOUNT_SK is empty - if so, fetch from GCP Secret Manager
 if [ -z "${ACCOUNT_SK}" ]; then
-  echo "ACCOUNT_SK not provided in environment, will from GCP Secret Manager..."
+  echo "ACCOUNT_SK not provided in environment, will fetch from GCP Secret Manager..."
   ACCOUNT_SK=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_ACCOUNT_SK_SECRET_ID)
 else
   echo "Using provided ACCOUNT_SK from environment"
 fi
 
-# Export environment variables if they exist and are not empty
-[ -n "${GCP_PROJECT_ID}" ] && export GCP_PROJECT_ID="${GCP_PROJECT_ID}"
-[ -n "${GCP_KEYSHARE_SECRET_ID}" ] && export GCP_KEYSHARE_SECRET_ID="${GCP_KEYSHARE_SECRET_ID}"
-[ -n "${LOCAL_ENCRYPTION_KEY}" ] && export MPC_SECRET_STORE_KEY="${LOCAL_ENCRYPTION_KEY}"
-[ -n "${P2P_PRIVATE_KEY}" ] && export MPC_P2P_PRIVATE_KEY="${P2P_PRIVATE_KEY}"
-[ -n "${ACCOUNT_SK}" ] && export MPC_ACCOUNT_SK="${ACCOUNT_SK}"
+export MPC_SECRET_STORE_KEY="${LOCAL_ENCRYPTION_KEY}"
+export MPC_P2P_PRIVATE_KEY="${P2P_PRIVATE_KEY}"
+export MPC_ACCOUNT_SK="${ACCOUNT_SK}"
 
 echo "Starting mpc node..."
 /app/mpc-node start
