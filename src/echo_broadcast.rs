@@ -85,7 +85,7 @@ pub async fn reliable_broadcast_send<T>(
     data: T,
 ) -> MessageType<T>
 where
-    T: Serialize + Copy,
+    T: Serialize,
 {
     let vote = MessageType::Send(data);
     let sid = participants.index(me.clone());
@@ -108,7 +108,7 @@ pub async fn reliable_broadcast_receive_all<T>(
     send_vote: MessageType<T>,
 ) -> Result<Vec<T>, ProtocolError>
 where
-    T: Serialize + Clone + DeserializeOwned + Copy + PartialEq,
+    T: Serialize + Clone + DeserializeOwned + PartialEq,
 {
     let n = participants.len();
     let (echo_t, ready_t) = echo_ready_thresholds(n);
@@ -154,7 +154,7 @@ where
 
         is_simulated_vote = false;
 
-        match vote {
+        match vote.clone() {
             // Receive send vote then echo to everybody
             MessageType::Send(data) => {
                 // if the sender is not the one identified by the session id (sid)
@@ -182,7 +182,7 @@ where
                     continue;
                 }
                 // insert or increment the number of collected echo of a specific vote
-                data_echo[sid].insert_or_increase_counter(data);
+                data_echo[sid].insert_or_increase_counter(data.clone());
 
                 // upon gathering strictly more than (n+f)/2 votes
                 // for a result, deliver Ready
@@ -236,7 +236,7 @@ where
                 }
 
                 // insert or increment the number of collected ready of a specific vote
-                data_ready[sid].insert_or_increase_counter(data);
+                data_ready[sid].insert_or_increase_counter(data.clone());
 
                 // upon gathering strictly more than f votes
                 // and if I haven't already amplified ready vote in session sid then
@@ -244,7 +244,7 @@ where
                 if data_ready[sid].get(&data).unwrap() > ready_t
                     && finish_amplification[sid] == false
                 {
-                    vote = MessageType::Ready(data);
+                    vote = MessageType::Ready(data.clone());
                     chan.send_many(wait, &(&sid, &vote))
                         .await;
                     finish_amplification[sid] = true;
@@ -261,7 +261,7 @@ where
 
                     // return an array of data
                     // make a list of data and return them
-                    vote_output.push(data);
+                    vote_output.push(data.clone());
 
                     // Output error if the received vote after broadcast is not
                     // the same as the one originally sent
@@ -296,7 +296,7 @@ pub async fn do_broadcast<T>(
     data: T,
 ) -> Result<Vec<T>, ProtocolError>
 where
-    T: Serialize + Clone + DeserializeOwned + Copy + PartialEq,
+    T: Serialize + Clone + DeserializeOwned + PartialEq,
 {
     let wait_broadcast = chan.next_waitpoint();
     let send_vote = reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, data).await;

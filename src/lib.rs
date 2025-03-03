@@ -118,7 +118,12 @@
 mod compat;
 mod constants;
 mod crypto;
+
+#[cfg(feature = "internals")]
+pub mod echo_broadcast;
+#[cfg(not(feature = "internals"))]
 mod echo_broadcast;
+
 mod keyshare;
 mod math;
 
