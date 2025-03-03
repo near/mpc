@@ -112,7 +112,7 @@ impl Debug for BufferedBlockData {
     }
 }
 
-/// Thin API that need from the network.
+/// Thin API that the queue needs from the network.
 pub trait NetworkAPIForSigning: Send + Sync + 'static {
     /// Returns the participants that are currently connected to us.
     fn alive_participants(&self) -> HashSet<ParticipantId>;
