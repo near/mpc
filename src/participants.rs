@@ -68,8 +68,17 @@ impl ParticipantList {
     /// Return the index of a given participant.
     ///
     /// Basically, the order they appear in a sorted list
-    pub fn index(&self, participant: Participant) -> usize {
+    pub fn index(&self, participant: &Participant) -> usize {
         self.indices[&participant]
+    }
+
+    // Return a participant of a given index from the order they
+    // appear in the sorted list
+    pub fn from_index(&self, index: &usize) -> Option<Participant>{
+        if *index >= self.participants.len(){
+            return None
+        }
+        Some(self.participants[*index].clone())
     }
 
     /// Get the lagrange coefficient for a participant, relative to this list.
@@ -162,13 +171,26 @@ impl<'a, T> ParticipantMap<'a, T> {
         self.data[i] = Some(data);
         self.count += 1;
     }
+
+    // Consumes the Map returning only the vector of the unwrapped data
+    // If one of the data is still none, then return None
+    pub fn into_vec_or_none(self) -> Option<Vec<T>>{
+        let mut vec_data: Vec<T> = Vec::new();
+        for d in self.data {
+            let Some(data) = d else {
+                return None
+            };
+            vec_data.push(data)
+        }
+        return Some(vec_data)
+    }
 }
 
 impl<'a, T> Index<Participant> for ParticipantMap<'a, T> {
     type Output = T;
 
     fn index(&self, index: Participant) -> &Self::Output {
-        self.data[self.participants.index(index)].as_ref().unwrap()
+        self.data[self.participants.index(&index)].as_ref().unwrap()
     }
 }
 

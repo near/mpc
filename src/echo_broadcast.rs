@@ -1,4 +1,4 @@
-use crate::participants::{ParticipantCounter, ParticipantList};
+use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
 use crate::protocol::ProtocolError;
 use crate::protocol::{
     internal::{SharedChannel, Waitpoint},
@@ -88,7 +88,7 @@ where
     T: Serialize,
 {
     let vote = MessageType::Send(data);
-    let sid = participants.index(me.clone());
+    let sid = participants.index(&me);
     // Send vote to all participants but for myself
     chan.send_many(wait, &(&sid, &vote)).await;
     // the vote is returned to be taken into consideration as received
@@ -99,21 +99,21 @@ where
 /// It broadcasts a vote of type MessageType::Send and expects that the output
 /// of the broadcasts be the same as the input vote.
 /// Reliable_broadcast_receive_all is expected to be called right after reliable_broadcast_send.
-///
-pub async fn reliable_broadcast_receive_all<T>(
+pub async fn reliable_broadcast_receive_all<'a, T>(
     chan: &SharedChannel,
     wait: Waitpoint,
-    participants: &ParticipantList,
+    participants: &'a ParticipantList,
     me: &Participant,
     send_vote: MessageType<T>,
-) -> Result<Vec<T>, ProtocolError>
+) -> Result<ParticipantMap<'a, T>, ProtocolError>
 where
     T: Serialize + Clone + DeserializeOwned + PartialEq,
 {
     let n = participants.len();
     let (echo_t, ready_t) = echo_ready_thresholds(n);
 
-    let mut vote_output: Vec<T> = Vec::new();
+    let mut vote_output= ParticipantMap::new(&participants);
+
     // first dimension determines the session
     // second dimension contains the counter for the received data
     let mut data_echo = vec![CounterList::new(); n];
@@ -131,7 +131,7 @@ where
 
     // receive simulated vote
     let mut from = me.clone();
-    let mut sid = participants.index(me.clone());
+    let mut sid = participants.index(&me);
     let mut vote = match send_vote{
         MessageType::Send(_) => send_vote.clone(),
         _ => return Err(ProtocolError::AssertionFailed(format!(
@@ -162,7 +162,7 @@ where
                 // then skip
                 // the second condition prevents a malicious party starting the protocol
                 // on behalf on somebody else
-                if finish_send[sid] || sid != participants.index(from.clone()) {
+                if finish_send[sid] || sid != participants.index(&from) {
                     continue;
                 }
                 vote = MessageType::Echo(data);
@@ -259,13 +259,15 @@ where
                     finish_echo[sid] = true;
                     finish_ready[sid] = true;
 
-                    // return an array of data
+                    // return a map of participant data
+                    // the unwrap will not fail as the index is in the range of participants
+                    let p = participants.from_index(&sid).unwrap();
                     // make a list of data and return them
-                    vote_output.push(data.clone());
+                    vote_output.put(p, data.clone());
 
                     // Output error if the received vote after broadcast is not
                     // the same as the one originally sent
-                    if sid == participants.index(me.clone()){
+                    if sid == participants.index(&me){
                         if MessageType::Send(data) != send_vote{
                             return Err(ProtocolError::AssertionFailed(format!(
                                 "Too many malicious parties, way above the assumed threshold:
@@ -289,12 +291,12 @@ where
 
 /// The reliable echo-broadcast protocol that party me is supposed
 /// to run with all the other parties
-pub async fn do_broadcast<T>(
+pub async fn do_broadcast<'a, T>(
     chan: &mut SharedChannel,
-    participants: &ParticipantList,
+    participants: &'a ParticipantList,
     me: &Participant,
     data: T,
-) -> Result<Vec<T>, ProtocolError>
+) -> Result<ParticipantMap<'a, T>, ProtocolError>
 where
     T: Serialize + Clone + DeserializeOwned + PartialEq,
 {
@@ -328,6 +330,7 @@ mod test {
         let vote_list =
             reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, send_vote)
                 .await?;
+        let vote_list = vote_list.into_vec_or_none().unwrap();
         Ok(vote_list)
     }
 
@@ -376,7 +379,7 @@ mod test {
         me: Participant,
     ) -> Result<Vec<bool>, ProtocolError> {
         let wait_broadcast = chan.next_waitpoint();
-        let sid = participants.index(me.clone());
+        let sid = participants.index(&me);
 
         // malicious reliable broadcast send
         let vote_true = MessageType::Send(true);
@@ -397,6 +400,7 @@ mod test {
         let vote_list =
             reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, vote_false)
                 .await?;
+        let vote_list = vote_list.into_vec_or_none().unwrap();
         Ok(vote_list)
     }
 
@@ -406,7 +410,7 @@ mod test {
         me: Participant,
     ) -> Result<Vec<bool>, ProtocolError> {
         let wait_broadcast = chan.next_waitpoint();
-        let sid = participants.index(me.clone());
+        let sid = participants.index(&me);
 
         // malicious reliable broadcast send
         let vote_true = MessageType::Send(true);
@@ -427,6 +431,7 @@ mod test {
         let vote_list =
             reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, vote_true)
                 .await?;
+        let vote_list = vote_list.into_vec_or_none().unwrap();
         Ok(vote_list)
     }
 

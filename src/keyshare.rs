@@ -153,6 +153,8 @@ async fn do_keyshare<C: CSCurve>(
 
     // broadcast hash of transcript and collect all broadcasted transcripts
     let transcript_list = do_broadcast(&mut chan, &participants, &me, my_transcript_hash).await?;
+    // unwrap here would never fail as the broadcast protocol ends only when the map is full
+    let transcript_list = transcript_list.into_vec_or_none().unwrap();
 
     let mut err = String::new();
 
@@ -230,6 +232,8 @@ async fn do_keyshare<C: CSCurve>(
         true => {
             // broadcast node me succeded
             let vote_list = do_broadcast(&mut chan, &participants, &me, true).await?;
+            // unwrap here would never fail as the broadcast protocol ends only when the map is full
+            let vote_list = vote_list.into_vec_or_none().unwrap();
             // go through all the list of votes and check if any is fail
             if vote_list.contains(&false) {
                 return Err(ProtocolError::AssertionFailed(format!(
