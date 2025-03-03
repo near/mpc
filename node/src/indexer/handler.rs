@@ -103,10 +103,12 @@ async fn handle_message(
                     entropy: streamer_message.block.header.random_value.into(),
                     timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
                 });
+                metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
             } else if let Some(signature_id) =
                 maybe_get_signature_completion(&receipt, mpc_contract_id)
             {
                 completed_signatures.push(signature_id);
+                metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
             }
         }
     }

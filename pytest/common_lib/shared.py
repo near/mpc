@@ -318,16 +318,12 @@ class MpcCluster:
                     - If the indexers fail to observe the signature requests before `constants.TIMEOUT` is reached.
                     - If `sig_verification` raisese an AssertionError.
         """
-        started = time.time()
-        tx_hashes, tx_sent = self.generate_and_send_signature_requests(
+        tx_hashes, _ = self.generate_and_send_signature_requests(
             num_requests, add_gas, add_deposit)
         print("Sent signature requests, tx_hashes:", tx_hashes)
 
         results = self.await_txs_responses(tx_hashes)
         verify_txs(results, sig_verification)
-
-        respond_timeouts = self.get_int_metric_value("mpc_num_sign_responses_timed_out")
-        print("Number of respond txs which had to be resubmitted:", respond_timeouts)
 
     def generate_and_send_signature_requests(self,
                                              num_requests,
@@ -353,8 +349,8 @@ class MpcCluster:
         while True:
             assert time.time() - started < TIMEOUT, "Waiting for mpc indexers"
             try:
-                indexed_request_count = self.get_int_metric_value("mpc_num_signature_requests")
-                print("Indexers num_signature_requests:", indexed_request_count)
+                indexed_request_count = self.get_int_metric_value("mpc_num_signature_requests_indexed")
+                print("num_signature_requests_indexed:", indexed_request_count)
                 if all(x and x == num_requests for x in indexed_request_count):
                     tx_indexed = time.time()
                     print("Indexer latency: ", tx_indexed - tx_sent)

@@ -236,7 +236,7 @@ impl MpcClient {
                             .clone();
                         let response = match existing_response {
                             None => {
-                                metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
                                     .with_label_values(&["total"])
                                     .inc();
 
@@ -246,7 +246,7 @@ impl MpcClient {
                                 )
                                 .await??;
 
-                                metrics::MPC_NUM_SIGN_REQUESTS_LEADER
+                                metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
                                     .with_label_values(&["succeeded"])
                                     .inc();
 
