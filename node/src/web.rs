@@ -9,6 +9,7 @@ use futures::future::BoxFuture;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tokio::sync::{broadcast, mpsc};
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -41,10 +42,56 @@ pub(crate) async fn metrics() -> String {
 struct WebServerState {
     /// Root task handle for the whole program.
     root_task_handle: Arc<TaskHandle>,
+    /// Sender for debug requests that need the MPC client to respond.
+    signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
     format!("{:?}", state.root_task_handle.report())
+}
+
+#[derive(Clone)]
+pub struct SignatureDebugRequest {
+    pub kind: SignatureDebugRequestKind,
+    responder: mpsc::Sender<String>,
+}
+
+impl SignatureDebugRequest {
+    pub fn respond(self, response: String) {
+        let _ = self.responder.try_send(response);
+    }
+}
+
+#[derive(Clone)]
+pub enum SignatureDebugRequestKind {
+    RecentBlocks,
+    RecentSignatures,
+}
+
+async fn debug_request_from_node(
+    State(state): State<WebServerState>,
+    request: SignatureDebugRequestKind,
+) -> Result<String, AnyhowErrorWrapper> {
+    let (sender, mut receiver) = mpsc::channel(1);
+    let request = SignatureDebugRequest {
+        kind: request,
+        responder: sender,
+    };
+    if state.signature_debug_request_sender.send(request).is_err() {
+        return Err(anyhow::anyhow!("Error: node not in the Running state").into());
+    }
+    let Some(response) = receiver.recv().await else {
+        return Err(anyhow::anyhow!("Node dropped the debug request").into());
+    };
+    Ok(response)
+}
+
+async fn debug_blocks(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
+    debug_request_from_node(state, SignatureDebugRequestKind::RecentBlocks).await
+}
+
+async fn debug_signatures(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
+    debug_request_from_node(state, SignatureDebugRequestKind::RecentSignatures).await
 }
 
 /// Starts the web server. This is an async function that returns a future.
@@ -55,6 +102,7 @@ async fn debug_tasks(State(state): State<WebServerState>) -> String {
 /// the returned future will stop the web server.
 pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
+    signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     config: WebUIConfig,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
@@ -62,8 +110,13 @@ pub async fn start_web_server(
     let router = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics))
         .route("/debug/tasks", axum::routing::get(debug_tasks))
+        .route("/debug/blocks", axum::routing::get(debug_blocks))
+        .route("/debug/signatures", axum::routing::get(debug_signatures))
         .route("/health", axum::routing::get(|| async { "OK" }))
-        .with_state(WebServerState { root_task_handle });
+        .with_state(WebServerState {
+            root_task_handle,
+            signature_debug_request_sender,
+        });
 
     let tcp_listener = TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;
     Ok(async move {

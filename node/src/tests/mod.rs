@@ -11,7 +11,7 @@ use crate::config::{
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::fake::FakeIndexerManager;
-use crate::indexer::handler::{ChainSignatureRequest, SignArgs};
+use crate::indexer::handler::{SignArgs, SignatureRequestFromChain};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::KeyshareStorageFactory;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
@@ -20,8 +20,9 @@ use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::start_web_server;
 use k256::elliptic_curve::Field;
 use near_indexer_primitives::types::Finality;
+use near_indexer_primitives::CryptoHash;
 use near_sdk::AccountId;
-use near_time::{Clock, Duration};
+use near_time::Clock;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::time::timeout;
@@ -188,7 +189,13 @@ impl OneNodeTestConfig {
         async move {
             let root_future = async move {
                 let root_task_handle = tracking::current_task();
-                let web_server = start_web_server(root_task_handle, config.web_ui.clone()).await?;
+                let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+                let web_server = start_web_server(
+                    root_task_handle,
+                    signature_debug_request_sender.clone(),
+                    config.web_ui.clone(),
+                )
+                .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
 
                 let secret_db = SecretDB::new(&home_dir, secrets.local_storage_aes_key)?;
@@ -206,6 +213,7 @@ impl OneNodeTestConfig {
                     keyshare_storage_factory,
                     indexer,
                     currently_running_job_name,
+                    signature_debug_request_sender,
                 };
                 coordinator.run().await
             };
@@ -234,13 +242,13 @@ impl IntegrationTestSetup {
         temp_dir: &Path,
         participant_accounts: Vec<AccountId>,
         threshold: usize,
-        txn_delay: Duration,
+        txn_delay_blocks: u64,
         port_seed: PortSeed,
     ) -> IntegrationTestSetup {
         let p2p_configs =
             generate_test_p2p_configs(&participant_accounts, threshold, port_seed).unwrap();
         let participants = p2p_configs[0].0.participants.clone();
-        let mut indexer_manager = FakeIndexerManager::new(clock.clone(), txn_delay);
+        let mut indexer_manager = FakeIndexerManager::new(clock.clone(), txn_delay_blocks);
 
         let mut configs = Vec::new();
         for (i, (_, p2p_key)) in p2p_configs.into_iter().enumerate() {
@@ -305,9 +313,10 @@ pub async fn request_signature_and_await_response(
     user: &str,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
-    let request = ChainSignatureRequest {
+    let request = SignatureRequestFromChain {
         entropy: rand::random(),
-        request_id: rand::random(),
+        signature_id: CryptoHash(rand::random()),
+        receipt_id: CryptoHash(rand::random()),
         predecessor_id: user.parse().unwrap(),
         timestamp_nanosec: rand::random(),
         request: SignArgs {

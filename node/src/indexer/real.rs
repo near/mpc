@@ -20,7 +20,7 @@ pub fn spawn_real_indexer(
 ) -> (std::thread::JoinHandle<()>, IndexerAPI) {
     let (chain_config_sender, chain_config_receiver) =
         tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
-    let (sign_request_sender, sign_request_receiver) = mpsc::unbounded_channel();
+    let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
 
     let thread = std::thread::spawn(move || {
@@ -72,7 +72,7 @@ pub fn spawn_real_indexer(
                 indexer_config.concurrency,
                 Arc::clone(&stats),
                 indexer_config.mpc_contract_id,
-                sign_request_sender,
+                block_update_sender,
             )
             .await;
         });
@@ -81,7 +81,7 @@ pub fn spawn_real_indexer(
         thread,
         IndexerAPI {
             contract_state_receiver: chain_config_receiver,
-            sign_request_receiver: Arc::new(Mutex::new(sign_request_receiver)),
+            block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
             txn_sender: chain_txn_sender,
         },
     )

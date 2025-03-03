@@ -24,7 +24,15 @@ def test_web_endpoints():
         assert 'OK' in response.text, response.text
 
         response = requests.get(f'http://localhost:{port}/metrics')
-        assert 'mpc_num_signature_requests' in response.text, response.text
+        assert 'mpc_num_signature_requests_indexed' in response.text, response.text
 
         response = requests.get(f'http://localhost:{port}/debug/tasks')
         assert 'root:' in response.text, response.text
+
+        response = requests.get(f'http://localhost:{port}/debug/blocks')
+        assert 'Recent blocks:' in response.text, response.text
+        assert '1 sign reqs:' in response.text, response.text
+
+        response = requests.get(f'http://localhost:{port}/debug/signatures')
+        assert 'Recent Signatures:' in response.text, response.text
+        assert 'id:' in response.text, response.text

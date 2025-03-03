@@ -1,6 +1,6 @@
 use crate::config::{ConfigFile, MpcConfig, SecretsConfig};
 use crate::db::{DBCol, SecretDB};
-use crate::indexer::handler::ChainSignatureRequest;
+use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractInitializingState, ContractResharingState, ContractRunningState, ContractState,
 };
@@ -19,12 +19,13 @@ use crate::sign::PresignatureStorage;
 use crate::sign_request::SignRequestStorage;
 use crate::tracking::{self};
 use crate::triple::TripleStorage;
+use crate::web::SignatureDebugRequest;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use near_time::{Clock, Duration};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 
 /// Main entry point for the MPC node logic. Assumes the existence of an
 /// indexer. Queries and monitors the contract for state transitions, and act
@@ -46,6 +47,9 @@ pub struct Coordinator {
 
     /// For testing, to know what the current state is.
     pub currently_running_job_name: Arc<Mutex<String>>,
+
+    /// For debug UI to send us debug requests.
+    pub signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
 }
 
 /// Represents a top-level task that we run for the current contract state.
@@ -70,15 +74,9 @@ enum MpcJobResult {
     /// This MpcJob could not run because the contract is in a state that we
     /// cannot handle (such as the contract being invalid or we're not a current
     /// participant). If this is returned, the coordinator should do nothing
-    /// until either timeout or the contract state changed.
-    HaltUntilInterrupted {
-        /// If true, signature requests received during the time we halt are
-        /// buffered for the next Running state to handle. If false, signatures
-        /// received during this time are dropped.
-        /// In general, true should be used iff the node expects to become online
-        /// shortly (such as doing keygen or resharing).
-        buffer_signature_requests: bool,
-    },
+    /// until either timeout or the contract state changed. During this time,
+    /// block updates are buffered.
+    HaltUntilInterrupted,
 }
 
 impl Coordinator {
@@ -90,23 +88,16 @@ impl Coordinator {
                     // This is the initial state. We stop this state for any state changes.
                     MpcJob {
                         name: "WaitingForSync",
-                        fut: futures::future::ready(Ok(MpcJobResult::HaltUntilInterrupted {
-                            buffer_signature_requests: true,
-                        }))
-                        .boxed(),
+                        fut: futures::future::ready(Ok(MpcJobResult::HaltUntilInterrupted)).boxed(),
                         stop_fn: Box::new(|_| true),
                         timeout_fut: futures::future::pending().boxed(),
                     }
                 }
                 ContractState::Invalid => {
-                    // Invalid state. Similar to initial state; we do nothing until the state changes,
-                    // but do not buffer signatures.
+                    // Invalid state. Similar to initial state; we do nothing until the state changes.
                     MpcJob {
                         name: "Invalid",
-                        fut: futures::future::ready(Ok(MpcJobResult::HaltUntilInterrupted {
-                            buffer_signature_requests: false,
-                        }))
-                        .boxed(),
+                        fut: futures::future::ready(Ok(MpcJobResult::HaltUntilInterrupted)).boxed(),
                         stop_fn: Box::new(|_| true),
                         timeout_fut: futures::future::pending().boxed(),
                     }
@@ -160,10 +151,11 @@ impl Coordinator {
                                 state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer
-                                    .sign_request_receiver
+                                    .block_update_receiver
                                     .clone()
                                     .lock_owned()
                                     .await,
+                                self.signature_debug_request_sender.subscribe(),
                             ),
                         )?,
                         stop_fn: Box::new(move |new_state| match new_state {
@@ -219,22 +211,11 @@ impl Coordinator {
                                 tracing::info!("[{}] finished successfully", job.name);
                                 break;
                             }
-                            Ok(MpcJobResult::HaltUntilInterrupted{buffer_signature_requests}) => {
+                            Ok(MpcJobResult::HaltUntilInterrupted) => {
                                 tracing::info!("[{}] halted; waiting for state change or timeout", job.name);
                                 // Replace it with a never-completing future so next iteration we wait for
                                 // only state change or timeout.
-                                if !buffer_signature_requests {
-                                    let mut sign_request_receiver = self.indexer.sign_request_receiver.clone().lock_owned().await;
-                                    job.fut = async move {
-                                        while sign_request_receiver.recv().await.is_some() {
-                                            // drop the signature
-                                        }
-                                        futures::future::pending::<()>().await;
-                                        unreachable!()
-                                    }.boxed();
-                                } else {
-                                    job.fut = futures::future::pending().boxed();
-                                }
+                                job.fut = futures::future::pending().boxed();
                                 continue;
                             }
                         }
@@ -307,9 +288,7 @@ impl Coordinator {
                     "Contract is in initialization state. We already have a keyshare, but its epoch is not zero. Refusing to participate in initialization"
                 );
                 // This is an error situation; we can't recover from it so we just halt.
-                return Ok(MpcJobResult::HaltUntilInterrupted {
-                    buffer_signature_requests: false,
-                });
+                return Ok(MpcJobResult::HaltUntilInterrupted);
             }
 
             let my_public_key = affine_point_to_public_key(existing_key.public_key)?;
@@ -317,9 +296,7 @@ impl Coordinator {
                 if votes.contains(&config_file.my_near_account_id) {
                     tracing::info!("Initialization: we already voted for our public key; waiting for public key consensus");
                     // Wait indefinitely. We will be terminated when config changes, or when we timeout.
-                    return Ok(MpcJobResult::HaltUntilInterrupted {
-                        buffer_signature_requests: true,
-                    });
+                    return Ok(MpcJobResult::HaltUntilInterrupted);
                 }
             }
 
@@ -332,9 +309,7 @@ impl Coordinator {
                 .await?;
 
             // Like above, just wait.
-            return Ok(MpcJobResult::HaltUntilInterrupted {
-                buffer_signature_requests: true,
-            });
+            return Ok(MpcJobResult::HaltUntilInterrupted);
         }
 
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
@@ -342,9 +317,7 @@ impl Coordinator {
             &config_file.my_near_account_id,
         ) else {
             tracing::info!("We are not a participant in the initial candidates list; doing nothing until contract state change");
-            return Ok(MpcJobResult::HaltUntilInterrupted {
-                buffer_signature_requests: false,
-            });
+            return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
         tracking::set_progress(&format!(
@@ -389,9 +362,10 @@ impl Coordinator {
         keyshare_storage: Box<dyn KeyshareStorage>,
         contract_state: ContractRunningState,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
-        sign_request_receiver: tokio::sync::OwnedMutexGuard<
-            mpsc::UnboundedReceiver<ChainSignatureRequest>,
+        block_update_receiver: tokio::sync::OwnedMutexGuard<
+            mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
+        signature_debug_request_receiver: broadcast::Receiver<SignatureDebugRequest>,
     ) -> anyhow::Result<MpcJobResult> {
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
             contract_state.participants,
@@ -399,9 +373,7 @@ impl Coordinator {
         ) else {
             // TODO(#150): Implement sending join txn.
             tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
-            return Ok(MpcJobResult::HaltUntilInterrupted {
-                buffer_signature_requests: false,
-            });
+            return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
         let keyshare = keyshare_storage.load().await?;
@@ -414,9 +386,7 @@ impl Coordinator {
                 tracing::error!(
                     "This node is a participant in the current epoch but is missing a keyshare."
                 );
-                return Ok(MpcJobResult::HaltUntilInterrupted {
-                    buffer_signature_requests: false,
-                });
+                return Ok(MpcJobResult::HaltUntilInterrupted);
             }
         };
 
@@ -460,7 +430,7 @@ impl Coordinator {
 
         let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
 
-        let mpc_client = MpcClient::new(
+        let mpc_client = Arc::new(MpcClient::new(
             config_file.clone().into(),
             mpc_config.clone().into(),
             network_client,
@@ -468,10 +438,14 @@ impl Coordinator {
             presignature_store,
             sign_request_store,
             keyshare,
-        );
+        ));
         mpc_client
-            .clone()
-            .run(channel_receiver, sign_request_receiver, chain_txn_sender)
+            .run(
+                channel_receiver,
+                block_update_receiver,
+                chain_txn_sender,
+                signature_debug_request_receiver,
+            )
             .await?;
 
         Ok(MpcJobResult::Done)
@@ -492,9 +466,7 @@ impl Coordinator {
             &config_file.my_near_account_id,
         ) else {
             tracing::info!("We are not a participant in the new epoch; doing nothing until contract state change");
-            return Ok(MpcJobResult::HaltUntilInterrupted {
-                buffer_signature_requests: false,
-            });
+            return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
         let was_participant_last_epoch = contract_state
@@ -527,9 +499,7 @@ impl Coordinator {
                             .await?;
                         tracing::info!("Sent vote_reshared txn; waiting for contract state to transition into Running");
                     }
-                    return Ok(MpcJobResult::HaltUntilInterrupted {
-                        buffer_signature_requests: true,
-                    });
+                    return Ok(MpcJobResult::HaltUntilInterrupted);
                 }
                 if was_participant_last_epoch {
                     anyhow::ensure!(
