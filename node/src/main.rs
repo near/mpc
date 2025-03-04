@@ -9,6 +9,7 @@ mod cli;
 mod config;
 mod coordinator;
 mod db;
+mod frost;
 mod hkdf;
 mod indexer;
 mod key_generation;
