@@ -3,7 +3,7 @@ use crate::frost::KeygenOutput;
 #[cfg(test)]
 use cait_sith::protocol::{make_protocol, Context, Participant, Protocol};
 #[cfg(test)]
-use frost_ed25519::Signature;
+use frost_ed25519::{Identifier, Signature};
 
 #[cfg(test)]
 #[allow(dead_code)]
@@ -116,4 +116,34 @@ pub(crate) fn build_and_run_signature_protocols(
     }
 
     Ok(run_protocol(protocols)?)
+}
+
+/// Extract group signin key from participants.
+/// The caller is responsible for providing at least `min_signers` shares:
+///  if less than that is provided, a different key will be returned.
+#[cfg(test)]
+pub(crate) fn reconstruct_signing_key(
+    participants: &[(Participant, KeygenOutput)],
+) -> anyhow::Result<frost_ed25519::SigningKey> {
+    let key_packages = participants
+        .iter()
+        .map(|(_, key_pair)| key_pair.key_package.clone())
+        .collect::<Vec<_>>();
+
+    let signing_key = frost_ed25519::keys::reconstruct(&key_packages)?;
+
+    Ok(signing_key)
+}
+
+#[test]
+fn verify_stability_of_identifier_derivation() {
+    let participant = Participant::from(1e9 as u32);
+    let identifier = Identifier::derive(participant.bytes().as_slice()).unwrap();
+    assert_eq!(
+        identifier.serialize(),
+        vec![
+            96, 203, 29, 92, 230, 35, 120, 169, 19, 185, 45, 28, 48, 68, 84, 190, 12, 186, 169,
+            192, 196, 21, 238, 181, 134, 181, 203, 236, 162, 68, 212, 4
+        ]
+    );
 }
