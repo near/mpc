@@ -20,6 +20,7 @@
 mod dkg;
 mod kdf;
 mod sign;
+#[cfg(test)]
 mod tests;
 
 use cait_sith::protocol::{Participant, Protocol};

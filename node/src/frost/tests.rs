@@ -1,18 +1,13 @@
-#[cfg(test)]
 use crate::frost::KeygenOutput;
-#[cfg(test)]
 use cait_sith::protocol::{make_protocol, Context, Participant, Protocol};
-#[cfg(test)]
 use frost_ed25519::{Identifier, Signature};
 
-#[cfg(test)]
 #[allow(dead_code)]
 pub(crate) enum SignatureOutput {
     Coordinator(Signature),
     Participant,
 }
 
-#[cfg(test)]
 pub(crate) fn build_key_packages_with_dealer(
     max_signers: usize,
     min_signers: usize,
@@ -57,7 +52,6 @@ pub(crate) fn build_key_packages_with_dealer(
         .collect::<Vec<_>>()
 }
 
-#[cfg(test)]
 pub(crate) fn build_and_run_signature_protocols(
     participants: &[(Participant, KeygenOutput)],
     actual_signers: usize,
@@ -124,7 +118,6 @@ pub(crate) fn build_and_run_signature_protocols(
 ///     3. No "other" participant is present in `PublicKeyPackage::verifying_shares()`
 ///     4. For each participant their `verifying_share = secret_share * G`
 ///     5. For each participant their `verifying_share` is the same across `KeyPackage` and `PublicKeyPackage`
-#[cfg(test)]
 pub(crate) fn assert_public_key_invariant(
     participants: &[(Participant, KeygenOutput)],
 ) -> anyhow::Result<()> {
@@ -179,7 +172,6 @@ pub(crate) fn assert_public_key_invariant(
 /// Extract group signin key from participants.
 /// The caller is responsible for providing at least `min_signers` shares:
 ///  if less than that is provided, a different key will be returned.
-#[cfg(test)]
 pub(crate) fn reconstruct_signing_key(
     participants: &[(Participant, KeygenOutput)],
 ) -> anyhow::Result<frost_ed25519::SigningKey> {
@@ -193,23 +185,9 @@ pub(crate) fn reconstruct_signing_key(
     Ok(signing_key)
 }
 
-#[test]
-fn verify_stability_of_identifier_derivation() {
-    let participant = Participant::from(1e9 as u32);
-    let identifier = Identifier::derive(participant.bytes().as_slice()).unwrap();
-    assert_eq!(
-        identifier.serialize(),
-        vec![
-            96, 203, 29, 92, 230, 35, 120, 169, 19, 185, 45, 28, 48, 68, 84, 190, 12, 186, 169,
-            192, 196, 21, 238, 181, 134, 181, 203, 236, 162, 68, 212, 4
-        ]
-    );
-}
-
 /// Assert that:
 ///     1. For each subset of size `< threshold` incorrect signing key is reconstructed.
 ///     2. For each subset of size `>= threshold` correct signing key is constructed.
-#[cfg(test)]
 pub(crate) fn assert_signing_schema_threshold_holds(
     expected_signing_key: frost_ed25519::SigningKey,
     threshold: usize,
@@ -245,4 +223,17 @@ pub(crate) fn assert_signing_schema_threshold_holds(
             })?;
     }
     Ok(())
+}
+
+#[test]
+fn verify_stability_of_identifier_derivation() {
+    let participant = Participant::from(1e9 as u32);
+    let identifier = Identifier::derive(participant.bytes().as_slice()).unwrap();
+    assert_eq!(
+        identifier.serialize(),
+        vec![
+            96, 203, 29, 92, 230, 35, 120, 169, 19, 185, 45, 28, 48, 68, 84, 190, 12, 186, 169,
+            192, 196, 21, 238, 181, 134, 181, 203, 236, 162, 68, 212, 4
+        ]
+    );
 }
