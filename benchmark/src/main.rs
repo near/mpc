@@ -92,7 +92,7 @@ fn new_random_mpc_sign_args(rng: &mut ThreadRng, key_version: u32) -> serde_json
 pub async fn benchmark_mpc_sign_impl(
     args: &BenchmarkMpcSignArgs,
     client: JsonRpcClient,
-    accounts: &mut Vec<Account>,
+    accounts: &mut [Account],
 ) -> anyhow::Result<()> {
     // Pick interval to achieve desired TPS.
     let mut interval = time::interval(Duration::from_micros(1_000_000 / args.requests_per_second));
@@ -189,7 +189,7 @@ pub async fn benchmark_mpc_sign_impl(
 pub async fn benchmark_mpc_sign(args: &BenchmarkMpcSignArgs) -> anyhow::Result<()> {
     let mut accounts = accounts_from_dir(&args.user_data_dir)?;
     assert!(
-        accounts.len() > 0,
+        !accounts.is_empty(),
         "at least one account required in {:?} to send transactions",
         args.user_data_dir
     );
