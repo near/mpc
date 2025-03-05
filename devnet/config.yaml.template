@@ -1,0 +1,5 @@
+rpcs:
+  - url: http://replace_me:3030
+    rate_limit: 5
+    max_concurrency: 30
+infra_ops_path: /replace_me/infra-ops
