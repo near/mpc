@@ -1,3 +1,5 @@
+//! This module wraps a signature generation functionality from `Frost` library
+//!  into `cait-sith::Protocol` representation.
 use crate::frost::{to_frost_identifier, KeygenOutput};
 use cait_sith::participants::{ParticipantCounter, ParticipantList};
 use cait_sith::protocol::{
@@ -7,6 +9,8 @@ use frost_ed25519::{round1, round2, Signature};
 use rand::{CryptoRng, RngCore};
 use std::collections::BTreeMap;
 
+/// This is an internal function intended to be re-exported into `mod.rs`.
+/// Converts a future object into `cait_sith::Protocol`.
 pub(crate) fn sign_internal_coordinator<RNG: CryptoRng + RngCore + 'static + Send>(
     rng: RNG,
     participants: Vec<Participant>,
@@ -37,6 +41,8 @@ pub(crate) fn sign_internal_coordinator<RNG: CryptoRng + RngCore + 'static + Sen
     Ok(protocol)
 }
 
+/// This is an internal function intended to be re-exported into `mod.rs`.
+/// Converts a future object into `cait_sith::Protocol`.
 pub(crate) fn sign_internal_passive<RNG: CryptoRng + RngCore + 'static + Send>(
     rng: RNG,
     keygen_output: KeygenOutput,
@@ -54,6 +60,7 @@ pub(crate) fn sign_internal_passive<RNG: CryptoRng + RngCore + 'static + Send>(
 #[derive(serde::Serialize, serde::Deserialize)]
 struct InitMessage();
 
+/// Returns a future that executes signature protocol for *the Coordinator*.
 pub(crate) async fn do_sign_coordinator<RNG: CryptoRng + RngCore + 'static + Send>(
     mut chan: SharedChannel,
     mut rng: RNG,
@@ -127,6 +134,7 @@ pub(crate) async fn do_sign_coordinator<RNG: CryptoRng + RngCore + 'static + Sen
     Ok(signature)
 }
 
+/// Returns a future that executes signature protocol for *a Participant*.
 pub(crate) async fn do_sign_participant<RNG: CryptoRng + RngCore + 'static>(
     mut chan: SharedChannel,
     mut rng: RNG,

@@ -1,3 +1,5 @@
+//! This module wraps Distributed Key Generation functionality from `Frost` library
+//!  into `cait-sith::Protocol` representation.
 use crate::frost::{to_frost_identifier, KeygenOutput};
 use cait_sith::participants::{ParticipantCounter, ParticipantList};
 use cait_sith::protocol::{
@@ -10,6 +12,8 @@ use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
 use std::ops::Index;
 
+/// This is an internal function intended to be re-exported into `mod.rs`.
+/// Converts a future object into `cait_sith::Protocol`.
 pub(crate) fn dkg_internal<RNG: CryptoRng + RngCore + 'static + Send>(
     rng: RNG,
     participants: Vec<Participant>,
@@ -43,6 +47,7 @@ pub(crate) fn dkg_internal<RNG: CryptoRng + RngCore + 'static + Send>(
     Ok(make_protocol(ctx, fut))
 }
 
+/// Returns a future that executes the DKG algorithm.
 async fn do_dkg<RNG: CryptoRng + RngCore + 'static + Send>(
     mut chan: SharedChannel,
     rng: RNG,
@@ -147,6 +152,7 @@ async fn handle_round2(
     Ok((round2_secret, round2_packages))
 }
 
+/// A utility function for collecting packages from specified participants during some round of a protocol.
 pub(crate) async fn wait_for_packages<P: Clone + DeserializeOwned>(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
