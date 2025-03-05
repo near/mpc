@@ -141,20 +141,21 @@ async fn handle_round2(
         .await;
     }
 
-    let mut seen = ParticipantCounter::new(participants);
-    seen.put(me);
     let round2_packages: BTreeMap<Identifier, round2::Package> =
-        wait_for_packages(chan, &mut seen, r2_wait_point).await?;
+        wait_for_packages(chan, participants, me, r2_wait_point).await?;
 
     Ok((round2_secret, round2_packages))
 }
 
 pub(crate) async fn wait_for_packages<P: Clone + DeserializeOwned>(
     chan: &mut SharedChannel,
-    seen: &mut ParticipantCounter<'_>,
+    participants: &ParticipantList,
+    me: Participant,
     wait_point: u64,
 ) -> Result<BTreeMap<Identifier, P>, ProtocolError> {
     let mut packages = BTreeMap::new();
+    let mut seen = ParticipantCounter::new(participants);
+    seen.put(me);
     while !seen.full() {
         let (from, package): (_, P) = chan.recv(wait_point).await?;
         if seen.put(from) {
