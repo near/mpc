@@ -1,7 +1,8 @@
-use crate::assets::{ProtocolsStorage, UniqueId};
+use crate::assets::{DistributedAssetStorage, UniqueId};
 use crate::background::InFlightGenerationTracker;
 use crate::config::PresignatureConfig;
 use crate::hkdf::{derive_public_key, derive_randomness};
+use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{participants_from_triples, ParticipantId, PresignOutputWithParticipants};
 use crate::protocol::run_protocol;
@@ -15,112 +16,193 @@ use k256::{AffinePoint, Scalar, Secp256k1};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::time::timeout;
 
 /// Performs an MPC presignature operation. This is shared for the initiator
 /// and for passive participants.
-pub async fn pre_sign(
-    channel: NetworkTaskChannel,
-    me: ParticipantId,
+pub struct PresignComputation {
     threshold: usize,
     triple0: TripleGenerationOutput<Secp256k1>,
     triple1: TripleGenerationOutput<Secp256k1>,
     keygen_out: KeygenOutput<Secp256k1>,
-) -> anyhow::Result<PresignOutput<Secp256k1>> {
-    let cs_participants = channel
-        .participants
-        .iter()
-        .copied()
-        .map(Participant::from)
-        .collect::<Vec<_>>();
-    let protocol = cait_sith::presign::<Secp256k1>(
-        &cs_participants,
-        me.into(),
-        &cs_participants,
-        me.into(),
-        PresignArguments {
-            triple0,
-            triple1,
-            keygen_out,
-            threshold,
-        },
-    )?;
-    let presignature = run_protocol("presign", channel, me, protocol).await?;
-    metrics::MPC_NUM_PRESIGNATURES_GENERATED.inc();
-    Ok(presignature)
 }
 
-/// Performs an MPC presignature operation. This is a helper function for the unowned
-/// code path that also includes awaiting for the triples to be available.
-#[allow(clippy::too_many_arguments)]
-pub async fn pre_sign_unowned(
-    channel: NetworkTaskChannel,
-    me: ParticipantId,
-    threshold: usize,
-    keygen_out: KeygenOutput<Secp256k1>,
-    triple_store: Arc<TripleStorage>,
-    paired_triple_id: UniqueId,
-) -> anyhow::Result<PresignOutput<Secp256k1>> {
-    let (triple0, triple1) = triple_store.take_unowned(paired_triple_id).await?;
-    pre_sign(channel, me, threshold, triple0, triple1, keygen_out).await
+#[async_trait::async_trait]
+impl MpcLeaderCentricComputation<PresignOutput<Secp256k1>> for PresignComputation {
+    async fn compute(
+        self,
+        channel: &mut NetworkTaskChannel,
+    ) -> anyhow::Result<PresignOutput<Secp256k1>> {
+        let cs_participants = channel
+            .participants()
+            .iter()
+            .copied()
+            .map(Participant::from)
+            .collect::<Vec<_>>();
+        let me = channel.my_participant_id();
+        let protocol = cait_sith::presign::<Secp256k1>(
+            &cs_participants,
+            me.into(),
+            &cs_participants,
+            me.into(),
+            PresignArguments {
+                triple0: self.triple0,
+                triple1: self.triple1,
+                keygen_out: self.keygen_out,
+                threshold: self.threshold,
+            },
+        )?;
+        let _timer = metrics::MPC_PRE_SIGNATURE_TIME_ELAPSED.start_timer();
+        let presignature = run_protocol("presign", channel, protocol).await?;
+        Ok(presignature)
+    }
+
+    fn leader_waits_for_success(&self) -> bool {
+        true
+    }
+}
+
+/// Performs an MPC presignature operation as a follower.
+/// The difference is: we need to read the triples from the triple store (which may fail),
+/// and we need to write the presignature to the presignature store before completing.
+pub struct FollowerPresignComputation {
+    pub threshold: usize,
+    pub paired_triple_id: UniqueId,
+    pub keygen_out: KeygenOutput<Secp256k1>,
+    pub triple_store: Arc<TripleStorage>,
+
+    pub out_presignature_store: Arc<PresignatureStorage>,
+    pub out_presignature_id: UniqueId,
+}
+
+#[async_trait::async_trait]
+impl MpcLeaderCentricComputation<()> for FollowerPresignComputation {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+        let (triple0, triple1) = self.triple_store.take_unowned(self.paired_triple_id)?;
+        let presignature = PresignComputation {
+            threshold: self.threshold,
+            triple0,
+            triple1,
+            keygen_out: self.keygen_out,
+        }
+        .compute(channel)
+        .await?;
+        self.out_presignature_store.add_unowned(
+            self.out_presignature_id,
+            PresignOutputWithParticipants {
+                presignature,
+                participants: channel.participants().to_vec(),
+            },
+        );
+        Ok(())
+    }
+
+    fn leader_waits_for_success(&self) -> bool {
+        true
+    }
 }
 
 /// Performs an MPC signature operation. This is the same for the initiator
 /// and for passive participants.
 /// The entropy is used to rerandomize the presignature (inspired by [GS21])
 /// The tweak allows key derivation
-pub async fn sign(
-    channel: NetworkTaskChannel,
-    me: ParticipantId,
-    keygen_out: KeygenOutput<Secp256k1>,
-    presign_out: PresignOutput<Secp256k1>,
-    msg_hash: Scalar,
-    tweak: Scalar,
-    entropy: [u8; 32],
-) -> anyhow::Result<(FullSignature<Secp256k1>, AffinePoint)> {
-    let cs_participants = channel
-        .participants
-        .iter()
-        .copied()
-        .map(Participant::from)
-        .collect::<Vec<_>>();
-
-    let public_key = derive_public_key(keygen_out.public_key, tweak);
-
-    // rerandomize the presignature: a variant of [GS21]
-    let PresignOutput { big_r, k, sigma } = presign_out;
-    let delta = derive_randomness(
-        public_key,
-        msg_hash,
-        big_r,
-        channel.participants.clone(),
-        entropy,
-    );
-    // we use the default inversion: it is absolutely fine to use a
-    // variable time inversion since delta is a public value
-    let inverted_delta = delta.invert().unwrap();
-    let presign_out = PresignOutput {
-        // R' = [delta] R
-        big_r: (big_r * delta).to_affine(),
-        // k' = k/delta
-        k: k * inverted_delta,
-        // sigma = sigma/delta + k tweak/delta
-        sigma: (sigma + tweak * k) * inverted_delta,
-    };
-
-    let protocol = cait_sith::sign::<Secp256k1>(
-        &cs_participants,
-        me.into(),
-        public_key,
-        presign_out,
-        msg_hash,
-    )?;
-    let signature = run_protocol("sign", channel, me, protocol).await?;
-    metrics::MPC_NUM_SIGNATURES_GENERATED.inc();
-    Ok((signature, public_key))
+pub struct SignComputation {
+    pub keygen_out: KeygenOutput<Secp256k1>,
+    pub presign_out: PresignOutput<Secp256k1>,
+    pub msg_hash: Scalar,
+    pub tweak: Scalar,
+    pub entropy: [u8; 32],
 }
 
-pub type PresignatureStorage = ProtocolsStorage<PresignOutputWithParticipants>;
+#[async_trait::async_trait]
+impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, AffinePoint)> for SignComputation {
+    async fn compute(
+        self,
+        channel: &mut NetworkTaskChannel,
+    ) -> anyhow::Result<(FullSignature<Secp256k1>, AffinePoint)> {
+        let cs_participants = channel
+            .participants()
+            .iter()
+            .copied()
+            .map(Participant::from)
+            .collect::<Vec<_>>();
+        let me = channel.my_participant_id();
+
+        let public_key = derive_public_key(self.keygen_out.public_key, self.tweak);
+
+        // rerandomize the presignature: a variant of [GS21]
+        let PresignOutput { big_r, k, sigma } = self.presign_out;
+        let delta = derive_randomness(
+            public_key,
+            self.msg_hash,
+            big_r,
+            channel.participants().to_vec(),
+            self.entropy,
+        );
+        // we use the default inversion: it is absolutely fine to use a
+        // variable time inversion since delta is a public value
+        let inverted_delta = delta.invert().unwrap();
+        let presign_out = PresignOutput {
+            // R' = [delta] R
+            big_r: (big_r * delta).to_affine(),
+            // k' = k/delta
+            k: k * inverted_delta,
+            // sigma = sigma/delta + k tweak/delta
+            sigma: (sigma + self.tweak * k) * inverted_delta,
+        };
+
+        let protocol = cait_sith::sign::<Secp256k1>(
+            &cs_participants,
+            me.into(),
+            public_key,
+            presign_out,
+            self.msg_hash,
+        )?;
+        let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
+        let signature = run_protocol("sign", channel, protocol).await?;
+        Ok((signature, public_key))
+    }
+
+    fn leader_waits_for_success(&self) -> bool {
+        false
+    }
+}
+
+pub type PresignatureStorage = DistributedAssetStorage<PresignOutputWithParticipants>;
+
+/// Performs an MPC signature operation as a follower.
+/// The difference is that the follower needs to look up the presignature, which may fail.
+pub struct FollowerSignComputation {
+    pub keygen_out: KeygenOutput<Secp256k1>,
+    pub presignature_id: UniqueId,
+    pub presignature_store: Arc<PresignatureStorage>,
+    pub msg_hash: Scalar,
+    pub tweak: Scalar,
+    pub entropy: [u8; 32],
+}
+
+#[async_trait::async_trait]
+impl MpcLeaderCentricComputation<()> for FollowerSignComputation {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+        let presign_out = self
+            .presignature_store
+            .take_unowned(self.presignature_id)?
+            .presignature;
+        SignComputation {
+            keygen_out: self.keygen_out,
+            presign_out,
+            msg_hash: self.msg_hash,
+            tweak: self.tweak,
+            entropy: self.entropy,
+        }
+        .compute(channel)
+        .await?;
+        Ok(())
+    }
+
+    fn leader_waits_for_success(&self) -> bool {
+        false
+    }
+}
 
 /// Continuously generates presignatures, trying to maintain the desired number of
 /// presignatures available, using the desired number of concurrent computations as
@@ -151,26 +233,23 @@ pub async fn run_background_presignature_generation(
     let mut tasks = AutoAbortTaskCollection::new();
     loop {
         progress_tracker.update_progress();
+        metrics::MPC_OWNED_NUM_PRESIGNATURES_ONLINE
+            .set(presignature_store.num_owned_ready() as i64);
+        metrics::MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT
+            .set(presignature_store.num_owned_offline() as i64);
         let my_presignatures_count: usize = presignature_store.num_owned();
         metrics::MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE.set(my_presignatures_count as i64);
-        if my_presignatures_count + in_flight_generations.num_in_flight()
-            < config.desired_presignatures_to_buffer
+        let should_generate = my_presignatures_count + in_flight_generations.num_in_flight()
+            < config.desired_presignatures_to_buffer;
+        if should_generate
             // There's no point to issue way too many in-flight computations, as they
             // will just be limited by the concurrency anyway.
             && in_flight_generations.num_in_flight()
                 < config.concurrency * 2
         {
-            let current_active_participants_ids = client.all_alive_participant_ids();
-            if current_active_participants_ids.len() < threshold {
-                // that should not happen often, so sleeping here is okay
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                continue;
-            }
             let id = presignature_store.generate_and_reserve_id();
             progress_tracker.set_waiting_for_triples(true);
-            let (paired_triple_id, (triple0, triple1)) = triple_store
-                .take_owned(&current_active_participants_ids)
-                .await;
+            let (paired_triple_id, (triple0, triple1)) = triple_store.take_owned().await;
             progress_tracker.set_waiting_for_triples(false);
             let participants = participants_from_triples(&triple0, &triple1);
             let task_id = crate::primitives::MpcTaskId::Presignature {
@@ -179,7 +258,6 @@ pub async fn run_background_presignature_generation(
             };
             let channel = client.new_channel_for_task(task_id, participants.clone())?;
             let in_flight = in_flight_generations.in_flight(1);
-            let client = client.clone();
             let parallelism_limiter = parallelism_limiter.clone();
             let presignature_store = presignature_store.clone();
             let config_clone = config.clone();
@@ -187,18 +265,17 @@ pub async fn run_background_presignature_generation(
             tasks.spawn_checked(&format!("{:?}", task_id), async move {
                 let _in_flight = in_flight;
                 let _semaphore_guard = parallelism_limiter.acquire().await?;
-                let presignature = timeout(
+                let presignature = PresignComputation {
+                    threshold,
+                    triple0,
+                    triple1,
+                    keygen_out,
+                }
+                .perform_leader_centric_computation(
+                    channel,
                     Duration::from_secs(config_clone.timeout_sec),
-                    pre_sign(
-                        channel,
-                        client.my_participant_id(),
-                        threshold,
-                        triple0,
-                        triple1,
-                        keygen_out,
-                    ),
                 )
-                .await??;
+                .await?;
                 presignature_store.add_owned(
                     id,
                     PresignOutputWithParticipants {
@@ -209,9 +286,15 @@ pub async fn run_background_presignature_generation(
 
                 anyhow::Ok(())
             });
-        } else {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            continue;
         }
+
+        // If the store is full, try to discard some presignatures which cannot be used right now
+        if my_presignatures_count == config.desired_presignatures_to_buffer {
+            presignature_store.maybe_discard_owned(1).await;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 }
 

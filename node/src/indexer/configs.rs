@@ -10,6 +10,7 @@ impl IndexerConfig {
             home_dir,
             sync_mode: self.sync_mode.clone().into(),
             await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync,
+            finality: self.finality.clone(),
             validate_genesis: self.validate_genesis,
         }
     }

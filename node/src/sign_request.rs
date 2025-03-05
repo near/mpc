@@ -1,18 +1,19 @@
-use crate::config::MpcConfig;
 use crate::db::{DBCol, SecretDB};
-use crate::primitives::ParticipantId;
-
-use k256::sha2::{Digest, Sha256};
+use crate::metrics;
 use k256::Scalar;
+use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
-pub type SignatureId = [u8; 32];
+pub type SignatureId = CryptoHash;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SignatureRequest {
+    /// The unique ID that identifies the signature, and can also uniquely identify the response.
     pub id: SignatureId,
+    /// The receipt that generated the signature request, which can be used to look up on chain.
+    pub receipt_id: CryptoHash,
     pub msg_hash: Scalar,
     pub tweak: Scalar,
     pub entropy: [u8; 32],
@@ -26,7 +27,7 @@ pub struct SignRequestStorage {
 
 impl SignRequestStorage {
     pub fn new(db: Arc<SecretDB>) -> anyhow::Result<Self> {
-        let (tx, _) = tokio::sync::broadcast::channel(10);
+        let (tx, _) = tokio::sync::broadcast::channel(500);
         Ok(Self { db, add_sender: tx })
     }
 
@@ -62,7 +63,14 @@ impl SignRequestStorage {
         if let Some(request_ser) = self.db.get(DBCol::SignRequest, &key)? {
             return Ok(serde_json::from_slice(&request_ser)?);
         }
-        while let Ok(added_id) = rx.recv().await {
+        loop {
+            let added_id = match rx.recv().await {
+                Ok(added_id) => added_id,
+                Err(e) => {
+                    metrics::SIGN_REQUEST_CHANNEL_FAILED.inc();
+                    return Err(anyhow::anyhow!("Error in sign_request channel recv, {}", e));
+                }
+            };
             if added_id == id {
                 break;
             }
@@ -70,31 +78,4 @@ impl SignRequestStorage {
         let request_ser = self.db.get(DBCol::SignRequest, &key)?.unwrap();
         Ok(serde_json::from_slice(&request_ser)?)
     }
-}
-
-fn compute_hash(participant_id: &ParticipantId, signature_request_id: &[u8; 32]) -> [u8; 32] {
-    let mut h = Sha256::new();
-    h.update(participant_id.raw().to_le_bytes());
-    h.update(signature_request_id);
-    h.finalize().into()
-}
-
-/// Computes primary and second leaders for a given request.
-pub fn compute_leaders_for_signing(
-    config: &MpcConfig,
-    request: &SignatureRequest,
-) -> (ParticipantId, ParticipantId) {
-    let mut all_hashes = config
-        .participants
-        .participants
-        .iter()
-        .map(|p| (compute_hash(&p.id, &request.id), p.id))
-        .collect::<Vec<_>>();
-    all_hashes.sort();
-    assert!(!all_hashes.is_empty());
-    if all_hashes.len() == 1 {
-        return (all_hashes[0].1, all_hashes[0].1);
-    }
-
-    (all_hashes[0].1, all_hashes[1].1)
 }

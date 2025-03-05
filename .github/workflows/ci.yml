@@ -14,6 +14,7 @@ jobs:
   ci-tests:
     name: "Run tests"
     runs-on: ubuntu-22.04-8core
+    timeout-minutes: 60
     permissions:
       contents: read
 
@@ -29,13 +30,13 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
-      
+
       - name: Run Clippy fmt
         run: |
           CARGO_TARGET_DIR="target/clippy" \
           RUSTFLAGS="-D warnings" \
           cargo clippy --all-features --all-targets --locked
- 
+
       - name: Run Cargo fmt
         run: cargo fmt -- --check
           
@@ -45,24 +46,78 @@ jobs:
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked 
 
+      - name: Build the contract
+        run: | 
+          cd libs/chain-signatures
+          cargo build -p mpc-contract --target=wasm32-unknown-unknown --release
+          mkdir -p res && cp target/wasm32-unknown-unknown/release/mpc_contract.wasm res/mpc_contract.wasm
+
+      - name: Download near core binary from S3
+        id: download-neard
+        continue-on-error: true
+        run: |
+          os=$(uname)
+          arch=$(uname -m)
+          os_and_arch=${os}-${arch}
+          cd libs/nearcore
+
+          branch_name=$(git branch -r --contains HEAD | grep -o 'origin/[^ ]*' | sed 's|origin/||' | head -n 1 || echo "no-branch")
+          commit_hash=$(git rev-parse HEAD || echo "no-commit")
+
+          url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
+          
+          mkdir -p target/release
+          status_code=$(curl -v -o target/release/neard -w "%{http_code}" "${url}")
+          if [ "$status_code" -ne 200 ]; then
+            echo "curl failed with URL: ${url}, Status Code: ${status_code}"
+            exit 1
+          fi
+          chmod +x target/release/neard
+
+      - name: Build near core as fallback
+        if: steps.download-neard.outcome != 'success'
+        run: |
+          cd libs/nearcore
+          cargo build -p neard --release
+
+      - name: Build mpc node
+        run: cargo build -p mpc-node --release
+      
+      - name: Setup python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Setup virtualenv
+        run: |
+          python3 -m venv pytest/venv
+          source pytest/venv/bin/activate
+          cd pytest
+          pip install -r requirements.txt
+
+      - name: Run pytest
+        run: |
+          source pytest/venv/bin/activate
+          cd pytest 
+          pytest -m "not ci_excluded" -s 
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Check Docker image can be built
+      - name: Check Docker image can be built (GCP)
         uses: docker/build-push-action@v6
         with:
           context: .
           push: false
-          file: integration-test/Dockerfile
+          file: deployment/Dockerfile-gcp
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # - name: Expose GitHub Runtime
-      #   uses: crazy-max/ghaction-github-runtime@v3
-
-      # - name: Check Docker image can be built
-      #   run: docker build --cache-to type=gha --cache-from type=gha -f integration-test/Dockerfile --progress=plain . 
-        
-
-
-          
+      - name: Check Docker image can be built (Near Node Initializer)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          file: deployment/Dockerfile-near-node-initializer
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

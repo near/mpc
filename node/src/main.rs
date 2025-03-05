@@ -2,33 +2,38 @@ use clap::Parser;
 use tracing::init_logging;
 
 mod assets;
+#[cfg(test)]
+mod async_testing;
 mod background;
 mod cli;
 mod config;
+mod coordinator;
 mod db;
+mod frost;
 mod hkdf;
 mod indexer;
 mod key_generation;
+mod key_resharing;
+mod keyshare;
 mod metrics;
 mod mpc_client;
 mod network;
 mod p2p;
 mod primitives;
 mod protocol;
+mod protocol_version;
+mod runtime;
 mod sign;
 mod sign_request;
+pub mod signing;
 #[cfg(test)]
 mod tests;
 mod tracing;
 mod tracking;
 mod triple;
 mod web;
-#[cfg(test)]
-mod web_test;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     init_logging();
-    let cli = cli::Cli::parse();
-    cli.run().await
+    futures::executor::block_on(cli::Cli::parse().run())
 }

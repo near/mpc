@@ -64,7 +64,19 @@ pub type BatchedMessages = Vec<Vec<u8>>;
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct MpcMessage {
     pub task_id: MpcTaskId,
-    pub data: BatchedMessages,
+    pub kind: MpcMessageKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub enum MpcMessageKind {
+    Start(MpcStartMessage),
+    Computation(Vec<Vec<u8>>),
+    Abort(String),
+    Success,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct MpcStartMessage {
     pub participants: Vec<ParticipantId>,
 }
 
@@ -77,6 +89,9 @@ pub struct MpcPeerMessage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum MpcTaskId {
     KeyGeneration,
+    KeyResharing {
+        new_epoch: u64,
+    },
     ManyTriples {
         start: UniqueId,
         count: u32,
@@ -149,4 +164,19 @@ pub fn participants_from_triples(
         .filter(|p| triple1.1.participants.contains(p))
         .map(|p| p.into())
         .collect()
+}
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct IndexerHeightMessage {
+    pub height: u64,
+}
+
+pub struct PeerIndexerHeightMessage {
+    pub from: ParticipantId,
+    pub message: IndexerHeightMessage,
+}
+
+pub enum PeerMessage {
+    Mpc(MpcPeerMessage),
+    IndexerHeight(PeerIndexerHeightMessage),
 }

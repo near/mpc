@@ -1,23 +1,27 @@
-use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
+use crate::config::MpcConfig;
+use crate::network::conn::{
+    AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
+};
+use crate::network::constants::MAX_MESSAGE_LEN;
+use crate::network::handshake::p2p_handshake;
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-use crate::primitives::{MpcMessage, MpcPeerMessage, ParticipantId};
+use crate::primitives::{
+    IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
+    PeerMessage,
+};
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context};
 use async_trait::async_trait;
-use borsh::BorshDeserialize;
-use near_crypto::ED25519SecretKey;
-use near_sdk::AccountId;
-use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
-use rustls::server::danger::ClientCertVerifier;
+use borsh::{BorshDeserialize, BorshSerialize};
+use rustls::pki_types::PrivatePkcs8KeyDer;
+use rustls::server::WebPkiClientVerifier;
 use rustls::{ClientConfig, CommonState, ServerConfig};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::{self, Receiver, UnboundedSender};
-use tokio::task::JoinSet;
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 use x509_parser::prelude::{FromDer, X509Certificate};
@@ -29,11 +33,12 @@ pub struct TlsMeshSender {
     my_id: ParticipantId,
     participants: Vec<ParticipantId>,
     connections: HashMap<ParticipantId, Arc<PersistentConnection>>,
+    connectivities: Arc<AllNodeConnectivities<TlsConnection, ()>>,
 }
 
 /// Implements MeshNetworkTransportReceiver.
 pub struct TlsMeshReceiver {
-    receiver: Receiver<MpcPeerMessage>,
+    receiver: UnboundedReceiver<PeerMessage>,
     _incoming_connections_task: AutoAbortTask<()>,
 }
 
@@ -43,65 +48,11 @@ struct ParticipantIdentities {
     key_to_participant_id: HashMap<near_crypto::PublicKey, ParticipantId>,
 }
 
-/// A always-allowing client certificate verifier for the TLS layer.
-/// Note that in general, verifying the certificate simply means that the
-/// other party's public key has been correctly signed by a certificate
-/// authority. In this case, we don't need that, because we already know
-/// the exact public key we're expecting from each peer. So don't bother
-/// verifying the certificate itself.
-#[derive(Debug)]
-struct DummyClientCertVerifier;
-
-impl ClientCertVerifier for DummyClientCertVerifier {
-    fn root_hint_subjects(&self) -> &[rustls::DistinguishedName] {
-        &[]
-    }
-
-    fn verify_client_cert(
-        &self,
-        _end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _now: rustls::pki_types::UnixTime,
-    ) -> std::result::Result<rustls::server::danger::ClientCertVerified, rustls::Error> {
-        Ok(rustls::server::danger::ClientCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        vec![rustls::SignatureScheme::ED25519]
-    }
-}
-
 /// A retrying connection that will automatically reconnect if the TCP
 /// connection is broken.
 struct PersistentConnection {
     target_participant_id: ParticipantId,
-    // Current connection and version. The connection is an Option because it
-    // can be None if the connection was never established. It is a Weak
-    // because the connection is owned by the loop-to-connect task (see the
-    // `new` method) and when the connection is closed it is dropped. The
-    // version is incremented every time the connection is re-established.
-    current: tokio::sync::watch::Receiver<Option<(usize, Weak<TlsConnection>)>>,
-    // Atomic to quickly read whether a connection is alive. It's faster than
-    // checking the current connection.
-    is_alive: Arc<AtomicBool>,
+    connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
     // The task that loops to connect to the target. When `PersistentConnection`
     // is dropped, this task is aborted. The task owns any active connection,
     // so dropping it also frees any connection currently alive.
@@ -136,13 +87,18 @@ impl Drop for DropToCancel {
     }
 }
 
-/// Either a Ping or a data packet.
+#[derive(BorshSerialize, BorshDeserialize)]
 enum Packet {
     Ping,
-    Data(Vec<u8>),
+    MpcMessage(MpcMessage),
+    IndexerHeight(IndexerHeightMessage),
 }
 
 impl TlsConnection {
+    /// Both sides of the connection must complete handshake within this time, or else
+    /// the connection is considered not successful.
+    const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
     /// Makes a TLS/TCP connection to the given address, authenticating the
     /// other side as the given participant.
     async fn new(
@@ -169,6 +125,10 @@ impl TlsConnection {
             );
         }
 
+        p2p_handshake(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
+            .await
+            .context("p2p handshake")?;
+
         let (sender, mut receiver) = mpsc::unbounded_channel::<Packet>();
         let closed = CancellationToken::new();
         let closed_clone = closed.clone();
@@ -183,18 +143,12 @@ impl TlsConnection {
                             let Some(data) = data else {
                                 break;
                             };
-                            match data {
-                                Packet::Ping => {
-                                    tls_conn.write_u8(0).await?;
-                                    sent_bytes += 1;
-                                }
-                                Packet::Data(vec) => {
-                                    tls_conn.write_u8(1).await?;
-                                    tls_conn.write_u32(vec.len() as u32).await?;
-                                    tls_conn.write_all(&vec).await?;
-                                    sent_bytes += 5 + vec.len() as u64;
-                                }
-                            }
+                            let serialized = borsh::to_vec(&data)?;
+                            let len: u32 = serialized.len().try_into().context("Message too long")?;
+                            tls_conn.write_u32(len).await?;
+                            tls_conn.write_all(&serialized).await?;
+                            sent_bytes += 4 + len as u64;
+
                             tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                         }
                         _ = tls_conn.read_u8() => {
@@ -236,8 +190,13 @@ impl TlsConnection {
         self.closed.cancelled().await;
     }
 
-    fn send(&self, data: Vec<u8>) -> anyhow::Result<()> {
-        self.sender.send(Packet::Data(data))?;
+    fn send_mpc_message(&self, msg: MpcMessage) -> anyhow::Result<()> {
+        self.sender.send(Packet::MpcMessage(msg))?;
+        Ok(())
+    }
+
+    fn send_indexer_height(&self, msg: IndexerHeightMessage) -> anyhow::Result<()> {
+        self.sender.send(Packet::IndexerHeight(msg))?;
         Ok(())
     }
 }
@@ -246,26 +205,26 @@ impl PersistentConnection {
     const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
     /// Sends a message over the connection. If the connection was reset, fail.
-    fn send_message(&self, expected_version: usize, msg: Vec<u8>) -> anyhow::Result<()> {
-        let Some(conn) = self.current.borrow().clone() else {
-            anyhow::bail!(
-                "Connection to {} was never established",
-                self.target_participant_id
-            );
-        };
-
-        let (version, conn) = conn;
-        if version != expected_version {
-            anyhow::bail!(
-                "Connection to {} is not the original connection expected",
-                self.target_participant_id
-            );
-        }
-        let Some(conn) = conn.upgrade() else {
-            anyhow::bail!("Connection to {} was dropped", self.target_participant_id);
-        };
-        conn.send(msg)?;
+    fn send_mpc_message(
+        &self,
+        expected_version: ConnectionVersion,
+        msg: MpcMessage,
+    ) -> anyhow::Result<()> {
+        self.connectivity
+            .outgoing_connection_asserting(expected_version)
+            .with_context(|| format!("Cannot send MPC message to {}", self.target_participant_id))?
+            .send_mpc_message(msg)
+            .with_context(|| {
+                format!("Cannot send MPC message to {}", self.target_participant_id)
+            })?;
         Ok(())
+    }
+
+    /// Sends a message over the connection. This is done on a best-effort basis.
+    fn send_indexer_height(&self, height: IndexerHeightMessage) {
+        if let Some(conn) = self.connectivity.any_outgoing_connection() {
+            let _ = conn.send_indexer_height(height);
+        }
     }
 
     pub fn new(
@@ -274,15 +233,12 @@ impl PersistentConnection {
         target_address: String,
         target_participant_id: ParticipantId,
         participant_identities: Arc<ParticipantIdentities>,
+        connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
     ) -> anyhow::Result<PersistentConnection> {
-        let (current_sender, current_receiver) = tokio::sync::watch::channel(None);
-        let is_alive = Arc::new(AtomicBool::new(false));
-        let is_alive_clone = is_alive.clone();
-
+        let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
-                let mut connection_version = 1;
                 loop {
                     let new_conn = match TlsConnection::new(
                         client_config.clone(),
@@ -293,7 +249,11 @@ impl PersistentConnection {
                     .await
                     {
                         Ok(new_conn) => {
-                            tracing::info!("Connected to {}, me {}", target_participant_id, my_id);
+                            tracing::info!(
+                                "Outgoing {} --> {} connected",
+                                my_id,
+                                target_participant_id
+                            );
                             new_conn
                         }
                         Err(e) => {
@@ -310,23 +270,14 @@ impl PersistentConnection {
                         }
                     };
                     let new_conn = Arc::new(new_conn);
-                    if current_sender
-                        .send(Some((connection_version, Arc::downgrade(&new_conn))))
-                        .is_err()
-                    {
-                        break;
-                    }
-                    connection_version += 1;
-                    is_alive_clone.store(true, Ordering::Relaxed);
+                    connectivity.set_outgoing_connection(&new_conn);
                     new_conn.wait_for_close().await;
-                    is_alive_clone.store(false, Ordering::Relaxed);
                 }
             },
         );
         Ok(PersistentConnection {
             target_participant_id,
-            current: current_receiver,
-            is_alive,
+            connectivity: connectivity_clone,
             _task: task,
         })
     }
@@ -362,29 +313,6 @@ fn raw_ed25519_secret_key_to_keypair(
     Ok(keypair)
 }
 
-/// Converts a keypair to an ED25519 secret key, asserting that it is the
-/// exact kind of keypair we expect.
-fn keypair_to_raw_ed25519_secret_key(
-    keypair: &rcgen::KeyPair,
-) -> anyhow::Result<near_crypto::ED25519SecretKey> {
-    let pkcs8_encoded = keypair.serialize_der();
-    if pkcs8_encoded.len() != 16 + 32 + 3 + 32 {
-        anyhow::bail!("Invalid PKCS8 length");
-    }
-    if pkcs8_encoded[..16] != PKCS8_HEADER {
-        anyhow::bail!("Invalid PKCS8 header");
-    }
-    if pkcs8_encoded[16 + 32..16 + 32 + 3] != PKCS8_MIDDLE {
-        anyhow::bail!("Invalid PKCS8 middle");
-    }
-
-    let mut key = [0u8; 64];
-    key[..32].copy_from_slice(&pkcs8_encoded[16..16 + 32]);
-    key[32..].copy_from_slice(&pkcs8_encoded[16 + 32 + 3..]);
-
-    Ok(near_crypto::ED25519SecretKey(key))
-}
-
 /// Configures TLS server and client to properly perform TLS handshakes.
 /// On the server side it expects a client to provide a certificate that
 /// presents a public key that matches one of the participants in the MPC
@@ -414,19 +342,20 @@ fn configure_tls(
     let mut root_cert_store = rustls::RootCertStore::empty();
     root_cert_store.add(issuer_cert.der().clone())?;
 
-    // As the server, we do not verify the client's certificate, but we still need
-    // a custom verifier or else the certificate will not even be propagated to us
-    // when we handle the connection. Later we'll check that the client provided a
-    // valid public key in the certificate.
-    let server_config = rustls::ServerConfig::builder()
-        .with_client_cert_verifier(Arc::new(DummyClientCertVerifier))
-        .with_single_cert(vec![p2p_cert.der().clone()], p2p_key_der.clone_key())?;
+    let client_verifier =
+        WebPkiClientVerifier::builder(Arc::new(root_cert_store.clone())).build()?;
+
+    let server_config =
+        rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
+            .with_client_cert_verifier(client_verifier)
+            .with_single_cert(vec![p2p_cert.der().clone()], p2p_key_der.clone_key())?;
     // As a client, we verify that the server has a valid certificate signed by the
     // dummy issuer (this is required by rustls). When making the connection we also
     // check that the server has the right public key.
-    let client_config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_cert_store)
-        .with_client_auth_cert(vec![p2p_cert.der().clone()], p2p_key_der.clone_key())?;
+    let client_config =
+        rustls::ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
+            .with_root_certificates(root_cert_store)
+            .with_client_auth_cert(vec![p2p_cert.der().clone()], p2p_key_der.clone_key())?;
 
     Ok((server_config.into(), client_config.into()))
 }
@@ -435,7 +364,7 @@ fn configure_tls(
 pub async fn new_tls_mesh_network(
     config: &MpcConfig,
     p2p_private_key: &near_crypto::ED25519SecretKey,
-) -> Result<(
+) -> anyhow::Result<(
     impl MeshNetworkTransportSender,
     impl MeshNetworkTransportReceiver,
 )> {
@@ -450,11 +379,21 @@ pub async fn new_tls_mesh_network(
         .ok_or_else(|| anyhow!("My ID not found in participants"))?;
 
     // Prepare participant data.
-    let mut participant_ids = Vec::new();
     let mut participant_identities = ParticipantIdentities::default();
     let mut connections = HashMap::new();
+    let connectivities = Arc::new(AllNodeConnectivities::new(
+        config.my_participant_id,
+        &config
+            .participants
+            .participants
+            .iter()
+            .map(|p| p.id)
+            .collect::<Vec<_>>(),
+    ));
     for participant in &config.participants.participants {
-        participant_ids.push(participant.id);
+        if participant.id == config.my_participant_id {
+            continue;
+        }
         participant_identities
             .key_to_participant_id
             .insert(participant.p2p_public_key.clone(), participant.id);
@@ -472,15 +411,14 @@ pub async fn new_tls_mesh_network(
                 format!("{}:{}", participant.address, participant.port),
                 participant.id,
                 participant_identities.clone(),
+                connectivities.get(participant.id)?,
             )?),
         );
     }
 
     let tls_acceptor = TlsAcceptor::from(server_config);
 
-    // TODO: what should the channel size be? What's our flow control strategy in general?
-    let (message_sender, message_receiver) = mpsc::channel(1000000);
-    // let endpoint_for_listener = server.clone();
+    let (message_sender, message_receiver) = mpsc::unbounded_channel();
     let tcp_listener = TcpListener::bind(SocketAddr::V4(SocketAddrV4::new(
         Ipv4Addr::new(0, 0, 0, 0),
         my_port,
@@ -488,41 +426,59 @@ pub async fn new_tls_mesh_network(
     .await
     .context("TCP bind")?;
 
+    let connectivities_clone = connectivities.clone();
+    let my_id = config.my_participant_id;
     let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
         let mut tasks = AutoAbortTaskCollection::new();
         while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
             let message_sender = message_sender.clone();
             let participant_identities = participant_identities.clone();
             let tls_acceptor = tls_acceptor.clone();
+            let connectivities = connectivities_clone.clone();
             tasks.spawn_checked::<_, ()>("Handle connection", async move {
                 let mut stream = tls_acceptor.accept(tcp_stream).await?;
                 let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                 tracking::set_progress(&format!("Authenticated as {}", peer_id));
+                p2p_handshake(&mut stream, TlsConnection::HANDSHAKE_TIMEOUT)
+                    .await
+                    .context("p2p handshake")?;
+                tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
+                let incoming_conn = Arc::new(());
+                connectivities
+                    .get(peer_id)?
+                    .set_incoming_connection(&incoming_conn);
                 let mut received_bytes: u64 = 0;
                 loop {
-                    let tag = stream.read_u8().await?;
-                    match tag {
-                        0 => {
-                            // Ping
-                            received_bytes += 1;
+                    let len = stream.read_u32().await?;
+                    if len >= MAX_MESSAGE_LEN {
+                        anyhow::bail!("Message too long");
+                    }
+                    let mut buf = vec![0; len as usize];
+                    stream.read_exact(&mut buf).await?;
+                    received_bytes += 4 + len as u64;
+
+                    let packet =
+                        Packet::try_from_slice(&buf).context("Failed to deserialize packet")?;
+                    match packet {
+                        Packet::Ping => {
+                            // Do nothing. Pings are just for TCP keepalive.
                         }
-                        1 => {
-                            let mut len_buf = [0u8; 4];
-                            stream.read_exact(&mut len_buf).await?;
-                            let len = u32::from_be_bytes(len_buf) as usize;
-                            let mut buf = vec![0u8; len];
-                            stream.read_exact(&mut buf).await?;
-                            let message = MpcPeerMessage {
+                        Packet::MpcMessage(mpc_message) => {
+                            message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
                                 from: peer_id,
-                                message: MpcMessage::try_from_slice(&buf)?,
-                            };
-                            message_sender.send(message).await?;
-                            received_bytes += 5 + len as u64;
+                                message: mpc_message,
+                            }))?;
                         }
-                        _ => {
-                            anyhow::bail!("Invalid tag");
+                        Packet::IndexerHeight(message) => {
+                            message_sender.send(PeerMessage::IndexerHeight(
+                                PeerIndexerHeightMessage {
+                                    from: peer_id,
+                                    message,
+                                },
+                            ))?;
                         }
                     }
+
                     tracking::set_progress(&format!(
                         "Received {} bytes from {}",
                         received_bytes, peer_id
@@ -534,8 +490,14 @@ pub async fn new_tls_mesh_network(
 
     let sender = TlsMeshSender {
         my_id: config.my_participant_id,
-        participants: participant_ids,
+        participants: config
+            .participants
+            .participants
+            .iter()
+            .map(|p| p.id)
+            .collect(),
         connections,
+        connectivities,
     };
 
     let receiver = TlsMeshReceiver {
@@ -584,7 +546,7 @@ fn verify_peer_identity(
     Ok(*peer_id)
 }
 
-#[async_trait]
+#[async_trait::async_trait]
 impl MeshNetworkTransportSender for TlsMeshSender {
     fn my_participant_id(&self) -> ParticipantId {
         self.my_id
@@ -594,70 +556,39 @@ impl MeshNetworkTransportSender for TlsMeshSender {
         self.participants.clone()
     }
 
-    fn connection_version(&self, participant_id: ParticipantId) -> usize {
-        self.connections
-            .get(&participant_id)
-            .map(|conn| conn.current.borrow().clone().map(|(v, _)| v).unwrap_or(0))
-            .unwrap_or(0)
+    fn connectivity(&self, participant_id: ParticipantId) -> Arc<dyn NodeConnectivityInterface> {
+        self.connectivities.get(participant_id).unwrap().clone()
     }
 
-    async fn send(
+    fn send(
         &self,
         recipient_id: ParticipantId,
         message: MpcMessage,
-        connection_version: usize,
-    ) -> Result<()> {
+        connection_version: ConnectionVersion,
+    ) -> anyhow::Result<()> {
         self.connections
             .get(&recipient_id)
             .ok_or_else(|| anyhow!("Recipient not found"))?
-            .send_message(connection_version, borsh::to_vec(&message)?)?;
+            .send_mpc_message(connection_version, message)
+            .with_context(|| format!("Cannot send MPC message to recipient {}", recipient_id))?;
         Ok(())
+    }
+
+    fn send_indexer_height(&self, height: IndexerHeightMessage) {
+        for conn in self.connections.values() {
+            conn.send_indexer_height(height.clone());
+        }
     }
 
     async fn wait_for_ready(&self, threshold: usize) -> anyhow::Result<()> {
-        assert!(threshold - 1 <= self.connections.len());
-        let mut join_set = JoinSet::new();
-        for (participant_id, conn) in &self.connections {
-            let participant_id = *participant_id;
-            let my_id = self.my_id;
-            let conn = conn.clone();
-            join_set.spawn(async move {
-                let mut receiver = conn.current.clone();
-                while receiver
-                    .borrow()
-                    .clone()
-                    .is_none_or(|(_, weak)| weak.upgrade().is_none())
-                {
-                    tracing::info!("Waiting for connection to {}, me {}", participant_id, my_id);
-                    receiver.changed().await?;
-                }
-                tracing::info!("Connected to {}, me {}", participant_id, my_id);
-                anyhow::Ok(())
-            });
-        }
-        for _ in 1..threshold {
-            join_set.join_next().await.unwrap()??;
-        }
+        self.connectivities.wait_for_ready(threshold).await;
         Ok(())
-    }
-
-    fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
-        let mut ids: Vec<_> = self
-            .connections
-            .iter()
-            .filter(|(_, conn)| conn.is_alive.load(Ordering::Relaxed))
-            .map(|(p, _)| *p)
-            .chain([self.my_id])
-            .collect();
-        // Make it stable for testing.
-        ids.sort();
-        ids
     }
 }
 
 #[async_trait]
 impl MeshNetworkTransportReceiver for TlsMeshReceiver {
-    async fn receive(&mut self) -> Result<MpcPeerMessage> {
+    async fn receive(&mut self) -> anyhow::Result<PeerMessage> {
         self.receiver
             .recv()
             .await
@@ -665,82 +596,146 @@ impl MeshNetworkTransportReceiver for TlsMeshReceiver {
     }
 }
 
-/// Generates an ED25519 keypair, returning the pem-encoded private key and the
-/// hex-encoded public key.
-pub fn generate_keypair() -> Result<(near_crypto::ED25519SecretKey, near_crypto::ED25519PublicKey)>
-{
-    let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
-    Ok((
-        keypair_to_raw_ed25519_secret_key(&key_pair)?,
-        near_crypto::ED25519PublicKey(key_pair.public_key_raw().try_into().unwrap()),
-    ))
-}
+pub mod testing {
+    use super::{PKCS8_HEADER, PKCS8_MIDDLE};
+    use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
+    use crate::primitives::ParticipantId;
+    use near_crypto::ED25519SecretKey;
+    use near_sdk::AccountId;
 
-pub fn generate_test_p2p_configs(
-    participant_accounts: &[AccountId],
-    threshold: usize,
-    // this is a hack to make sure that when tests run in parallel, they don't
-    // collide on the same port.
-    seed: u16,
-) -> anyhow::Result<Vec<(MpcConfig, ED25519SecretKey)>> {
-    let mut participants = Vec::new();
-    let mut keypairs = Vec::new();
-    for (i, participant_account) in participant_accounts.iter().enumerate() {
-        let (p2p_private_key, p2p_public_key) = generate_keypair()?;
-        participants.push(ParticipantInfo {
-            id: ParticipantId::from_raw(rand::random()),
-            address: "127.0.0.1".to_string(),
-            port: 10000 + seed * 1000 + i as u16,
-            p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
-            near_account_id: participant_account.clone(),
-        });
-        keypairs.push((p2p_private_key, p2p_public_key));
+    /// A unique seed for each integration test to avoid port conflicts during testing.
+    #[derive(Copy, Clone)]
+    pub struct PortSeed(u16);
+
+    impl PortSeed {
+        pub fn p2p_port(&self, node_index: usize) -> u16 {
+            (10000_usize + self.0 as usize * 100 + node_index)
+                .try_into()
+                .unwrap()
+        }
+
+        pub fn web_port(&self, node_index: usize) -> u16 {
+            (20000_usize + self.0 as usize * 100 + node_index)
+                .try_into()
+                .unwrap()
+        }
+
+        pub const CLI_FOR_PYTEST: Self = Self(0);
     }
 
-    let mut configs = Vec::new();
-    for (i, keypair) in keypairs.into_iter().enumerate() {
-        let participants = ParticipantsConfig {
-            threshold: threshold as u32,
-            participants: participants.clone(),
-        };
-
-        let mpc_config = MpcConfig {
-            my_participant_id: participants.participants[i].id,
-            participants,
-        };
-        configs.push((mpc_config, keypair.0));
+    #[cfg(test)]
+    impl PortSeed {
+        // Each place that passes a PortSeed in should define a unique one here.
+        pub const P2P_BASIC_TEST: Self = Self(1);
+        pub const P2P_WAIT_FOR_READY_TEST: Self = Self(2);
+        pub const BASIC_CLUSTER_TEST: Self = Self(3);
+        pub const FAULTY_CLUSTER_TEST: Self = Self(4);
+        pub const KEY_RESHARING_SIMPLE_TEST: Self = Self(5);
+        pub const KEY_RESHARING_MULTISTAGE_TEST: Self = Self(6);
+        pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: Self = Self(7);
     }
 
-    Ok(configs)
+    /// Converts a keypair to an ED25519 secret key, asserting that it is the
+    /// exact kind of keypair we expect.
+    pub fn keypair_to_raw_ed25519_secret_key(
+        keypair: &rcgen::KeyPair,
+    ) -> anyhow::Result<near_crypto::ED25519SecretKey> {
+        let pkcs8_encoded = keypair.serialize_der();
+        if pkcs8_encoded.len() != 16 + 32 + 3 + 32 {
+            anyhow::bail!("Invalid PKCS8 length");
+        }
+        if pkcs8_encoded[..16] != PKCS8_HEADER {
+            anyhow::bail!("Invalid PKCS8 header");
+        }
+        if pkcs8_encoded[16 + 32..16 + 32 + 3] != PKCS8_MIDDLE {
+            anyhow::bail!("Invalid PKCS8 middle");
+        }
+
+        let mut key = [0u8; 64];
+        key[..32].copy_from_slice(&pkcs8_encoded[16..16 + 32]);
+        key[32..].copy_from_slice(&pkcs8_encoded[16 + 32 + 3..]);
+
+        Ok(near_crypto::ED25519SecretKey(key))
+    }
+
+    /// Generates an ED25519 keypair, returning the pem-encoded private key and the
+    /// hex-encoded public key.
+    pub fn generate_keypair(
+    ) -> anyhow::Result<(near_crypto::ED25519SecretKey, near_crypto::ED25519PublicKey)> {
+        let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
+        Ok((
+            keypair_to_raw_ed25519_secret_key(&key_pair)?,
+            near_crypto::ED25519PublicKey(key_pair.public_key_raw().try_into().unwrap()),
+        ))
+    }
+
+    pub fn generate_test_p2p_configs(
+        participant_accounts: &[AccountId],
+        threshold: usize,
+        // this is a hack to make sure that when tests run in parallel, they don't
+        // collide on the same port.
+        port_seed: PortSeed,
+    ) -> anyhow::Result<Vec<(MpcConfig, ED25519SecretKey)>> {
+        let mut participants = Vec::new();
+        let mut keypairs = Vec::new();
+        for (i, participant_account) in participant_accounts.iter().enumerate() {
+            let (p2p_private_key, p2p_public_key) = generate_keypair()?;
+            participants.push(ParticipantInfo {
+                id: ParticipantId::from_raw(rand::random()),
+                address: "127.0.0.1".to_string(),
+                port: port_seed.p2p_port(i),
+                p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
+                near_account_id: participant_account.clone(),
+            });
+            keypairs.push((p2p_private_key, p2p_public_key));
+        }
+
+        let mut configs = Vec::new();
+        for (i, keypair) in keypairs.into_iter().enumerate() {
+            let participants = ParticipantsConfig {
+                threshold: threshold as u32,
+                participants: participants.clone(),
+            };
+
+            let mpc_config = MpcConfig {
+                my_participant_id: participants.participants[i].id,
+                participants,
+            };
+            configs.push((mpc_config, keypair.0));
+        }
+
+        Ok(configs)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-    use crate::p2p::{keypair_to_raw_ed25519_secret_key, raw_ed25519_secret_key_to_keypair};
-    use crate::primitives::{MpcMessage, ParticipantId};
+    use crate::p2p::raw_ed25519_secret_key_to_keypair;
+    use crate::p2p::testing::{
+        generate_keypair, generate_test_p2p_configs, keypair_to_raw_ed25519_secret_key, PortSeed,
+    };
+    use crate::primitives::{MpcMessage, ParticipantId, PeerMessage};
     use crate::tracing::init_logging;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use serial_test::serial;
     use std::time::Duration;
     use tokio::time::timeout;
 
     #[test]
     fn test_pkcs8_ed25519_encoding() {
-        let (private_key, _) = super::generate_keypair().unwrap();
+        let (private_key, _) = generate_keypair().unwrap();
         let keypair = raw_ed25519_secret_key_to_keypair(&private_key).unwrap();
         let private_key2 = keypair_to_raw_ed25519_secret_key(&keypair).unwrap();
         assert_eq!(private_key, private_key2);
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_basic_tls_mesh_network() {
         init_logging();
-        let configs = super::generate_test_p2p_configs(
+        let configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
-            0,
+            PortSeed::P2P_BASIC_TEST,
         )
         .unwrap();
         let participant0 = configs[0].0.my_participant_id;
@@ -759,49 +754,68 @@ mod tests {
             sender0.wait_for_ready(2).await.unwrap();
             sender1.wait_for_ready(2).await.unwrap();
 
-            for _ in 0..100 {
+            for i in 0..100 {
+                let msg0to1 = MpcMessage {
+                    task_id: crate::primitives::MpcTaskId::KeyResharing { new_epoch: i },
+                    kind: crate::primitives::MpcMessageKind::Success,
+                };
                 sender0
                     .send(
                         participant1,
-                        MpcMessage {
-                            data: vec![vec![1, 2, 3]],
-                            task_id: crate::primitives::MpcTaskId::KeyGeneration,
-                            participants: vec![],
-                        },
-                        1,
+                        msg0to1.clone(),
+                        sender0.connectivity(participant1).connection_version(),
                     )
-                    .await
                     .unwrap();
-                let msg = receiver1.receive().await.unwrap();
+                let PeerMessage::Mpc(msg) = receiver1.receive().await.unwrap() else {
+                    panic!("Expected MPC message");
+                };
                 assert_eq!(msg.from, participant0);
-                assert_eq!(msg.message.data, vec![vec![1, 2, 3]]);
+                assert_eq!(msg.message, msg0to1);
 
+                let msg1to0 = MpcMessage {
+                    task_id: crate::primitives::MpcTaskId::KeyResharing { new_epoch: i },
+                    kind: crate::primitives::MpcMessageKind::Abort("test".to_owned()),
+                };
                 sender1
                     .send(
                         participant0,
-                        MpcMessage {
-                            data: vec![vec![4, 5, 6]],
-                            task_id: crate::primitives::MpcTaskId::KeyGeneration,
-                            participants: vec![],
-                        },
-                        1,
+                        msg1to0.clone(),
+                        sender1.connectivity(participant0).connection_version(),
                     )
-                    .await
                     .unwrap();
 
-                let msg = receiver0.receive().await.unwrap();
+                let PeerMessage::Mpc(msg) = receiver0.receive().await.unwrap() else {
+                    panic!("Expected MPC message");
+                };
                 assert_eq!(msg.from, participant1);
-                assert_eq!(msg.message.data, vec![vec![4, 5, 6]]);
+                assert_eq!(msg.message, msg1to0);
             }
         })
         .await;
     }
 
+    fn all_alive_participant_ids(sender: &impl MeshNetworkTransportSender) -> Vec<ParticipantId> {
+        let mut result = Vec::new();
+        for participant in sender.all_participant_ids() {
+            if participant == sender.my_participant_id() {
+                continue;
+            }
+            if sender
+                .connectivity(participant)
+                .is_bidirectionally_connected()
+            {
+                result.push(participant);
+            }
+        }
+        result.push(sender.my_participant_id());
+        result.sort();
+        result
+    }
+
     #[tokio::test]
-    #[serial]
     async fn test_wait_for_ready() {
         init_logging();
-        let mut configs = super::generate_test_p2p_configs(
+        let mut configs = generate_test_p2p_configs(
             &[
                 "test0".parse().unwrap(),
                 "test1".parse().unwrap(),
@@ -809,7 +823,7 @@ mod tests {
                 "test3".parse().unwrap(),
             ],
             4,
-            1,
+            PortSeed::P2P_WAIT_FOR_READY_TEST,
         )
         .unwrap();
         // Make node 3 use the wrong address for the 0th node. All connections should work
@@ -829,16 +843,19 @@ mod tests {
                 .await
                 .unwrap();
 
-            sender0.wait_for_ready(4).await.unwrap();
             sender1.wait_for_ready(4).await.unwrap();
             sender2.wait_for_ready(4).await.unwrap();
             // Node 3 should not be able to connect to node 0, so if we wait for 4,
-            // it should fail.
+            // it should fail. This goes both ways (3 to 0 and 0 to 3).
+            assert!(timeout(Duration::from_secs(1), sender0.wait_for_ready(4))
+                .await
+                .is_err());
             assert!(timeout(Duration::from_secs(1), sender3.wait_for_ready(4))
                 .await
                 .is_err());
 
             // But if we wait for 3, it should succeed.
+            sender0.wait_for_ready(3).await.unwrap();
             sender3.wait_for_ready(3).await.unwrap();
 
             let ids: Vec<_> = configs[0]
@@ -848,11 +865,14 @@ mod tests {
                 .iter()
                 .map(|p| p.id)
                 .collect();
-            assert_eq!(sender0.all_alive_participant_ids(), sorted(&ids));
-            assert_eq!(sender1.all_alive_participant_ids(), sorted(&ids));
-            assert_eq!(sender2.all_alive_participant_ids(), sorted(&ids));
             assert_eq!(
-                sender3.all_alive_participant_ids(),
+                all_alive_participant_ids(&sender0),
+                sorted(&[ids[0], ids[1], ids[2]]),
+            );
+            assert_eq!(all_alive_participant_ids(&sender1), sorted(&ids));
+            assert_eq!(all_alive_participant_ids(&sender2), sorted(&ids));
+            assert_eq!(
+                all_alive_participant_ids(&sender3),
                 sorted(&[ids[1], ids[2], ids[3]]),
             );
 
@@ -860,15 +880,15 @@ mod tests {
             drop((sender1, receiver1));
             tokio::time::sleep(Duration::from_secs(2)).await;
             assert_eq!(
-                sender0.all_alive_participant_ids(),
+                all_alive_participant_ids(&sender0),
+                sorted(&[ids[0], ids[2]])
+            );
+            assert_eq!(
+                all_alive_participant_ids(&sender2),
                 sorted(&[ids[0], ids[2], ids[3]])
             );
             assert_eq!(
-                sender2.all_alive_participant_ids(),
-                sorted(&[ids[0], ids[2], ids[3]])
-            );
-            assert_eq!(
-                sender3.all_alive_participant_ids(),
+                all_alive_participant_ids(&sender3),
                 sorted(&[ids[2], ids[3]])
             );
 
@@ -876,15 +896,18 @@ mod tests {
             let (sender1, _receiver1) = super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
                 .await
                 .unwrap();
-            sender0.wait_for_ready(4).await.unwrap();
+            sender0.wait_for_ready(3).await.unwrap();
             sender1.wait_for_ready(4).await.unwrap();
             sender2.wait_for_ready(4).await.unwrap();
             sender3.wait_for_ready(3).await.unwrap();
-            assert_eq!(sender0.all_alive_participant_ids(), sorted(&ids));
-            assert_eq!(sender1.all_alive_participant_ids(), sorted(&ids));
-            assert_eq!(sender2.all_alive_participant_ids(), sorted(&ids));
             assert_eq!(
-                sender3.all_alive_participant_ids(),
+                all_alive_participant_ids(&sender0),
+                sorted(&[ids[0], ids[1], ids[2]]),
+            );
+            assert_eq!(all_alive_participant_ids(&sender1), sorted(&ids));
+            assert_eq!(all_alive_participant_ids(&sender2), sorted(&ids));
+            assert_eq!(
+                all_alive_participant_ids(&sender3),
                 sorted(&[ids[1], ids[2], ids[3]]),
             );
         })

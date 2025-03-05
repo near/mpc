@@ -1,5 +1,4 @@
 use super::TestGenerators;
-use cait_sith::protocol::Participant;
 use k256::elliptic_curve::Field;
 use k256::Scalar;
 
@@ -35,7 +34,7 @@ fn benchmark_single_threaded_signature_generation() {
     for _ in 0..COUNT {
         let _ = generator.make_signature(
             &presignatures,
-            keygens[&Participant::from(0)].public_key,
+            keygens.iter().next().unwrap().1.public_key,
             Scalar::random(&mut rand::thread_rng()),
         );
     }

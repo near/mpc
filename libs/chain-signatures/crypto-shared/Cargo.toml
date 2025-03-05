@@ -1,0 +1,26 @@
+[package]
+name = "crypto-shared"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+k256 = { version = "0.13.1", features = [
+    "sha256",
+    "ecdsa",
+    "serde",
+    "arithmetic",
+    "expose-field",
+] }
+anyhow = "1"
+serde = "1"
+borsh = "1.3.0"
+near-account-id = "1"
+serde_json = "1"
+near-sdk = { version = "5.2.1", features = ["unstable"] }
+sha3 = "0.10.8"
+subtle = "2.6.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2.12", features = ["custom"] }
+
+[dev-dependencies]
