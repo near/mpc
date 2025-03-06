@@ -70,7 +70,7 @@ impl MigrateKeyshare {
 
         let local_key_share_storage = KeyshareStorageFactory::Local {
             home_dir: self.home_dir.into(),
-            encryption_key: encryption_key,
+            encryption_key,
         }
         .create()
         .await?;
