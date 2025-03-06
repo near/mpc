@@ -1,4 +1,4 @@
-use near_crypto::{PublicKey, SecretKey};
+use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -18,42 +18,44 @@ pub enum NearAccountKind {
     Normal,
     /// Account used by MPC participants.
     MpcParticipant(MpcParticipantSetup),
-    /// Account hosting the MPC contract.
-    MpcContract,
-    /// Account hosting the loadtesting contract.
-    LoadtestContract,
+    /// Account hosting a contract.
+    Contract(ContractSetup),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MpcParticipantSetup {
     pub p2p_private_key: SecretKey,
-    pub p2p_public_key: PublicKey,
-    pub respond_yaml_file_contents: String,
+    pub responding_account_id: AccountId,
 }
 
-// From mpc code.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RespondConfigFile {
-    pub account_id: AccountId,
-    pub access_keys: Vec<SecretKey>,
+pub struct ContractSetup {
+    pub deployed_filename: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct DevnetSetupRepository {
     pub accounts: HashMap<AccountId, NearAccount>,
-    pub mpc_setups: HashMap<String, DevnetSetup>,
+    pub mpc_setups: HashMap<String, MpcNetworkSetup>,
     pub loadtest_setups: HashMap<String, LoadtestSetup>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DevnetSetup {
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct MpcNetworkSetup {
     pub participants: Vec<AccountId>,
-    pub contract: AccountId,
+    pub contract: Option<AccountId>,
+    pub threshold: usize,
+    pub desired_balance_per_account: u128,
+    pub num_responding_access_keys: usize,
+    pub desired_balance_per_responding_account: u128,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct LoadtestSetup {
     pub load_senders: Vec<AccountId>,
+    pub desired_balance_per_account: u128,
+    pub desired_keys_per_account: usize,
+    pub parallel_signatures_contract: Option<AccountId>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

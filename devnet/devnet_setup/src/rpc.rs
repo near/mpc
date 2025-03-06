@@ -13,6 +13,7 @@ struct NearRpcClient {
     client: Arc<JsonRpcClient>,
     receiver: flume::Receiver<()>,
     concurrency: Arc<tokio::sync::Semaphore>,
+    rate_limit: usize,
 }
 
 impl NearRpcClient {
@@ -36,6 +37,7 @@ impl NearRpcClient {
             client: Arc::new(client),
             receiver,
             concurrency: Arc::new(concurrency),
+            rate_limit: config.rate_limit,
         }
     }
 
@@ -96,5 +98,9 @@ impl NearRpcClients {
             }
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
+    }
+
+    pub fn total_qps(&self) -> usize {
+        self.rpcs.iter().map(|rpc| rpc.rate_limit).sum()
     }
 }
