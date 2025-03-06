@@ -3,7 +3,7 @@ use anyhow::Context;
 use near_crypto::{PublicKey, SecretKey};
 use near_indexer_primitives::types::{AccountId, Finality};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{path::Path, str::FromStr};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripleConfig {
@@ -172,10 +172,10 @@ impl From<[u8; 16]> for AesEncryptionKey {
     }
 }
 
-impl TryFrom<&str> for AesEncryptionKey {
-    type Error = anyhow::Error;
+impl FromStr for AesEncryptionKey {
+    type Err = anyhow::Error;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         let local_storage_aes_key =
             hex::decode(value).context("Encryption key must be 32 hex characters")?;
 
@@ -198,7 +198,7 @@ impl SecretsConfig {
         local_storage_aes_key_hex_str: &str,
         p2p_private_key: near_crypto::SecretKey,
     ) -> anyhow::Result<Self> {
-        let local_storage_aes_key = local_storage_aes_key_hex_str.try_into()?;
+        let local_storage_aes_key = AesEncryptionKey::from_str(local_storage_aes_key_hex_str)?;
 
         let near_crypto::SecretKey::ED25519(p2p_private_key) = p2p_private_key else {
             anyhow::bail!("P2P private key must be ed25519");

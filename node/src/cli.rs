@@ -18,6 +18,7 @@ use near_sdk::AccountId;
 use near_time::Clock;
 use std::{
     path::PathBuf,
+    str::FromStr,
     sync::{Arc, Mutex},
 };
 
@@ -66,7 +67,7 @@ impl MigrateKeyshare {
         .create()
         .await?;
 
-        let encryption_key = AesEncryptionKey::try_from(self.secret_store_key_hex.as_str())?;
+        let encryption_key = AesEncryptionKey::from_str(self.secret_store_key_hex.as_str())?;
 
         let local_key_share_storage = KeyshareStorageFactory::Local {
             home_dir: self.home_dir.into(),
