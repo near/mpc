@@ -1,3 +1,17 @@
+//! Contains OperatingAccounts, OperatingAccount, and OperatingAccessKey.
+//!
+//! OperatingAccounts contain a collection of OperatingAccount, which contains a collection of
+//! OperatingAccessKey.
+//!
+//! When we send a transaction to the chain, upon success we also mutate the local state we have.
+//! For example, upon creating an account, we would make a new OperatingAccount for it and add it
+//! to the OperatingAccounts structure.
+//!
+//! For this reason, we place methods in the appropriate structure depending on what needs to be
+//! updated. The method for creating an access key, for example, lives in OperatingAccount,
+//! because we need a mutable reference to it to add access keys to our local state. On the other
+//! hand, sending an arbitrary transfer of NEAR tokens is in OperatingAccessKey, since no local
+//! state needs changing (other than updating the nonce, which is per access key).
 use crate::rpc::NearRpcClients;
 use crate::types::{ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind};
 use futures::FutureExt;
@@ -18,10 +32,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::OwnedMutexGuard;
 
+/// Current state of an account while the CLI is running.
 pub struct OperatingAccount {
+    /// The current view of the account data. This is persisted at the end of the CLI run.
     account_data: NearAccount,
+    /// A recent block hash for submitting transactions to chain.
     recent_block_hash: CryptoHash,
+    /// RPC for submitting transactions.
     client: Arc<NearRpcClients>,
+    /// Access keys; each is a mutex so that they can simultaneously be used.
     keys: Vec<Arc<tokio::sync::Mutex<OperatingAccessKey>>>,
 }
 
@@ -49,33 +68,27 @@ impl OperatingAccount {
             account_data,
         }
     }
-
-    pub fn new_access_key_added(&mut self, key: SecretKey) {
-        self.account_data.access_keys.push(key.clone());
-        self.keys
-            .push(Arc::new(tokio::sync::Mutex::new(OperatingAccessKey::new(
-                self.account_data.account_id.clone(),
-                key,
-                self.recent_block_hash,
-                self.client.clone(),
-            ))));
-    }
 }
 
+/// An access key that can be used to send transactions.
+/// Internally keeps track of the most recent nonce.
+/// Can only send one transaction at once, in order to avoid nonce conflicts.
+/// That transaction must at least be included in the chain before sending another.
 pub struct OperatingAccessKey {
     account_id: AccountId,
-    nonce: Option<u64>,
+    nonce: Option<u64>, // if none, need to fetch it later.
     recent_block_hash: CryptoHash,
     client: Arc<NearRpcClients>,
     signer: Signer,
     secret_key: SecretKey,
 }
 
+/// Returns {prefix}{random string}{suffix}.
 pub fn make_random_account_name(prefix: &str, suffix: &str) -> AccountId {
     format!(
         "{}{}{}",
         prefix,
-        hex::encode(&rand::random::<[u8; 6]>()),
+        hex::encode(rand::random::<[u8; 6]>()),
         suffix
     )
     .try_into()
@@ -103,6 +116,7 @@ impl OperatingAccessKey {
         }
     }
 
+    /// Returns the next nonce to use, querying it from RPC if needed.
     async fn next_nonce(&mut self) -> u64 {
         match &mut self.nonce {
             Some(nonce) => {
@@ -142,6 +156,9 @@ impl OperatingAccessKey {
         }
     }
 
+    /// Creates an account, returning the new NearAccount structure that represents the created
+    /// account. Note: the account created must be a subaccount of this account, so that's why
+    /// only a prefix is taken and not a suffix.
     pub async fn create_account(
         &mut self,
         new_account_prefix: &str,
@@ -175,6 +192,7 @@ impl OperatingAccessKey {
         }
     }
 
+    /// Adds the given access key to this account.
     pub async fn add_access_key(&mut self, key: PublicKey) {
         println!(
             "[{}] Adding access key {} to account {}",
@@ -202,6 +220,8 @@ impl OperatingAccessKey {
         rpc.call(request).await.unwrap();
     }
 
+    /// Submits a transaction to the chain to mutably call a function on a contract.
+    #[allow(clippy::too_many_arguments)]
     pub async fn submit_tx_to_call_function(
         &mut self,
         contract_id: &AccountId,
@@ -250,6 +270,9 @@ impl OperatingAccessKey {
 }
 
 impl OperatingAccount {
+    /// In log(N) serial steps, ensure that this account has at least the desired number of access
+    /// keys. Internally, what this does is it uses each access key to add another key to the
+    /// account, doubling the number of keys every time up to the desired limit.
     pub async fn ensure_have_n_access_keys(&mut self, desired_num_keys: usize) {
         while self.keys.len() < desired_num_keys {
             let keys_to_add = (desired_num_keys - self.keys.len()).min(self.keys.len());
@@ -271,7 +294,17 @@ impl OperatingAccount {
             });
             let new_keys = futures::future::join_all(futs).await;
             for new_key in new_keys {
-                self.new_access_key_added(new_key);
+                {
+                    let this = &mut *self;
+                    this.account_data.access_keys.push(new_key.clone());
+                    this.keys
+                        .push(Arc::new(tokio::sync::Mutex::new(OperatingAccessKey::new(
+                            this.account_data.account_id.clone(),
+                            new_key,
+                            this.recent_block_hash,
+                            this.client.clone(),
+                        ))));
+                };
             }
         }
         println!(
@@ -281,6 +314,7 @@ impl OperatingAccount {
         );
     }
 
+    /// Sets the metadata for this account to represent an MPC participant.
     pub fn set_mpc_participant(&mut self, mpc: MpcParticipantSetup) {
         self.account_data.kind = NearAccountKind::MpcParticipant(mpc);
     }
@@ -292,6 +326,8 @@ impl OperatingAccount {
         }
     }
 
+    /// Deploys the given contract. This will deploy over an existing contract if one exists
+    /// already and the code isn't the same.
     pub async fn deploy_contract(&mut self, code: Vec<u8>, from_path: &str) {
         println!(
             "Deploying MPC contract to account {}",
@@ -327,6 +363,7 @@ impl OperatingAccount {
         });
     }
 
+    /// Performs a readonly query to the contract.
     pub async fn query_contract(&self, method: &str, args: Vec<u8>) -> anyhow::Result<CallResult> {
         let request = methods::query::RpcQueryRequest {
             block_reference: BlockReference::Finality(Finality::Final),
@@ -344,6 +381,7 @@ impl OperatingAccount {
         }
     }
 
+    /// Queries the code of the contract.
     pub async fn get_contract_code(&self) -> anyhow::Result<Vec<u8>> {
         let request = methods::query::RpcQueryRequest {
             block_reference: BlockReference::Finality(Finality::Final),
@@ -359,15 +397,18 @@ impl OperatingAccount {
         }
     }
 
+    /// Returns the first access key, for transactions that don't need parallelism.
     pub async fn any_access_key(&self) -> OwnedMutexGuard<OperatingAccessKey> {
         self.keys[0].clone().lock_owned().await
     }
 
+    /// Returns all access keys, for transactions that need full parallelism.
     pub async fn all_access_keys(&self) -> Vec<OwnedMutexGuard<OperatingAccessKey>> {
         futures::future::join_all(self.keys.iter().map(|key| key.clone().lock_owned())).await
     }
 }
 
+/// Represents the live state of the collection of all accounts the CLI knows.
 pub struct OperatingAccounts {
     accounts: HashMap<AccountId, OperatingAccount>,
     recent_block_hash: CryptoHash,
@@ -395,6 +436,9 @@ impl OperatingAccounts {
         }
     }
 
+    /// Creates a new account using the funding_account. The created account will be a subaccount
+    /// (suffixed by ".{funding_account}"), and adds the account to the list of accounts we keep
+    /// track of.
     pub async fn create_account(
         &mut self,
         new_account_prefix: &str,
@@ -417,6 +461,7 @@ impl OperatingAccounts {
         new_account.account_id
     }
 
+    /// Sends some balance from one account to another.
     pub async fn send_balance(&self, sender: &AccountId, receiver: &AccountId, amount: u128) {
         let mut sender = self.accounts.get(sender).unwrap().keys[0].lock().await;
         let request = methods::send_tx::RpcSendTransactionRequest {
@@ -434,6 +479,8 @@ impl OperatingAccounts {
         rpc.call(request).await.unwrap();
     }
 
+    /// Creates a new account from the Testnet faucet, using it as a funding account to create or
+    /// refill other accounts.
     pub async fn create_funding_account_from_faucet(&mut self, new_account_id: &AccountId) {
         let secret_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
         let mut data = std::collections::HashMap::new();
@@ -456,6 +503,7 @@ impl OperatingAccounts {
         self.accounts.insert(new_account_id.clone(), account);
     }
 
+    /// Get all funding accounts we know of.
     pub fn get_funding_accounts(&self) -> Vec<AccountId> {
         self.accounts
             .iter()
@@ -469,6 +517,7 @@ impl OperatingAccounts {
             .collect()
     }
 
+    /// Queries the balances of any number of accounts, in parallel.
     pub async fn get_account_balances(&self, accounts: &[AccountId]) -> HashMap<AccountId, u128> {
         let futs = accounts.iter().map(|account_id| async {
             self.client
@@ -486,7 +535,7 @@ impl OperatingAccounts {
                             .kind
                         {
                             QueryResponseKind::ViewAccount(account) => {
-                                return anyhow::Ok((account_id.clone(), account.amount))
+                                anyhow::Ok((account_id.clone(), account.amount))
                             }
                             _ => panic!("Unexpected response"),
                         }
@@ -499,6 +548,7 @@ impl OperatingAccounts {
         futures::future::join_all(futs).await.into_iter().collect()
     }
 
+    /// Get the balance of a single account.
     pub async fn get_account_balance(&self, account_id: &AccountId) -> u128 {
         self.get_account_balances(&[account_id.clone()])
             .await
@@ -515,6 +565,7 @@ impl OperatingAccounts {
         self.accounts.get(account_id).unwrap()
     }
 
+    /// Get mutable references to multiple accounts at the same time.
     pub fn accounts_mut(
         &mut self,
         account_ids: &[AccountId],
@@ -530,10 +581,13 @@ impl OperatingAccounts {
             .collect()
     }
 
+    /// Removes an account from the list of accounts we know of.
+    /// Does NOT delete the account on chain.
     pub fn discard_account(&mut self, account_id: &AccountId) {
         self.accounts.remove(account_id);
     }
 
+    /// Serializes the persistent state of all accounts to the format we store on disk.
     pub fn to_data(&self) -> HashMap<AccountId, NearAccount> {
         self.accounts
             .iter()

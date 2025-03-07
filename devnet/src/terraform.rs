@@ -1,3 +1,4 @@
+#![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::OperatingAccounts;
 use crate::cli::{
     MpcTerraformDeployInfraCmd, MpcTerraformDeployNomadCmd, MpcTerraformDestroyInfraCmd,
@@ -9,6 +10,8 @@ use near_sdk::AccountId;
 use serde::Serialize;
 use std::path::PathBuf;
 
+/// Creates a {name}.tfvars.json file in the current directory with the Terraform variables
+/// needed by the infra-ops scripts.
 async fn export_terraform_vars(
     name: &str,
     accounts: &OperatingAccounts,
@@ -96,10 +99,12 @@ impl MpcTerraformDeployInfraCmd {
             .get_mut(name)
             .expect(&format!("MPC network {} does not exist", name));
         let terraform_vars_file = export_terraform_vars(name, &setup.accounts, mpc_setup).await;
-        // Invoke terraform
         let infra_ops_path = &config.infra_ops_path;
         let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
 
+        // Make sure to init, and then create/select the workspace for this network.
+        // Workspaces have independent state, so as long as the name is unique, this prevents any
+        // conflict between networks.
         std::process::Command::new("terraform")
             .arg("init")
             .current_dir(&infra_dir)
@@ -138,6 +143,8 @@ impl MpcTerraformDeployInfraCmd {
             .current_dir(&infra_dir)
             .print_and_run();
 
+        // Query for the nomad server URL reported by Terraform. We store that for
+        // deploy-nomad later.
         let nomad_server_url = std::process::Command::new("terraform")
             .arg("output")
             .arg("-raw")
@@ -186,7 +193,8 @@ impl MpcTerraformDeployNomadCmd {
             .env("NOMAD_ADDR", &nomad_server_url)
             .print_and_run();
 
-        std::process::Command::new("terraform")
+        let mut command = std::process::Command::new("terraform");
+        command
             .arg("apply")
             .arg("-var-file")
             .arg(terraform_vars_file)
@@ -194,7 +202,13 @@ impl MpcTerraformDeployNomadCmd {
             .arg(format!(
                 "shutdown_and_reset_db={}",
                 self.shutdown_and_reset_db
-            ))
+            ));
+        if let Some(docker_image) = &self.docker_image {
+            command
+                .arg("-var")
+                .arg(format!("docker_image={}", docker_image));
+        }
+        command
             .current_dir(&infra_dir)
             .env("NOMAD_ADDR", &nomad_server_url)
             .print_and_run();

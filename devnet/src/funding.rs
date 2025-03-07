@@ -6,11 +6,16 @@ use crate::constants::{
 use near_sdk::AccountId;
 use std::collections::VecDeque;
 
+/// An account to request funding for.
 pub enum AccountToFund {
+    /// Create a new account with the given prefix and initial balance.
+    /// The account will be in the form of {prefix}-{random_string}.{funding_account}
     NewAccount {
         initial_balance: u128,
         prefix: String,
     },
+    /// Refill an existing account to the desired balance, but do not refill if it's
+    /// above a balance of `do_not_refill_above`.
     ExistingAccount {
         account_id: AccountId,
         desired_balance: u128,
@@ -37,6 +42,9 @@ impl AccountToFund {
     }
 }
 
+/// Funds the given accounts, drawing from existing funding accounts when available, and creating
+/// new funding accounts from the faucet if needed. Any number of accounts and any amount of balance
+/// can be funded, up to a sanity limit of 100 NEAR total.
 pub async fn fund_accounts(
     accounts: &mut OperatingAccounts,
     desired_funding: Vec<AccountToFund>,
@@ -130,6 +138,7 @@ pub async fn fund_accounts(
         let balance_remaining_to_fund = balance_needed - balance_to_fund;
 
         if balance_remaining_in_funding_account > 0 {
+            // If the funding account still has balance, put it back so we can use it again.
             funding_accounts.push_front((
                 funding_account.clone(),
                 balance_remaining_in_funding_account,
@@ -141,7 +150,7 @@ pub async fn fund_accounts(
         let account_id = match &account_to_fund {
             AccountToFund::NewAccount { prefix, .. } => {
                 accounts
-                    .create_account(&prefix, balance_to_fund, &funding_account)
+                    .create_account(prefix, balance_to_fund, &funding_account)
                     .await
             }
             AccountToFund::ExistingAccount { account_id, .. } => {
@@ -158,6 +167,7 @@ pub async fn fund_accounts(
             }
         };
         if balance_remaining_to_fund > 0 {
+            // It's possible that we didn't fully fund the account, so we put it back and continue.
             accounts_to_be_funded.push_front((
                 AccountToFund::ExistingAccount {
                     account_id: account_id.clone(),

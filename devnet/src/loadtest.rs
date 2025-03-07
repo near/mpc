@@ -1,3 +1,4 @@
+#![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccessKey, OperatingAccounts};
 use crate::cli::{
     DeployParallelSignContractCmd, DrainExpiredRequestsCmd, NewLoadtestCmd, RunLoadtestCmd,
@@ -18,12 +19,14 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use tokio::sync::OwnedMutexGuard;
 
+/// Bring the loadtest setup to the desired parameterization.
 async fn update_loadtest_setup(
     name: &str,
     accounts: &mut OperatingAccounts,
     loadtest_setup: &mut LoadtestSetup,
     desired_num_accounts: usize,
 ) {
+    // First create any accounts we don't already have, and refill existing.
     let mut accounts_to_fund = Vec::new();
     for i in 0..desired_num_accounts {
         if let Some(account_id) = loadtest_setup.load_senders.get(i) {
@@ -42,12 +45,11 @@ async fn update_loadtest_setup(
 
     loadtest_setup.load_senders = funded_accounts.clone();
 
+    // Ensure that each account has the desired number of access keys.
     let futs = accounts
         .accounts_mut(&funded_accounts)
-        .into_iter()
-        .map(|(_, account)| {
-            account.ensure_have_n_access_keys(loadtest_setup.desired_keys_per_account)
-        })
+        .into_values()
+        .map(|account| account.ensure_have_n_access_keys(loadtest_setup.desired_keys_per_account))
         .collect::<Vec<_>>();
     futures::future::join_all(futs).await;
 }
@@ -198,14 +200,11 @@ impl RunLoadtestCmd {
                 tx_per_sec, config.rpc.total_qps());
         }
 
-        let sender: Arc<
-            dyn for<'a> Fn(
-                    &'a mut OperatingAccessKey,
-                ) -> BoxFuture<'a, anyhow::Result<RpcTransactionResponse>>
-                + Send
-                + Sync
-                + 'static,
-        > = if let Some(signatures_per_contract_call) = self.signatures_per_contract_call {
+        let sender: LoadSenderAsyncFn<RpcTransactionResponse> = if let Some(
+            signatures_per_contract_call,
+        ) =
+            self.signatures_per_contract_call
+        {
             let contract = loadtest_setup.parallel_signatures_contract.clone().expect(
                 "Signatures per contract call specified, but no parallel signatures contract is deployed",
             );
@@ -246,7 +245,7 @@ impl RunLoadtestCmd {
                             },
                         })
                         .unwrap(),
-                        20,
+                        30,
                         1,
                         near_primitives::views::TxExecutionStatus::Included,
                         false,
@@ -287,12 +286,7 @@ impl DrainExpiredRequestsCmd {
             keys.extend(account.all_access_keys().await);
         }
 
-        let sender: Arc<
-            dyn for<'a> Fn(&'a mut OperatingAccessKey) -> BoxFuture<'a, anyhow::Result<()>>
-                + Send
-                + Sync
-                + 'static,
-        > = Arc::new(move |key: &mut OperatingAccessKey| {
+        let sender: LoadSenderAsyncFn<()> = Arc::new(move |key: &mut OperatingAccessKey| {
             let mpc_contract = mpc_account.clone();
             async move {
                 match key
@@ -343,15 +337,21 @@ struct RemoveTimedOutRequestsArgs {
     max_num_to_remove: u32,
 }
 
+type LoadSenderAsyncFn<R> = Arc<
+    dyn for<'a> Fn(&'a mut OperatingAccessKey) -> BoxFuture<'a, anyhow::Result<R>>
+        + Send
+        + Sync
+        + 'static,
+>;
+
+/// Send parallel load up to the given QPS (may fluctuate within a second),
+/// using the sender function. The sender function will only be executed once at a time for each
+/// access key, so enough access keys would be needed to saturate the QPS.
+/// Also, the rpc client will internally apply rate limits, so that's another possible bottleneck.
 async fn send_load<R: 'static>(
     keys: Vec<OwnedMutexGuard<OperatingAccessKey>>,
     qps: f64,
-    sender: Arc<
-        dyn for<'a> Fn(&'a mut OperatingAccessKey) -> BoxFuture<'a, anyhow::Result<R>>
-            + Send
-            + Sync
-            + 'static,
-    >,
+    sender: LoadSenderAsyncFn<R>,
 ) {
     let mut handles = Vec::new();
     let (permits_sender, permits_receiver) = flume::bounded(qps.ceil() as usize);

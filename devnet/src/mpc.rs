@@ -1,3 +1,4 @@
+#![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::OperatingAccounts;
 use crate::cli::{
     MpcDeployContractCmd, MpcJoinCmd, MpcViewContractCmd, MpcVoteJoinCmd, NewMpcNetworkCmd,
@@ -15,6 +16,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
+/// Bring the MPC network up to the desired parameterization.
 async fn update_mpc_network(
     name: &str,
     accounts: &mut OperatingAccounts,
@@ -28,6 +30,9 @@ async fn update_mpc_network(
             desired_num_participants
         );
     }
+
+    // Create new participants as needed and refill existing participants' balances.
+    // For each participant we maintain two accounts: the MPC account, and the responding account.
     let mut accounts_to_fund = Vec::new();
     for i in 0..desired_num_participants {
         if let Some(account_id) = mpc_setup.participants.get(i) {
@@ -80,10 +85,12 @@ async fn update_mpc_network(
                 .clone()
         })
         .collect::<Vec<_>>();
+
+    // Ensure that the responding accounts have enough access keys.
     let futs = accounts
         .accounts_mut(&responding_accounts)
-        .into_iter()
-        .map(|(_, account)| account.ensure_have_n_access_keys(mpc_setup.num_responding_access_keys))
+        .into_values()
+        .map(|account| account.ensure_have_n_access_keys(mpc_setup.num_responding_access_keys))
         .collect::<Vec<_>>();
     futures::future::join_all(futs).await;
 }

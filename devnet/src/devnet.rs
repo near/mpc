@@ -5,6 +5,8 @@ use near_jsonrpc_client::methods;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Live state of the setup for the entire devnet.
+/// Upon dropping, saves the state to devnet_setup.yaml
 pub struct OperatingDevnetSetup {
     pub accounts: OperatingAccounts,
     pub mpc_setups: HashMap<String, MpcNetworkSetup>,
@@ -14,6 +16,7 @@ pub struct OperatingDevnetSetup {
 impl OperatingDevnetSetup {
     const SETUP_FILENAME: &str = "devnet_setup.yaml";
 
+    /// Load the setup from disk.
     pub async fn load(client: Arc<NearRpcClients>) -> Self {
         if !std::fs::exists(Self::SETUP_FILENAME).unwrap() {
             std::fs::write(
@@ -56,6 +59,7 @@ impl Drop for OperatingDevnetSetup {
         };
         let setup_data = serde_yaml::to_string(&setup).unwrap();
         if std::fs::exists(OperatingDevnetSetup::SETUP_FILENAME).unwrap() {
+            // Make a backup, just in case the CLI crashed and saved some invalid middle state.
             std::fs::rename(
                 OperatingDevnetSetup::SETUP_FILENAME,
                 format!("{}.bak", OperatingDevnetSetup::SETUP_FILENAME),

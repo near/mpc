@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Locally stored Near account information.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NearAccount {
     pub account_id: AccountId,
@@ -25,17 +26,21 @@ pub enum NearAccountKind {
     Contract(ContractSetup),
 }
 
+/// Locally stored MPC participant keys and other info.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MpcParticipantSetup {
     pub p2p_private_key: SecretKey,
+    /// The account this participant uses to respond to signature requests.
     pub responding_account_id: AccountId,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContractSetup {
+    /// The filename that was deployed last time. This is just for informational purposes.
     pub deployed_filename: String,
 }
 
+/// The format of the devnet_setup.yaml file - all the local state we store.
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct DevnetSetupRepository {
     pub accounts: HashMap<AccountId, NearAccount>,
@@ -43,17 +48,20 @@ pub struct DevnetSetupRepository {
     pub loadtest_setups: HashMap<String, LoadtestSetup>,
 }
 
+/// Local state for a single MPC network.
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct MpcNetworkSetup {
     pub participants: Vec<AccountId>,
     pub contract: Option<AccountId>,
     pub threshold: usize,
+    // These desired fields are used when updating the network.
     pub desired_balance_per_account: u128,
     pub num_responding_access_keys: usize,
     pub desired_balance_per_responding_account: u128,
     pub nomad_server_url: Option<String>,
 }
 
+/// Local state for a single loadtest setup.
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct LoadtestSetup {
     pub load_senders: Vec<AccountId>,
@@ -73,7 +81,9 @@ pub struct Config {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RpcConfig {
     pub url: String,
+    /// Maximum number of requests per second that the RPC server will allow.
     pub rate_limit: usize,
+    /// Maximum number of in-flight requests that the RPC server will allow.
     pub max_concurrency: usize,
 }
 
