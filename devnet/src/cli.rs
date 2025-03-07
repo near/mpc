@@ -42,6 +42,9 @@ impl Cli {
                     MpcNetworkSubCmd::DeployNomad(cmd) => {
                         cmd.run(&name, config).await;
                     }
+                    MpcNetworkSubCmd::DestroyInfra(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
                 }
             }
             Cli::Loadtest(cmd) => {
@@ -57,6 +60,9 @@ impl Cli {
                         cmd.run(&name, config).await;
                     }
                     LoadtestSubCmd::Run(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
+                    LoadtestSubCmd::DrainExpiredRequests(cmd) => {
                         cmd.run(&name, config).await;
                     }
                 }
@@ -83,6 +89,7 @@ pub enum MpcNetworkSubCmd {
     VoteJoin(MpcVoteJoinCmd),
     DeployInfra(MpcTerraformDeployInfraCmd),
     DeployNomad(MpcTerraformDeployNomadCmd),
+    DestroyInfra(MpcTerraformDestroyInfraCmd),
 }
 
 #[derive(clap::Parser)]
@@ -98,6 +105,7 @@ pub enum LoadtestSubCmd {
     Update(UpdateLoadtestCmd),
     DeployParallelSignContract(DeployParallelSignContractCmd),
     Run(RunLoadtestCmd),
+    DrainExpiredRequests(DrainExpiredRequestsCmd),
 }
 
 #[derive(clap::Parser)]
@@ -143,6 +151,8 @@ pub struct MpcDeployContractCmd {
     pub init_participants: usize,
     #[clap(long, default_value = "20")]
     pub deposit_near: u128,
+    #[clap(long)]
+    pub max_requests_to_remove: Option<u32>,
 }
 
 #[derive(clap::Parser)]
@@ -164,10 +174,19 @@ pub struct MpcVoteJoinCmd {
 }
 
 #[derive(clap::Parser)]
-pub struct MpcTerraformDeployInfraCmd {}
+pub struct MpcTerraformDeployInfraCmd {
+    #[clap(long)]
+    pub reset_keyshares: bool,
+}
 
 #[derive(clap::Parser)]
-pub struct MpcTerraformDeployNomadCmd {}
+pub struct MpcTerraformDeployNomadCmd {
+    #[clap(long)]
+    pub shutdown_and_reset_db: bool,
+}
+
+#[derive(clap::Parser)]
+pub struct MpcTerraformDestroyInfraCmd {}
 
 #[derive(clap::Parser)]
 pub struct NewLoadtestCmd {
@@ -209,4 +228,12 @@ pub struct RunLoadtestCmd {
     pub qps: usize,
     #[clap(long)]
     pub signatures_per_contract_call: Option<usize>,
+}
+
+#[derive(clap::Parser)]
+pub struct DrainExpiredRequestsCmd {
+    #[clap(long)]
+    pub mpc_network: String,
+    #[clap(long, default_value = "1")]
+    pub qps: usize,
 }

@@ -158,7 +158,15 @@ pub async fn fund_accounts(
             }
         };
         if balance_remaining_to_fund > 0 {
-            accounts_to_be_funded.push_front((account_to_fund, balance_remaining_to_fund));
+            accounts_to_be_funded.push_front((
+                AccountToFund::ExistingAccount {
+                    account_id: account_id.clone(),
+                    // These don't matter anymore.
+                    desired_balance: 0,
+                    do_not_refill_above: 0,
+                },
+                balance_remaining_to_fund,
+            ));
         } else {
             funded_accounts.push(account_id);
         }

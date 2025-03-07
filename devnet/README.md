@@ -50,10 +50,12 @@ independent nonce.
 Then, deploy the contract.
 ```
 target/debug/devnet mpc my-test deploy-contract \
-  # Can be less, if we want to not start with the full set
   --init-participants 2
 ```
-(The path of the contract binary can be overridden via `--path`.)
+The `--init-participants` can be fewer than the total number of participants,
+if we wish to have fewer participants join the network at the beginning.
+
+The path of the contract binary can be overridden via `--path`.
 
 We can now deploy the infra with Terraform:
 ```

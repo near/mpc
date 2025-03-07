@@ -212,7 +212,10 @@ impl MpcDeployContractCmd {
                 "init",
                 &serde_json::to_vec(&InitArgs {
                     threshold: mpc_setup.threshold,
-                    init_config: None,
+                    init_config: Some(InitConfigV1 {
+                        max_num_requests_to_remove: self.max_requests_to_remove,
+                        request_timeout_blocks: None,
+                    }),
                     candidates: mpc_setup
                         .participants
                         .iter()

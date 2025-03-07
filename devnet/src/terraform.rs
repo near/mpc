@@ -1,5 +1,7 @@
 use crate::account::OperatingAccounts;
-use crate::cli::{MpcTerraformDeployInfraCmd, MpcTerraformDeployNomadCmd};
+use crate::cli::{
+    MpcTerraformDeployInfraCmd, MpcTerraformDeployNomadCmd, MpcTerraformDestroyInfraCmd,
+};
 use crate::devnet::OperatingDevnetSetup;
 use crate::types::{MpcNetworkSetup, ParsedConfig};
 use near_crypto::{PublicKey, SecretKey};
@@ -111,6 +113,24 @@ impl MpcTerraformDeployInfraCmd {
             .current_dir(&infra_dir)
             .print_and_run();
 
+        // If we need to reset keyshares, force replace the secrets.
+        // We still need to run another apply afterwards because deleting the secrets
+        // would also delete the IAM rules.
+        if self.reset_keyshares {
+            let mut command = std::process::Command::new("terraform");
+            command
+                .arg("apply")
+                .arg("-var-file")
+                .arg(&terraform_vars_file);
+            for i in 0..mpc_setup.participants.len() {
+                command.arg("-replace").arg(format!(
+                    "google_secret_manager_secret.keyshare_secret[{}]",
+                    i
+                ));
+            }
+            command.current_dir(&infra_dir).print_and_run();
+        }
+
         std::process::Command::new("terraform")
             .arg("apply")
             .arg("-var-file")
@@ -170,9 +190,54 @@ impl MpcTerraformDeployNomadCmd {
             .arg("apply")
             .arg("-var-file")
             .arg(terraform_vars_file)
+            .arg("-var")
+            .arg(format!(
+                "shutdown_and_reset_db={}",
+                self.shutdown_and_reset_db
+            ))
             .current_dir(&infra_dir)
             .env("NOMAD_ADDR", &nomad_server_url)
             .print_and_run();
+    }
+}
+
+impl MpcTerraformDestroyInfraCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        println!(
+            "Going to destroy testing cluster infra with Terraform recipes located at {}",
+            name,
+        );
+        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} does not exist", name));
+        let terraform_vars_file = export_terraform_vars(name, &setup.accounts, mpc_setup).await;
+        // Invoke terraform
+        let infra_ops_path = &config.infra_ops_path;
+        let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
+
+        std::process::Command::new("terraform")
+            .arg("init")
+            .current_dir(&infra_dir)
+            .print_and_run();
+
+        std::process::Command::new("terraform")
+            .arg("workspace")
+            .arg("select")
+            .arg("-or-create")
+            .arg(name)
+            .current_dir(&infra_dir)
+            .print_and_run();
+
+        std::process::Command::new("terraform")
+            .arg("destroy")
+            .arg("-var-file")
+            .arg(terraform_vars_file)
+            .current_dir(&infra_dir)
+            .print_and_run();
+
+        mpc_setup.nomad_server_url = None;
     }
 }
 
