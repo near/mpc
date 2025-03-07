@@ -216,7 +216,7 @@ impl ChainRespondArgs {
         }
         // if Rx is larger than the group order then set recovery_id higher bit to 1
         // if Ry is odd then set recovery_id lower bit to 1
-        (is_x_reduced as u8) << 1 | y_bit
+        ((is_x_reduced as u8) << 1) | y_bit
     }
 }
 
