@@ -54,9 +54,10 @@ async fn update_mpc_network(
                 mpc_setup.desired_balance_per_account,
                 format!("mpc-{}-{}-", i, name),
             ));
+            // Arbitrary prefix "0" to put it on shard 0.
             accounts_to_fund.push(AccountToFund::from_new(
                 mpc_setup.desired_balance_per_responding_account,
-                format!("mpc-responder-{}-{}-", i, name),
+                format!("0mpc-responder-{}-{}-", i, name),
             ));
         }
     }
@@ -192,6 +193,7 @@ impl MpcDeployContractCmd {
         } else {
             AccountToFund::from_new(
                 self.deposit_near * ONE_NEAR,
+                // This goes to shard 4.
                 format!("mpc-contract-{}-", name),
             )
         };

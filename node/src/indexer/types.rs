@@ -139,9 +139,8 @@ impl ChainSendTransactionRequest {
 
     pub fn gas_required(&self) -> Gas {
         match self {
-            Self::Respond(_) | Self::Join(_) | Self::VotePk(_) | Self::VoteReshared(_) => {
-                300 * TGAS
-            }
+            Self::Respond(_) => 10 * TGAS,
+            Self::Join(_) | Self::VotePk(_) | Self::VoteReshared(_) => 300 * TGAS,
         }
     }
 }

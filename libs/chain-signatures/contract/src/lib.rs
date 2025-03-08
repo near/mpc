@@ -18,9 +18,8 @@ use k256::Scalar;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
 use near_sdk::json_types::U128;
-use near_sdk::store::Vector;
 use near_sdk::{
-    env, log, near_bindgen, AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise,
+    env, log, near_bindgen, AccountId, BlockHeight, CryptoHash, Gas, GasWeight, NearToken, Promise,
     PromiseError, PublicKey,
 };
 use primitives::{
@@ -70,7 +69,9 @@ impl Default for VersionedMpcContract {
 pub struct MpcContractV1 {
     protocol_state: ProtocolContractState,
     pending_requests: LookupMap<SignatureRequest, YieldIndex>,
-    request_by_block_height: Vector<(u64, SignatureRequest)>,
+    requests_in_order: LookupMap<u64, (BlockHeight, SignatureRequest)>,
+    earliest_stored_request_id: u64,
+    next_request_id: u64,
     proposed_updates: ProposedUpdates,
     config: ConfigV1,
 }
@@ -80,20 +81,37 @@ impl MpcContractV1 {
         let min_pending_request_height =
             cmp::max(env::block_height(), self.config.request_timeout_blocks)
                 - self.config.request_timeout_blocks;
+
+        let mut request_id = self.earliest_stored_request_id;
+        let next_request_id = self.next_request_id;
         let mut i = 0;
-        for x in self.request_by_block_height.iter() {
-            if (min_pending_request_height <= x.0) || (i > max_num_to_remove) {
+        while request_id < next_request_id {
+            if i >= max_num_to_remove {
                 break;
             }
-            self.pending_requests.remove(&x.1);
+            if let Some((block_height, request)) = self.requests_in_order.get(&request_id) {
+                if block_height < min_pending_request_height {
+                    self.requests_in_order.remove(&request_id);
+                    self.pending_requests.remove(&request);
+                    request_id += 1;
+                } else {
+                    break;
+                }
+            } else {
+                // Invalid case, but let's proceed anyway.
+                request_id += 1;
+            }
             i += 1;
         }
-        self.request_by_block_height.drain(..i);
-        cmp::max(i, 1) - 1
+        self.earliest_stored_request_id = request_id;
+        i
     }
     fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) {
-        self.request_by_block_height
-            .push((env::block_height(), request.clone()));
+        self.requests_in_order.insert(
+            &self.next_request_id,
+            &(env::block_height(), request.clone()),
+        );
+        self.next_request_id += 1;
         self.pending_requests
             .insert(request, &YieldIndex { data_id });
     }
@@ -120,7 +138,9 @@ impl MpcContractV1 {
                 pk_votes: PkVotes::new(),
             }),
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
-            request_by_block_height: Vector::new(StorageKey::RequestsByTimestamp),
+            requests_in_order: LookupMap::new(StorageKey::RequestsInOrder),
+            earliest_stored_request_id: 0,
+            next_request_id: 0,
             proposed_updates: ProposedUpdates::default(),
         }
     }
@@ -794,7 +814,9 @@ impl VersionedMpcContract {
                 join_votes: Votes::new(),
                 leave_votes: Votes::new(),
             }),
-            request_by_block_height: Vector::new(StorageKey::RequestsByTimestamp),
+            requests_in_order: LookupMap::new(StorageKey::RequestsInOrder),
+            earliest_stored_request_id: 0,
+            next_request_id: 0,
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             proposed_updates: ProposedUpdates::default(),
         }))
@@ -818,7 +840,9 @@ impl VersionedMpcContract {
                     config: ConfigV1::default(),
                     protocol_state: mpc_contract_v0.protocol_state,
                     pending_requests: mpc_contract_v0.pending_requests,
-                    request_by_block_height: Vector::new(StorageKey::RequestsByTimestamp),
+                    requests_in_order: LookupMap::new(StorageKey::RequestsInOrder),
+                    earliest_stored_request_id: 0,
+                    next_request_id: 0,
                     proposed_updates: ProposedUpdates::default(),
                 }))
             }

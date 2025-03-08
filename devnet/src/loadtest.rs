@@ -37,7 +37,8 @@ async fn update_loadtest_setup(
         } else {
             accounts_to_fund.push(AccountToFund::from_new(
                 loadtest_setup.desired_balance_per_account,
-                format!("loadtest-{}-{}-", i, name),
+                // Arbitrary prefix "b" to put it on shard 2.
+                format!("b-loadtest-{}-{}-", i, name),
             ));
         }
     }
@@ -146,7 +147,11 @@ impl DeployParallelSignContractCmd {
                     do_not_refill_above: 0,
                 }
             } else {
-                AccountToFund::from_new(self.deposit_near * ONE_NEAR, format!("par-sign-{}-", name))
+                // Arbitrary prefix "h" to put it on shard 3.
+                AccountToFund::from_new(
+                    self.deposit_near * ONE_NEAR,
+                    format!("h-par-sign-{}-", name),
+                )
             };
         let contract_account = fund_accounts(&mut setup.accounts, vec![contract_account_to_fund])
             .await
@@ -245,7 +250,7 @@ impl RunLoadtestCmd {
                             },
                         })
                         .unwrap(),
-                        30,
+                        10,
                         1,
                         near_primitives::views::TxExecutionStatus::Included,
                         false,
@@ -294,7 +299,7 @@ impl DrainExpiredRequestsCmd {
                         &mpc_contract,
                         "remove_timed_out_requests",
                         &serde_json::to_vec(&RemoveTimedOutRequestsArgs {
-                            max_num_to_remove: 20,
+                            max_num_to_remove: 500,
                         })
                         .unwrap(),
                         300,

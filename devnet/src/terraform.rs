@@ -208,6 +208,13 @@ impl MpcTerraformDeployNomadCmd {
                 .arg("-var")
                 .arg(format!("docker_image={}", docker_image));
         }
+        if self.restart {
+            for i in 0..mpc_setup.participants.len() {
+                command
+                    .arg("-replace")
+                    .arg(format!("nomad_job.mpc_node[{}]", i));
+            }
+        }
         command
             .current_dir(&infra_dir)
             .env("NOMAD_ADDR", &nomad_server_url)

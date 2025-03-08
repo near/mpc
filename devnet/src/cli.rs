@@ -218,6 +218,9 @@ pub struct MpcTerraformDeployNomadCmd {
     /// If true, shuts down the nodes and deletes the database.
     #[clap(long)]
     pub shutdown_and_reset_db: bool,
+    /// If true, restarts the nodes.
+    #[clap(long)]
+    pub restart: bool,
     /// Overrides the docker image to use for MPC nodes.
     #[clap(long)]
     pub docker_image: Option<String>,

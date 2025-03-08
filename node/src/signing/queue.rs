@@ -23,7 +23,7 @@ const STALE_PARTICIPANT_THRESHOLD: NumBlocks = 10;
 const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
 /// The maximum time we'll wait, after a transaction is submitted to the chain, before we decide
 /// that the transaction is lost and that we should retry.
-const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
+const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(20);
 /// Maximum attempts we should make for each signature when we are the leader.
 const MAX_ATTEMPTS_PER_SIGNATURE_AS_LEADER: u64 = 10;
 
