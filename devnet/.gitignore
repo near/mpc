@@ -1,0 +1,5 @@
+devnet_setup.yaml
+devnet_setup.yaml.bak
+config.yaml
+*.tfvars.json
+target/
