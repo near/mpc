@@ -3,7 +3,7 @@ use crate::indexer::participants::ContractResharingState;
 use crate::keyshare::{KeyshareStorage, RootKeyshareData};
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{MpcTaskId, ParticipantId};
+use crate::primitives::{EcdsaTaskId, MpcTaskId, ParticipantId};
 use crate::protocol::run_protocol;
 use cait_sith::protocol::Participant;
 use cait_sith::KeygenOutput;
@@ -73,25 +73,15 @@ pub async fn run_key_resharing_client(
     keyshare_storage: Box<dyn KeyshareStorage>,
     mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
 ) -> anyhow::Result<()> {
-    let my_participant_id = client.my_participant_id();
-    let is_leader = my_participant_id
-        == config
-            .participants
-            .participants
-            .iter()
-            .map(|p| p.id)
-            .min()
-            .unwrap();
-
-    let task_id = MpcTaskId::KeyResharing {
+    let task_id = EcdsaTaskId::KeyResharing {
         new_epoch: state.old_epoch + 1,
     };
-    let channel = if is_leader {
+    let channel = if config.is_leader_for_keygen() {
         client.new_channel_for_task(task_id, client.all_participant_ids())?
     } else {
         loop {
             let channel = channel_receiver.recv().await.unwrap();
-            if channel.task_id() != task_id {
+            if channel.task_id() != MpcTaskId::EcdsaTaskId(task_id) {
                 tracing::info!(
                     "Received task ID is not key resharing: {:?}; ignoring.",
                     channel.task_id()
@@ -157,7 +147,7 @@ mod tests {
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::primitives::{MpcTaskId, ParticipantId};
+    use crate::primitives::{EcdsaTaskId, ParticipantId};
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use std::sync::Arc;
@@ -187,7 +177,7 @@ mod tests {
                     // We'll have the first participant be the leader.
                     let channel = if participant_id == all_participant_ids[0] {
                         client.new_channel_for_task(
-                            MpcTaskId::KeyGeneration,
+                            EcdsaTaskId::KeyGeneration,
                             client.all_participant_ids(),
                         )?
                     } else {

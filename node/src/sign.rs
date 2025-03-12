@@ -4,7 +4,9 @@ use crate::config::PresignatureConfig;
 use crate::hkdf::{derive_public_key, derive_randomness};
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{participants_from_triples, ParticipantId, PresignOutputWithParticipants};
+use crate::primitives::{
+    participants_from_triples, EcdsaTaskId, ParticipantId, PresignOutputWithParticipants,
+};
 use crate::protocol::run_protocol;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::triple::TripleStorage;
@@ -252,7 +254,7 @@ pub async fn run_background_presignature_generation(
             let (paired_triple_id, (triple0, triple1)) = triple_store.take_owned().await;
             progress_tracker.set_waiting_for_triples(false);
             let participants = participants_from_triples(&triple0, &triple1);
-            let task_id = crate::primitives::MpcTaskId::Presignature {
+            let task_id = EcdsaTaskId::Presignature {
                 id,
                 paired_triple_id,
             };

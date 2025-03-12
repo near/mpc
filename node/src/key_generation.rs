@@ -2,7 +2,7 @@ use crate::config::MpcConfig;
 use crate::keyshare::{KeyshareStorage, RootKeyshareData};
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
+use crate::primitives::{EcdsaTaskId, MpcTaskId};
 use crate::protocol::run_protocol;
 use anyhow::Context;
 use cait_sith::protocol::Participant;
@@ -53,22 +53,13 @@ pub async fn run_key_generation_client(
     if keyshare_storage.load().await?.is_some() {
         anyhow::bail!("Keyshare already exists, refusing to run key generation");
     }
-    let my_participant_id = client.my_participant_id();
-    let is_leader = my_participant_id
-        == config
-            .participants
-            .participants
-            .iter()
-            .map(|p| p.id)
-            .min()
-            .unwrap();
 
-    let channel = if is_leader {
-        client.new_channel_for_task(MpcTaskId::KeyGeneration, client.all_participant_ids())?
+    let channel = if config.is_leader_for_keygen() {
+        client.new_channel_for_task(EcdsaTaskId::KeyGeneration, client.all_participant_ids())?
     } else {
         loop {
             let channel = channel_receiver.recv().await.unwrap();
-            if channel.task_id() != MpcTaskId::KeyGeneration {
+            if channel.task_id() != MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration) {
                 tracing::info!(
                     "Received task ID is not key generation: {:?}; ignoring.",
                     channel.task_id()
@@ -108,7 +99,7 @@ mod tests {
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::primitives::MpcTaskId;
+    use crate::primitives::EcdsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use cait_sith::KeygenOutput;
@@ -139,7 +130,7 @@ mod tests {
 
         // We'll have the first participant be the leader.
         let channel = if participant_id == all_participant_ids[0] {
-            client.new_channel_for_task(MpcTaskId::KeyGeneration, client.all_participant_ids())?
+            client.new_channel_for_task(EcdsaTaskId::KeyGeneration, client.all_participant_ids())?
         } else {
             channel_receiver
                 .recv()

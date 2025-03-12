@@ -22,6 +22,7 @@ mod p2p;
 mod primitives;
 mod protocol;
 mod protocol_version;
+mod providers;
 mod runtime;
 mod sign;
 mod sign_request;
