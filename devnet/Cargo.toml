@@ -1,0 +1,26 @@
+[package]
+name = "devnet"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.97"
+clap = { version = "4.5.31", features = ["derive"] }
+flume = "0.11.1"
+futures = "0.3.31"
+hex = "0.4.3"
+near-crypto = "0.28.0"
+near-jsonrpc-client = "0.15.1"
+near-jsonrpc-primitives = "0.28.0"
+near-primitives = "0.28.0"
+near-sdk = { version = "5.8.1" }
+rand = "0.9.0"
+reqwest = "0.12.12"
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.140"
+serde_yaml = "0.9.34"
+tokio = { version = "1.43.0", features = ["full"] }
+
+mpc-contract = { path = "../libs/chain-signatures/contract" }
+
+[workspace]

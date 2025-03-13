@@ -43,7 +43,7 @@ impl TestContract {
                     "sign".to_string(),
                     serde_json::to_vec(&args).unwrap(),
                     NearToken::from_yoctonear(1),
-                    Gas::from_tgas(50),
+                    Gas::from_tgas(30),
                 )
             })
             .collect::<Vec<_>>();
@@ -60,7 +60,7 @@ impl TestContract {
             "handle_results".to_string(),
             vec![],
             NearToken::from_near(0),
-            Gas::from_tgas(30),
+            Gas::from_tgas(10),
         ))
     }
 
