@@ -43,7 +43,7 @@ fn scalar_fails_as_expected() {
 }
 
 // Is there a better way to force a borsh serialization?
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy, PartialOrd, Ord)]
 pub struct SerializableScalar {
     pub scalar: Scalar,
 }
