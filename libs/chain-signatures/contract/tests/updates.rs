@@ -44,7 +44,7 @@ async fn test_propose_contract_max_size_upload() {
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh((ProposeUpdateArgs {
-            code: Some(vec![0; 1536 * 1024 - 224]), //3900 seems does not work locally
+            code: Some(vec![0; 1536 * 1024 - 224]), //3900 seems to not work locally
             config: None,
         },))
         .max_gas()
@@ -139,17 +139,6 @@ async fn test_propose_update_config() {
     let config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
     assert_ne!(config, old_config);
     assert_eq!(config, new_config);
-
-    //// Check that we can partially set hardcoded configs, while leaving other configs as dynamic values:
-    //#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-    //pub struct LocalConfig {
-    //    pub protocol: ProtocolConfig,
-    //    #[serde(flatten)]
-    //    other: HashMap<String, serde_json::Value>,
-    //}
-    //let config: LocalConfig = serde_json::from_value(config).unwrap();
-    //let new_config: LocalConfig = serde_json::from_value(new_config).unwrap();
-    //assert_eq!(config, new_config);
 }
 
 #[tokio::test]
