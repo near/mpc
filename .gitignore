@@ -6,6 +6,7 @@
 /pytest/tests/test_contracts/parallel/target/
 
 /devnet/generate_keys/target/
+/devnet/devnet_setup.yaml
 /devnet/target
 /libs/chain-signatures/res/
 /libs/chain-signatures/target/
