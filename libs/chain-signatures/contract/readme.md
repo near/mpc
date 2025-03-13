@@ -85,4 +85,5 @@ These functions require the caller to be a participant or candidate.
 | `update_config(config: ConfigV1)` | Updates the contract configuration for `V1`. | `()` | TBD | TBD |
 
 
-
+## Development
+Run tests with `cargo nextest run`
