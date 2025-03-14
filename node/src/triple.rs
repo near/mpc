@@ -5,7 +5,7 @@ use crate::metrics;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::MeshNetworkClient;
 use crate::network::NetworkTaskChannel;
-use crate::primitives::{choose_random_participants, PairedTriple};
+use crate::primitives::{choose_random_participants, EcdsaTaskId, PairedTriple};
 use crate::protocol::run_protocol;
 use crate::tracking::AutoAbortTaskCollection;
 use cait_sith::protocol::Participant;
@@ -137,7 +137,7 @@ pub async fn run_background_triple_generation(
             }
             let id_start = triple_store
                 .generate_and_reserve_id_range(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32);
-            let task_id = crate::primitives::MpcTaskId::ManyTriples {
+            let task_id = EcdsaTaskId::ManyTriples {
                 start: id_start,
                 count: SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32,
             };
@@ -197,7 +197,7 @@ mod tests_many {
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::primitives::MpcTaskId;
+    use crate::primitives::{EcdsaTaskId, MpcTaskId};
     use crate::tests::TestGenerators;
     use crate::tracing::init_logging;
     use crate::tracking;
@@ -254,7 +254,9 @@ mod tests_many {
                 tasks.push(tracking::spawn(
                     &format!("passive task {:?}", channel.task_id()),
                     async move {
-                        let MpcTaskId::ManyTriples { start, .. } = channel.task_id() else {
+                        let MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples { start, .. }) =
+                            channel.task_id()
+                        else {
                             panic!("Unexpected task id");
                         };
                         let triples = ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
@@ -285,7 +287,7 @@ mod tests_many {
                     let participant_id = client.my_participant_id();
                     let all_participant_ids = client.all_participant_ids();
                     let start_triple_id = UniqueId::new(participant_id, i as u64, 0);
-                    let task_id = MpcTaskId::ManyTriples {
+                    let task_id = EcdsaTaskId::ManyTriples {
                         start: start_triple_id,
                         count: TRIPLES_PER_BATCH as u32,
                     };

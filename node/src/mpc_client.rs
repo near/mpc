@@ -6,7 +6,7 @@ use crate::keyshare::RootKeyshareData;
 use crate::metrics;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
+use crate::primitives::{EcdsaTaskId, MpcTaskId};
 use crate::sign::{
     run_background_presignature_generation, FollowerPresignComputation, FollowerSignComputation,
     PresignatureStorage, SignComputation,
@@ -300,78 +300,82 @@ impl MpcClient {
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<()> {
         match channel.task_id() {
-            MpcTaskId::KeyGeneration => {
-                anyhow::bail!("Key generation rejected in normal node operation");
-            }
-            MpcTaskId::KeyResharing { .. } => {
-                anyhow::bail!("Key resharing rejected in normal node operation");
-            }
-            MpcTaskId::ManyTriples { start, count } => {
-                if count as usize != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
-                    return Err(anyhow::anyhow!(
-                        "Unsupported batch size for triple generation"
-                    ));
+            MpcTaskId::EcdsaTaskId(task) => match task {
+                EcdsaTaskId::KeyGeneration => {
+                    anyhow::bail!("Key generation rejected in normal node operation");
                 }
-                FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
-                    threshold: self.mpc_config.participants.threshold as usize,
-                    out_triple_id_start: start,
-                    out_triple_store: self.triple_store.clone(),
+                EcdsaTaskId::KeyResharing { .. } => {
+                    anyhow::bail!("Key resharing rejected in normal node operation");
                 }
-                .perform_leader_centric_computation(
-                    channel,
-                    Duration::from_secs(self.config.triple.timeout_sec),
-                )
-                .await?;
-            }
-            MpcTaskId::Presignature {
-                id,
-                paired_triple_id,
-            } => {
-                FollowerPresignComputation {
-                    threshold: self.mpc_config.participants.threshold as usize,
-                    keygen_out: self.root_keyshare.keygen_output(),
-                    triple_store: self.triple_store.clone(),
+                EcdsaTaskId::ManyTriples { start, count } => {
+                    if count as usize != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
+                        return Err(anyhow::anyhow!(
+                            "Unsupported batch size for triple generation"
+                        ));
+                    }
+                    FollowerManyTripleGenerationComputation::<
+                        SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
+                    > {
+                        threshold: self.mpc_config.participants.threshold as usize,
+                        out_triple_id_start: start,
+                        out_triple_store: self.triple_store.clone(),
+                    }
+                    .perform_leader_centric_computation(
+                        channel,
+                        Duration::from_secs(self.config.triple.timeout_sec),
+                    )
+                    .await?;
+                }
+                EcdsaTaskId::Presignature {
+                    id,
                     paired_triple_id,
-                    out_presignature_store: self.presignature_store.clone(),
-                    out_presignature_id: id,
+                } => {
+                    FollowerPresignComputation {
+                        threshold: self.mpc_config.participants.threshold as usize,
+                        keygen_out: self.root_keyshare.keygen_output(),
+                        triple_store: self.triple_store.clone(),
+                        paired_triple_id,
+                        out_presignature_store: self.presignature_store.clone(),
+                        out_presignature_id: id,
+                    }
+                    .perform_leader_centric_computation(
+                        channel,
+                        Duration::from_secs(self.config.presignature.timeout_sec),
+                    )
+                    .await?;
                 }
-                .perform_leader_centric_computation(
-                    channel,
-                    Duration::from_secs(self.config.presignature.timeout_sec),
-                )
-                .await?;
-            }
-            MpcTaskId::Signature {
-                id,
-                presignature_id,
-            } => {
-                metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
-                let SignatureRequest {
-                    msg_hash,
-                    tweak,
-                    entropy,
-                    ..
-                } = timeout(
-                    Duration::from_secs(self.config.signature.timeout_sec),
-                    self.sign_request_store.get(id),
-                )
-                .await??;
-                metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
-
-                FollowerSignComputation {
-                    keygen_out: self.root_keyshare.keygen_output(),
-                    presignature_store: self.presignature_store.clone(),
+                EcdsaTaskId::Signature {
+                    id,
                     presignature_id,
-                    msg_hash,
-                    tweak,
-                    entropy,
+                } => {
+                    metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
+                    let SignatureRequest {
+                        msg_hash,
+                        tweak,
+                        entropy,
+                        ..
+                    } = timeout(
+                        Duration::from_secs(self.config.signature.timeout_sec),
+                        self.sign_request_store.get(id),
+                    )
+                    .await??;
+                    metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
+
+                    FollowerSignComputation {
+                        keygen_out: self.root_keyshare.keygen_output(),
+                        presignature_store: self.presignature_store.clone(),
+                        presignature_id,
+                        msg_hash,
+                        tweak,
+                        entropy,
+                    }
+                    .perform_leader_centric_computation(
+                        channel,
+                        Duration::from_secs(self.config.signature.timeout_sec),
+                    )
+                    .await?;
                 }
-                .perform_leader_centric_computation(
-                    channel,
-                    Duration::from_secs(self.config.signature.timeout_sec),
-                )
-                .await?;
-            }
+            },
         }
 
         Ok(())
@@ -384,7 +388,7 @@ impl MpcClient {
         let (presignature_id, presignature) = self.presignature_store.take_owned().await;
         let sign_request = self.sign_request_store.get(id).await?;
         let channel = self.client.new_channel_for_task(
-            MpcTaskId::Signature {
+            EcdsaTaskId::Signature {
                 id,
                 presignature_id,
             },

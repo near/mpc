@@ -87,7 +87,7 @@ pub struct MpcPeerMessage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub enum MpcTaskId {
+pub enum EcdsaTaskId {
     KeyGeneration,
     KeyResharing {
         new_epoch: u64,
@@ -104,6 +104,17 @@ pub enum MpcTaskId {
         id: SignatureId,
         presignature_id: UniqueId,
     },
+}
+
+impl From<EcdsaTaskId> for MpcTaskId {
+    fn from(val: EcdsaTaskId) -> Self {
+        MpcTaskId::EcdsaTaskId(val)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+pub enum MpcTaskId {
+    EcdsaTaskId(EcdsaTaskId),
 }
 
 pub trait HasParticipants {
