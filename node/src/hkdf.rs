@@ -1,6 +1,8 @@
+use anyhow::Context;
+use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{
     elliptic_curve::{bigint::ArrayEncoding, PrimeField},
-    Scalar, U256,
+    AffinePoint, Scalar, U256,
 };
 use near_indexer_primitives::types::AccountId;
 use sha3::{Digest, Sha3_256};
