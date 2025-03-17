@@ -46,6 +46,16 @@ resource "google_compute_global_address" "external_ips" {
     prevent_destroy = true
   }
 }
+
+resource "google_compute_address" "external_ips" {
+  count        = length(var.node_configs)
+  name         = "multichain-partner-mainnet-vm-${count.index}"
+  region       = var.region
+  address_type = "EXTERNAL"
+  lifecycle {
+    prevent_destroy = true
+  }
+}
 #####################################################################
 # Cloud init config
 #####################################################################
@@ -128,7 +138,14 @@ module "instances" {
   hostname   = "multichain-mainnet-partner-${count.index}"
   network    = var.network
   subnetwork = var.subnetwork
-
+  access_config = [
+    [
+      {
+        nat_ip       = google_compute_address.external_ips[count.index].address
+        network_tier = "PREMIUM"
+      }
+    ]
+  ]
   instance_template = module.ig_template[count.index].self_link_unique
 
 }
@@ -147,7 +164,16 @@ resource "google_compute_firewall" "app_port" {
     protocol = "tcp"
     ports    = ["80", "8080", "3030", "3000"]
   }
+}
 
+resource "google_compute_firewall" "mainnet-mpc" {
+  name    = "mainnet-mpc"
+  network = "default"
+  allow {
+    protocol = "tcp"
+    ports    = ["80", "3030", "24567"]
+  }
+  source_ranges = ["0.0.0.0/0"]
 }
 
 #####################################################################
