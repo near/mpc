@@ -196,6 +196,7 @@ impl VersionedMpcContract {
             payload,
             path,
             key_version,
+            signature_scheme,
         } = request;
         // First, clear the state.
         match self {
@@ -207,6 +208,7 @@ impl VersionedMpcContract {
         }
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
+        // TODO: implement this for EdDSA
         let payload = Scalar::from_bytes(payload).ok_or(
             InvalidParameters::MalformedPayload
                 .message("Payload hash cannot be convereted to Scalar"),
@@ -255,7 +257,7 @@ impl VersionedMpcContract {
             Self::V1(_) => {}
         }
         let predecessor = env::predecessor_account_id();
-        let request = SignatureRequest::new(payload, &predecessor, &path);
+        let request = SignatureRequest::new(payload, &predecessor, &path, &signature_scheme);
         if self.request_already_exists(&request) {
             env::panic_str(&SignError::PayloadCollision.to_string());
         }

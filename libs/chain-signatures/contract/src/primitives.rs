@@ -29,7 +29,6 @@ pub struct YieldIndex {
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone)]
 #[borsh(crate = "near_sdk::borsh")]
 pub struct SignatureRequest {
-    pub epsilon: SerializableScalar,
     pub payload_hash: SerializableScalar,
 }
 
@@ -43,15 +42,28 @@ pub struct ContractSignatureRequest {
 }
 
 impl SignatureRequest {
-    pub fn new(payload_hash: Scalar, predecessor_id: &AccountId, path: &str) -> Self {
-        let epsilon = derive_epsilon(predecessor_id, path);
-        let epsilon = SerializableScalar { scalar: epsilon };
+    pub fn new(
+        payload_hash: Scalar,
+        predecessor_id: &AccountId,
+        path: &str,
+        scheme: &SignatureScheme,
+    ) -> Self {
+        let signature_scheme_inner = match scheme {
+            SignatureScheme::ECDSA => {
+                let epsilon = derive_epsilon(predecessor_id, path);
+                let epsilon = SerializableScalar { scalar: epsilon };
+                SignatureSchemeInner::ECDSA { epsilon }
+            }
+            SignatureScheme::EdDSA => SignatureSchemeInner::EdDSA,
+        };
+
         let payload_hash = SerializableScalar {
             scalar: payload_hash,
         };
+
         SignatureRequest {
-            epsilon,
             payload_hash,
+            signature_scheme_inner,
         }
     }
 }
@@ -271,6 +283,24 @@ pub struct SignRequest {
     pub payload: [u8; 32],
     pub path: String,
     pub key_version: u32,
+    #[serde(default = "default_value_signature_scheme_for_deserialization")]
+    pub signature_scheme: SignatureScheme,
+}
+
+#[derive(Serialize, Deserialize, BorshDeserialize, BorshSerialize, Clone, Debug)]
+pub enum SignatureScheme {
+    ECDSA,
+    EdDSA,
+}
+
+pub trait KeyDerivation {
+    fn derive_epsilon(predecessor_id: &AccountId, path: &str) -> Scalar;
+}
+
+/// Returns [`SignatureScheme::ECDSA`] as a default value for signature scheme
+/// to maintain backwars compatibility.
+fn default_value_signature_scheme_for_deserialization() -> SignatureScheme {
+    SignatureScheme::ECDSA
 }
 
 #[derive(Serialize, Deserialize, BorshDeserialize, BorshSerialize, Clone, Debug)]
