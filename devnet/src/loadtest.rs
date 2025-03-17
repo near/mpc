@@ -11,7 +11,7 @@ use crate::mpc::SignArgs;
 use crate::types::{LoadtestSetup, ParsedConfig};
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use mpc_contract::primitives::SignRequest;
+use legacy_mpc_contract::primitives::SignRequest;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_sdk::AccountId;
 use serde::Serialize;
