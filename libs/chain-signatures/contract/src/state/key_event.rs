@@ -3,7 +3,6 @@ use crate::errors::KeyEventError;
 use crate::errors::VoteError;
 use crate::primitives::key_state::KeyEventId;
 use crate::primitives::key_state::{AttemptId, EpochId, KeyStateProposal};
-use crate::primitives::leader::leaders;
 use crate::primitives::participants::AuthenticatedCandidateId;
 use crate::primitives::participants::ParticipantId;
 use crate::primitives::thresholds::Threshold;
@@ -134,15 +133,13 @@ impl KeyEvent {
 // Constuctor
 impl KeyEvent {
     pub fn new(epoch_id: EpochId, proposed_key_state: KeyStateProposal) -> Self {
-        let seed = env::random_seed();
-        let seed = u64::from_le_bytes(seed[..8].try_into().unwrap());
-        let seed = seed ^ epoch_id.get();
-        let leader_order = leaders(
-            proposed_key_state
-                .proposed_threshold_parameters()
-                .participants(),
-            seed,
-        );
+        let leader_order = proposed_key_state
+            .proposed_threshold_parameters()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(_, p_id, _)| p_id.clone())
+            .collect();
         KeyEvent {
             epoch_id,
             leader_order,
