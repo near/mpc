@@ -1,5 +1,4 @@
 pub mod key_state;
-pub mod leader;
 pub mod participants;
 pub mod signature;
 #[cfg(test)]

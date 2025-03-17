@@ -65,13 +65,9 @@ impl KeyEvent {
         &mut self,
         key_event_id: &KeyEventId,
         event_max_idle_blocks: u64,
-        //callback: Option<F>,
     ) -> Result<Tally, Error> {
         let candidate = self.verify_vote(key_event_id, event_max_idle_blocks)?;
         let n_votes = self.instance.vote_success(candidate.clone())?;
-        //if let Some(cb) = callback {
-        //    cb(candidate);
-        //}
         if self.event_threshold().value() <= n_votes {
             Ok(Tally::ThresholdReached(candidate))
         } else {
@@ -264,7 +260,7 @@ impl KeyEventInstance {
         if self.aborted.contains(&candidate) {
             return Err(VoteError::VoterAlreadyAborted.into());
         }
-        // return error if the candidate alredy submitted a vote.
+        // return error if the candidate already submitted a vote.
         if self.completed.contains(&candidate) {
             return Err(VoteError::VoteAlreadySubmitted.into());
         }
