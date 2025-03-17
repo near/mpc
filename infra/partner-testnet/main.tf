@@ -124,7 +124,7 @@ module "ig_template" {
     "container-vm" = module.gce-container[count.index].vm_container_label
   }
 
-  depends_on = [google_compute_global_address.external_ips]
+  depends_on = [google_compute_address.external_ips]
 }
 
 module "instances" {
