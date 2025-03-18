@@ -16,7 +16,7 @@ use mpc_contract::{
 };
 use near_workspaces::types::NearToken;
 
-use crypto_shared::SignatureResponse;
+use crypto_shared::Secp256k1SignatureResponse;
 use std::mem;
 
 #[tokio::test]
@@ -117,7 +117,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
     let execution = execution.into_result()?;
 
     // Finally wait the result:
-    let returned_resp: SignatureResponse = execution.json()?;
+    let returned_resp: Secp256k1SignatureResponse = execution.json()?;
     assert_eq!(
         returned_resp, respond_resp,
         "Returned signature request does not match"

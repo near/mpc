@@ -1,7 +1,7 @@
-use crypto_shared::kdf::{check_ec_signature, derive_secret_key};
 use crypto_shared::{
-    derive_epsilon, derive_key, ScalarExt as _, SerializableAffinePoint, SerializableScalar,
-    SignatureResponse,
+    derive_epsilon, derive_key,
+    kdf::{secp256k1::check_ec_signature, secp256k1::derive_secret_key},
+    ScalarExt as _, Secp256k1SignatureResponse, SerializableAffinePoint, SerializableScalar,
 };
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
@@ -160,7 +160,7 @@ pub async fn create_response(
     msg: &str,
     path: &str,
     sk: &k256::SecretKey,
-) -> ([u8; 32], SignatureRequest, SignatureResponse) {
+) -> ([u8; 32], SignatureRequest, Secp256k1SignatureResponse) {
     let (digest, scalar_hash, payload_hash) = process_message(msg).await;
     let pk = sk.public_key();
 
@@ -191,7 +191,7 @@ pub async fn create_response(
         panic!("unable to use recovery id of 0 or 1");
     };
 
-    let respond_resp = SignatureResponse {
+    let respond_resp = Secp256k1SignatureResponse {
         big_r: SerializableAffinePoint {
             affine_point: big_r,
         },
@@ -204,7 +204,7 @@ pub async fn create_response(
 
 pub async fn sign_and_validate(
     request: &SignRequest,
-    respond: Option<(&SignatureRequest, &SignatureResponse)>,
+    respond: Option<(&SignatureRequest, &Secp256k1SignatureResponse)>,
     contract: &Contract,
 ) -> anyhow::Result<()> {
     let status = contract
@@ -239,7 +239,7 @@ pub async fn sign_and_validate(
     let execution = execution.into_result()?;
 
     // Finally wait the result:
-    let returned_resp: SignatureResponse = execution.json()?;
+    let returned_resp: Secp256k1SignatureResponse = execution.json()?;
     if let Some((_, respond_resp)) = respond {
         assert_eq!(
             &returned_resp, respond_resp,

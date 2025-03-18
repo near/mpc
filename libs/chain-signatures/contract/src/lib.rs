@@ -9,8 +9,8 @@ use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 use config::{Config, InitConfig};
 use crypto_shared::SerializableScalar;
 use crypto_shared::{
-    derive_epsilon, derive_key, kdf::check_ec_signature, near_public_key_to_affine_point,
-    types::SignatureResponse, ScalarExt as _,
+    derive_epsilon, derive_key, kdf::secp256k1::check_ec_signature,
+    near_public_key_to_affine_point, types::SignatureResponse, ScalarExt as _,
 };
 use errors::{
     ConversionError, InvalidParameters, InvalidState, PublicKeyError, RespondError, SignError,
