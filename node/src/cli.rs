@@ -6,11 +6,14 @@ use crate::config::{ConfigFile, IndexerConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::{real::spawn_real_indexer, IndexerAPI};
-use crate::keyshare::KeyshareStorageFactory;
+use crate::keyshare::{
+    local::LocalKeyshareStorage, KeyshareStorage, KeyshareStorageFactory, RootKeyshareData,
+};
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::tracking::{self, start_root_task};
 use crate::web::start_web_server;
 use clap::Parser;
+use hex::FromHex;
 use near_crypto::SecretKey;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
@@ -23,6 +26,10 @@ pub enum Cli {
     Start(StartCmd),
     /// Generates/downloads required files for Near node to run
     Init(InitConfigArgs),
+    /// Imports a keyshare from JSON and stores it in the local encrypted storage
+    ImportKeyshare(ImportKeyshareCmd),
+    /// Exports a keyshare from local encrypted storage and prints it to the console
+    ExportKeyshare(ExportKeyshareCmd),
     /// Generates a set of test configurations suitable for running MPC in
     /// an integration test.
     GenerateTestConfigs {
@@ -85,6 +92,34 @@ pub struct StartCmd {
     /// specified in the config.
     #[arg(env("MPC_ACCOUNT_SK"))]
     pub account_secret_key: SecretKey,
+}
+
+#[derive(Parser, Debug)]
+pub struct ImportKeyshareCmd {
+    /// Path to home directory
+    #[arg(long, env("MPC_HOME_DIR"))]
+    pub home_dir: String,
+
+    /// JSON string containing the keyshare to import
+    #[arg(
+        help = "JSON string with the keyshare in format: {\"epoch\":1,\"private_share\":\"...\",\"public_key\":\"...\"}"
+    )]
+    pub keyshare_json: String,
+
+    /// Hex-encoded 16 byte AES key for local storage encryption
+    #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
+    pub local_encryption_key_hex: String,
+}
+
+#[derive(Parser, Debug)]
+pub struct ExportKeyshareCmd {
+    /// Path to home directory
+    #[arg(long, env("MPC_HOME_DIR"))]
+    pub home_dir: String,
+
+    /// Hex-encoded 16 byte AES key for local storage encryption
+    #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
+    pub local_encryption_key_hex: String,
 }
 
 impl StartCmd {
@@ -206,6 +241,8 @@ impl Cli {
                 None,
                 None,
             ),
+            Cli::ImportKeyshare(cmd) => cmd.run().await,
+            Cli::ExportKeyshare(cmd) => cmd.run().await,
             Cli::GenerateTestConfigs {
                 ref output_dir,
                 ref participants,
@@ -294,5 +331,96 @@ impl Cli {
             keygen: KeygenConfig { timeout_sec: 60 },
             cores: Some(4),
         })
+    }
+}
+
+impl ImportKeyshareCmd {
+    pub async fn run(&self) -> anyhow::Result<()> {
+        println!("Importing keyshare to local storage...");
+
+        // Parse the encryption key
+        let encryption_key_bytes =
+            <[u8; 16]>::from_hex(&self.local_encryption_key_hex).map_err(|_| {
+                anyhow::anyhow!("Invalid encryption key: must be 32 hex characters (16 bytes)")
+            })?;
+
+        // Parse the keyshare JSON
+        let keyshare: RootKeyshareData = serde_json::from_str(&self.keyshare_json)
+            .map_err(|e| anyhow::anyhow!("Failed to parse keyshare JSON: {}", e))?;
+
+        println!("Parsed keyshare for epoch {}", keyshare.epoch);
+
+        // Create the local storage and store the keyshare
+        let home_dir = PathBuf::from(&self.home_dir);
+
+        // Ensure the directory exists
+        if !home_dir.exists() {
+            std::fs::create_dir_all(&home_dir).map_err(|e| {
+                anyhow::anyhow!("Failed to create directory {}: {}", home_dir.display(), e)
+            })?;
+        }
+
+        let storage = LocalKeyshareStorage::new(home_dir.clone(), encryption_key_bytes);
+
+        // Check for existing keyshare
+        if let Some(existing) = storage.load().await? {
+            println!("Found existing keyshare with epoch {}", existing.epoch);
+            if existing.epoch >= keyshare.epoch {
+                return Err(anyhow::anyhow!(
+                    "Refusing to overwrite existing keyshare of epoch {} with new keyshare of older or same epoch {}",
+                    existing.epoch,
+                    keyshare.epoch
+                ));
+            }
+        }
+
+        // Store the keyshare
+        storage.store(&keyshare).await?;
+        println!("Successfully imported keyshare to {}", home_dir.display());
+
+        Ok(())
+    }
+}
+
+impl ExportKeyshareCmd {
+    pub async fn run(&self) -> anyhow::Result<()> {
+        println!("Exporting keyshare from local storage...");
+
+        // Parse the encryption key
+        let encryption_key_bytes =
+            <[u8; 16]>::from_hex(&self.local_encryption_key_hex).map_err(|_| {
+                anyhow::anyhow!("Invalid encryption key: must be 32 hex characters (16 bytes)")
+            })?;
+
+        // Create the local storage
+        let home_dir = PathBuf::from(&self.home_dir);
+
+        // Check if directory exists
+        if !home_dir.exists() {
+            return Err(anyhow::anyhow!(
+                "Directory {} does not exist",
+                home_dir.display()
+            ));
+        }
+
+        let storage = LocalKeyshareStorage::new(home_dir.clone(), encryption_key_bytes);
+
+        // Load the keyshare
+        let keyshare = storage
+            .load()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("No keyshare found in {}", home_dir.display()))?;
+
+        // Print the keyshare to console
+        let json = serde_json::to_string_pretty(&keyshare)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize keyshare: {}", e))?;
+
+        println!("{}", json);
+        println!(
+            "\nKeyshare for epoch {} successfully exported.",
+            keyshare.epoch
+        );
+
+        Ok(())
     }
 }
