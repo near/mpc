@@ -5,3 +5,4 @@ pub mod signature;
 pub mod test_utils;
 pub mod thresholds;
 pub mod votes;
+pub mod domain;

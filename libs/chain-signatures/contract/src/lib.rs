@@ -24,12 +24,10 @@ use near_sdk::{
     env, log, near_bindgen, AccountId, BlockHeight, CryptoHash, Gas, GasWeight, NearToken, Promise,
     PromiseError, PublicKey,
 };
-use primitives::key_state::{DKState, EpochId, KeyEventId, KeyStateProposal};
+use primitives::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
+use primitives::key_state::{EpochId, KeyEventId, Keyset};
 use primitives::signature::{SignRequest, SignatureRequest, YieldIndex};
-use primitives::thresholds::Threshold;
-use primitives::votes::KeyStateVotes;
-use state::initializing::{InitializingContractState, PkVotes};
-use state::key_event::KeyEvent;
+use primitives::thresholds::{Threshold, ThresholdParameters};
 use state::running::RunningContractState;
 use state::ProtocolContractState;
 use std::cmp;
@@ -67,8 +65,8 @@ pub struct MpcContract {
 }
 
 impl MpcContract {
-    fn public_key(&self) -> Result<PublicKey, Error> {
-        self.protocol_state.public_key()
+    fn public_key(&self, domain_id: DomainId) -> Result<PublicKey, Error> {
+        self.protocol_state.public_key(domain_id)
     }
 
     fn threshold(&self) -> Result<Threshold, Error> {
@@ -105,20 +103,21 @@ impl MpcContract {
         self.pending_requests.get(request).cloned()
     }
 
-    pub fn init(proposed_key_state: KeyStateProposal, init_config: Option<InitConfig>) -> Self {
+    pub fn init(parameters: ThresholdParameters, init_config: Option<InitConfig>) -> Self {
         log!(
-            "init: proposed_key_state={:?}, init_config={:?}",
-            proposed_key_state,
+            "init: parameters={:?}, init_config={:?}",
+            parameters,
             init_config,
         );
-        proposed_key_state.validate().unwrap();
+        parameters.validate().unwrap();
 
         MpcContract {
             config: Config::from(init_config),
-            protocol_state: ProtocolContractState::Initializing(InitializingContractState {
-                keygen: KeyEvent::new(EpochId::new(0), proposed_key_state),
-                pk_votes: PkVotes::new(),
-            }),
+            protocol_state: ProtocolContractState::Running(RunningContractState::new(
+                DomainRegistry::new(),
+                Keyset::new(EpochId::new(0), Vec::new()),
+                parameters,
+            )),
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             request_by_block_height: Vector::new(StorageKey::RequestsByTimestamp),
             proposed_updates: ProposedUpdates::default(),
@@ -135,28 +134,43 @@ impl MpcContract {
             .start_reshare_instance(self.config.event_max_idle_blocks)
     }
 
-    pub fn vote_reshared(
-        &mut self,
-        key_event_id: KeyEventId,
-    ) -> Result<Option<ProtocolContractState>, Error> {
-        self.protocol_state
-            .vote_reshared(key_event_id, self.config.event_max_idle_blocks)
+    pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+        if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
+            self.protocol_state = new_state;
+        }
+        Ok(())
     }
 
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
         public_key: PublicKey,
-    ) -> Result<Option<ProtocolContractState>, Error> {
-        self.protocol_state
-            .vote_pk(key_event_id, public_key, self.config.event_max_idle_blocks)
+    ) -> Result<(), Error> {
+        if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, public_key)? {
+            self.protocol_state = new_state;
+        }
+        Ok(())
     }
 
-    pub fn vote_new_key_state(
-        &mut self,
-        proposed_key_state: &KeyStateProposal,
-    ) -> Result<Option<ProtocolContractState>, Error> {
-        self.protocol_state.vote_new_key_state(proposed_key_state)
+    pub fn vote_cancel_keygen(&mut self) -> Result<(), Error> {
+        if let Some(new_state) = self.protocol_state.vote_cancel_keygen()? {
+            self.protocol_state = new_state;
+        }
+        Ok(())
+    }
+
+    pub fn vote_new_parameters(&mut self, proposal: &ThresholdParameters) -> Result<(), Error> {
+        if let Some(new_state) = self.protocol_state.vote_new_parameters(proposal)? {
+            self.protocol_state = new_state;
+        }
+        Ok(())
+    }
+
+    pub fn vote_add_domains(&mut self, domains: Vec<DomainConfig>) -> Result<(), Error> {
+        if let Some(new_state) = self.protocol_state.vote_add_domains(domains)? {
+            self.protocol_state = new_state;
+        }
+        Ok(())
     }
 }
 
@@ -269,24 +283,39 @@ impl VersionedMpcContract {
 
     /// This is the root public key combined from all the public keys of the participants.
     #[handle_result]
+    #[deprecated(note = "Use public_key_for_domain")]
     pub fn public_key(&self) -> Result<PublicKey, Error> {
+        self.public_key_for_domain(DomainId::legacy_ecdsa_id())
+    }
+
+    #[handle_result]
+    pub fn public_key_for_domain(&self, domain_id: DomainId) -> Result<PublicKey, Error> {
         match self {
-            Self::V0(mpc_contract) => mpc_contract.public_key(),
+            Self::V0(mpc_contract) => mpc_contract.public_key(domain_id),
         }
+    }
+
+    #[handle_result]
+    #[deprecated(note = "Use derived_public_key_for_domain")]
+    pub fn derive_public_key(&self, path: String) -> Result<PublicKey, Error> {
+        self.derived_public_key_for_domain(DomainId::legacy_ecdsa_id(), path, None)
     }
 
     /// This is the derived public key of the caller given path and predecessor
     /// if predecessor is not provided, it will be the caller of the contract
     #[handle_result]
-    pub fn derived_public_key(
+    pub fn derived_public_key_for_domain(
         &self,
+        domain: DomainId,
         path: String,
         predecessor: Option<AccountId>,
     ) -> Result<PublicKey, Error> {
         let predecessor = predecessor.unwrap_or_else(env::predecessor_account_id);
         let epsilon = derive_epsilon(&predecessor, &path);
-        let derived_public_key =
-            derive_key(near_public_key_to_affine_point(self.public_key()?), epsilon);
+        let derived_public_key = derive_key(
+            near_public_key_to_affine_point(self.public_key_for_domain(domain)?),
+            epsilon,
+        );
         let encoded_point = derived_public_key.to_encoded_point(false);
         let slice: &[u8] = &encoded_point.as_bytes()[1..65];
         let mut data: Vec<u8> = vec![near_sdk::CurveType::SECP256K1 as u8];
@@ -298,8 +327,20 @@ impl VersionedMpcContract {
     /// Older key versions will always work but newer key versions were never held by older signers
     /// Newer key versions may also add new security features, like only existing within a secure enclave
     /// Currently only 0 is a valid key version
-    pub const fn latest_key_version(&self) -> u32 {
-        0
+    #[deprecated(note = "Use latest_domain_for_signature_scheme")]
+    pub fn latest_key_version(&self) -> u32 {
+        self.latest_domain_for_signature_scheme(SignatureScheme::Secp256k1)
+            .unwrap()
+            .0 as u32
+    }
+
+    #[handle_result]
+    pub fn latest_domain_for_signature_scheme(
+        &self,
+        signature_scheme: SignatureScheme,
+    ) -> Result<DomainId, Error> {
+        self.state()
+            .most_recent_domain_for_signature_scheme(signature_scheme)
     }
 }
 
@@ -360,24 +401,26 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn vote_new_key_state(
-        &mut self,
-        proposed_key_state: KeyStateProposal,
-    ) -> Result<bool, Error> {
+    pub fn vote_new_parameters(&mut self, proposal: ThresholdParameters) -> Result<(), Error> {
         log!(
-            "vote_new_key_state: signer={}, proposed_key_state={:?}",
+            "vote_new_parameters: signer={}, proposal={:?}",
             env::signer_account_id(),
-            proposed_key_state,
+            proposal,
         );
         match self {
-            Self::V0(mpc_contract) => {
-                if let Some(next_state) = mpc_contract.vote_new_key_state(&proposed_key_state)? {
-                    mpc_contract.protocol_state = next_state;
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            }
+            Self::V0(mpc_contract) => mpc_contract.vote_new_parameters(&proposal),
+        }
+    }
+
+    #[handle_result]
+    pub fn vote_add_domains(&mut self, domains: Vec<DomainConfig>) -> Result<(), Error> {
+        log!(
+            "vote_add_domains: signer={}, domains={:?}",
+            env::signer_account_id(),
+            domains,
+        );
+        match self {
+            Self::V0(mpc_contract) => mpc_contract.vote_add_domains(domains),
         }
     }
 
@@ -400,7 +443,7 @@ impl VersionedMpcContract {
         &mut self,
         key_event_id: KeyEventId,
         public_key: PublicKey,
-    ) -> Result<bool, Error> {
+    ) -> Result<(), Error> {
         log!(
             "vote_pk: signer={}, key_event_id={:?}, public_key={:?}",
             env::signer_account_id(),
@@ -408,12 +451,7 @@ impl VersionedMpcContract {
             public_key,
         );
         match self {
-            Self::V0(contract_state) => {
-                if let Some(next_state) = contract_state.vote_pk(key_event_id, public_key)? {
-                    contract_state.protocol_state = next_state;
-                }
-                Ok(false)
-            }
+            Self::V0(contract_state) => contract_state.vote_pk(key_event_id, public_key),
         }
     }
 
@@ -429,19 +467,22 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<bool, Error> {
+    pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         log!(
             "vote_reshared: signer={}, resharing_id={:?}",
             env::signer_account_id(),
             key_event_id,
         );
         match self {
-            Self::V0(contract_state) => {
-                if let Some(running) = contract_state.vote_reshared(key_event_id)? {
-                    contract_state.protocol_state = running; //ProtocolContractState::Running(running);
-                }
-                Ok(false)
-            }
+            Self::V0(contract_state) => contract_state.vote_reshared(key_event_id),
+        }
+    }
+
+    #[handle_result]
+    pub fn vote_cancel_keygen(&mut self) -> Result<(), Error> {
+        log!("vote_cancel_keygen: signer={}", env::signer_account_id());
+        match self {
+            Self::V0(contract_state) => contract_state.vote_cancel_keygen(),
         }
     }
 
@@ -524,18 +565,18 @@ impl VersionedMpcContract {
     #[handle_result]
     #[init]
     pub fn init(
-        key_state_proposal: KeyStateProposal,
+        parameters: ThresholdParameters,
         init_config: Option<InitConfig>,
     ) -> Result<Self, Error> {
         log!(
-            "init: signer={}, key_state_proposal={:?}, init_config={:?}",
+            "init: signer={}, parameters={:?}, init_config={:?}",
             env::signer_account_id(),
-            key_state_proposal,
+            parameters,
             init_config,
         );
-        key_state_proposal.validate()?;
+        parameters.validate()?;
 
-        Ok(Self::V0(MpcContract::init(key_state_proposal, init_config)))
+        Ok(Self::V0(MpcContract::init(parameters, init_config)))
     }
 
     // This function can be used to transfer the MPC network to a new contract.
@@ -543,23 +584,27 @@ impl VersionedMpcContract {
     #[init]
     #[handle_result]
     pub fn init_running(
-        key_state: DKState,
+        domains: Vec<DomainConfig>,
+        next_domain_id: u64,
+        keyset: Keyset,
+        parameters: ThresholdParameters,
         init_config: Option<InitConfig>,
     ) -> Result<Self, Error> {
         log!(
-            "init_running: signer={}, key_state={:?}, init_config={:?}",
+            "init_running: signer={}, domains={:?}, keyset={:?}, parameters={:?}, init_config={:?}",
             env::signer_account_id(),
-            key_state,
+            domains,
+            keyset,
+            parameters,
             init_config,
         );
-        key_state.validate()?;
-
+        parameters.validate()?;
+        let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
         Ok(Self::V0(MpcContract {
             config: Config::from(init_config),
-            protocol_state: ProtocolContractState::Running(RunningContractState {
-                key_state,
-                key_state_votes: KeyStateVotes::default(),
-            }),
+            protocol_state: ProtocolContractState::Running(RunningContractState::new(
+                domains, keyset, parameters,
+            )),
             request_by_block_height: Vector::new(StorageKey::RequestsByTimestamp),
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             proposed_updates: ProposedUpdates::default(),

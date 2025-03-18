@@ -23,30 +23,6 @@ impl Threshold {
     }
 }
 
-/// Stores the success threshold for distributed key generation and resharing.
-/// ```
-/// use mpc_contract::primitives::thresholds::DKGThreshold;
-/// let dt = DKGThreshold::new(8);
-/// assert!(dt.value() == 8);
-/// ```
-#[near(serializers=[borsh, json])]
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct DKGThreshold(u64);
-impl DKGThreshold {
-    pub fn new(val: u64) -> Self {
-        Self(val)
-    }
-    pub fn value(&self) -> u64 {
-        self.0
-    }
-    pub fn validate(&self, n_shares: u64, k: Threshold) -> Result<(), Error> {
-        if self.value() != n_shares {
-            return Err(InvalidThreshold::DKGThresholdFailed.into());
-        }
-        ThresholdParameters::validate_threshold(n_shares, k)
-    }
-}
-
 /// Stores information about the threshold key parameters:
 /// - owners of key shares
 /// - cryptographic threshold
@@ -61,7 +37,7 @@ impl ThresholdParameters {
     /// Constructs Threshold parameters from `participants` and `threshold` if the
     /// threshold meets the absolute and relavite validation criteria.
     pub fn new(participants: Participants, threshold: Threshold) -> Result<Self, Error> {
-        match Self::validate_threshold(participants.count(), threshold.clone()) {
+        match Self::validate_threshold(participants.len() as u64, threshold.clone()) {
             Ok(_) => Ok(ThresholdParameters {
                 participants,
                 threshold,
@@ -92,7 +68,7 @@ impl ThresholdParameters {
         Ok(())
     }
     pub fn validate(&self) -> Result<(), Error> {
-        Self::validate_threshold(self.participants.count(), self.threshold())?;
+        Self::validate_threshold(self.participants.len() as u64, self.threshold())?;
         self.participants.validate()
     }
     pub fn threshold(&self) -> Threshold {
@@ -102,32 +78,19 @@ impl ThresholdParameters {
     pub fn participants(&self) -> &Participants {
         &self.participants
     }
+
+    /// For migration from legacy, don't check the threshold.
+    pub fn migrate_from_legacy(
+        threshold: usize,
+        participants: legacy_contract::primitives::Participants,
+    ) -> Self {
+        ThresholdParameters {
+            threshold: Threshold::new(threshold as u64),
+            participants: participants.into(),
+        }
+    }
 }
 
-// The previous implementation did not impose restrictions on the threshold.
-// Any migration call must succeed, even with invalid thresholds.
-impl From<(Threshold, legacy_contract::primitives::Candidates)> for ThresholdParameters {
-    fn from(
-        (threshold, candidates): (Threshold, legacy_contract::primitives::Candidates),
-    ) -> ThresholdParameters {
-        ThresholdParameters {
-            participants: candidates.into(),
-            threshold,
-        }
-    }
-}
-// The previous implementation did not impose restrictions on the threshold.
-// Any migration call must succeed, even with invalid thresholds.
-impl From<(Threshold, legacy_contract::primitives::Participants)> for ThresholdParameters {
-    fn from(
-        (threshold, participants): (Threshold, legacy_contract::primitives::Participants),
-    ) -> ThresholdParameters {
-        ThresholdParameters {
-            participants: participants.into(),
-            threshold,
-        }
-    }
-}
 #[cfg(test)]
 mod tests {
     use crate::primitives::participants::tests::{
@@ -147,14 +110,7 @@ mod tests {
             assert_eq!(v, x.value());
         }
     }
-    #[test]
-    fn test_dkg_threshold() {
-        for _ in 0..20 {
-            let v = rand::thread_rng().gen::<u64>();
-            let x = DKGThreshold::new(v);
-            assert_eq!(v, x.value());
-        }
-    }
+
     #[test]
     fn test_validate_threshold() {
         let n = rand::thread_rng().gen_range(2..600) as u64;
@@ -167,6 +123,7 @@ mod tests {
         }
         assert!(ThresholdParameters::validate_threshold(n, Threshold::new(n + 1)).is_err());
     }
+
     #[test]
     fn test_threshold_parameters_constructor() {
         let n: usize = rand::thread_rng().gen_range(2..600);
@@ -187,7 +144,7 @@ mod tests {
             let tp = tp.unwrap();
             assert!(tp.validate().is_ok());
             assert_eq!(tp.threshold(), threshold);
-            assert_eq!(tp.participants.count(), participants.count());
+            assert_eq!(tp.participants.len(), participants.len());
             assert_eq!(participants, *tp.participants());
             // porbably overkill to test below
             for (account_id, _, _) in participants.participants() {
@@ -211,7 +168,7 @@ mod tests {
         let tp: ThresholdParameters = (threshold.clone(), candidates.clone()).into();
         assert_eq!(threshold, tp.threshold());
         let participants = tp.participants();
-        assert_eq!(participants.count(), n as u64);
+        assert_eq!(participants.len(), n as u64);
         assert_candidate_migration(&candidates, participants);
     }
     #[test]
@@ -223,7 +180,7 @@ mod tests {
         let tp: ThresholdParameters = (threshold.clone(), legacy_participants.clone()).into();
         assert_eq!(threshold, tp.threshold());
         let participants = tp.participants();
-        assert_eq!(participants.count(), n as u64);
+        assert_eq!(participants.len(), n as u64);
         assert_participant_migration(&legacy_participants, participants);
     }
 }

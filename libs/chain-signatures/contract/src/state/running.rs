@@ -1,75 +1,113 @@
+use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::errors::{Error, InvalidCandidateSet};
+use crate::errors::{DomainError, Error, InvalidCandidateSet};
+use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
 use crate::primitives::key_state::{
-    AuthenticatedParticipantId, DKState, EpochId, KeyStateProposal,
+    AttemptId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
 };
 use crate::primitives::participants::{ParticipantId, ParticipantInfo};
-use crate::primitives::votes::KeyStateVotes;
-use near_sdk::{near, AccountId, PublicKey};
-use std::collections::BTreeMap;
+use crate::primitives::thresholds::ThresholdParameters;
+use crate::primitives::votes::ThresholdParametersVotes;
+use near_sdk::{near, AccountId};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
 pub struct RunningContractState {
-    pub key_state: DKState,
-    pub key_state_votes: KeyStateVotes,
+    pub domains: DomainRegistry,
+    pub keyset: Keyset,
+    pub parameters: ThresholdParameters,
+    pub key_state_votes: ThresholdParametersVotes,
+    pub add_domains_votes: AddDomainsVotes,
 }
+
 impl From<&legacy_contract::RunningContractState> for RunningContractState {
     fn from(state: &legacy_contract::RunningContractState) -> Self {
         RunningContractState {
-            key_state: state.into(),
-            key_state_votes: KeyStateVotes::default(),
+            domains: DomainRegistry::new_single_ecdsa_key_from_legacy(),
+            keyset: Keyset::new(
+                EpochId::new(state.epoch),
+                vec![KeyForDomain {
+                    attempt: AttemptId::default(),
+                    domain_id: DomainId::legacy_ecdsa_id(),
+                    key: state.public_key.clone(),
+                }],
+            ),
+            parameters: ThresholdParameters::migrate_from_legacy(
+                state.threshold,
+                state.participants.clone(),
+            ),
+            key_state_votes: ThresholdParametersVotes::default(),
+            add_domains_votes: AddDomainsVotes::default(),
         }
     }
 }
 
 impl RunningContractState {
-    pub fn authenticate_participant(&self) -> Result<AuthenticatedParticipantId, Error> {
-        self.key_state.authenticate()
+    pub fn new(domains: DomainRegistry, keyset: Keyset, parameters: ThresholdParameters) -> Self {
+        RunningContractState {
+            domains,
+            keyset,
+            parameters,
+            key_state_votes: ThresholdParametersVotes::default(),
+            add_domains_votes: AddDomainsVotes::default(),
+        }
     }
-    pub fn public_key(&self) -> &PublicKey {
-        self.key_state.public_key()
-    }
-    pub fn epoch_id(&self) -> EpochId {
-        self.key_state.epoch_id()
-    }
+
     /// Casts a vote for `proposal` to the current state, propagating any errors.
     /// Returns ResharingContract state if the proposal is accepted.
-    pub fn vote_new_key_state(
+    pub fn vote_new_parameters(
         &mut self,
-        proposal: &KeyStateProposal,
+        proposal: &ThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
-        if self.vote_key_state_proposal(proposal)? {
-            return Ok(Some(ResharingContractState {
-                current_state: RunningContractState {
-                    key_state: self.key_state.clone(),
-                    key_state_votes: KeyStateVotes::default(),
-                },
-                event_state: KeyEvent::new(self.epoch_id().next(), proposal.clone()),
-            }));
+        if self.process_new_parameters_proposal(proposal)? {
+            if let Some(first_domain) = self.domains.get_domain_by_index(0) {
+                return Ok(Some(ResharingContractState {
+                    previous_running_state: RunningContractState::new(
+                        self.domains.clone(),
+                        self.keyset.clone(),
+                        self.parameters.clone(),
+                    ),
+                    reshared_keys: Vec::new(),
+                    resharing_key: KeyEvent::new(
+                        self.keyset.epoch_id.next(),
+                        first_domain.clone(),
+                        proposal.clone(),
+                    ),
+                }));
+            } else {
+                // A new ThresholdParameters was proposed, but we have no keys, so directly
+                // transition into Running state.
+                *self = RunningContractState::new(
+                    self.domains.clone(),
+                    Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
+                    proposal.clone(),
+                );
+            }
         }
         Ok(None)
     }
+
     /// Casts a vote for `proposal`, removing any previous votes by `env::signer_account_id()`.
     /// Fails if the proposal is invalid or the signer is not a participant.
     /// Returns true if the proposal reached `threshold` number of votes.
-    pub fn vote_key_state_proposal(&mut self, proposal: &KeyStateProposal) -> Result<bool, Error> {
+    pub(super) fn process_new_parameters_proposal(
+        &mut self,
+        proposal: &ThresholdParameters,
+    ) -> Result<bool, Error> {
         // ensure the signer is a participant
-        let participant = self.key_state.authenticate()?;
+        let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         // ensure the proposed threshold parameters are valid:
         // if performance issue, inline and merge with loop below
         proposal.validate()?;
         let mut old_by_id: BTreeMap<ParticipantId, AccountId> = BTreeMap::new();
         let mut old_by_acc: BTreeMap<AccountId, (ParticipantId, ParticipantInfo)> = BTreeMap::new();
-        for (acc, id, info) in self.key_state.participants().participants() {
+        for (acc, id, info) in self.parameters.participants().participants() {
             old_by_id.insert(id.clone(), acc.clone());
             old_by_acc.insert(acc.clone(), (id.clone(), info.clone()));
         }
-        let new_participants = proposal
-            .proposed_threshold_parameters()
-            .participants()
-            .participants();
+        let new_participants = proposal.participants().participants();
         let mut new_min_id = u32::MAX;
         let mut new_max_id = 0u32;
         let mut n_old = 0u64;
@@ -94,76 +132,104 @@ impl RunningContractState {
             }
         }
         // assert there are enough old participants
-        if n_old < self.key_state.threshold().value() {
+        if n_old < self.parameters.threshold().value() {
             return Err(InvalidCandidateSet::InsufficientOldParticipants.into());
         }
         // ensure the new ids are contiguous and unique
-        let n_new = proposal
-            .proposed_threshold_parameters()
-            .participants()
-            .count()
-            - n_old;
+        let n_new = proposal.participants().len() as u64 - n_old;
         if n_new > 0 {
             if n_new - 1 != (new_max_id - new_min_id) as u64 {
                 return Err(InvalidCandidateSet::NewParticipantIdsNotContiguous.into());
             }
-            if new_min_id != self.key_state.participants().next_id().get() {
+            if new_min_id != self.parameters.participants().next_id().get() {
                 return Err(InvalidCandidateSet::NewParticipantIdsNotContiguous.into());
             }
-            if new_max_id + 1
-                != proposal
-                    .proposed_threshold_parameters()
-                    .participants()
-                    .next_id()
-                    .get()
-            {
+            if new_max_id + 1 != proposal.participants().next_id().get() {
                 return Err(InvalidCandidateSet::NewParticipantIdsTooHigh.into());
             }
         }
         // finally, vote. Propagate any errors
         let n_votes = self.key_state_votes.vote(proposal, &participant);
-        Ok(self.key_state.threshold().value() <= n_votes)
+        Ok(self.parameters.threshold().value() <= n_votes)
+    }
+
+    pub fn vote_add_domains(
+        &mut self,
+        domains: Vec<DomainConfig>,
+    ) -> Result<Option<InitializingContractState>, Error> {
+        if domains.is_empty() {
+            return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
+        }
+        let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
+        let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
+        if self.parameters.threshold().value() <= n_votes {
+            let new_domains = self.domains.add_domains(domains.clone())?;
+            Ok(Some(InitializingContractState {
+                generated_keys: self.keyset.domains.clone(),
+                domains: new_domains,
+                epoch_id: self.keyset.epoch_id,
+                generating_key: KeyEvent::new(
+                    self.keyset.epoch_id,
+                    domains[0].clone(),
+                    self.parameters.clone(),
+                ),
+                cancel_votes: BTreeSet::new(),
+            }))
+        } else {
+            Ok(None)
+        }
     }
 }
+
 #[cfg(test)]
 pub mod running_tests {
     use std::collections::BTreeSet;
 
     use super::RunningContractState;
-    use crate::primitives::key_state::tests::gen_key_state_proposal;
-    use crate::primitives::key_state::{AttemptId, DKState, EpochId, KeyEventId, KeyStateProposal};
+    use crate::primitives::key_state::tests::gen_parameters_proposal;
+    use crate::primitives::key_state::{
+        AttemptId, DKState, EpochId, KeyEventId, KeyForDomain, KeyStateProposal,
+    };
     use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::{gen_participant, gen_pk, gen_threshold_params};
+    use crate::primitives::test_utils::{
+        gen_domain_registry, gen_participant, gen_pk, gen_threshold_params,
+    };
     use crate::primitives::thresholds::{DKGThreshold, Threshold, ThresholdParameters};
-    use crate::primitives::votes::KeyStateVotes;
+    use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
     use rand::Rng;
 
-    pub fn gen_running_state() -> RunningContractState {
+    pub fn gen_running_state(num_domains: usize) -> RunningContractState {
         let epoch_id = EpochId::new(rand::thread_rng().gen());
-        let mut attempt = AttemptId::default();
-        let x: usize = rand::thread_rng().gen();
-        let x = x % 800;
-        for _ in 0..x {
-            attempt = attempt.next();
+        let domains = gen_domain_registry(num_domains);
+
+        let keys = Vec::new();
+        for domain in domains.domains() {
+            let mut attempt = AttemptId::default();
+            let x: usize = rand::thread_rng().gen();
+            let x = x % 800;
+            for _ in 0..x {
+                attempt = attempt.next();
+            }
+            let key_event_id = KeyEventId::new(epoch_id, domain.id, attempt);
+            keys.push(KeyForDomain {
+                attempt,
+                domain_id: domain.id,
+                key: gen_pk(),
+            });
         }
-        let key_event_id = KeyEventId::new(epoch_id, attempt);
         let max_n = 300;
         let threshold_parameters = gen_threshold_params(max_n);
         let public_key = gen_pk();
-        let key_state_votes = KeyStateVotes::default();
-        let key_state = DKState::new(public_key, key_event_id, threshold_parameters).unwrap();
-        RunningContractState {
-            key_state,
-            key_state_votes,
-        }
+        RunningContractState::new(domains, Keyset::new(epoch_id, keys), threshold_parameters)
     }
-    pub fn gen_valid_ksp(dkg: &DKState) -> KeyStateProposal {
+
+    pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParameters {
         let mut rng = rand::thread_rng();
-        let current_k = dkg.threshold().value() as usize;
-        let current_n = dkg.participants().count() as usize;
+        let current_k = params.threshold().value() as usize;
+        let current_n = params.participants().count() as usize;
         let n_old_participants: usize = rng.gen_range(current_k..current_n + 1);
-        let current_participants = dkg.participants();
+        let current_participants = params.participants();
         let mut old_ids: BTreeSet<ParticipantId> = current_participants
             .participants()
             .iter()
@@ -190,54 +256,61 @@ pub mod running_tests {
             next_id = next_id.next();
         }
 
-        let threshold = ((new_participants.count() as f64) * 0.6).ceil() as u64;
-        let dkg_threshold = DKGThreshold::new(new_participants.count());
-        let proposed =
-            ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap();
-        KeyStateProposal::new(proposed, dkg_threshold).unwrap()
+        let threshold = ((new_participants.len() as f64) * 0.6).ceil() as u64;
+        ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap()
     }
 
     #[test]
     fn test_running() {
-        let mut state = gen_running_state();
-        let mut env = Environment::new(None, None, None);
-        let participants = state.key_state.participants().clone();
-        // assert that random proposals fail:
+        for num_domains in 0..5 {
+            let mut state = gen_running_state(num_domains);
+            let mut env = Environment::new(None, None, None);
+            let participants = state.parameters.participants().clone();
+            // assert that random proposals fail:
 
-        for (account_id, _, _) in participants.participants() {
-            let ksp = gen_key_state_proposal(None);
-            env.set_signer(account_id);
-            assert!(state.vote_key_state_proposal(&ksp).is_err());
-        }
-        for (account_id, _, _) in participants.participants() {
-            env.set_signer(account_id);
-            let ksp = gen_valid_ksp(&state.key_state);
-            assert!(!state.vote_key_state_proposal(&ksp).unwrap())
-        }
-        let ksp = gen_valid_ksp(&state.key_state);
-
-        for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
-            env.set_signer(account_id);
-            let res = state.vote_key_state_proposal(&ksp).unwrap();
-            if i + 1 < state.key_state.threshold().value() as usize {
-                assert!(!res);
-            } else {
-                assert!(res);
+            for (account_id, _, _) in participants.participants() {
+                let ksp = gen_parameters_proposal(None);
+                env.set_signer(account_id);
+                assert!(state.vote_new_parameters(&ksp).is_err());
             }
+            for (account_id, _, _) in participants.participants() {
+                env.set_signer(account_id);
+                let proposal = gen_valid_params_proposal(&state.parameters);
+                assert!(!state.vote_new_parameters(&proposal).unwrap())
+            }
+            let proposal = gen_valid_params_proposal(&state.key_state);
+
+            for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
+                env.set_signer(account_id);
+                let res = state.vote_new_parameters(&proposal).unwrap();
+                if i + 1 < state.parameters.threshold().value() as usize {
+                    assert!(!res);
+                } else {
+                    assert!(res);
+                }
+            }
+            let (account_id, _, _) = &participants.participants()[0];
+            env.set_signer(account_id);
+            let resharing = state.vote_new_parameters(&proposal).unwrap().unwrap();
+            assert_eq!(
+                resharing.previous_running_state.parameters,
+                state.parameters
+            );
+            let ke = resharing.resharing_key;
+            assert_eq!(
+                ke.current_key_event_id(),
+                KeyEventId::new(
+                    state.epoch_id().next(),
+                    resharing
+                        .previous_running_state
+                        .domains
+                        .get_domain_by_index(0)
+                        .unwrap()
+                        .id,
+                    AttemptId::new()
+                )
+            );
+            assert_eq!(ke.proposed_parameters(), *proposal.proposed_parameters());
         }
-        let (account_id, _, _) = &participants.participants()[0];
-        env.set_signer(account_id);
-        let resharing = state.vote_new_key_state(&ksp).unwrap().unwrap();
-        assert_eq!(resharing.current_state.key_state, state.key_state);
-        let ke = resharing.event_state;
-        assert_eq!(
-            ke.current_key_event_id(),
-            KeyEventId::new(state.epoch_id().next(), AttemptId::new())
-        );
-        assert_eq!(
-            ke.proposed_threshold_parameters(),
-            *ksp.proposed_threshold_parameters()
-        );
-        assert_eq!(ke.event_threshold(), ksp.key_event_threshold());
     }
 }

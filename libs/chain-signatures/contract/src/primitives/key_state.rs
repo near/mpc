@@ -1,10 +1,10 @@
+use super::domain::DomainId;
 use super::participants::{ParticipantId, Participants};
-use super::thresholds::{DKGThreshold, Threshold, ThresholdParameters};
-use crate::errors::{Error, InvalidState};
+use crate::errors::{DomainError, Error, InvalidState};
 use near_sdk::{env, near, PublicKey};
 
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct EpochId(u64);
 
 impl EpochId {
@@ -20,7 +20,7 @@ impl EpochId {
 }
 
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct AttemptId(u64);
 
 impl AttemptId {
@@ -32,6 +32,9 @@ impl AttemptId {
     }
     pub fn get(&self) -> u64 {
         self.0
+    }
+    pub fn legacy_attempt_id() -> Self {
+        AttemptId(0)
     }
 }
 
@@ -48,77 +51,49 @@ impl Default for AttemptId {
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct KeyEventId {
-    epoch_id: EpochId,
-    attempt: AttemptId,
+    pub epoch_id: EpochId,
+    pub domain_id: DomainId,
+    pub attempt_id: AttemptId,
 }
 
 impl KeyEventId {
-    /// Returns the id associated with this key event.
-    pub fn attempt(&self) -> AttemptId {
-        self.attempt.clone()
-    }
-    /// Returns self.epoch_id + 1.
-    pub fn epoch_id(&self) -> EpochId {
-        self.epoch_id.clone()
-    }
-    /// Construct a new KeyEventId for `epoch_id` and `leader`.
-    pub fn new(epoch_id: EpochId, attempt: AttemptId) -> Self {
-        KeyEventId { epoch_id, attempt }
-    }
-    // for migrating from V1 to V2
-    pub fn new_migrated_key(epoch_id: u64) -> Self {
+    pub fn new(epoch_id: EpochId, domain_id: DomainId, attempt_id: AttemptId) -> Self {
         KeyEventId {
-            epoch_id: EpochId(epoch_id),
-            attempt: AttemptId::new(),
+            epoch_id,
+            domain_id,
+            attempt_id,
         }
     }
 }
 
-///Distributed key state:
-/// - the public key
-/// - the key event that resulted in the key shares
-/// - threshold parameters
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq)]
-pub struct DKState {
-    public_key: PublicKey,
-    key_event_id: KeyEventId,
-    threshold_parameters: ThresholdParameters,
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct KeyForDomain {
+    pub domain_id: DomainId,
+    pub key: PublicKey,
+    pub attempt: AttemptId,
 }
 
-impl DKState {
-    pub fn authenticate(&self) -> Result<AuthenticatedParticipantId, Error> {
-        AuthenticatedParticipantId::new(self.threshold_parameters.participants())
+#[near(serializers=[borsh, json])]
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Keyset {
+    pub epoch_id: EpochId,
+    pub domains: Vec<KeyForDomain>,
+}
+
+impl Keyset {
+    pub fn new(epoch_id: EpochId, domains: Vec<KeyForDomain>) -> Self {
+        Keyset { epoch_id, domains }
     }
-    pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
-    }
-    pub fn epoch_id(&self) -> EpochId {
-        self.key_event_id.epoch_id.clone()
-    }
-    pub fn key_event_id(&self) -> KeyEventId {
-        self.key_event_id.clone()
-    }
-    pub fn threshold(&self) -> Threshold {
-        self.threshold_parameters.threshold()
-    }
-    pub fn participants(&self) -> &Participants {
-        self.threshold_parameters.participants()
-    }
-    pub fn validate(&self) -> Result<(), Error> {
-        ThresholdParameters::validate_threshold(self.participants().count(), self.threshold())
-    }
-    pub fn new(
-        public_key: PublicKey,
-        key_event_id: KeyEventId,
-        threshold_parameters: ThresholdParameters,
-    ) -> Result<Self, Error> {
-        threshold_parameters.validate()?;
-        Ok(DKState {
-            public_key,
-            key_event_id,
-            threshold_parameters,
-        })
+
+    pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKey, Error> {
+        Ok(self
+            .domains
+            .iter()
+            .find(|k| k.domain_id == domain_id)
+            .ok_or_else(|| DomainError::NoSuchDomain)?
+            .key
+            .clone())
     }
 }
 
@@ -139,91 +114,6 @@ impl AuthenticatedParticipantId {
             .find(|(a_id, _, _)| *a_id == signer)
             .map(|(_, p_id, _)| AuthenticatedParticipantId(p_id.clone()))
             .ok_or_else(|| InvalidState::NotParticipant.into())
-    }
-}
-
-/// Proposal for a new key state, specifying the threshold for the key event.
-#[near(serializers=[borsh, json])]
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct KeyStateProposal {
-    proposed_threshold_parameters: ThresholdParameters,
-    key_event_threshold: DKGThreshold,
-}
-
-impl KeyStateProposal {
-    pub fn proposed_threshold_parameters(&self) -> &ThresholdParameters {
-        &self.proposed_threshold_parameters
-    }
-    pub fn new(
-        proposed_threshold_parameters: ThresholdParameters,
-        key_event_threshold: DKGThreshold,
-    ) -> Result<Self, Error> {
-        key_event_threshold.validate(
-            proposed_threshold_parameters.participants().count(),
-            proposed_threshold_parameters.threshold(),
-        )?;
-        Ok(KeyStateProposal {
-            proposed_threshold_parameters,
-            key_event_threshold,
-        })
-    }
-    pub fn key_event_threshold(&self) -> DKGThreshold {
-        self.key_event_threshold.clone()
-    }
-    pub fn validate(&self) -> Result<(), Error> {
-        self.key_event_threshold().validate(
-            self.proposed_threshold_parameters.participants().count(),
-            self.proposed_threshold_parameters.threshold(),
-        )?;
-        self.proposed_threshold_parameters.participants().validate()
-    }
-}
-
-/* Migration helpers. Though ideally, we don't reshare and update at the same time. */
-impl From<&legacy_contract::ResharingContractState> for DKState {
-    fn from(state: &legacy_contract::ResharingContractState) -> Self {
-        DKState {
-            public_key: state.public_key.clone(),
-            key_event_id: KeyEventId::new_migrated_key(state.old_epoch),
-            threshold_parameters: ThresholdParameters::from((
-                Threshold::new(state.threshold as u64),
-                state.old_participants.clone(),
-            )),
-        }
-    }
-}
-impl From<&legacy_contract::RunningContractState> for DKState {
-    fn from(state: &legacy_contract::RunningContractState) -> Self {
-        DKState {
-            public_key: state.public_key.clone(),
-            key_event_id: KeyEventId::new_migrated_key(state.epoch),
-            threshold_parameters: ThresholdParameters::from((
-                Threshold::new(state.threshold as u64),
-                state.participants.clone(),
-            )),
-        }
-    }
-}
-impl From<&legacy_contract::ResharingContractState> for KeyStateProposal {
-    fn from(state: &legacy_contract::ResharingContractState) -> Self {
-        KeyStateProposal {
-            proposed_threshold_parameters: ThresholdParameters::from((
-                Threshold::new(state.threshold as u64),
-                state.new_participants.clone(),
-            )),
-            key_event_threshold: DKGThreshold::new(state.new_participants.len() as u64),
-        }
-    }
-}
-impl From<&legacy_contract::InitializingContractState> for KeyStateProposal {
-    fn from(state: &legacy_contract::InitializingContractState) -> KeyStateProposal {
-        KeyStateProposal {
-            proposed_threshold_parameters: ThresholdParameters::from((
-                Threshold::new(state.threshold as u64),
-                state.candidates.clone(),
-            )),
-            key_event_threshold: DKGThreshold::new(state.candidates.candidates.len() as u64),
-        }
     }
 }
 
@@ -275,44 +165,11 @@ pub mod tests {
         assert_eq!(KeyEventId::new_migrated_key(5).epoch_id(), EpochId::new(5));
         assert_eq!(KeyEventId::new_migrated_key(5).attempt().get(), 0);
     }
-    #[test]
-    fn test_dk_state() {
-        let public_key = gen_pk();
-        let key_event_id = gen_key_event_id();
-        let threshold_params = gen_threshold_params(50);
-        let participants = threshold_params.participants().clone();
-        let dk_state = DKState::new(public_key.clone(), key_event_id, threshold_params).unwrap();
-        assert_eq!(*dk_state.public_key(), public_key);
-        assert!(dk_state.validate().is_ok());
-        for (account_id, _, _) in participants.participants() {
-            let mut context = VMContextBuilder::new();
-            context.signer_account_id(account_id.clone());
-            testing_env!(context.build());
-            assert_eq!(
-                participants.id(account_id).unwrap(),
-                dk_state.authenticate().unwrap().get()
-            );
-            let mut context = VMContextBuilder::new();
-            context.signer_account_id(gen_account_id());
-            testing_env!(context.build());
-            assert!(dk_state.authenticate().is_err());
-        }
-    }
-    pub fn gen_key_state_proposal(max_n: Option<usize>) -> KeyStateProposal {
-        let max_n = max_n.unwrap_or(MAX_N);
-        let proposed_threshold_parameters = gen_threshold_params(max_n);
-        let key_event_threshold =
-            DKGThreshold::new(proposed_threshold_parameters.participants().count());
-        KeyStateProposal::new(
-            proposed_threshold_parameters.clone(),
-            key_event_threshold.clone(),
-        )
-        .unwrap()
-    }
+
     #[test]
     fn test_key_state_proposal() {
         let proposed_threshold_parameters = gen_threshold_params(MAX_N);
-        for i in 0..proposed_threshold_parameters.participants().count() {
+        for i in 0..proposed_threshold_parameters.participants().len() {
             let key_event_threshold = DKGThreshold::new(i);
             assert!(KeyStateProposal::new(
                 proposed_threshold_parameters.clone(),
@@ -321,7 +178,7 @@ pub mod tests {
             .is_err());
         }
         let candidates = proposed_threshold_parameters.participants();
-        let i = proposed_threshold_parameters.participants().count();
+        let i = proposed_threshold_parameters.participants().len();
         let key_event_threshold = DKGThreshold::new(i);
         let ksp = KeyStateProposal::new(proposed_threshold_parameters.clone(), key_event_threshold);
         assert!(ksp.is_ok());
@@ -331,7 +188,7 @@ pub mod tests {
         // test authentication:
         KeyStateProposal::new(
             proposed_threshold_parameters.clone(),
-            DKGThreshold::new(proposed_threshold_parameters.participants().count()),
+            DKGThreshold::new(proposed_threshold_parameters.participants().len()),
         )
         .unwrap();
         for (account_id, _, _) in candidates.participants() {
@@ -357,7 +214,7 @@ pub mod tests {
             assert_eq!(migrated_ksp.key_event_threshold().value(), n as u64);
             let found = migrated_ksp.proposed_threshold_parameters();
             assert_eq!(found.threshold().value(), k as u64);
-            assert_eq!(found.participants().count(), n as u64);
+            assert_eq!(found.participants().len(), n as u64);
             assert_candidate_migration(&legacy_state.candidates, found.participants());
         }
     }
@@ -400,7 +257,7 @@ pub mod tests {
             let found = migrated_ksp.proposed_threshold_parameters();
             assert_eq!(found.threshold().value(), k as u64);
             assert_eq!(migrated_ksp.key_event_threshold().value(), n as u64);
-            assert_eq!(found.participants().count(), n as u64);
+            assert_eq!(found.participants().len(), n as u64);
             assert_participant_migration(&legacy_state.new_participants, found.participants());
         }
     }

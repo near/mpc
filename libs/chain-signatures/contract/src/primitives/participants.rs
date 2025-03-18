@@ -28,24 +28,6 @@ impl From<&legacy_contract::primitives::ParticipantInfo> for ParticipantInfo {
 }
 
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct AuthenticatedCandidateId(ParticipantId);
-impl AuthenticatedCandidateId {
-    pub fn get(&self) -> ParticipantId {
-        self.0.clone()
-    }
-    pub fn new(candidates: &Participants) -> Result<Self, Error> {
-        let signer = env::signer_account_id();
-        candidates
-            .participants()
-            .iter()
-            .find(|(a_id, _, _)| *a_id == signer)
-            .map(|(_, p_id, _)| AuthenticatedCandidateId(p_id.clone()))
-            .ok_or_else(|| InvalidState::NotParticipant.into())
-    }
-}
-
-#[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantId(u32);
 impl ParticipantId {
@@ -76,8 +58,8 @@ impl Participants {
             participants: Vec::new(),
         }
     }
-    pub fn count(&self) -> u64 {
-        self.participants.len() as u64
+    pub fn len(&self) -> usize {
+        self.participants.len()
     }
     pub fn insert_with_id(
         &mut self,
@@ -119,10 +101,10 @@ impl Participants {
                 return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
             }
         }
-        if ids.len() as u64 != self.count() {
+        if ids.len() != self.len() {
             return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
         }
-        if accounts.len() as u64 != self.count() {
+        if accounts.len() != self.len() {
             return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
         }
         Ok(())
@@ -237,7 +219,7 @@ pub mod tests {
             );
             assert!(participants.is_participant(account_id));
         }
-        assert_eq!(participants.count(), n as u64);
+        assert_eq!(participants.len(), n as u64);
         for i in 0..n {
             assert!(participants.account_id(&ParticipantId(i as u32)).is_ok());
         }
@@ -249,7 +231,7 @@ pub mod tests {
         migrated_participants: &Participants,
     ) {
         assert_eq!(
-            migrated_participants.count(),
+            migrated_participants.len(),
             legacy_candidates.candidates.len() as u64
         );
         for (account_id, info) in &legacy_candidates.candidates {
@@ -282,7 +264,7 @@ pub mod tests {
     ) {
         assert_eq!(
             legacy_participants.participants.len() as u64,
-            migrated_participants.count(),
+            migrated_participants.len(),
         );
         assert_eq!(
             legacy_participants.next_id,
