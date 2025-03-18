@@ -424,3 +424,126 @@ impl ExportKeyshareCmd {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use k256::{AffinePoint, Scalar};
+    use tempfile::TempDir;
+
+    // Mock keyshare data for testing
+    fn create_test_keyshare() -> RootKeyshareData {
+        // Create a dummy private key - this is only for testing
+        let private_share = Scalar::ONE;
+        let public_key = AffinePoint::default();
+        RootKeyshareData {
+            epoch: 1,
+            private_share,
+            public_key,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_keyshare_import_export() {
+        // Create a temporary directory for the test
+        let temp_dir = TempDir::new().unwrap();
+        let home_dir = temp_dir.path().to_string_lossy().to_string();
+
+        // Create test data
+        let keyshare = create_test_keyshare();
+        let keyshare_json = serde_json::to_string(&keyshare).unwrap();
+        let encryption_key = "0123456789ABCDEF0123456789ABCDEF";
+
+        // Test import functionality
+        let import_cmd = ImportKeyshareCmd {
+            home_dir: home_dir.clone(),
+            keyshare_json,
+            local_encryption_key_hex: encryption_key.to_string(),
+        };
+
+        let result = import_cmd.run().await;
+        assert!(result.is_ok(), "Import command failed: {:?}", result.err());
+
+        // Test export functionality
+        let export_cmd = ExportKeyshareCmd {
+            home_dir: home_dir.clone(),
+            local_encryption_key_hex: encryption_key.to_string(),
+        };
+
+        let result = export_cmd.run().await;
+        assert!(result.is_ok(), "Export command failed: {:?}", result.err());
+
+        // Verify the exported data matches what we imported
+        // For a more thorough test, we could capture stdout and verify the JSON content
+    }
+
+    #[tokio::test]
+    async fn test_import_existing_keyshare_with_lower_epoch() {
+        // Create a temporary directory for the test
+        let temp_dir = TempDir::new().unwrap();
+        let home_dir = temp_dir.path().to_string_lossy().to_string();
+
+        // Create two keyshares with different epochs
+        let mut keyshare1 = create_test_keyshare();
+        keyshare1.epoch = 2; // Higher epoch
+
+        let mut keyshare2 = create_test_keyshare();
+        keyshare2.epoch = 1; // Lower epoch
+
+        let keyshare1_json = serde_json::to_string(&keyshare1).unwrap();
+        let keyshare2_json = serde_json::to_string(&keyshare2).unwrap();
+        let encryption_key = "0123456789ABCDEF0123456789ABCDEF";
+
+        // Import the first keyshare
+        let import_cmd1 = ImportKeyshareCmd {
+            home_dir: home_dir.clone(),
+            keyshare_json: keyshare1_json,
+            local_encryption_key_hex: encryption_key.to_string(),
+        };
+
+        let result = import_cmd1.run().await;
+        assert!(
+            result.is_ok(),
+            "First import command failed: {:?}",
+            result.err()
+        );
+
+        // Try to import the second keyshare with lower epoch
+        let import_cmd2 = ImportKeyshareCmd {
+            home_dir: home_dir.clone(),
+            keyshare_json: keyshare2_json,
+            local_encryption_key_hex: encryption_key.to_string(),
+        };
+
+        let result = import_cmd2.run().await;
+        assert!(
+            result.is_err(),
+            "Import command with lower epoch should fail"
+        );
+        assert!(result.unwrap_err().to_string().contains("Refusing to overwrite existing keyshare of epoch 2 with new keyshare of older or same epoch 1"));
+    }
+
+    #[tokio::test]
+    async fn test_export_nonexistent_keyshare() {
+        // Create a temporary directory for the test
+        let temp_dir = TempDir::new().unwrap();
+        let home_dir = temp_dir.path().to_string_lossy().to_string();
+        let encryption_key = "0123456789ABCDEF0123456789ABCDEF";
+
+        // Parse the export command on an empty directory
+        let export_cmd = ExportKeyshareCmd {
+            home_dir,
+            local_encryption_key_hex: encryption_key.to_string(),
+        };
+
+        let result = export_cmd.run().await;
+        assert!(
+            result.is_err(),
+            "Export command should fail on nonexistent keyshare"
+        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No keyshare found"));
+    }
+}
