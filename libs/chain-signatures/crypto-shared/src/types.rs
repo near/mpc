@@ -19,6 +19,7 @@ pub enum Scheme {
     Ed25519,
 }
 
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum SignatureResponse {
     Secp256k1(k256_types::SignatureResponse),
     Edd25519(curve25519_types::SignatureResponse),

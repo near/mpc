@@ -10,9 +10,9 @@ use config::{Config, InitConfig};
 use crypto_shared::types::Scheme;
 use crypto_shared::{
     derive_epsilon, derive_key,
-    k256_types::{SerializableAffinePoint, SerializableScalar, SignatureResponse},
+    k256_types::{SerializableAffinePoint, SerializableScalar},
     kdf::secp256k1::check_ec_signature,
-    near_public_key_to_affine_point, ScalarExt,
+    near_public_key_to_affine_point, ScalarExt, SignatureResponse,
 };
 use errors::{
     ConversionError, InvalidParameters, InvalidState, PublicKeyError, RespondError, SignError,
@@ -307,11 +307,10 @@ impl VersionedMpcContract {
     ) -> Result<(), Error> {
         let signer = env::signer_account_id();
         log!(
-            "respond: signer={}, request={:?} big_r={:?} s={:?}",
+            "respond: signer={}, request={:?}, response={:?}",
             &signer,
             &request,
-            &response.big_r,
-            &response.s
+            &response,
         );
         if !self.state().is_running() {
             return Err(InvalidState::ProtocolStateNotRunning.into());

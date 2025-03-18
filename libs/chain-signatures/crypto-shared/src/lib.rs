@@ -9,7 +9,10 @@ pub use kdf::{
     secp256k1::{derive_key, x_coordinate},
 };
 use types::Scheme;
-pub use types::{curve25519_types, k256_types, Ed25519PublicKey, ScalarExt, Secp256k1PublicKey};
+pub use types::{
+    curve25519_types, k256_types, Ed25519PublicKey, ScalarExt, Secp256k1PublicKey,
+    SignatureResponse,
+};
 
 // Our wasm runtime doesn't support good syncronous entropy.
 // We could use something VRF + pseudorandom here, but someone would likely shoot themselves in the foot with it.
