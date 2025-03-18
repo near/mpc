@@ -1742,6 +1742,7 @@ dependencies = [
  "borsh",
  "curve25519-dalek",
  "ed25519-dalek",
+ "frost-ed25519",
  "getrandom 0.2.15",
  "k256",
  "near-account-id",
@@ -3894,6 +3895,9 @@ version = "2.0.0-alpha"
 dependencies = [
  "borsh",
  "crypto-shared 0.1.1",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "frost-ed25519",
  "k256",
  "mpc-contract 1.0.1 (git+https://github.com/Near-One/mpc?rev=bd1737264a86a7419bb6ffc6023fb5d668223d83)",
  "near-gas 0.2.5",

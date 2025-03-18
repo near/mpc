@@ -21,6 +21,7 @@ pub fn derive_epsilon<Scalar: ScalarExt>(predecessor_id: &AccountId, path: &str)
     let mut hasher = Sha3_256::new();
     hasher.update(derivation_path);
     let hash: [u8; 32] = hasher.finalize().into();
+
     ScalarExt::from_non_biased(hash)
 }
 
@@ -115,65 +116,21 @@ mod ed25519 {
         public_key: &Ed25519PublicKey,
         epsilon: Scalar,
     ) -> anyhow::Result<Ed25519PublicKey> {
-        // First, get the Edwards point representation of the public key
-        let pk_bytes = public_key.as_bytes();
-        let compressed =
-            CompressedEdwardsY::from_slice(pk_bytes).context("Invalid public key bytes")?;
-
-        let point = compressed
-            .decompress()
-            .context("Failed to decompress public key point")?;
-
-        // Compute: G * epsilon + public_key_point
-        let derived_point = ED25519_BASEPOINT_TABLE * &epsilon + point;
-
-        // Convert back to Ed25519PublicKey format
-        let derived_compressed = derived_point.compress();
-        Ed25519PublicKey::from_bytes(&derived_compressed.to_bytes())
-            .context("Failed to create verifying key from derived point")
+        todo!()
     }
 
     pub fn derive_secret_key(secret_key: &SigningKey, epsilon: Scalar) -> SigningKey {
-        // In Ed25519, the secret key is 32 bytes
-        let secret_bytes = secret_key.to_bytes();
-
-        // The actual scalar is derived from the first 32 bytes using SHA512
-        // We can't just add to the bytes directly due to Ed25519's key derivation
-        // Instead, we'd need to derive the actual scalar, add epsilon, and create a new key
-
-        // This is a simplified approach - in practice, you might need more careful manipulation
-        // of the expanded key material. This implementation focuses on the high-level structure.
-
-        // Get the scalar from secret key (this is a simplification)
-        let sk_scalar = Scalar::from_bytes_mod_order(secret_bytes);
-
-        // Add epsilon
-        let derived_scalar = sk_scalar + epsilon;
-
-        // Convert back to bytes
-        let derived_bytes = derived_scalar.to_bytes();
-
-        // Create new signing key
-        SigningKey::from_bytes(&derived_bytes)
+        todo!()
     }
 
+    // TODO: Go over with Simon
     pub fn check_ed25519_signature(
         expected_pk: &Ed25519PublicKey,
         big_r: &EdwardsPoint,
         s: &Scalar,
         message: &[u8],
     ) -> anyhow::Result<()> {
-        // Construct a canonical Ed25519 signature from R and S
-        let mut sig_bytes = [0u8; 64];
-        sig_bytes[0..32].copy_from_slice(&big_r.compress().to_bytes());
-        sig_bytes[32..64].copy_from_slice(&s.to_bytes());
-
-        let signature = Signature::from_bytes(&sig_bytes);
-
-        // Verify the signature
-        expected_pk
-            .verify(message, &signature)
-            .context("Ed25519 signature verification failed")
+        todo!()
     }
 
     // Ed25519 doesn't use the recovery ID concept like ECDSA does,

@@ -19,6 +19,17 @@ k256 = { version = "0.13.4", features = [
     "arithmetic",
     "expose-field",
 ] }
+curve25519-dalek = { version = "4.1.3", features = [
+    "group",
+], default-features = true }
+ed25519-dalek = { version = "2.1.1", default-features = true, features = [
+    "pkcs8",
+
+] }
+
+frost-ed25519 = { version = "2.1.0", default-features = true, features = [
+    "serialization",
+] }
 crypto-shared = { path = "../crypto-shared" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 thiserror = "1"

@@ -17,6 +17,9 @@ curve25519-dalek = { version = "4.1.3", features = [
 ed25519-dalek = { version = "2.1.1", default-features = true, features = [
     "pkcs8",
 ] }
+frost-ed25519 = { version = "2.1.0", default-features = true, features = [
+    "serialization",
+] }
 anyhow = "1"
 serde = "1"
 borsh = "1.3.0"

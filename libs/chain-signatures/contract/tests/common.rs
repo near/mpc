@@ -14,7 +14,7 @@ use mpc_contract::primitives::key_state::{
     AttemptId, DKState, EpochId, KeyEventId, KeyStateProposal,
 };
 use mpc_contract::primitives::participants::{ParticipantInfo, Participants};
-use mpc_contract::primitives::signature::{SignRequest, SignatureRequest};
+use mpc_contract::primitives::signature::{SignatureRequestContract, SignatureRequestMpc};
 use mpc_contract::primitives::thresholds::{DKGThreshold, Threshold, ThresholdParameters};
 use mpc_contract::update::UpdateId;
 use near_sdk::log;
@@ -160,7 +160,7 @@ pub async fn create_response(
     msg: &str,
     path: &str,
     sk: &k256::SecretKey,
-) -> ([u8; 32], SignatureRequest, Secp256k1SignatureResponse) {
+) -> ([u8; 32], SignatureRequestMpc, Secp256k1SignatureResponse) {
     let (digest, scalar_hash, payload_hash) = process_message(msg).await;
     let pk = sk.public_key();
 
@@ -178,7 +178,7 @@ pub async fn create_response(
     let s = signature.s();
     let (r_bytes, _s_bytes) = signature.split_bytes();
     let payload_hash_s = Scalar::from_bytes(payload_hash).unwrap();
-    let respond_req = SignatureRequest::new(payload_hash_s, predecessor_id, path);
+    let respond_req = SignatureRequestMpc::new(payload_hash_s, predecessor_id, path);
     let big_r =
         AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
     let s: k256::Scalar = *s.as_ref();
@@ -203,8 +203,8 @@ pub async fn create_response(
 }
 
 pub async fn sign_and_validate(
-    request: &SignRequest,
-    respond: Option<(&SignatureRequest, &Secp256k1SignatureResponse)>,
+    request: &SignatureRequestContract,
+    respond: Option<(&SignatureRequestMpc, &Secp256k1SignatureResponse)>,
     contract: &Contract,
 ) -> anyhow::Result<()> {
     let status = contract
