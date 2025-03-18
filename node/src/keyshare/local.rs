@@ -18,6 +18,45 @@ impl LocalKeyshareStorage {
             encryption_key: key,
         }
     }
+
+    // Synchronous version of load
+    pub fn load_sync(&self) -> anyhow::Result<Option<RootKeyshareData>> {
+        let cipher = Aes128Gcm::new(GenericArray::from_slice(&self.encryption_key));
+        let keyfile = self.home_dir.join("key");
+        if !keyfile.exists() {
+            return Ok(None);
+        }
+        let data = std::fs::read(&keyfile).context("Failed to read keygen file")?;
+        let decrypted = db::decrypt(&cipher, &data).context("Failed to decrypt keygen")?;
+        let keyshare: RootKeyshareData =
+            serde_json::from_slice(&decrypted).context("Failed to parse keygen")?;
+        Ok(Some(keyshare))
+    }
+
+    // Synchronous version of store
+    pub fn store_sync(&self, root_keyshare: &RootKeyshareData) -> anyhow::Result<()> {
+        let existing = self.load_sync().context("Checking existing keyshare")?;
+        if let Some(existing) = existing {
+            if existing.epoch >= root_keyshare.epoch {
+                return Err(anyhow::anyhow!(
+                    "Refusing to overwrite existing keyshare of epoch {} with new keyshare of older epoch {}",
+                    existing.epoch,
+                    root_keyshare.epoch,
+                ));
+            }
+        }
+        let cipher = Aes128Gcm::new(GenericArray::from_slice(&self.encryption_key));
+        let data = serde_json::to_vec(&root_keyshare).context("Failed to serialize keygen")?;
+        let encrypted = db::encrypt(&cipher, &data);
+        // Write the new key to a separate file, and then create a link to it.
+        // That way there is no risk of corrupting the previous keyshare if the write is interrupted.
+        let keyfile_for_epoch = self.home_dir.join(format!("key_{}", root_keyshare.epoch));
+        std::fs::write(&keyfile_for_epoch, &encrypted).context("Failed to write keygen file")?;
+        let keyfile = self.home_dir.join("key");
+        std::fs::remove_file(&keyfile).ok();
+        std::fs::hard_link(&keyfile_for_epoch, &keyfile).context("Failed to link keygen file")?;
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
