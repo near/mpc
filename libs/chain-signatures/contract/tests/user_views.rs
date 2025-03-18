@@ -1,8 +1,7 @@
 pub mod common;
 use common::{create_response, init_env};
 
-use mpc_contract::primitives::SignRequest;
-
+use mpc_contract::primitives::signature::SignRequest;
 use near_sdk::{CurveType, PublicKey};
 use near_workspaces::types::NearToken;
 use serde_json::json;
@@ -97,6 +96,6 @@ async fn test_experimental_signature_deposit() -> anyhow::Result<()> {
         .json::<String>()
         .unwrap()
         .parse()?;
-    assert_eq!(deposit, NearToken::from_millinear(50).as_yoctonear());
+    assert_eq!(deposit, NearToken::from_yoctonear(1).as_yoctonear());
     Ok(())
 }

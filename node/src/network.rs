@@ -96,9 +96,10 @@ impl MeshNetworkClient {
     /// tasks with the same MPC task ID.
     pub fn new_channel_for_task(
         &self,
-        task_id: MpcTaskId,
+        task_id: impl Into<MpcTaskId>,
         participants: Vec<ParticipantId>,
     ) -> anyhow::Result<NetworkTaskChannel> {
+        let task_id: MpcTaskId = task_id.into();
         tracing::debug!(
             target: "network",
             "[{}] Creating new channel for task {:?}",
@@ -126,6 +127,29 @@ impl MeshNetworkClient {
             )?;
         }
         Ok(channel)
+    }
+
+    /// That is expected that the caller is a follower of this MPC task.
+    /// Used in cases when the task sequence is strictly defined, e.g. when doing key generation
+    pub async fn wait_for_task(
+        channel_receiver: &mut mpsc::UnboundedReceiver<NetworkTaskChannel>,
+        expected_task_id: impl Into<MpcTaskId>,
+    ) -> NetworkTaskChannel {
+        let task_id = expected_task_id.into();
+        loop {
+            let channel = channel_receiver.recv().await.unwrap();
+
+            if channel.task_id() != task_id {
+                tracing::info!(
+                    "Received unexpected task ID: expected {:?}, actual {:?}; ignoring.",
+                    task_id,
+                    channel.task_id()
+                );
+                continue;
+            }
+
+            break channel;
+        }
     }
 
     pub fn my_participant_id(&self) -> ParticipantId {
@@ -827,6 +851,7 @@ mod tests {
     use crate::assets::UniqueId;
     use crate::network::testing::run_test_clients;
     use crate::primitives::MpcTaskId;
+    use crate::providers::EcdsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
@@ -879,7 +904,7 @@ mod tests {
         let mut expected_results = Vec::new();
         for seed in 0..5 {
             let channel = client.new_channel_for_task(
-                MpcTaskId::ManyTriples {
+                EcdsaTaskId::ManyTriples {
                     start: UniqueId::new(participant_id, seed, 0),
                     count: 1,
                 },
@@ -953,7 +978,7 @@ mod tests {
     impl MpcLeaderCentricComputation<()> for TaskFollower {
         async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
             match channel.task_id() {
-                MpcTaskId::ManyTriples { .. } => {
+                MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples { .. }) => {
                     let msg = channel.receive().await?;
                     let inner: TestTripleMessage = borsh::from_slice(&msg.data[0])?;
                     channel.sender().send(
@@ -986,7 +1011,8 @@ mod fault_handling_tests {
     use super::{MeshNetworkClient, NetworkTaskChannel};
     use crate::assets::UniqueId;
     use crate::network::testing::run_test_clients;
-    use crate::primitives::{MpcTaskId, ParticipantId};
+    use crate::primitives::ParticipantId;
+    use crate::providers::EcdsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use near_o11y::testonly::init_integration_logger;
@@ -1055,7 +1081,7 @@ mod fault_handling_tests {
         let is_leader = client.my_participant_id().raw() == 0;
         let channel = if is_leader {
             client.new_channel_for_task(
-                MpcTaskId::ManyTriples {
+                EcdsaTaskId::ManyTriples {
                     start: UniqueId::new(me, 0, 0),
                     count: 1,
                 },

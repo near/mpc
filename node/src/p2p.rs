@@ -715,7 +715,8 @@ mod tests {
     use crate::p2p::testing::{
         generate_keypair, generate_test_p2p_configs, keypair_to_raw_ed25519_secret_key, PortSeed,
     };
-    use crate::primitives::{MpcMessage, ParticipantId, PeerMessage};
+    use crate::primitives::{MpcMessage, MpcTaskId, ParticipantId, PeerMessage};
+    use crate::providers::EcdsaTaskId;
     use crate::tracing::init_logging;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use std::time::Duration;
@@ -756,7 +757,7 @@ mod tests {
 
             for i in 0..100 {
                 let msg0to1 = MpcMessage {
-                    task_id: crate::primitives::MpcTaskId::KeyResharing { new_epoch: i },
+                    task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { new_epoch: i }),
                     kind: crate::primitives::MpcMessageKind::Success,
                 };
                 sender0
@@ -773,7 +774,7 @@ mod tests {
                 assert_eq!(msg.message, msg0to1);
 
                 let msg1to0 = MpcMessage {
-                    task_id: crate::primitives::MpcTaskId::KeyResharing { new_epoch: i },
+                    task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { new_epoch: i }),
                     kind: crate::primitives::MpcMessageKind::Abort("test".to_owned()),
                 };
                 sender1

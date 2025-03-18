@@ -37,8 +37,17 @@ jobs:
           RUSTFLAGS="-D warnings" \
           cargo clippy --all-features --all-targets --locked
 
+          cd devnet
+          CARGO_TARGET_DIR="target/clippy" \
+          RUSTFLAGS="-D warnings" \
+          cargo clippy --all-features --all-targets --locked
+
       - name: Run Cargo fmt
-        run: cargo fmt -- --check
+        run: |
+          cargo fmt -- --check
+
+          cd devnet
+          cargo fmt -- --check
           
       - name: Install cargo-nextest
         run: cargo install cargo-nextest
@@ -49,7 +58,7 @@ jobs:
       - name: Build the contract
         run: | 
           cd libs/chain-signatures
-          cargo build -p mpc-contract --target=wasm32-unknown-unknown --release
+          cargo build -p mpc-contract@2.0.0-alpha --target=wasm32-unknown-unknown --release
           mkdir -p res && cp target/wasm32-unknown-unknown/release/mpc_contract.wasm res/mpc_contract.wasm
 
       - name: Download near core binary from S3

@@ -21,6 +21,6 @@ serde_json = "1.0.140"
 serde_yaml = "0.9.34"
 tokio = { version = "1.43.0", features = ["full"] }
 
-mpc-contract = { path = "../libs/chain-signatures/contract" }
+legacy-mpc-contract = {package="mpc-contract", git = "https://github.com/Near-One/mpc/", version = "1.0.1" }
 
 [workspace]

@@ -72,10 +72,14 @@ resource "google_project_iam_member" "sa-roles" {
 #####################################################################
 # External ip resevation
 #####################################################################
-resource "google_compute_global_address" "external_ips" {
+resource "google_compute_address" "external_ips" {
   count        = length(var.node_configs)
-  name         = "multichain-dev-parnter-${count.index}"
+  name         = "multichain-dev-partner-${count.index}"
+  region       = var.region
   address_type = "EXTERNAL"
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 #####################################################################
@@ -120,7 +124,7 @@ module "ig_template" {
     "container-vm" = module.gce-container[count.index].vm_container_label
   }
 
-  depends_on = [google_compute_global_address.external_ips]
+  depends_on = [google_compute_address.external_ips]
 }
 
 module "instances" {
@@ -131,7 +135,14 @@ module "instances" {
   hostname   = "multichain-testnet-partner-${count.index}"
   network    = var.network
   subnetwork = var.subnetwork
-
+  access_config = [
+    [
+      {
+        nat_ip       = google_compute_address.external_ips[count.index].address
+        network_tier = "PREMIUM"
+      }
+    ]
+  ]
   instance_template = module.ig_template[count.index].self_link_unique
 }
 
@@ -151,125 +162,12 @@ resource "google_compute_firewall" "app_port" {
   }
 }
 
-#####################################################################
-# LOAD BALANCER definition
-#####################################################################
-resource "google_compute_health_check" "multichain_healthcheck" {
-  name = "multichain-testnet-partner-tcp-healthcheck"
-
-  http_health_check {
-    port         = 3030
-    proxy_header = "NONE"
-    request_path = "/metrics"
+resource "google_compute_firewall" "testnet-mpc" {
+  name    = "testnet-mpc"
+  network = "default"
+  allow {
+    protocol = "tcp"
+    ports    = ["80", "3030", "24567"]
   }
-}
-
-resource "google_compute_instance_group" "multichain_group" {
-  name       = "multichain-partner-instance-group"
-  instances  = module.instances[*].self_links[0]
-  depends_on = [module.instances]
-
-  zone = var.zone
-  named_port {
-    name = "http"
-    port = 80
-  }
-  named_port {
-    name = "http-alt"
-    port = 8080
-  }
-  named_port {
-    name = "metrics"
-    port = 3030
-  }
-}
-
-resource "google_compute_backend_service" "mpc_backend_http" {
-  name                  = "mpc-partner-backend-service-http"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  protocol              = "TCP"
-  port_name             = "http"
-  timeout_sec           = 30
-  backend {
-    group = google_compute_instance_group.multichain_group.id
-  }
-
-  health_checks = [google_compute_health_check.multichain_healthcheck.id]
-}
-
-resource "google_compute_target_tcp_proxy" "mpc_proxy_http" {
-  count           = length(var.node_configs)
-  name            = "mpc-partner-target-proxy-http-${count.index}"
-  description     = "MPC proxy for http(80) port"
-  backend_service = google_compute_backend_service.mpc_backend_http.id
-}
-
-resource "google_compute_global_forwarding_rule" "mpc_frontend_http" {
-  count                 = length(var.node_configs)
-  name                  = "mpc-partner-rule-http-${count.index}"
-  ip_protocol           = "TCP"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  port_range            = "80"
-  target                = google_compute_target_tcp_proxy.mpc_proxy_http[count.index].id
-  ip_address            = google_compute_global_address.external_ips[count.index].address
-}
-
-resource "google_compute_backend_service" "mpc_backend_http_alt" {
-  name                  = "mpc-partner-backend-service-http-alt"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  protocol              = "TCP"
-  port_name             = "http-alt"
-  timeout_sec           = 30
-  backend {
-    group = google_compute_instance_group.multichain_group.id
-  }
-
-  health_checks = [google_compute_health_check.multichain_healthcheck.id]
-}
-
-resource "google_compute_target_tcp_proxy" "mpc_proxy_http_alt" {
-  count           = length(var.node_configs)
-  name            = "mpc-partner-target-proxy-http-alt-${count.index}"
-  description     = "MPC proxy for http-alt(8080) port"
-  backend_service = google_compute_backend_service.mpc_backend_http_alt.id
-}
-
-resource "google_compute_global_forwarding_rule" "mpc_frontend_http_alt" {
-  count                 = length(var.node_configs)
-  name                  = "mpc-partner-rule-http-alt-${count.index}"
-  ip_protocol           = "TCP"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  port_range            = "8080"
-  target                = google_compute_target_tcp_proxy.mpc_proxy_http_alt[count.index].id
-  ip_address            = google_compute_global_address.external_ips[count.index].address
-}
-
-resource "google_compute_backend_service" "mpc_backend_metrics" {
-  name                  = "mpc-partner-backend-service-metrics"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  protocol              = "TCP"
-  port_name             = "metrics"
-  timeout_sec           = 30
-  backend {
-    group = google_compute_instance_group.multichain_group.id
-  }
-
-  health_checks = [google_compute_health_check.multichain_healthcheck.id]
-}
-
-resource "google_compute_target_tcp_proxy" "mpc_proxy_metrics" {
-  count           = length(var.node_configs)
-  name            = "mpc-partner-target-proxy-metrics-${count.index}"
-  description     = "MPC proxy for metrics(8080) port"
-  backend_service = google_compute_backend_service.mpc_backend_metrics.id
-}
-
-resource "google_compute_global_forwarding_rule" "mpc_frontend_metrics" {
-  count                 = length(var.node_configs)
-  name                  = "mpc-partner-rule-metrics-${count.index}"
-  ip_protocol           = "TCP"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  port_range            = "3000"
-  target                = google_compute_target_tcp_proxy.mpc_proxy_metrics[count.index].id
-  ip_address            = google_compute_global_address.external_ips[count.index].address
+  source_ranges = ["0.0.0.0/0"]
 }

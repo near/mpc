@@ -12,8 +12,6 @@ mod db;
 mod frost;
 mod hkdf;
 mod indexer;
-mod key_generation;
-mod key_resharing;
 mod keyshare;
 mod metrics;
 mod mpc_client;
@@ -22,15 +20,14 @@ mod p2p;
 mod primitives;
 mod protocol;
 mod protocol_version;
+mod providers;
 mod runtime;
-mod sign;
 mod sign_request;
 pub mod signing;
 #[cfg(test)]
 mod tests;
 mod tracing;
 mod tracking;
-mod triple;
 mod web;
 
 fn main() -> anyhow::Result<()> {
