@@ -149,19 +149,6 @@ module "instances" {
 #####################################################################
 # Firewall template
 #####################################################################
-resource "google_compute_firewall" "app_port" {
-  name    = "allow-multichain-healthcheck-access"
-  network = var.network
-
-  source_ranges = ["130.211.0.0/22", "35.191.0.0/16"]
-  source_tags   = ["multichain"]
-
-  allow {
-    protocol = "tcp"
-    ports    = ["80", "8080", "3030", "3000"]
-  }
-}
-
 resource "google_compute_firewall" "testnet-mpc" {
   name    = "testnet-mpc"
   network = "default"
