@@ -75,7 +75,3 @@ variable "create_network" {
   default     = false
   description = "Do you want to create a new VPC network (true) or use default GCP network (false)?"
 }
-
-variable "domain" {
-  description = "DNS name for your node"
-}
