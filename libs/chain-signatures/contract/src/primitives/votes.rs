@@ -3,6 +3,8 @@ use super::thresholds::ThresholdParameters;
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
+/// Tracks votes for ThresholdParameters (new participants and threshold).
+/// Each current participant can maintain one vote.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Default, PartialEq)]
 pub struct ThresholdParametersVotes {
@@ -10,10 +12,10 @@ pub struct ThresholdParametersVotes {
 }
 
 impl ThresholdParametersVotes {
-    /// Registers a vote by `participant` for `proposal` (inserts `proposal` if necessary).
+    /// Registers a vote by `participant` for `proposal`.
     /// Removes any existing votes by `participant`.
-    /// Returns an Error if `participant` already registered a vote.
-    /// Returns the number of votes for the current proposal.
+    /// Returns the number of participants who has voted for the same proposal (including the new
+    /// vote).
     pub fn vote(
         &mut self,
         proposal: &ThresholdParameters,

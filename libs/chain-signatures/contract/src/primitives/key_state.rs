@@ -3,6 +3,11 @@ use super::participants::{ParticipantId, Participants};
 use crate::errors::{DomainError, Error, InvalidState};
 use near_sdk::{env, near, PublicKey};
 
+/// An EpochId uniquely identifies a ThresholdParameters (but not vice-versa).
+/// Every time we change the ThresholdParameters (participants and threshold),
+/// we increment EpochId.
+/// Locally on each node, each keyshare is uniquely identified by the tuple
+/// (EpochId, DomainId, AttemptId).
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct EpochId(u64);
@@ -44,10 +49,12 @@ impl Default for AttemptId {
     }
 }
 
-/// A unique identifier for a key event:
-/// `epoch_id` the epoch for which the key is supposed to be active.
-/// `attempt`: an identifier for the attempt during the epoch.
-/// Note: `attempt` is just a counter.
+/// A unique identifier for a key event (generation or resharing):
+/// `epoch_id`: identifies the ThresholdParameters that this key is intended to function in.
+/// `domain_id`: the domain this key is intended for.
+/// `attempt_id`: identifies a particular attempt for this key event, in case multiple attempts
+///               yielded partially valid results. This is incremented for each attempt within the
+///               same epoch and domain.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct KeyEventId {
@@ -66,14 +73,24 @@ impl KeyEventId {
     }
 }
 
+/// The identification of a specific distributed key, based on which a node would know exactly what
+/// keyshare it has corresponds to this distributed key. (A distributed key refers to a specific set
+/// of keyshares that nodes have which can be pieced together to form the secret key.)
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct KeyForDomain {
+    /// Identifies the domain this key is intended for.
     pub domain_id: DomainId,
+    /// Identifies the public key. Although technically redundant given that we have the AttemptId,
+    /// we keep it here in the contract so that it can be verified against and queried.
     pub key: PublicKey,
+    /// The attempt ID that generated (initially or as a result of resharing) this distributed key.
+    /// Nodes may have made multiple attempts to generate the distributed key, and this uniquely
+    /// identifies which one should ultimately be used.
     pub attempt: AttemptId,
 }
 
+/// Represents a key for every domain in a specific epoch.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Keyset {
@@ -91,14 +108,16 @@ impl Keyset {
             .domains
             .iter()
             .find(|k| k.domain_id == domain_id)
-            .ok_or_else(|| DomainError::NoSuchDomain)?
+            .ok_or(DomainError::NoSuchDomain)?
             .key
             .clone())
     }
 }
 
-/// This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`
-/// It is supposed to be constructed only by DKState.
+/// This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`,
+/// but is only constructible given a set of participants that includes the signer, thus acting as
+/// a typesystem-based enforcement mechanism (albeit a best-effort one) for authenticating the
+/// signer.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthenticatedParticipantId(ParticipantId);

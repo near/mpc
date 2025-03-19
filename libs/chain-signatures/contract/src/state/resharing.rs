@@ -5,6 +5,19 @@ use crate::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
 use crate::primitives::thresholds::ThresholdParameters;
 use near_sdk::near;
 
+/// In this state, we reshare the key of every domain onto a new set of participants and threshold.
+/// Similar to key generation, we reshare the key of one domain at a time; when we finish resharing
+/// for one domain, we move on to the next or transition to the Running state.
+///
+/// This state is reached by calling vote_new_parameters from the Running state.
+///
+/// This state keeps the previous running state because:
+///  - The previous running state's ThresholdParameters are needed in order to facilitate the
+///    possible re-proposal of a new ThresholdParameters, in case the currently proposed set of
+///    participants are no longer all online. For tracking the votes we also use the same
+///    tracking structure in the running state.
+///  - The previous running state's keys are needed to copy the public keys.
+///  - We use the previous running state's DomainRegistry.
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
 pub struct ResharingContractState {
@@ -15,6 +28,7 @@ pub struct ResharingContractState {
 
 impl From<&legacy_contract::ResharingContractState> for ResharingContractState {
     fn from(_state: &legacy_contract::ResharingContractState) -> Self {
+        // It's complicated to upgrade the contract while resharing. Just don't support it.
         unimplemented!("Cannot migrate from Resharing state")
     }
 }
@@ -23,12 +37,16 @@ impl ResharingContractState {
     pub fn previous_keyset(&self) -> &Keyset {
         &self.previous_running_state.keyset
     }
+
+    /// Returns the epoch ID that we would transition into if resharing were completed successfully.
+    /// This would increment if we end up voting for a re-proposal.
     pub fn prospective_epoch_id(&self) -> EpochId {
         self.resharing_key.epoch_id()
     }
-    /// Casts a vote for `proposal`, removing any exiting votes by `signer_account_id()`.
-    /// Returns an error if `proposal` is invalid or signer not in the old partipicant set.
-    /// Returns ResharingContract state if the proposal is accepted.
+
+    /// Casts a vote for a re-proposal. Requires the signer to be an original participant from the
+    /// previous running state. If this exceeds the threshold (from the previous running state),
+    /// returns a new ResharingContractState that we should transition into.
     pub fn vote_new_parameters(
         &mut self,
         proposal: &ThresholdParameters,
@@ -57,18 +75,26 @@ impl ResharingContractState {
         }
         Ok(None)
     }
-}
 
-// Leader API. Below functions shall only be called by a leader account
-impl ResharingContractState {
-    /// Starts a new reshare instance if there is no active reshare instance
+    /// Starts a new attempt to reshare the key for the current domain.
+    /// Returns an Error if the signer is not the leader (the participant with the lowest ID).
     pub fn start(&mut self, event_max_idle_blocks: u64) -> Result<(), Error> {
         self.resharing_key.start(event_max_idle_blocks)
     }
 
-    /// Casts a vote for `public_key` in `key_event_id`.
-    /// Fails if `signer` is not a candidate, if the candidate already voted or if there is no active key event.
-    /// Returns `RunningContractState` if `public_key` reaches the required votes.
+    /// Casts a successfully-reshared vote for for the attempt identified by `key_event_id`.
+    /// Upon success (a return of Ok(...)), the effect of this method is one of the following:
+    ///  - A vote has been collected but we don't have enough votes yet.
+    ///  - Everyone has now voted; the state transitions into resharing the key for the next domain.
+    ///    (This returns Ok(None) still).
+    ///  - Same as the last case, except that all domains' keys have been reshared now, and we
+    ///    return Ok(Some(running state)) that the caller should now transition into.
+    ///
+    /// Fails in the following cases:
+    ///  - There is no active key resharing attempt (including if the attempt timed out).
+    ///  - The key_event_id corresponds to a different domain, different epoch, or different attempt
+    ///    from the current key resharing attempt.
+    ///  - The signer is not a participant in the *proposed* set of participants.
     pub fn vote_reshared(
         &mut self,
         key_event_id: KeyEventId,
@@ -105,7 +131,9 @@ impl ResharingContractState {
         Ok(None)
     }
 
-    /// Casts a vote to abort the current keygen instance.
+    /// Casts a vote to abort the current key resharing attempt.
+    /// After aborting, another call to start() is necessary to start a new attempt.
+    /// Returns error if there is no active attempt, or if the signer is not a proposed participant.
     pub fn vote_abort(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         self.resharing_key.vote_abort(key_event_id)
     }
@@ -123,6 +151,9 @@ mod tests {
     use near_sdk::AccountId;
     use std::collections::BTreeSet;
 
+    /// Generates a resharing state with the given number of domains.
+    /// We do this by starting from the Running state and calling vote_new_parameters to have it
+    /// transition into Resharing. (This also tests the transitioning code path.)
     fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContractState) {
         let mut env = Environment::new(Some(100), None, None);
         let mut running = gen_running_state(num_domains);

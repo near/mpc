@@ -8,26 +8,59 @@ use crate::primitives::key_state::{
 use near_sdk::{near, PublicKey};
 use std::collections::BTreeSet;
 
+/// In this state, we generate a new key for each new domain. At any given point of time, we are
+/// generating the key of a single domain. After that, we move on to the next domain, or if there
+/// are no more domains, transition into the Running state.
+///
+/// This state is reached by calling vote_add_domains from the Running state by a threshold number
+/// of participants.
+///
+/// While generating the key for a domain, the `generating_key` field internally handles multiple
+/// attempts as needed, only finishing when an attempt has succeeded.
+///
+/// Additionally, a threshold number of participants can vote to cancel this state; doing so will
+/// revert back to the Running state but deleting the domains for which we have not yet successfully
+/// generated a key. This can be useful if the current set of participants are no longer all online
+/// and we wish to perform a resharing before adding domains again.
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
 pub struct InitializingContractState {
+    /// All domains, including the already existing ones and the ones we're generating a new key for
     pub domains: DomainRegistry,
+    /// The epoch ID; this is the same as the Epoch ID of the Running state we transitioned from.
     pub epoch_id: EpochId,
+    /// The key for each domain we have already generated a key for; this is in the same order as
+    /// the domains in the DomainRegistry, except that it only has a prefix of the domains.
     pub generated_keys: Vec<KeyForDomain>,
+    /// The key generation state for the currently generating domain (the next domain after
+    /// `generated_keys`).
     pub generating_key: KeyEvent,
+    /// Votes that have been cast to cancel the key generation.
     pub cancel_votes: BTreeSet<AuthenticatedParticipantId>,
 }
 
 impl InitializingContractState {
-    /// Starts a new keygen instance.
-    /// Returns an Error if the signer is not the leader.
+    /// Starts a new attempt to generate a key for the current domain.
+    /// Returns an Error if the signer is not the leader (the participant with the lowest ID).
     pub fn start(&mut self, event_max_idle_blocks: u64) -> Result<(), Error> {
         self.generating_key.start(event_max_idle_blocks)
     }
 
-    /// Casts a vote for `public_key` in `key_event_id`.
-    /// Fails if `signer` is not a candidate, if the candidate already voted or if there is no active key event.
-    /// Returns `RunningContractState` if `public_key` reaches the required votes.
+    /// Casts a vote for `public_key` for the attempt identified by `key_event_id`.
+    /// Upon success (a return of Ok(...)), the effect of this method is one of the following:
+    ///  - A vote has been collected but we don't have enough votes yet.
+    ///  - This vote is for a public key that disagrees from an earlier voted public key, causing
+    ///    the attempt to abort; another call to `start` is then necessary.
+    ///  - Everyone has now voted for the same public key; the state transitions into generating a
+    ///    key for the next domain. (This returns Ok(None) still).
+    ///  - Same as the last case, except that all domains have a generated key now, and we return
+    ///    Ok(Some(running state)) that the caller should now transition into.
+    ///
+    /// Fails in the following cases:
+    ///  - There is no active key generation attempt (including if the attempt timed out).
+    ///  - The key_event_id corresponds to a different domain, different epoch, or different attempt
+    ///    from the current key generation attempt.
+    ///  - The signer is not a participant.
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
@@ -59,33 +92,33 @@ impl InitializingContractState {
         Ok(None)
     }
 
-    /// Casts a vote to abort the current keygen instance.
+    /// Casts a vote to abort the current key generation attempt.
+    /// After aborting, another call to start() is necessary to start a new attempt.
+    /// Returns error if there is no active attempt, or if the signer is not a participant.
     pub fn vote_abort(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         self.generating_key.vote_abort(key_event_id)
     }
 
     /// Casts a vote to cancel key generation. Any keys that have already been generated
-    /// are kept and we transition into Running state; remaining domains are deleted.
+    /// are kept and we transition into Running state; remaining domains are permanently deleted.
+    /// Deleted domain IDs are not reused again.
     pub fn vote_cancel(&mut self) -> Result<Option<RunningContractState>, Error> {
         let participant = AuthenticatedParticipantId::new(
             self.generating_key.proposed_parameters().participants(),
         )?;
-        if self.cancel_votes.insert(participant) {
-            if self.cancel_votes.len()
-                >= self
-                    .generating_key
-                    .proposed_parameters()
-                    .threshold()
-                    .value() as usize
-            {
-                let mut domains = self.domains.clone();
-                domains.retain_domains(self.generated_keys.len());
-                return Ok(Some(RunningContractState::new(
-                    domains,
-                    Keyset::new(self.epoch_id, self.generated_keys.clone()),
-                    self.generating_key.proposed_parameters().clone(),
-                )));
-            }
+        let required_threshold = self
+            .generating_key
+            .proposed_parameters()
+            .threshold()
+            .value() as usize;
+        if self.cancel_votes.insert(participant) && self.cancel_votes.len() >= required_threshold {
+            let mut domains = self.domains.clone();
+            domains.retain_domains(self.generated_keys.len());
+            return Ok(Some(RunningContractState::new(
+                domains,
+                Keyset::new(self.epoch_id, self.generated_keys.clone()),
+                self.generating_key.proposed_parameters().clone(),
+            )));
         }
         Ok(None)
     }
@@ -93,6 +126,8 @@ impl InitializingContractState {
 
 impl From<&legacy_contract::InitializingContractState> for InitializingContractState {
     fn from(_state: &legacy_contract::InitializingContractState) -> Self {
+        // It's inconceivable we would upgrade from an Initializing state. So don't bother
+        // supporting it.
         unimplemented!("Cannot upgrade from legacy Initializing state")
     }
 }
@@ -111,6 +146,10 @@ mod tests {
     use near_sdk::AccountId;
     use std::collections::BTreeSet;
 
+    /// Randomly generates an InitializingContractState where we already have keys for
+    /// `num_generated` domains, and we are targeting `num_domains` total domains.
+    /// This is done by starting from a Running state with `num_generated` keys and then transition
+    /// into Initializing state by calling vote_add_domains. (We also test that code path.)
     fn gen_initializing_state(
         num_domains: usize,
         num_generated: usize,
@@ -281,3 +320,5 @@ mod tests {
         }
     }
 }
+
+// TODO: add tests for aborting key generation

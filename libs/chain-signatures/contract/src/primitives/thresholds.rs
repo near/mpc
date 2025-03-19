@@ -79,7 +79,7 @@ impl ThresholdParameters {
         &self.participants
     }
 
-    /// For migration from legacy, don't check the threshold.
+    /// For migration from legacy; does not check the threshold.
     pub fn migrate_from_legacy(
         threshold: usize,
         participants: legacy_contract::primitives::Participants,
@@ -90,6 +90,7 @@ impl ThresholdParameters {
         }
     }
 
+    /// For integration testing.
     pub fn new_unvalidated(participants: Participants, threshold: Threshold) -> Self {
         ThresholdParameters {
             participants,

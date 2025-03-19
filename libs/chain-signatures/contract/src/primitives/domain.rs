@@ -3,16 +3,22 @@ use crate::errors::{DomainError, Error};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
+/// Each domain corresponds to a specific root key in a specific signature scheme. There may be
+/// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DomainId(pub u64);
 
 impl DomainId {
+    /// Returns the DomainId of the single ECDSA key present in the contract before V2.
     pub fn legacy_ecdsa_id() -> Self {
         Self(0)
     }
 }
 
+/// Uniquely identifies a specific signature algorithm.
+/// More signature schemes may be added in the future. When adding new signature schemes, both Borsh
+/// *and* JSON serialization must be kept compatible.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignatureScheme {
@@ -20,6 +26,7 @@ pub enum SignatureScheme {
     Ed25519,
 }
 
+/// Describes the configuration of a domain: the domain ID and the signature scheme it uses.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
@@ -27,31 +34,30 @@ pub struct DomainConfig {
     pub scheme: SignatureScheme,
 }
 
+/// All the domains present in the contract, as well as the next domain ID which is kept to ensure
+/// that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to
+/// add domains but ultimately cancels that process.)
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DomainRegistry {
     domains: Vec<DomainConfig>,
     next_domain_id: u64,
 }
 
 impl DomainRegistry {
-    pub fn new() -> Self {
-        Self {
-            domains: Vec::new(),
-            next_domain_id: 0,
-        }
-    }
-
     pub fn domains(&self) -> &[DomainConfig] {
         &self.domains
     }
 
+    /// Migration from legacy: creates a DomainRegistry with a single ecdsa key.
     pub fn new_single_ecdsa_key_from_legacy() -> Self {
-        let mut registry = Self::new();
+        let mut registry = Self::default();
         registry.add_domain(SignatureScheme::Secp256k1);
         registry
     }
 
+    /// Add a single domain with the given signature scheme, returning the DomainId of the added
+    /// domain.
     fn add_domain(&mut self, scheme: SignatureScheme) -> DomainId {
         let domain = DomainConfig {
             id: DomainId(self.next_domain_id),
@@ -62,6 +68,9 @@ impl DomainRegistry {
         domain.id
     }
 
+    /// Processes the addition of the given domains, returning a new DomainRegistry.
+    /// This stringently requires that the domains specified have sorted and contiguous IDs starting
+    /// from next_domain_id, returning an error otherwise.
     pub fn add_domains(&self, domains: Vec<DomainConfig>) -> Result<DomainRegistry, Error> {
         let mut new_registry = self.clone();
         for domain in domains {
@@ -73,14 +82,19 @@ impl DomainRegistry {
         Ok(new_registry)
     }
 
+    /// Retain a prefix of the given number of domains. This is used for cancelling key generation,
+    /// where we would delete whatever domains we failed to generate a key for.
     pub fn retain_domains(&mut self, num_domains: usize) {
         self.domains.truncate(num_domains);
     }
 
+    /// Returns the given domain by the index, not the DomainId.
     pub fn get_domain_by_index(&self, index: usize) -> Option<&DomainConfig> {
         self.domains.get(index)
     }
 
+    /// Returns the most recently added domain for the given signature scheme,
+    /// or None if no such domain exists.
     pub fn most_recent_domain_for_signature_scheme(
         &self,
         scheme: SignatureScheme,
@@ -92,6 +106,10 @@ impl DomainRegistry {
             .map(|domain| domain.id)
     }
 
+    /// Constructs a DomainRegistry from its raw fields, but performing basic
+    /// validation that the fields could've been produced by a valid
+    /// sequence of add_domains and retain_domains calls. This is used for
+    /// init_running and testing only.
     pub fn from_raw_validated(
         domains: Vec<DomainConfig>,
         next_domain_id: u64,
@@ -114,6 +132,8 @@ impl DomainRegistry {
     }
 }
 
+/// Tracks votes to add domains. Each participant can at any given time vote for a list of domains
+/// to add.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AddDomainsVotes {
@@ -121,6 +141,9 @@ pub struct AddDomainsVotes {
 }
 
 impl AddDomainsVotes {
+    /// Votes for the proposal, returning the total number of voters so far who
+    /// have proposed the exact same domains to add.
+    /// If the participant had voted already, this replaces the existing vote.
     pub fn vote(
         &mut self,
         proposal: Vec<DomainConfig>,
@@ -150,6 +173,7 @@ pub mod tests {
     const ALL_SIGNATURE_SCHEMES: [SignatureScheme; 2] =
         [SignatureScheme::Secp256k1, SignatureScheme::Ed25519];
 
+    /// Generates a valid DomainRegistry with various signature schemes, with num_domains total.
     pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
         let mut domains = Vec::new();
         for i in 0..num_domains {
@@ -161,6 +185,7 @@ pub mod tests {
         DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
     }
 
+    /// Generates a valid list of domains to add to the given registry.
     pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<DomainConfig> {
         let mut new_domains = Vec::new();
         for i in 0..num_domains {
@@ -174,7 +199,7 @@ pub mod tests {
 
     #[test]
     fn test_add_domains() {
-        let registry = DomainRegistry::new();
+        let registry = DomainRegistry::default();
         let domains1 = vec![
             DomainConfig {
                 id: DomainId(0),
@@ -202,11 +227,25 @@ pub mod tests {
         assert_eq!(&new_registry.domains[0..2], &domains1);
         assert_eq!(&new_registry.domains[2..4], &domains2);
 
+        // This fails because the domain ID does not start from next_domain_id.
         let domains3 = vec![DomainConfig {
             id: DomainId(5),
             scheme: SignatureScheme::Secp256k1,
         }];
         assert!(new_registry.add_domains(domains3).is_err());
+
+        // This fails because the domain IDs are not sorted.
+        let domains4 = vec![
+            DomainConfig {
+                id: DomainId(5),
+                scheme: SignatureScheme::Secp256k1,
+            },
+            DomainConfig {
+                id: DomainId(4),
+                scheme: SignatureScheme::Secp256k1,
+            },
+        ];
+        assert!(new_registry.add_domains(domains4).is_err());
     }
 
     #[test]
@@ -247,6 +286,7 @@ pub mod tests {
                 },
             ]
         );
+        assert_eq!(registry.next_domain_id, 6);
         registry.retain_domains(2);
         assert_eq!(
             registry.domains,
@@ -261,8 +301,10 @@ pub mod tests {
                 },
             ]
         );
+        assert_eq!(registry.next_domain_id, 6);
         registry.retain_domains(0);
         assert_eq!(registry.domains, Vec::new());
+        assert_eq!(registry.next_domain_id, 6);
     }
 
     #[test]

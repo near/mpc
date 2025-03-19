@@ -10,7 +10,7 @@ use near_sdk::{env, log, near};
 use near_sdk::{BlockHeight, PublicKey};
 use std::collections::BTreeSet;
 
-/// Stores the information for the current key generation or resharing.
+/// Maintains the state for the current key generation or resharing.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone)]
 pub struct KeyEvent {
@@ -41,7 +41,8 @@ impl KeyEvent {
         }
     }
 
-    // Start a new key event instance as the leader, if one isn't already active.
+    /// Start a new key event instance as the leader, if one isn't already active.
+    /// The leader is always the participant with the lowest participant ID.
     pub fn start(&mut self, timeout_blocks: u64) -> Result<(), Error> {
         self.cleanup_if_timed_out();
         if self.instance.is_some() {
@@ -56,7 +57,7 @@ impl KeyEvent {
     /// Ensures that the signer account matches the leader participant.
     /// The leader is the one with the lowest participant ID.
     pub fn verify_leader(&self) -> Result<(), Error> {
-        if &self
+        if self
             .parameters
             .participants()
             .participants()
@@ -64,7 +65,7 @@ impl KeyEvent {
             .min_by_key(|(_, participant_id, _)| participant_id)
             .unwrap()
             .0
-            != &env::signer_account_id()
+            != env::signer_account_id()
         {
             return Err(VoteError::VoterNotLeader.into());
         }
@@ -81,7 +82,8 @@ impl KeyEvent {
 
     /// Casts a vote for `public_key` in `key_event_id`.
     /// Fails if `signer` is not a candidate, if the candidate already voted or if there is no active key event.
-    /// Returns KeyEventId if all participants have reached consensus, None otherwise.
+    /// If this vote disagrees with an earlier vote on the public key, aborts the current attempt.
+    /// Otherwise, returns true iff all participants have voted for the same public key.
     pub fn vote_success(
         &mut self,
         key_event_id: &KeyEventId,
@@ -126,6 +128,9 @@ impl KeyEvent {
         Ok(())
     }
 
+    /// Convenience function to internally remove the current instance if it timed out.
+    /// Whoever reads and parses the state must treat a timed out instance as equivalent to not
+    /// having an instance at all; thus this function performs no functional change.
     fn cleanup_if_timed_out(&mut self) {
         if let Some(instance) = self.instance.as_ref() {
             if !instance.active() {
@@ -134,11 +139,13 @@ impl KeyEvent {
         }
     }
 
+    /// Verifies that the signer is authorized to cast a vote and that the key event ID corresponds
+    /// to the current generation attempt.
     fn verify_vote(
         &mut self,
         key_event_id: &KeyEventId,
     ) -> Result<AuthenticatedParticipantId, Error> {
-        let candidate = AuthenticatedParticipantId::new(&self.parameters.participants())?;
+        let candidate = AuthenticatedParticipantId::new(self.parameters.participants())?;
         self.cleanup_if_timed_out();
         let Some(instance) = self.instance.as_ref() else {
             return Err(KeyEventError::NoActiveKeyEvent.into());
@@ -152,6 +159,8 @@ impl KeyEvent {
         Ok(candidate)
     }
 
+    /// Returns the KeyEventId that identifies the current key generation or resharing attempt.
+    /// It returns None if there is no active attempt (including if the attempt has timed out).
     pub fn current_key_event_id(&self) -> Option<KeyEventId> {
         let instance = self.instance.as_ref()?;
         if instance.expires_on <= env::block_height() {
@@ -164,11 +173,13 @@ impl KeyEvent {
         ))
     }
 
+    /// Returns whether an attempt is active ()and not timed out).
     #[cfg(test)]
     pub fn is_active(&self) -> bool {
         self.current_key_event_id().is_some()
     }
 
+    /// Returns the number of success votes in the current attempt (asserting that it is active).
     #[cfg(test)]
     pub fn num_completed(&self) -> usize {
         assert!(self.is_active());
@@ -176,21 +187,28 @@ impl KeyEvent {
     }
 }
 
+/// See KeyEventInstance::vote_success.
 #[derive(Debug, PartialEq)]
-pub enum VoteSuccessResult {
-    /// Voted successfully, returning the number of votes.
+enum VoteSuccessResult {
+    /// Voted successfully, returning the number of votes so far.
     Voted(usize),
-    /// Participants disagreed on the public key, vote failed.
+    /// Participants disagreed on the public key, consensus failed.
     PublicKeyDisagreement,
 }
 
+/// State for a single attempt at generating or resharing a key.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default)]
 pub struct KeyEventInstance {
     attempt_id: AttemptId,
+    /// The block in which KeyEvent::start() was called.
     started_in: BlockHeight,
+    /// The block that this attempt expires on. To clarify off-by-one behavior: if the contract were
+    /// called *on* or after this height, the attempt is considered no longer existent.
     expires_on: BlockHeight,
+    /// The participants that voted that they successfully completed the keygen or resharing.
     completed: BTreeSet<AuthenticatedParticipantId>,
+    /// The public key currently voted for. This is None iff no one has voted.
     public_key: Option<PublicKey>,
 }
 
@@ -209,9 +227,11 @@ impl KeyEventInstance {
         env::block_height() < self.expires_on
     }
 
-    /// Commits the vote of `candidate` to `public_key`, returning the total number of votes for `public_key`.
+    /// Commits the vote of `candidate` to `public_key`, returning either Voted with the number of
+    /// votes already cast, or PublicKeyDisagreement if this vote conflicts with an earlier vote's
+    /// public key.
     /// Fails if the candidate already submitted a vote.
-    pub fn vote_success(
+    fn vote_success(
         &mut self,
         candidate: AuthenticatedParticipantId,
         public_key: PublicKey,

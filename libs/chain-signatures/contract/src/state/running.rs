@@ -12,13 +12,27 @@ use crate::primitives::votes::ThresholdParametersVotes;
 use near_sdk::{near, AccountId};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// In this state, the contract is ready to process signature requests.
+///
+/// Proposals can be submitted to modify the state:
+///  - vote_add_domains, upon threshold agreement, transitions into the
+///    Initializing state to generate keys for new domains.
+///  - vote_new_parameters, upon threshold agreement, transitions into the
+///    Resharing state to reshare keys for new participants and also change the
+///    threshold if desired.
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
 pub struct RunningContractState {
+    /// The domains for which we have a key ready for signature processing.
     pub domains: DomainRegistry,
+    /// The keys that are currently in use; for each domain provides an unique identifier for a
+    /// distributed key, so that the nodes can identify which local keyshare to use.
     pub keyset: Keyset,
+    /// The current participants and threshold.
     pub parameters: ThresholdParameters,
+    /// Votes for proposals for a new set of participants and threshold.
     pub parameters_votes: ThresholdParametersVotes,
+    /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
 }
 
@@ -56,7 +70,7 @@ impl RunningContractState {
     }
 
     /// Casts a vote for `proposal` to the current state, propagating any errors.
-    /// Returns ResharingContract state if the proposal is accepted.
+    /// Returns ResharingContractState if the proposal is accepted.
     pub fn vote_new_parameters(
         &mut self,
         proposal: &ThresholdParameters,
@@ -78,7 +92,7 @@ impl RunningContractState {
                 }));
             } else {
                 // A new ThresholdParameters was proposed, but we have no keys, so directly
-                // transition into Running state.
+                // transition into Running state but bump the EpochId.
                 *self = RunningContractState::new(
                     self.domains.clone(),
                     Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
@@ -153,6 +167,10 @@ impl RunningContractState {
         Ok(self.parameters.threshold().value() <= n_votes)
     }
 
+    /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
+    /// If this causes a threshold number of participants to vote for the same set of new domains,
+    /// returns the InitializingContractState we should transition into to generate keys for these
+    /// new domains.
     pub fn vote_add_domains(
         &mut self,
         domains: Vec<DomainConfig>,
@@ -196,6 +214,7 @@ pub mod running_tests {
     use crate::state::key_event::tests::Environment;
     use rand::Rng;
 
+    /// Generates a Running state that contains this many domains.
     pub fn gen_running_state(num_domains: usize) -> RunningContractState {
         let epoch_id = EpochId::new(rand::thread_rng().gen());
         let domains = gen_domain_registry(num_domains);
@@ -288,9 +307,7 @@ pub mod running_tests {
             {
                 env.set_signer(account_id);
                 let res = state.vote_new_parameters(&proposal).unwrap();
-                if i + 1 < state.parameters.threshold().value() as usize {
-                    assert!(res.is_none());
-                } else if num_domains == 0 {
+                if i + 1 < state.parameters.threshold().value() as usize || num_domains == 0 {
                     assert!(res.is_none());
                 } else {
                     resharing = Some(res.unwrap());
