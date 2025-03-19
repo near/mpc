@@ -10,19 +10,19 @@ use near_sdk::{env, log, near};
 use near_sdk::{BlockHeight, PublicKey};
 use std::collections::BTreeSet;
 
-/// Stores the information for the current key event:
-/// - the epoch_id for which the new keyshares shall be valid.
-/// - the proposed threshold parameters
-/// - the key event threshold
-/// - the current instance of the key event
-/// - a leader order, pseudo-randomly generated from `env::random_seed()` and `epoch_id`.
+/// Stores the information for the current key generation or resharing.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone)]
 pub struct KeyEvent {
+    /// The epoch ID that we're generating or resharing keys for.
     epoch_id: EpochId,
+    /// The domain that we're generating or resharing the key for.
     domain: DomainConfig,
+    /// The participants and threshold that shall participate in the key event.
     parameters: ThresholdParameters,
+    /// If exists, the current attempt to generate or reshare the key.
     instance: Option<KeyEventInstance>,
+    /// The ID of the next attempt to generate or reshare the key.
     next_attempt_id: AttemptId,
 }
 
@@ -112,7 +112,16 @@ impl KeyEvent {
     /// Casts a vote to abort the current keygen instance.
     /// A new instance needs to be started later to start a new keygen attempt.
     pub fn vote_abort(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
-        self.verify_vote(&key_event_id)?;
+        let candidate = self.verify_vote(&key_event_id)?;
+        if self
+            .instance
+            .as_ref()
+            .unwrap()
+            .completed
+            .contains(&candidate)
+        {
+            return Err(VoteError::VoteAlreadySubmitted.into());
+        }
         self.instance = None;
         Ok(())
     }
@@ -143,20 +152,32 @@ impl KeyEvent {
         Ok(candidate)
     }
 
-    #[cfg(test)]
-    pub fn current_key_event_id(&self) -> KeyEventId {
-        let instance = self.instance.as_ref().unwrap();
-        KeyEventId::new(self.epoch_id, self.domain.id, instance.attempt_id)
+    pub fn current_key_event_id(&self) -> Option<KeyEventId> {
+        let instance = self.instance.as_ref()?;
+        if instance.expires_on <= env::block_height() {
+            return None;
+        }
+        Some(KeyEventId::new(
+            self.epoch_id,
+            self.domain.id,
+            instance.attempt_id,
+        ))
     }
 
     #[cfg(test)]
     pub fn is_active(&self) -> bool {
-        self.instance.is_some()
+        self.current_key_event_id().is_some()
+    }
+
+    #[cfg(test)]
+    pub fn num_completed(&self) -> usize {
+        assert!(self.is_active());
+        self.instance.as_ref().unwrap().completed.len()
     }
 }
 
 #[derive(Debug, PartialEq)]
-enum VoteSuccessResult {
+pub enum VoteSuccessResult {
     /// Voted successfully, returning the number of votes.
     Voted(usize),
     /// Participants disagreed on the public key, vote failed.
@@ -178,7 +199,7 @@ impl KeyEventInstance {
         KeyEventInstance {
             attempt_id,
             started_in: env::block_height(),
-            expires_on: env::block_height() + timeout_blocks,
+            expires_on: env::block_height() + 1 + timeout_blocks,
             completed: BTreeSet::new(),
             public_key: None,
         }
@@ -214,16 +235,11 @@ impl KeyEventInstance {
 
 #[cfg(test)]
 pub mod tests {
-    use super::AuthenticatedLeader;
-    use crate::primitives::key_state::tests::gen_parameters_proposal;
-    use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId};
-    use crate::primitives::participants::{AuthenticatedParticipantId, ParticipantId};
+    use crate::primitives::participants::ParticipantId;
     use crate::primitives::test_utils::{gen_account_id, gen_seed};
-    use crate::state::key_event::{InstanceStatus, KeyEvent, KeyEventInstance, Tally};
+    use crate::state::key_event::KeyEvent;
     use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, BlockHeight};
     use rand::Rng;
-    use std::collections::BTreeSet;
-    use std::mem;
 
     pub struct Environment {
         pub signer: AccountId,

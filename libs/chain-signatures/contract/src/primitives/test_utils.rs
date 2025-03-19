@@ -1,8 +1,6 @@
-use super::domain::{DomainConfig, DomainRegistry};
-use crate::primitives::key_state::{AttemptId, EpochId};
 use crate::primitives::participants::{ParticipantInfo, Participants};
 use crate::primitives::thresholds::Threshold;
-use crate::primitives::{key_state::KeyEventId, thresholds::ThresholdParameters};
+use crate::primitives::thresholds::ThresholdParameters;
 use legacy_contract::primitives::CandidateInfo;
 use near_sdk::{AccountId, CurveType, PublicKey};
 use rand::{distributions::Uniform, Rng};
@@ -112,11 +110,6 @@ pub fn gen_seed() -> [u8; 32] {
     let mut seed = [0u8; 32];
     rng.fill(&mut seed);
     seed
-}
-
-pub fn gen_key_event_id() -> KeyEventId {
-    let epoch_id: u64 = rand::thread_rng().gen();
-    KeyEventId::new(EpochId::new(epoch_id), AttemptId::new())
 }
 
 pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {

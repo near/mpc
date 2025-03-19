@@ -211,7 +211,7 @@ impl VersionedMpcContract {
             }
         };
 
-        if request.key_version > self.latest_key_version() {
+        if request.key_version > self.latest_key_version(None) {
             env::panic_str(&SignError::UnsupportedKeyVersion.to_string());
         }
 
@@ -283,37 +283,26 @@ impl VersionedMpcContract {
 
     /// This is the root public key combined from all the public keys of the participants.
     #[handle_result]
-    #[deprecated(note = "Use public_key_for_domain")]
-    pub fn public_key(&self) -> Result<PublicKey, Error> {
-        self.public_key_for_domain(DomainId::legacy_ecdsa_id())
-    }
-
-    #[handle_result]
-    pub fn public_key_for_domain(&self, domain_id: DomainId) -> Result<PublicKey, Error> {
+    pub fn public_key(&self, domain: Option<DomainId>) -> Result<PublicKey, Error> {
+        let domain = domain.unwrap_or_else(DomainId::legacy_ecdsa_id);
         match self {
-            Self::V0(mpc_contract) => mpc_contract.public_key(domain_id),
+            Self::V0(mpc_contract) => mpc_contract.public_key(domain),
         }
-    }
-
-    #[handle_result]
-    #[deprecated(note = "Use derived_public_key_for_domain")]
-    pub fn derive_public_key(&self, path: String) -> Result<PublicKey, Error> {
-        self.derived_public_key_for_domain(DomainId::legacy_ecdsa_id(), path, None)
     }
 
     /// This is the derived public key of the caller given path and predecessor
     /// if predecessor is not provided, it will be the caller of the contract
     #[handle_result]
-    pub fn derived_public_key_for_domain(
+    pub fn derived_public_key(
         &self,
-        domain: DomainId,
         path: String,
         predecessor: Option<AccountId>,
+        domain: Option<DomainId>,
     ) -> Result<PublicKey, Error> {
         let predecessor = predecessor.unwrap_or_else(env::predecessor_account_id);
         let epsilon = derive_epsilon(&predecessor, &path);
         let derived_public_key = derive_key(
-            near_public_key_to_affine_point(self.public_key_for_domain(domain)?),
+            near_public_key_to_affine_point(self.public_key(domain)?),
             epsilon,
         );
         let encoded_point = derived_public_key.to_encoded_point(false);
@@ -326,21 +315,13 @@ impl VersionedMpcContract {
     /// Key versions refer new versions of the root key that we may choose to generate on cohort changes
     /// Older key versions will always work but newer key versions were never held by older signers
     /// Newer key versions may also add new security features, like only existing within a secure enclave
-    /// Currently only 0 is a valid key version
-    #[deprecated(note = "Use latest_domain_for_signature_scheme")]
-    pub fn latest_key_version(&self) -> u32 {
-        self.latest_domain_for_signature_scheme(SignatureScheme::Secp256k1)
+    pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
+        self.state()
+            .most_recent_domain_for_signature_scheme(
+                signature_scheme.unwrap_or(SignatureScheme::Secp256k1),
+            )
             .unwrap()
             .0 as u32
-    }
-
-    #[handle_result]
-    pub fn latest_domain_for_signature_scheme(
-        &self,
-        signature_scheme: SignatureScheme,
-    ) -> Result<DomainId, Error> {
-        self.state()
-            .most_recent_domain_for_signature_scheme(signature_scheme)
     }
 }
 
@@ -365,7 +346,7 @@ impl VersionedMpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
         // generate the expected public key
-        let pk = self.public_key()?;
+        let pk = self.public_key(None)?;
         let expected_public_key =
             derive_key(near_public_key_to_affine_point(pk), request.epsilon.scalar);
 

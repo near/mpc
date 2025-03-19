@@ -1,5 +1,5 @@
-use crate::errors::{Error, InvalidCandidateSet, InvalidParameters, InvalidState};
-use near_sdk::{env, log, near, AccountId, PublicKey};
+use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
+use near_sdk::{log, near, AccountId, PublicKey};
 use std::collections::BTreeSet;
 
 pub mod hpke {
@@ -117,7 +117,7 @@ impl Participants {
             .iter()
             .find(|(a_id, _, _)| a_id == account_id)
             .map(|(_, p_id, _)| p_id.clone())
-            .ok_or_else(|| InvalidState::NotParticipant.into())
+            .ok_or_else(|| crate::errors::InvalidState::NotParticipant.into())
     }
     pub fn info(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
         self.participants
@@ -130,7 +130,7 @@ impl Participants {
             .iter()
             .find(|(_, p_id, _)| p_id == id)
             .map(|(a_id, _, _)| a_id.clone())
-            .ok_or_else(|| InvalidState::ParticipantIndexOutOfRange.into())
+            .ok_or_else(|| crate::errors::InvalidState::ParticipantIndexOutOfRange.into())
     }
     pub fn is_participant(&self, account_id: &AccountId) -> bool {
         self.participants
@@ -219,7 +219,7 @@ pub mod tests {
             );
             assert!(participants.is_participant(account_id));
         }
-        assert_eq!(participants.len(), n as u64);
+        assert_eq!(participants.len(), n);
         for i in 0..n {
             assert!(participants.account_id(&ParticipantId(i as u32)).is_ok());
         }
@@ -232,7 +232,7 @@ pub mod tests {
     ) {
         assert_eq!(
             migrated_participants.len(),
-            legacy_candidates.candidates.len() as u64
+            legacy_candidates.candidates.len()
         );
         for (account_id, info) in &legacy_candidates.candidates {
             assert!(migrated_participants.is_participant(account_id));
@@ -263,7 +263,7 @@ pub mod tests {
         migrated_participants: &Participants,
     ) {
         assert_eq!(
-            legacy_participants.participants.len() as u64,
+            legacy_participants.participants.len(),
             migrated_participants.len(),
         );
         assert_eq!(

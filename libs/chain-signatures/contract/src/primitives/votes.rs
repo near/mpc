@@ -36,9 +36,8 @@ impl ThresholdParametersVotes {
 #[cfg(test)]
 mod tests {
     use super::ThresholdParametersVotes;
-    use crate::primitives::key_state::{
-        tests::gen_parameters_proposal, AuthenticatedParticipantId,
-    };
+    use crate::primitives::key_state::AuthenticatedParticipantId;
+    use crate::primitives::test_utils::gen_threshold_params;
     use rand::Rng;
     use std::mem;
 
@@ -46,11 +45,11 @@ mod tests {
     fn test_voting_and_removal() {
         let id: u64 = rand::thread_rng().gen();
         let participant: AuthenticatedParticipantId = unsafe { mem::transmute_copy(&id) };
-        let mut ksv = ThresholdParametersVotes::new();
-        let ksp = gen_parameters_proposal(None);
-        assert_eq!(ksv.vote(&ksp, &participant), 1);
-        assert_eq!(ksv.vote(&ksp, &participant), 1);
+        let mut votes = ThresholdParametersVotes::default();
+        let params = gen_threshold_params(30);
+        assert_eq!(votes.vote(&params, &participant), 1);
+        assert_eq!(votes.vote(&params, &participant), 1);
         let participant: AuthenticatedParticipantId = unsafe { mem::transmute_copy(&(id + 1)) };
-        assert_eq!(ksv.vote(&ksp, &participant), 2);
+        assert_eq!(votes.vote(&params, &participant), 2);
     }
 }

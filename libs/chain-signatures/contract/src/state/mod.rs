@@ -38,7 +38,7 @@ impl ProtocolContractState {
             }
             ProtocolContractState::Running(state) => Ok(state.parameters.threshold()),
             ProtocolContractState::Resharing(state) => {
-                Ok(state.resharing_key.proposed_parameters().threshold())
+                Ok(state.previous_running_state.parameters.threshold())
             }
             ProtocolContractState::NotInitialized => {
                 Err(InvalidState::UnexpectedProtocolState.into())
@@ -181,7 +181,7 @@ impl ProtocolContractState {
             }
             ProtocolContractState::Resharing(state) => {
                 AuthenticatedParticipantId::new(
-                    state.resharing_key.proposed_parameters().participants(),
+                    state.previous_running_state.parameters.participants(),
                 )?;
             }
             ProtocolContractState::NotInitialized => {

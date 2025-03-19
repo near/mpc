@@ -1,10 +1,8 @@
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
 use crate::errors::Error;
-use crate::primitives::domain::AddDomainsVotes;
 use crate::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
 use crate::primitives::thresholds::ThresholdParameters;
-use crate::primitives::votes::ThresholdParametersVotes;
 use near_sdk::near;
 
 #[near(serializers=[borsh, json])]
@@ -114,189 +112,172 @@ impl ResharingContractState {
 }
 #[cfg(test)]
 mod tests {
+    use crate::primitives::domain::{AddDomainsVotes, DomainId};
     use crate::primitives::key_state::{AttemptId, KeyEventId};
     use crate::primitives::test_utils::gen_account_id;
-    use crate::primitives::test_utils::gen_legacy_resharing_state;
     use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::{find_leader, Environment};
-    use crate::state::key_event::{InstanceStatus, KeyEvent};
     use crate::state::resharing::ResharingContractState;
-    use crate::state::running::running_tests::{gen_running_state, gen_valid_ksp};
+    use crate::state::running::running_tests::{gen_running_state, gen_valid_params_proposal};
     use crate::state::running::RunningContractState;
     use near_sdk::AccountId;
     use std::collections::BTreeSet;
 
-    fn gen_resharing_state() -> (Environment, ResharingContractState) {
-        let env = Environment::new(Some(100), None, None);
-        let current_state = gen_running_state();
-        let proposal = gen_valid_ksp(&current_state.key_state);
-        let key_id = KeyEventId::new(current_state.epoch_id(), AttemptId::new());
-        let event_state = KeyEvent::new(key_id.epoch_id(), proposal);
+    fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContractState) {
+        let mut env = Environment::new(Some(100), None, None);
+        let mut running = gen_running_state(num_domains);
+        let proposal = gen_valid_params_proposal(&running.parameters);
+        let mut resharing_state = None;
+        let voting_participants = running.parameters.participants().participants()
+            [0..running.parameters.threshold().value() as usize]
+            .to_vec();
+        for (account, _, _) in voting_participants {
+            env.set_signer(&account);
+            assert!(resharing_state.is_none());
+            resharing_state = running.vote_new_parameters(&proposal).unwrap();
+        }
         (
             env,
-            ResharingContractState {
-                current_state,
-                event_state,
-            },
+            resharing_state.expect("Should've transitioned into resharing"),
         )
     }
 
-    #[test]
-    fn test_resharing_contract_state() {
-        let (mut env, mut state) = gen_resharing_state();
+    fn test_resharing_contract_state_for(num_domains: usize) {
+        println!("Testing with {} domains", num_domains);
+        let (mut env, mut state) = gen_resharing_state(num_domains);
         let candidates: BTreeSet<AccountId> = state
-            .event_state
-            .proposed_threshold_parameters()
+            .resharing_key
+            .proposed_parameters()
             .participants()
             .participants()
             .iter()
             .map(|(aid, _, _)| aid.clone())
             .collect();
-        let key_event = state.event_state.current_key_event_id();
-        let leader = find_leader(&key_event.attempt(), &state.event_state);
-        for c in &candidates {
-            env.set_signer(c);
-            // verify that each candidate is authorized
-            assert!(state.event_state.authenticate_candidate().is_ok());
-            // verify that no votes are casted before the reshare started.
-            assert!(state.vote_reshared(key_event.clone(), 100).is_err());
-            assert!(state.vote_abort(key_event.clone(), 100).is_err());
-            if *c != leader.0 {
-                assert!(state.start(100).is_err());
+
+        let mut resulting_running_state: Option<RunningContractState> = None;
+        for i in 0..num_domains {
+            println!("Testing domain {}", i);
+            assert!(!state.resharing_key.is_active());
+            let first_key_event_id = KeyEventId {
+                attempt_id: AttemptId::new(),
+                domain_id: state
+                    .previous_running_state
+                    .domains
+                    .get_domain_by_index(i)
+                    .unwrap()
+                    .id,
+                epoch_id: state.prospective_epoch_id(),
+            };
+            let leader = find_leader(&state.resharing_key);
+            for c in &candidates {
+                env.set_signer(c);
+                // verify that no votes can be cast before the resharing started.
+                assert!(state.vote_reshared(first_key_event_id.clone()).is_err());
+                assert!(state.vote_abort(first_key_event_id.clone()).is_err());
+                if *c != leader.0 {
+                    assert!(state.start(1).is_err());
+                }
+            }
+            // start the resharing; verify that the resharing is for the right epoch and domain ID.
+            env.set_signer(&leader.0);
+            assert!(state.start(0).is_ok());
+            let key_event = state.resharing_key.current_key_event_id().unwrap();
+            assert_eq!(key_event, first_key_event_id);
+
+            // check that randos can't vote.
+            for _ in 0..20 {
+                env.set_signer(&gen_account_id());
+                assert!(state.vote_reshared(key_event.clone()).is_err());
+                assert!(state.vote_abort(key_event.clone()).is_err());
+            }
+
+            // check that timing out will abort the instance
+            env.advance_block_height(1);
+            assert!(!state.resharing_key.is_active());
+            for c in &candidates {
+                env.set_signer(c);
+                assert!(state.vote_reshared(key_event.clone()).is_err());
+                assert!(state.vote_abort(key_event.clone()).is_err());
+                assert!(!state.resharing_key.is_active());
+            }
+
+            // assert that votes for a different resharings do not count
+            env.set_signer(&leader.0);
+            assert!(state.start(0).is_ok());
+            let key_event = state.resharing_key.current_key_event_id().unwrap();
+            let bad_key_events = [
+                KeyEventId::new(
+                    key_event.epoch_id,
+                    key_event.domain_id,
+                    key_event.attempt_id.next(),
+                ),
+                KeyEventId::new(
+                    key_event.epoch_id,
+                    DomainId(key_event.domain_id.0 + 1),
+                    key_event.attempt_id,
+                ),
+                KeyEventId::new(
+                    key_event.epoch_id.next(),
+                    key_event.domain_id,
+                    key_event.attempt_id,
+                ),
+            ];
+            for bad_key_event in bad_key_events {
+                for c in &candidates {
+                    env.set_signer(c);
+                    assert!(state.vote_reshared(bad_key_event.clone()).is_err());
+                    assert!(state.vote_abort(bad_key_event.clone()).is_err());
+                }
+            }
+            assert_eq!(state.resharing_key.num_completed(), 0);
+
+            // check that vote_abort immediately causes failure.
+            env.advance_block_height(1);
+            env.set_signer(&leader.0);
+            assert!(state.start(0).is_ok());
+            let key_event = state.resharing_key.current_key_event_id().unwrap();
+            env.set_signer(candidates.iter().next().unwrap());
+            assert!(state.vote_abort(key_event.clone()).is_ok());
+            assert!(!state.resharing_key.is_active());
+
+            // assert that valid votes get counted correctly
+            env.set_signer(&leader.0);
+            assert!(state.start(0).is_ok());
+            let key_event = state.resharing_key.current_key_event_id().unwrap();
+            for (i, c) in candidates.clone().into_iter().enumerate() {
+                env.set_signer(&c);
+                assert!(resulting_running_state.is_none());
+                assert_eq!(state.resharing_key.num_completed(), i);
+                resulting_running_state = state.vote_reshared(key_event.clone()).unwrap();
+                assert!(state.vote_abort(key_event.clone()).is_err());
             }
         }
-        // check that some randos can't vote
-        for _ in 0..20 {
-            env.set_signer(&gen_account_id());
-            assert!(state.event_state.authenticate_candidate().is_err());
-            assert!(state.vote_reshared(key_event.clone(), 100).is_err());
-            assert!(state.vote_abort(key_event.clone(), 100).is_err());
-            assert!(state.start(100).is_err());
-        }
-        // start the keygen:
-        env.set_signer(&leader.0);
-        assert!(state.start(0).is_ok());
 
-        // assert that timed out votes do not count
-        env.advance_block_height(1);
-        for c in &candidates {
-            env.set_signer(c);
-            assert!(state.vote_reshared(key_event.clone(), 0).is_err());
-            assert!(state.vote_abort(key_event.clone(), 0).is_err());
-        }
-
-        // check that some randos can't vote
-        env.block_height -= 1;
-        env.set();
-        for _ in 0..20 {
-            env.set_signer(&gen_account_id());
-            assert!(state.event_state.authenticate_candidate().is_err());
-            assert!(state.vote_reshared(key_event.clone(), 100).is_err());
-            assert!(state.vote_abort(key_event.clone(), 100).is_err());
-            assert!(state.start(100).is_err());
-        }
-
-        // assert that votes for a different reshare do not count
-        let ke = KeyEventId::new(key_event.epoch_id(), key_event.attempt().next());
-        for c in &candidates {
-            env.set_signer(c);
-            assert!(state.vote_reshared(ke.clone(), 10).is_err());
-            assert!(state.vote_abort(ke.clone(), 10).is_err());
-        }
-        let ke = KeyEventId::new(key_event.epoch_id().next(), key_event.attempt());
-        for c in &candidates {
-            env.set_signer(c);
-            assert!(state.vote_reshared(ke.clone(), 10).is_err());
-            assert!(state.vote_abort(ke.clone(), 10).is_err());
-        }
-
-        // find leader for next attempt
-        env.advance_block_height(100);
-        let leader = find_leader(&key_event.attempt().next(), &state.event_state);
-        env.set_signer(&leader.0);
-        assert!(state.start(0).is_ok());
-        let key_event = KeyEventId::new(key_event.epoch_id(), key_event.attempt().next());
-        assert_eq!(key_event, state.event_state.current_key_event_id());
-
-        // assert that valid votes get counted correctly:
-        let mut res: Option<RunningContractState> = None;
-        for (i, c) in candidates.clone().into_iter().enumerate() {
-            env.set_signer(&c);
-            res = state.vote_reshared(key_event.clone(), 0).unwrap();
-            // everybody voting for the same key
-            if ((i + 1) as u64) < state.event_state.event_threshold().value() {
-                assert!(res.is_none());
-            } else {
-                assert!(res.is_some());
-                break;
-            }
-            // assert we can't abort after voting
-            assert!(state.vote_abort(key_event.clone(), 0).is_err());
-        }
-        // assert running state is correct
-        let running_state = res.unwrap();
+        // assert that the final running state is correct
+        let running_state = resulting_running_state.unwrap();
         assert_eq!(
-            running_state.key_state.threshold(),
-            state.event_state.proposed_threshold(),
+            &running_state.parameters,
+            state.resharing_key.proposed_parameters(),
         );
+        assert_eq!(running_state.keyset.epoch_id, state.prospective_epoch_id());
+        assert_eq!(running_state.keyset.domains, state.reshared_keys);
+        assert_eq!(running_state.keyset.domains.len(), num_domains);
+        assert_eq!(running_state.domains, state.previous_running_state.domains);
         assert_eq!(
-            *running_state.key_state.participants(),
-            *state
-                .event_state
-                .proposed_threshold_parameters()
-                .participants()
+            running_state.parameters_votes,
+            ThresholdParametersVotes::default()
         );
-        assert_eq!(
-            *running_state.public_key(),
-            *state.current_state.public_key()
-        );
-        assert_eq!(running_state.key_state.key_event_id(), key_event);
-        assert_eq!(
-            running_state.key_state_votes,
-            ThresholdParametersVotes::new()
-        );
+        assert_eq!(running_state.add_domains_votes, AddDomainsVotes::default());
+    }
 
-        // assert that the instance resets after a timeout
-        env.advance_block_height(100);
-        let leader = find_leader(&key_event.attempt().next(), &state.event_state);
-        env.set_signer(&leader.0);
-        assert!(state.start(0).is_ok());
-        let key_event = KeyEventId::new(key_event.epoch_id(), key_event.attempt().next());
-        assert_eq!(key_event, state.event_state.current_key_event_id());
-        // assert that valid aborts get counted correctly:
-        for (i, c) in candidates.clone().into_iter().enumerate() {
-            env.set_signer(&c);
-            // assert we can abort
-            let x = state.vote_abort(key_event.clone(), 0).unwrap();
-            if state
-                .event_state
-                .proposed_threshold_parameters()
-                .participants()
-                .count()
-                - ((i + 1) as u64)
-                < state.event_state.event_threshold().value()
-            {
-                assert_eq!(x, InstanceStatus::Replaced);
-                let key_event = KeyEventId::new(key_event.epoch_id(), key_event.attempt().next());
-                assert_eq!(state.event_state.current_key_event_id(), key_event);
-                break;
-            } else {
-                assert_eq!(x, InstanceStatus::Pending);
-            }
-            // assert we can't abort after aborting
-            assert!(state.vote_abort(key_event.clone(), 0).is_err());
-            // assert we can't vote after aborting
-            assert!(state.vote_reshared(key_event.clone(), 0).is_err());
-        }
-        // restart the keygen
-        let attempt = key_event.attempt().next();
-        let leader = find_leader(&attempt, &state.event_state);
-        println!("{:?}", state.event_state.current_key_event_id());
-        println!("{:?}", attempt);
-        env.set_signer(&leader.0);
-        let res = state.start(0);
-        println!("{:?}", res);
-        println!("{:?}", state.event_state.current_key_event_id());
-        assert!(res.is_ok());
+    #[test]
+    fn test_resharing_contract_state() {
+        test_resharing_contract_state_for(1);
+        test_resharing_contract_state_for(2);
+        test_resharing_contract_state_for(3);
+        test_resharing_contract_state_for(4);
+        test_resharing_contract_state_for(5);
     }
 }
+
+// todo: add resharing re-proposal test.

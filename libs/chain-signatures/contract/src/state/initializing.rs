@@ -100,40 +100,16 @@ impl From<&legacy_contract::InitializingContractState> for InitializingContractS
 #[cfg(test)]
 mod tests {
     use super::InitializingContractState;
-    use crate::primitives::domain::tests::{gen_domain_registry, gen_domains_to_add};
-    use crate::primitives::domain::DomainId;
-    use crate::primitives::key_state::{tests::gen_parameters_proposal, EpochId};
+    use crate::primitives::domain::tests::gen_domains_to_add;
+    use crate::primitives::domain::{AddDomainsVotes, DomainId};
     use crate::primitives::key_state::{AttemptId, KeyEventId};
-    use crate::primitives::test_utils::{
-        gen_account_id, gen_legacy_initializing_state, gen_pk, gen_threshold_params,
-    };
+    use crate::primitives::test_utils::{gen_account_id, gen_pk};
     use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::{find_leader, Environment};
-    use crate::state::key_event::{InstanceStatus, KeyEvent};
     use crate::state::running::running_tests::gen_running_state;
     use crate::state::running::RunningContractState;
     use near_sdk::AccountId;
-    use rand::Rng;
     use std::collections::BTreeSet;
-
-    #[test]
-    fn test_migration() {
-        let n = 200;
-        let k = 2;
-        let legacy_state = gen_legacy_initializing_state(n, k);
-        let state: InitializingContractState = (&legacy_state).into();
-        assert_eq!(
-            state
-                .keygen
-                .proposed_threshold_parameters()
-                .threshold()
-                .value(),
-            k as u64
-        );
-        assert_eq!(state.keygen.event_threshold().value(), n as u64);
-        assert_eq!(state.keygen.current_key_event_id().epoch_id().get(), 0u64);
-        assert_eq!(state.keygen.current_key_event_id().attempt().get(), 0u64);
-    }
 
     fn gen_initializing_state(
         num_domains: usize,
@@ -144,19 +120,20 @@ mod tests {
         let domains_to_add = gen_domains_to_add(&running.domains, num_domains - num_generated);
 
         let mut initializing_state = None;
-        for (account, _, _) in &running.parameters.participants().participants()
+        let voting_participants = running.parameters.participants().participants()
             [0..running.parameters.threshold().value() as usize]
-        {
-            env.set_signer(account);
+            .to_vec();
+        for (account, _, _) in voting_participants {
+            env.set_signer(&account);
             assert!(initializing_state.is_none());
-            initializing_state = running.vote_add_domains(domains_to_add).unwrap();
+            initializing_state = running.vote_add_domains(domains_to_add.clone()).unwrap();
         }
         let initializing_state = initializing_state
             .expect("Enough votes to add domains should transition into initializing");
         (env, initializing_state)
     }
 
-    fn test_initializing_contract_state(num_domains: usize, num_already_generated: usize) {
+    fn test_initializing_contract_state_for(num_domains: usize, num_already_generated: usize) {
         let (mut env, mut state) = gen_initializing_state(num_domains, num_already_generated);
         let candidates: BTreeSet<AccountId> = state
             .generating_key
@@ -189,7 +166,7 @@ mod tests {
             // start the keygen; verify that the keygen is for the right epoch and domain ID.
             env.set_signer(&leader.0);
             assert!(state.start(0).is_ok());
-            let key_event = state.generating_key.current_key_event_id();
+            let key_event = state.generating_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
             // check that randos can't vote.
@@ -201,6 +178,7 @@ mod tests {
 
             // check that timing out will abort the instance
             env.advance_block_height(1);
+            assert!(!state.generating_key.is_active());
             for c in &candidates {
                 env.set_signer(c);
                 assert!(state.vote_pk(key_event.clone(), gen_pk()).is_err());
@@ -211,7 +189,7 @@ mod tests {
             // assert that votes for a different keygen do not count
             env.set_signer(&leader.0);
             assert!(state.start(0).is_ok());
-            let key_event = state.generating_key.current_key_event_id();
+            let key_event = state.generating_key.current_key_event_id().unwrap();
             let bad_key_events = [
                 KeyEventId::new(
                     key_event.epoch_id,
@@ -220,7 +198,7 @@ mod tests {
                 ),
                 KeyEventId::new(
                     key_event.epoch_id,
-                    DomainId(key_event.domain_id.0),
+                    DomainId(key_event.domain_id.0 + 1),
                     key_event.attempt_id,
                 ),
                 KeyEventId::new(
@@ -236,6 +214,7 @@ mod tests {
                     assert!(state.vote_abort(bad_key_event.clone()).is_err());
                 }
             }
+            assert_eq!(state.generating_key.num_completed(), 0);
 
             // assert that voting for different keys will fail
             for (j, account) in candidates.iter().enumerate() {
@@ -253,7 +232,7 @@ mod tests {
             // check that vote_abort immediately causes failure.
             env.set_signer(&leader.0);
             assert!(state.start(0).is_ok());
-            let key_event = state.generating_key.current_key_event_id();
+            let key_event = state.generating_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
             assert!(state.vote_abort(key_event.clone()).is_ok());
             assert!(!state.generating_key.is_active());
@@ -261,11 +240,12 @@ mod tests {
             // assert that valid votes get counted correctly
             env.set_signer(&leader.0);
             assert!(state.start(0).is_ok());
-            let key_event = state.generating_key.current_key_event_id();
+            let key_event = state.generating_key.current_key_event_id().unwrap();
             let pk = gen_pk();
             for (i, c) in candidates.clone().into_iter().enumerate() {
                 env.set_signer(&c);
                 assert!(resulting_running_state.is_none());
+                assert_eq!(state.generating_key.num_completed(), i);
                 resulting_running_state = state.vote_pk(key_event.clone(), pk.clone()).unwrap();
                 assert!(state.vote_abort(key_event.clone()).is_err());
             }
@@ -282,8 +262,22 @@ mod tests {
         assert_eq!(running_state.keyset.domains.len(), num_domains);
         assert_eq!(running_state.domains, state.domains);
         assert_eq!(
-            running_state.key_state_votes,
-            ThresholdParametersVotes::new()
+            running_state.parameters_votes,
+            ThresholdParametersVotes::default()
         );
+        assert_eq!(running_state.add_domains_votes, AddDomainsVotes::default());
+    }
+
+    #[test]
+    fn test_initializing_contract_state() {
+        for num_domains in 1..=5 {
+            for num_already_generated in 0..num_domains {
+                println!(
+                    "Testing {} domains, {} already generated",
+                    num_domains, num_already_generated
+                );
+                test_initializing_contract_state_for(num_domains, num_already_generated);
+            }
+        }
     }
 }

@@ -119,20 +119,11 @@ impl AuthenticatedParticipantId {
 
 #[cfg(test)]
 pub mod tests {
-    use super::DKState;
-    use crate::primitives::key_state::AttemptId;
-    use crate::primitives::key_state::EpochId;
-    use crate::primitives::key_state::KeyEventId;
-    use crate::primitives::key_state::KeyStateProposal;
-    use crate::primitives::participants::tests::assert_candidate_migration;
-    use crate::primitives::participants::tests::assert_participant_migration;
+    use crate::primitives::domain::DomainId;
+    use crate::primitives::key_state::{AttemptId, AuthenticatedParticipantId, KeyForDomain};
+    use crate::primitives::key_state::{EpochId, Keyset};
     use crate::primitives::test_utils::gen_account_id;
-    use crate::primitives::test_utils::gen_legacy_initializing_state;
-    use crate::primitives::test_utils::gen_legacy_resharing_state;
-    use crate::primitives::test_utils::gen_legacy_running_state;
-    use crate::primitives::test_utils::min_thrershold;
-    use crate::primitives::test_utils::{gen_key_event_id, gen_pk, gen_threshold_params};
-    use crate::primitives::thresholds::DKGThreshold;
+    use crate::primitives::test_utils::{gen_pk, gen_threshold_params};
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rand::Rng;
@@ -154,111 +145,44 @@ pub mod tests {
     }
 
     #[test]
-    fn test_key_event_id() {
-        let id = rand::thread_rng().gen();
-        let epoch_id = EpochId::new(id);
-        let key_event_id = KeyEventId::new(epoch_id.clone(), AttemptId::new());
-        assert_eq!(epoch_id, key_event_id.epoch_id());
-        assert_eq!(id, key_event_id.epoch_id().get());
-        assert_eq!(AttemptId::new(), key_event_id.attempt());
-        assert_eq!(0, key_event_id.attempt().get());
-        assert_eq!(KeyEventId::new_migrated_key(5).epoch_id(), EpochId::new(5));
-        assert_eq!(KeyEventId::new_migrated_key(5).attempt().get(), 0);
+    fn test_keyset() {
+        let domain_id0 = DomainId(0);
+        let domain_id1 = DomainId(3);
+        let key0 = gen_pk();
+        let key1 = gen_pk();
+        let keyset = Keyset::new(
+            EpochId::new(5),
+            vec![
+                KeyForDomain {
+                    domain_id: domain_id0,
+                    key: key0.clone(),
+                    attempt: AttemptId::new(),
+                },
+                KeyForDomain {
+                    domain_id: domain_id1,
+                    key: key1.clone(),
+                    attempt: AttemptId::new(),
+                },
+            ],
+        );
+        assert_eq!(keyset.public_key(domain_id0).unwrap(), key0);
+        assert_eq!(keyset.public_key(domain_id1).unwrap(), key1);
+        assert!(keyset.public_key(DomainId(1)).is_err());
     }
 
     #[test]
-    fn test_key_state_proposal() {
-        let proposed_threshold_parameters = gen_threshold_params(MAX_N);
-        for i in 0..proposed_threshold_parameters.participants().len() {
-            let key_event_threshold = DKGThreshold::new(i);
-            assert!(KeyStateProposal::new(
-                proposed_threshold_parameters.clone(),
-                key_event_threshold
-            )
-            .is_err());
-        }
-        let candidates = proposed_threshold_parameters.participants();
-        let i = proposed_threshold_parameters.participants().len();
-        let key_event_threshold = DKGThreshold::new(i);
-        let ksp = KeyStateProposal::new(proposed_threshold_parameters.clone(), key_event_threshold);
-        assert!(ksp.is_ok());
-        let ksp = ksp.unwrap();
-        assert!(ksp.validate().is_ok());
-        assert_eq!(ksp.key_event_threshold().value(), i);
-        // test authentication:
-        KeyStateProposal::new(
-            proposed_threshold_parameters.clone(),
-            DKGThreshold::new(proposed_threshold_parameters.participants().len()),
-        )
-        .unwrap();
-        for (account_id, _, _) in candidates.participants() {
+    fn test_authenticated_participant_id() {
+        let proposed_parameters = gen_threshold_params(MAX_N);
+        assert!(proposed_parameters.validate().is_ok());
+        for (account_id, _, _) in proposed_parameters.participants().participants() {
             let mut context = VMContextBuilder::new();
             context.signer_account_id(account_id.clone());
             testing_env!(context.build());
+            assert!(AuthenticatedParticipantId::new(proposed_parameters.participants()).is_ok());
             let mut context = VMContextBuilder::new();
             context.signer_account_id(gen_account_id());
             testing_env!(context.build());
-        }
-    }
-
-    #[test]
-    fn test_key_state_proposal_migration_initializing() {
-        let n = rand::thread_rng().gen_range(2..MAX_N);
-        let min_k = min_thrershold(n);
-        // we must allow previously invalid parameters as well
-        let k_invalid = rand::thread_rng().gen_range(1..min_k);
-        let k_valid = rand::thread_rng().gen_range(min_k..n + 1);
-        for k in [k_invalid, k_valid] {
-            let legacy_state = gen_legacy_initializing_state(n, k);
-            let migrated_ksp: KeyStateProposal = (&legacy_state).into();
-            assert_eq!(migrated_ksp.key_event_threshold().value(), n as u64);
-            let found = migrated_ksp.proposed_threshold_parameters();
-            assert_eq!(found.threshold().value(), k as u64);
-            assert_eq!(found.participants().len(), n as u64);
-            assert_candidate_migration(&legacy_state.candidates, found.participants());
-        }
-    }
-
-    #[test]
-    fn test_dkstate_migration_running() {
-        let n = rand::thread_rng().gen_range(2..MAX_N);
-        let min_k = min_thrershold(n);
-        // we must allow previously invalid parameters as well
-        let k_invalid = rand::thread_rng().gen_range(1..min_k);
-        let k_valid = rand::thread_rng().gen_range(min_k..n + 1);
-        for k in [k_invalid, k_valid] {
-            let legacy_state = gen_legacy_running_state(n, k);
-            let migrated_dkg: DKState = (&legacy_state).into();
-            assert_eq!(migrated_dkg.threshold().value(), k as u64);
-            assert_eq!(*migrated_dkg.public_key(), legacy_state.public_key);
-            assert_eq!(migrated_dkg.epoch_id().get(), legacy_state.epoch);
-            assert_participant_migration(&legacy_state.participants, migrated_dkg.participants());
-        }
-    }
-
-    #[test]
-    fn test_dkstate_key_state_proposal_migration_resharing() {
-        let n = rand::thread_rng().gen_range(2..MAX_N);
-        let min_k = min_thrershold(n);
-        // we must allow previously invalid paramters as well
-        let k_invalid = rand::thread_rng().gen_range(1..min_k);
-        let k_valid = rand::thread_rng().gen_range(min_k..n + 1);
-        for k in [k_invalid, k_valid] {
-            let legacy_state = gen_legacy_resharing_state(n, k);
-            let migrated_dkg: DKState = (&legacy_state).into();
-            assert_eq!(migrated_dkg.threshold().value(), k as u64);
-            assert_eq!(*migrated_dkg.public_key(), legacy_state.public_key);
-            assert_eq!(migrated_dkg.epoch_id().get(), legacy_state.old_epoch);
-            assert_participant_migration(
-                &legacy_state.old_participants,
-                migrated_dkg.participants(),
-            );
-            let migrated_ksp: KeyStateProposal = (&legacy_state).into();
-            let found = migrated_ksp.proposed_threshold_parameters();
-            assert_eq!(found.threshold().value(), k as u64);
-            assert_eq!(migrated_ksp.key_event_threshold().value(), n as u64);
-            assert_eq!(found.participants().len(), n as u64);
-            assert_participant_migration(&legacy_state.new_participants, found.participants());
+            assert!(AuthenticatedParticipantId::new(proposed_parameters.participants()).is_err());
         }
     }
 }

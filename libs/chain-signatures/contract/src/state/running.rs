@@ -18,7 +18,7 @@ pub struct RunningContractState {
     pub domains: DomainRegistry,
     pub keyset: Keyset,
     pub parameters: ThresholdParameters,
-    pub key_state_votes: ThresholdParametersVotes,
+    pub parameters_votes: ThresholdParametersVotes,
     pub add_domains_votes: AddDomainsVotes,
 }
 
@@ -38,7 +38,7 @@ impl From<&legacy_contract::RunningContractState> for RunningContractState {
                 state.threshold,
                 state.participants.clone(),
             ),
-            key_state_votes: ThresholdParametersVotes::default(),
+            parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: AddDomainsVotes::default(),
         }
     }
@@ -50,7 +50,7 @@ impl RunningContractState {
             domains,
             keyset,
             parameters,
-            key_state_votes: ThresholdParametersVotes::default(),
+            parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: AddDomainsVotes::default(),
         }
     }
@@ -149,7 +149,7 @@ impl RunningContractState {
             }
         }
         // finally, vote. Propagate any errors
-        let n_votes = self.key_state_votes.vote(proposal, &participant);
+        let n_votes = self.parameters_votes.vote(proposal, &participant);
         Ok(self.parameters.threshold().value() <= n_votes)
     }
 
@@ -186,15 +186,12 @@ pub mod running_tests {
     use std::collections::BTreeSet;
 
     use super::RunningContractState;
-    use crate::primitives::key_state::tests::gen_parameters_proposal;
-    use crate::primitives::key_state::{
-        AttemptId, DKState, EpochId, KeyEventId, KeyForDomain, KeyStateProposal,
-    };
+    use crate::primitives::domain::tests::gen_domain_registry;
+    use crate::primitives::domain::AddDomainsVotes;
+    use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::{
-        gen_domain_registry, gen_participant, gen_pk, gen_threshold_params,
-    };
-    use crate::primitives::thresholds::{DKGThreshold, Threshold, ThresholdParameters};
+    use crate::primitives::test_utils::{gen_participant, gen_pk, gen_threshold_params};
+    use crate::primitives::thresholds::{Threshold, ThresholdParameters};
     use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
     use rand::Rng;
@@ -203,7 +200,7 @@ pub mod running_tests {
         let epoch_id = EpochId::new(rand::thread_rng().gen());
         let domains = gen_domain_registry(num_domains);
 
-        let keys = Vec::new();
+        let mut keys = Vec::new();
         for domain in domains.domains() {
             let mut attempt = AttemptId::default();
             let x: usize = rand::thread_rng().gen();
@@ -211,7 +208,6 @@ pub mod running_tests {
             for _ in 0..x {
                 attempt = attempt.next();
             }
-            let key_event_id = KeyEventId::new(epoch_id, domain.id, attempt);
             keys.push(KeyForDomain {
                 attempt,
                 domain_id: domain.id,
@@ -220,14 +216,13 @@ pub mod running_tests {
         }
         let max_n = 300;
         let threshold_parameters = gen_threshold_params(max_n);
-        let public_key = gen_pk();
         RunningContractState::new(domains, Keyset::new(epoch_id, keys), threshold_parameters)
     }
 
     pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParameters {
         let mut rng = rand::thread_rng();
         let current_k = params.threshold().value() as usize;
-        let current_n = params.participants().count() as usize;
+        let current_n = params.participants().len();
         let n_old_participants: usize = rng.gen_range(current_k..current_n + 1);
         let current_participants = params.participants();
         let mut old_ids: BTreeSet<ParticipantId> = current_participants
@@ -263,54 +258,62 @@ pub mod running_tests {
     #[test]
     fn test_running() {
         for num_domains in 0..5 {
+            println!("Testing with {} domains", num_domains);
             let mut state = gen_running_state(num_domains);
             let mut env = Environment::new(None, None, None);
             let participants = state.parameters.participants().clone();
-            // assert that random proposals fail:
-
+            // Assert that random proposals get rejected.
             for (account_id, _, _) in participants.participants() {
-                let ksp = gen_parameters_proposal(None);
+                let ksp = gen_threshold_params(30);
                 env.set_signer(account_id);
                 assert!(state.vote_new_parameters(&ksp).is_err());
             }
+            // Assert that disagreeing proposals do not reach concensus.
             for (account_id, _, _) in participants.participants() {
                 env.set_signer(account_id);
                 let proposal = gen_valid_params_proposal(&state.parameters);
-                assert!(!state.vote_new_parameters(&proposal).unwrap())
+                assert!(state.vote_new_parameters(&proposal).unwrap().is_none());
             }
-            let proposal = gen_valid_params_proposal(&state.key_state);
 
-            for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
+            // Now let's vote for agreeing proposals.
+            let proposal = gen_valid_params_proposal(&state.parameters);
+
+            let original_epoch_id = state.keyset.epoch_id;
+            let mut resharing = None;
+            for (i, (account_id, _, _)) in participants
+                .participants()
+                .iter()
+                .enumerate()
+                .take(state.parameters.threshold().value() as usize)
+            {
                 env.set_signer(account_id);
                 let res = state.vote_new_parameters(&proposal).unwrap();
                 if i + 1 < state.parameters.threshold().value() as usize {
-                    assert!(!res);
+                    assert!(res.is_none());
+                } else if num_domains == 0 {
+                    assert!(res.is_none());
                 } else {
-                    assert!(res);
+                    resharing = Some(res.unwrap());
                 }
             }
-            let (account_id, _, _) = &participants.participants()[0];
-            env.set_signer(account_id);
-            let resharing = state.vote_new_parameters(&proposal).unwrap().unwrap();
-            assert_eq!(
-                resharing.previous_running_state.parameters,
-                state.parameters
-            );
-            let ke = resharing.resharing_key;
-            assert_eq!(
-                ke.current_key_event_id(),
-                KeyEventId::new(
-                    state.epoch_id().next(),
-                    resharing
-                        .previous_running_state
-                        .domains
-                        .get_domain_by_index(0)
-                        .unwrap()
-                        .id,
-                    AttemptId::new()
-                )
-            );
-            assert_eq!(ke.proposed_parameters(), *proposal.proposed_parameters());
+            if num_domains == 0 {
+                // If there are no domains, we should transition directly to Running with a higher
+                // epoch ID, not resharing.
+                assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
+                assert_eq!(state.parameters_votes, ThresholdParametersVotes::default());
+                assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
+            } else {
+                let resharing = resharing.unwrap();
+                assert_eq!(
+                    resharing.previous_running_state.parameters,
+                    state.parameters
+                );
+                assert_eq!(
+                    resharing.prospective_epoch_id(),
+                    state.keyset.epoch_id.next(),
+                );
+                assert_eq!(resharing.resharing_key.proposed_parameters(), &proposal);
+            }
         }
     }
 }

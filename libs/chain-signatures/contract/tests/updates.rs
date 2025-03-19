@@ -1,10 +1,12 @@
 pub mod common;
-use common::{init_env, vote_update_till_completion, CONTRACT_FILE_PATH, INVALID_CONTRACT};
+use common::{
+    init_env_secp256k1, vote_update_till_completion, CONTRACT_FILE_PATH, INVALID_CONTRACT,
+};
 
 use mpc_contract::config::Config;
-use mpc_contract::errors;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 
+use mpc_contract::state::ProtocolContractState;
 use near_workspaces::types::NearToken;
 
 pub fn dummy_contract() -> ProposeUpdateArgs {
@@ -37,7 +39,7 @@ const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(870
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
-    let (_, contract, accounts, _) = init_env().await;
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     dbg!(contract.id());
 
     // check that we can propose an update with the maximum contract size.
@@ -61,7 +63,7 @@ async fn test_propose_contract_max_size_upload() {
 
 #[tokio::test]
 async fn test_propose_update_config() {
-    let (_, contract, accounts, _) = init_env().await;
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     dbg!(contract.id());
 
     // contract should not be able to propose updates unless it's a part of the participant/voter set.
@@ -76,7 +78,7 @@ async fn test_propose_update_config() {
         .into_result()
         .unwrap_err()
         .to_string()
-        .contains(&errors::VoteError::VoterNotParticipant.to_string()));
+        .contains("not a voter"));
 
     // have each participant propose a new update:
     let new_config = Config {
@@ -105,8 +107,7 @@ async fn test_propose_update_config() {
     }
 
     let old_config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
-    let state: legacy_contract::ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
 
     // check that each participant can vote on a singular proposal and have it reflect changes:
     let first_proposal = &proposals[0];
@@ -144,7 +145,7 @@ async fn test_propose_update_config() {
 
 #[tokio::test]
 async fn test_propose_update_contract() {
-    let (_, contract, accounts, _) = init_env().await;
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     dbg!(contract.id());
 
     let execution = accounts[0]
@@ -172,13 +173,13 @@ async fn test_propose_update_contract() {
 
     dbg!(&execution);
 
-    let state: legacy_contract::ProtocolContractState = execution.json().unwrap();
+    let state: ProtocolContractState = execution.json().unwrap();
     dbg!(state);
 }
 
 #[tokio::test]
 async fn test_invalid_contract_deploy() {
-    let (_, contract, accounts, _) = init_env().await;
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     dbg!(contract.id());
 
     const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
@@ -210,13 +211,13 @@ async fn test_invalid_contract_deploy() {
         .unwrap();
 
     dbg!(&execution);
-    let state: legacy_contract::ProtocolContractState = execution.json().unwrap();
+    let state: ProtocolContractState = execution.json().unwrap();
     dbg!(state);
 }
 // todo: fix this test
 #[tokio::test]
 async fn test_propose_update_contract_many() {
-    let (_, contract, accounts, _) = init_env().await;
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     dbg!(contract.id());
 
     const PROPOSAL_COUNT: usize = 10;
@@ -245,7 +246,6 @@ async fn test_propose_update_contract_many() {
     vote_update_till_completion(&contract, &accounts, proposals.last().unwrap()).await;
 
     // Let's check that we can call into the state and see all the proposals.
-    let state: legacy_contract::ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     dbg!(state);
 }

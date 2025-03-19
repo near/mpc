@@ -1,12 +1,13 @@
 pub mod common;
-use common::init_env;
 
+use common::init_env_secp256k1;
+use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
 use serde_json::json;
 
 #[tokio::test]
 async fn test_join() -> anyhow::Result<()> {
-    let (worker, contract, accounts, _) = init_env().await;
+    let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
 
     let alice = worker.dev_create_account().await?;
 
@@ -59,7 +60,7 @@ async fn test_join() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_vote_join() -> anyhow::Result<()> {
-    let (worker, contract, accounts, _) = init_env().await;
+    let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
 
     let alice = worker.dev_create_account().await?;
     let execution = alice
@@ -125,7 +126,7 @@ async fn test_vote_join() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_vote_leave() -> anyhow::Result<()> {
-    let (worker, contract, accounts, _) = init_env().await;
+    let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
 
     let alice = worker.dev_create_account().await?;
     let bob = worker.dev_create_account().await?;
@@ -201,7 +202,7 @@ async fn test_vote_leave() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_vote_pk() -> anyhow::Result<()> {
-    let (_, contract, accounts, _) = init_env().await;
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
     let key: String = contract.view("public_key").await.unwrap().json().unwrap();
 
@@ -229,13 +230,13 @@ async fn test_vote_pk() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_vote_reshare() -> anyhow::Result<()> {
-    let (worker, contract, accounts, _) = init_env().await;
+    let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
 
     // in running state, vote current epoch will fail
     let execution = accounts[2]
         .call(contract.id(), "vote_reshared")
         .args_json(json!({
-            "key_event_id": KeyEventId::new(EpochId::new(0), AttemptId::new())
+            "key_event_id": KeyEventId::new(EpochId::new(0), DomainId::legacy_ecdsa_id(), AttemptId::new())
         }))
         .transact()
         .await?;
