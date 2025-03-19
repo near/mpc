@@ -148,7 +148,7 @@ resource "google_compute_firewall" "mainnet-mpc" {
   network = "default"
   allow {
     protocol = "tcp"
-    ports    = ["80", "3030", "24567"]
+    ports    = ["80", "3030", "8080", "24567"]
   }
   source_ranges = ["0.0.0.0/0"]
 }
