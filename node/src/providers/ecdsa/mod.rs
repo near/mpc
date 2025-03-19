@@ -14,7 +14,7 @@ use crate::db::{DBCol, SecretDB};
 use crate::indexer::participants::ContractResharingState;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
-use crate::providers::{HasParticipants, KeyshareId, SignatureProvider};
+use crate::providers::{HasParticipants, SignatureProvider};
 use crate::sign_request::{SignRequestStorage, SignatureId};
 use crate::tracking;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -105,12 +105,6 @@ pub enum EcdsaTaskId {
 impl From<EcdsaTaskId> for MpcTaskId {
     fn from(val: EcdsaTaskId) -> Self {
         MpcTaskId::EcdsaTaskId(val)
-    }
-}
-
-impl KeyshareId for KeygenOutput<Secp256k1> {
-    fn keyshare_id() -> &'static str {
-        "ecdsa"
     }
 }
 

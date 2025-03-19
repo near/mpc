@@ -20,17 +20,11 @@ use crate::config::MpcConfig;
 use crate::indexer::participants::ContractResharingState;
 use crate::primitives::{MpcTaskId, ParticipantId};
 
-/// This `keyshare_id` is used for persisting a key share.
-/// The returned value should be unique across all `SignatureProviders`.
-#[allow(dead_code)] // TODO: To be fixed in #252 follow-up
-pub trait KeyshareId {
-    fn keyshare_id() -> &'static str;
-}
 
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
 #[allow(dead_code)] // TODO: To be fixed in #252 follow-up
 pub trait SignatureProvider {
-    type KeygenOutput: KeyshareId;
+    type KeygenOutput;
     type SignatureOutput;
 
     /// Trait bound `Into<MpcTaskId>` serves as a way to see what logic needs to be added,
