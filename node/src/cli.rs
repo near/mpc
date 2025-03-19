@@ -6,7 +6,9 @@ use crate::config::{ConfigFile, IndexerConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::{real::spawn_real_indexer, IndexerAPI};
-use crate::keyshare::{local::LocalKeyshareStorage, KeyshareStorageFactory, RootKeyshareData};
+use crate::keyshare::{
+    local::LocalKeyshareStorage, KeyshareStorage, KeyshareStorageFactory, RootKeyshareData,
+};
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::tracking::{self, start_root_task};
 use crate::web::start_web_server;
@@ -239,8 +241,8 @@ impl Cli {
                 None,
                 None,
             ),
-            Cli::ImportKeyshare(cmd) => cmd.run(),
-            Cli::ExportKeyshare(cmd) => cmd.run(),
+            Cli::ImportKeyshare(cmd) => cmd.run().await,
+            Cli::ExportKeyshare(cmd) => cmd.run().await,
             Cli::GenerateTestConfigs {
                 ref output_dir,
                 ref participants,
@@ -333,7 +335,7 @@ impl Cli {
 }
 
 impl ImportKeyshareCmd {
-    pub fn run(&self) -> anyhow::Result<()> {
+    pub async fn run(&self) -> anyhow::Result<()> {
         println!("Importing keyshare to local storage...");
 
         // Parse the encryption key
@@ -361,7 +363,7 @@ impl ImportKeyshareCmd {
         let storage = LocalKeyshareStorage::new(home_dir.clone(), encryption_key_bytes);
 
         // Check for existing keyshare
-        if let Some(existing) = storage.load_sync()? {
+        if let Some(existing) = storage.load().await? {
             println!("Found existing keyshare with epoch {}", existing.epoch);
             if existing.epoch >= keyshare.epoch {
                 return Err(anyhow::anyhow!(
@@ -373,7 +375,7 @@ impl ImportKeyshareCmd {
         }
 
         // Store the keyshare
-        storage.store_sync(&keyshare)?;
+        storage.store(&keyshare).await?;
         println!("Successfully imported keyshare to {}", home_dir.display());
 
         Ok(())
@@ -381,7 +383,7 @@ impl ImportKeyshareCmd {
 }
 
 impl ExportKeyshareCmd {
-    pub fn run(&self) -> anyhow::Result<()> {
+    pub async fn run(&self) -> anyhow::Result<()> {
         println!("Exporting keyshare from local storage...");
 
         // Parse the encryption key
@@ -405,7 +407,8 @@ impl ExportKeyshareCmd {
 
         // Load the keyshare
         let keyshare = storage
-            .load_sync()?
+            .load()
+            .await?
             .ok_or_else(|| anyhow::anyhow!("No keyshare found in {}", home_dir.display()))?;
 
         // Print the keyshare to console
@@ -440,8 +443,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_keyshare_import_export() {
+    #[tokio::test]
+    async fn test_keyshare_import_export() {
         // Create a temporary directory for the test
         let temp_dir = TempDir::new().unwrap();
         let home_dir = temp_dir.path().to_string_lossy().to_string();
@@ -458,7 +461,7 @@ mod tests {
             local_encryption_key_hex: encryption_key.to_string(),
         };
 
-        let result = import_cmd.run();
+        let result = import_cmd.run().await;
         assert!(result.is_ok(), "Import command failed: {:?}", result.err());
 
         // Test export functionality
@@ -467,15 +470,15 @@ mod tests {
             local_encryption_key_hex: encryption_key.to_string(),
         };
 
-        let result = export_cmd.run();
+        let result = export_cmd.run().await;
         assert!(result.is_ok(), "Export command failed: {:?}", result.err());
 
         // Verify the exported data matches what we imported
         // For a more thorough test, we could capture stdout and verify the JSON content
     }
 
-    #[test]
-    fn test_import_existing_keyshare_with_lower_epoch() {
+    #[tokio::test]
+    async fn test_import_existing_keyshare_with_lower_epoch() {
         // Create a temporary directory for the test
         let temp_dir = TempDir::new().unwrap();
         let home_dir = temp_dir.path().to_string_lossy().to_string();
@@ -498,7 +501,7 @@ mod tests {
             local_encryption_key_hex: encryption_key.to_string(),
         };
 
-        let result = import_cmd1.run();
+        let result = import_cmd1.run().await;
         assert!(
             result.is_ok(),
             "First import command failed: {:?}",
@@ -512,7 +515,7 @@ mod tests {
             local_encryption_key_hex: encryption_key.to_string(),
         };
 
-        let result = import_cmd2.run();
+        let result = import_cmd2.run().await;
         assert!(
             result.is_err(),
             "Import command with lower epoch should fail"
@@ -520,8 +523,8 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("Refusing to overwrite existing keyshare of epoch 2 with new keyshare of older or same epoch 1"));
     }
 
-    #[test]
-    fn test_export_nonexistent_keyshare() {
+    #[tokio::test]
+    async fn test_export_nonexistent_keyshare() {
         // Create a temporary directory for the test
         let temp_dir = TempDir::new().unwrap();
         let home_dir = temp_dir.path().to_string_lossy().to_string();
@@ -533,7 +536,7 @@ mod tests {
             local_encryption_key_hex: encryption_key.to_string(),
         };
 
-        let result = export_cmd.run();
+        let result = export_cmd.run().await;
         assert!(
             result.is_err(),
             "Export command should fail on nonexistent keyshare"
