@@ -4,6 +4,7 @@ use aes_gcm::{Aes128Gcm, KeyInit};
 use anyhow::Context;
 use sha3::digest::generic_array::GenericArray;
 use std::path::PathBuf;
+use crate::keyshare::migration::try_load_from_old_keyshare;
 
 /// Stores the root keyshare in a local encrypted file.
 pub struct LocalKeyshareStorage {
@@ -32,8 +33,10 @@ impl KeyshareStorage for LocalKeyshareStorage {
             .await
             .context("Failed to read keygen file")?;
         let decrypted = db::decrypt(&cipher, &data).context("Failed to decrypt keygen")?;
-        let keyshare: PartialRootKeyshareData =
-            serde_json::from_slice(&decrypted).context("Failed to parse keygen")?;
+        let keyshare = match try_load_from_old_keyshare(decrypted.as_slice()) {
+            None => serde_json::from_slice(decrypted.as_slice()).context("Failed to parse keygen")?,
+            Some(old_keyshare) => old_keyshare
+        };
         Ok(Some(keyshare))
     }
 

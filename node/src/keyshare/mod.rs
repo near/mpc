@@ -1,5 +1,6 @@
 pub mod gcp;
 pub mod local;
+mod migration;
 
 use serde::{Deserialize, Serialize};
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
