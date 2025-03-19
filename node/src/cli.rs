@@ -436,11 +436,13 @@ mod tests {
         // Create a dummy private key - this is only for testing
         let private_share = Scalar::ONE;
         let public_key = AffinePoint::default();
-        RootKeyshareData {
-            epoch: 1,
-            private_share,
-            public_key,
-        }
+        RootKeyshareData::new(
+            1,
+            cait_sith::KeygenOutput {
+                private_share,
+                public_key,
+            }
+        )
     }
 
     #[tokio::test]

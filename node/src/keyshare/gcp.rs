@@ -1,4 +1,4 @@
-use super::{KeyshareStorage, RootKeyshareData};
+use super::{KeyshareStorage, PartialRootKeyshareData, RootKeyshareData};
 use anyhow::Context;
 use gcloud_sdk::google::cloud::secretmanager::v1::secret_manager_service_client::SecretManagerServiceClient;
 use gcloud_sdk::google::cloud::secretmanager::v1::secret_version::State;
@@ -35,7 +35,7 @@ impl GcpKeyshareStorage {
 
 #[async_trait::async_trait]
 impl KeyshareStorage for GcpKeyshareStorage {
-    async fn load(&self) -> anyhow::Result<Option<RootKeyshareData>> {
+    async fn load(&self) -> anyhow::Result<Option<PartialRootKeyshareData>> {
         let secret_name = format!("projects/{}/secrets/{}", self.project_id, self.secret_id);
         let versions = self
             .secrets_client
@@ -67,7 +67,7 @@ impl KeyshareStorage for GcpKeyshareStorage {
             .payload
             .ok_or_else(|| anyhow::anyhow!("Secret version has no payload"))?;
 
-        let keyshare: RootKeyshareData = serde_json::from_slice(secret.data.as_sensitive_bytes())
+        let keyshare: PartialRootKeyshareData = serde_json::from_slice(secret.data.as_sensitive_bytes())
             .context("Failed to parse keygen")?;
         Ok(Some(keyshare))
     }
@@ -75,13 +75,7 @@ impl KeyshareStorage for GcpKeyshareStorage {
     async fn store(&self, root_keyshare: &RootKeyshareData) -> anyhow::Result<()> {
         let existing = self.load().await.context("Checking existing keyshare")?;
         if let Some(existing) = existing {
-            if existing.epoch >= root_keyshare.epoch {
-                return Err(anyhow::anyhow!(
-                    "Refusing to overwrite existing keyshare of epoch {} with new keyshare of older epoch {}",
-                    existing.epoch,
-                    root_keyshare.epoch,
-                ));
-            }
+            RootKeyshareData::compare_against_existing_share(root_keyshare, &existing)?;
         }
         let secret_name = format!("projects/{}/secrets/{}", self.project_id, self.secret_id);
         let data = serde_json::to_vec(&root_keyshare).context("Failed to serialize keygen")?;

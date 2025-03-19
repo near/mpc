@@ -7,7 +7,7 @@ use crate::indexer::participants::{
 };
 use crate::indexer::types::{ChainSendTransactionRequest, ChainVotePkArgs, ChainVoteResharedArgs};
 use crate::indexer::IndexerAPI;
-use crate::keyshare::{KeyshareStorage, KeyshareStorageFactory, RootKeyshareData};
+use crate::keyshare::{KeyshareStorage, KeyshareStorageFactory, PartialRootKeyshareData, RootKeyshareData};
 use crate::metrics;
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
@@ -279,7 +279,12 @@ impl Coordinator {
         contract_state: ContractInitializingState,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     ) -> anyhow::Result<MpcJobResult> {
-        let existing_key = keyshare_storage.load().await?;
+        let existing_key = keyshare_storage
+            .load()
+            .await?
+            .as_ref()
+            .map(PartialRootKeyshareData::as_complete)
+            .flatten();
         if let Some(existing_key) = existing_key {
             if existing_key.epoch != 0 {
                 tracing::error!(
@@ -289,7 +294,7 @@ impl Coordinator {
                 return Ok(MpcJobResult::HaltUntilInterrupted);
             }
 
-            let my_public_key = affine_point_to_public_key(existing_key.public_key)?;
+            let my_public_key = affine_point_to_public_key(existing_key.ecdsa.public_key)?;
             if let Some(votes) = contract_state.pk_votes.get(&my_public_key) {
                 if votes.contains(&config_file.my_near_account_id) {
                     tracing::info!("Initialization: we already voted for our public key; waiting for public key consensus");
@@ -379,7 +384,12 @@ impl Coordinator {
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        let keyshare = keyshare_storage.load().await?;
+        let keyshare = keyshare_storage
+            .load()
+            .await?
+            .as_ref()
+            .map(PartialRootKeyshareData::as_complete)
+            .flatten();
         let keyshare = match keyshare {
             Some(keyshare) if keyshare.epoch == contract_state.epoch => keyshare,
             _ => {
@@ -415,7 +425,7 @@ impl Coordinator {
             clock,
             secret_db,
             sign_request_store.clone(),
-            keyshare.keygen_output(),
+            keyshare.ecdsa,
         )?);
 
         let mpc_client = Arc::new(MpcClient::new(
@@ -461,7 +471,13 @@ impl Coordinator {
             .iter()
             .any(|p| p.near_account_id == config_file.my_near_account_id);
 
-        let existing_keyshare = match keyshare_storage.load().await? {
+        let existing_keyshare = keyshare_storage
+            .load()
+            .await?
+            .as_ref()
+            .map(PartialRootKeyshareData::as_complete)
+            .flatten();
+        let existing_keyshare = match existing_keyshare {
             Some(existing_keyshare) => {
                 // only enter this if the full key event id matches.
                 if existing_keyshare.epoch == contract_state.old_epoch + 1 {
@@ -546,7 +562,7 @@ impl Coordinator {
             mpc_config.clone().into(),
             network_client,
             contract_state.clone(),
-            existing_keyshare.map(|k| k.private_share),
+            existing_keyshare.map(|k| k.ecdsa.private_share),
             channel_receiver,
         )
         .await?;
