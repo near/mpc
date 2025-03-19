@@ -1,4 +1,5 @@
 use super::{KeyshareStorage, PartialRootKeyshareData, RootKeyshareData};
+use crate::keyshare::migration::try_load_from_old_keyshare;
 use anyhow::Context;
 use gcloud_sdk::google::cloud::secretmanager::v1::secret_manager_service_client::SecretManagerServiceClient;
 use gcloud_sdk::google::cloud::secretmanager::v1::secret_version::State;
@@ -7,7 +8,6 @@ use gcloud_sdk::google::cloud::secretmanager::v1::{
 };
 use gcloud_sdk::proto_ext::secretmanager::SecretPayload;
 use gcloud_sdk::{GoogleApi, GoogleAuthMiddleware, SecretValue};
-use crate::keyshare::migration::try_load_from_old_keyshare;
 
 /// Keyshare storage that loads and stores the key from Google Secret Manager.
 pub struct GcpKeyshareStorage {
@@ -71,7 +71,7 @@ impl KeyshareStorage for GcpKeyshareStorage {
         let data = secret.data.as_sensitive_bytes();
         let keyshare = match try_load_from_old_keyshare(data) {
             None => serde_json::from_slice(data).context("Failed to parse keygen")?,
-            Some(old_keyshare) => old_keyshare
+            Some(old_keyshare) => old_keyshare,
         };
         Ok(Some(keyshare))
     }

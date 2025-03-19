@@ -20,7 +20,6 @@ use crate::config::MpcConfig;
 use crate::indexer::participants::ContractResharingState;
 use crate::primitives::{MpcTaskId, ParticipantId};
 
-
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
 #[allow(dead_code)] // TODO: To be fixed in #252 follow-up
 pub trait SignatureProvider {

@@ -1,10 +1,10 @@
 use super::{KeyshareStorage, PartialRootKeyshareData, RootKeyshareData};
 use crate::db;
+use crate::keyshare::migration::try_load_from_old_keyshare;
 use aes_gcm::{Aes128Gcm, KeyInit};
 use anyhow::Context;
 use sha3::digest::generic_array::GenericArray;
 use std::path::PathBuf;
-use crate::keyshare::migration::try_load_from_old_keyshare;
 
 /// Stores the root keyshare in a local encrypted file.
 pub struct LocalKeyshareStorage {
@@ -34,8 +34,10 @@ impl KeyshareStorage for LocalKeyshareStorage {
             .context("Failed to read keygen file")?;
         let decrypted = db::decrypt(&cipher, &data).context("Failed to decrypt keygen")?;
         let keyshare = match try_load_from_old_keyshare(decrypted.as_slice()) {
-            None => serde_json::from_slice(decrypted.as_slice()).context("Failed to parse keygen")?,
-            Some(old_keyshare) => old_keyshare
+            None => {
+                serde_json::from_slice(decrypted.as_slice()).context("Failed to parse keygen")?
+            }
+            Some(old_keyshare) => old_keyshare,
         };
         Ok(Some(keyshare))
     }
@@ -86,7 +88,13 @@ mod tests {
             .store(&RootKeyshareData::new(0, generated_key.clone()))
             .await
             .unwrap();
-        let loaded_key = storage.load().await.unwrap().unwrap().as_complete().unwrap();
+        let loaded_key = storage
+            .load()
+            .await
+            .unwrap()
+            .unwrap()
+            .as_complete()
+            .unwrap();
         assert_eq!(generated_key.private_share, loaded_key.ecdsa.private_share);
         assert_eq!(generated_key.public_key, loaded_key.ecdsa.public_key);
 
@@ -107,8 +115,17 @@ mod tests {
             .store(&RootKeyshareData::new(1, generated_key_2.clone()))
             .await
             .unwrap();
-        let loaded_key_2 = storage.load().await.unwrap().unwrap().as_complete().unwrap();
-        assert_eq!(generated_key_2.private_share, loaded_key_2.ecdsa.private_share);
+        let loaded_key_2 = storage
+            .load()
+            .await
+            .unwrap()
+            .unwrap()
+            .as_complete()
+            .unwrap();
+        assert_eq!(
+            generated_key_2.private_share,
+            loaded_key_2.ecdsa.private_share
+        );
         assert_eq!(generated_key_2.public_key, loaded_key_2.ecdsa.public_key);
 
         // Can't store unless epoch is higher.

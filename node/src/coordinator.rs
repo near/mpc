@@ -7,7 +7,9 @@ use crate::indexer::participants::{
 };
 use crate::indexer::types::{ChainSendTransactionRequest, ChainVotePkArgs, ChainVoteResharedArgs};
 use crate::indexer::IndexerAPI;
-use crate::keyshare::{KeyshareStorage, KeyshareStorageFactory, PartialRootKeyshareData, RootKeyshareData};
+use crate::keyshare::{
+    KeyshareStorage, KeyshareStorageFactory, PartialRootKeyshareData, RootKeyshareData,
+};
 use crate::metrics;
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
@@ -283,8 +285,7 @@ impl Coordinator {
             .load()
             .await?
             .as_ref()
-            .map(PartialRootKeyshareData::as_complete)
-            .flatten();
+            .and_then(PartialRootKeyshareData::as_complete);
         if let Some(existing_key) = existing_key {
             if existing_key.epoch != 0 {
                 tracing::error!(
@@ -388,8 +389,7 @@ impl Coordinator {
             .load()
             .await?
             .as_ref()
-            .map(PartialRootKeyshareData::as_complete)
-            .flatten();
+            .and_then(PartialRootKeyshareData::as_complete);
         let keyshare = match keyshare {
             Some(keyshare) if keyshare.epoch == contract_state.epoch => keyshare,
             _ => {
@@ -475,8 +475,7 @@ impl Coordinator {
             .load()
             .await?
             .as_ref()
-            .map(PartialRootKeyshareData::as_complete)
-            .flatten();
+            .and_then(PartialRootKeyshareData::as_complete);
         let existing_keyshare = match existing_keyshare {
             Some(existing_keyshare) => {
                 // only enter this if the full key event id matches.

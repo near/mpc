@@ -2,9 +2,8 @@ pub mod gcp;
 pub mod local;
 mod migration;
 
-use serde::{Deserialize, Serialize};
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
-
+use serde::{Deserialize, Serialize};
 
 /// The root keyshare data along with an epoch. The epoch is incremented for each key resharing.
 /// This structure is used in context, where we should have all key shares present (e.g. "Running" state)
@@ -25,25 +24,26 @@ pub struct PartialRootKeyshareData {
 impl PartialRootKeyshareData {
     /// Returns a complete RootKeyshareData if all fields are set.
     pub(crate) fn as_complete(&self) -> Option<RootKeyshareData> {
-        let Some(ecdsa) = self.ecdsa.clone() else {
-            return None;
-        };
-        Some(RootKeyshareData { epoch: self.epoch, ecdsa })
+        let ecdsa = self.ecdsa.clone()?;
+        Some(RootKeyshareData {
+            epoch: self.epoch,
+            ecdsa,
+        })
     }
 }
 
 impl RootKeyshareData {
-    pub fn new(epoch: u64, ecdsa: <EcdsaSignatureProvider as SignatureProvider>::KeygenOutput) -> Self {
-        Self {
-            epoch,
-            ecdsa,
-        }
+    pub fn new(
+        epoch: u64,
+        ecdsa: <EcdsaSignatureProvider as SignatureProvider>::KeygenOutput,
+    ) -> Self {
+        Self { epoch, ecdsa }
     }
 
     /// If some data exists already, check that we can safely overwrite it
     fn compare_against_existing_share(
         to_save: &RootKeyshareData,
-        existing: &PartialRootKeyshareData
+        existing: &PartialRootKeyshareData,
     ) -> anyhow::Result<()> {
         match existing.as_complete() {
             // Key shares for all signature providers generated -> we do resharing
@@ -54,7 +54,7 @@ impl RootKeyshareData {
                         "Refusing to overwrite existing keyshare of epoch {} with new keyshare of older epoch {}",
                         existing.epoch,
                         to_save.epoch,
-                    ))
+                    ));
                 }
             }
 
@@ -63,7 +63,9 @@ impl RootKeyshareData {
             None => {
                 if let Some(ecdsa) = &existing.ecdsa {
                     if ecdsa.private_share != to_save.ecdsa.private_share {
-                        return Err(anyhow::anyhow!("Refusing to overwrite existing ecdsa keyshare"))
+                        return Err(anyhow::anyhow!(
+                            "Refusing to overwrite existing ecdsa keyshare"
+                        ));
                     }
                 }
             }

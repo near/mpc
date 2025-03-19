@@ -441,7 +441,7 @@ mod tests {
             cait_sith::KeygenOutput {
                 private_share,
                 public_key,
-            }
+            },
         )
     }
 
