@@ -458,7 +458,7 @@ pub struct MpcContractV1 {
 pub struct MpcContractV0;
 
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
-pub enum MpcContractVersion {
+pub enum VersionedMpcContract {
     V0(MpcContractV0),
     V1(MpcContractV1),
 }

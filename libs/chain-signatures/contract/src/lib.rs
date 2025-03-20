@@ -577,8 +577,8 @@ impl VersionedMpcContract {
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
-        if let Some(legacy_contract_state::MpcContractVersion::V1(state)) =
-            env::state_read::<legacy_contract_state::MpcContractVersion>()
+        if let Some(legacy_contract_state::VersionedMpcContract::V1(state)) =
+            env::state_read::<legacy_contract_state::VersionedMpcContract>()
         {
             // migrate config
             let mut config = Config::default();
