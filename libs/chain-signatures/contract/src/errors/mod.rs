@@ -133,6 +133,8 @@ pub enum DomainError {
     AddDomainsMustAddAtLeastOneDomain,
     #[error("Invalid list of domains provided")]
     InvalidDomains,
+    #[error("Domains from keyset do not match the provided domains")]
+    DomainsMismatch,
 }
 
 /// A list specifying general categories of MPC Contract errors.

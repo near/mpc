@@ -36,7 +36,7 @@ pub struct DomainConfig {
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
 /// that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to
-/// add domains but ultimately cancels that process.)
+/// add domains but ultimately canceled that process.)
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DomainRegistry {

@@ -14,7 +14,8 @@ use crypto_shared::{
     types::SignatureResponse, ScalarExt as _,
 };
 use errors::{
-    ConversionError, InvalidParameters, InvalidState, PublicKeyError, RespondError, SignError,
+    ConversionError, DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError,
+    SignError,
 };
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::Scalar;
@@ -627,6 +628,18 @@ impl VersionedMpcContract {
         );
         parameters.validate()?;
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
+
+        // Check that the domains match exactly those in the keyset.
+        let domain_ids_from_domains = domains.domains().iter().map(|d| d.id).collect::<Vec<_>>();
+        let domain_ids_from_keyset = keyset
+            .domains
+            .iter()
+            .map(|k| k.domain_id)
+            .collect::<Vec<_>>();
+        if domain_ids_from_domains != domain_ids_from_keyset {
+            return Err(DomainError::DomainsMismatch.into());
+        }
+
         Ok(Self::V0(MpcContract {
             config: Config::from(init_config),
             protocol_state: ProtocolContractState::Running(RunningContractState::new(

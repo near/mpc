@@ -2,8 +2,8 @@ use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{DomainError, Error};
-use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
 use crate::legacy_contract_state;
+use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
 use crate::primitives::key_state::{
     AttemptId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
 };
