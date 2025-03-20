@@ -38,7 +38,8 @@ stateDiagram-v2
     Running --> Initializing : vote_add_domains
     Running --> Resharing : vote_new_parameters
     Initializing --> Running : vote_pk
-    Resharing --> running : vote_reshared
+    Resharing --> Running : vote_reshared
+    Resharing --> Resharing : vote_new_parameters
 ```
 
 ### Contract API
