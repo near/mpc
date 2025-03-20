@@ -12,13 +12,12 @@ use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_epsilon, derive_key, kdf::check_ec_signature, near_public_key_to_affine_point,
-    types::SignatureResponse, ScalarExt as _, SerializableScalar,
+    types::SignatureResponse, ScalarExt as _,
 };
 use errors::{
     ConversionError, InvalidParameters, InvalidState, PublicKeyError, RespondError, SignError,
 };
 use k256::elliptic_curve::sec1::ToEncodedPoint;
-use k256::Scalar;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::near;
 use near_sdk::store::{LookupMap, Vector};
@@ -27,7 +26,7 @@ use near_sdk::{
     PromiseError, PublicKey,
 };
 use primitives::key_state::{DKState, EpochId, KeyEventId, KeyStateProposal};
-use primitives::signature::{SignRequest, SignatureRequest, YieldIndex};
+use primitives::signature::{Epsilon, PayloadHash, SignRequest, SignatureRequest, YieldIndex};
 use primitives::thresholds::Threshold;
 use primitives::votes::KeyStateVotes;
 use state::initializing::{InitializingContractState, PkVotes};
@@ -185,18 +184,14 @@ impl VersionedMpcContract {
             request
         );
         // ensure the signer sent a valid signature request
-
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        let payload = match Scalar::from_bytes(request.payload) {
-            Some(payload) => payload,
-            None => {
-                env::panic_str(
-                    &InvalidParameters::MalformedPayload
-                        .message("Payload hash cannot be convereted to Scalar")
-                        .to_string(),
-                );
-            }
+        if let None = k256::Scalar::from_bytes(request.payload.as_bytes()) {
+            env::panic_str(
+                &InvalidParameters::MalformedPayload
+                    .message("Payload hash cannot be convereted to Scalar")
+                    .to_string(),
+            );
         };
 
         if request.key_version > self.latest_key_version() {
@@ -238,7 +233,7 @@ impl VersionedMpcContract {
             }
         }
 
-        let request = SignatureRequest::new(payload, &predecessor, &request.path);
+        let request = SignatureRequest::new(request.payload, &predecessor, &request.path);
 
         let Self::V0(mpc_contract) = self;
         // Remove timed out requests
@@ -287,8 +282,10 @@ impl VersionedMpcContract {
     ) -> Result<PublicKey, Error> {
         let predecessor = predecessor.unwrap_or_else(env::predecessor_account_id);
         let epsilon = derive_epsilon(&predecessor, &path);
-        let derived_public_key =
-            derive_key(near_public_key_to_affine_point(self.public_key()?), epsilon);
+        let derived_public_key = derive_key(
+            near_public_key_to_affine_point(self.public_key()?),
+            &epsilon,
+        );
         let encoded_point = derived_public_key.to_encoded_point(false);
         let slice: &[u8] = &encoded_point.as_bytes()[1..65];
         let mut data: Vec<u8> = vec![near_sdk::CurveType::SECP256K1 as u8];
@@ -327,15 +324,14 @@ impl VersionedMpcContract {
         }
         // generate the expected public key
         let pk = self.public_key()?;
-        let expected_public_key =
-            derive_key(near_public_key_to_affine_point(pk), request.epsilon.scalar);
+        let expected_public_key = derive_key(near_public_key_to_affine_point(pk), &request.epsilon);
 
         // Check the signature is correct
         if check_ec_signature(
             &expected_public_key,
             &response.big_r.affine_point,
             &response.s.scalar,
-            request.payload_hash.scalar,
+            &request.payload_hash,
             response.recovery_id,
         )
         .is_err()
@@ -598,14 +594,16 @@ impl VersionedMpcContract {
                         let data_id = YieldIndex {
                             data_id: data_id.data_id,
                         };
+
+                        let epsilon = Epsilon::new(request.epsilon.scalar.to_bytes().into());
+                        let payload_hash =
+                            PayloadHash::new(request.payload_hash.scalar.to_bytes().into());
+
                         let request = SignatureRequest {
-                            epsilon: SerializableScalar {
-                                scalar: request.epsilon.scalar,
-                            },
-                            payload_hash: SerializableScalar {
-                                scalar: request.payload_hash.scalar,
-                            },
+                            payload_hash,
+                            epsilon,
                         };
+
                         request_by_block_height.push((*created, request.clone()));
                         pending_requests.insert(request, data_id);
                     }

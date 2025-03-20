@@ -1,4 +1,7 @@
-use crate::crypto_shared::types::{PublicKey, ScalarExt};
+use crate::{
+    crypto_shared::types::{PublicKey, ScalarExt},
+    primitives::signature::{Epsilon, PayloadHash},
+};
 use anyhow::Context;
 use k256::{
     ecdsa::{RecoveryId, Signature, VerifyingKey},
@@ -12,7 +15,7 @@ use sha3::{Digest, Sha3_256};
 // near-mpc-recovery with key derivation protocol vX.Y.Z.
 const EPSILON_DERIVATION_PREFIX: &str = "near-mpc-recovery v0.1.0 epsilon derivation:";
 
-pub fn derive_epsilon(predecessor_id: &AccountId, path: &str) -> Scalar {
+pub fn derive_epsilon(predecessor_id: &AccountId, path: &str) -> Epsilon {
     // TODO: Use a key derivation library instead of doing this manually.
     // https://crates.io/crates/hkdf might be a good option?
     //
@@ -25,10 +28,11 @@ pub fn derive_epsilon(predecessor_id: &AccountId, path: &str) -> Scalar {
     let mut hasher = Sha3_256::new();
     hasher.update(derivation_path);
     let hash: [u8; 32] = hasher.finalize().into();
-    Scalar::from_non_biased(hash)
+    Epsilon::new(hash)
 }
 
-pub fn derive_key(public_key: PublicKey, epsilon: Scalar) -> PublicKey {
+pub fn derive_key(public_key: PublicKey, epsilon: &Epsilon) -> PublicKey {
+    let epsilon = Scalar::from_non_biased(epsilon.as_bytes());
     (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * epsilon + public_key).to_affine()
 }
 
@@ -49,14 +53,14 @@ pub fn check_ec_signature(
     expected_pk: &k256::AffinePoint,
     big_r: &k256::AffinePoint,
     s: &k256::Scalar,
-    msg_hash: Scalar,
+    msg_hash: &PayloadHash,
     recovery_id: u8,
 ) -> anyhow::Result<()> {
     let public_key = expected_pk.to_encoded_point(false);
     let signature = k256::ecdsa::Signature::from_scalars(x_coordinate(big_r), s)
         .context("cannot create signature from cait_sith signature")?;
     let found_pk = recover(
-        &msg_hash.to_bytes(),
+        &msg_hash.as_bytes(),
         &signature,
         RecoveryId::try_from(recovery_id).context("invalid recovery ID")?,
     )?
