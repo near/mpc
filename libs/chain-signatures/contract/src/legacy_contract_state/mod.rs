@@ -95,6 +95,12 @@ impl From<CandidateInfo> for ParticipantInfo {
     }
 }
 
+impl Default for Candidates {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Candidates {
     pub fn new() -> Self {
         Candidates {
@@ -120,6 +126,12 @@ impl Candidates {
 
     pub fn iter(&self) -> impl Iterator<Item = (&AccountId, &CandidateInfo)> {
         self.candidates.iter()
+    }
+}
+
+impl Default for Participants {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -167,6 +179,12 @@ impl Participants {
 
     pub fn is_empty(&self) -> bool {
         self.participants.is_empty()
+    }
+}
+
+impl Default for PkVotes {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
