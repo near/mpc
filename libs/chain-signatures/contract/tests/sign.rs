@@ -16,7 +16,7 @@ use mpc_contract::{
 };
 use near_workspaces::types::NearToken;
 
-use crypto_shared::SignatureResponse;
+use mpc_contract::crypto_shared::SignatureResponse;
 use std::mem;
 
 #[tokio::test]

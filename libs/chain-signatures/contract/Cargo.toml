@@ -7,8 +7,12 @@ edition = "2021"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
+anyhow = "1"
 borsh = "1.5.0"
-near-sdk = { version = "5.2.1", features = ["legacy", "unit-testing"] }
+near-sdk = { version = "5.2.1", features = [
+    "legacy",
+    "unit-testing",
+] } # might need unstable
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "0.8"
@@ -19,12 +23,17 @@ k256 = { version = "0.13.4", features = [
     "arithmetic",
     "expose-field",
 ] }
-crypto-shared = { path = "../crypto-shared", package = "crypto-shared" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
+near-account-id = "1"
 thiserror = "1"
+sha3 = "0.10.8"
+subtle = "2.6.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2.12", features = ["custom"] }
+
 
 [dev-dependencies]
-anyhow = "1"
 rand = "0.8"
 tokio = { version = "1", features = ["full"] }
 

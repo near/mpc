@@ -1,8 +1,3 @@
-use crypto_shared::kdf::{check_ec_signature, derive_secret_key};
-use crypto_shared::{
-    derive_epsilon, derive_key, ScalarExt as _, SerializableAffinePoint, SerializableScalar,
-    SignatureResponse,
-};
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use k256::elliptic_curve::ops::Reduce;
@@ -10,6 +5,11 @@ use k256::elliptic_curve::point::DecompressPoint as _;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, FieldBytes, Scalar, Secp256k1};
 use mpc_contract::config::InitConfig;
+use mpc_contract::crypto_shared::{
+    derive_epsilon, derive_key,
+    kdf::{check_ec_signature, derive_secret_key},
+    ScalarExt as _, SerializableAffinePoint, SerializableScalar, SignatureResponse,
+};
 use mpc_contract::primitives::key_state::{
     AttemptId, DKState, EpochId, KeyEventId, KeyStateProposal,
 };

@@ -1,4 +1,4 @@
-use crate::types::{PublicKey, ScalarExt};
+use crate::crypto_shared::types::{PublicKey, ScalarExt};
 use anyhow::Context;
 use k256::{
     ecdsa::{RecoveryId, Signature, VerifyingKey},
