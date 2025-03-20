@@ -453,3 +453,12 @@ pub struct MpcContractV1 {
     pub proposed_updates: ProposedUpdates,
     pub config: ConfigV1,
 }
+
+#[derive(BorshDeserialize, BorshSerialize, Debug)]
+pub struct MpcContractV0;
+
+#[derive(BorshDeserialize, BorshSerialize, Debug)]
+pub enum MpcContractVersion {
+    V0(MpcContractV0),
+    V1(MpcContractV1),
+}

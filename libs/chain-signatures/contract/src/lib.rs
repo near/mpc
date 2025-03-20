@@ -577,7 +577,9 @@ impl VersionedMpcContract {
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
-        if let Some(state) = env::state_read::<legacy_contract_state::MpcContractV1>() {
+        if let Some(legacy_contract_state::MpcContractVersion::V1(state)) =
+            env::state_read::<legacy_contract_state::MpcContractVersion>()
+        {
             // migrate config
             let mut config = Config::default();
             config.request_timeout_blocks = state.config.request_timeout_blocks;
