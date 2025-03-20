@@ -1,8 +1,7 @@
 use crate::legacy_contract_state::{self, CandidateInfo};
-use crate::primitives::key_state::{AttemptId, EpochId};
 use crate::primitives::participants::{ParticipantInfo, Participants};
 use crate::primitives::thresholds::Threshold;
-use crate::primitives::{key_state::KeyEventId, thresholds::ThresholdParameters};
+use crate::primitives::thresholds::ThresholdParameters;
 use near_sdk::{AccountId, CurveType, PublicKey};
 use rand::{distributions::Uniform, Rng};
 use std::collections::{BTreeMap, HashSet};
@@ -113,13 +112,8 @@ pub fn gen_seed() -> [u8; 32] {
     seed
 }
 
-pub fn gen_key_event_id() -> KeyEventId {
-    let epoch_id: u64 = rand::thread_rng().gen();
-    KeyEventId::new(EpochId::new(epoch_id), AttemptId::new())
-}
-
 pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
-    let n = rand::thread_rng().gen_range(2..max_n + 1);
+    let n: usize = rand::thread_rng().gen_range(2..max_n + 1);
     let k_min = min_thrershold(n);
     let k = rand::thread_rng().gen_range(k_min..n + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()

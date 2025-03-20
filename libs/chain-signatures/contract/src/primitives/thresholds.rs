@@ -1,9 +1,10 @@
-use super::participants::Participants;
+use super::participants::{ParticipantId, ParticipantInfo, Participants};
 use crate::{
-    errors::{Error, InvalidThreshold},
+    errors::{Error, InvalidCandidateSet, InvalidThreshold},
     legacy_contract_state,
 };
-use near_sdk::near;
+use near_sdk::{near, AccountId};
+use std::collections::BTreeMap;
 
 /// Minimum absolute threshold required.
 const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
@@ -26,30 +27,6 @@ impl Threshold {
     }
 }
 
-/// Stores the success threshold for distributed key generation and resharing.
-/// ```
-/// use mpc_contract::primitives::thresholds::DKGThreshold;
-/// let dt = DKGThreshold::new(8);
-/// assert!(dt.value() == 8);
-/// ```
-#[near(serializers=[borsh, json])]
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct DKGThreshold(u64);
-impl DKGThreshold {
-    pub fn new(val: u64) -> Self {
-        Self(val)
-    }
-    pub fn value(&self) -> u64 {
-        self.0
-    }
-    pub fn validate(&self, n_shares: u64, k: Threshold) -> Result<(), Error> {
-        if self.value() != n_shares {
-            return Err(InvalidThreshold::DKGThresholdFailed.into());
-        }
-        ThresholdParameters::validate_threshold(n_shares, k)
-    }
-}
-
 /// Stores information about the threshold key parameters:
 /// - owners of key shares
 /// - cryptographic threshold
@@ -64,7 +41,7 @@ impl ThresholdParameters {
     /// Constructs Threshold parameters from `participants` and `threshold` if the
     /// threshold meets the absolute and relavite validation criteria.
     pub fn new(participants: Participants, threshold: Threshold) -> Result<Self, Error> {
-        match Self::validate_threshold(participants.count(), threshold.clone()) {
+        match Self::validate_threshold(participants.len() as u64, threshold.clone()) {
             Ok(_) => Ok(ThresholdParameters {
                 participants,
                 threshold,
@@ -95,9 +72,66 @@ impl ThresholdParameters {
         Ok(())
     }
     pub fn validate(&self) -> Result<(), Error> {
-        Self::validate_threshold(self.participants.count(), self.threshold())?;
+        Self::validate_threshold(self.participants.len() as u64, self.threshold())?;
         self.participants.validate()
     }
+
+    /// Validates the incoming proposal against the current, checking that it is allowed for the
+    /// current set of participants and threshold setting to propose the new parameters.
+    pub fn validate_incoming_proposal(&self, proposal: &ThresholdParameters) -> Result<(), Error> {
+        // ensure the proposed threshold parameters are valid:
+        // if performance issue, inline and merge with loop below
+        proposal.validate()?;
+        let mut old_by_id: BTreeMap<ParticipantId, AccountId> = BTreeMap::new();
+        let mut old_by_acc: BTreeMap<AccountId, (ParticipantId, ParticipantInfo)> = BTreeMap::new();
+        for (acc, id, info) in self.participants().participants() {
+            old_by_id.insert(id.clone(), acc.clone());
+            old_by_acc.insert(acc.clone(), (id.clone(), info.clone()));
+        }
+        let new_participants = proposal.participants().participants();
+        let mut new_min_id = u32::MAX;
+        let mut new_max_id = 0u32;
+        let mut n_old = 0u64;
+        for (new_account, new_id, new_info) in new_participants {
+            match old_by_acc.get(new_account) {
+                Some((old_id, old_info)) => {
+                    if new_id != old_id {
+                        return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
+                    }
+                    if *new_info != *old_info {
+                        return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
+                    }
+                    n_old += 1;
+                }
+                None => {
+                    if old_by_id.contains_key(new_id) {
+                        return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
+                    }
+                    new_min_id = std::cmp::min(new_min_id, new_id.get());
+                    new_max_id = std::cmp::max(new_max_id, new_id.get());
+                }
+            }
+        }
+        // assert there are enough old participants
+        if n_old < self.threshold().value() {
+            return Err(InvalidCandidateSet::InsufficientOldParticipants.into());
+        }
+        // ensure the new ids are contiguous and unique
+        let n_new = proposal.participants().len() as u64 - n_old;
+        if n_new > 0 {
+            if n_new - 1 != (new_max_id - new_min_id) as u64 {
+                return Err(InvalidCandidateSet::NewParticipantIdsNotContiguous.into());
+            }
+            if new_min_id != self.participants().next_id().get() {
+                return Err(InvalidCandidateSet::NewParticipantIdsNotContiguous.into());
+            }
+            if new_max_id + 1 != proposal.participants().next_id().get() {
+                return Err(InvalidCandidateSet::NewParticipantIdsTooHigh.into());
+            }
+        }
+        Ok(())
+    }
+
     pub fn threshold(&self) -> Threshold {
         self.threshold.clone()
     }
@@ -105,41 +139,35 @@ impl ThresholdParameters {
     pub fn participants(&self) -> &Participants {
         &self.participants
     }
+
+    /// For migration from legacy; does not check the threshold.
+    pub fn migrate_from_legacy(
+        threshold: usize,
+        participants: legacy_contract_state::Participants,
+    ) -> Self {
+        ThresholdParameters {
+            threshold: Threshold::new(threshold as u64),
+            participants: participants.into(),
+        }
+    }
+
+    /// For integration testing.
+    pub fn new_unvalidated(participants: Participants, threshold: Threshold) -> Self {
+        ThresholdParameters {
+            participants,
+            threshold,
+        }
+    }
 }
 
-// The previous implementation did not impose restrictions on the threshold.
-// Any migration call must succeed, even with invalid thresholds.
-impl From<(Threshold, legacy_contract_state::Candidates)> for ThresholdParameters {
-    fn from(
-        (threshold, candidates): (Threshold, legacy_contract_state::Candidates),
-    ) -> ThresholdParameters {
-        ThresholdParameters {
-            participants: candidates.into(),
-            threshold,
-        }
-    }
-}
-// The previous implementation did not impose restrictions on the threshold.
-// Any migration call must succeed, even with invalid thresholds.
-impl From<(Threshold, legacy_contract_state::Participants)> for ThresholdParameters {
-    fn from(
-        (threshold, participants): (Threshold, legacy_contract_state::Participants),
-    ) -> ThresholdParameters {
-        ThresholdParameters {
-            participants: participants.into(),
-            threshold,
-        }
-    }
-}
 #[cfg(test)]
 mod tests {
-    use crate::primitives::participants::tests::{
-        assert_candidate_migration, assert_participant_migration,
-    };
+    use crate::primitives::participants::tests::assert_participant_migration;
     use crate::primitives::test_utils::{
-        gen_legacy_candidates, gen_legacy_participants, gen_participants,
+        gen_legacy_participants, gen_participants, gen_threshold_params,
     };
-    use crate::primitives::thresholds::{DKGThreshold, Threshold, ThresholdParameters};
+    use crate::primitives::thresholds::{Threshold, ThresholdParameters};
+    use crate::state::running::running_tests::gen_valid_params_proposal;
     use rand::Rng;
 
     #[test]
@@ -150,14 +178,7 @@ mod tests {
             assert_eq!(v, x.value());
         }
     }
-    #[test]
-    fn test_dkg_threshold() {
-        for _ in 0..20 {
-            let v = rand::thread_rng().gen::<u64>();
-            let x = DKGThreshold::new(v);
-            assert_eq!(v, x.value());
-        }
-    }
+
     #[test]
     fn test_validate_threshold() {
         let n = rand::thread_rng().gen_range(2..600) as u64;
@@ -170,6 +191,7 @@ mod tests {
         }
         assert!(ThresholdParameters::validate_threshold(n, Threshold::new(n + 1)).is_err());
     }
+
     #[test]
     fn test_threshold_parameters_constructor() {
         let n: usize = rand::thread_rng().gen_range(2..600);
@@ -190,7 +212,7 @@ mod tests {
             let tp = tp.unwrap();
             assert!(tp.validate().is_ok());
             assert_eq!(tp.threshold(), threshold);
-            assert_eq!(tp.participants.count(), participants.count());
+            assert_eq!(tp.participants.len(), participants.len());
             assert_eq!(participants, *tp.participants());
             // porbably overkill to test below
             for (account_id, _, _) in participants.participants() {
@@ -206,27 +228,65 @@ mod tests {
     }
 
     #[test]
-    fn test_migration_candidates() {
-        let n: usize = rand::thread_rng().gen_range(2..600);
-        let candidates = gen_legacy_candidates(n);
-        // migration has to work for now invalid thresholds as well.
-        let threshold = Threshold::new(rand::thread_rng().gen::<u64>());
-        let tp: ThresholdParameters = (threshold.clone(), candidates.clone()).into();
-        assert_eq!(threshold, tp.threshold());
-        let participants = tp.participants();
-        assert_eq!(participants.count(), n as u64);
-        assert_candidate_migration(&candidates, participants);
-    }
-    #[test]
     fn test_migration_participants() {
         let n: usize = rand::thread_rng().gen_range(2..600);
         let legacy_participants = gen_legacy_participants(n);
         // migration has to work for now invalid thresholds as well.
         let threshold = Threshold::new(rand::thread_rng().gen::<u64>());
-        let tp: ThresholdParameters = (threshold.clone(), legacy_participants.clone()).into();
+        let tp = ThresholdParameters::migrate_from_legacy(
+            threshold.0 as usize,
+            legacy_participants.clone(),
+        );
         assert_eq!(threshold, tp.threshold());
         let participants = tp.participants();
-        assert_eq!(participants.count(), n as u64);
+        assert_eq!(participants.len(), n);
         assert_participant_migration(&legacy_participants, participants);
+    }
+
+    #[test]
+    fn test_validate_incoming_proposal() {
+        // Valid proposals should validate.
+        let params = gen_threshold_params(10);
+        let proposal = gen_valid_params_proposal(&params);
+        assert!(params.validate_incoming_proposal(&proposal).is_ok());
+
+        // Random proposals should not validate.
+        let proposal = gen_threshold_params(10);
+        assert!(params.validate_incoming_proposal(&proposal).is_err());
+
+        // Proposal with threshold number of shared participants should be allowed.
+        let mut new_participants = params
+            .participants
+            .subset(0..params.threshold.value() as usize);
+        new_participants.add_random_participants_till_n(params.participants.len());
+        let proposal =
+            ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
+        assert!(
+            params.validate_incoming_proposal(&proposal).is_ok(),
+            "{:?} -> {:?}",
+            params,
+            proposal
+        );
+
+        // Proposal with less than threshold number of shared participants should not be allowed,
+        // even if the new threshold is lower.
+        let mut new_participants = params
+            .participants
+            .subset(0..params.threshold.value() as usize - 1);
+        new_participants.add_random_participants_till_n(params.participants.len());
+        let proposal = ThresholdParameters::new_unvalidated(
+            new_participants,
+            Threshold(params.threshold.value() - 1),
+        );
+        assert!(params.validate_incoming_proposal(&proposal).is_err());
+
+        // Proposal with the new threshold being invalid should not be allowed.
+        let mut new_participants = params
+            .participants
+            .subset(0..params.threshold.value() as usize);
+        new_participants.add_random_participants_till_n(50);
+        let proposal =
+            ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
+        assert!(params.validate_incoming_proposal(&proposal).is_err());
     }
 }

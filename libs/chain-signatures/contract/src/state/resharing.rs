@@ -1,307 +1,413 @@
-use super::key_event::{InstanceStatus, KeyEvent, Tally};
+use super::key_event::KeyEvent;
 use super::running::RunningContractState;
 use crate::errors::Error;
 use crate::legacy_contract_state;
-use crate::primitives::key_state::{
-    AuthenticatedParticipantId, DKState, EpochId, KeyEventId, KeyStateProposal,
-};
-use crate::primitives::votes::KeyStateVotes;
-use near_sdk::{near, BlockHeight, PublicKey};
+use crate::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
+use crate::primitives::thresholds::ThresholdParameters;
+use near_sdk::near;
 
+/// In this state, we reshare the key of every domain onto a new set of participants and threshold.
+/// Similar to key generation, we reshare the key of one domain at a time; when we finish resharing
+/// for one domain, we move on to the next or transition to the Running state.
+///
+/// This state is reached by calling vote_new_parameters from the Running state.
+///
+/// This state keeps the previous running state because:
+///  - The previous running state's ThresholdParameters are needed in order to facilitate the
+///    possible re-proposal of a new ThresholdParameters, in case the currently proposed set of
+///    participants are no longer all online. For tracking the votes we also use the same
+///    tracking structure in the running state.
+///  - The previous running state's keys are needed to copy the public keys.
+///  - We use the previous running state's DomainRegistry.
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
 pub struct ResharingContractState {
-    pub current_state: RunningContractState,
-    pub event_state: KeyEvent, // rename
+    pub previous_running_state: RunningContractState,
+    pub reshared_keys: Vec<KeyForDomain>,
+    pub resharing_key: KeyEvent,
 }
 
 impl From<&legacy_contract_state::ResharingContractState> for ResharingContractState {
-    fn from(state: &legacy_contract_state::ResharingContractState) -> Self {
-        ResharingContractState {
-            // todo: test this.
-            current_state: RunningContractState {
-                key_state: state.into(),
-                key_state_votes: KeyStateVotes::default(),
-            },
-            event_state: KeyEvent::new(EpochId::new(state.old_epoch + 1), state.into()),
-        }
+    fn from(_state: &legacy_contract_state::ResharingContractState) -> Self {
+        // It's complicated to upgrade the contract while resharing. Just don't support it.
+        unimplemented!("Cannot migrate from Resharing state")
     }
 }
 
 impl ResharingContractState {
-    pub fn authenticate_participant(&self) -> Result<AuthenticatedParticipantId, Error> {
-        self.current_state.authenticate_participant()
+    pub fn previous_keyset(&self) -> &Keyset {
+        &self.previous_running_state.keyset
     }
-    pub fn public_key(&self) -> &PublicKey {
-        self.current_state.public_key()
+
+    /// Returns the epoch ID that we would transition into if resharing were completed successfully.
+    /// This would increment if we end up voting for a re-proposal.
+    pub fn prospective_epoch_id(&self) -> EpochId {
+        self.resharing_key.epoch_id()
     }
-    /// Casts a vote for `proposal`, removing any exiting votes by `signer_account_id()`.
-    /// Returns an error if `proposal` is invalid or signer not in the old partipicant set.
-    /// Returns ResharingContract state if the proposal is accepted.
-    pub fn vote_new_key_state(
+
+    /// Casts a vote for a re-proposal. Requires the signer to be an original participant from the
+    /// previous running state. If this exceeds the threshold (from the previous running state),
+    /// returns a new ResharingContractState that we should transition into.
+    pub fn vote_new_parameters(
         &mut self,
-        proposal: &KeyStateProposal,
+        proposal: &ThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
-        if self.current_state.vote_key_state_proposal(proposal)? {
+        if self
+            .previous_running_state
+            .process_new_parameters_proposal(proposal)?
+        {
             return Ok(Some(ResharingContractState {
-                current_state: RunningContractState {
-                    key_state: self.current_state.key_state.clone(),
-                    key_state_votes: KeyStateVotes::default(),
-                },
-                event_state: KeyEvent::new(
-                    self.event_state.current_key_event_id().epoch_id().next(),
+                previous_running_state: RunningContractState::new(
+                    self.previous_running_state.domains.clone(),
+                    self.previous_running_state.keyset.clone(),
+                    self.previous_running_state.parameters.clone(),
+                ),
+                reshared_keys: Vec::new(),
+                resharing_key: KeyEvent::new(
+                    self.prospective_epoch_id().next(),
+                    self.previous_running_state
+                        .domains
+                        .get_domain_by_index(0)
+                        .unwrap()
+                        .clone(),
                     proposal.clone(),
                 ),
             }));
         }
         Ok(None)
     }
-}
 
-// Leader API. Below functions shall only be called by a leader account
-impl ResharingContractState {
-    // starts a new reshare instance if there is no active reshare instance
+    /// Starts a new attempt to reshare the key for the current domain.
+    /// Returns an Error if the signer is not the leader (the participant with the lowest ID).
     pub fn start(&mut self, event_max_idle_blocks: u64) -> Result<(), Error> {
-        self.event_state.start(event_max_idle_blocks)
+        self.resharing_key.start(event_max_idle_blocks)
     }
-    /// Casts a vote for `public_key` in `key_event_id`.
-    /// Fails if `signer` is not a candidate, if the candidate already voted or if there is no active key event.
-    /// Returns `RunningContractState` if `public_key` reaches the required votes.
+
+    /// Casts a successfully-reshared vote for for the attempt identified by `key_event_id`.
+    /// Upon success (a return of Ok(...)), the effect of this method is one of the following:
+    ///  - A vote has been collected but we don't have enough votes yet.
+    ///  - Everyone has now voted; the state transitions into resharing the key for the next domain.
+    ///    (This returns Ok(None) still).
+    ///  - Same as the last case, except that all domains' keys have been reshared now, and we
+    ///    return Ok(Some(running state)) that the caller should now transition into.
+    ///
+    /// Fails in the following cases:
+    ///  - There is no active key resharing attempt (including if the attempt timed out).
+    ///  - The key_event_id corresponds to a different domain, different epoch, or different attempt
+    ///    from the current key resharing attempt.
+    ///  - The signer is not a participant in the *proposed* set of participants.
     pub fn vote_reshared(
         &mut self,
         key_event_id: KeyEventId,
-        event_max_idle_blocks: u64,
     ) -> Result<Option<RunningContractState>, Error> {
-        if let Tally::ThresholdReached(_) = self
-            .event_state
-            .vote_success(&key_event_id, event_max_idle_blocks)?
+        let previous_key = self.previous_keyset().domains[self.reshared_keys.len()].clone();
+        if self
+            .resharing_key
+            .vote_success(&key_event_id, previous_key.key.clone())?
         {
-            return Ok(Some(RunningContractState {
-                key_state: DKState::new(
-                    self.public_key().clone(),
-                    key_event_id,
-                    self.event_state.proposed_threshold_parameters().clone(),
-                )?,
-                key_state_votes: KeyStateVotes::default(),
-            }));
+            let new_key = KeyForDomain {
+                domain_id: key_event_id.domain_id,
+                attempt: key_event_id.attempt_id,
+                key: previous_key.key,
+            };
+            self.reshared_keys.push(new_key);
+            if let Some(next_domain) = self
+                .previous_running_state
+                .domains
+                .get_domain_by_index(self.reshared_keys.len())
+            {
+                self.resharing_key = KeyEvent::new(
+                    self.prospective_epoch_id(),
+                    next_domain.clone(),
+                    self.resharing_key.proposed_parameters().clone(),
+                );
+            } else {
+                return Ok(Some(RunningContractState::new(
+                    self.previous_running_state.domains.clone(),
+                    Keyset::new(self.prospective_epoch_id(), self.reshared_keys.clone()),
+                    self.resharing_key.proposed_parameters().clone(),
+                )));
+            }
         }
         Ok(None)
     }
-    /// Casts a vote to abort the current keygen instance.
-    /// Replaces the current instance in case dkg threshold can't be reached anymore.
-    pub fn vote_abort(
-        &mut self,
-        key_event_id: KeyEventId,
-        event_max_idle_blocks: BlockHeight,
-    ) -> Result<InstanceStatus, Error> {
-        self.event_state
-            .vote_abort(key_event_id, event_max_idle_blocks)
+
+    /// Casts a vote to abort the current key resharing attempt.
+    /// After aborting, another call to start() is necessary to start a new attempt.
+    /// Returns error if there is no active attempt, or if the signer is not a proposed participant.
+    pub fn vote_abort(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+        self.resharing_key.vote_abort(key_event_id)
     }
 }
 #[cfg(test)]
 mod tests {
+    use crate::primitives::domain::{AddDomainsVotes, DomainId};
     use crate::primitives::key_state::{AttemptId, KeyEventId};
     use crate::primitives::test_utils::gen_account_id;
-    use crate::primitives::test_utils::gen_legacy_resharing_state;
-    use crate::primitives::votes::KeyStateVotes;
+    use crate::primitives::thresholds::{Threshold, ThresholdParameters};
+    use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::{find_leader, Environment};
-    use crate::state::key_event::{InstanceStatus, KeyEvent};
     use crate::state::resharing::ResharingContractState;
-    use crate::state::running::running_tests::{gen_running_state, gen_valid_ksp};
+    use crate::state::running::running_tests::{gen_running_state, gen_valid_params_proposal};
     use crate::state::running::RunningContractState;
     use near_sdk::AccountId;
     use std::collections::BTreeSet;
 
-    #[test]
-    fn test_migration() {
-        let n = 200;
-        let k = 2;
-        let legacy_state = gen_legacy_resharing_state(n, k);
-        let state: ResharingContractState = (&legacy_state).into();
-        assert_eq!(*state.public_key(), legacy_state.public_key);
-        assert_eq!(state.current_state.epoch_id().get(), legacy_state.old_epoch);
-        assert_eq!(
-            state.current_state.key_state.threshold().value(),
-            legacy_state.threshold as u64
-        );
-        assert_eq!(state.event_state.event_threshold().value(), n as u64);
-        assert_eq!(
-            state.event_state.current_key_event_id().epoch_id().get(),
-            legacy_state.old_epoch + 1
-        );
-        assert_eq!(
-            state.event_state.current_key_event_id().attempt().get(),
-            0u64
-        );
-    }
-    fn gen_resharing_state() -> (Environment, ResharingContractState) {
-        let env = Environment::new(Some(100), None, None);
-        let current_state = gen_running_state();
-        let proposal = gen_valid_ksp(&current_state.key_state);
-        let key_id = KeyEventId::new(current_state.epoch_id(), AttemptId::new());
-        let event_state = KeyEvent::new(key_id.epoch_id(), proposal);
+    /// Generates a resharing state with the given number of domains.
+    /// We do this by starting from the Running state and calling vote_new_parameters to have it
+    /// transition into Resharing. (This also tests the transitioning code path.)
+    fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContractState) {
+        let mut env = Environment::new(Some(100), None, None);
+        let mut running = gen_running_state(num_domains);
+        let proposal = gen_valid_params_proposal(&running.parameters);
+        let mut resharing_state = None;
+        let voting_participants = running.parameters.participants().participants()
+            [0..running.parameters.threshold().value() as usize]
+            .to_vec();
+        for (account, _, _) in voting_participants {
+            env.set_signer(&account);
+            assert!(resharing_state.is_none());
+            resharing_state = running.vote_new_parameters(&proposal).unwrap();
+        }
         (
             env,
-            ResharingContractState {
-                current_state,
-                event_state,
-            },
+            resharing_state.expect("Should've transitioned into resharing"),
         )
     }
 
-    #[test]
-    fn test_resharing_contract_state() {
-        let (mut env, mut state) = gen_resharing_state();
+    fn test_resharing_contract_state_for(num_domains: usize) {
+        println!("Testing with {} domains", num_domains);
+        let (mut env, mut state) = gen_resharing_state(num_domains);
         let candidates: BTreeSet<AccountId> = state
-            .event_state
-            .proposed_threshold_parameters()
+            .resharing_key
+            .proposed_parameters()
             .participants()
             .participants()
             .iter()
             .map(|(aid, _, _)| aid.clone())
             .collect();
-        let key_event = state.event_state.current_key_event_id();
-        let leader = find_leader(&key_event.attempt(), &state.event_state);
-        for c in &candidates {
-            env.set_signer(c);
-            // verify that each candidate is authorized
-            assert!(state.event_state.authenticate_candidate().is_ok());
-            // verify that no votes are casted before the reshare started.
-            assert!(state.vote_reshared(key_event.clone(), 100).is_err());
-            assert!(state.vote_abort(key_event.clone(), 100).is_err());
-            if *c != leader.0 {
-                assert!(state.start(100).is_err());
+
+        let mut resulting_running_state: Option<RunningContractState> = None;
+        for i in 0..num_domains {
+            println!("Testing domain {}", i);
+            assert!(!state.resharing_key.is_active());
+            let first_key_event_id = KeyEventId {
+                attempt_id: AttemptId::new(),
+                domain_id: state
+                    .previous_running_state
+                    .domains
+                    .get_domain_by_index(i)
+                    .unwrap()
+                    .id,
+                epoch_id: state.prospective_epoch_id(),
+            };
+            let leader = find_leader(&state.resharing_key);
+            for c in &candidates {
+                env.set_signer(c);
+                // verify that no votes can be cast before the resharing started.
+                assert!(state.vote_reshared(first_key_event_id.clone()).is_err());
+                assert!(state.vote_abort(first_key_event_id.clone()).is_err());
+                if *c != leader.0 {
+                    assert!(state.start(1).is_err());
+                }
+            }
+            // start the resharing; verify that the resharing is for the right epoch and domain ID.
+            env.set_signer(&leader.0);
+            assert!(state.start(0).is_ok());
+            let key_event = state.resharing_key.current_key_event_id().unwrap();
+            assert_eq!(key_event, first_key_event_id);
+
+            // check that randos can't vote.
+            for _ in 0..20 {
+                env.set_signer(&gen_account_id());
+                assert!(state.vote_reshared(key_event.clone()).is_err());
+                assert!(state.vote_abort(key_event.clone()).is_err());
+            }
+
+            // check that timing out will abort the instance
+            env.advance_block_height(1);
+            assert!(!state.resharing_key.is_active());
+            for c in &candidates {
+                env.set_signer(c);
+                assert!(state.vote_reshared(key_event.clone()).is_err());
+                assert!(state.vote_abort(key_event.clone()).is_err());
+                assert!(!state.resharing_key.is_active());
+            }
+
+            // assert that votes for a different resharings do not count
+            env.set_signer(&leader.0);
+            assert!(state.start(0).is_ok());
+            let key_event = state.resharing_key.current_key_event_id().unwrap();
+            let bad_key_events = [
+                KeyEventId::new(
+                    key_event.epoch_id,
+                    key_event.domain_id,
+                    key_event.attempt_id.next(),
+                ),
+                KeyEventId::new(
+                    key_event.epoch_id,
+                    DomainId(key_event.domain_id.0 + 1),
+                    key_event.attempt_id,
+                ),
+                KeyEventId::new(
+                    key_event.epoch_id.next(),
+                    key_event.domain_id,
+                    key_event.attempt_id,
+                ),
+            ];
+            for bad_key_event in bad_key_events {
+                for c in &candidates {
+                    env.set_signer(c);
+                    assert!(state.vote_reshared(bad_key_event.clone()).is_err());
+                    assert!(state.vote_abort(bad_key_event.clone()).is_err());
+                }
+            }
+            assert_eq!(state.resharing_key.num_completed(), 0);
+
+            // check that vote_abort immediately causes failure.
+            env.advance_block_height(1);
+            env.set_signer(&leader.0);
+            assert!(state.start(0).is_ok());
+            let key_event = state.resharing_key.current_key_event_id().unwrap();
+            env.set_signer(candidates.iter().next().unwrap());
+            assert!(state.vote_abort(key_event.clone()).is_ok());
+            assert!(!state.resharing_key.is_active());
+
+            // assert that valid votes get counted correctly
+            env.set_signer(&leader.0);
+            assert!(state.start(0).is_ok());
+            let key_event = state.resharing_key.current_key_event_id().unwrap();
+            for (i, c) in candidates.clone().into_iter().enumerate() {
+                env.set_signer(&c);
+                assert!(resulting_running_state.is_none());
+                assert_eq!(state.resharing_key.num_completed(), i);
+                resulting_running_state = state.vote_reshared(key_event.clone()).unwrap();
+                assert!(state.vote_abort(key_event.clone()).is_err());
             }
         }
-        // check that some randos can't vote
-        for _ in 0..20 {
-            env.set_signer(&gen_account_id());
-            assert!(state.event_state.authenticate_candidate().is_err());
-            assert!(state.vote_reshared(key_event.clone(), 100).is_err());
-            assert!(state.vote_abort(key_event.clone(), 100).is_err());
-            assert!(state.start(100).is_err());
-        }
-        // start the keygen:
-        env.set_signer(&leader.0);
-        assert!(state.start(0).is_ok());
 
-        // assert that timed out votes do not count
-        env.advance_block_height(1);
-        for c in &candidates {
-            env.set_signer(c);
-            assert!(state.vote_reshared(key_event.clone(), 0).is_err());
-            assert!(state.vote_abort(key_event.clone(), 0).is_err());
-        }
-
-        // check that some randos can't vote
-        env.block_height -= 1;
-        env.set();
-        for _ in 0..20 {
-            env.set_signer(&gen_account_id());
-            assert!(state.event_state.authenticate_candidate().is_err());
-            assert!(state.vote_reshared(key_event.clone(), 100).is_err());
-            assert!(state.vote_abort(key_event.clone(), 100).is_err());
-            assert!(state.start(100).is_err());
-        }
-
-        // assert that votes for a different reshare do not count
-        let ke = KeyEventId::new(key_event.epoch_id(), key_event.attempt().next());
-        for c in &candidates {
-            env.set_signer(c);
-            assert!(state.vote_reshared(ke.clone(), 10).is_err());
-            assert!(state.vote_abort(ke.clone(), 10).is_err());
-        }
-        let ke = KeyEventId::new(key_event.epoch_id().next(), key_event.attempt());
-        for c in &candidates {
-            env.set_signer(c);
-            assert!(state.vote_reshared(ke.clone(), 10).is_err());
-            assert!(state.vote_abort(ke.clone(), 10).is_err());
-        }
-
-        // find leader for next attempt
-        env.advance_block_height(100);
-        let leader = find_leader(&key_event.attempt().next(), &state.event_state);
-        env.set_signer(&leader.0);
-        assert!(state.start(0).is_ok());
-        let key_event = KeyEventId::new(key_event.epoch_id(), key_event.attempt().next());
-        assert_eq!(key_event, state.event_state.current_key_event_id());
-
-        // assert that valid votes get counted correctly:
-        let mut res: Option<RunningContractState> = None;
-        for (i, c) in candidates.clone().into_iter().enumerate() {
-            env.set_signer(&c);
-            res = state.vote_reshared(key_event.clone(), 0).unwrap();
-            // everybody voting for the same key
-            if ((i + 1) as u64) < state.event_state.event_threshold().value() {
-                assert!(res.is_none());
-            } else {
-                assert!(res.is_some());
-                break;
-            }
-            // assert we can't abort after voting
-            assert!(state.vote_abort(key_event.clone(), 0).is_err());
-        }
-        // assert running state is correct
-        let running_state = res.unwrap();
+        // assert that the final running state is correct
+        let running_state = resulting_running_state.unwrap();
         assert_eq!(
-            running_state.key_state.threshold(),
-            state.event_state.proposed_threshold(),
+            &running_state.parameters,
+            state.resharing_key.proposed_parameters(),
         );
+        assert_eq!(running_state.keyset.epoch_id, state.prospective_epoch_id());
+        assert_eq!(running_state.keyset.domains, state.reshared_keys);
+        assert_eq!(running_state.keyset.domains.len(), num_domains);
+        assert_eq!(running_state.domains, state.previous_running_state.domains);
         assert_eq!(
-            *running_state.key_state.participants(),
-            *state
-                .event_state
-                .proposed_threshold_parameters()
+            running_state.parameters_votes,
+            ThresholdParametersVotes::default()
+        );
+        assert_eq!(running_state.add_domains_votes, AddDomainsVotes::default());
+    }
+
+    #[test]
+    fn test_resharing_contract_state_1() {
+        test_resharing_contract_state_for(1);
+    }
+    #[test]
+    fn test_resharing_contract_state_2() {
+        test_resharing_contract_state_for(2);
+    }
+    #[test]
+    fn test_resharing_contract_state_3() {
+        test_resharing_contract_state_for(3);
+    }
+    #[test]
+    fn test_resharing_contract_state_4() {
+        test_resharing_contract_state_for(4);
+    }
+
+    #[test]
+    fn test_resharing_reproposal() {
+        let (mut env, mut state) = gen_resharing_state(3);
+
+        // Vote for first domain's key.
+        let leader = find_leader(&state.resharing_key);
+        env.set_signer(&leader.0);
+        assert!(state.start(0).is_ok());
+
+        let key_event_id = state.resharing_key.current_key_event_id().unwrap();
+        let old_participants = state
+            .previous_running_state
+            .parameters
+            .participants()
+            .clone();
+        let old_threshold = state.previous_running_state.parameters.threshold().value() as usize;
+        {
+            let new_participants = state
+                .resharing_key
+                .proposed_parameters()
                 .participants()
-        );
-        assert_eq!(
-            *running_state.public_key(),
-            *state.current_state.public_key()
-        );
-        assert_eq!(running_state.key_state.key_event_id(), key_event);
-        assert_eq!(running_state.key_state_votes, KeyStateVotes::new());
-
-        // assert that the instance resets after a timeout
-        env.advance_block_height(100);
-        let leader = find_leader(&key_event.attempt().next(), &state.event_state);
-        env.set_signer(&leader.0);
-        assert!(state.start(0).is_ok());
-        let key_event = KeyEventId::new(key_event.epoch_id(), key_event.attempt().next());
-        assert_eq!(key_event, state.event_state.current_key_event_id());
-        // assert that valid aborts get counted correctly:
-        for (i, c) in candidates.clone().into_iter().enumerate() {
-            env.set_signer(&c);
-            // assert we can abort
-            let x = state.vote_abort(key_event.clone(), 0).unwrap();
-            if state
-                .event_state
-                .proposed_threshold_parameters()
                 .participants()
-                .count()
-                - ((i + 1) as u64)
-                < state.event_state.event_threshold().value()
-            {
-                assert_eq!(x, InstanceStatus::Replaced);
-                let key_event = KeyEventId::new(key_event.epoch_id(), key_event.attempt().next());
-                assert_eq!(state.event_state.current_key_event_id(), key_event);
-                break;
-            } else {
-                assert_eq!(x, InstanceStatus::Pending);
+                .clone();
+            for (account, _, _) in new_participants {
+                env.set_signer(&account);
+                state.vote_reshared(key_event_id.clone()).unwrap();
             }
-            // assert we can't abort after aborting
-            assert!(state.vote_abort(key_event.clone(), 0).is_err());
-            // assert we can't vote after aborting
-            assert!(state.vote_reshared(key_event.clone(), 0).is_err());
         }
-        // restart the keygen
-        let attempt = key_event.attempt().next();
-        let leader = find_leader(&attempt, &state.event_state);
-        println!("{:?}", state.event_state.current_key_event_id());
-        println!("{:?}", attempt);
-        env.set_signer(&leader.0);
-        let res = state.start(0);
-        println!("{:?}", res);
-        println!("{:?}", state.event_state.current_key_event_id());
-        assert!(res.is_ok());
+        assert!(state.reshared_keys.len() == 1);
+
+        // Generate two sets of params:
+        //  - old params -> new_params_1 is a valid proposal.
+        //  - new_params_1 -> new_params_2 is a valid proposal.
+        //  - old params -> new_params_2 is NOT a valid proposal.
+        //
+        // Reproposing with new_params_1 should succeed, but then reproposing with new_params_2
+        // should be rejected, since all re-proposals must be valid against the original.
+        let mut new_participants_1 = old_participants.clone();
+        let new_threshold = Threshold::new(old_participants.len() as u64);
+        new_participants_1.add_random_participants_till_n(old_participants.len() * 3 / 2);
+        let new_participants_2 = new_participants_1
+            .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
+        let new_params_1 =
+            ThresholdParameters::new(new_participants_1, new_threshold.clone()).unwrap();
+        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
+        assert!(state
+            .previous_running_state
+            .parameters
+            .validate_incoming_proposal(&new_params_1)
+            .is_ok());
+        assert!(new_params_1
+            .validate_incoming_proposal(&new_params_2)
+            .is_ok());
+        assert!(state
+            .previous_running_state
+            .parameters
+            .validate_incoming_proposal(&new_params_2)
+            .is_err());
+
+        // Repropose with new_params_1.
+        let mut new_state = None;
+        for (account, _, _) in &old_participants.participants()[0..old_threshold] {
+            env.set_signer(account);
+            assert!(new_state.is_none());
+            new_state = state.vote_new_parameters(&new_params_1).unwrap();
+        }
+        // We should've gotten a new resharing state.
+        assert!(new_state.is_some());
+        let mut new_state = new_state.unwrap();
+        // New state should start from the beginning, with the epoch ID bumped.
+        assert_eq!(new_state.reshared_keys.len(), 0);
+        assert_eq!(
+            new_state.resharing_key.epoch_id(),
+            state.prospective_epoch_id().next()
+        );
+        assert_eq!(new_state.resharing_key.proposed_parameters(), &new_params_1);
+        assert_eq!(
+            new_state.resharing_key.domain_id(),
+            state
+                .previous_running_state
+                .domains
+                .get_domain_by_index(0)
+                .unwrap()
+                .id
+        );
+
+        // Repropose with new_params_2. That should fail.
+        env.set_signer(&old_participants.participants()[0].0);
+        assert!(new_state.vote_new_parameters(&new_params_2).is_err());
     }
 }

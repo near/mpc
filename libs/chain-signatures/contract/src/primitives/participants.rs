@@ -1,8 +1,8 @@
 use crate::{
-    errors::{Error, InvalidCandidateSet, InvalidParameters, InvalidState},
+    errors::{Error, InvalidCandidateSet, InvalidParameters},
     legacy_contract_state,
 };
-use near_sdk::{env, log, near, AccountId, PublicKey};
+use near_sdk::{log, near, AccountId, PublicKey};
 use std::collections::BTreeSet;
 
 pub mod hpke {
@@ -27,24 +27,6 @@ impl From<&legacy_contract_state::ParticipantInfo> for ParticipantInfo {
             cipher_pk: info.cipher_pk,
             sign_pk: info.sign_pk.clone(),
         }
-    }
-}
-
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct AuthenticatedCandidateId(ParticipantId);
-impl AuthenticatedCandidateId {
-    pub fn get(&self) -> ParticipantId {
-        self.0.clone()
-    }
-    pub fn new(candidates: &Participants) -> Result<Self, Error> {
-        let signer = env::signer_account_id();
-        candidates
-            .participants()
-            .iter()
-            .find(|(a_id, _, _)| *a_id == signer)
-            .map(|(_, p_id, _)| AuthenticatedCandidateId(p_id.clone()))
-            .ok_or_else(|| InvalidState::NotParticipant.into())
     }
 }
 
@@ -79,8 +61,9 @@ impl Participants {
             participants: Vec::new(),
         }
     }
-    pub fn count(&self) -> u64 {
-        self.participants.len() as u64
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.participants.len()
     }
     pub fn insert_with_id(
         &mut self,
@@ -112,6 +95,11 @@ impl Participants {
     pub fn next_id(&self) -> ParticipantId {
         self.next_id.clone()
     }
+
+    /// Validates that the fields are coherent:
+    ///  - All participant IDs are unique.
+    ///  - All account IDs are unique.
+    ///  - The next_id is greater than all participant IDs.
     pub fn validate(&self) -> Result<(), Error> {
         let mut ids: BTreeSet<ParticipantId> = BTreeSet::new();
         let mut accounts: BTreeSet<AccountId> = BTreeSet::new();
@@ -122,15 +110,16 @@ impl Participants {
                 return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
             }
         }
-        if ids.len() as u64 != self.count() {
+        if ids.len() != self.len() {
             return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
         }
-        if accounts.len() as u64 != self.count() {
+        if accounts.len() != self.len() {
             return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
         }
         Ok(())
     }
 }
+
 #[cfg(test)]
 impl Participants {
     pub fn id(&self, account_id: &AccountId) -> Result<ParticipantId, Error> {
@@ -138,7 +127,7 @@ impl Participants {
             .iter()
             .find(|(a_id, _, _)| a_id == account_id)
             .map(|(_, p_id, _)| p_id.clone())
-            .ok_or_else(|| InvalidState::NotParticipant.into())
+            .ok_or_else(|| crate::errors::InvalidState::NotParticipant.into())
     }
     pub fn info(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
         self.participants
@@ -151,12 +140,30 @@ impl Participants {
             .iter()
             .find(|(_, p_id, _)| p_id == id)
             .map(|(a_id, _, _)| a_id.clone())
-            .ok_or_else(|| InvalidState::ParticipantIndexOutOfRange.into())
+            .ok_or_else(|| crate::errors::InvalidState::ParticipantIndexOutOfRange.into())
     }
     pub fn is_participant(&self, account_id: &AccountId) -> bool {
         self.participants
             .iter()
             .any(|(a_id, _, _)| a_id == account_id)
+    }
+    /// Returns a subset of the participants according to the given range of indices.
+    pub fn subset(&self, range: std::ops::Range<usize>) -> Participants {
+        let participants = self.participants[range]
+            .iter()
+            .map(|(a, p, i)| (a.clone(), p.clone(), i.clone()));
+        Participants {
+            next_id: self.next_id.clone(),
+            participants: participants.collect(),
+        }
+    }
+    pub fn add_random_participants_till_n(&mut self, n: usize) {
+        let mut rng = rand::thread_rng();
+        while self.len() < n {
+            let (account, pinfo) =
+                crate::primitives::test_utils::gen_participant(rand::Rng::gen(&mut rng));
+            self.insert(account, pinfo).unwrap();
+        }
     }
 }
 
@@ -241,7 +248,7 @@ pub mod tests {
             );
             assert!(participants.is_participant(account_id));
         }
-        assert_eq!(participants.count(), n as u64);
+        assert_eq!(participants.len(), n);
         for i in 0..n {
             assert!(participants.account_id(&ParticipantId(i as u32)).is_ok());
         }
@@ -253,8 +260,8 @@ pub mod tests {
         migrated_participants: &Participants,
     ) {
         assert_eq!(
-            migrated_participants.count(),
-            legacy_candidates.candidates.len() as u64
+            migrated_participants.len(),
+            legacy_candidates.candidates.len()
         );
         for (account_id, info) in &legacy_candidates.candidates {
             assert!(migrated_participants.is_participant(account_id));
@@ -285,8 +292,8 @@ pub mod tests {
         migrated_participants: &Participants,
     ) {
         assert_eq!(
-            legacy_participants.participants.len() as u64,
-            migrated_participants.count(),
+            legacy_participants.participants.len(),
+            migrated_participants.len(),
         );
         assert_eq!(
             legacy_participants.next_id,
