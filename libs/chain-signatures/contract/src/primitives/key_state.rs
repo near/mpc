@@ -1,6 +1,7 @@
 use super::participants::{ParticipantId, Participants};
 use super::thresholds::{DKGThreshold, Threshold, ThresholdParameters};
 use crate::errors::{Error, InvalidState};
+use crate::legacy_contract_state;
 use near_sdk::{env, near, PublicKey};
 
 #[near(serializers=[borsh, json])]
@@ -180,8 +181,8 @@ impl KeyStateProposal {
 }
 
 /* Migration helpers. Though ideally, we don't reshare and update at the same time. */
-impl From<&legacy_contract::ResharingContractState> for DKState {
-    fn from(state: &legacy_contract::ResharingContractState) -> Self {
+impl From<&legacy_contract_state::ResharingContractState> for DKState {
+    fn from(state: &legacy_contract_state::ResharingContractState) -> Self {
         DKState {
             public_key: state.public_key.clone(),
             key_event_id: KeyEventId::new_migrated_key(state.old_epoch),
@@ -192,8 +193,8 @@ impl From<&legacy_contract::ResharingContractState> for DKState {
         }
     }
 }
-impl From<&legacy_contract::RunningContractState> for DKState {
-    fn from(state: &legacy_contract::RunningContractState) -> Self {
+impl From<&legacy_contract_state::RunningContractState> for DKState {
+    fn from(state: &legacy_contract_state::RunningContractState) -> Self {
         DKState {
             public_key: state.public_key.clone(),
             key_event_id: KeyEventId::new_migrated_key(state.epoch),
@@ -204,8 +205,8 @@ impl From<&legacy_contract::RunningContractState> for DKState {
         }
     }
 }
-impl From<&legacy_contract::ResharingContractState> for KeyStateProposal {
-    fn from(state: &legacy_contract::ResharingContractState) -> Self {
+impl From<&legacy_contract_state::ResharingContractState> for KeyStateProposal {
+    fn from(state: &legacy_contract_state::ResharingContractState) -> Self {
         KeyStateProposal {
             proposed_threshold_parameters: ThresholdParameters::from((
                 Threshold::new(state.threshold as u64),
@@ -215,8 +216,8 @@ impl From<&legacy_contract::ResharingContractState> for KeyStateProposal {
         }
     }
 }
-impl From<&legacy_contract::InitializingContractState> for KeyStateProposal {
-    fn from(state: &legacy_contract::InitializingContractState) -> KeyStateProposal {
+impl From<&legacy_contract_state::InitializingContractState> for KeyStateProposal {
+    fn from(state: &legacy_contract_state::InitializingContractState) -> KeyStateProposal {
         KeyStateProposal {
             proposed_threshold_parameters: ThresholdParameters::from((
                 Threshold::new(state.threshold as u64),

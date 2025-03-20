@@ -1,5 +1,6 @@
 pub mod config;
 pub mod errors;
+pub mod legacy_contract_state;
 pub mod primitives;
 pub mod state;
 pub mod storage_keys;
@@ -576,8 +577,8 @@ impl VersionedMpcContract {
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
-        if let Some(legacy_contract::VersionedMpcContract::V1(state)) =
-            env::state_read::<legacy_contract::VersionedMpcContract>()
+        if let Some(legacy_contract_state::VersionedMpcContract::V1(state)) =
+            env::state_read::<legacy_contract_state::VersionedMpcContract>()
         {
             // migrate config
             let mut config = Config::default();

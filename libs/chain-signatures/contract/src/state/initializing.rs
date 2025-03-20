@@ -1,6 +1,7 @@
 use super::key_event::{InstanceStatus, KeyEvent, Tally};
 use super::running::RunningContractState;
 use crate::errors::Error;
+use crate::legacy_contract_state;
 use crate::primitives::key_state::{DKState, EpochId, KeyEventId};
 use crate::primitives::participants::AuthenticatedCandidateId;
 use crate::primitives::votes::KeyStateVotes;
@@ -89,8 +90,8 @@ impl InitializingContractState {
     }
 }
 
-impl From<&legacy_contract::InitializingContractState> for InitializingContractState {
-    fn from(state: &legacy_contract::InitializingContractState) -> Self {
+impl From<&legacy_contract_state::InitializingContractState> for InitializingContractState {
+    fn from(state: &legacy_contract_state::InitializingContractState) -> Self {
         InitializingContractState {
             keygen: KeyEvent::new(EpochId::new(0), state.into()),
             pk_votes: PkVotes::default(),

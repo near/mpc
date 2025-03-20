@@ -1,6 +1,7 @@
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{Error, InvalidCandidateSet};
+use crate::legacy_contract_state;
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, DKState, EpochId, KeyStateProposal,
 };
@@ -15,8 +16,8 @@ pub struct RunningContractState {
     pub key_state: DKState,
     pub key_state_votes: KeyStateVotes,
 }
-impl From<&legacy_contract::RunningContractState> for RunningContractState {
-    fn from(state: &legacy_contract::RunningContractState) -> Self {
+impl From<&legacy_contract_state::RunningContractState> for RunningContractState {
+    fn from(state: &legacy_contract_state::RunningContractState) -> Self {
         RunningContractState {
             key_state: state.into(),
             key_state_votes: KeyStateVotes::default(),
