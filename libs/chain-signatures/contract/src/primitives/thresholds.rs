@@ -1,5 +1,8 @@
 use super::participants::{ParticipantId, ParticipantInfo, Participants};
-use crate::errors::{Error, InvalidCandidateSet, InvalidThreshold};
+use crate::{
+    errors::{Error, InvalidCandidateSet, InvalidThreshold},
+    legacy_contract_state,
+};
 use near_sdk::{near, AccountId};
 use std::collections::BTreeMap;
 
@@ -140,7 +143,7 @@ impl ThresholdParameters {
     /// For migration from legacy; does not check the threshold.
     pub fn migrate_from_legacy(
         threshold: usize,
-        participants: legacy_contract::primitives::Participants,
+        participants: legacy_contract_state::Participants,
     ) -> Self {
         ThresholdParameters {
             threshold: Threshold::new(threshold as u64),

@@ -56,9 +56,9 @@ async fn test_keygen() -> anyhow::Result<()> {
         "public_key": pk,
     });
 
-    for i in 0..3 {
+    for account in &accounts[0..3] {
         check_call_success(
-            accounts[i]
+            account
                 .call(contract.id(), "vote_pk")
                 .args_json(vote_pk_args.clone())
                 .transact()

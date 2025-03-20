@@ -134,20 +134,20 @@ impl ProtocolContractState {
     }
 }
 
-impl From<&legacy_contract::ProtocolContractState> for ProtocolContractState {
-    fn from(protocol_state: &legacy_contract::ProtocolContractState) -> Self {
+impl From<&super::legacy_contract_state::ProtocolContractState> for ProtocolContractState {
+    fn from(protocol_state: &super::legacy_contract_state::ProtocolContractState) -> Self {
         // can this be simplified?
         match &protocol_state {
-            legacy_contract::ProtocolContractState::NotInitialized => {
+            super::legacy_contract_state::ProtocolContractState::NotInitialized => {
                 ProtocolContractState::NotInitialized
             }
-            legacy_contract::ProtocolContractState::Initializing(state) => {
+            super::legacy_contract_state::ProtocolContractState::Initializing(state) => {
                 ProtocolContractState::Initializing(state.into())
             }
-            legacy_contract::ProtocolContractState::Running(state) => {
+            super::legacy_contract_state::ProtocolContractState::Running(state) => {
                 ProtocolContractState::Running(state.into())
             }
-            legacy_contract::ProtocolContractState::Resharing(state) => {
+            super::legacy_contract_state::ProtocolContractState::Resharing(state) => {
                 ProtocolContractState::Resharing(state.into())
             }
         }

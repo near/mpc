@@ -1,6 +1,7 @@
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
 use crate::errors::Error;
+use crate::legacy_contract_state;
 use crate::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
 use crate::primitives::thresholds::ThresholdParameters;
 use near_sdk::near;
@@ -26,8 +27,8 @@ pub struct ResharingContractState {
     pub resharing_key: KeyEvent,
 }
 
-impl From<&legacy_contract::ResharingContractState> for ResharingContractState {
-    fn from(_state: &legacy_contract::ResharingContractState) -> Self {
+impl From<&legacy_contract_state::ResharingContractState> for ResharingContractState {
+    fn from(_state: &legacy_contract_state::ResharingContractState) -> Self {
         // It's complicated to upgrade the contract while resharing. Just don't support it.
         unimplemented!("Cannot migrate from Resharing state")
     }

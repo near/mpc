@@ -1,7 +1,7 @@
+use crate::legacy_contract_state::{self, CandidateInfo};
 use crate::primitives::participants::{ParticipantInfo, Participants};
 use crate::primitives::thresholds::Threshold;
 use crate::primitives::thresholds::ThresholdParameters;
-use legacy_contract::primitives::CandidateInfo;
 use near_sdk::{AccountId, CurveType, PublicKey};
 use rand::{distributions::Uniform, Rng};
 use std::collections::{BTreeMap, HashSet};
@@ -65,9 +65,9 @@ pub fn gen_participants(n: usize) -> Participants {
     participants
 }
 
-pub fn gen_legacy_participants(n: usize) -> legacy_contract::primitives::Participants {
+pub fn gen_legacy_participants(n: usize) -> legacy_contract_state::Participants {
     // ensure random indices
-    let mut legacy_participants = legacy_contract::primitives::Participants::new();
+    let mut legacy_participants = legacy_contract_state::Participants::new();
     legacy_participants.next_id = rand::thread_rng().gen_range(0..1000000);
     let legacy_candidate = gen_legacy_candidates(n);
     for (i, (account_id, info)) in legacy_candidate.candidates.iter().enumerate() {
@@ -83,7 +83,7 @@ pub fn gen_legacy_participants(n: usize) -> legacy_contract::primitives::Partici
     legacy_participants
 }
 
-pub fn gen_legacy_candidates(n: usize) -> legacy_contract::primitives::Candidates {
+pub fn gen_legacy_candidates(n: usize) -> legacy_contract_state::Candidates {
     pub fn candidates(names: Vec<AccountId>) -> BTreeMap<AccountId, CandidateInfo> {
         let mut candidates: BTreeMap<AccountId, CandidateInfo> = BTreeMap::new();
         for (i, account_id) in names.iter().enumerate() {
@@ -100,7 +100,7 @@ pub fn gen_legacy_candidates(n: usize) -> legacy_contract::primitives::Candidate
         candidates
     }
     let accounts: Vec<AccountId> = (0..n).map(|_| gen_account_id()).collect();
-    legacy_contract::primitives::Candidates {
+    legacy_contract_state::Candidates {
         candidates: candidates(accounts),
     }
 }
@@ -122,9 +122,9 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
 pub fn gen_legacy_initializing_state(
     n: usize,
     k: usize,
-) -> legacy_contract::InitializingContractState {
+) -> legacy_contract_state::InitializingContractState {
     let candidates = gen_legacy_candidates(n);
-    let mut pk_votes = legacy_contract::primitives::PkVotes::new();
+    let mut pk_votes = legacy_contract_state::PkVotes::new();
     let n_pk_votes = rand::thread_rng().gen_range(0..k);
     let n_pks = match n_pk_votes {
         0 => 0,
@@ -138,25 +138,28 @@ pub fn gen_legacy_initializing_state(
         let (account_id, _) = candidates.candidates.iter().nth(i).unwrap();
         pk_votes.entry(pk).insert(account_id.clone());
     }
-    legacy_contract::InitializingContractState {
+    legacy_contract_state::InitializingContractState {
         candidates,
         threshold: (k),
         pk_votes,
     }
 }
-pub fn gen_legacy_running_state(n: usize, k: usize) -> legacy_contract::RunningContractState {
-    legacy_contract::RunningContractState {
+pub fn gen_legacy_running_state(n: usize, k: usize) -> legacy_contract_state::RunningContractState {
+    legacy_contract_state::RunningContractState {
         epoch: rand::thread_rng().gen(),
         participants: gen_legacy_participants(n),
         threshold: k,
         public_key: gen_pk(),
         candidates: gen_legacy_candidates(rand::thread_rng().gen_range(0..n + 5)),
-        join_votes: legacy_contract::primitives::Votes::default(),
-        leave_votes: legacy_contract::primitives::Votes::default(),
+        join_votes: legacy_contract_state::Votes::default(),
+        leave_votes: legacy_contract_state::Votes::default(),
     }
 }
-pub fn gen_legacy_resharing_state(n: usize, k: usize) -> legacy_contract::ResharingContractState {
-    legacy_contract::ResharingContractState {
+pub fn gen_legacy_resharing_state(
+    n: usize,
+    k: usize,
+) -> legacy_contract_state::ResharingContractState {
+    legacy_contract_state::ResharingContractState {
         old_epoch: rand::thread_rng().gen(),
         old_participants: gen_legacy_participants(n),
         new_participants: gen_legacy_participants(n),

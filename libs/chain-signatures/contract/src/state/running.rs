@@ -3,6 +3,7 @@ use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{DomainError, Error};
 use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
+use crate::legacy_contract_state;
 use crate::primitives::key_state::{
     AttemptId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
 };
@@ -35,8 +36,8 @@ pub struct RunningContractState {
     pub add_domains_votes: AddDomainsVotes,
 }
 
-impl From<&legacy_contract::RunningContractState> for RunningContractState {
-    fn from(state: &legacy_contract::RunningContractState) -> Self {
+impl From<&legacy_contract_state::RunningContractState> for RunningContractState {
+    fn from(state: &legacy_contract_state::RunningContractState) -> Self {
         RunningContractState {
             domains: DomainRegistry::new_single_ecdsa_key_from_legacy(),
             keyset: Keyset::new(

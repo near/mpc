@@ -83,4 +83,7 @@ These functions require the caller to be a participant or candidate.
 
 
 ## Development
-Run tests with `cargo nextest run -p mpc-contract@2.0.0-alpha`
+Run tests with `cargo nextest run`. This includes the integration tests, for which it is necessary to compile the contract first:
+```
+cargo build --release --target=wasm32-unknown-unknown
+```
