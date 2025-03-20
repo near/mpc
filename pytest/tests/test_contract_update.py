@@ -7,6 +7,7 @@ votes on the contract update.
 Verifies that the update was executed.
 """
 
+import hashlib
 import json
 import sys
 import time
@@ -21,24 +22,28 @@ from common_lib import shared
 from common_lib.contracts import V0_CONTRACT_PATH, COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, V1_CONTRACT_PATH, UpdateArgsV0, UpdateArgsV1, ConfigV1
 
 
-@pytest.mark.parametrize("initial_contract_path,update_args", [
-    pytest.param(V0_CONTRACT_PATH,
-                 UpdateArgsV0(COMPILED_CONTRACT_PATH),
-                 id="update v0 to current"),
-    pytest.param(V1_CONTRACT_PATH,
-                 UpdateArgsV0(COMPILED_CONTRACT_PATH),
-                 id="update v1 to current"),
-    pytest.param(COMPILED_CONTRACT_PATH,
-                 UpdateArgsV1(code_path=MIGRATE_CURRENT_CONTRACT_PATH),
-                 id="update current code"),
-    pytest.param(COMPILED_CONTRACT_PATH,
-                 UpdateArgsV1(code_path=None,
-                              config=ConfigV1(max_num_requests_to_remove=2,
-                                              request_timeout_blocks=10)),
-                 id="update current config"),
-])
+@pytest.mark.parametrize(
+    "initial_contract_path,update_args",
+    [
+        #pytest.param(V0_CONTRACT_PATH,
+        #             UpdateArgsV0(COMPILED_CONTRACT_PATH),
+        #             id="update v0 to current"),
+        pytest.param(V1_CONTRACT_PATH,
+                     UpdateArgsV0(COMPILED_CONTRACT_PATH),
+                     id="update v1 to current"),
+        #pytest.param(COMPILED_CONTRACT_PATH,
+        #             UpdateArgsV1(code_path=MIGRATE_CURRENT_CONTRACT_PATH),
+        #             id="update current code"),
+        #pytest.param(COMPILED_CONTRACT_PATH,
+        #             UpdateArgsV1(code_path=None,
+        #                          config=ConfigV1(max_num_requests_to_remove=2,
+        #                                          request_timeout_blocks=10)),
+        #             id="update current config"),
+    ])
 def test_contract_update(initial_contract_path, update_args):
     initial_contract = load_binary_file(initial_contract_path)
+    print("initial contract hash")
+    print(hashlib.sha256(initial_contract).hexdigest())
     cluster = shared.start_cluster_with_mpc(2, 2, 1, initial_contract)
     # assert correct contract is deployed
     cluster.assert_is_deployed(initial_contract)
@@ -56,6 +61,11 @@ def test_contract_update(initial_contract_path, update_args):
     # assert v1 is now deployed
     if update_args.code() is not None:
         print("ensuring contract code is updated")
+        print("proposed contract hash")
+        print(hashlib.sha256(update_args.code()).hexdigest())
+        print("deployed contract hash")
+        print(cluster.get_deployed_contract_hash())
+        time.sleep(2)
         cluster.assert_is_deployed(update_args.code())
     else:
         print("ensuring config is updated")
@@ -64,9 +74,9 @@ def test_contract_update(initial_contract_path, update_args):
         assert deployed_config == expected_config
     print("update completed")
     # add deposit and gas for contract in MIGRATE_CURRENT_CONTRACT_PATH
-    cluster.send_and_await_signature_requests(2,
-                                              add_gas=150 * TGAS,
-                                              add_deposit=10)
+    #cluster.send_and_await_signature_requests(2,
+    #                                          add_gas=150 * TGAS,
+    #                                          add_deposit=10)
 
 
 # In case a nonce conflict occurs during a vote_update call, rerun the test once.

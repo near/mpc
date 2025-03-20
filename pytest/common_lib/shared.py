@@ -78,6 +78,7 @@ class NearNode:
 
     def send_txn_and_check_success(self, txn, timeout=20):
         res = self.near_node.send_tx_and_wait(txn, timeout)
+        print(json.dumps(res, indent=" "))
         assert_txn_success(res)
         return res
 
@@ -140,7 +141,8 @@ class MpcNode(NearNode):
             open(pathlib.Path(self.home_dir) /
                  'validator_key.json').read())['secret_key']
         extra_env = {
-            'RUST_LOG': 'INFO', # mpc-node produces way too much output on DEBUG
+            'RUST_LOG':
+            'INFO',  # mpc-node produces way too much output on DEBUG
             'MPC_SECRET_STORE_KEY': self.secret_store_key,
             'MPC_P2P_PRIVATE_KEY': p2p_private_key,
             'MPC_ACCOUNT_SK': near_secret_key,
@@ -155,9 +157,11 @@ class MpcNode(NearNode):
     def wait_for_connection_count(self, awaited_count):
         started = time.time()
         while True:
-            assert time.time() - started < TIMEOUT, "Waiting for connection count"
+            assert time.time(
+            ) - started < TIMEOUT, "Waiting for connection count"
             try:
-                conns = self.metrics.get_metric_all_values("mpc_network_live_connections")
+                conns = self.metrics.get_metric_all_values(
+                    "mpc_network_live_connections")
                 print("mpc_network_live_connections", conns)
                 connection_count = int(sum([kv[1] for kv in conns]))
                 if connection_count == awaited_count:
@@ -197,7 +201,8 @@ class MpcCluster:
         ]
 
     def get_int_metric_value_for_node(self, metric_name, node_index):
-        return self.mpc_nodes[node_index].metrics.get_int_metric_value(metric_name)
+        return self.mpc_nodes[node_index].metrics.get_int_metric_value(
+            metric_name)
 
     """
     Deploy the MPC contract.
@@ -349,7 +354,8 @@ class MpcCluster:
         while True:
             assert time.time() - started < TIMEOUT, "Waiting for mpc indexers"
             try:
-                indexed_request_count = self.get_int_metric_value("mpc_num_signature_requests_indexed")
+                indexed_request_count = self.get_int_metric_value(
+                    "mpc_num_signature_requests_indexed")
                 print("num_signature_requests_indexed:", indexed_request_count)
                 if all(x and x == num_requests for x in indexed_request_count):
                     tx_indexed = time.time()
@@ -511,8 +517,11 @@ def sign_create_account_with_multiple_access_keys_tx(creator_key,
     return serialize_transaction(signed_tx)
 
 
-def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
-                           contract, presignatures_to_buffer=None):
+def start_cluster_with_mpc(num_validators,
+                           num_mpc_nodes,
+                           num_respond_aks,
+                           contract,
+                           presignatures_to_buffer=None):
     rpc_polling_config = {
         "rpc": {
             "polling_config": {
@@ -546,11 +555,14 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
     # Generate the mpc configs
     dot_near = pathlib.Path.home() / '.near'
     cmd = (MPC_BINARY_PATH, 'generate-test-configs', '--output-dir', dot_near,
-         '--participants', ','.join(f'test{i + num_validators}'
-                                    for i in range(num_mpc_nodes)),
-         '--threshold', str(num_mpc_nodes))
+           '--participants', ','.join(f'test{i + num_validators}'
+                                      for i in range(num_mpc_nodes)),
+           '--threshold', str(num_mpc_nodes))
     if presignatures_to_buffer:
-        cmd = cmd + ('--desired-presignatures-to-buffer', str(presignatures_to_buffer),)
+        cmd = cmd + (
+            '--desired-presignatures-to-buffer',
+            str(presignatures_to_buffer),
+        )
     subprocess.run(cmd)
 
     # Get the participant set from the mpc configs.
@@ -610,7 +622,8 @@ def start_cluster_with_mpc(num_validators, num_mpc_nodes, num_respond_aks,
                 for s in range(0, num_respond_aks)
             ]
             tx = sign_create_account_with_multiple_access_keys_tx(
-                mpc_node.signer_key(), account_id, access_keys, 1, last_block_hash)
+                mpc_node.signer_key(), account_id, access_keys, 1,
+                last_block_hash)
             cluster.contract_node.send_txn_and_check_success(tx)
             respond_cfg = {
                 'account_id': account_id,
