@@ -92,6 +92,11 @@ impl Participants {
     pub fn next_id(&self) -> ParticipantId {
         self.next_id.clone()
     }
+
+    /// Validates that the fields are coherent:
+    ///  - All participant IDs are unique.
+    ///  - All account IDs are unique.
+    ///  - The next_id is greater than all participant IDs.
     pub fn validate(&self) -> Result<(), Error> {
         let mut ids: BTreeSet<ParticipantId> = BTreeSet::new();
         let mut accounts: BTreeSet<AccountId> = BTreeSet::new();
@@ -111,6 +116,7 @@ impl Participants {
         Ok(())
     }
 }
+
 #[cfg(test)]
 impl Participants {
     pub fn id(&self, account_id: &AccountId) -> Result<ParticipantId, Error> {
@@ -137,6 +143,24 @@ impl Participants {
         self.participants
             .iter()
             .any(|(a_id, _, _)| a_id == account_id)
+    }
+    /// Returns a subset of the participants according to the given range of indices.
+    pub fn subset(&self, range: std::ops::Range<usize>) -> Participants {
+        let participants = self.participants[range]
+            .iter()
+            .map(|(a, p, i)| (a.clone(), p.clone(), i.clone()));
+        Participants {
+            next_id: self.next_id.clone(),
+            participants: participants.collect(),
+        }
+    }
+    pub fn add_random_participants_till_n(&mut self, n: usize) {
+        let mut rng = rand::thread_rng();
+        while self.len() < n {
+            let (account, pinfo) =
+                crate::primitives::test_utils::gen_participant(rand::Rng::gen(&mut rng));
+            self.insert(account, pinfo).unwrap();
+        }
     }
 }
 

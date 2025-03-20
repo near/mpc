@@ -185,6 +185,11 @@ impl KeyEvent {
         assert!(self.is_active());
         self.instance.as_ref().unwrap().completed.len()
     }
+
+    #[cfg(test)]
+    pub fn domain_id(&self) -> crate::primitives::domain::DomainId {
+        self.domain.id
+    }
 }
 
 /// See KeyEventInstance::vote_success.

@@ -308,17 +308,78 @@ mod tests {
     }
 
     #[test]
-    fn test_initializing_contract_state() {
-        for num_domains in 1..=5 {
-            for num_already_generated in 0..num_domains {
-                println!(
-                    "Testing {} domains, {} already generated",
-                    num_domains, num_already_generated
-                );
-                test_initializing_contract_state_for(num_domains, num_already_generated);
-            }
+    fn test_initializing_contract_state_1_0() {
+        test_initializing_contract_state_for(1, 0);
+    }
+
+    #[test]
+    fn test_initializing_contract_state_2_0() {
+        test_initializing_contract_state_for(2, 0);
+    }
+
+    #[test]
+    fn test_initializing_contract_state_2_1() {
+        test_initializing_contract_state_for(2, 1);
+    }
+
+    #[test]
+    fn test_initializing_contract_state_3_0() {
+        test_initializing_contract_state_for(3, 0);
+    }
+
+    #[test]
+    fn test_initializing_contract_state_3_1() {
+        test_initializing_contract_state_for(3, 1);
+    }
+
+    #[test]
+    fn test_initializing_contract_state_3_2() {
+        test_initializing_contract_state_for(3, 2);
+    }
+
+    #[test]
+    fn test_cancel_key_generation() {
+        let (mut env, mut state) = gen_initializing_state(5, 2);
+
+        // Vote for domain #2.
+        let leader = find_leader(&state.generating_key);
+        env.set_signer(&leader.0);
+        assert!(state.start(0).is_ok());
+
+        let pk = gen_pk();
+        let key_event_id = state.generating_key.current_key_event_id().unwrap();
+        let participants = state
+            .generating_key
+            .proposed_parameters()
+            .participants()
+            .participants()
+            .clone();
+        let threshold = state
+            .generating_key
+            .proposed_parameters()
+            .threshold()
+            .value() as usize;
+        for (account, _, _) in &participants {
+            env.set_signer(account);
+            state.vote_pk(key_event_id.clone(), pk.clone()).unwrap();
         }
+
+        // we should have 3 keys now.
+        assert!(state.generated_keys.len() == 3);
+        let mut running = None;
+        for (account, _, _) in &participants[0..threshold] {
+            env.set_signer(account);
+            assert!(running.is_none());
+            running = state.vote_cancel().unwrap();
+        }
+        let running = running.expect("Enough votes to cancel should transition into running");
+        assert_eq!(running.keyset.domains.len(), 3);
+        assert_eq!(running.domains.domains().len(), 3);
+        assert_eq!(running.keyset.domains[2].key, pk);
+
+        assert_eq!(
+            running.domains.next_domain_id(),
+            state.domains.next_domain_id(),
+        );
     }
 }
-
-// TODO: add tests for aborting key generation

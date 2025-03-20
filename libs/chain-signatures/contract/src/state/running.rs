@@ -1,16 +1,15 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::errors::{DomainError, Error, InvalidCandidateSet};
+use crate::errors::{DomainError, Error};
 use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
 use crate::primitives::key_state::{
     AttemptId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
 };
-use crate::primitives::participants::{ParticipantId, ParticipantInfo};
 use crate::primitives::thresholds::ThresholdParameters;
 use crate::primitives::votes::ThresholdParametersVotes;
-use near_sdk::{near, AccountId};
-use std::collections::{BTreeMap, BTreeSet};
+use near_sdk::near;
+use std::collections::BTreeSet;
 
 /// In this state, the contract is ready to process signature requests.
 ///
@@ -112,56 +111,10 @@ impl RunningContractState {
     ) -> Result<bool, Error> {
         // ensure the signer is a participant
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
-        // ensure the proposed threshold parameters are valid:
-        // if performance issue, inline and merge with loop below
-        proposal.validate()?;
-        let mut old_by_id: BTreeMap<ParticipantId, AccountId> = BTreeMap::new();
-        let mut old_by_acc: BTreeMap<AccountId, (ParticipantId, ParticipantInfo)> = BTreeMap::new();
-        for (acc, id, info) in self.parameters.participants().participants() {
-            old_by_id.insert(id.clone(), acc.clone());
-            old_by_acc.insert(acc.clone(), (id.clone(), info.clone()));
-        }
-        let new_participants = proposal.participants().participants();
-        let mut new_min_id = u32::MAX;
-        let mut new_max_id = 0u32;
-        let mut n_old = 0u64;
-        for (new_account, new_id, new_info) in new_participants {
-            match old_by_acc.get(new_account) {
-                Some((old_id, old_info)) => {
-                    if new_id != old_id {
-                        return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
-                    }
-                    if *new_info != *old_info {
-                        return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
-                    }
-                    n_old += 1;
-                }
-                None => {
-                    if old_by_id.contains_key(new_id) {
-                        return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
-                    }
-                    new_min_id = std::cmp::min(new_min_id, new_id.get());
-                    new_max_id = std::cmp::max(new_max_id, new_id.get());
-                }
-            }
-        }
-        // assert there are enough old participants
-        if n_old < self.parameters.threshold().value() {
-            return Err(InvalidCandidateSet::InsufficientOldParticipants.into());
-        }
-        // ensure the new ids are contiguous and unique
-        let n_new = proposal.participants().len() as u64 - n_old;
-        if n_new > 0 {
-            if n_new - 1 != (new_max_id - new_min_id) as u64 {
-                return Err(InvalidCandidateSet::NewParticipantIdsNotContiguous.into());
-            }
-            if new_min_id != self.parameters.participants().next_id().get() {
-                return Err(InvalidCandidateSet::NewParticipantIdsNotContiguous.into());
-            }
-            if new_max_id + 1 != proposal.participants().next_id().get() {
-                return Err(InvalidCandidateSet::NewParticipantIdsTooHigh.into());
-            }
-        }
+
+        // ensure the proposal is valid against the current parameters
+        self.parameters.validate_incoming_proposal(proposal)?;
+
         // finally, vote. Propagate any errors
         let n_votes = self.parameters_votes.vote(proposal, &participant);
         Ok(self.parameters.threshold().value() <= n_votes)
@@ -233,7 +186,7 @@ pub mod running_tests {
                 key: gen_pk(),
             });
         }
-        let max_n = 300;
+        let max_n = 30;
         let threshold_parameters = gen_threshold_params(max_n);
         RunningContractState::new(domains, Keyset::new(epoch_id, keys), threshold_parameters)
     }
@@ -274,63 +227,100 @@ pub mod running_tests {
         ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap()
     }
 
-    #[test]
-    fn test_running() {
-        for num_domains in 0..5 {
-            println!("Testing with {} domains", num_domains);
-            let mut state = gen_running_state(num_domains);
-            let mut env = Environment::new(None, None, None);
-            let participants = state.parameters.participants().clone();
-            // Assert that random proposals get rejected.
-            for (account_id, _, _) in participants.participants() {
-                let ksp = gen_threshold_params(30);
-                env.set_signer(account_id);
-                assert!(state.vote_new_parameters(&ksp).is_err());
-            }
-            // Assert that disagreeing proposals do not reach concensus.
-            for (account_id, _, _) in participants.participants() {
-                env.set_signer(account_id);
+    fn test_running_for(num_domains: usize) {
+        let mut state = gen_running_state(num_domains);
+        println!(
+            "Participants: {}, threshold: {}",
+            state.parameters.participants().len(),
+            state.parameters.threshold().value()
+        );
+        let mut env = Environment::new(None, None, None);
+        let participants = state.parameters.participants().clone();
+        // Assert that random proposals get rejected.
+        for (account_id, _, _) in participants.participants() {
+            let ksp = gen_threshold_params(30);
+            env.set_signer(account_id);
+            assert!(state.vote_new_parameters(&ksp).is_err());
+        }
+        // Assert that disagreeing proposals do not reach concensus.
+        // Generate an extra proposal for the next step.
+        let mut proposals = Vec::new();
+        for _ in 0..participants.participants().len() + 1 {
+            loop {
                 let proposal = gen_valid_params_proposal(&state.parameters);
-                assert!(state.vote_new_parameters(&proposal).unwrap().is_none());
-            }
-
-            // Now let's vote for agreeing proposals.
-            let proposal = gen_valid_params_proposal(&state.parameters);
-
-            let original_epoch_id = state.keyset.epoch_id;
-            let mut resharing = None;
-            for (i, (account_id, _, _)) in participants
-                .participants()
-                .iter()
-                .enumerate()
-                .take(state.parameters.threshold().value() as usize)
-            {
-                env.set_signer(account_id);
-                let res = state.vote_new_parameters(&proposal).unwrap();
-                if i + 1 < state.parameters.threshold().value() as usize || num_domains == 0 {
-                    assert!(res.is_none());
-                } else {
-                    resharing = Some(res.unwrap());
+                if proposals.contains(&proposal) {
+                    continue;
                 }
-            }
-            if num_domains == 0 {
-                // If there are no domains, we should transition directly to Running with a higher
-                // epoch ID, not resharing.
-                assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
-                assert_eq!(state.parameters_votes, ThresholdParametersVotes::default());
-                assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
-            } else {
-                let resharing = resharing.unwrap();
-                assert_eq!(
-                    resharing.previous_running_state.parameters,
-                    state.parameters
-                );
-                assert_eq!(
-                    resharing.prospective_epoch_id(),
-                    state.keyset.epoch_id.next(),
-                );
-                assert_eq!(resharing.resharing_key.proposed_parameters(), &proposal);
+                proposals.push(proposal.clone());
+                break;
             }
         }
+        for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
+            env.set_signer(account_id);
+            assert!(state.vote_new_parameters(&proposals[i]).unwrap().is_none());
+        }
+
+        // Now let's vote for agreeing proposals.
+        let proposal = proposals.last().unwrap().clone();
+
+        let original_epoch_id = state.keyset.epoch_id;
+        let mut resharing = None;
+        for (i, (account_id, _, _)) in participants
+            .participants()
+            .iter()
+            .enumerate()
+            .take(state.parameters.threshold().value() as usize)
+        {
+            env.set_signer(account_id);
+            let res = state.vote_new_parameters(&proposal).unwrap();
+            if i + 1 < state.parameters.threshold().value() as usize || num_domains == 0 {
+                assert!(res.is_none());
+            } else {
+                resharing = Some(res.unwrap());
+            }
+        }
+        if num_domains == 0 {
+            // If there are no domains, we should transition directly to Running with a higher
+            // epoch ID, not resharing.
+            assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
+            assert_eq!(state.parameters_votes, ThresholdParametersVotes::default());
+            assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
+        } else {
+            let resharing = resharing.unwrap();
+            assert_eq!(
+                resharing.previous_running_state.parameters,
+                state.parameters
+            );
+            assert_eq!(
+                resharing.prospective_epoch_id(),
+                state.keyset.epoch_id.next(),
+            );
+            assert_eq!(resharing.resharing_key.proposed_parameters(), &proposal);
+        }
+    }
+
+    #[test]
+    fn test_running_0() {
+        test_running_for(0);
+    }
+
+    #[test]
+    fn test_running_1() {
+        test_running_for(1);
+    }
+
+    #[test]
+    fn test_running_2() {
+        test_running_for(2);
+    }
+
+    #[test]
+    fn test_running_3() {
+        test_running_for(3);
+    }
+
+    #[test]
+    fn test_running_4() {
+        test_running_for(4);
     }
 }

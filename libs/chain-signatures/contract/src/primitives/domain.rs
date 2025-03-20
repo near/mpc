@@ -130,6 +130,11 @@ impl DomainRegistry {
         }
         Ok(registry)
     }
+
+    #[cfg(test)]
+    pub fn next_domain_id(&self) -> u64 {
+        self.next_domain_id
+    }
 }
 
 /// Tracks votes to add domains. Each participant can at any given time vote for a list of domains
@@ -335,5 +340,19 @@ pub mod tests {
             registry.most_recent_domain_for_signature_scheme(SignatureScheme::Ed25519),
             Some(DomainId(2))
         );
+    }
+
+    #[test]
+    fn test_serialization_format() {
+        let domain_config = DomainConfig {
+            id: DomainId(3),
+            scheme: SignatureScheme::Secp256k1,
+        };
+        let json = serde_json::to_string(&domain_config).unwrap();
+        assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1"}"#);
+
+        let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(domain_config.id, DomainId(3));
+        assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
     }
 }

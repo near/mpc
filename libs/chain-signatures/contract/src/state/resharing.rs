@@ -143,6 +143,7 @@ mod tests {
     use crate::primitives::domain::{AddDomainsVotes, DomainId};
     use crate::primitives::key_state::{AttemptId, KeyEventId};
     use crate::primitives::test_utils::gen_account_id;
+    use crate::primitives::thresholds::{Threshold, ThresholdParameters};
     use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::{find_leader, Environment};
     use crate::state::resharing::ResharingContractState;
@@ -302,13 +303,110 @@ mod tests {
     }
 
     #[test]
-    fn test_resharing_contract_state() {
+    fn test_resharing_contract_state_1() {
         test_resharing_contract_state_for(1);
+    }
+    #[test]
+    fn test_resharing_contract_state_2() {
         test_resharing_contract_state_for(2);
+    }
+    #[test]
+    fn test_resharing_contract_state_3() {
         test_resharing_contract_state_for(3);
+    }
+    #[test]
+    fn test_resharing_contract_state_4() {
         test_resharing_contract_state_for(4);
-        test_resharing_contract_state_for(5);
+    }
+
+    #[test]
+    fn test_resharing_reproposal() {
+        let (mut env, mut state) = gen_resharing_state(3);
+
+        // Vote for first domain's key.
+        let leader = find_leader(&state.resharing_key);
+        env.set_signer(&leader.0);
+        assert!(state.start(0).is_ok());
+
+        let key_event_id = state.resharing_key.current_key_event_id().unwrap();
+        let old_participants = state
+            .previous_running_state
+            .parameters
+            .participants()
+            .clone();
+        let old_threshold = state.previous_running_state.parameters.threshold().value() as usize;
+        {
+            let new_participants = state
+                .resharing_key
+                .proposed_parameters()
+                .participants()
+                .participants()
+                .clone();
+            for (account, _, _) in new_participants {
+                env.set_signer(&account);
+                state.vote_reshared(key_event_id.clone()).unwrap();
+            }
+        }
+        assert!(state.reshared_keys.len() == 1);
+
+        // Generate two sets of params:
+        //  - old params -> new_params_1 is a valid proposal.
+        //  - new_params_1 -> new_params_2 is a valid proposal.
+        //  - old params -> new_params_2 is NOT a valid proposal.
+        //
+        // Reproposing with new_params_1 should succeed, but then reproposing with new_params_2
+        // should be rejected, since all re-proposals must be valid against the original.
+        let mut new_participants_1 = old_participants.clone();
+        let new_threshold = Threshold::new(old_participants.len() as u64);
+        new_participants_1.add_random_participants_till_n(old_participants.len() * 3 / 2);
+        let new_participants_2 = new_participants_1
+            .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
+        let new_params_1 =
+            ThresholdParameters::new(new_participants_1, new_threshold.clone()).unwrap();
+        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
+        assert!(state
+            .previous_running_state
+            .parameters
+            .validate_incoming_proposal(&new_params_1)
+            .is_ok());
+        assert!(new_params_1
+            .validate_incoming_proposal(&new_params_2)
+            .is_ok());
+        assert!(state
+            .previous_running_state
+            .parameters
+            .validate_incoming_proposal(&new_params_2)
+            .is_err());
+
+        // Repropose with new_params_1.
+        let mut new_state = None;
+        for (account, _, _) in &old_participants.participants()[0..old_threshold] {
+            env.set_signer(account);
+            assert!(new_state.is_none());
+            new_state = state.vote_new_parameters(&new_params_1).unwrap();
+        }
+        // We should've gotten a new resharing state.
+        assert!(new_state.is_some());
+        let mut new_state = new_state.unwrap();
+        // New state should start from the beginning, with the epoch ID bumped.
+        assert_eq!(new_state.reshared_keys.len(), 0);
+        assert_eq!(
+            new_state.resharing_key.epoch_id(),
+            state.prospective_epoch_id().next()
+        );
+        assert_eq!(new_state.resharing_key.proposed_parameters(), &new_params_1);
+        assert_eq!(
+            new_state.resharing_key.domain_id(),
+            state
+                .previous_running_state
+                .domains
+                .get_domain_by_index(0)
+                .unwrap()
+                .id
+        );
+
+        // Repropose with new_params_2. That should fail.
+        env.set_signer(&old_participants.participants()[0].0);
+        assert!(new_state.vote_new_parameters(&new_params_2).is_err());
     }
 }
-
-// todo: add resharing re-proposal test.

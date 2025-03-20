@@ -19,13 +19,13 @@ use mpc_contract::update::UpdateId;
 use near_crypto::KeyType;
 use near_sdk::log;
 use near_workspaces::network::Sandbox;
+use near_workspaces::result::ExecutionFinalResult;
 use near_workspaces::types::{AccountId, NearToken};
 use near_workspaces::{Account, Contract, Worker};
 use signature::DigestSigner;
 use std::str::FromStr;
 
 pub const CONTRACT_FILE_PATH: &str = "../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
-pub const INVALID_CONTRACT: &str = "../res/mpc_test_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
@@ -290,4 +290,11 @@ pub async fn vote_update_till_completion(
             break;
         }
     }
+}
+
+pub fn check_call_success(result: ExecutionFinalResult) {
+    assert!(
+        result.is_success(),
+        "execution should have succeeded: {result:#?}"
+    );
 }

@@ -1,7 +1,5 @@
 pub mod common;
-use common::{
-    init_env_secp256k1, vote_update_till_completion, CONTRACT_FILE_PATH, INVALID_CONTRACT,
-};
+use common::{init_env_secp256k1, vote_update_till_completion, CONTRACT_FILE_PATH};
 
 use mpc_contract::config::Config;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
@@ -25,7 +23,7 @@ pub fn current_contract() -> ProposeUpdateArgs {
 }
 
 pub fn invalid_contract() -> ProposeUpdateArgs {
-    let new_wasm = std::fs::read(INVALID_CONTRACT).unwrap();
+    let new_wasm = b"invalid wasm".to_vec();
     ProposeUpdateArgs {
         code: Some(new_wasm),
         config: None,
