@@ -1,4 +1,7 @@
-use crate::errors::{Error, InvalidCandidateSet, InvalidParameters, InvalidState};
+use crate::{
+    errors::{Error, InvalidCandidateSet, InvalidParameters, InvalidState},
+    legacy_contract_state,
+};
 use near_sdk::{env, log, near, AccountId, PublicKey};
 use std::collections::BTreeSet;
 
@@ -17,8 +20,8 @@ pub struct ParticipantInfo {
 }
 
 /* Migration helper */
-impl From<&legacy_contract::primitives::ParticipantInfo> for ParticipantInfo {
-    fn from(info: &legacy_contract::primitives::ParticipantInfo) -> ParticipantInfo {
+impl From<&legacy_contract_state::ParticipantInfo> for ParticipantInfo {
+    fn from(info: &legacy_contract_state::ParticipantInfo) -> ParticipantInfo {
         ParticipantInfo {
             url: info.url.clone(),
             cipher_pk: info.cipher_pk,
@@ -160,7 +163,7 @@ impl Participants {
 /* Migration helpers */
 /// hopefully not required
 fn migrate_inconsistent_participants(
-    participants: legacy_contract::primitives::Participants,
+    participants: legacy_contract_state::Participants,
 ) -> Participants {
     log!("migrating inconsistent participant state!");
     let mut migrated_participants = Participants::new();
@@ -171,8 +174,8 @@ fn migrate_inconsistent_participants(
     migrated_participants
 }
 
-impl From<legacy_contract::primitives::Participants> for Participants {
-    fn from(legacy_participants: legacy_contract::primitives::Participants) -> Participants {
+impl From<legacy_contract_state::Participants> for Participants {
+    fn from(legacy_participants: legacy_contract_state::Participants) -> Participants {
         let mut participants: Vec<(AccountId, ParticipantId, ParticipantInfo)> = Vec::new();
         let mut ids: BTreeSet<ParticipantId> = BTreeSet::new();
         let next_id = ParticipantId(legacy_participants.next_id);
@@ -201,9 +204,9 @@ impl From<legacy_contract::primitives::Participants> for Participants {
     }
 }
 
-impl From<legacy_contract::primitives::Candidates> for Participants {
-    fn from(candidates: legacy_contract::primitives::Candidates) -> Participants {
-        let legacy_participants: legacy_contract::primitives::Participants = candidates.into();
+impl From<legacy_contract_state::Candidates> for Participants {
+    fn from(candidates: legacy_contract_state::Candidates) -> Participants {
+        let legacy_participants: legacy_contract_state::Participants = candidates.into();
         legacy_participants.into()
     }
 }
@@ -211,6 +214,7 @@ impl From<legacy_contract::primitives::Candidates> for Participants {
 #[cfg(test)]
 pub mod tests {
 
+    use crate::legacy_contract_state;
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
         gen_accounts_and_info, gen_legacy_candidates, gen_legacy_participants,
@@ -245,7 +249,7 @@ pub mod tests {
     }
 
     pub fn assert_candidate_migration(
-        legacy_candidates: &legacy_contract::primitives::Candidates,
+        legacy_candidates: &legacy_contract_state::Candidates,
         migrated_participants: &Participants,
     ) {
         assert_eq!(
@@ -277,7 +281,7 @@ pub mod tests {
     }
 
     pub fn assert_participant_migration(
-        legacy_participants: &legacy_contract::primitives::Participants,
+        legacy_participants: &legacy_contract_state::Participants,
         migrated_participants: &Participants,
     ) {
         assert_eq!(

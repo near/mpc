@@ -1,3 +1,5 @@
+use crate::legacy_contract_state;
+
 use super::consts::{
     DEFAULT_EVENT_MAX_IDLE_BLOCKS, DEFAULT_REQUEST_TIMEOUT_BLOCKS, MAX_NUM_REQUESTS_TO_REMOVE,
 };
@@ -30,8 +32,8 @@ impl From<Option<InitConfig>> for Config {
         }
     }
 }
-impl From<&legacy_contract::config::ConfigV1> for Config {
-    fn from(config: &legacy_contract::config::ConfigV1) -> Self {
+impl From<&legacy_contract_state::ConfigV1> for Config {
+    fn from(config: &legacy_contract_state::ConfigV1) -> Self {
         Config {
             max_num_requests_to_remove: config.max_num_requests_to_remove,
             request_timeout_blocks: config.request_timeout_blocks,

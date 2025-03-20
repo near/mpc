@@ -2,8 +2,8 @@ pub mod common;
 use common::{init_env, vote_update_till_completion, CONTRACT_FILE_PATH, INVALID_CONTRACT};
 
 use mpc_contract::config::Config;
-use mpc_contract::errors;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
+use mpc_contract::{errors, legacy_contract_state};
 
 use near_workspaces::types::NearToken;
 
@@ -105,7 +105,7 @@ async fn test_propose_update_config() {
     }
 
     let old_config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
-    let state: legacy_contract::ProtocolContractState =
+    let state: legacy_contract_state::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
 
     // check that each participant can vote on a singular proposal and have it reflect changes:
@@ -172,7 +172,7 @@ async fn test_propose_update_contract() {
 
     dbg!(&execution);
 
-    let state: legacy_contract::ProtocolContractState = execution.json().unwrap();
+    let state: legacy_contract_state::ProtocolContractState = execution.json().unwrap();
     dbg!(state);
 }
 
@@ -210,7 +210,7 @@ async fn test_invalid_contract_deploy() {
         .unwrap();
 
     dbg!(&execution);
-    let state: legacy_contract::ProtocolContractState = execution.json().unwrap();
+    let state: legacy_contract_state::ProtocolContractState = execution.json().unwrap();
     dbg!(state);
 }
 // todo: fix this test
@@ -245,7 +245,7 @@ async fn test_propose_update_contract_many() {
     vote_update_till_completion(&contract, &accounts, proposals.last().unwrap()).await;
 
     // Let's check that we can call into the state and see all the proposals.
-    let state: legacy_contract::ProtocolContractState =
+    let state: legacy_contract_state::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
     dbg!(state);
 }

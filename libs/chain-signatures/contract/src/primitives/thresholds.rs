@@ -1,5 +1,8 @@
 use super::participants::Participants;
-use crate::errors::{Error, InvalidThreshold};
+use crate::{
+    errors::{Error, InvalidThreshold},
+    legacy_contract_state,
+};
 use near_sdk::near;
 
 /// Minimum absolute threshold required.
@@ -106,9 +109,9 @@ impl ThresholdParameters {
 
 // The previous implementation did not impose restrictions on the threshold.
 // Any migration call must succeed, even with invalid thresholds.
-impl From<(Threshold, legacy_contract::primitives::Candidates)> for ThresholdParameters {
+impl From<(Threshold, legacy_contract_state::Candidates)> for ThresholdParameters {
     fn from(
-        (threshold, candidates): (Threshold, legacy_contract::primitives::Candidates),
+        (threshold, candidates): (Threshold, legacy_contract_state::Candidates),
     ) -> ThresholdParameters {
         ThresholdParameters {
             participants: candidates.into(),
@@ -118,9 +121,9 @@ impl From<(Threshold, legacy_contract::primitives::Candidates)> for ThresholdPar
 }
 // The previous implementation did not impose restrictions on the threshold.
 // Any migration call must succeed, even with invalid thresholds.
-impl From<(Threshold, legacy_contract::primitives::Participants)> for ThresholdParameters {
+impl From<(Threshold, legacy_contract_state::Participants)> for ThresholdParameters {
     fn from(
-        (threshold, participants): (Threshold, legacy_contract::primitives::Participants),
+        (threshold, participants): (Threshold, legacy_contract_state::Participants),
     ) -> ThresholdParameters {
         ThresholdParameters {
             participants: participants.into(),

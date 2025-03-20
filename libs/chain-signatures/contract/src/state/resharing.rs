@@ -1,6 +1,7 @@
 use super::key_event::{InstanceStatus, KeyEvent, Tally};
 use super::running::RunningContractState;
 use crate::errors::Error;
+use crate::legacy_contract_state;
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, DKState, EpochId, KeyEventId, KeyStateProposal,
 };
@@ -14,8 +15,8 @@ pub struct ResharingContractState {
     pub event_state: KeyEvent, // rename
 }
 
-impl From<&legacy_contract::ResharingContractState> for ResharingContractState {
-    fn from(state: &legacy_contract::ResharingContractState) -> Self {
+impl From<&legacy_contract_state::ResharingContractState> for ResharingContractState {
+    fn from(state: &legacy_contract_state::ResharingContractState) -> Self {
         ResharingContractState {
             // todo: test this.
             current_state: RunningContractState {

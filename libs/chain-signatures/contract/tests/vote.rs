@@ -1,7 +1,10 @@
 pub mod common;
 use common::init_env;
 
-use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+use mpc_contract::{
+    legacy_contract_state,
+    primitives::key_state::{AttemptId, EpochId, KeyEventId},
+};
 use serde_json::json;
 
 #[tokio::test]
@@ -22,10 +25,10 @@ async fn test_join() -> anyhow::Result<()> {
 
     assert!(execution.is_success());
 
-    let state: legacy_contract::ProtocolContractState =
+    let state: legacy_contract_state::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
     match state {
-        legacy_contract::ProtocolContractState::Running(r) => {
+        legacy_contract_state::ProtocolContractState::Running(r) => {
             assert!(r.candidates.contains_key(alice.id()));
         }
         _ => panic!("should be in running state"),
@@ -184,10 +187,10 @@ async fn test_vote_leave() -> anyhow::Result<()> {
     let vote_pass: bool = execution.json().unwrap();
     assert!(vote_pass);
 
-    let state: legacy_contract::ProtocolContractState =
+    let state: legacy_contract_state::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
     match state {
-        legacy_contract::ProtocolContractState::Resharing(r) => {
+        legacy_contract_state::ProtocolContractState::Resharing(r) => {
             assert!(!r
                 .new_participants
                 .participants
@@ -285,10 +288,10 @@ async fn test_vote_reshare() -> anyhow::Result<()> {
     assert!(execution.is_success());
     let vote_pass: bool = execution.json().unwrap();
     assert!(vote_pass);
-    let state: legacy_contract::ProtocolContractState =
+    let state: legacy_contract_state::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
     match state {
-        legacy_contract::ProtocolContractState::Resharing(r) => {
+        legacy_contract_state::ProtocolContractState::Resharing(r) => {
             assert!(r.new_participants.participants.contains_key(alice.id()));
         }
         _ => panic!("should be in resharing state"),
@@ -338,10 +341,10 @@ async fn test_vote_reshare() -> anyhow::Result<()> {
     let vote_pass: bool = execution.json().unwrap();
     assert!(vote_pass);
 
-    let state: legacy_contract::ProtocolContractState =
+    let state: legacy_contract_state::ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
     match state {
-        legacy_contract::ProtocolContractState::Running(r) => {
+        legacy_contract_state::ProtocolContractState::Running(r) => {
             assert!(r.epoch == 1);
             assert!(r.participants.contains_key(alice.id()));
         }
