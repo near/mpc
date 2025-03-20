@@ -1,5 +1,6 @@
 pub mod config;
 pub mod errors;
+pub mod legacy_contract_state;
 pub mod primitives;
 pub mod state;
 pub mod storage_keys;
