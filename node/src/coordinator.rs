@@ -87,9 +87,12 @@ enum MpcJobResult {
 impl Coordinator {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
+            tracing::info!("resetting coordinator");
             let wrapped_state = self.indexer.contract_state_receiver.borrow().clone();
+            tracing::info!("got wrapped state: {:?}", wrapped_state);
             let mut job: MpcJob = match wrapped_state {
                 ContractState::WaitingForSync => {
+                    tracing::info!("waiting now.");
                     // This is the initial state. We stop this state for any state changes.
                     MpcJob {
                         name: "WaitingForSync",
@@ -99,6 +102,7 @@ impl Coordinator {
                     }
                 }
                 ContractState::Invalid => {
+                    tracing::info!("invalid now.");
                     // Invalid state. Similar to initial state; we do nothing until the state changes.
                     MpcJob {
                         name: "Invalid",
@@ -108,6 +112,7 @@ impl Coordinator {
                     }
                 }
                 ContractState::Initializing(state) => {
+                    tracing::info!("init now.");
                     // For initialization state, we generate keys and vote for the public key.
                     // We give it a timeout, so that if somehow the keygen and voting fail to
                     // progress, we can retry.
@@ -129,15 +134,17 @@ impl Coordinator {
                         )?,
                         stop_fn: Box::new(move |new_state| match new_state {
                             ContractState::Initializing(new_state) => {
-                                if new_state.key_event.id == state.key_event.id {
-                                    // still same attempt, send the update
-                                    if key_event_sender.send(new_state.key_event.clone()).is_ok() {
-                                        return false;
-                                    }
+                                if new_state.key_event.id.epoch_id != state.key_event.id.epoch_id {
+                                    tracing::info!("dropping initializing");
+                                    true
+                                } else {
+                                    key_event_sender.send(new_state.key_event.clone()).is_err()
                                 }
+                            }
+                            _ => {
+                                tracing::info!("dropping initializing");
                                 true
                             }
-                            _ => true,
                         }),
                         // TODO(#151): This timeout is not ideal. If participants are not synchronized,
                         // they might each timeout out of order and never complete keygen?
@@ -148,6 +155,7 @@ impl Coordinator {
                     }
                 }
                 ContractState::Running(state) => {
+                    tracing::info!("running now.");
                     // For the running state, we run the full MPC protocol.
                     // There's no timeout. The only time we stop is when the contract state
                     // changes to no longer be running (or if somehow the epoch changes).
@@ -182,6 +190,7 @@ impl Coordinator {
                     }
                 }
                 ContractState::Resharing(state) => {
+                    tracing::info!("resharing now.");
                     // In resharing state, we perform key resharing, again with a timeout.
                     let (key_event_sender, key_event_receiver) =
                         watch::channel(state.key_event.clone());
@@ -202,13 +211,12 @@ impl Coordinator {
                         )?,
                         stop_fn: Box::new(move |new_state| match new_state {
                             ContractState::Resharing(new_state) => {
-                                if new_state.key_event.id == state.key_event.id {
+                                if new_state.key_event.id.epoch_id == state.key_event.id.epoch_id {
                                     // still same attempt, just send the update
                                     if key_event_sender.send(new_state.key_event.clone()).is_ok() {
                                         return false;
                                     }
                                 }
-                                // reset everything.
                                 true
                             }
                             _ => true,
@@ -358,58 +366,69 @@ impl Coordinator {
                     );
                     continue 'follower;
                 };
+                tracing::info!(
+                                    "Received Keygeneration task id: {:?}; spawning task, waiting on contract change. Our id; {:?}" ,
+                                    task_id,
+                mpc_config.my_participant_id,
+                                );
                 let max_timeout = 120;
                 let key_event_receiver_cloned = key_event_receiver.clone();
                 let mpc_config_cloned = mpc_config.clone();
                 let chain_txn_sender_cloned = chain_txn_sender.clone();
                 let keyshare_storage_cloned = keyshare_storage.clone();
-                tokio::spawn(async move {
-                    // Wait for the contract to confirm this key event
-                    let mut contract_event = key_event_receiver_cloned.borrow().clone();
-                    let mut n = 0; // one minute max
-                    while contract_event.id != task_key_event_id && !contract_event.started {
-                        if n > max_timeout {
-                            anyhow::bail!("timed out");
-                        }
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        contract_event = key_event_receiver_cloned.borrow().clone();
-                        n += 1;
+                //tokio::spawn(async move {
+                // Wait for the contract to confirm this key event
+                let mut contract_event = key_event_receiver_cloned.borrow().clone();
+                let mut n = 0; // one minute max
+                while contract_event.id != task_key_event_id || !contract_event.started {
+                    if n > max_timeout {
+                        anyhow::bail!("timed out");
                     }
-                    if contract_event
-                        .completed
-                        .contains(&mpc_config_cloned.my_participant_id)
-                    {
-                        anyhow::bail!(
-                            "We already completed this resharing. Why is there a second attempt?"
-                        );
-                    }
-                    tracing::info!(
-                        "Joining ecdsa secp256k1 key generation for key id {:?}",
-                        contract_event.id
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    contract_event = key_event_receiver_cloned.borrow().clone();
+                    n += 1;
+                }
+                tracing::info!(
+                    "Key Generation started on contract. Task id: {:?}, our id: {}",
+                    task_id,
+                    mpc_config_cloned.my_participant_id
+                );
+                if contract_event
+                    .completed
+                    .contains(&mpc_config_cloned.my_participant_id)
+                {
+                    anyhow::bail!(
+                        "We already completed this resharing. Why is there a second attempt?"
                     );
-                    // join computation
-                    // note: we could inline this, but maybe better to wait and see how other
-                    // singauter schemes will be handled.
-                    let res = EcdsaSignatureProvider::run_key_generation_client(
-                        mpc_config_cloned.clone(),
-                        channel,
-                    )
+                }
+                tracing::info!(
+                    "Joining ecdsa secp256k1 key generation for key id {:?} as follower: {:?}",
+                    contract_event.id,
+                    mpc_config.my_participant_id
+                );
+                // join computation
+                // note: we could inline this, but maybe better to wait and see how other
+                // singature schemes will be handled.
+                let res = EcdsaSignatureProvider::run_key_generation_client(
+                    mpc_config_cloned.participants.threshold as usize,
+                    channel,
+                )
+                .await?;
+                tracing::info!("Ecdsa secp256k1 key generation completed.");
+                let keyshare = Keyshare {
+                    key_id: contract_event.id,
+                    data: KeyshareData::Secp256k1(res.clone()),
+                };
+                keyshare_storage_cloned.store_key(keyshare).await?;
+                tracing::info!("Key generation complete; Follower calls vote_pk.");
+                chain_txn_sender_cloned
+                    .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
+                        key_event_id: contract_event.id,
+                        public_key: affine_point_to_public_key(res.public_key)?,
+                    }))
                     .await?;
-                    tracing::info!("Ecdsa secp256k1 key generation completed.");
-                    let keyshare = Keyshare {
-                        key_id: contract_event.id,
-                        data: KeyshareData::Secp256k1(res.clone()),
-                    };
-                    keyshare_storage_cloned.store_key(keyshare).await?;
-                    tracing::info!("Key generation complete; Follower calls vote_pk.");
-                    chain_txn_sender_cloned
-                        .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
-                            key_event_id: contract_event.id,
-                            public_key: affine_point_to_public_key(res.public_key)?,
-                        }))
-                        .await?;
-                    Ok(())
-                });
+                //Ok(())
+                //});
             }
         } else {
             let n_participants = mpc_config.participants.participants.len();
@@ -427,29 +446,42 @@ impl Coordinator {
                         },
                         network_client.all_participant_ids(),
                     )?;
+                    tracing::info!(
+                        "opened channel, sending start keygen on id: {:?}",
+                        channel.task_id()
+                    );
                     chain_txn_sender
                         .send(ChainSendTransactionRequest::StartKeygen(
                             ChainStartKeygenArgs {},
                         ))
                         .await?;
+                    tracing::info!("sent start keygen, starting computation");
                     // note: we could inline below function, but maybe better to wait and see how other
                     // singauter schemes will be handled.
                     let res = EcdsaSignatureProvider::run_key_generation_client(
-                        mpc_config.clone(),
+                        mpc_config.participants.threshold as usize,
                         channel,
                     )
-                    .await?;
+                    .await;
+                    let res = match res {
+                        Ok(res) => res,
+                        Err(e) => anyhow::bail!("error: {}", e),
+                    };
+                    tracing::info!("leader concluded computation, storing keyshare.");
                     let keyshare = Keyshare {
                         key_id: contract_event.id.clone(),
                         data: KeyshareData::Secp256k1(res.clone()),
                     };
                     keyshare_storage.store_key(keyshare).await?;
+                    tracing::info!("leader stored keyshare.");
                     let my_public_key = affine_point_to_public_key(res.public_key)?;
                     let key_event_id = contract_event.id;
                     while contract_event.completed.len() != n_participants - 1 {
+                        tracing::info!("leader waiting on follower votes");
                         contract_event = key_event_receiver.borrow_and_update().clone();
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     }
+                    tracing::info!("leader got follower votes");
                     if contract_event.id != key_event_id {
                         tracing::info!("Key generation timed out.");
                         continue 'leader;
@@ -461,6 +493,9 @@ impl Coordinator {
                             public_key: my_public_key,
                         }))
                         .await?;
+                } else {
+                    // note: if leader does not exit here, we just hang. Not sure why.
+                    return Ok(MpcJobResult::HaltUntilInterrupted);
                 }
             }
         }
@@ -490,6 +525,7 @@ impl Coordinator {
             tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
+        tracing::info!("Entering running state: {}", mpc_config.my_participant_id);
 
         let keyshares = match keyshare_storage.load_keyset(&contract_state.keyset).await {
             Ok(keyshares) => keyshares,
@@ -598,7 +634,7 @@ impl Coordinator {
             }
         } else {
             if keyshare_storage.load_keyset(previous_keyset).await.is_ok() {
-                tracing::info!("We should not have theses")
+                tracing::info!("We should not have these")
             }
             Vec::new()
         };
@@ -643,68 +679,75 @@ impl Coordinator {
                 let resharing_state_cloned = resharing_state.clone();
                 let existing_keyshares_cloned = existing_keyshares.clone();
                 let mpc_config_cloned = mpc_config.clone();
-                tokio::spawn(async move {
-                    // Wait for the contract to confirm this key event
-                    let mut contract_event = key_event_receiver_cloned.borrow().clone();
-                    let mut n = 0; // one minute max
-                    while contract_event.id != task_key_event_id && !contract_event.started {
-                        if n > max_timeout {
-                            anyhow::bail!("timed out");
-                        }
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        contract_event = key_event_receiver_cloned.borrow().clone();
-                        n += 1;
+                //tokio::spawn(async move {
+                // Wait for the contract to confirm this key event
+                let mut contract_event = key_event_receiver_cloned.borrow().clone();
+                let mut n = 0; // one minute max
+                while contract_event.id != task_key_event_id || !contract_event.started {
+                    if n > max_timeout {
+                        anyhow::bail!("timed out");
                     }
-                    if contract_event
-                        .completed
-                        .contains(&mpc_config_cloned.my_participant_id)
-                    {
-                        anyhow::bail!(
-                            "We already completed this resharing. Why is there a second attempt?"
-                        );
-                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    contract_event = key_event_receiver_cloned.borrow().clone();
+                    n += 1;
                     tracing::info!(
-                        "Joining ecdsa secp256k1 key resharing for key id {:?}",
-                        contract_event.id
+                        "Follower {} waiting on leader to start computation for {:?}",
+                        mpc_config.my_participant_id,
+                        task_id,
                     );
-                    // join computation
-                    let my_share = existing_keyshares_cloned
-                        .clone()
-                        .iter()
-                        .find(|share| share.key_id == contract_event.id)
-                        .map(|share| share.data.clone())
-                        .map(|KeyshareData::Secp256k1(data)| data.private_share);
-                    // todo: fix the silly conversion chain below.
-                    let public_key = resharing_state_cloned
-                        .previous_running_state
-                        .keyset
-                        .public_key(task_key_event_id.domain_id)
-                        .unwrap();
-                    let public_key = near_crypto::PublicKey::from_str(&String::from(&public_key));
-                    let public_key = public_key_to_affine_point(public_key.unwrap().into())?;
-                    let res = EcdsaSignatureProvider::run_key_resharing_client(
-                        mpc_config_cloned.clone().into(),
-                        my_share,
-                        public_key,
-                        &resharing_state_cloned.previous_running_state.participants,
-                        channel,
-                    )
+                }
+                if contract_event
+                    .completed
+                    .contains(&mpc_config_cloned.my_participant_id)
+                {
+                    // just return and wait.
+                    anyhow::bail!(
+                        "We already completed this resharing. Why is there a second attempt?"
+                    );
+                }
+                tracing::info!(
+                    "Joining ecdsa secp256k1 key resharing for key id {:?} as follower: {} and keyshares: {:?}",
+                    contract_event.id,
+                    mpc_config.my_participant_id,
+                    existing_keyshares_cloned
+                );
+                // join computation
+                let my_share = existing_keyshares_cloned
+                    .clone()
+                    .iter()
+                    .find(|share| share.key_id.domain_id == contract_event.id.domain_id)
+                    .map(|share| share.data.clone())
+                    .map(|KeyshareData::Secp256k1(data)| data.private_share);
+                // todo: fix the silly conversion chain below.
+                let public_key = resharing_state_cloned
+                    .previous_running_state
+                    .keyset
+                    .public_key(task_key_event_id.domain_id)
+                    .unwrap();
+                let public_key = near_crypto::PublicKey::from_str(&String::from(&public_key));
+                let public_key = public_key_to_affine_point(public_key.unwrap().into())?;
+                let res = EcdsaSignatureProvider::run_key_resharing_client(
+                    mpc_config_cloned.clone().into(),
+                    my_share,
+                    public_key,
+                    &resharing_state_cloned.previous_running_state.participants,
+                    channel,
+                )
+                .await?;
+                let keyshare = Keyshare {
+                    key_id: contract_event.id,
+                    data: KeyshareData::Secp256k1(res),
+                };
+                keyshare_storage_ref.store_key(keyshare).await?;
+                tracing::info!("Key resharing complete; Follower calls vote_pk.");
+                chain_txn_sender_cloned
+                    .send(ChainSendTransactionRequest::VoteReshared(
+                        ChainVoteResharedArgs {
+                            key_event_id: contract_event.id,
+                        },
+                    ))
                     .await?;
-                    let keyshare = Keyshare {
-                        key_id: contract_event.id,
-                        data: KeyshareData::Secp256k1(res),
-                    };
-                    keyshare_storage_ref.store_key(keyshare).await?;
-                    tracing::info!("Key resharing complete; Follower calls vote_pk.");
-                    chain_txn_sender_cloned
-                        .send(ChainSendTransactionRequest::VoteReshared(
-                            ChainVoteResharedArgs {
-                                key_event_id: contract_event.id,
-                            },
-                        ))
-                        .await?;
-                    Ok(())
-                });
+                //});
             }
         } else {
             let n_participants = mpc_config.participants.participants.len();
@@ -712,8 +755,10 @@ impl Coordinator {
                 let mut contract_event = key_event_receiver.borrow_and_update().clone();
                 if !contract_event.started {
                     tracing::info!(
-                        "Leader is starting ecdsa secp256k1 key resharing for key id {:?}",
-                        contract_event.id
+                        "Leader is starting ecdsa secp256k1 key resharing for key id {:?} as leader: {} with keyshare: {:?}",
+                        contract_event.id,
+                        mpc_config.my_participant_id,
+                        existing_keyshares,
                     );
                     // open the channel
                     let channel = network_client.new_channel_for_task(
@@ -729,9 +774,10 @@ impl Coordinator {
                         .await?;
                     let my_share = existing_keyshares
                         .iter()
-                        .find(|share| share.key_id == contract_event.id)
+                        .find(|share| share.key_id.domain_id == contract_event.id.domain_id)
                         .map(|share| share.data.clone())
                         .map(|KeyshareData::Secp256k1(data)| data.private_share);
+                    tracing::info!("leader keyshare after conversion: {:?}", my_share);
                     // todo: fix the silly conversion chain below.
                     let public_key = resharing_state
                         .previous_running_state
@@ -740,6 +786,11 @@ impl Coordinator {
                         .unwrap();
                     let public_key = near_crypto::PublicKey::from_str(&String::from(&public_key));
                     let public_key = public_key_to_affine_point(public_key.unwrap().into())?;
+                    tracing::info!(
+                        "leader trying to make sense here. MpcConfig: {:?}, resharing state: {:?}",
+                        mpc_config,
+                        resharing_state
+                    );
                     let res = EcdsaSignatureProvider::run_key_resharing_client(
                         mpc_config.clone().into(),
                         my_share,
@@ -747,20 +798,19 @@ impl Coordinator {
                         &resharing_state.previous_running_state.participants,
                         channel,
                     )
-                    .await?;
+                    .await;
+                    let res = match res {
+                        Ok(x) => x,
+                        Err(e) => {
+                            anyhow::bail!("found an error: {}", e);
+                        }
+                    };
                     let keyshare = Keyshare {
                         key_id: contract_event.id.clone(),
                         data: KeyshareData::Secp256k1(res.clone()),
                     };
                     keyshare_storage.store_key(keyshare).await?;
                     tracing::info!("Key resharing complete; Leader waits for completion.");
-                    chain_txn_sender
-                        .send(ChainSendTransactionRequest::VoteReshared(
-                            ChainVoteResharedArgs {
-                                key_event_id: contract_event.id,
-                            },
-                        ))
-                        .await?;
                     let key_event_id = contract_event.id;
                     while contract_event.completed.len() != n_participants - 1 {
                         contract_event = key_event_receiver.borrow_and_update().clone();
@@ -770,14 +820,23 @@ impl Coordinator {
                         tracing::info!("Key generation timed out.");
                         continue 'leader;
                     }
-                    let my_public_key = affine_point_to_public_key(res.public_key)?;
-                    tracing::info!("Key generation complete; Leader calls vote_pk.");
+                    //let my_public_key = affine_point_to_public_key(res.public_key)?;
+                    tracing::info!("Key resharing complete; Leader votes for completion.");
                     chain_txn_sender
-                        .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
-                            key_event_id: contract_event.id,
-                            public_key: my_public_key,
-                        }))
+                        .send(ChainSendTransactionRequest::VoteReshared(
+                            ChainVoteResharedArgs {
+                                key_event_id: contract_event.id,
+                            },
+                        ))
                         .await?;
+                    //chain_txn_sender
+                    //    .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
+                    //        key_event_id: contract_event.id,
+                    //        public_key: my_public_key,
+                    //    }))
+                    //    .await?;
+                } else {
+                    return Ok(MpcJobResult::Done);
                 }
             }
         }

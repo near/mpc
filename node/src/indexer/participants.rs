@@ -19,8 +19,6 @@ pub struct ContractKeyEventInstance {
 }
 
 pub fn convert_key_event_to_instance(key_event: &KeyEvent) -> ContractKeyEventInstance {
-    let epoch_id = key_event.epoch_id();
-    let domain_id = key_event.domain_id();
     let (attempt_id, started, completed) = if let Some(current_instance) = key_event.instance() {
         (
             current_instance.attempt_id(),
@@ -35,8 +33,8 @@ pub fn convert_key_event_to_instance(key_event: &KeyEvent) -> ContractKeyEventIn
         (key_event.next_attempt_id(), false, BTreeSet::new())
     };
     let id = KeyEventId {
-        epoch_id,
-        domain_id,
+        epoch_id: key_event.epoch_id(),
+        domain_id: key_event.domain_id(),
         attempt_id,
     };
     ContractKeyEventInstance {
@@ -54,6 +52,7 @@ pub struct ContractRunningState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractInitializingState {
+    // we also need the domain.wait
     pub generated_keyset: Keyset,
     pub participants: ParticipantsConfig,
     pub key_event: ContractKeyEventInstance,

@@ -186,7 +186,6 @@ impl KeyEvent {
         self.instance.as_ref().unwrap().completed.len()
     }
 
-    //#[cfg(test)]
     pub fn domain_id(&self) -> crate::primitives::domain::DomainId {
         self.domain.id
     }
@@ -194,7 +193,6 @@ impl KeyEvent {
     pub fn instance(&self) -> &Option<KeyEventInstance> {
         &self.instance
     }
-    /// Returns the current key event instance (or none)
     pub fn next_attempt_id(&self) -> AttemptId {
         self.next_attempt_id
     }
@@ -241,13 +239,6 @@ impl KeyEventInstance {
 
     pub fn active(&self) -> bool {
         env::block_height() < self.expires_on
-    }
-
-    pub fn expires_on(&self) -> BlockHeight {
-        self.expires_on
-    }
-    pub fn started_in(&self) -> BlockHeight {
-        self.started_in
     }
 
     pub fn attempt_id(&self) -> AttemptId {

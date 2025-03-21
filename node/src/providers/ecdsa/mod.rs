@@ -128,10 +128,10 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        mpc_config: MpcConfig,
+        threshold: usize,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        EcdsaSignatureProvider::run_key_generation_client_internal(mpc_config, channel).await
+        EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(

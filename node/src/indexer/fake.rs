@@ -37,11 +37,11 @@ impl FakeMpcContractState {
             pending_signatures: BTreeMap::new(),
         }
     }
-    pub fn gen_key_event(epoch: u64) -> ContractKeyEventInstance {
+    pub fn new_key_event(epoch: u64) -> ContractKeyEventInstance {
         let id = KeyEventId::new(
             EpochId::new(epoch),
             DomainId::legacy_ecdsa_id(),
-            AttemptId::legacy_attempt_id(),
+            AttemptId::new(),
         );
         let completed = BTreeSet::new();
         ContractKeyEventInstance {
@@ -59,7 +59,7 @@ impl FakeMpcContractState {
                 domains: Vec::new(),
             },
             participants: participants.clone(),
-            key_event: Self::gen_key_event(0),
+            key_event: Self::new_key_event(0),
         });
     }
     pub fn start_resharing(&mut self, new_participants: ParticipantsConfig) {
@@ -71,7 +71,7 @@ impl FakeMpcContractState {
             previous_running_state: running_state.clone(),
             new_participants: new_participants.clone(),
             reshared_keys: Keyset::new(running_state.keyset.epoch_id.next(), Vec::new()),
-            key_event: Self::gen_key_event(0),
+            key_event: Self::new_key_event(running_state.keyset.epoch_id.next().get()),
         });
     }
     pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, pk: PublicKey) {
@@ -86,6 +86,12 @@ impl FakeMpcContractState {
                 .unwrap();
             config.key_event.completed.insert(id);
             // assert pk matches
+            tracing::info!(
+                "received Pk vote: account_id: {}, key_id: {:?}, pk: {}",
+                account_id,
+                key_id,
+                pk
+            );
             if config.key_event.completed.len() == config.participants.participants.len() {
                 let keyset = Keyset {
                     epoch_id: key_id.epoch_id,
@@ -108,7 +114,18 @@ impl FakeMpcContractState {
             );
         }
     }
-
+    pub fn vote_start_keygen(&mut self) {
+        if let ContractState::Initializing(state) = &mut self.state {
+            assert!(!state.key_event.started);
+            state.key_event.started = true;
+        }
+    }
+    pub fn vote_start_reshare(&mut self) {
+        if let ContractState::Resharing(state) = &mut self.state {
+            assert!(!state.key_event.started);
+            state.key_event.started = true;
+        }
+    }
     pub fn vote_reshared(&mut self, account_id: AccountId, key_id: KeyEventId) {
         if let ContractState::Resharing(config) = &mut self.state {
             assert_eq!(key_id, config.key_event.id);
@@ -269,8 +286,13 @@ impl FakeIndexerCore {
                         let mut contract = contract.lock().await;
                         contract.vote_reshared(account_id, reshared.key_event_id);
                     }
-                    _ => {
-                        panic!("Unexpected txn: {:?}", txn);
+                    ChainSendTransactionRequest::StartKeygen(_) => {
+                        let mut contract = contract.lock().await;
+                        contract.vote_start_keygen();
+                    }
+                    ChainSendTransactionRequest::StartReshare(_) => {
+                        let mut contract = contract.lock().await;
+                        contract.vote_start_reshare();
                     }
                 }
             }

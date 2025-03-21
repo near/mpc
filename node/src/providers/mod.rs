@@ -53,7 +53,7 @@ pub trait SignatureProvider {
     ///
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_generation_client(
-        mpc_config: MpcConfig,
+        threshold: usize,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput>;
 
