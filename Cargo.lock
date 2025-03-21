@@ -3885,7 +3885,6 @@ version = "2.0.0-alpha"
 dependencies = [
  "anyhow",
  "borsh",
- "crypto-shared",
  "getrandom 0.2.15",
  "k256",
  "near-account-id",
