@@ -198,19 +198,46 @@ impl VersionedMpcContract {
             env::predecessor_account_id(),
             request
         );
+
+        let domain_registry = match self.state().domain_registry() {
+            Ok(domain_registry) => domain_registry,
+            Err(error) => env::panic_str(&error.to_string()),
+        };
+
+        let domain_id = &request.domain_id.unwrap_or_else(|| {
+            { domain_registry.most_recent_domain_for_signature_scheme(SignatureScheme::Secp256k1) }
+                .expect("A Domain ID must exist.")
+        });
+
+        let signature_scheme = domain_registry
+            .get_domain(domain_id)
+            .map(|d| d.scheme)
+            .expect("The request's domain ID must exist.");
+
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        if k256::Scalar::from_bytes(request.payload.as_bytes()).is_none() {
-            env::panic_str(
-                &InvalidParameters::MalformedPayload
-                    .message("Payload hash cannot be convereted to Scalar")
-                    .to_string(),
-            );
-        };
-
-        if request.key_version > self.latest_key_version(None) {
-            env::panic_str(&SignError::UnsupportedKeyVersion.to_string());
+        {
+            match signature_scheme {
+                SignatureScheme::Secp256k1 => {
+                    if k256::Scalar::from_bytes(request.payload.as_bytes()).is_none() {
+                        env::panic_str(
+                            &InvalidParameters::MalformedPayload
+                                .message("Payload hash cannot be convereted to Scalar")
+                                .to_string(),
+                        );
+                    };
+                }
+                SignatureScheme::Ed25519 => {
+                    if curve25519_dalek::Scalar::from_bytes(request.payload.as_bytes()).is_none() {
+                        env::panic_str(
+                            &InvalidParameters::MalformedPayload
+                                .message("Payload hash cannot be convereted to Scalar")
+                                .to_string(),
+                        );
+                    };
+                }
+            }
         }
 
         // Make sure sign call will not run out of gas doing yield/resume logic
@@ -248,7 +275,8 @@ impl VersionedMpcContract {
             }
         }
 
-        let request = SignatureRequest::new(request.payload, &predecessor, &request.path);
+        let request =
+            SignatureRequest::new(*domain_id, request.payload, &predecessor, &request.path);
 
         let Self::V0(mpc_contract) = self;
         // Remove timed out requests
@@ -313,20 +341,6 @@ impl VersionedMpcContract {
         let mut data: Vec<u8> = vec![near_sdk::CurveType::SECP256K1 as u8];
         data.extend(slice.to_vec());
         PublicKey::try_from(data).map_err(|_| PublicKeyError::DerivedKeyConversionFailed.into())
-    }
-
-    /// Key versions refer new versions of the root key that we may choose to generate on cohort changes
-    /// Older key versions will always work but newer key versions were never held by older signers
-    /// Newer key versions may also add new security features, like only existing within a secure enclave.
-    /// The signature_scheme parameter specifies which signature scheme we're querying the latest version
-    /// for. The default is Secp256k1. The default is **NOT** to query across all signature schemes.
-    pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
-        self.state()
-            .most_recent_domain_for_signature_scheme(
-                signature_scheme.unwrap_or(SignatureScheme::Secp256k1),
-            )
-            .unwrap()
-            .0 as u32
     }
 }
 
@@ -668,6 +682,9 @@ impl VersionedMpcContract {
                 Vector::new(StorageKey::RequestsByTimestamp);
             let mut pending_requests: LookupMap<SignatureRequest, YieldIndex> =
                 LookupMap::new(StorageKey::PendingRequests);
+
+            let protocol_state: ProtocolContractState = (&state.protocol_state).into();
+
             for (created, request) in &state.request_by_block_height {
                 // check if request is still valid:
                 if created + config.request_timeout_blocks > env::block_height() {
@@ -682,6 +699,9 @@ impl VersionedMpcContract {
                             PayloadHash::new(request.payload_hash.scalar.to_bytes().into());
 
                         let request = SignatureRequest {
+                            domain: protocol_state
+                                .most_recent_domain_for_signature_scheme(SignatureScheme::Secp256k1)
+                                .expect("There exists a signature scheme for Secp256k1"),
                             payload_hash,
                             epsilon,
                         };
@@ -693,7 +713,7 @@ impl VersionedMpcContract {
             }
             return Ok(VersionedMpcContract::V0(MpcContract {
                 config,
-                protocol_state: (&state.protocol_state).into(),
+                protocol_state,
                 pending_requests,
                 request_by_block_height,
                 proposed_updates: ProposedUpdates::default(),

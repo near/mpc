@@ -577,6 +577,7 @@ dependencies = [
  "curve25519-dalek-derive",
  "digest",
  "fiat-crypto",
+ "group",
  "rand_core",
  "rustc_version",
  "subtle",
@@ -1831,6 +1832,7 @@ version = "2.0.0-alpha"
 dependencies = [
  "anyhow",
  "borsh",
+ "curve25519-dalek",
  "digest",
  "ecdsa",
  "getrandom 0.2.15",

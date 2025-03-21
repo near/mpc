@@ -17,7 +17,7 @@ impl ScalarExt for Scalar {
     /// This will be very rare with random bytes as the field size is 2^256 - 2^32 - 2^9 - 2^8 - 2^7 - 2^6 - 2^4 - 1
     fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
         let bytes = U256::from_be_slice(bytes.as_slice());
-        Scalar::from_repr(bytes.to_be_byte_array()).into_option()
+        Self::from_repr(bytes.to_be_byte_array()).into_option()
     }
 
     /// When the user can't directly select the value, this will always work
@@ -26,7 +26,24 @@ impl ScalarExt for Scalar {
         // This should never happen.
         // The space of inputs is 2^256, the space of the field is ~2^256 - 2^129.
         // This mean that you'd have to run 2^127 hashes to find a value that causes this to fail.
-        Scalar::from_bytes(hash).expect("Derived epsilon value falls outside of the field")
+        Self::from_bytes(hash).expect("Derived epsilon value falls outside of the field")
+    }
+}
+
+impl ScalarExt for curve25519_dalek::Scalar {
+    /// Returns nothing if the bytes are greater than the field size of Secp256k1.
+    /// This will be very rare with random bytes as the field size is 2^256 - 2^32 - 2^9 - 2^8 - 2^7 - 2^6 - 2^4 - 1
+    fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
+        Self::from_repr(bytes).into_option()
+    }
+
+    /// When the user can't directly select the value, this will always work
+    /// Use cases are things that we know have been hashed
+    fn from_non_biased(hash: [u8; 32]) -> Self {
+        // This should never happen.
+        // The space of inputs is 2^256, the space of the field is ~2^256 - 2^129.
+        // This mean that you'd have to run 2^127 hashes to find a value that causes this to fail.
+        Self::from_bytes(hash).expect("Derived epsilon value falls outside of the field")
     }
 }
 

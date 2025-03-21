@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 /// Each domain corresponds to a specific root key in a specific signature scheme. There may be
 /// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DomainId(pub u64);
 
 impl DomainId {
@@ -129,6 +129,12 @@ impl DomainRegistry {
             }
         }
         Ok(registry)
+    }
+
+    pub fn get_domain(&self, domain_id: &DomainId) -> Option<&DomainConfig> {
+        self.domains
+            .iter()
+            .find(|domain_config| domain_config.id == *domain_id)
     }
 
     #[cfg(test)]

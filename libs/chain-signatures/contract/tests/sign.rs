@@ -34,6 +34,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
             payload: payload_hash,
             path: path.into(),
             key_version: 0,
+            domain_id: None,
         };
 
         sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
@@ -47,6 +48,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
         payload: payload_hash,
         path: path.into(),
         key_version: 0,
+        domain_id: None,
     };
     sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
     sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
@@ -78,6 +80,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
         payload: payload_hash,
         path: path.into(),
         key_version: 0,
+        domain_id: None,
     };
 
     let status = alice
@@ -152,6 +155,7 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
         payload: payload_hash,
         path: path.into(),
         key_version: 0,
+        domain_id: None,
     };
 
     let status = alice
@@ -212,6 +216,7 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
         payload: payload_hash,
         path: path.into(),
         key_version: 0,
+        domain_id: None,
     };
 
     let status = contract

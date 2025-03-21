@@ -3,6 +3,8 @@ use crate::crypto_shared;
 use crypto_shared::derive_epsilon;
 use near_sdk::{near, AccountId, CryptoHash};
 
+use super::domain::DomainId;
+
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 #[near(serializers=[borsh, json])]
 pub struct Epsilon([u8; 32]);
@@ -43,12 +45,19 @@ pub struct YieldIndex {
 pub struct SignatureRequest {
     pub epsilon: Epsilon,
     pub payload_hash: PayloadHash,
+    pub domain: DomainId,
 }
 
 impl SignatureRequest {
-    pub fn new(payload_hash: PayloadHash, predecessor_id: &AccountId, path: &str) -> Self {
+    pub fn new(
+        domain: DomainId,
+        payload_hash: PayloadHash,
+        predecessor_id: &AccountId,
+        path: &str,
+    ) -> Self {
         let epsilon = derive_epsilon(predecessor_id, path);
         SignatureRequest {
+            domain,
             epsilon,
             payload_hash,
         }
@@ -61,6 +70,7 @@ pub struct SignRequest {
     pub payload: PayloadHash,
     pub path: String,
     pub key_version: u32,
+    pub domain_id: Option<DomainId>,
 }
 
 #[derive(Clone, Debug)]
