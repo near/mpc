@@ -1,17 +1,18 @@
 pub mod config;
+pub mod crypto_shared;
 pub mod errors;
 pub mod legacy_contract_state;
 pub mod primitives;
 pub mod state;
 pub mod storage_keys;
 pub mod update;
+
 use crate::errors::Error;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 use config::{Config, InitConfig};
-use crypto_shared::SerializableScalar;
 use crypto_shared::{
     derive_epsilon, derive_key, kdf::check_ec_signature, near_public_key_to_affine_point,
-    types::SignatureResponse, ScalarExt as _,
+    types::SignatureResponse, ScalarExt as _, SerializableScalar,
 };
 use errors::{
     ConversionError, DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError,

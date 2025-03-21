@@ -1,8 +1,8 @@
 pub mod common;
 use common::{candidates, create_response, init, init_env_secp256k1, sign_and_validate};
-use crypto_shared::SignatureResponse;
 use mpc_contract::{
     config::InitConfig,
+    crypto_shared::SignatureResponse,
     errors,
     primitives::{
         participants::Participants,

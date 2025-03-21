@@ -1,3 +1,5 @@
+use crate::crypto_shared;
+
 use crypto_shared::{derive_epsilon, SerializableScalar};
 use k256::Scalar;
 use near_sdk::{near, AccountId, CryptoHash};

@@ -35,7 +35,6 @@ pub struct RunningContractState {
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
 }
-
 impl From<&legacy_contract_state::RunningContractState> for RunningContractState {
     fn from(state: &legacy_contract_state::RunningContractState) -> Self {
         RunningContractState {

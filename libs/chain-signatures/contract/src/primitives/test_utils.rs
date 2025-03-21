@@ -1,7 +1,8 @@
 use crate::legacy_contract_state::{self, CandidateInfo};
-use crate::primitives::participants::{ParticipantInfo, Participants};
-use crate::primitives::thresholds::Threshold;
-use crate::primitives::thresholds::ThresholdParameters;
+use crate::primitives::{
+    participants::{ParticipantInfo, Participants},
+    thresholds::{Threshold, ThresholdParameters},
+};
 use near_sdk::{AccountId, CurveType, PublicKey};
 use rand::{distributions::Uniform, Rng};
 use std::collections::{BTreeMap, HashSet};

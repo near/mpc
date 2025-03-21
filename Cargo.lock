@@ -3883,14 +3883,17 @@ dependencies = [
 name = "mpc-contract"
 version = "2.0.0-alpha"
 dependencies = [
+ "anyhow",
  "borsh",
- "crypto-shared",
+ "getrandom 0.2.15",
  "k256",
+ "near-account-id",
  "near-gas",
  "near-sdk",
  "schemars",
  "serde",
  "serde_json",
+ "sha3",
  "thiserror 1.0.69",
 ]
 

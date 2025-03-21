@@ -1,27 +1,33 @@
-use crypto_shared::kdf::{check_ec_signature, derive_secret_key};
-use crypto_shared::{
-    derive_epsilon, derive_key, ScalarExt as _, SerializableAffinePoint, SerializableScalar,
-    SignatureResponse,
-};
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
-use k256::elliptic_curve::ops::Reduce;
-use k256::elliptic_curve::point::DecompressPoint as _;
-use k256::elliptic_curve::sec1::ToEncodedPoint;
-use k256::{AffinePoint, FieldBytes, Scalar, Secp256k1};
-use mpc_contract::config::InitConfig;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
-use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
-use mpc_contract::primitives::participants::{ParticipantInfo, Participants};
-use mpc_contract::primitives::signature::{SignRequest, SignatureRequest};
-use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use mpc_contract::update::UpdateId;
+use k256::{
+    elliptic_curve::{ops::Reduce, point::DecompressPoint as _, sec1::ToEncodedPoint},
+    AffinePoint, FieldBytes, Scalar, Secp256k1,
+};
+use mpc_contract::{
+    config::InitConfig,
+    crypto_shared::{
+        derive_epsilon, derive_key,
+        kdf::{check_ec_signature, derive_secret_key},
+        ScalarExt, SerializableAffinePoint, SerializableScalar, SignatureResponse,
+    },
+    primitives::{
+        domain::{DomainConfig, DomainId, SignatureScheme},
+        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        participants::{ParticipantInfo, Participants},
+        signature::{SignRequest, SignatureRequest},
+        thresholds::{Threshold, ThresholdParameters},
+    },
+    update::UpdateId,
+};
 use near_crypto::KeyType;
 use near_sdk::log;
-use near_workspaces::network::Sandbox;
-use near_workspaces::result::ExecutionFinalResult;
-use near_workspaces::types::{AccountId, NearToken};
-use near_workspaces::{Account, Contract, Worker};
+use near_workspaces::{
+    network::Sandbox,
+    result::ExecutionFinalResult,
+    types::{AccountId, NearToken},
+    Account, Contract, Worker,
+};
 use signature::DigestSigner;
 use std::str::FromStr;
 
