@@ -1,12 +1,12 @@
 use super::permanent::LegacyRootKeyshareData;
-use super::{KeyShare, KeyShareData, KeyshareStorage, Secp256k1Data};
+use super::{Keyshare, KeyshareData, KeyshareStorage, Secp256k1KeyshareData};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
 
 /// For compatibility while we perform the refactoring.
 /// Converts the new format keyshares array to the old format.
 pub fn legacy_ecdsa_key_from_keyshares(
-    keyshares: &[KeyShare],
+    keyshares: &[Keyshare],
 ) -> anyhow::Result<LegacyRootKeyshareData> {
     if keyshares.len() != 1 {
         anyhow::bail!("Expected exactly one keyshare, got {}", keyshares.len());
@@ -18,9 +18,7 @@ pub fn legacy_ecdsa_key_from_keyshares(
             keyshare.key_id.domain_id
         );
     }
-    let secp256k1_data = match &keyshare.data {
-        KeyShareData::Secp256k1(secp256k1_data) => secp256k1_data,
-    };
+    let KeyshareData::Secp256k1(secp256k1_data) = &keyshare.data;
     Ok(LegacyRootKeyshareData {
         epoch: keyshare.key_id.epoch_id.get(),
         private_share: secp256k1_data.private_share,
@@ -29,6 +27,8 @@ pub fn legacy_ecdsa_key_from_keyshares(
 }
 
 impl KeyshareStorage {
+    /// For compatibility with the rest of the MPC codebase while we perform refactoring.
+    /// Loads the keyshare and converts it to legacy format.
     pub async fn compat_load_legacy_keyshare(
         &self,
         epoch_id: u64,
@@ -47,7 +47,8 @@ impl KeyshareStorage {
     }
 }
 
-impl KeyShare {
+impl Keyshare {
+    /// Converts the legacy keyshare to a keyshare in the new format.
     pub fn from_legacy(legacy: &LegacyRootKeyshareData) -> Self {
         Self {
             key_id: KeyEventId::new(
@@ -55,7 +56,7 @@ impl KeyShare {
                 DomainId::legacy_ecdsa_id(),
                 AttemptId::legacy_attempt_id(),
             ),
-            data: KeyShareData::Secp256k1(Secp256k1Data {
+            data: KeyshareData::Secp256k1(Secp256k1KeyshareData {
                 private_share: legacy.private_share,
                 public_key: legacy.public_key,
             }),

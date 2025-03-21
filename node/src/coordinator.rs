@@ -8,7 +8,7 @@ use crate::indexer::participants::{
 use crate::indexer::types::{ChainSendTransactionRequest, ChainVotePkArgs, ChainVoteResharedArgs};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::permanent::LegacyRootKeyshareData;
-use crate::keyshare::{KeyShare, KeyStorageConfig, KeyshareStorage};
+use crate::keyshare::{KeyStorageConfig, Keyshare, KeyshareStorage};
 use crate::metrics;
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
@@ -325,7 +325,7 @@ impl Coordinator {
         .await?;
 
         keyshare_storage
-            .store_key(KeyShare::from_legacy(&LegacyRootKeyshareData {
+            .store_key(Keyshare::from_legacy(&LegacyRootKeyshareData {
                 epoch: 0,
                 private_share: key.private_share,
                 public_key: key.public_key,
@@ -339,7 +339,7 @@ impl Coordinator {
             .await?;
 
         // Just halt and wait for the running state.
-        return Ok(MpcJobResult::HaltUntilInterrupted);
+        Ok(MpcJobResult::HaltUntilInterrupted)
     }
 
     /// Entry point to handle the Running state of the contract.
@@ -518,7 +518,7 @@ impl Coordinator {
         )
         .await?;
         keyshare_storage
-            .store_key(KeyShare::from_legacy(&LegacyRootKeyshareData {
+            .store_key(Keyshare::from_legacy(&LegacyRootKeyshareData {
                 epoch: contract_state.old_epoch + 1,
                 private_share: new_keygen_output.private_share,
                 public_key: new_keygen_output.public_key,

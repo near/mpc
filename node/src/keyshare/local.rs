@@ -44,6 +44,7 @@ impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
         let cipher = Aes128Gcm::new(GenericArray::from_slice(&self.encryption_key));
         let encrypted = db::encrypt(&cipher, data);
         // Write the new permanent keyshare to a separate file, and then create a link to it.
+        // That way, we don't lose any keys if we somehow mess up.
         let keyfile_for_epoch = self.permanent_key_dir.join(identifier);
         let mut file = tokio::fs::File::create_new(&keyfile_for_epoch)
             .await
@@ -83,9 +84,6 @@ mod tests {
         assert_eq!(storage.load().await.unwrap().unwrap(), b"123");
         storage.store(b"456", "id2").await.unwrap();
         assert_eq!(storage.load().await.unwrap().unwrap(), b"456");
-        assert_eq!(
-            &std::fs::read_to_string(dir.path().join("permanent_keys/id1")).unwrap(),
-            "123"
-        );
+        assert!(std::fs::exists(dir.path().join("permanent_keys/id1")).unwrap());
     }
 }

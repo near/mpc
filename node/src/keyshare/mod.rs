@@ -16,25 +16,27 @@ use serde::{Deserialize, Serialize};
 use temporary::TemporaryKeyStorage;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Secp256k1Data {
+pub struct Secp256k1KeyshareData {
     pub private_share: Scalar,
     pub public_key: AffinePoint,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum KeyShareData {
-    Secp256k1(Secp256k1Data),
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct KeyShare {
+pub enum KeyshareData {
+    Secp256k1(Secp256k1KeyshareData),
+}
+
+/// A single keyshare, corresponding to one epoch, one domain, one attempt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Keyshare {
     pub key_id: KeyEventId,
-    pub data: KeyShareData,
+    pub data: KeyshareData,
 }
 
-impl KeyShare {
+impl Keyshare {
     pub fn public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         match &self.data {
-            KeyShareData::Secp256k1(secp256k1_data) => {
+            KeyshareData::Secp256k1(secp256k1_data) => {
                 let public_key = affine_point_to_public_key(secp256k1_data.public_key)?;
                 Ok(public_key.to_string().parse()?)
             }
@@ -95,7 +97,7 @@ pub struct KeyshareStorage {
 impl KeyshareStorage {
     /// Stores a single keyshare into temporary key storage. The keyshare's KeyEventId must be
     /// unique. This must be called before sending in a vote_pk or vote_reshared.
-    pub async fn store_key(&self, key_share: KeyShare) -> anyhow::Result<()> {
+    pub async fn store_key(&self, key_share: Keyshare) -> anyhow::Result<()> {
         self.temporary.store_keyshare(key_share).await
     }
 
@@ -107,6 +109,9 @@ impl KeyshareStorage {
     ///      already generated keys.
     ///    - In an older epoch. This can happen if we missed the previous transition from Resharing
     ///      to Running before it transitions again into Initializing. This is fine.
+    ///
+    /// This function will never fail as long as the node is not buggy and the storage is not messed
+    /// with. Therefore it is intended to only be a sanity check.
     pub async fn ensure_can_generate_key(
         &self,
         epoch_id: EpochId,
@@ -144,6 +149,9 @@ impl KeyshareStorage {
     /// and use it afterwards. This requires:
     ///   - The already reshared keys exist in temporary storage.
     ///   - The current permanent key storage has an older epoch.
+    ///
+    /// This function will never fail as long as the node is not buggy and the storage is not messed
+    /// with. Therefore it is intended to only be a sanity check.
     pub async fn ensure_can_reshare_key(
         &self,
         epoch_id: EpochId,
@@ -173,7 +181,7 @@ impl KeyshareStorage {
     /// (We could also delete attempts in the same epoch ID but this is not necessary from a
     /// security perspective, since the same epoch ID corresponds to the same set of participants
     /// and the threshold value.)
-    pub async fn load_keyset(&self, keyset: &Keyset) -> anyhow::Result<Vec<KeyShare>> {
+    pub async fn load_keyset(&self, keyset: &Keyset) -> anyhow::Result<Vec<Keyshare>> {
         let permanent = self.permanent.load().await?;
         let existing_keyshares = if let Some(permanent) = permanent {
             if permanent.epoch_id == keyset.epoch_id {
@@ -216,9 +224,12 @@ impl KeyshareStorage {
         Ok(new_keyshares)
     }
 
+    /// Helper function to verify that the keyshares we have from permanent storage is a prefix
+    /// of the expected keyset, i.e. there are no extra keys, and each key is consistent with the
+    /// expected keyset.
     async fn verify_existing_keyshares_are_prefix_of_keyset(
         &self,
-        existing_keyshares: &[KeyShare],
+        existing_keyshares: &[Keyshare],
         epoch_id: EpochId,
         expected_keys: &[KeyForDomain],
     ) -> anyhow::Result<()> {
@@ -244,11 +255,13 @@ impl KeyshareStorage {
         Ok(())
     }
 
+    /// Loads a keyshare from temporary storage and verifies that it is consistent with the given
+    /// key's key ID and public key.
     async fn load_keyshare_from_temporary(
         &self,
         epoch_id: EpochId,
         key: &KeyForDomain,
-    ) -> anyhow::Result<KeyShare> {
+    ) -> anyhow::Result<Keyshare> {
         let key_id = KeyEventId::new(epoch_id, key.domain_id, key.attempt);
         let keyshare = self
             .temporary
@@ -267,7 +280,7 @@ pub struct GcpPermanentKeyStorageConfig {
     pub secret_id: String,
 }
 
-/// Factory to construct a KeyshareStorage implementation.
+/// Config for how to construct a KeyshareStorage.
 pub struct KeyStorageConfig {
     pub home_dir: std::path::PathBuf,
     pub local_encryption_key: [u8; 16],

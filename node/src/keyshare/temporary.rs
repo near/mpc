@@ -1,4 +1,4 @@
-use super::KeyShare;
+use super::Keyshare;
 use crate::db::{decrypt, encrypt};
 use aes_gcm::{Aes128Gcm, KeyInit};
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId};
@@ -6,6 +6,11 @@ use sha3::digest::generic_array::GenericArray;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 
+/// Stores keyshares that we generated (from keygen or resharing) but which have not yet been
+/// definitively included in a Running state by the contract. Each locally successful keygen
+/// or resharing attempt is stored here before voting for its success on the contract; that way
+/// if the contract then tells us that we should be using the keyshare from a specific attempt,
+/// we are sure to have persisted them in temporary key storage.
 pub struct TemporaryKeyStorage {
     storage_dir: PathBuf,
     cipher: Aes128Gcm,
@@ -31,26 +36,33 @@ impl TemporaryKeyStorage {
         self.storage_dir.join(filename)
     }
 
-    pub async fn store_keyshare(&self, keyshare: KeyShare) -> anyhow::Result<()> {
+    /// Stores the given keyshare into temporary storage; fails if a keyshare with the same key ID
+    /// already exists in storage.
+    pub async fn store_keyshare(&self, keyshare: Keyshare) -> anyhow::Result<()> {
         let path = self.keyshare_path(&keyshare.key_id);
         let data = serde_json::to_vec(&keyshare)?;
         let encrypted = encrypt(&self.cipher, &data);
 
+        // Make sure to fsync after writing the file, to have some resistance against power
+        // failures - right after exiting from this function we are going to vote on the contract,
+        // so we don't want to lose this keyshare.
         let mut file = tokio::fs::File::create_new(&path).await?;
         file.write_all(&encrypted).await?;
         file.sync_all().await?;
         Ok(())
     }
 
-    pub async fn load_keyshare(&self, key_id: &KeyEventId) -> anyhow::Result<Option<KeyShare>> {
+    /// Loads the keyshare with the given key ID from temporary storage, returning None if it
+    /// doesn't exist.
+    pub async fn load_keyshare(&self, key_id: &KeyEventId) -> anyhow::Result<Option<Keyshare>> {
         let path = self.keyshare_path(key_id);
-        if tokio::fs::try_exists(&path).await? {
+        if !tokio::fs::try_exists(&path).await? {
             return Ok(None);
         }
 
         let data = tokio::fs::read(&path).await?;
         let decrypted = decrypt(&self.cipher, &data)?;
-        let keyshare: KeyShare = serde_json::from_slice(&decrypted)?;
+        let keyshare: Keyshare = serde_json::from_slice(&decrypted)?;
         if keyshare.key_id != *key_id {
             anyhow::bail!(
                 "Keyshare loaded from {:?} has unexpected key ID {:?}",
@@ -70,6 +82,7 @@ impl TemporaryKeyStorage {
         Ok(EpochId::new(epoch_id))
     }
 
+    /// Deletes all keyshares stored in temporary storage that have an epoch ID less than the given.
     pub async fn delete_keyshares_prior_to_epoch_id(
         &self,
         epoch_id: EpochId,

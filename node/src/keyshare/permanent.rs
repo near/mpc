@@ -1,30 +1,41 @@
-use super::KeyShare;
+use super::Keyshare;
 use anyhow::Context;
 use k256::{AffinePoint, Scalar};
 use mpc_contract::primitives::key_state::EpochId;
 use serde::{Deserialize, Serialize};
 
+/// The single object we persist to permanent key storage.
+/// Corresponds to a Keyset in the contract side (i.e. one keyshare per domain).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PermanentKeyshareData {
     pub epoch_id: EpochId,
-    pub keyshares: Vec<KeyShare>,
+    /// These keyshares are in the exact same order as the domains in the Keyset.
+    pub keyshares: Vec<Keyshare>,
 }
 
 impl PermanentKeyshareData {
     pub fn from_legacy(legacy: &LegacyRootKeyshareData) -> Self {
         Self {
             epoch_id: EpochId::new(legacy.epoch),
-            keyshares: vec![KeyShare::from_legacy(legacy)],
+            keyshares: vec![Keyshare::from_legacy(legacy)],
         }
     }
 }
 
+/// Backend for storing the permanent keyshare data.
 #[async_trait::async_trait]
 pub trait PermanentKeyStorageBackend: Send + Sync {
+    /// Loads the latest stored data; or None if no data was ever stored.
     async fn load(&self) -> anyhow::Result<Option<Vec<u8>>>;
+    /// Stores the data, making it the latest. The identifier is used for the local backend to write
+    /// the data to a separate file and then linking it to the main file (acting as a backup
+    /// mechanism).
     async fn store(&self, data: &[u8], identifier: &str) -> anyhow::Result<()>;
 }
 
+/// Manages permanent keyshares. These are the keyshares we see from the Running state.
+/// When we generate or reshare a key, that key goes into temporary key storage first,
+/// and only when we transition to Running do we move it to permanent key storage.
 pub struct PermanentKeyStorage {
     backend: Box<dyn PermanentKeyStorageBackend>,
 }
@@ -32,13 +43,15 @@ pub struct PermanentKeyStorage {
 impl PermanentKeyStorage {
     pub async fn new(backend: Box<dyn PermanentKeyStorageBackend>) -> anyhow::Result<Self> {
         let ret = Self { backend };
+
+        // Migrate legacy data if necessary.
         let existing_data = ret.backend.load().await?;
         if let Some(data) = existing_data {
             if serde_json::from_slice::<PermanentKeyshareData>(&data).is_err() {
                 tracing::info!("Existing permanent keyshare data is not in the expected format, attempting to migrate...");
                 let legacy_data = serde_json::from_slice::<LegacyRootKeyshareData>(&data)?;
                 let new_data = PermanentKeyshareData::from_legacy(&legacy_data);
-                ret.store(&new_data).await?;
+                ret.store_unchecked(&new_data).await?;
             }
         }
         Ok(ret)
@@ -68,6 +81,10 @@ impl PermanentKeyStorage {
             }
         }
 
+        self.store_unchecked(keyshare_data).await
+    }
+
+    async fn store_unchecked(&self, keyshare_data: &PermanentKeyshareData) -> anyhow::Result<()> {
         let data_json = serde_json::to_vec(keyshare_data)?;
         let identifier = format!(
             "epoch_{}_with_{}_domains",
@@ -103,7 +120,7 @@ mod tests {
         LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend,
     };
     use crate::keyshare::test_utils::{generate_dummy_keyshare, permanent_keyshare_from_keyshares};
-    use crate::keyshare::{KeyShareData, Secp256k1Data};
+    use crate::keyshare::{KeyshareData, Secp256k1KeyshareData};
     use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
     use mpc_contract::primitives::key_state::EpochId;
@@ -196,7 +213,7 @@ mod tests {
         assert_eq!(loaded.keyshares[0].key_id.attempt_id.get(), 0);
         assert_eq!(
             loaded.keyshares[0].data,
-            KeyShareData::Secp256k1(Secp256k1Data {
+            KeyshareData::Secp256k1(Secp256k1KeyshareData {
                 private_share: legacy_data.private_share,
                 public_key: legacy_data.public_key,
             })

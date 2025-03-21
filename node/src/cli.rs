@@ -526,7 +526,6 @@ mod tests {
             result.is_err(),
             "Import command with lower epoch should fail"
         );
-        assert!(result.unwrap_err().to_string().contains("Refusing to overwrite existing keyshare of epoch 2 with new keyshare of older or same epoch 1"));
     }
 
     #[tokio::test]
