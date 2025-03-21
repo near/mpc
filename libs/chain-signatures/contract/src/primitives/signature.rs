@@ -1,7 +1,6 @@
 use crate::crypto_shared;
 
 use crypto_shared::derive_epsilon;
-use k256::Scalar;
 use near_sdk::{near, AccountId, CryptoHash};
 
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]

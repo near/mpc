@@ -1,27 +1,20 @@
 pub mod common;
-use common::{
-    candidates, contruct_valid_key_state_proposal, create_response, init, init_env,
-    sign_and_validate,
-};
-
+use common::{candidates, create_response, init, init_env_secp256k1, sign_and_validate};
 use mpc_contract::{
     config::InitConfig,
+    crypto_shared::SignatureResponse,
     errors,
     primitives::{
-        key_state::KeyStateProposal,
         participants::Participants,
         signature::SignRequest,
-        thresholds::{DKGThreshold, Threshold, ThresholdParameters},
+        thresholds::{Threshold, ThresholdParameters},
     },
 };
 use near_workspaces::types::NearToken;
 
-use mpc_contract::crypto_shared::SignatureResponse;
-use std::mem;
-
 #[tokio::test]
 async fn test_contract_sign_request() -> anyhow::Result<()> {
-    let (_, contract, _, sk) = init_env().await;
+    let (_, contract, _, sks) = init_env_secp256k1(1).await;
     let predecessor_id = contract.id();
     let path = "test";
 
@@ -36,7 +29,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
     for msg in messages {
         println!("submitting: {msg}");
         let (payload_hash, respond_req, respond_resp) =
-            create_response(predecessor_id, msg, path, &sk).await;
+            create_response(predecessor_id, msg, path, &sks[0]).await;
         let request = SignRequest {
             payload: payload_hash,
             path: path.into(),
@@ -49,7 +42,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
     // check duplicate requests can also be signed:
     let duplicate_msg = "welp";
     let (payload_hash, respond_req, respond_resp) =
-        create_response(predecessor_id, duplicate_msg, path, &sk).await;
+        create_response(predecessor_id, duplicate_msg, path, &sks[0]).await;
     let request = SignRequest {
         payload: payload_hash,
         path: path.into(),
@@ -71,7 +64,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sk) = init_env().await;
+    let (worker, contract, _, sks) = init_env_secp256k1(1).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -80,7 +73,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
     let msg = "hello world!";
     println!("submitting: {msg}");
     let (payload_hash, respond_req, respond_resp) =
-        create_response(alice.id(), msg, path, &sk).await;
+        create_response(alice.id(), msg, path, &sks[0]).await;
     let request = SignRequest {
         payload: payload_hash,
         path: path.into(),
@@ -146,7 +139,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sk) = init_env().await;
+    let (worker, contract, _, sks) = init_env_secp256k1(1).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -154,7 +147,7 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 
     let msg = "hello world!";
     println!("submitting: {msg}");
-    let (payload_hash, _, _) = create_response(alice.id(), msg, path, &sk).await;
+    let (payload_hash, _, _) = create_response(alice.id(), msg, path, &sks[0]).await;
     let request = SignRequest {
         payload: payload_hash,
         path: path.into(),
@@ -207,14 +200,14 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
-    let (_, contract, _, sk) = init_env().await;
+    let (_, contract, _, sks) = init_env_secp256k1(1).await;
     let predecessor_id = contract.id();
     let path = "testing-no-deposit";
 
     // Try to sign with no deposit, should fail.
     let msg = "without-deposit";
     let (payload_hash, respond_req, respond_resp) =
-        create_response(predecessor_id, msg, path, &sk).await;
+        create_response(predecessor_id, msg, path, &sks[0]).await;
     let request = SignRequest {
         payload: payload_hash,
         path: path.into(),
@@ -267,15 +260,11 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     // Empty candidates should fail.
     let participants = Participants::new();
     let threshold = Threshold::new(0);
-    let proposed_threshold_parameters: ThresholdParameters =
-        unsafe { mem::transmute((participants, threshold)) };
-    let key_event_threshold = DKGThreshold::new(0);
-    let key_state_proposal: KeyStateProposal =
-        unsafe { mem::transmute((proposed_threshold_parameters, key_event_threshold)) };
+    let proposed_parameters = ThresholdParameters::new_unvalidated(participants, threshold);
     let result = contract
         .call("init")
         .args_json(serde_json::json!({
-            "key_state_proposal": key_state_proposal,
+            "parameters": proposed_parameters,
             "init_config": None::<InitConfig>,
         }))
         .transact()
@@ -285,11 +274,12 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         "initializing with zero candidates or less than threshold candidates should fail"
     );
 
-    let key_state_proposal = contruct_valid_key_state_proposal(&candidates(None)).await;
+    let proposed_parameters =
+        ThresholdParameters::new(candidates(None), Threshold::new(3)).unwrap();
     let result = contract
         .call("init")
         .args_json(serde_json::json!({
-            "key_state_proposal": key_state_proposal,
+            "parameters": proposed_parameters,
             "init_config": None::<InitConfig>,
         }))
         .transact()
@@ -303,7 +293,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let result = contract
         .call("init")
         .args_json(serde_json::json!({
-            "key_state_proposal": key_state_proposal,
+            "parameters": proposed_parameters,
             "init_config": None::<InitConfig>,
         }))
         .transact()

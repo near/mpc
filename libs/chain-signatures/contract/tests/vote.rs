@@ -1,355 +1,292 @@
 pub mod common;
-use common::init_env;
 
-use mpc_contract::{
-    legacy_contract_state,
-    primitives::key_state::{AttemptId, EpochId, KeyEventId},
-};
+use common::{check_call_success, init_env_secp256k1};
+use mpc_contract::primitives::participants::ParticipantInfo;
+use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
+use mpc_contract::state::ProtocolContractState;
+use near_sdk::PublicKey;
 use serde_json::json;
+use std::str::FromStr;
 
 #[tokio::test]
-async fn test_join() -> anyhow::Result<()> {
-    let (worker, contract, accounts, _) = init_env().await;
+async fn test_keygen() -> anyhow::Result<()> {
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
-    let alice = worker.dev_create_account().await?;
+    let args = json!({
+        "domains": vec![
+            json!({
+                "id": 2,
+                "scheme": "Ed25519",
+            })
+        ]
+    });
+    for i in [1, 2] {
+        check_call_success(
+            accounts[i]
+                .call(contract.id(), "vote_add_domains")
+                .args_json(args.clone())
+                .transact()
+                .await?,
+        );
+    }
 
-    let execution = alice
-        .call(contract.id(), "join")
-        .args_json(json!({
-            "url": "127.0.0.1",
-            "cipher_pk": vec![1u8; 32],
-            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-        }))
-        .transact()
-        .await?;
-
-    assert!(execution.is_success());
-
-    let state: legacy_contract_state::ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     match state {
-        legacy_contract_state::ProtocolContractState::Running(r) => {
-            assert!(r.candidates.contains_key(alice.id()));
+        ProtocolContractState::Initializing(state) => {
+            assert_eq!(state.domains.domains().len(), 2);
+        }
+        _ => panic!("should be in initializing state"),
+    };
+
+    check_call_success(
+        accounts[0]
+            .call(contract.id(), "start_keygen_instance")
+            .args_json(json!({}))
+            .transact()
+            .await?,
+    );
+
+    let pk = PublicKey::from_str("ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae").unwrap();
+    let vote_pk_args = json!( {
+        "key_event_id": {
+            "epoch_id": 5,
+            "domain_id": 2,
+            "attempt_id": 0,
+        },
+        "public_key": pk,
+    });
+
+    for account in &accounts[0..3] {
+        check_call_success(
+            account
+                .call(contract.id(), "vote_pk")
+                .args_json(vote_pk_args.clone())
+                .transact()
+                .await?,
+        );
+    }
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    match state {
+        ProtocolContractState::Running(state) => {
+            assert_eq!(state.keyset.epoch_id.get(), 5); // we started with 5, should not change.
+            assert_eq!(state.domains.domains().len(), 2);
         }
         _ => panic!("should be in running state"),
     };
 
-    // try join again, still ok, because not become participant yet
-    let execution = alice
-        .call(contract.id(), "join")
-        .args_json(json!({
-            "url": "127.0.0.1",
-            "cipher_pk": vec![1u8; 32],
-            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-
-    // participant try join again, should fail
-    let execution = accounts[0]
-        .call(contract.id(), "join")
-        .args_json(json!({
-            "url": "127.0.0.1",
-            "cipher_pk": vec![1u8; 32],
-            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_failure());
     Ok(())
 }
 
 #[tokio::test]
-async fn test_vote_join() -> anyhow::Result<()> {
-    let (worker, contract, accounts, _) = init_env().await;
+async fn test_cancel_keygen() -> anyhow::Result<()> {
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
-    let alice = worker.dev_create_account().await?;
-    let execution = alice
-        .call(contract.id(), "join")
-        .args_json(json!({
-            "url": "127.0.0.1",
-            "cipher_pk": vec![1u8; 32],
-            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
+    let args = json!({
+        "domains": vec![
+            json!({
+                "id": 2,
+                "scheme": "Ed25519",
+            })
+        ]
+    });
+    for i in [1, 2] {
+        check_call_success(
+            accounts[i]
+                .call(contract.id(), "vote_add_domains")
+                .args_json(args.clone())
+                .transact()
+                .await?,
+        );
+    }
 
-    // vote by first candidate should success, but vote not pass threshold yet
-    let execution = accounts[0]
-        .call(contract.id(), "vote_join")
-        .args_json(json!({
-            "candidate": alice.id()
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-    let vote_pass: bool = execution.json().unwrap();
-    assert!(!vote_pass);
-
-    // vote by candidate itself should fail
-    let execution = alice
-        .call(contract.id(), "vote_join")
-        .args_json(json!({
-            "candidate": alice.id()
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_failure());
-
-    // vote by second candidate should success, and vote pass threshold
-    let execution = accounts[1]
-        .call(contract.id(), "vote_join")
-        .args_json(json!({
-            "candidate": alice.id()
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-    let vote_pass: bool = execution.json().unwrap();
-    assert!(vote_pass);
-
-    // another try to join should fail, because it's in Resharing state now
-    let bob = worker.dev_create_account().await?;
-    let execution = bob
-        .call(contract.id(), "join")
-        .args_json(json!({
-            "url": "127.0.0.1",
-            "cipher_pk": vec![1u8; 32],
-            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_failure());
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_vote_leave() -> anyhow::Result<()> {
-    let (worker, contract, accounts, _) = init_env().await;
-
-    let alice = worker.dev_create_account().await?;
-    let bob = worker.dev_create_account().await?;
-    let execution = alice
-        .call(contract.id(), "join")
-        .args_json(json!({
-            "url": "127.0.0.1",
-            "cipher_pk": vec![1u8; 32],
-            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-    // now alice is candidate, bob is just a random account
-
-    // alice should not have permission to vote leave
-    let execution = alice
-        .call(contract.id(), "vote_leave")
-        .args_json(json!({
-            "kick": accounts[0].id(),
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_failure());
-
-    // bob should not have permission to vote leave
-    let execution = bob
-        .call(contract.id(), "vote_leave")
-        .args_json(json!({
-            "kick": accounts[0].id(),
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_failure());
-
-    // participant should have permission to vote leave
-    let execution = accounts[1]
-        .call(contract.id(), "vote_leave")
-        .args_json(json!({
-            "kick": accounts[0].id(),
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-    let vote_pass: bool = execution.json().unwrap();
-    assert!(!vote_pass);
-
-    let execution = accounts[2]
-        .call(contract.id(), "vote_leave")
-        .args_json(json!({
-            "kick": accounts[0].id(),
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-    let vote_pass: bool = execution.json().unwrap();
-    assert!(vote_pass);
-
-    let state: legacy_contract_state::ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     match state {
-        legacy_contract_state::ProtocolContractState::Resharing(r) => {
-            assert!(!r
-                .new_participants
-                .participants
-                .contains_key(accounts[0].id()));
+        ProtocolContractState::Initializing(state) => {
+            assert_eq!(state.domains.domains().len(), 2);
         }
-        _ => panic!("should be in resharing state"),
+        _ => panic!("should be in initializing state"),
     };
 
-    Ok(())
-}
+    for i in [0, 2] {
+        check_call_success(
+            accounts[i]
+                .call(contract.id(), "vote_cancel_keygen")
+                .args_json(json!({}))
+                .transact()
+                .await?,
+        );
+    }
 
-#[tokio::test]
-async fn test_vote_pk() -> anyhow::Result<()> {
-    let (_, contract, accounts, _) = init_env().await;
-
-    let key: String = contract.view("public_key").await.unwrap().json().unwrap();
-
-    let execution = accounts[2]
-        .call(contract.id(), "vote_pk")
-        .args_json(json!({
-            "public_key": key
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-
-    let key2 = "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae";
-    let execution = accounts[2]
-        .call(contract.id(), "vote_pk")
-        .args_json(json!({
-            "public_key": key2
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_failure());
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_vote_reshare() -> anyhow::Result<()> {
-    let (worker, contract, accounts, _) = init_env().await;
-
-    // in running state, vote current epoch will fail
-    let execution = accounts[2]
-        .call(contract.id(), "vote_reshared")
-        .args_json(json!({
-            "key_event_id": KeyEventId::new(EpochId::new(0), AttemptId::new())
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_failure());
-
-    //// in running state, vote other epoch will fail
-    //let execution = accounts[2]
-    //    .call(contract.id(), "vote_reshared")
-    //    .args_json(json!({
-    //        "epoch": 1
-    //    }))
-    //    .transact()
-    //    .await?;
-    //assert!(execution.is_failure());
-
-    // join a new candidate
-    let alice = worker.dev_create_account().await?;
-    let execution = alice
-        .call(contract.id(), "join")
-        .args_json(json!({
-            "url": "127.0.0.1",
-            "cipher_pk": vec![1u8; 32],
-            "sign_pk": "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-
-    // vote to make it participant
-    let execution = accounts[0]
-        .call(contract.id(), "vote_join")
-        .args_json(json!({
-            "candidate": alice.id()
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-    let vote_pass: bool = execution.json().unwrap();
-    assert!(!vote_pass);
-    let execution = accounts[1]
-        .call(contract.id(), "vote_join")
-        .args_json(json!({
-            "candidate": alice.id()
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-    let vote_pass: bool = execution.json().unwrap();
-    assert!(vote_pass);
-    let state: legacy_contract_state::ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     match state {
-        legacy_contract_state::ProtocolContractState::Resharing(r) => {
-            assert!(r.new_participants.participants.contains_key(alice.id()));
-        }
-        _ => panic!("should be in resharing state"),
-    };
-
-    // now we can vote reshared:
-    let execution = accounts[0]
-        .call(contract.id(), "vote_reshared")
-        .args_json(json!({
-            "epoch": 1
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-    let vote_pass: bool = execution.json().unwrap();
-    assert!(!vote_pass);
-
-    // not participant cannot vote
-    let bob = worker.dev_create_account().await?;
-    let execution = bob
-        .call(contract.id(), "vote_reshared")
-        .args_json(json!({
-            "epoch": 1
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_failure());
-
-    // new participant also cannot vote
-    let execution = alice
-        .call(contract.id(), "vote_reshared")
-        .args_json(json!({
-            "epoch": 1
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_failure());
-
-    let execution = accounts[1]
-        .call(contract.id(), "vote_reshared")
-        .args_json(json!({
-            "epoch": 1
-        }))
-        .transact()
-        .await?;
-    assert!(execution.is_success());
-    let vote_pass: bool = execution.json().unwrap();
-    assert!(vote_pass);
-
-    let state: legacy_contract_state::ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
-    match state {
-        legacy_contract_state::ProtocolContractState::Running(r) => {
-            assert!(r.epoch == 1);
-            assert!(r.participants.contains_key(alice.id()));
+        ProtocolContractState::Running(state) => {
+            assert_eq!(state.keyset.epoch_id.get(), 5); // we started with 5, should not change.
+            assert_eq!(state.domains.domains().len(), 1);
         }
         _ => panic!("should be in running state"),
     };
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_resharing() -> anyhow::Result<()> {
+    let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    let alice = worker.dev_create_account().await?;
+
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    let existing_params = match state {
+        ProtocolContractState::Running(state) => state.parameters,
+        _ => panic!("should be in running state"),
+    };
+    let mut new_participants = existing_params.participants().clone();
+    new_participants
+        .insert(
+            alice.id().clone(),
+            ParticipantInfo {
+                url: "127.0.0.1".to_string(),
+                cipher_pk: [1u8; 32],
+                sign_pk: PublicKey::from_str(
+                    "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
+                )?,
+            },
+        )
+        .unwrap();
+    let proposal = ThresholdParameters::new(new_participants, Threshold::new(3)).unwrap();
+
+    for account in &accounts[1..3] {
+        check_call_success(
+            account
+                .call(contract.id(), "vote_new_parameters")
+                .args_json(json!({
+                    "proposal": proposal,
+                }))
+                .transact()
+                .await?,
+        );
+    }
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    match state {
+        ProtocolContractState::Resharing(resharing_contract_state) => {
+            assert_eq!(
+                resharing_contract_state.resharing_key.proposed_parameters(),
+                &proposal
+            );
+        }
+        _ => panic!("should be in resharing state"),
+    }
+
+    check_call_success(
+        accounts[0]
+            .call(contract.id(), "start_reshare_instance")
+            .args_json(json!({}))
+            .transact()
+            .await?,
+    );
+
+    let vote_reshared_args = json!( {
+        "key_event_id": {
+            "epoch_id": 6,
+            "domain_id": 0,
+            "attempt_id": 0,
+        },
+    });
+
+    for account in [&accounts[0], &accounts[1], &accounts[2], &alice] {
+        check_call_success(
+            account
+                .call(contract.id(), "vote_reshared")
+                .args_json(vote_reshared_args.clone())
+                .transact()
+                .await?,
+        );
+    }
+
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    match state {
+        ProtocolContractState::Running(state) => {
+            assert_eq!(state.parameters.participants().len(), 4);
+            assert_eq!(state.keyset.epoch_id.get(), 6); // we started with 5.
+        }
+        _ => panic!("should be in running state"),
+    };
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_repropose_resharing() -> anyhow::Result<()> {
+    let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    let alice = worker.dev_create_account().await?;
+
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    let existing_params = match state {
+        ProtocolContractState::Running(state) => state.parameters,
+        _ => panic!("should be in running state"),
+    };
+    let mut new_participants = existing_params.participants().clone();
+    new_participants
+        .insert(
+            alice.id().clone(),
+            ParticipantInfo {
+                url: "127.0.0.1".to_string(),
+                cipher_pk: [1u8; 32],
+                sign_pk: PublicKey::from_str(
+                    "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
+                )
+                .unwrap(),
+            },
+        )
+        .unwrap();
+    let proposal = ThresholdParameters::new(new_participants, Threshold::new(3)).unwrap();
+
+    for account in &accounts[..existing_params.threshold().value() as usize] {
+        check_call_success(
+            account
+                .call(contract.id(), "vote_new_parameters")
+                .args_json(json!({
+                    "proposal": proposal,
+                }))
+                .transact()
+                .await?,
+        );
+    }
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    match state {
+        ProtocolContractState::Resharing(state) => {
+            assert_eq!(state.resharing_key.proposed_parameters(), &proposal);
+        }
+        _ => panic!("should be in resharing state"),
+    }
+
+    for i in [0, 2] {
+        check_call_success(
+            accounts[i]
+                .call(contract.id(), "vote_new_parameters")
+                .args_json(json!({
+                    "proposal": existing_params,
+                }))
+                .transact()
+                .await?,
+        );
+    }
+
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    match state {
+        ProtocolContractState::Resharing(state) => {
+            assert_eq!(
+                state
+                    .resharing_key
+                    .proposed_parameters()
+                    .participants()
+                    .len(),
+                3
+            );
+            assert_eq!(state.resharing_key.epoch_id().get(), 7); // we started with 5.
+        }
+        _ => panic!("should be in resharing state"),
+    };
     Ok(())
 }

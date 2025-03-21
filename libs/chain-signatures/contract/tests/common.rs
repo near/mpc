@@ -1,31 +1,37 @@
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
-use k256::elliptic_curve::ops::Reduce;
-use k256::elliptic_curve::point::DecompressPoint as _;
-use k256::elliptic_curve::sec1::ToEncodedPoint;
-use k256::{AffinePoint, FieldBytes, Scalar, Secp256k1};
-use mpc_contract::config::InitConfig;
-use mpc_contract::crypto_shared::{
-    derive_epsilon, derive_key,
-    kdf::{check_ec_signature, derive_secret_key},
-    ScalarExt as _, SerializableAffinePoint, SerializableScalar, SignatureResponse,
+use k256::{
+    elliptic_curve::{ops::Reduce, point::DecompressPoint as _, sec1::ToEncodedPoint},
+    AffinePoint, FieldBytes, Scalar, Secp256k1,
 };
-use mpc_contract::primitives::key_state::{
-    AttemptId, DKState, EpochId, KeyEventId, KeyStateProposal,
+use mpc_contract::{
+    config::InitConfig,
+    crypto_shared::{
+        derive_epsilon, derive_key,
+        kdf::{check_ec_signature, derive_secret_key},
+        ScalarExt, SerializableAffinePoint, SerializableScalar, SignatureResponse,
+    },
+    primitives::{
+        domain::{DomainConfig, DomainId, SignatureScheme},
+        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        participants::{ParticipantInfo, Participants},
+        signature::{SignRequest, SignatureRequest},
+        thresholds::{Threshold, ThresholdParameters},
+    },
+    update::UpdateId,
 };
-use mpc_contract::primitives::participants::{ParticipantInfo, Participants};
-use mpc_contract::primitives::signature::{SignRequest, SignatureRequest};
-use mpc_contract::primitives::thresholds::{DKGThreshold, Threshold, ThresholdParameters};
-use mpc_contract::update::UpdateId;
+use near_crypto::KeyType;
 use near_sdk::log;
-use near_workspaces::network::Sandbox;
-use near_workspaces::types::{AccountId, NearToken};
-use near_workspaces::{Account, Contract, Worker};
+use near_workspaces::{
+    network::Sandbox,
+    result::ExecutionFinalResult,
+    types::{AccountId, NearToken},
+    Account, Contract, Worker,
+};
 use signature::DigestSigner;
 use std::str::FromStr;
 
 pub const CONTRACT_FILE_PATH: &str = "../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
-pub const INVALID_CONTRACT: &str = "../res/mpc_test_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
@@ -72,34 +78,44 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
     let contract = worker.dev_deploy(&wasm).await.unwrap();
     (worker, contract)
 }
-pub async fn contruct_valid_key_state_proposal(participants: &Participants) -> KeyStateProposal {
-    let threshold = ((participants.count() as f64) * 0.6).ceil() as u64;
-    let threshold = Threshold::new(threshold);
-    let threshold_parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
-    let key_event_threshold = DKGThreshold::new(threshold_parameters.participants().count());
-    KeyStateProposal::new(threshold_parameters, key_event_threshold).unwrap()
-}
+
 pub async fn init_with_candidates(
-    pk: Option<near_crypto::PublicKey>,
+    pks: Vec<near_crypto::PublicKey>,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
     let (accounts, participants) = accounts(&worker).await;
-    let threshold = ((participants.count() as f64) * 0.6).ceil() as u64;
+    let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
     let threshold = Threshold::new(threshold);
     let threshold_parameters = ThresholdParameters::new(participants, threshold).unwrap();
-    let init = if let Some(pk) = pk {
-        let pk: near_sdk::PublicKey = near_sdk::PublicKey::from_str(&format!("{}", pk)).unwrap();
-        let dk_state = DKState::new(
-            pk,
-            KeyEventId::new(EpochId::new(5), AttemptId::new()),
-            threshold_parameters,
-        )
-        .unwrap();
+    let init = if !pks.is_empty() {
+        let mut keys = Vec::new();
+        let mut domains = Vec::new();
+        for pk in pks {
+            let domain_id = DomainId(domains.len() as u64 * 2);
+            domains.push(DomainConfig {
+                id: domain_id,
+                scheme: match pk.key_type() {
+                    KeyType::ED25519 => SignatureScheme::Ed25519,
+                    KeyType::SECP256K1 => SignatureScheme::Secp256k1,
+                },
+            });
+
+            let pk = near_sdk::PublicKey::from_str(&format!("{}", pk)).unwrap();
+            let key = KeyForDomain {
+                attempt: AttemptId::new(),
+                domain_id,
+                key: pk,
+            };
+            keys.push(key);
+        }
+        let keyset = Keyset::new(EpochId::new(5), keys);
         contract
             .call("init_running")
             .args_json(serde_json::json!({
-                "key_state": dk_state,
-                "init_config": None::<InitConfig>,
+                "domains": domains,
+                "next_domain_id": domains.len() as u64 * 2,
+                "keyset": keyset,
+                "parameters": threshold_parameters,
             }))
             .transact()
             .await
@@ -107,13 +123,10 @@ pub async fn init_with_candidates(
             .into_result()
             .unwrap()
     } else {
-        let key_event_threshold = DKGThreshold::new(threshold_parameters.participants().count());
-        let key_state_proposal =
-            KeyStateProposal::new(threshold_parameters, key_event_threshold).unwrap();
         contract
             .call("init")
             .args_json(serde_json::json!({
-                "key_state_proposal": key_state_proposal,
+                "parameters": threshold_parameters,
                 "init_config": None::<InitConfig>,
             }))
             .transact()
@@ -126,19 +139,31 @@ pub async fn init_with_candidates(
     (worker, contract, accounts)
 }
 
-pub async fn init_env() -> (Worker<Sandbox>, Contract, Vec<Account>, k256::SecretKey) {
-    let sk = k256::SecretKey::random(&mut rand::thread_rng());
-    let pk = sk.public_key();
-    let (worker, contract, accounts) =
-        init_with_candidates(Some(near_crypto::PublicKey::SECP256K1(
+pub async fn init_env_secp256k1(
+    num_domains: usize,
+) -> (
+    Worker<Sandbox>,
+    Contract,
+    Vec<Account>,
+    Vec<k256::SecretKey>,
+) {
+    let mut public_keys = Vec::new();
+    let mut secret_keys = Vec::new();
+    for _ in 0..num_domains {
+        // TODO: Also add some ed25519 keys.
+        let sk = k256::SecretKey::random(&mut rand::thread_rng());
+        let pk = sk.public_key();
+        public_keys.push(near_crypto::PublicKey::SECP256K1(
             near_crypto::Secp256K1PublicKey::try_from(
                 &pk.as_affine().to_encoded_point(false).as_bytes()[1..65],
             )
             .unwrap(),
-        )))
-        .await;
+        ));
+        secret_keys.push(sk);
+    }
+    let (worker, contract, accounts) = init_with_candidates(public_keys).await;
 
-    (worker, contract, accounts, sk)
+    (worker, contract, accounts, secret_keys)
 }
 
 /// Process the message, creating the same hash with type of Digest, Scalar, and [u8; 32]
@@ -271,4 +296,11 @@ pub async fn vote_update_till_completion(
             break;
         }
     }
+}
+
+pub fn check_call_success(result: ExecutionFinalResult) {
+    assert!(
+        result.is_success(),
+        "execution should have succeeded: {result:#?}"
+    );
 }
