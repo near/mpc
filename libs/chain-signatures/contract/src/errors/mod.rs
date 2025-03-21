@@ -123,6 +123,20 @@ pub enum ConversionError {
     DataConversion,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
+pub enum DomainError {
+    #[error("No such domain.")]
+    NoSuchDomain,
+    #[error("Newly proposed domain IDs are not contiguous.")]
+    NewDomainIdsNotContiguous,
+    #[error("vote_add_domains must add at least one domain")]
+    AddDomainsMustAddAtLeastOneDomain,
+    #[error("Invalid list of domains provided")]
+    InvalidDomains,
+    #[error("Domains from keyset do not match the provided domains")]
+    DomainsMismatch,
+}
+
 /// A list specifying general categories of MPC Contract errors.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
@@ -157,6 +171,9 @@ pub enum ErrorKind {
     // Key event errors
     #[error("{0}")]
     KeyEventError(#[from] KeyEventError),
+    // Domain errors
+    #[error("{0}")]
+    DomainError(#[from] DomainError),
 }
 
 #[derive(Debug, thiserror::Error)]

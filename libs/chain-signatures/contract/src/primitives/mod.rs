@@ -1,3 +1,4 @@
+pub mod domain;
 pub mod key_state;
 pub mod participants;
 pub mod signature;

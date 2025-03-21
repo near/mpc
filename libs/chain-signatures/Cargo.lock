@@ -4723,8 +4723,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "x25519-dalek"
-version = "2.0.1"
-source = "git+https://github.com/dalek-cryptography/curve25519-dalek?rev=5b7082bbc8e0b2106ab0d956064f61fa0f393cdc#5b7082bbc8e0b2106ab0d956064f61fa0f393cdc"

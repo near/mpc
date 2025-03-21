@@ -3,9 +3,10 @@ pub mod key_event;
 pub mod resharing;
 pub mod running;
 
-use crate::errors::{Error, InvalidState};
-use crate::primitives::key_state::{KeyEventId, KeyStateProposal};
-use crate::primitives::thresholds::Threshold;
+use crate::errors::{DomainError, Error, InvalidState};
+use crate::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
+use crate::primitives::key_state::{AuthenticatedParticipantId, KeyEventId};
+use crate::primitives::thresholds::{Threshold, ThresholdParameters};
 use initializing::InitializingContractState;
 use near_sdk::{near, PublicKey};
 use resharing::ResharingContractState;
@@ -21,19 +22,23 @@ pub enum ProtocolContractState {
 }
 
 impl ProtocolContractState {
-    pub fn public_key(&self) -> Result<PublicKey, Error> {
+    pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKey, Error> {
         match self {
-            ProtocolContractState::Running(state) => Ok(state.public_key().clone()),
-            ProtocolContractState::Resharing(state) => Ok(state.public_key().clone()),
+            ProtocolContractState::Running(state) => state.keyset.public_key(domain_id),
+            ProtocolContractState::Resharing(state) => {
+                state.previous_keyset().public_key(domain_id)
+            }
             _ => Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
         }
     }
     pub fn threshold(&self) -> Result<Threshold, Error> {
         match self {
-            ProtocolContractState::Initializing(state) => Ok(state.keygen.proposed_threshold()),
-            ProtocolContractState::Running(state) => Ok(state.key_state.threshold()),
+            ProtocolContractState::Initializing(state) => {
+                Ok(state.generating_key.proposed_parameters().threshold())
+            }
+            ProtocolContractState::Running(state) => Ok(state.parameters.threshold()),
             ProtocolContractState::Resharing(state) => {
-                Ok(state.current_state.key_state.threshold())
+                Ok(state.previous_running_state.parameters.threshold())
             }
             ProtocolContractState::NotInitialized => {
                 Err(InvalidState::UnexpectedProtocolState.into())
@@ -55,13 +60,12 @@ impl ProtocolContractState {
     pub fn vote_reshared(
         &mut self,
         key_event_id: KeyEventId,
-        event_max_idle_blocks: u64,
     ) -> Result<Option<ProtocolContractState>, Error> {
         let ProtocolContractState::Resharing(state) = self else {
             return Err(InvalidState::ProtocolStateNotResharing.into());
         };
         state
-            .vote_reshared(key_event_id, event_max_idle_blocks)
+            .vote_reshared(key_event_id)
             .map(|x| x.map(ProtocolContractState::Running))
     }
     /// Casts a vote for `public_key` in `key_event_id` during Initializtion.
@@ -71,28 +75,62 @@ impl ProtocolContractState {
         &mut self,
         key_event_id: KeyEventId,
         public_key: PublicKey,
-        event_max_idle_blocks: u64,
     ) -> Result<Option<ProtocolContractState>, Error> {
         let ProtocolContractState::Initializing(state) = self else {
             return Err(InvalidState::ProtocolStateNotResharing.into());
         };
         state
-            .vote_pk(key_event_id, public_key, event_max_idle_blocks)
+            .vote_pk(key_event_id, public_key)
             .map(|x| x.map(ProtocolContractState::Running))
     }
-    /// Casts a vote for `proposed_key_state`, returning the new protocol state if the proposal is
+    /// Casts a vote for `proposed_parameters`, returning the new protocol state if the proposal is
     /// accepted.
     /// Returns an error if the protocol is not in running resharing.
-    pub fn vote_new_key_state(
+    pub fn vote_new_parameters(
         &mut self,
-        proposed_key_state: &KeyStateProposal,
+        proposed_parameters: &ThresholdParameters,
     ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
-            ProtocolContractState::Running(state) => state.vote_new_key_state(proposed_key_state),
-            ProtocolContractState::Resharing(state) => state.vote_new_key_state(proposed_key_state),
+            ProtocolContractState::Running(state) => state.vote_new_parameters(proposed_parameters),
+            ProtocolContractState::Resharing(state) => {
+                state.vote_new_parameters(proposed_parameters)
+            }
             _ => Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
         }
         .map(|x| x.map(ProtocolContractState::Resharing))
+    }
+
+    pub fn vote_add_domains(
+        &mut self,
+        domains: Vec<DomainConfig>,
+    ) -> Result<Option<ProtocolContractState>, Error> {
+        match self {
+            ProtocolContractState::Running(state) => state.vote_add_domains(domains),
+            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
+        }
+        .map(|x| x.map(ProtocolContractState::Initializing))
+    }
+
+    pub fn vote_cancel_keygen(&mut self) -> Result<Option<ProtocolContractState>, Error> {
+        match self {
+            ProtocolContractState::Initializing(state) => state.vote_cancel(),
+            _ => Err(InvalidState::ProtocolStateNotInitializing.into()),
+        }
+        .map(|x| x.map(ProtocolContractState::Running))
+    }
+
+    pub fn most_recent_domain_for_signature_scheme(
+        &self,
+        signature_scheme: SignatureScheme,
+    ) -> Result<DomainId, Error> {
+        let domain_registry = match self {
+            ProtocolContractState::Running(state) => &state.domains,
+            ProtocolContractState::Resharing(state) => &state.previous_running_state.domains,
+            _ => return Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
+        };
+        domain_registry
+            .most_recent_domain_for_signature_scheme(signature_scheme)
+            .ok_or_else(|| DomainError::NoSuchDomain.into())
     }
 }
 
@@ -132,10 +170,20 @@ impl ProtocolContractState {
         false
     }
     pub fn authenticate_update_vote(&self) -> Result<(), Error> {
-        let _ = match &self {
-            ProtocolContractState::Initializing(state) => state.authenticate_candidate()?.get(),
-            ProtocolContractState::Running(state) => state.authenticate_participant()?.get(),
-            ProtocolContractState::Resharing(state) => state.authenticate_participant()?.get(),
+        match &self {
+            ProtocolContractState::Initializing(state) => {
+                AuthenticatedParticipantId::new(
+                    state.generating_key.proposed_parameters().participants(),
+                )?;
+            }
+            ProtocolContractState::Running(state) => {
+                AuthenticatedParticipantId::new(state.parameters.participants())?;
+            }
+            ProtocolContractState::Resharing(state) => {
+                AuthenticatedParticipantId::new(
+                    state.previous_running_state.parameters.participants(),
+                )?;
+            }
             ProtocolContractState::NotInitialized => {
                 return Err(InvalidState::UnexpectedProtocolState.message(self.name()));
             }

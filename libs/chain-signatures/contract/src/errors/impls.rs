@@ -2,9 +2,9 @@ use std::borrow::Cow;
 use std::fmt;
 
 use super::{
-    ConversionError, Error, ErrorKind, ErrorRepr, InvalidCandidateSet, InvalidParameters,
-    InvalidState, InvalidThreshold, KeyEventError, PublicKeyError, RespondError, SignError,
-    VoteError,
+    ConversionError, DomainError, Error, ErrorKind, ErrorRepr, InvalidCandidateSet,
+    InvalidParameters, InvalidState, InvalidThreshold, KeyEventError, PublicKeyError, RespondError,
+    SignError, VoteError,
 };
 
 impl Error {
@@ -142,5 +142,11 @@ impl From<InvalidThreshold> for Error {
 impl From<InvalidCandidateSet> for Error {
     fn from(code: InvalidCandidateSet) -> Self {
         Self::simple(ErrorKind::InvalidCandidateSet(code))
+    }
+}
+
+impl From<DomainError> for Error {
+    fn from(code: DomainError) -> Self {
+        Self::simple(ErrorKind::DomainError(code))
     }
 }
