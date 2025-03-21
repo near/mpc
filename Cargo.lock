@@ -3894,7 +3894,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha3",
- "subtle",
  "thiserror 1.0.69",
 ]
 
