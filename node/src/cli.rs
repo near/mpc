@@ -6,9 +6,12 @@ use crate::config::{ConfigFile, IndexerConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::{real::spawn_real_indexer, IndexerAPI};
-use crate::keyshare::{
-    local::LocalKeyshareStorage, KeyshareStorage, KeyshareStorageFactory, RootKeyshareData,
+use crate::keyshare::compat::legacy_ecdsa_key_from_keyshares;
+use crate::keyshare::local::LocalPermanentKeyStorageBackend;
+use crate::keyshare::permanent::{
+    LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend,
 };
+use crate::keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig};
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::tracking::{self, start_root_task};
 use crate::web::start_web_server;
@@ -189,19 +192,22 @@ impl StartCmd {
 
         let secret_db = SecretDB::new(&home_dir, secrets.local_storage_aes_key)?;
 
-        let keyshare_storage_factory = if let Some(secret_id) = gcp_keyshare_secret_id {
-            let project_id = gcp_project_id.ok_or_else(|| {
-                anyhow::anyhow!("GCP_PROJECT_ID must be specified to use GCP_KEYSHARE_SECRET_ID")
-            })?;
-            KeyshareStorageFactory::Gcp {
-                project_id,
-                secret_id,
-            }
-        } else {
-            KeyshareStorageFactory::Local {
-                home_dir: home_dir.clone(),
-                encryption_key: secrets.local_storage_aes_key,
-            }
+        let key_storage_config = KeyStorageConfig {
+            home_dir: home_dir.clone(),
+            local_encryption_key: secrets.local_storage_aes_key,
+            gcp: if let Some(secret_id) = gcp_keyshare_secret_id {
+                let project_id = gcp_project_id.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "GCP_PROJECT_ID must be specified to use GCP_KEYSHARE_SECRET_ID"
+                    )
+                })?;
+                Some(GcpPermanentKeyStorageConfig {
+                    project_id,
+                    secret_id,
+                })
+            } else {
+                None
+            },
         };
 
         let coordinator = Coordinator {
@@ -209,7 +215,7 @@ impl StartCmd {
             config_file: config,
             secrets,
             secret_db,
-            keyshare_storage_factory,
+            key_storage_config,
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
             signature_debug_request_sender,
@@ -345,7 +351,7 @@ impl ImportKeyshareCmd {
             })?;
 
         // Parse the keyshare JSON
-        let keyshare: RootKeyshareData = serde_json::from_str(&self.keyshare_json)
+        let keyshare: LegacyRootKeyshareData = serde_json::from_str(&self.keyshare_json)
             .map_err(|e| anyhow::anyhow!("Failed to parse keyshare JSON: {}", e))?;
 
         println!("Parsed keyshare for epoch {}", keyshare.epoch);
@@ -360,22 +366,18 @@ impl ImportKeyshareCmd {
             })?;
         }
 
-        let storage = LocalKeyshareStorage::new(home_dir.clone(), encryption_key_bytes);
+        let storage =
+            LocalPermanentKeyStorageBackend::new(home_dir.clone(), encryption_key_bytes).await?;
 
         // Check for existing keyshare
-        if let Some(existing) = storage.load().await? {
-            println!("Found existing keyshare with epoch {}", existing.epoch);
-            if existing.epoch >= keyshare.epoch {
-                return Err(anyhow::anyhow!(
-                    "Refusing to overwrite existing keyshare of epoch {} with new keyshare of older or same epoch {}",
-                    existing.epoch,
-                    keyshare.epoch
-                ));
-            }
+        if storage.load().await?.is_some() {
+            anyhow::bail!("Refusing to overwrite existing local keyshare");
         }
 
         // Store the keyshare
-        storage.store(&keyshare).await?;
+        storage
+            .store(&serde_json::to_vec(&keyshare)?, "imported")
+            .await?;
         println!("Successfully imported keyshare to {}", home_dir.display());
 
         Ok(())
@@ -403,13 +405,17 @@ impl ExportKeyshareCmd {
             ));
         }
 
-        let storage = LocalKeyshareStorage::new(home_dir.clone(), encryption_key_bytes);
+        let storage = PermanentKeyStorage::new(Box::new(
+            LocalPermanentKeyStorageBackend::new(home_dir.clone(), encryption_key_bytes).await?,
+        ))
+        .await?;
 
         // Load the keyshare
         let keyshare = storage
             .load()
             .await?
             .ok_or_else(|| anyhow::anyhow!("No keyshare found in {}", home_dir.display()))?;
+        let keyshare = legacy_ecdsa_key_from_keyshares(&keyshare.keyshares)?;
 
         // Print the keyshare to console
         let json = serde_json::to_string_pretty(&keyshare)
@@ -432,11 +438,11 @@ mod tests {
     use tempfile::TempDir;
 
     // Mock keyshare data for testing
-    fn create_test_keyshare() -> RootKeyshareData {
+    fn create_test_keyshare() -> LegacyRootKeyshareData {
         // Create a dummy private key - this is only for testing
         let private_share = Scalar::ONE;
         let public_key = AffinePoint::default();
-        RootKeyshareData {
+        LegacyRootKeyshareData {
             epoch: 1,
             private_share,
             public_key,
@@ -520,7 +526,6 @@ mod tests {
             result.is_err(),
             "Import command with lower epoch should fail"
         );
-        assert!(result.unwrap_err().to_string().contains("Refusing to overwrite existing keyshare of epoch 2 with new keyshare of older or same epoch 1"));
     }
 
     #[tokio::test]

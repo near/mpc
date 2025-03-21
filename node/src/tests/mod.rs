@@ -13,7 +13,7 @@ use crate::db::SecretDB;
 use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{SignArgs, SignatureRequestFromChain};
 use crate::indexer::IndexerAPI;
-use crate::keyshare::KeyshareStorageFactory;
+use crate::keyshare::KeyStorageConfig;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
@@ -200,9 +200,10 @@ impl OneNodeTestConfig {
 
                 let secret_db = SecretDB::new(&home_dir, secrets.local_storage_aes_key)?;
 
-                let keyshare_storage_factory = KeyshareStorageFactory::Local {
+                let key_storage_config = KeyStorageConfig {
                     home_dir: home_dir.clone(),
-                    encryption_key: secrets.local_storage_aes_key,
+                    local_encryption_key: secrets.local_storage_aes_key,
+                    gcp: None,
                 };
 
                 let coordinator = Coordinator {
@@ -210,7 +211,7 @@ impl OneNodeTestConfig {
                     config_file: config,
                     secrets,
                     secret_db,
-                    keyshare_storage_factory,
+                    key_storage_config,
                     indexer,
                     currently_running_job_name,
                     signature_debug_request_sender,
