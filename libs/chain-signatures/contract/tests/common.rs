@@ -7,7 +7,7 @@ use k256::{
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        derive_tweak, derive_key, kdf::check_ec_signature, ScalarExt, SerializableAffinePoint,
+        derive_key, derive_tweak, kdf::check_ec_signature, ScalarExt, SerializableAffinePoint,
         SerializableScalar, SignatureResponse,
     },
     primitives::{
