@@ -1,7 +1,8 @@
 use super::permanent::PermanentKeyshareData;
-use super::{Keyshare, KeyshareData, Secp256k1KeyshareData};
+use super::{Keyshare, KeyshareData};
 use crate::hkdf::affine_point_to_public_key;
 use crate::tests::TestGenerators;
+use cait_sith::KeygenOutput;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
 
@@ -18,7 +19,7 @@ pub fn generate_dummy_keyshare(epoch_id: u64, domain_id: u64, attempt_id: u64) -
             DomainId(domain_id),
             serde_json::from_str(&format!("{}", attempt_id)).unwrap(),
         ),
-        data: KeyshareData::Secp256k1(Secp256k1KeyshareData {
+        data: KeyshareData::Secp256k1(KeygenOutput {
             private_share: key.private_share,
             public_key: key.public_key,
         }),

@@ -1,5 +1,6 @@
 use super::permanent::LegacyRootKeyshareData;
-use super::{Keyshare, KeyshareData, KeyshareStorage, Secp256k1KeyshareData};
+use super::{Keyshare, KeyshareData, KeyshareStorage};
+use cait_sith::KeygenOutput;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
 
@@ -56,7 +57,7 @@ impl Keyshare {
                 DomainId::legacy_ecdsa_id(),
                 AttemptId::legacy_attempt_id(),
             ),
-            data: KeyshareData::Secp256k1(Secp256k1KeyshareData {
+            data: KeyshareData::Secp256k1(KeygenOutput {
                 private_share: legacy.private_share,
                 public_key: legacy.public_key,
             }),

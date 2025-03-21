@@ -8,23 +8,30 @@ pub mod test_utils;
 
 use crate::hkdf::affine_point_to_public_key;
 use anyhow::Context;
-use k256::{AffinePoint, Scalar};
+use cait_sith::KeygenOutput;
+use k256::Secp256k1;
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};
 use permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData};
 use serde::{Deserialize, Serialize};
 use temporary::TemporaryKeyStorage;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Secp256k1KeyshareData {
-    pub private_share: Scalar,
-    pub public_key: AffinePoint,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum KeyshareData {
+    Secp256k1(KeygenOutput<Secp256k1>),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum KeyshareData {
-    Secp256k1(Secp256k1KeyshareData),
+impl PartialEq for KeyshareData {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (KeyshareData::Secp256k1(a), KeyshareData::Secp256k1(b)) => {
+                a.private_share == b.private_share && a.public_key == b.public_key
+            }
+        }
+    }
 }
+
+impl Eq for KeyshareData {}
 
 /// A single keyshare, corresponding to one epoch, one domain, one attempt.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -124,8 +131,7 @@ impl KeyshareStorage {
                     &permanent.keyshares,
                     epoch_id,
                     already_generated_keys,
-                )
-                .await?;
+                )?;
                 permanent.keyshares.len()
             } else if permanent.epoch_id.get() > epoch_id.get() {
                 anyhow::bail!(
@@ -196,8 +202,7 @@ impl KeyshareStorage {
             &existing_keyshares,
             keyset.epoch_id,
             &keyset.domains,
-        )
-        .await?;
+        )?;
 
         if existing_keyshares.len() == keyset.domains.len() {
             return Ok(existing_keyshares);
@@ -225,9 +230,9 @@ impl KeyshareStorage {
     }
 
     /// Helper function to verify that the keyshares we have from permanent storage is a prefix
-    /// of the expected keyset, i.e. there are no extra keys, and each key is consistent with the
-    /// expected keyset.
-    async fn verify_existing_keyshares_are_prefix_of_keyset(
+    /// of the expected keyset, i.e. there are no extra keyshares, and each keyshare matches the
+    /// keyset entry at the same index.
+    fn verify_existing_keyshares_are_prefix_of_keyset(
         &self,
         existing_keyshares: &[Keyshare],
         epoch_id: EpochId,

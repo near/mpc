@@ -1,6 +1,6 @@
 [package]
 name = "mpc-node"
-version = "1.0.0"
+version = "2.0.0-alpha" # DO NOT RELEASE
 edition = "2021"
 
 [dependencies]

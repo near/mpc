@@ -120,7 +120,7 @@ mod tests {
         LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend,
     };
     use crate::keyshare::test_utils::{generate_dummy_keyshare, permanent_keyshare_from_keyshares};
-    use crate::keyshare::{KeyshareData, Secp256k1KeyshareData};
+    use crate::keyshare::KeyshareData;
     use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
     use mpc_contract::primitives::key_state::EpochId;
@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(loaded.keyshares[0].key_id.attempt_id.get(), 0);
         assert_eq!(
             loaded.keyshares[0].data,
-            KeyshareData::Secp256k1(Secp256k1KeyshareData {
+            KeyshareData::Secp256k1(cait_sith::KeygenOutput {
                 private_share: legacy_data.private_share,
                 public_key: legacy_data.public_key,
             })
