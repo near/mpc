@@ -6,7 +6,7 @@ use anyhow::Context;
 use k256::{
     ecdsa::{RecoveryId, Signature, VerifyingKey},
     elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic},
-    Scalar, Secp256k1, SecretKey,
+    Scalar, Secp256k1,
 };
 use near_account_id::AccountId;
 use sha3::{Digest, Sha3_256};
@@ -34,10 +34,6 @@ pub fn derive_epsilon(predecessor_id: &AccountId, path: &str) -> Epsilon {
 pub fn derive_key(public_key: PublicKey, epsilon: &Epsilon) -> PublicKey {
     let epsilon = Scalar::from_non_biased(epsilon.as_bytes());
     (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * epsilon + public_key).to_affine()
-}
-
-pub fn derive_secret_key(secret_key: &SecretKey, epsilon: Scalar) -> SecretKey {
-    SecretKey::new((epsilon + secret_key.to_nonzero_scalar().as_ref()).into())
 }
 
 /// Get the x coordinate of a point, as a scalar
