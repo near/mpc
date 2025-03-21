@@ -9,7 +9,7 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 anyhow = "1"
 borsh = "1.5.0"
-near-sdk = { version = "5.2.1", features = [
+near-sdk = { version = "=5.2.1", features = [
     "legacy",
     "unit-testing",
     "unstable",
@@ -28,7 +28,6 @@ near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-account-id = "1"
 thiserror = "1"
 sha3 = "0.10.8"
-subtle = "2.6.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.12", features = ["custom"] }
