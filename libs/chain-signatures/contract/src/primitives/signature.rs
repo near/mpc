@@ -1,13 +1,13 @@
 use crate::crypto_shared;
 
-use crypto_shared::derive_epsilon;
+use crypto_shared::derive_tweak;
 use near_sdk::{near, AccountId, CryptoHash};
 
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 #[near(serializers=[borsh, json])]
-pub struct Epsilon([u8; 32]);
+pub struct Tweak([u8; 32]);
 
-impl Epsilon {
+impl Tweak {
     pub fn as_bytes(&self) -> [u8; 32] {
         self.0
     }
@@ -41,15 +41,15 @@ pub struct YieldIndex {
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 #[near(serializers=[borsh, json])]
 pub struct SignatureRequest {
-    pub epsilon: Epsilon,
+    pub tweak: Tweak,
     pub payload_hash: PayloadHash,
 }
 
 impl SignatureRequest {
     pub fn new(payload_hash: PayloadHash, predecessor_id: &AccountId, path: &str) -> Self {
-        let epsilon = derive_epsilon(predecessor_id, path);
+        let tweak = derive_tweak(predecessor_id, path);
         SignatureRequest {
-            epsilon,
+            tweak,
             payload_hash,
         }
     }

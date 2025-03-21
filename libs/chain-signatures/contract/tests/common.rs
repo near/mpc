@@ -7,14 +7,14 @@ use k256::{
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        derive_epsilon, derive_key, kdf::check_ec_signature, ScalarExt, SerializableAffinePoint,
+        derive_tweak, derive_key, kdf::check_ec_signature, ScalarExt, SerializableAffinePoint,
         SerializableScalar, SignatureResponse,
     },
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        signature::{Epsilon, PayloadHash, SignRequest, SignatureRequest},
+        signature::{PayloadHash, SignRequest, SignatureRequest, Tweak},
         thresholds::{Threshold, ThresholdParameters},
     },
     update::UpdateId,
@@ -175,9 +175,9 @@ pub async fn process_message(msg: &str) -> (impl Digest, PayloadHash) {
     (digest, payload_hash)
 }
 
-pub fn derive_secret_key(secret_key: &SecretKey, epsilon: &Epsilon) -> SecretKey {
-    let epsilon = Scalar::from_non_biased(epsilon.as_bytes());
-    SecretKey::new((epsilon + secret_key.to_nonzero_scalar().as_ref()).into())
+pub fn derive_secret_key(secret_key: &SecretKey, tweak: &Tweak) -> SecretKey {
+    let tweak = Scalar::from_non_biased(tweak.as_bytes());
+    SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
 }
 
 pub async fn create_response(
@@ -189,9 +189,9 @@ pub async fn create_response(
     let (digest, payload_hash) = process_message(msg).await;
     let pk = sk.public_key();
 
-    let epsilon = derive_epsilon(predecessor_id, path);
-    let derived_sk = derive_secret_key(sk, &epsilon);
-    let derived_pk = derive_key(pk.into(), &epsilon);
+    let tweak = derive_tweak(predecessor_id, path);
+    let derived_sk = derive_secret_key(sk, &tweak);
+    let derived_pk = derive_key(pk.into(), &tweak);
     let signing_key = k256::ecdsa::SigningKey::from(&derived_sk);
     let verifying_key =
         k256::ecdsa::VerifyingKey::from(&k256::PublicKey::from_affine(derived_pk).unwrap());
