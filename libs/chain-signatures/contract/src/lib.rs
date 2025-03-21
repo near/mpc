@@ -201,7 +201,7 @@ impl VersionedMpcContract {
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        if let None = k256::Scalar::from_bytes(request.payload.as_bytes()) {
+        if k256::Scalar::from_bytes(request.payload.as_bytes()).is_none() {
             env::panic_str(
                 &InvalidParameters::MalformedPayload
                     .message("Payload hash cannot be convereted to Scalar")
