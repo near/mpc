@@ -732,7 +732,7 @@ impl VersionedMpcContract {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
-    /// Upon success, removes the signature from state and returns it.
+    /// Upon success, removes the gature from state and returns it.
     /// Returns an Error if the signature timed out.
     /// Note that timed out signatures will need to be cleaned up from the state by a different function.
     ///
@@ -790,5 +790,69 @@ impl VersionedMpcContract {
                 }
             },
         }
+    }
+}
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
+    use crate::primitives::test_utils::gen_participants;
+    use k256::{
+        self,
+        ecdsa::{SigningKey, VerifyingKey},
+    };
+    use near_sdk::{test_utils::VMContextBuilder, testing_env, VMContext};
+    use primitives::key_state::{AttemptId, KeyForDomain};
+    use rand::rngs::OsRng;
+    use rand::RngCore;
+
+    fn basic_setup() -> (VMContext, VersionedMpcContract, SigningKey) {
+        let context = VMContextBuilder::new().build();
+        testing_env!(context.clone());
+        let secret_key = k256::ecdsa::SigningKey::random(&mut OsRng);
+        let public_key = VerifyingKey::from(&secret_key);
+        let domain_id = DomainId::legacy_ecdsa_id();
+        let domains = vec![DomainConfig {
+            id: domain_id,
+            scheme: SignatureScheme::Secp256k1,
+        }];
+        let epoch_id = EpochId::new(0);
+        let key_for_domain = KeyForDomain {
+            domain_id,
+            key: PublicKey::from_parts(
+                near_sdk::CurveType::SECP256K1,
+                public_key.to_sec1_bytes().to_vec(),
+            )
+            .unwrap(),
+            attempt: AttemptId::new(),
+        };
+        let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
+        let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+        let contract =
+            VersionedMpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
+        (context, contract, secret_key)
+    }
+
+    #[test]
+    fn test_state_cleanup() {
+        use k256::ecdsa::{signature::Signer, Signature};
+        let (context, mut contract, secret_key) = basic_setup();
+        let mut payload = [0u8; 32];
+        OsRng.fill_bytes(&mut payload);
+        let signature: Signature = secret_key.sign(&payload);
+        let request = SignRequest {
+            payload,
+            path: "m/44'\''/60'\''/0'\''/0/0".to_string(),
+            key_version: 0,
+        };
+        let signature_request = SignatureRequest::new(
+            Scalar::from_bytes(payload).unwrap(),
+            &context.predecessor_account_id,
+            &request.path,
+        );
+        contract.sign(request);
+        // let index = contract.get_pending_request(&signature_request).unwrap();
+        // println!("index: {:?}", index);
     }
 }
