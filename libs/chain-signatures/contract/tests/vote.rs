@@ -146,7 +146,6 @@ async fn test_resharing() -> anyhow::Result<()> {
             alice.id().clone(),
             ParticipantInfo {
                 url: "127.0.0.1".to_string(),
-                cipher_pk: [1u8; 32],
                 sign_pk: PublicKey::from_str(
                     "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
                 )?,
@@ -232,7 +231,6 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
             alice.id().clone(),
             ParticipantInfo {
                 url: "127.0.0.1".to_string(),
-                cipher_pk: [1u8; 32],
                 sign_pk: PublicKey::from_str(
                     "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
                 )
