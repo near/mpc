@@ -49,7 +49,6 @@ pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
             account_id.clone(),
             ParticipantInfo {
                 url: "127.0.0.1".into(),
-                cipher_pk: [0; 32],
                 sign_pk: near_sdk::PublicKey::from_str(
                     "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
                 )
