@@ -13,8 +13,6 @@ pub mod hpke {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantInfo {
     pub url: String,
-    /// The public key used for encrypting messages.
-    pub cipher_pk: hpke::PublicKey,
     /// The public key used for verifying messages.
     pub sign_pk: PublicKey,
 }
@@ -24,7 +22,6 @@ impl From<&legacy_contract_state::ParticipantInfo> for ParticipantInfo {
     fn from(info: &legacy_contract_state::ParticipantInfo) -> ParticipantInfo {
         ParticipantInfo {
             url: info.url.clone(),
-            cipher_pk: info.cipher_pk,
             sign_pk: info.sign_pk.clone(),
         }
     }
@@ -267,7 +264,6 @@ pub mod tests {
             assert!(migrated_participants.is_participant(account_id));
             let mp_info = migrated_participants.info(account_id).unwrap();
             assert_eq!(mp_info.url, info.url);
-            assert_eq!(mp_info.cipher_pk, info.cipher_pk);
             assert_eq!(mp_info.sign_pk, info.sign_pk);
             assert_eq!(
                 *account_id,
@@ -305,7 +301,6 @@ pub mod tests {
             let legacy_participant = legacy_participant.unwrap();
             assert_eq!(legacy_participant.account_id, *account_id);
             assert_eq!(legacy_participant.url, info.url);
-            assert_eq!(legacy_participant.cipher_pk, info.cipher_pk);
             assert_eq!(legacy_participant.sign_pk, info.sign_pk);
             let legacy_idx = *legacy_participants
                 .account_to_participant_id

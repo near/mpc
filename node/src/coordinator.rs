@@ -7,7 +7,8 @@ use crate::indexer::participants::{
 };
 use crate::indexer::types::{ChainSendTransactionRequest, ChainVotePkArgs, ChainVoteResharedArgs};
 use crate::indexer::IndexerAPI;
-use crate::keyshare::{KeyshareStorage, KeyshareStorageFactory, RootKeyshareData};
+use crate::keyshare::permanent::LegacyRootKeyshareData;
+use crate::keyshare::{KeyStorageConfig, Keyshare, KeyshareStorage};
 use crate::metrics;
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
@@ -19,6 +20,7 @@ use crate::tracking::{self};
 use crate::web::SignatureDebugRequest;
 use futures::future::BoxFuture;
 use futures::FutureExt;
+use mpc_contract::primitives::key_state::EpochId;
 use near_time::{Clock, Duration};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
@@ -36,8 +38,8 @@ pub struct Coordinator {
 
     /// Storage for triples, presignatures, signing requests.
     pub secret_db: Arc<SecretDB>,
-    /// Storage for keyshare.
-    pub keyshare_storage_factory: KeyshareStorageFactory,
+    /// Storage config for keyshares.
+    pub key_storage_config: KeyStorageConfig,
 
     /// For interaction with the indexer.
     pub indexer: IndexerAPI,
@@ -111,7 +113,7 @@ impl Coordinator {
                             Self::run_initialization(
                                 self.secrets.clone(),
                                 self.config_file.clone(),
-                                self.keyshare_storage_factory.create().await?,
+                                self.key_storage_config.create().await?,
                                 state.clone(),
                                 self.indexer.txn_sender.clone(),
                             ),
@@ -144,7 +146,7 @@ impl Coordinator {
                                 self.secret_db.clone(),
                                 self.secrets.clone(),
                                 self.config_file.clone(),
-                                self.keyshare_storage_factory.create().await?,
+                                self.key_storage_config.create().await?,
                                 state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer
@@ -173,7 +175,7 @@ impl Coordinator {
                                 self.secret_db.clone(),
                                 self.secrets.clone(),
                                 self.config_file.clone(),
-                                self.keyshare_storage_factory.create().await?,
+                                self.key_storage_config.create().await?,
                                 state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 // here, pass self.indexer.reshare_instance_receiver
@@ -275,38 +277,15 @@ impl Coordinator {
     async fn run_initialization(
         secrets: SecretsConfig,
         config_file: ConfigFile,
-        keyshare_storage: Box<dyn KeyshareStorage>,
+        keyshare_storage: KeyshareStorage,
         contract_state: ContractInitializingState,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     ) -> anyhow::Result<MpcJobResult> {
-        let existing_key = keyshare_storage.load().await?;
-        if let Some(existing_key) = existing_key {
-            if existing_key.epoch != 0 {
-                tracing::error!(
-                    "Contract is in initialization state. We already have a keyshare, but its epoch is not zero. Refusing to participate in initialization"
-                );
-                // This is an error situation; we can't recover from it so we just halt.
-                return Ok(MpcJobResult::HaltUntilInterrupted);
-            }
-
-            let my_public_key = affine_point_to_public_key(existing_key.public_key)?;
-            if let Some(votes) = contract_state.pk_votes.get(&my_public_key) {
-                if votes.contains(&config_file.my_near_account_id) {
-                    tracing::info!("Initialization: we already voted for our public key; waiting for public key consensus");
-                    // Wait indefinitely. We will be terminated when config changes, or when we timeout.
-                    return Ok(MpcJobResult::HaltUntilInterrupted);
-                }
-            }
-
-            tracing::info!("Contract is in initialization state. We have our keyshare. Sending vote_pk to vote for our public key");
-
-            chain_txn_sender
-                .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
-                    public_key: my_public_key,
-                }))
-                .await?;
-
-            // Like above, just wait.
+        if let Err(e) = keyshare_storage
+            .ensure_can_generate_key(EpochId::new(0), &[])
+            .await
+        {
+            tracing::error!("Cannot participate in key generation: {:?}", e);
             return Ok(MpcJobResult::HaltUntilInterrupted);
         }
 
@@ -346,11 +325,21 @@ impl Coordinator {
         .await?;
 
         keyshare_storage
-            .store(&RootKeyshareData::new(0, key.clone()))
+            .store_key(Keyshare::from_legacy(&LegacyRootKeyshareData {
+                epoch: 0,
+                private_share: key.private_share,
+                public_key: key.public_key,
+            }))
+            .await?;
+        let my_public_key = affine_point_to_public_key(key.public_key)?;
+        chain_txn_sender
+            .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
+                public_key: my_public_key,
+            }))
             .await?;
 
-        tracing::info!("Key generation complete");
-        anyhow::Ok(MpcJobResult::Done)
+        // Just halt and wait for the running state.
+        Ok(MpcJobResult::HaltUntilInterrupted)
     }
 
     /// Entry point to handle the Running state of the contract.
@@ -362,7 +351,7 @@ impl Coordinator {
         secret_db: Arc<SecretDB>,
         secrets: SecretsConfig,
         config_file: ConfigFile,
-        keyshare_storage: Box<dyn KeyshareStorage>,
+        keyshare_storage: KeyshareStorage,
         contract_state: ContractRunningState,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
@@ -379,15 +368,15 @@ impl Coordinator {
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        let keyshare = keyshare_storage.load().await?;
-        let keyshare = match keyshare {
-            Some(keyshare) if keyshare.epoch == contract_state.epoch => keyshare,
-            _ => {
-                // This case can happen if a participant is misconfigured or lost its keyshare.
-                // We can't do anything. The only way to recover if the keyshare is truly lost
-                // is to leave and rejoin the network.
+        let keyshare = match keyshare_storage
+            .compat_load_legacy_keyshare(contract_state.epoch, contract_state.root_public_key)
+            .await
+        {
+            Ok(keyshare) => keyshare,
+            Err(e) => {
                 tracing::error!(
-                    "This node is a participant in the current epoch but is missing a keyshare."
+                    "Failed to load keyshare: {:?}; doing nothing until contract state change",
+                    e
                 );
                 return Ok(MpcJobResult::HaltUntilInterrupted);
             }
@@ -442,7 +431,7 @@ impl Coordinator {
         secret_db: Arc<SecretDB>,
         secrets: SecretsConfig,
         config_file: ConfigFile,
-        keyshare_storage: Box<dyn KeyshareStorage>,
+        keyshare_storage: KeyshareStorage,
         contract_state: ContractResharingState,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
         // reshare_instance_receiver
@@ -461,58 +450,36 @@ impl Coordinator {
             .iter()
             .any(|p| p.near_account_id == config_file.my_near_account_id);
 
-        let existing_keyshare = match keyshare_storage.load().await? {
-            Some(existing_keyshare) => {
-                // only enter this if the full key event id matches.
-                if existing_keyshare.epoch == contract_state.old_epoch + 1 {
-                    // check key id: a mismatch should (theoretically) never happen.
-                    if contract_state
-                        .finished_votes
-                        .contains(&config_file.my_near_account_id)
-                    {
-                        tracing::info!(
-                            "We already performed key resharing for epoch {} and already performed vote_reshared; waiting for contract state to transition into Running",
-                            contract_state.old_epoch + 1);
-                    } else {
-                        tracing::info!(
-                            "We already performed key resharing for epoch {}; sending vote_reshared.",
-                            contract_state.old_epoch + 1
-                        );
-                        chain_txn_sender
-                            .send(ChainSendTransactionRequest::VoteReshared(
-                                ChainVoteResharedArgs {
-                                    epoch: contract_state.old_epoch + 1,
-                                },
-                            ))
-                            .await?; // adjust
-                        tracing::info!("Sent vote_reshared txn; waiting for contract state to transition into Running");
-                    }
+        if let Err(e) = keyshare_storage
+            .ensure_can_reshare_key(EpochId::new(contract_state.old_epoch + 1), &[])
+            .await
+        {
+            tracing::error!("Cannot participate in key resharing: {:?}", e);
+            return Ok(MpcJobResult::HaltUntilInterrupted);
+        }
+
+        let existing_keyshare = if was_participant_last_epoch {
+            let existing_keyshare = match keyshare_storage
+                .compat_load_legacy_keyshare(
+                    contract_state.old_epoch,
+                    contract_state.public_key.clone(),
+                )
+                .await
+            {
+                Ok(keyshare) => keyshare,
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to load keyshare for epoch {}: {:?}; doing nothing until contract state change",
+                        contract_state.old_epoch,
+                        e
+                    );
                     return Ok(MpcJobResult::HaltUntilInterrupted);
                 }
-                if was_participant_last_epoch {
-                    anyhow::ensure!(
-                        existing_keyshare.epoch == contract_state.old_epoch,
-                        "We were a participant last epoch, but we somehow have a key of epoch #{}",
-                        existing_keyshare.epoch
-                    );
-                    Some(existing_keyshare)
-                } else {
-                    anyhow::ensure!(
-                        existing_keyshare.epoch < contract_state.old_epoch,
-                        "We were not a participant last epoch, but we somehow have a key of epoch #{}",
-                        existing_keyshare.epoch
-                    );
-                    None
-                }
-            }
-            None => {
-                if was_participant_last_epoch {
-                    anyhow::bail!("We were a participant last epoch, but we don't have a keyshare");
-                }
-                None
-            }
+            };
+            Some(existing_keyshare)
+        } else {
+            None
         };
-
         tracking::set_progress(&format!(
             "Resharing for epoch {} as participant {}",
             contract_state.old_epoch + 1,
@@ -551,18 +518,26 @@ impl Coordinator {
         )
         .await?;
         keyshare_storage
-            .store(&RootKeyshareData::new(
-                contract_state.old_epoch + 1,
-                new_keygen_output,
-            ))
+            .store_key(Keyshare::from_legacy(&LegacyRootKeyshareData {
+                epoch: contract_state.old_epoch + 1,
+                private_share: new_keygen_output.private_share,
+                public_key: new_keygen_output.public_key,
+            }))
             .await?;
 
         tracing::info!("Key resharing complete; will call vote_reshared next");
-        // Exit; we'll immediately re-enter the same function and send vote_reshared.
-        // maybe send vote_instance_complete() here, before exiting.
-        //
 
-        // leader needs to observe the contract state here.
+        chain_txn_sender
+            .send(ChainSendTransactionRequest::VoteReshared(
+                ChainVoteResharedArgs {
+                    epoch: contract_state.old_epoch + 1,
+                },
+            ))
+            .await?; // adjust
+        tracing::info!(
+            "Sent vote_reshared txn; waiting for contract state to transition into Running"
+        );
+
         Ok(MpcJobResult::Done)
     }
 }
