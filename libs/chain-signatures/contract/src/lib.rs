@@ -11,7 +11,7 @@ use crate::errors::Error;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 use config::{Config, InitConfig};
 use crypto_shared::{
-    derive_epsilon, derive_key, kdf::check_ec_signature, near_public_key_to_affine_point,
+    derive_key, derive_tweak, kdf::check_ec_signature, near_public_key_to_affine_point,
     types::SignatureResponse, ScalarExt as _,
 };
 use errors::{
@@ -28,7 +28,7 @@ use near_sdk::{
 };
 use primitives::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
 use primitives::key_state::{EpochId, KeyEventId, Keyset};
-use primitives::signature::{Epsilon, PayloadHash, SignRequest, SignatureRequest, YieldIndex};
+use primitives::signature::{PayloadHash, SignRequest, SignatureRequest, Tweak, YieldIndex};
 use primitives::thresholds::{Threshold, ThresholdParameters};
 use state::running::RunningContractState;
 use state::ProtocolContractState;
@@ -335,10 +335,10 @@ impl VersionedMpcContract {
         domain: Option<DomainId>,
     ) -> Result<PublicKey, Error> {
         let predecessor = predecessor.unwrap_or_else(env::predecessor_account_id);
-        let epsilon = derive_epsilon(&predecessor, &path);
+        let tweak = derive_tweak(&predecessor, &path);
         let derived_public_key = derive_key(
             near_public_key_to_affine_point(self.public_key(domain)?),
-            &epsilon,
+            &tweak,
         );
         let encoded_point = derived_public_key.to_encoded_point(false);
         let slice: &[u8] = &encoded_point.as_bytes()[1..65];
@@ -400,7 +400,7 @@ impl VersionedMpcContract {
             SignatureResponse::Secp256k1(signature_response) => {
                 // generate the expected public key
                 let expected_public_key =
-                    derive_key(near_public_key_to_affine_point(pk), &request.epsilon);
+                    derive_key(near_public_key_to_affine_point(pk), &request.tweak);
 
                 // Check the signature is correct
                 if check_ec_signature(
@@ -721,7 +721,7 @@ impl VersionedMpcContract {
                             data_id: data_id.data_id,
                         };
 
-                        let epsilon = Epsilon::new(request.epsilon.scalar.to_bytes().into());
+                        let tweak = Tweak::new(request.epsilon.scalar.to_bytes().into());
                         let payload_hash =
                             PayloadHash::new(request.payload_hash.scalar.to_bytes().into());
 
@@ -730,7 +730,7 @@ impl VersionedMpcContract {
                                 .most_recent_domain_for_signature_scheme(SignatureScheme::Secp256k1)
                                 .expect("There exists a signature scheme for Secp256k1"),
                             payload_hash,
-                            epsilon,
+                            tweak,
                         };
 
                         request_by_block_height.push((*created, request.clone()));

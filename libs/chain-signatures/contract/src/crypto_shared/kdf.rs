@@ -1,6 +1,6 @@
 use crate::{
     crypto_shared::types::{k256_types::PublicKey, ScalarExt},
-    primitives::signature::{Epsilon, PayloadHash},
+    primitives::signature::{PayloadHash, Tweak},
 };
 use anyhow::Context;
 use k256::{
@@ -11,11 +11,11 @@ use k256::{
 use near_account_id::AccountId;
 use sha3::{Digest, Sha3_256};
 
-// Constant prefix that ensures epsilon derivation values are used specifically for
+// Constant prefix that ensures tweak derivation values are used specifically for
 // near-mpc-recovery with key derivation protocol vX.Y.Z.
-const EPSILON_DERIVATION_PREFIX: &str = "near-mpc-recovery v0.1.0 epsilon derivation:";
+const TWEAK_DERIVATION_PREFIX: &str = "near-mpc-recovery v0.1.0 epsilon derivation:";
 
-pub fn derive_epsilon(predecessor_id: &AccountId, path: &str) -> Epsilon {
+pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
     // TODO: Use a key derivation library instead of doing this manually.
     // https://crates.io/crates/hkdf might be a good option?
     //
@@ -24,16 +24,16 @@ pub fn derive_epsilon(predecessor_id: &AccountId, path: &str) -> Epsilon {
     // indicate the end of the account id in derivation path.
     // Do not reuse this hash function on anything that isn't an account
     // ID or it'll be vunerable to Hash Melleability/extention attacks.
-    let derivation_path = format!("{EPSILON_DERIVATION_PREFIX}{},{}", predecessor_id, path);
+    let derivation_path = format!("{TWEAK_DERIVATION_PREFIX}{},{}", predecessor_id, path);
     let mut hasher = Sha3_256::new();
     hasher.update(derivation_path);
     let hash: [u8; 32] = hasher.finalize().into();
-    Epsilon::new(hash)
+    Tweak::new(hash)
 }
 
-pub fn derive_key(public_key: PublicKey, epsilon: &Epsilon) -> PublicKey {
-    let epsilon = Scalar::from_non_biased(epsilon.as_bytes());
-    (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * epsilon + public_key).to_affine()
+pub fn derive_key(public_key: PublicKey, tweak: &Tweak) -> PublicKey {
+    let tweak = Scalar::from_non_biased(tweak.as_bytes());
+    (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key).to_affine()
 }
 
 /// Get the x coordinate of a point, as a scalar

@@ -43,7 +43,6 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
         gen_account_id(),
         ParticipantInfo {
             url: format!("near{}", i),
-            cipher_pk: [0u8; 32],
             sign_pk: gen_pk(),
         },
     )

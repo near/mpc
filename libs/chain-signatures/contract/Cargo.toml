@@ -8,6 +8,16 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 anyhow = "1"
+curve25519-dalek = { version = "4.1.3", features = [
+    "group",
+], default-features = true }
+ed25519-dalek = { version = "2.1.1", default-features = true, features = [
+    "pkcs8",
+
+] }
+frost-ed25519 = { version = "2.1.0", default-features = true, features = [
+    "serialization",
+] }
 borsh = "1.5.0"
 near-sdk = { version = "=5.2.1", features = [
     "legacy",
@@ -24,22 +34,11 @@ k256 = { version = "0.13.4", features = [
     "arithmetic",
     "expose-field",
 ] }
-curve25519-dalek = { version = "4.1.3", features = [
-    "group",
-], default-features = true }
-ed25519-dalek = { version = "2.1.1", default-features = true, features = [
-    "pkcs8",
 
-] }
-
-frost-ed25519 = { version = "2.1.0", default-features = true, features = [
-    "serialization",
-] }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-account-id = "1"
 thiserror = "1"
 sha3 = "0.10.8"
-subtle = "2.6.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.12", features = ["custom"] }
