@@ -33,6 +33,7 @@ use primitives::thresholds::{Threshold, ThresholdParameters};
 use state::running::RunningContractState;
 use state::ProtocolContractState;
 use std::cmp;
+use std::fmt::format;
 use storage_keys::StorageKey;
 
 //Gas requised for a sign request
@@ -204,15 +205,18 @@ impl VersionedMpcContract {
             Err(error) => env::panic_str(&error.to_string()),
         };
 
-        let domain_id = &request.domain_id.unwrap_or_else(|| {
-            { domain_registry.most_recent_domain_for_signature_scheme(SignatureScheme::Secp256k1) }
-                .expect("A Domain ID must exist.")
-        });
+        let domain_id = &request.domain_id.unwrap_or_default();
 
-        let signature_scheme = domain_registry
-            .get_domain(domain_id)
-            .map(|d| d.scheme)
-            .expect("The request's domain ID must exist.");
+        let Some(signature_scheme) = domain_registry.get_domain(domain_id).map(|d| d.scheme) else {
+            env::panic_str(
+                &InvalidParameters::DomainNotFound
+                    .message(format!(
+                        "The provided domain_id, {:?} was not found.",
+                        request.domain_id,
+                    ))
+                    .to_string(),
+            );
+        };
 
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
@@ -354,49 +358,72 @@ impl VersionedMpcContract {
         response: SignatureResponse,
     ) -> Result<(), Error> {
         let signer = env::signer_account_id();
-        log!(
-            "respond: signer={}, request={:?} big_r={:?} s={:?}",
-            &signer,
-            &request,
-            &response.big_r,
-            &response.s
-        );
+        log!("respond: signer={}, request={:?}", &signer, &request);
         if !self.state().is_running() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
-        // generate the expected public key
-        let pk = self.public_key(None)?;
-        let expected_public_key = derive_key(near_public_key_to_affine_point(pk), &request.epsilon);
 
-        // Check the signature is correct
-        if check_ec_signature(
-            &expected_public_key,
-            &response.big_r.affine_point,
-            &response.s.scalar,
-            &request.payload_hash,
-            response.recovery_id,
-        )
-        .is_err()
-        {
-            return Err(RespondError::InvalidSignature.into());
+        // 1. First get the yield promise of the (potentially timed out) request.
+        let yield_index = self
+            .get_pending_request(&request)
+            .ok_or::<Error>(InvalidParameters::RequestNotFound.into())?;
+
+        // 2. Only then clean up the state.
+        // This order of execution ensures that the state is cleaned of the current
+        // response, even if it belongs to an already timed out signature request.
+        match self {
+            Self::V0(mpc_contract) => {
+                mpc_contract
+                    .remove_timed_out_requests(mpc_contract.config.max_num_requests_to_remove);
+            }
         }
-        // First get the yield promise of the (potentially timed out) request.
-        if let Some(YieldIndex { data_id }) = self.get_pending_request(&request) {
-            // Only then clean up the state.
-            // This order of execution ensures that the state is cleaned of the current
-            // response, even if it belongs to an already timed out signature request.
-            match self {
-                Self::V0(mpc_contract) => {
-                    mpc_contract
-                        .remove_timed_out_requests(mpc_contract.config.max_num_requests_to_remove);
+
+        let domain_registry = match self.state().domain_registry() {
+            Ok(domain_registry) => domain_registry,
+            Err(error) => env::panic_str(&error.to_string()),
+        };
+
+        let signature_scheme = domain_registry
+            .get_domain(&request.domain_id)
+            .map(|d| d.scheme)
+            .ok_or_else(|| Error::from(RespondError::DomainNotFound))?;
+
+        match (&response, &signature_scheme) {
+            (SignatureResponse::Secp256k1(_), SignatureScheme::Secp256k1)
+            | (SignatureResponse::Edd25519(_), SignatureScheme::Ed25519) => {}
+            _ => return Err(RespondError::SignatureSchemeMismatch.into()),
+        }
+
+        let pk = self.public_key(Some(request.domain_id))?;
+
+        match &response {
+            SignatureResponse::Secp256k1(signature_response) => {
+                // generate the expected public key
+                let expected_public_key =
+                    derive_key(near_public_key_to_affine_point(pk), &request.epsilon);
+
+                // Check the signature is correct
+                if check_ec_signature(
+                    &expected_public_key,
+                    &signature_response.big_r.affine_point,
+                    &signature_response.s.scalar,
+                    &request.payload_hash,
+                    signature_response.recovery_id,
+                )
+                .is_err()
+                {
+                    return Err(RespondError::InvalidSignature.into());
                 }
             }
-            // Finally, resolve the promise. This will have no effect if the request already timed.
-            env::promise_yield_resume(&data_id, &serde_json::to_vec(&response).unwrap());
-            Ok(())
-        } else {
-            Err(InvalidParameters::RequestNotFound.into())
+            SignatureResponse::Edd25519(signature_response) => todo!(),
         }
+
+        // Finally, resolve the promise. This will have no effect if the request already timed.
+        env::promise_yield_resume(
+            &yield_index.data_id,
+            &serde_json::to_vec(&response).unwrap(),
+        );
+        Ok(())
     }
 
     /// Propose a new set of parameters (participants and threshold) for the MPC network.
@@ -699,7 +726,7 @@ impl VersionedMpcContract {
                             PayloadHash::new(request.payload_hash.scalar.to_bytes().into());
 
                         let request = SignatureRequest {
-                            domain: protocol_state
+                            domain_id: protocol_state
                                 .most_recent_domain_for_signature_scheme(SignatureScheme::Secp256k1)
                                 .expect("There exists a signature scheme for Secp256k1"),
                             payload_hash,

@@ -45,7 +45,7 @@ pub struct YieldIndex {
 pub struct SignatureRequest {
     pub epsilon: Epsilon,
     pub payload_hash: PayloadHash,
-    pub domain: DomainId,
+    pub domain_id: DomainId,
 }
 
 impl SignatureRequest {
@@ -57,7 +57,7 @@ impl SignatureRequest {
     ) -> Self {
         let epsilon = derive_epsilon(predecessor_id, path);
         SignatureRequest {
-            domain,
+            domain_id: domain,
             epsilon,
             payload_hash,
         }

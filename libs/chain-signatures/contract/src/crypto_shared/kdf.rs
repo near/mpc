@@ -1,5 +1,5 @@
 use crate::{
-    crypto_shared::types::{PublicKey, ScalarExt},
+    crypto_shared::types::{k256_types::PublicKey, ScalarExt},
     primitives::signature::{Epsilon, PayloadHash},
 };
 use anyhow::Context;

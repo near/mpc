@@ -9,6 +9,12 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DomainId(pub u64);
 
+impl Default for DomainId {
+    fn default() -> Self {
+        Self::legacy_ecdsa_id()
+    }
+}
+
 impl DomainId {
     /// Returns the DomainId of the single ECDSA key present in the contract before V2.
     pub fn legacy_ecdsa_id() -> Self {

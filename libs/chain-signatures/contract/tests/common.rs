@@ -202,7 +202,12 @@ pub async fn create_response(
 
     let s = signature.s();
     let (r_bytes, _s_bytes) = signature.split_bytes();
-    let respond_req = SignatureRequest::new(payload_hash.clone(), predecessor_id, path);
+    let respond_req = SignatureRequest::new(
+        todo!("Update test to take payload_hash"),
+        payload_hash.clone(),
+        predecessor_id,
+        path,
+    );
     let big_r =
         AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
     let s: k256::Scalar = *s.as_ref();
