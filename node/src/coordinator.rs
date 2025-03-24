@@ -87,12 +87,9 @@ enum MpcJobResult {
 impl Coordinator {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
-            tracing::info!("resetting coordinator");
-            let wrapped_state = self.indexer.contract_state_receiver.borrow().clone();
-            tracing::info!("got wrapped state: {:?}", wrapped_state);
-            let mut job: MpcJob = match wrapped_state {
+            let state = self.indexer.contract_state_receiver.borrow().clone();
+            let mut job: MpcJob = match state {
                 ContractState::WaitingForSync => {
-                    tracing::info!("waiting now.");
                     // This is the initial state. We stop this state for any state changes.
                     MpcJob {
                         name: "WaitingForSync",
@@ -102,7 +99,6 @@ impl Coordinator {
                     }
                 }
                 ContractState::Invalid => {
-                    tracing::info!("invalid now.");
                     // Invalid state. Similar to initial state; we do nothing until the state changes.
                     MpcJob {
                         name: "Invalid",
@@ -112,7 +108,6 @@ impl Coordinator {
                     }
                 }
                 ContractState::Initializing(state) => {
-                    tracing::info!("init now.");
                     // For initialization state, we generate keys and vote for the public key.
                     // We give it a timeout, so that if somehow the keygen and voting fail to
                     // progress, we can retry.
@@ -155,7 +150,6 @@ impl Coordinator {
                     }
                 }
                 ContractState::Running(state) => {
-                    tracing::info!("running now.");
                     // For the running state, we run the full MPC protocol.
                     // There's no timeout. The only time we stop is when the contract state
                     // changes to no longer be running (or if somehow the epoch changes).
@@ -190,7 +184,6 @@ impl Coordinator {
                     }
                 }
                 ContractState::Resharing(state) => {
-                    tracing::info!("resharing now.");
                     // In resharing state, we perform key resharing, again with a timeout.
                     let (key_event_sender, key_event_receiver) =
                         watch::channel(state.key_event.clone());
@@ -338,7 +331,6 @@ impl Coordinator {
             mpc_config.my_participant_id
         ));
 
-        // todo: lets see if this timout can be removed.
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         let (sender, receiver) =
             new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
@@ -646,7 +638,7 @@ impl Coordinator {
         let _ = update.commit();
         tracing::info!("Deleted all presignatures");
         // TODO: see if we can remove this.
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        //tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         let (sender, receiver) =
             new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
         // Must wait for all participants to be ready before starting key generation.
@@ -817,10 +809,9 @@ impl Coordinator {
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     }
                     if contract_event.id != key_event_id {
-                        tracing::info!("Key generation timed out.");
+                        tracing::info!("Key resharing timed out.");
                         continue 'leader;
                     }
-                    //let my_public_key = affine_point_to_public_key(res.public_key)?;
                     tracing::info!("Key resharing complete; Leader votes for completion.");
                     chain_txn_sender
                         .send(ChainSendTransactionRequest::VoteReshared(
@@ -829,12 +820,6 @@ impl Coordinator {
                             },
                         ))
                         .await?;
-                    //chain_txn_sender
-                    //    .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
-                    //        key_event_id: contract_event.id,
-                    //        public_key: my_public_key,
-                    //    }))
-                    //    .await?;
                 } else {
                     return Ok(MpcJobResult::Done);
                 }
