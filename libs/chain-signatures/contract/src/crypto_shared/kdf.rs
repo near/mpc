@@ -13,7 +13,7 @@ use sha3::{Digest, Sha3_256};
 
 // Constant prefix that ensures tweak derivation values are used specifically for
 // near-mpc-recovery with key derivation protocol vX.Y.Z.
-const EPSILON_DERIVATION_PREFIX: &str = "near-mpc-recovery v0.1.0 tweak derivation:";
+const TWEAK_DERIVATION_PREFIX: &str = "near-mpc-recovery v0.1.0 epsilon derivation:";
 
 pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
     // TODO: Use a key derivation library instead of doing this manually.
@@ -24,7 +24,7 @@ pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
     // indicate the end of the account id in derivation path.
     // Do not reuse this hash function on anything that isn't an account
     // ID or it'll be vunerable to Hash Melleability/extention attacks.
-    let derivation_path = format!("{EPSILON_DERIVATION_PREFIX}{},{}", predecessor_id, path);
+    let derivation_path = format!("{TWEAK_DERIVATION_PREFIX}{},{}", predecessor_id, path);
     let mut hasher = Sha3_256::new();
     hasher.update(derivation_path);
     let hash: [u8; 32] = hasher.finalize().into();
