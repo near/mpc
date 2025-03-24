@@ -49,11 +49,11 @@ impl EcdsaSignatureProvider {
 ///       the old threshold; or
 ///     - the threshold is larger than the number of participants.
 pub struct KeyResharingComputation {
-    pub threshold: usize,
-    pub old_participants: Vec<ParticipantId>,
-    pub old_threshold: usize,
-    pub my_share: Option<Scalar>,
-    pub public_key: AffinePoint,
+    threshold: usize,
+    old_participants: Vec<ParticipantId>,
+    old_threshold: usize,
+    my_share: Option<Scalar>,
+    public_key: AffinePoint,
 }
 
 #[async_trait::async_trait]
@@ -141,7 +141,7 @@ mod tests {
                 let keyshare = keygens.get(&participant_id.into()).map(|k| k.private_share);
                 let old_participants = old_participants.clone();
                 let key_id = KeyEventId::new(
-                    EpochId::new(0),
+                    EpochId::new(42),
                     DomainId::legacy_ecdsa_id(),
                     AttemptId::legacy_attempt_id(),
                 );

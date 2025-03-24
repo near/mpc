@@ -138,11 +138,10 @@ impl FakeMpcContractState {
                 .map(|info| info.id)
                 .unwrap();
             config.key_event.completed.insert(id);
-            // assert pk matches
             if config.key_event.completed.len() == config.new_participants.participants.len() {
                 let mut keyset = config.previous_running_state.keyset.clone();
                 keyset.epoch_id = keyset.epoch_id.next();
-                // todo: prepare for multiple keys
+                // todo: multiple keys
                 let new_config = ContractState::Running(ContractRunningState {
                     keyset,
                     participants: config.new_participants.clone(),

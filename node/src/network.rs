@@ -451,28 +451,15 @@ impl NetworkTaskChannelSender {
     ///  - We are the leader. This is redundant because the leader already queried the alive
     ///    participants when making the choice of participants to use in the computation.
     async fn wait_for_all_participants_connected(&self) -> anyhow::Result<()> {
-        tracing::info!("waiting for all participants");
         for &participant in &self.participants {
-            tracing::info!("waiting inside, our id: {}", self.my_participant_id);
             if participant == self.my_participant_id {
-                tracing::info!("ignoring ourselves, our id: {}", self.my_participant_id);
                 continue;
             }
-            tracing::info!(
-                "Waiting for {}, our id: {}",
-                participant,
-                self.my_participant_id
-            );
             tracking::set_progress(&format!("Waiting for connection to {}", participant));
             self.transport_sender
                 .connectivity(participant)
                 .wait_for_connection(self.connection_versions[&participant])
                 .await?;
-            tracing::info!(
-                "Realized connecton with {}, our id: {}",
-                participant,
-                self.my_participant_id
-            );
         }
         tracking::set_progress("All participants connected");
         Ok(())

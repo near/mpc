@@ -23,23 +23,11 @@ pub async fn run_protocol<T>(
     let mut queue_receivers: HashMap<ParticipantId, mpsc::UnboundedReceiver<BatchedMessages>> =
         HashMap::new();
 
-    tracing::info!("run_protocol now, my id: {}", channel.my_participant_id());
     for p in channel.participants() {
-        tracing::info!(
-            "setting up channel, my id: {}, other id: {}",
-            channel.my_participant_id(),
-            p
-        );
         let (send, recv) = mpsc::unbounded_channel();
         queue_senders.insert(*p, send);
         queue_receivers.insert(*p, recv);
-        tracing::info!(
-            "Success setting up channel, my id: {}, other id: {}",
-            channel.my_participant_id(),
-            p
-        );
     }
-    tracing::info!("got all channels. my id: {}", channel.my_participant_id());
 
     // We split the protocol into two tasks: one dedicated to sending messages, and one dedicated
     // to computation and receiving messages. There are two reasons for this:
@@ -145,19 +133,7 @@ pub async fn run_protocol<T>(
             }
         }
     };
-    tracing::info!("Try join computation result.",);
-    let x = futures::try_join!(computation_handle, sending_handle);
-    tracing::info!("Joined comp result.");
-
-    match x {
-        Ok(_) => tracing::info!("ok"),
-        Err(x) => {
-            tracing::info!("error: {}", x);
-            return Err(x);
-        }
-    };
-    let (computation_result, _) = x?;
-    tracing::info!("returning computation resul",);
+    let (computation_result, _) = futures::try_join!(computation_handle, sending_handle)?;
     Ok(computation_result)
 }
 

@@ -31,21 +31,11 @@ pub trait MpcLeaderCentricComputation<T>: Sized + 'static {
         let sender = channel.sender();
         let sender_clone = sender.clone();
 
-        tracing::info!("leader centric computation, wrapping future now.");
         // We'll wrap the following future in a timeout below.
         let fut = async move {
             let is_leader = sender.is_leader();
-            tracing::info!("inside future, is_leader: {}", is_leader);
-            //if !sender.is_leader() {
-            tracing::info!("we will wait for all participants");
             sender.wait_for_all_participants_connected().await?;
-            //}
-            tracing::info!(
-                "everyone connected, starting compute, is_leader: {}",
-                is_leader
-            );
             let result = self.compute(&mut channel).await;
-            tracing::info!("completed compute");
             let result = match result {
                 Ok(result) => result,
                 Err(err) => {
@@ -63,10 +53,8 @@ pub trait MpcLeaderCentricComputation<T>: Sized + 'static {
         };
 
         async move {
-            tracing::info!("wrapping future in timout");
             let sender = sender_clone;
             let result = tokio::time::timeout(timeout, fut).await;
-            tracing::info!("got result");
             let result = match result {
                 Ok(result) => result,
                 Err(_) => {

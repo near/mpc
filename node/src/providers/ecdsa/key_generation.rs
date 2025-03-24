@@ -11,7 +11,6 @@ impl EcdsaSignatureProvider {
         threshold: usize,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
-        tracing::info!("Ecdsa secp256k1 key generation starting internally");
         let key = KeyGenerationComputation { threshold }
             .perform_leader_centric_computation(
                 channel,
@@ -28,7 +27,7 @@ impl EcdsaSignatureProvider {
 /// Runs the key generation protocol, returning the key generated.
 /// This protocol is identical for the leader and the followers.
 pub struct KeyGenerationComputation {
-    pub threshold: usize,
+    threshold: usize,
 }
 
 #[async_trait::async_trait]
@@ -37,10 +36,6 @@ impl MpcLeaderCentricComputation<KeygenOutput<Secp256k1>> for KeyGenerationCompu
         self,
         channel: &mut NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
-        tracing::info!(
-            "Starting computation now, my_id: {}",
-            channel.my_participant_id()
-        );
         let cs_participants = channel
             .participants()
             .iter()
@@ -48,9 +43,7 @@ impl MpcLeaderCentricComputation<KeygenOutput<Secp256k1>> for KeyGenerationCompu
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        tracing::info!("setting protocol, my id: {}", channel.my_participant_id());
         let protocol = cait_sith::keygen::<Secp256k1>(&cs_participants, me.into(), self.threshold)?;
-        tracing::info!("runnign protocl, my id: {}", channel.my_participant_id());
         run_protocol("key generation", channel, protocol).await
     }
 
@@ -100,7 +93,7 @@ mod tests {
             client.new_channel_for_task(
                 EcdsaTaskId::KeyGeneration {
                     key_event: KeyEventId::new(
-                        EpochId::new(0),
+                        EpochId::new(42),
                         DomainId::legacy_ecdsa_id(),
                         AttemptId::legacy_attempt_id(),
                     ),

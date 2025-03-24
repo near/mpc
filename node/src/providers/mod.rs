@@ -7,18 +7,16 @@
 //! As a reference, check the existing implementations.
 
 pub mod ecdsa;
+use crate::config::MpcConfig;
+use crate::config::ParticipantsConfig;
+use crate::network::NetworkTaskChannel;
+use crate::primitives::{MpcTaskId, ParticipantId};
+use crate::sign_request::SignatureId;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
 use k256::AffinePoint;
-
-use crate::config::ParticipantsConfig;
-use crate::network::NetworkTaskChannel;
-use crate::sign_request::SignatureId;
 use k256::Scalar;
 use std::sync::Arc;
-
-use crate::config::MpcConfig;
-use crate::primitives::{MpcTaskId, ParticipantId};
 
 /// This `keyshare_id` is used for persisting a key share.
 /// The returned value should be unique across all `SignatureProviders`.
