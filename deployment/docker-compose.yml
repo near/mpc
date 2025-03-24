@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  mpc-node:
+    image: nearone/mpc-node-gcp:latest
+    container_name: mpc-node
+    network_mode: "host"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - MPC_HOME_DIR=/app/data
+      - RUST_LOG=info
+    command: ["./mpc-node", "start", "--home-dir", "/app/data"]
+    restart: unless-stopped 
