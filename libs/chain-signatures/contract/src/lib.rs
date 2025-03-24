@@ -126,14 +126,14 @@ impl MpcContract {
         }
     }
 
-    pub fn start_keygen_instance(&mut self) -> Result<(), Error> {
+    pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         self.protocol_state
-            .start_keygen_instance(self.config.event_max_idle_blocks)
+            .start_keygen_instance(key_event_id, self.config.event_max_idle_blocks)
     }
 
-    pub fn start_reshare_instance(&mut self) -> Result<(), Error> {
+    pub fn start_reshare_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         self.protocol_state
-            .start_reshare_instance(self.config.event_max_idle_blocks)
+            .start_reshare_instance(key_event_id, self.config.event_max_idle_blocks)
     }
 
     pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
@@ -154,15 +154,22 @@ impl MpcContract {
         Ok(())
     }
 
-    pub fn vote_cancel_keygen(&mut self) -> Result<(), Error> {
-        if let Some(new_state) = self.protocol_state.vote_cancel_keygen()? {
+    pub fn vote_cancel_keygen(&mut self, next_domain_id: u64) -> Result<(), Error> {
+        if let Some(new_state) = self.protocol_state.vote_cancel_keygen(next_domain_id)? {
             self.protocol_state = new_state;
         }
         Ok(())
     }
 
-    pub fn vote_new_parameters(&mut self, proposal: &ThresholdParameters) -> Result<(), Error> {
-        if let Some(new_state) = self.protocol_state.vote_new_parameters(proposal)? {
+    pub fn vote_new_parameters(
+        &mut self,
+        prospective_epoch_id: EpochId,
+        proposal: &ThresholdParameters,
+    ) -> Result<(), Error> {
+        if let Some(new_state) = self
+            .protocol_state
+            .vote_new_parameters(prospective_epoch_id, proposal)?
+        {
             self.protocol_state = new_state;
         }
         Ok(())
@@ -388,15 +395,25 @@ impl VersionedMpcContract {
     /// Propose a new set of parameters (participants and threshold) for the MPC network.
     /// If a threshold number of votes are reached on the exact same proposal, this will transition
     /// the contract into the Resharing state.
+    ///
+    /// The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch
+    /// ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from
+    /// accidentally voting on outdated proposals.
     #[handle_result]
-    pub fn vote_new_parameters(&mut self, proposal: ThresholdParameters) -> Result<(), Error> {
+    pub fn vote_new_parameters(
+        &mut self,
+        prospective_epoch_id: EpochId,
+        proposal: ThresholdParameters,
+    ) -> Result<(), Error> {
         log!(
             "vote_new_parameters: signer={}, proposal={:?}",
             env::signer_account_id(),
             proposal,
         );
         match self {
-            Self::V0(mpc_contract) => mpc_contract.vote_new_parameters(&proposal),
+            Self::V0(mpc_contract) => {
+                mpc_contract.vote_new_parameters(prospective_epoch_id, &proposal)
+            }
         }
     }
 
@@ -421,10 +438,10 @@ impl VersionedMpcContract {
     /// Starts a new attempt to generate a key for the current domain.
     /// This only succeeds if the signer is the leader (the participant with the lowest ID).
     #[handle_result]
-    pub fn start_keygen_instance(&mut self) -> Result<(), Error> {
+    pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         log!("start_keygen_instance: signer={}", env::signer_account_id(),);
         match self {
-            Self::V0(contract_state) => contract_state.start_keygen_instance(),
+            Self::V0(contract_state) => contract_state.start_keygen_instance(key_event_id),
         }
     }
 
@@ -463,13 +480,13 @@ impl VersionedMpcContract {
     /// Starts a new attempt to reshare the key for the current domain.
     /// This only succeeds if the signer is the leader (the participant with the lowest ID).
     #[handle_result]
-    pub fn start_reshare_instance(&mut self) -> Result<(), Error> {
+    pub fn start_reshare_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         log!(
             "start_reshare_instance: signer={}",
             env::signer_account_id()
         );
         match self {
-            Self::V0(contract_state) => contract_state.start_reshare_instance(),
+            Self::V0(contract_state) => contract_state.start_reshare_instance(key_event_id),
         }
     }
 
@@ -501,11 +518,14 @@ impl VersionedMpcContract {
     /// Casts a vote to cancel key generation. Any keys that have already been generated
     /// are kept and we transition into Running state; remaining domains are permanently deleted.
     /// Deleted domain IDs cannot be reused again in future calls to vote_add_domains.
+    ///
+    /// A next_domain_id that matches that in the state's domains struct must be passed in. This is
+    /// to prevent stale requests from accidentally cancelling a future key generation state.
     #[handle_result]
-    pub fn vote_cancel_keygen(&mut self) -> Result<(), Error> {
+    pub fn vote_cancel_keygen(&mut self, next_domain_id: u64) -> Result<(), Error> {
         log!("vote_cancel_keygen: signer={}", env::signer_account_id());
         match self {
-            Self::V0(contract_state) => contract_state.vote_cancel_keygen(),
+            Self::V0(contract_state) => contract_state.vote_cancel_keygen(next_domain_id),
         }
     }
 

@@ -71,6 +71,15 @@ impl KeyEventId {
             attempt_id,
         }
     }
+
+    #[cfg(test)]
+    pub fn next_attempt(&self) -> Self {
+        KeyEventId {
+            epoch_id: self.epoch_id,
+            domain_id: self.domain_id,
+            attempt_id: self.attempt_id.next(),
+        }
+    }
 }
 
 /// The identification of a specific distributed key, based on which a node would know exactly what

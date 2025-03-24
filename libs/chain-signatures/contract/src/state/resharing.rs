@@ -1,6 +1,6 @@
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
-use crate::errors::Error;
+use crate::errors::{Error, InvalidParameters};
 use crate::legacy_contract_state;
 use crate::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
 use crate::primitives::thresholds::ThresholdParameters;
@@ -50,8 +50,12 @@ impl ResharingContractState {
     /// returns a new ResharingContractState that we should transition into.
     pub fn vote_new_parameters(
         &mut self,
+        prospective_epoch_id: EpochId,
         proposal: &ThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
+        if prospective_epoch_id != self.prospective_epoch_id().next() {
+            return Err(InvalidParameters::EpochMismatch.into());
+        }
         if self
             .previous_running_state
             .process_new_parameters_proposal(proposal)?
@@ -79,8 +83,13 @@ impl ResharingContractState {
 
     /// Starts a new attempt to reshare the key for the current domain.
     /// Returns an Error if the signer is not the leader (the participant with the lowest ID).
-    pub fn start(&mut self, event_max_idle_blocks: u64) -> Result<(), Error> {
-        self.resharing_key.start(event_max_idle_blocks)
+    pub fn start(
+        &mut self,
+        key_event_id: KeyEventId,
+        event_max_idle_blocks: u64,
+    ) -> Result<(), Error> {
+        self.resharing_key
+            .start(key_event_id, event_max_idle_blocks)
     }
 
     /// Casts a successfully-reshared vote for for the attempt identified by `key_event_id`.
@@ -167,7 +176,9 @@ mod tests {
         for (account, _, _) in voting_participants {
             env.set_signer(&account);
             assert!(resharing_state.is_none());
-            resharing_state = running.vote_new_parameters(&proposal).unwrap();
+            resharing_state = running
+                .vote_new_parameters(running.keyset.epoch_id.next(), &proposal)
+                .unwrap();
         }
         (
             env,
@@ -208,12 +219,15 @@ mod tests {
                 assert!(state.vote_reshared(first_key_event_id.clone()).is_err());
                 assert!(state.vote_abort(first_key_event_id.clone()).is_err());
                 if *c != leader.0 {
-                    assert!(state.start(1).is_err());
+                    assert!(state.start(first_key_event_id.clone(), 1).is_err());
+                } else {
+                    // Also check that starting with the wrong KeyEventId fails.
+                    assert!(state.start(first_key_event_id.next_attempt(), 1).is_err());
                 }
             }
             // start the resharing; verify that the resharing is for the right epoch and domain ID.
             env.set_signer(&leader.0);
-            assert!(state.start(0).is_ok());
+            assert!(state.start(first_key_event_id.clone(), 0).is_ok());
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
@@ -236,7 +250,7 @@ mod tests {
 
             // assert that votes for a different resharings do not count
             env.set_signer(&leader.0);
-            assert!(state.start(0).is_ok());
+            assert!(state.start(first_key_event_id.next_attempt(), 0).is_ok());
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             let bad_key_events = [
                 KeyEventId::new(
@@ -267,7 +281,7 @@ mod tests {
             // check that vote_abort immediately causes failure.
             env.advance_block_height(1);
             env.set_signer(&leader.0);
-            assert!(state.start(0).is_ok());
+            assert!(state.start(key_event.next_attempt(), 0).is_ok());
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
             assert!(state.vote_abort(key_event.clone()).is_ok());
@@ -275,7 +289,7 @@ mod tests {
 
             // assert that valid votes get counted correctly
             env.set_signer(&leader.0);
-            assert!(state.start(0).is_ok());
+            assert!(state.start(key_event.next_attempt(), 0).is_ok());
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             for (i, c) in candidates.clone().into_iter().enumerate() {
                 env.set_signer(&c);
@@ -327,9 +341,18 @@ mod tests {
         // Vote for first domain's key.
         let leader = find_leader(&state.resharing_key);
         env.set_signer(&leader.0);
-        assert!(state.start(0).is_ok());
+        let first_key_event_id = KeyEventId {
+            attempt_id: AttemptId::new(),
+            domain_id: state
+                .previous_running_state
+                .domains
+                .get_domain_by_index(0)
+                .unwrap()
+                .id,
+            epoch_id: state.prospective_epoch_id(),
+        };
+        assert!(state.start(first_key_event_id.clone(), 0).is_ok());
 
-        let key_event_id = state.resharing_key.current_key_event_id().unwrap();
         let old_participants = state
             .previous_running_state
             .parameters
@@ -345,7 +368,7 @@ mod tests {
                 .clone();
             for (account, _, _) in new_participants {
                 env.set_signer(&account);
-                state.vote_reshared(key_event_id.clone()).unwrap();
+                state.vote_reshared(first_key_event_id.clone()).unwrap();
             }
         }
         assert!(state.reshared_keys.len() == 1);
@@ -379,12 +402,25 @@ mod tests {
             .validate_incoming_proposal(&new_params_2)
             .is_err());
 
+        // Reproposing with invalid epoch ID should fail.
+        {
+            env.set_signer(&old_participants.participants()[0].0);
+            assert!(state
+                .vote_new_parameters(state.prospective_epoch_id(), &new_params_1)
+                .is_err());
+            assert!(state
+                .vote_new_parameters(state.prospective_epoch_id().next().next(), &new_params_1)
+                .is_err());
+        }
+
         // Repropose with new_params_1.
         let mut new_state = None;
         for (account, _, _) in &old_participants.participants()[0..old_threshold] {
             env.set_signer(account);
             assert!(new_state.is_none());
-            new_state = state.vote_new_parameters(&new_params_1).unwrap();
+            new_state = state
+                .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
+                .unwrap();
         }
         // We should've gotten a new resharing state.
         assert!(new_state.is_some());
@@ -408,6 +444,8 @@ mod tests {
 
         // Repropose with new_params_2. That should fail.
         env.set_signer(&old_participants.participants()[0].0);
-        assert!(new_state.vote_new_parameters(&new_params_2).is_err());
+        assert!(new_state
+            .vote_new_parameters(new_state.prospective_epoch_id().next(), &new_params_2)
+            .is_err());
     }
 }

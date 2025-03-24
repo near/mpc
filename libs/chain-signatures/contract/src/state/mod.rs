@@ -5,7 +5,7 @@ pub mod running;
 
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
-use crate::primitives::key_state::{AuthenticatedParticipantId, KeyEventId};
+use crate::primitives::key_state::{AuthenticatedParticipantId, EpochId, KeyEventId};
 use crate::primitives::thresholds::{Threshold, ThresholdParameters};
 use initializing::InitializingContractState;
 use near_sdk::{near, PublicKey};
@@ -45,17 +45,25 @@ impl ProtocolContractState {
             }
         }
     }
-    pub fn start_keygen_instance(&mut self, event_max_idle_blocks: u64) -> Result<(), Error> {
+    pub fn start_keygen_instance(
+        &mut self,
+        key_event_id: KeyEventId,
+        event_max_idle_blocks: u64,
+    ) -> Result<(), Error> {
         let ProtocolContractState::Initializing(state) = self else {
             return Err(InvalidState::ProtocolStateNotInitializing.into());
         };
-        state.start(event_max_idle_blocks)
+        state.start(key_event_id, event_max_idle_blocks)
     }
-    pub fn start_reshare_instance(&mut self, event_max_idle_blocks: u64) -> Result<(), Error> {
+    pub fn start_reshare_instance(
+        &mut self,
+        key_event_id: KeyEventId,
+        event_max_idle_blocks: u64,
+    ) -> Result<(), Error> {
         let ProtocolContractState::Resharing(state) = self else {
             return Err(InvalidState::ProtocolStateNotResharing.into());
         };
-        state.start(event_max_idle_blocks)
+        state.start(key_event_id, event_max_idle_blocks)
     }
     pub fn vote_reshared(
         &mut self,
@@ -88,12 +96,15 @@ impl ProtocolContractState {
     /// Returns an error if the protocol is not in running resharing.
     pub fn vote_new_parameters(
         &mut self,
+        prospective_epoch_id: EpochId,
         proposed_parameters: &ThresholdParameters,
     ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
-            ProtocolContractState::Running(state) => state.vote_new_parameters(proposed_parameters),
+            ProtocolContractState::Running(state) => {
+                state.vote_new_parameters(prospective_epoch_id, proposed_parameters)
+            }
             ProtocolContractState::Resharing(state) => {
-                state.vote_new_parameters(proposed_parameters)
+                state.vote_new_parameters(prospective_epoch_id, proposed_parameters)
             }
             _ => Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
         }
@@ -111,9 +122,12 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Initializing))
     }
 
-    pub fn vote_cancel_keygen(&mut self) -> Result<Option<ProtocolContractState>, Error> {
+    pub fn vote_cancel_keygen(
+        &mut self,
+        next_domain_id: u64,
+    ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
-            ProtocolContractState::Initializing(state) => state.vote_cancel(),
+            ProtocolContractState::Initializing(state) => state.vote_cancel(next_domain_id),
             _ => Err(InvalidState::ProtocolStateNotInitializing.into()),
         }
         .map(|x| x.map(ProtocolContractState::Running))
