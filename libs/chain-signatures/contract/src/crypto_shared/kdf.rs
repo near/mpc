@@ -36,6 +36,32 @@ pub fn derive_key(public_key: PublicKey, tweak: &Tweak) -> PublicKey {
     (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key).to_affine()
 }
 
+pub(crate) fn derive_keygen_output(keygen_output: &KeygenOutput, tweak: [u8; 32]) -> KeygenOutput {
+    let tweak = Scalar::from_bytes_mod_order(tweak);
+    KeygenOutput {
+        key_package: derive_key_package(&keygen_output.key_package, tweak),
+        public_key_package: derive_public_key_package(&keygen_output.public_key_package, tweak),
+    }
+}
+
+fn derive_public_key_package(pubkey_package: &PublicKeyPackage, tweak: Scalar) -> PublicKeyPackage {
+    let verifying_shares: BTreeMap<Identifier, VerifyingShare> = pubkey_package
+        .verifying_shares()
+        .iter()
+        .map(|(&identifier, &share)| {
+            (
+                identifier,
+                VerifyingShare::new(add_tweak(share.to_element(), tweak)),
+            )
+        })
+        .collect();
+    let verifying_key = VerifyingKey::new(add_tweak(
+        pubkey_package.verifying_key().to_element(),
+        tweak,
+    ));
+    PublicKeyPackage::new(verifying_shares, verifying_key)
+}
+
 /// Get the x coordinate of a point, as a scalar
 pub fn x_coordinate(
     point: &<Secp256k1 as CurveArithmetic>::AffinePoint,
