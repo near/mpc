@@ -677,7 +677,7 @@ impl VersionedMpcContract {
                             data_id: data_id.data_id,
                         };
 
-                        let tweak = Tweak::new(request.tweak.scalar.to_bytes().into());
+                        let tweak = Tweak::new(request.epsilon.scalar.to_bytes().into());
                         let payload_hash =
                             PayloadHash::new(request.payload_hash.scalar.to_bytes().into());
 
