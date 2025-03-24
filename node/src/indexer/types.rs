@@ -7,7 +7,10 @@ use k256::{
     AffinePoint, Scalar, Secp256k1,
 };
 use legacy_mpc_contract;
-use mpc_contract::primitives::key_state::KeyEventId;
+use mpc_contract::primitives::{
+    key_state::KeyEventId,
+    signature::{PayloadHash, Tweak},
+};
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
@@ -18,12 +21,12 @@ const TGAS: u64 = 1_000_000_000_000;
 pub struct SerializableScalar {
     pub scalar: Scalar,
 }
-
-impl From<Scalar> for SerializableScalar {
-    fn from(scalar: Scalar) -> Self {
-        SerializableScalar { scalar }
-    }
-}
+//
+//impl From<Scalar> for SerializableScalar {
+//    fn from(scalar: Scalar) -> Self {
+//        SerializableScalar { scalar }
+//    }
+//}
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 struct SerializableAffinePoint {
@@ -37,18 +40,16 @@ struct SerializableAffinePoint {
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainSignatureRequest {
-    pub epsilon: SerializableScalar,
-    pub payload_hash: SerializableScalar,
+    pub tweak: Tweak,
+    pub payload_hash: PayloadHash,
 }
 
 impl ChainSignatureRequest {
     pub fn new(payload_hash: Scalar, tweak: Scalar) -> Self {
-        let epsilon = SerializableScalar { scalar: tweak };
-        let payload_hash = SerializableScalar {
-            scalar: payload_hash,
-        };
+        let tweak = Tweak::new(tweak.to_bytes().into()); // SerializableScalar { scalar: tweak };
+        let payload_hash = PayloadHash::new(payload_hash.to_bytes().into());
         ChainSignatureRequest {
-            epsilon,
+            tweak,
             payload_hash,
         }
     }

@@ -50,7 +50,7 @@ def compile_contract():
     chain_signatures = git_root / "libs" / "chain-signatures"
 
     subprocess.run([
-        "cargo", "build", "-p", "mpc-contract@2.0.0-alpha",
+        "cargo", "build", "-p", "mpc-contract",
         "--target=wasm32-unknown-unknown", "--release"
     ],
                    cwd=chain_signatures,

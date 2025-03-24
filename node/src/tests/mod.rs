@@ -2,6 +2,7 @@ use cait_sith::protocol::{run_protocol, Participant, Protocol};
 use cait_sith::triples::TripleGenerationOutput;
 use cait_sith::{FullSignature, KeygenOutput, PresignArguments, PresignOutput};
 use k256::{AffinePoint, Scalar, Secp256k1};
+use mpc_contract::primitives::signature::PayloadHash;
 use std::collections::HashMap;
 
 use crate::config::{
@@ -336,7 +337,9 @@ pub async fn request_signature_and_await_response(
     loop {
         match timeout(timeout_sec, indexer.next_response()).await {
             Ok(signature) => {
-                if signature.request.payload_hash.scalar != request.request.payload {
+                if signature.request.payload_hash
+                    != PayloadHash::new(request.request.payload.to_bytes().into())
+                {
                     // This can legitimately happen when multiple nodes submit responses
                     // for the same signature request. In tests this can happen if the
                     // secondary leader thinks the primary leader is offline when in fact
@@ -346,7 +349,7 @@ pub async fn request_signature_and_await_response(
                          Expected {:?}, actual {:?}",
                         user,
                         request.request.payload,
-                        signature.request.payload_hash.scalar
+                        signature.request.payload_hash
                     );
                     continue;
                 }

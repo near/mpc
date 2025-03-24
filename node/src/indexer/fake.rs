@@ -10,6 +10,7 @@ use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use k256::Scalar;
+use mpc_contract::crypto_shared::ScalarExt;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
 use near_crypto::PublicKey;
@@ -269,16 +270,16 @@ impl FakeIndexerCore {
                     }
                     ChainSendTransactionRequest::Respond(respond) => {
                         let mut contract = contract.lock().await;
-                        let signature_id = contract
-                            .pending_signatures
-                            .remove(&respond.request.payload_hash.scalar);
+                        let signature_id = contract.pending_signatures.remove(
+                            &Scalar::from_bytes(respond.request.payload_hash.as_bytes()).unwrap(),
+                        );
                         if let Some(signature_id) = signature_id {
                             self.sign_response_sender.send(respond.clone()).unwrap();
                             block_update.completed_signatures.push(signature_id);
                         } else {
                             tracing::warn!(
                                 "Ignoring respond transaction for unknown (possibly already-responded-to) signature: {:?}",
-                                respond.request.payload_hash.scalar
+                                respond.request.payload_hash
                             );
                         }
                     }

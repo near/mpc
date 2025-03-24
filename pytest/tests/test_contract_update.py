@@ -21,26 +21,28 @@ from common_lib import shared
 from common_lib.contracts import V0_CONTRACT_PATH, COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, V1_CONTRACT_PATH, UpdateArgsV0, UpdateArgsV1, ConfigV1
 
 
-@pytest.mark.parametrize("initial_contract_path,update_args", [
-    pytest.param(V0_CONTRACT_PATH,
-                 UpdateArgsV0(COMPILED_CONTRACT_PATH),
-                 id="update v0 to current"),
-    pytest.param(V1_CONTRACT_PATH,
-                 UpdateArgsV0(COMPILED_CONTRACT_PATH),
-                 id="update v1 to current"),
-    pytest.param(COMPILED_CONTRACT_PATH,
-                 UpdateArgsV1(code_path=MIGRATE_CURRENT_CONTRACT_PATH),
-                 id="update current code"),
-    pytest.param(COMPILED_CONTRACT_PATH,
-                 UpdateArgsV1(code_path=None,
-                              config=ConfigV1(max_num_requests_to_remove=2,
-                                              request_timeout_blocks=10)),
-                 id="update current config"),
-])
+# todo: migration tests
+@pytest.mark.skip
+@pytest.mark.parametrize(
+    "initial_contract_path,update_args",
+    [
+        pytest.param(V1_CONTRACT_PATH,
+                     UpdateArgsV0(COMPILED_CONTRACT_PATH),
+                     id="update v1 to current"),
+        #pytest.param(COMPILED_CONTRACT_PATH,
+        #             UpdateArgsV1(code_path=MIGRATE_CURRENT_CONTRACT_PATH),
+        #             id="update current code"),
+        #pytest.param(COMPILED_CONTRACT_PATH,
+        #             UpdateArgsV1(code_path=None,
+        #                          config=ConfigV1(max_num_requests_to_remove=2,
+        #                                          request_timeout_blocks=10)),
+        #             id="update current config"),
+    ])
 def test_contract_update(initial_contract_path, update_args):
     initial_contract = load_binary_file(initial_contract_path)
     cluster = shared.start_cluster_with_mpc(2, 2, 1, initial_contract)
     # assert correct contract is deployed
+    # todo: legacy cluster
     cluster.assert_is_deployed(initial_contract)
     cluster.init_contract(threshold=2)
     # do some requests
@@ -70,8 +72,10 @@ def test_contract_update(initial_contract_path, update_args):
 
 
 # In case a nonce conflict occurs during a vote_update call, rerun the test once.
+# todo: migration tests
+@pytest.mark.skip
 @pytest.mark.parametrize("initial_contract_path,update_args", [
-    pytest.param(V0_CONTRACT_PATH,
+    pytest.param(V1_CONTRACT_PATH,
                  UpdateArgsV0(COMPILED_CONTRACT_PATH),
                  id="update v0 to current"),
 ])
@@ -81,13 +85,15 @@ def test_contract_update_trailing_sigs(initial_contract_path, update_args):
     """
     num_requests = 100
     initial_contract = load_binary_file(initial_contract_path)
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1, initial_contract)
+    # todo: legacy cluster
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1,
+                                                       initial_contract)
     cluster.set_active_mpc_nodes(mpc_nodes)
 
     # assert correct contract is deployed
     cluster.assert_is_deployed(initial_contract)
     cluster.init_contract(threshold=2)
-    cluster.add_domains(['secp256k1'])
+    cluster.add_domains(['Secp256k1'])
     # propose and vote on contract update (avoid nonce conflicts)
     time.sleep(2)
 

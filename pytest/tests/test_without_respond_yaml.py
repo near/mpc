@@ -17,10 +17,8 @@ from common_lib.contracts import load_mpc_contract
 @pytest.mark.parametrize("num_requests", [(10)])
 def test_without_respond_yaml(num_requests):
     cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 0,
-                                            load_mpc_contract())
-    cluster.set_active_mpc_nodes(mpc_nodes)
-    cluster.init_contract(threshold=2)
-    cluster.add_domains(['secp256k1'])
+                                                       load_mpc_contract())
+    cluster.init_cluster(participants=mpc_nodes, threshold=2)
 
     for node in cluster.mpc_nodes:
         home_dir_fnames = os.listdir(node.home_dir)

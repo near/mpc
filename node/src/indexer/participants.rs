@@ -217,39 +217,27 @@ mod tests {
     use std::collections::HashMap;
     use std::str::FromStr;
 
-    fn create_participant_data_raw() -> Vec<(String, String, [u8; 32], String)> {
+    fn create_participant_data_raw() -> Vec<(String, String, String)> {
         vec![
             (
                 "multichain-node-dev-0.testnet".to_string(),
                 "http://10.101.0.56:3000".to_string(),
-                [
-                    90, 157, 29, 39, 252, 60, 149, 46, 122, 247, 162, 241, 200, 79, 85, 41, 40,
-                    238, 194, 50, 195, 242, 195, 231, 135, 244, 161, 93, 130, 168, 41, 22,
-                ],
                 "ed25519:4upBpJYUrjPBzqNYaY8pvJGQtep7YMT3j9zRsopYQqfG".to_string(),
             ),
             (
                 "multichain-node-dev-1.testnet".to_string(),
                 "http://10.101.0.81:3000".to_string(),
-                [
-                    52, 159, 137, 246, 113, 122, 2, 170, 247, 166, 73, 185, 138, 199, 175, 9, 230,
-                    81, 127, 253, 76, 183, 234, 138, 159, 110, 222, 232, 248, 74, 51, 12,
-                ],
                 "ed25519:6sqMFXkswuH9b7Pnn6dGAy1vA1X3N2CSrKDDkdHzTcrv".to_string(),
             ),
             (
                 "multichain-node-dev-2.testnet".to_string(),
                 "http://10.101.0.57:3000".to_string(),
-                [
-                    120, 174, 103, 211, 138, 250, 166, 211, 41, 187, 160, 23, 92, 32, 10, 140, 36,
-                    138, 90, 130, 215, 143, 187, 143, 113, 224, 96, 230, 193, 134, 216, 0,
-                ],
                 "ed25519:Fru1RoC6dw1xY2J6C6ZSBUt5PEysxTLX2kDexxqoDN6k".to_string(),
             ),
         ]
     }
 
-    fn create_invalid_participant_data_raw() -> Vec<(String, String, [u8; 32], String)> {
+    fn create_invalid_participant_data_raw() -> Vec<(String, String, String)> {
         // The on-chain participant data is strongly typed with AccountId and near_sdk::PublicKey.
         // It's really only possible to have bad data in the urls, which are arbitrary strings.
         vec![
@@ -257,42 +245,25 @@ mod tests {
             (
                 "multichain-node-dev-5.testnet".to_string(),
                 "http://:3000".to_string(),
-                [
-                    52, 159, 137, 246, 113, 122, 2, 170, 247, 166, 73, 185, 138, 199, 175, 9, 230,
-                    81, 127, 253, 76, 183, 234, 138, 159, 110, 222, 232, 248, 74, 51, 12,
-                ],
                 "ed25519:5op5eGtWrVAWmNjyaLhZMm4itc8bWottr8PGUJEzcKHd".to_string(),
             ),
             // Bad URL format (missing http prefix)
             (
                 "multichain-node-dev-6.testnet".to_string(),
                 "10.101.0.122:3000".to_string(),
-                [
-                    73, 12, 220, 236, 69, 28, 157, 52, 209, 134, 175, 75, 7, 71, 248, 44, 61, 188,
-                    69, 223, 13, 154, 109, 75, 140, 214, 138, 120, 53, 146, 7, 59,
-                ],
                 "ed25519:41VQ8NxWF11cjse5WjiJBtbrGDPKLQ712Kg1oGyM9w9P".to_string(),
             ),
         ]
     }
 
-    fn create_chain_participant_infos_from_raw(
-        raw: Vec<(String, String, [u8; 32], String)>,
-    ) -> Participants {
+    fn create_chain_participant_infos_from_raw(raw: Vec<(String, String, String)>) -> Participants {
         let mut participants = Participants::new();
-        for (account_id, url, cipher_pk, pk) in raw {
+        for (account_id, url, pk) in raw {
             let account_id = AccountId::from_str(&account_id).unwrap();
             let url = url.to_string();
             let sign_pk = near_sdk::PublicKey::from_str(&pk).unwrap();
             participants
-                .insert(
-                    account_id.clone(),
-                    ParticipantInfo {
-                        url,
-                        cipher_pk,
-                        sign_pk,
-                    },
-                )
+                .insert(account_id.clone(), ParticipantInfo { url, sign_pk })
                 .unwrap();
         }
         participants
