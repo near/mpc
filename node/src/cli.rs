@@ -342,92 +342,98 @@ impl Cli {
 
 impl ImportKeyshareCmd {
     pub async fn run(&self) -> anyhow::Result<()> {
-        println!("Importing keyshare to local storage...");
+        let runtime = tokio::runtime::Runtime::new()?;
+        runtime.block_on(async {
+            println!("Importing keyshare to local storage...");
 
-        // Parse the encryption key
-        let encryption_key_bytes =
-            <[u8; 16]>::from_hex(&self.local_encryption_key_hex).map_err(|_| {
-                anyhow::anyhow!("Invalid encryption key: must be 32 hex characters (16 bytes)")
-            })?;
+            // Parse the encryption key
+            let encryption_key_bytes = <[u8; 16]>::from_hex(&self.local_encryption_key_hex)
+                .map_err(|_| {
+                    anyhow::anyhow!("Invalid encryption key: must be 32 hex characters (16 bytes)")
+                })?;
 
-        // Parse the keyshare JSON
-        let keyshare: LegacyRootKeyshareData = serde_json::from_str(&self.keyshare_json)
-            .map_err(|e| anyhow::anyhow!("Failed to parse keyshare JSON: {}", e))?;
+            let keyshare: LegacyRootKeyshareData = serde_json::from_str(&self.keyshare_json)
+                .map_err(|e| anyhow::anyhow!("Failed to parse keyshare JSON: {}", e))?;
 
-        println!("Parsed keyshare for epoch {}", keyshare.epoch);
+            println!("Parsed keyshare for epoch {}", keyshare.epoch);
 
-        // Create the local storage and store the keyshare
-        let home_dir = PathBuf::from(&self.home_dir);
+            // Create the local storage and store the keyshare
+            let home_dir = PathBuf::from(&self.home_dir);
 
-        // Ensure the directory exists
-        if !home_dir.exists() {
-            std::fs::create_dir_all(&home_dir).map_err(|e| {
-                anyhow::anyhow!("Failed to create directory {}: {}", home_dir.display(), e)
-            })?;
-        }
+            // Ensure the directory exists
+            if !home_dir.exists() {
+                std::fs::create_dir_all(&home_dir).map_err(|e| {
+                    anyhow::anyhow!("Failed to create directory {}: {}", home_dir.display(), e)
+                })?;
+            }
 
-        let storage =
-            LocalPermanentKeyStorageBackend::new(home_dir.clone(), encryption_key_bytes).await?;
+            let storage =
+                LocalPermanentKeyStorageBackend::new(home_dir.clone(), encryption_key_bytes)
+                    .await?;
 
-        // Check for existing keyshare
-        if storage.load().await?.is_some() {
-            anyhow::bail!("Refusing to overwrite existing local keyshare");
-        }
+            // Check for existing keyshare
+            if storage.load().await?.is_some() {
+                anyhow::bail!("Refusing to overwrite existing local keyshare");
+            }
 
-        // Store the keyshare
-        storage
-            .store(&serde_json::to_vec(&keyshare)?, "imported")
-            .await?;
-        println!("Successfully imported keyshare to {}", home_dir.display());
+            // Store the keyshare
+            storage
+                .store(&serde_json::to_vec(&keyshare)?, "imported")
+                .await?;
+            println!("Successfully imported keyshare to {}", home_dir.display());
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 
 impl ExportKeyshareCmd {
     pub async fn run(&self) -> anyhow::Result<()> {
-        println!("Exporting keyshare from local storage...");
+        let runtime = tokio::runtime::Runtime::new()?;
+        runtime.block_on(async {
+            println!("Exporting keyshare from local storage...");
 
-        // Parse the encryption key
-        let encryption_key_bytes =
-            <[u8; 16]>::from_hex(&self.local_encryption_key_hex).map_err(|_| {
-                anyhow::anyhow!("Invalid encryption key: must be 32 hex characters (16 bytes)")
-            })?;
+            let encryption_key_bytes = <[u8; 16]>::from_hex(&self.local_encryption_key_hex)
+                .map_err(|_| {
+                    anyhow::anyhow!("Invalid encryption key: must be 32 hex characters (16 bytes)")
+                })?;
 
-        // Create the local storage
-        let home_dir = PathBuf::from(&self.home_dir);
+            // Create the local storage
+            let home_dir = PathBuf::from(&self.home_dir);
 
-        // Check if directory exists
-        if !home_dir.exists() {
-            return Err(anyhow::anyhow!(
-                "Directory {} does not exist",
-                home_dir.display()
-            ));
-        }
+            // Check if directory exists
+            if !home_dir.exists() {
+                return Err(anyhow::anyhow!(
+                    "Directory {} does not exist",
+                    home_dir.display()
+                ));
+            }
 
-        let storage = PermanentKeyStorage::new(Box::new(
-            LocalPermanentKeyStorageBackend::new(home_dir.clone(), encryption_key_bytes).await?,
-        ))
-        .await?;
+            let storage = PermanentKeyStorage::new(Box::new(
+                LocalPermanentKeyStorageBackend::new(home_dir.clone(), encryption_key_bytes)
+                    .await?,
+            ))
+            .await?;
 
-        // Load the keyshare
-        let keyshare = storage
-            .load()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("No keyshare found in {}", home_dir.display()))?;
-        let keyshare = legacy_ecdsa_key_from_keyshares(&keyshare.keyshares)?;
+            // Load the keyshare
+            let keyshare = storage
+                .load()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("No keyshare found in {}", home_dir.display()))?;
+            let keyshare = legacy_ecdsa_key_from_keyshares(&keyshare.keyshares)?;
 
-        // Print the keyshare to console
-        let json = serde_json::to_string_pretty(&keyshare)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize keyshare: {}", e))?;
+            // Print the keyshare to console
+            let json = serde_json::to_string_pretty(&keyshare)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize keyshare: {}", e))?;
 
-        println!("{}", json);
-        println!(
-            "\nKeyshare for epoch {} successfully exported.",
-            keyshare.epoch
-        );
+            println!("{}", json);
+            println!(
+                "\nKeyshare for epoch {} successfully exported.",
+                keyshare.epoch
+            );
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 
@@ -449,8 +455,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_keyshare_import_export() {
+    #[test]
+    fn test_keyshare_import_export() {
         // Create a temporary directory for the test
         let temp_dir = TempDir::new().unwrap();
         let home_dir = temp_dir.path().to_string_lossy().to_string();
@@ -467,7 +473,7 @@ mod tests {
             local_encryption_key_hex: encryption_key.to_string(),
         };
 
-        let result = import_cmd.run().await;
+        let result = futures::executor::block_on(import_cmd.run());
         assert!(result.is_ok(), "Import command failed: {:?}", result.err());
 
         // Test export functionality
@@ -476,15 +482,15 @@ mod tests {
             local_encryption_key_hex: encryption_key.to_string(),
         };
 
-        let result = export_cmd.run().await;
+        let result = futures::executor::block_on(export_cmd.run());
         assert!(result.is_ok(), "Export command failed: {:?}", result.err());
 
         // Verify the exported data matches what we imported
         // For a more thorough test, we could capture stdout and verify the JSON content
     }
 
-    #[tokio::test]
-    async fn test_import_existing_keyshare_with_lower_epoch() {
+    #[test]
+    fn test_import_existing_keyshare_with_lower_epoch() {
         // Create a temporary directory for the test
         let temp_dir = TempDir::new().unwrap();
         let home_dir = temp_dir.path().to_string_lossy().to_string();
@@ -507,7 +513,7 @@ mod tests {
             local_encryption_key_hex: encryption_key.to_string(),
         };
 
-        let result = import_cmd1.run().await;
+        let result = futures::executor::block_on(import_cmd1.run());
         assert!(
             result.is_ok(),
             "First import command failed: {:?}",
@@ -521,15 +527,15 @@ mod tests {
             local_encryption_key_hex: encryption_key.to_string(),
         };
 
-        let result = import_cmd2.run().await;
+        let result = futures::executor::block_on(import_cmd2.run());
         assert!(
             result.is_err(),
             "Import command with lower epoch should fail"
         );
     }
 
-    #[tokio::test]
-    async fn test_export_nonexistent_keyshare() {
+    #[test]
+    fn test_export_nonexistent_keyshare() {
         // Create a temporary directory for the test
         let temp_dir = TempDir::new().unwrap();
         let home_dir = temp_dir.path().to_string_lossy().to_string();
@@ -541,7 +547,7 @@ mod tests {
             local_encryption_key_hex: encryption_key.to_string(),
         };
 
-        let result = export_cmd.run().await;
+        let result = futures::executor::block_on(export_cmd.run());
         assert!(
             result.is_err(),
             "Export command should fail on nonexistent keyshare"
