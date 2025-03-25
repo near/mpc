@@ -1,6 +1,6 @@
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
-use crate::errors::Error;
+use crate::errors::{Error, InvalidParameters};
 use crate::legacy_contract_state;
 use crate::primitives::domain::DomainRegistry;
 use crate::primitives::key_state::{
@@ -43,8 +43,13 @@ pub struct InitializingContractState {
 impl InitializingContractState {
     /// Starts a new attempt to generate a key for the current domain.
     /// Returns an Error if the signer is not the leader (the participant with the lowest ID).
-    pub fn start(&mut self, event_max_idle_blocks: u64) -> Result<(), Error> {
-        self.generating_key.start(event_max_idle_blocks)
+    pub fn start(
+        &mut self,
+        key_event_id: KeyEventId,
+        event_max_idle_blocks: u64,
+    ) -> Result<(), Error> {
+        self.generating_key
+            .start(key_event_id, event_max_idle_blocks)
     }
 
     /// Casts a vote for `public_key` for the attempt identified by `key_event_id`.
@@ -103,7 +108,16 @@ impl InitializingContractState {
     /// Casts a vote to cancel key generation. Any keys that have already been generated
     /// are kept and we transition into Running state; remaining domains are permanently deleted.
     /// Deleted domain IDs are not reused again.
-    pub fn vote_cancel(&mut self) -> Result<Option<RunningContractState>, Error> {
+    ///
+    /// The next_domain_id parameter is used to verify that this cancel vote is indeed for this
+    /// particular instance of key generation, not some older instance.
+    pub fn vote_cancel(
+        &mut self,
+        next_domain_id: u64,
+    ) -> Result<Option<RunningContractState>, Error> {
+        if next_domain_id != self.domains.next_domain_id() {
+            return Err(InvalidParameters::NextDomainIdMismatch.into());
+        }
         let participant = AuthenticatedParticipantId::new(
             self.generating_key.proposed_parameters().participants(),
         )?;
@@ -200,12 +214,15 @@ mod tests {
                 assert!(state.vote_pk(first_key_event_id.clone(), gen_pk()).is_err());
                 assert!(state.vote_abort(first_key_event_id.clone()).is_err());
                 if *c != leader.0 {
-                    assert!(state.start(1).is_err());
+                    assert!(state.start(first_key_event_id.clone(), 1).is_err());
+                } else {
+                    // Also check that starting with the wrong KeyEventId fails.
+                    assert!(state.start(first_key_event_id.next_attempt(), 1).is_err());
                 }
             }
             // start the keygen; verify that the keygen is for the right epoch and domain ID.
             env.set_signer(&leader.0);
-            assert!(state.start(0).is_ok());
+            assert!(state.start(first_key_event_id.clone(), 0).is_ok());
             let key_event = state.generating_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
@@ -228,7 +245,7 @@ mod tests {
 
             // assert that votes for a different keygen do not count
             env.set_signer(&leader.0);
-            assert!(state.start(0).is_ok());
+            assert!(state.start(first_key_event_id.next_attempt(), 0).is_ok());
             let key_event = state.generating_key.current_key_event_id().unwrap();
             let bad_key_events = [
                 KeyEventId::new(
@@ -271,7 +288,7 @@ mod tests {
 
             // check that vote_abort immediately causes failure.
             env.set_signer(&leader.0);
-            assert!(state.start(0).is_ok());
+            assert!(state.start(key_event.next_attempt(), 0).is_ok());
             let key_event = state.generating_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
             assert!(state.vote_abort(key_event.clone()).is_ok());
@@ -279,7 +296,7 @@ mod tests {
 
             // assert that valid votes get counted correctly
             env.set_signer(&leader.0);
-            assert!(state.start(0).is_ok());
+            assert!(state.start(key_event.next_attempt(), 0).is_ok());
             let key_event = state.generating_key.current_key_event_id().unwrap();
             let pk = gen_pk();
             for (i, c) in candidates.clone().into_iter().enumerate() {
@@ -345,10 +362,14 @@ mod tests {
         // Vote for domain #2.
         let leader = find_leader(&state.generating_key);
         env.set_signer(&leader.0);
-        assert!(state.start(0).is_ok());
+        let first_key_event_id = KeyEventId {
+            attempt_id: AttemptId::new(),
+            domain_id: state.domains.get_domain_by_index(2).unwrap().id,
+            epoch_id: state.epoch_id,
+        };
+        assert!(state.start(first_key_event_id.clone(), 0).is_ok());
 
         let pk = gen_pk();
-        let key_event_id = state.generating_key.current_key_event_id().unwrap();
         let participants = state
             .generating_key
             .proposed_parameters()
@@ -362,7 +383,9 @@ mod tests {
             .value() as usize;
         for (account, _, _) in &participants {
             env.set_signer(account);
-            state.vote_pk(key_event_id.clone(), pk.clone()).unwrap();
+            state
+                .vote_pk(first_key_event_id.clone(), pk.clone())
+                .unwrap();
         }
 
         // we should have 3 keys now.
@@ -371,7 +394,11 @@ mod tests {
         for (account, _, _) in &participants[0..threshold] {
             env.set_signer(account);
             assert!(running.is_none());
-            running = state.vote_cancel().unwrap();
+            // Check that using the wrong next_domain_id fails.
+            assert!(state
+                .vote_cancel(state.domains.next_domain_id() - 1)
+                .is_err());
+            running = state.vote_cancel(state.domains.next_domain_id()).unwrap();
         }
         let running = running.expect("Enough votes to cancel should transition into running");
         assert_eq!(running.keyset.domains.len(), 3);

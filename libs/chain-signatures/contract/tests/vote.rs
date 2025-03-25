@@ -41,7 +41,13 @@ async fn test_keygen() -> anyhow::Result<()> {
     check_call_success(
         accounts[0]
             .call(contract.id(), "start_keygen_instance")
-            .args_json(json!({}))
+            .args_json(json!({
+                "key_event_id": {
+                    "epoch_id": 5,
+                    "domain_id": 2,
+                    "attempt_id": 0,
+                },
+            }))
             .transact()
             .await?,
     );
@@ -111,7 +117,9 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         check_call_success(
             accounts[i]
                 .call(contract.id(), "vote_cancel_keygen")
-                .args_json(json!({}))
+                .args_json(json!({
+                    "next_domain_id": 3,
+                }))
                 .transact()
                 .await?,
         );
@@ -159,6 +167,7 @@ async fn test_resharing() -> anyhow::Result<()> {
             account
                 .call(contract.id(), "vote_new_parameters")
                 .args_json(json!({
+                    "prospective_epoch_id": 6,
                     "proposal": proposal,
                 }))
                 .transact()
@@ -179,7 +188,13 @@ async fn test_resharing() -> anyhow::Result<()> {
     check_call_success(
         accounts[0]
             .call(contract.id(), "start_reshare_instance")
-            .args_json(json!({}))
+            .args_json(json!({
+                "key_event_id": {
+                    "epoch_id": 6,
+                    "domain_id": 0,
+                    "attempt_id": 0,
+                },
+            }))
             .transact()
             .await?,
     );
@@ -245,6 +260,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
             account
                 .call(contract.id(), "vote_new_parameters")
                 .args_json(json!({
+                    "prospective_epoch_id": 6,
                     "proposal": proposal,
                 }))
                 .transact()
@@ -264,6 +280,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
             accounts[i]
                 .call(contract.id(), "vote_new_parameters")
                 .args_json(json!({
+                    "prospective_epoch_id": 7,
                     "proposal": existing_params,
                 }))
                 .transact()

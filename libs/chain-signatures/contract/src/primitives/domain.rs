@@ -131,7 +131,6 @@ impl DomainRegistry {
         Ok(registry)
     }
 
-    #[cfg(test)]
     pub fn next_domain_id(&self) -> u64 {
         self.next_domain_id
     }

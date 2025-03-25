@@ -1,7 +1,7 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::errors::{DomainError, Error};
+use crate::errors::{DomainError, Error, InvalidParameters};
 use crate::legacy_contract_state;
 use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
 use crate::primitives::key_state::{
@@ -72,8 +72,12 @@ impl RunningContractState {
     /// Returns ResharingContractState if the proposal is accepted.
     pub fn vote_new_parameters(
         &mut self,
+        prospective_epoch_id: EpochId,
         proposal: &ThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
+        if prospective_epoch_id != self.keyset.epoch_id.next() {
+            return Err(InvalidParameters::EpochMismatch.into());
+        }
         if self.process_new_parameters_proposal(proposal)? {
             if let Some(first_domain) = self.domains.get_domain_by_index(0) {
                 return Ok(Some(ResharingContractState {
@@ -240,7 +244,20 @@ pub mod running_tests {
         for (account_id, _, _) in participants.participants() {
             let ksp = gen_threshold_params(30);
             env.set_signer(account_id);
-            assert!(state.vote_new_parameters(&ksp).is_err());
+            assert!(state
+                .vote_new_parameters(state.keyset.epoch_id.next(), &ksp)
+                .is_err());
+        }
+        // Assert that proposals of the wrong epoch ID get rejected.
+        {
+            let ksp = gen_valid_params_proposal(&state.parameters);
+            env.set_signer(&participants.participants()[0].0);
+            assert!(state
+                .vote_new_parameters(state.keyset.epoch_id, &ksp)
+                .is_err());
+            assert!(state
+                .vote_new_parameters(state.keyset.epoch_id.next().next(), &ksp)
+                .is_err());
         }
         // Assert that disagreeing proposals do not reach concensus.
         // Generate an extra proposal for the next step.
@@ -257,7 +274,10 @@ pub mod running_tests {
         }
         for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
             env.set_signer(account_id);
-            assert!(state.vote_new_parameters(&proposals[i]).unwrap().is_none());
+            assert!(state
+                .vote_new_parameters(state.keyset.epoch_id.next(), &proposals[i])
+                .unwrap()
+                .is_none());
         }
 
         // Now let's vote for agreeing proposals.
@@ -272,7 +292,9 @@ pub mod running_tests {
             .take(state.parameters.threshold().value() as usize)
         {
             env.set_signer(account_id);
-            let res = state.vote_new_parameters(&proposal).unwrap();
+            let res = state
+                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+                .unwrap();
             if i + 1 < state.parameters.threshold().value() as usize || num_domains == 0 {
                 assert!(res.is_none());
             } else {

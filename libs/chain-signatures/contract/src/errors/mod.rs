@@ -27,8 +27,6 @@ pub enum PublicKeyError {
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum KeyEventError {
-    #[error("Epoch Id must be incremented by one.")]
-    EpochMismatch,
     #[error("Key event Id mismatch")]
     KeyEventIdMismatch,
     #[error("Can not start a new reshare or keygen instance while the current instance is still active.")]
@@ -71,6 +69,10 @@ pub enum InvalidParameters {
     ParticipantAlreadyInSet,
     #[error("Participant id already used.")]
     ParticipantAlreadyUsed,
+    #[error("Provided Epoch Id does not match expected.")]
+    EpochMismatch,
+    #[error("Next domain ID mismatch")]
+    NextDomainIdMismatch,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
