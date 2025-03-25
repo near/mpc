@@ -1,11 +1,8 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc};
 
 use k256::AffinePoint;
 use mpc_contract::primitives::key_state::{KeyEventId, Keyset};
-use tokio::{
-    sync::{mpsc, watch},
-    time,
-};
+use tokio::sync::{mpsc, watch};
 
 use crate::{
     config::ParticipantsConfig,
