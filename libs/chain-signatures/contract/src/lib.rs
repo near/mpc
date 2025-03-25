@@ -10,8 +10,9 @@ pub mod update;
 use crate::errors::Error;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 use config::{Config, InitConfig};
+use crypto_shared::kdf::derive_public_key_package_edd25519;
 use crypto_shared::{
-    derive_key, derive_tweak, kdf::check_ec_signature, near_public_key_to_affine_point,
+    derive_key_secp256k1, derive_tweak, kdf::check_ec_signature, near_public_key_to_affine_point,
     types::SignatureResponse, ScalarExt as _,
 };
 use errors::{
@@ -20,6 +21,7 @@ use errors::{
 };
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
+use near_sdk::env::ed25519_verify;
 use near_sdk::near;
 use near_sdk::store::{LookupMap, Vector};
 use near_sdk::{
@@ -34,6 +36,7 @@ use state::running::RunningContractState;
 use state::ProtocolContractState;
 use std::cmp;
 use std::fmt::format;
+use std::io::Read;
 use storage_keys::StorageKey;
 
 //Gas requised for a sign request
@@ -336,7 +339,7 @@ impl VersionedMpcContract {
     ) -> Result<PublicKey, Error> {
         let predecessor = predecessor.unwrap_or_else(env::predecessor_account_id);
         let tweak = derive_tweak(&predecessor, &path);
-        let derived_public_key = derive_key(
+        let derived_public_key = derive_key_secp256k1(
             near_public_key_to_affine_point(self.public_key(domain)?),
             &tweak,
         );
@@ -383,39 +386,55 @@ impl VersionedMpcContract {
             Err(error) => env::panic_str(&error.to_string()),
         };
 
-        let signature_scheme = domain_registry
+        let request_signature_scheme = domain_registry
             .get_domain(&request.domain_id)
             .map(|d| d.scheme)
             .ok_or_else(|| Error::from(RespondError::DomainNotFound))?;
 
-        match (&response, &signature_scheme) {
+        match (&response, &request_signature_scheme) {
             (SignatureResponse::Secp256k1(_), SignatureScheme::Secp256k1)
             | (SignatureResponse::Edd25519(_), SignatureScheme::Ed25519) => {}
             _ => return Err(RespondError::SignatureSchemeMismatch.into()),
         }
 
-        let pk = self.public_key(Some(request.domain_id))?;
-
-        match &response {
+        let signature_is_valid = match &response {
             SignatureResponse::Secp256k1(signature_response) => {
+                let pk = self.public_key(Some(request.domain_id))?;
+
                 // generate the expected public key
                 let expected_public_key =
-                    derive_key(near_public_key_to_affine_point(pk), &request.tweak);
+                    derive_key_secp256k1(near_public_key_to_affine_point(pk), &request.tweak);
 
                 // Check the signature is correct
-                if check_ec_signature(
+                check_ec_signature(
                     &expected_public_key,
                     &signature_response.big_r.affine_point,
                     &signature_response.s.scalar,
                     &request.payload_hash,
                     signature_response.recovery_id,
                 )
-                .is_err()
-                {
-                    return Err(RespondError::InvalidSignature.into());
-                }
+                .is_ok()
             }
-            SignatureResponse::Edd25519(signature_response) => todo!(),
+            SignatureResponse::Edd25519(signature_response) => {
+                let public_key_package = todo!("Need to change pk return type for this.");
+                let expected_public_key =
+                    derive_public_key_package_edd25519(public_key_package, &request.tweak);
+
+                let message = request.payload_hash.as_bytes();
+                let public_key: [u8; 32] = expected_public_key
+                    .verifying_key()
+                    .serialize()
+                    .expect("TODO; Can this fail?")
+                    .as_slice()
+                    .try_into()
+                    .expect("key must be 32 bytes");
+
+                ed25519_verify(&signature_response.to_bytes(), &message, &public_key)
+            }
+        };
+
+        if !signature_is_valid {
+            return Err(RespondError::InvalidSignature.into());
         }
 
         // Finally, resolve the promise. This will have no effect if the request already timed.

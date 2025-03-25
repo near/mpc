@@ -137,11 +137,14 @@ pub mod edd25519_types {
     use std::fmt;
 
     use super::*;
-    use curve25519_dalek::Scalar;
+    use curve25519_dalek::{edwards::CompressedEdwardsY, Scalar};
+    use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare, VerifyingShare};
     use serde::{
         de::{Error, Visitor},
         ser, Deserializer, Serializer,
     };
+
+    pub type PublicKey = PublicKeyPackage;
 
     impl ScalarExt for Scalar {
         fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
@@ -234,11 +237,45 @@ pub mod edd25519_types {
         }
     }
 
+    // TODO: Is there a better way to force a borsh serialization?
+    #[derive(Debug, PartialEq, Serialize, Deserialize, Eq, Clone, Copy)]
+    pub struct SerializableEdwardsPoint(CompressedEdwardsY);
+
+    impl BorshSerialize for SerializableEdwardsPoint {
+        fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+            let to_ser: Vec<u8> = serde_json::to_vec(&self.0)?;
+            BorshSerialize::serialize(&to_ser, writer)
+        }
+    }
+
+    impl BorshDeserialize for SerializableEdwardsPoint {
+        fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
+            let from_ser: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
+            let edwards_point = serde_json::from_slice(&from_ser)?;
+            Ok(SerializableEdwardsPoint(edwards_point))
+        }
+    }
+
     #[derive(
         BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
     )]
-    // TODO: What fields go in here?
-    pub struct SignatureResponse {}
+    pub struct SignatureResponse {
+        edwards_point: SerializableEdwardsPoint,
+        s: SerializableScalar,
+    }
+
+    impl SignatureResponse {
+        pub fn to_bytes(&self) -> [u8; 64] {
+            let s: [u8; 32] = self.s.scalar.to_bytes();
+            let edwards_point: [u8; 32] = self.edwards_point.0.to_bytes();
+            let mut bytes_repr = [0u8; 64];
+
+            bytes_repr[0..32].copy_from_slice(&s);
+            bytes_repr[32..64].copy_from_slice(&edwards_point);
+
+            bytes_repr
+        }
+    }
 }
 
 // Ed25519 EdwardsPoint serialization (equivalent to AffinePoint for Ed25519)

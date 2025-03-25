@@ -1,12 +1,15 @@
+use std::collections::BTreeMap;
+
 use crate::{
-    crypto_shared::types::{k256_types::PublicKey, ScalarExt},
+    crypto_shared::types::{edd25519_types, k256_types, ScalarExt},
     primitives::signature::{PayloadHash, Tweak},
 };
 use anyhow::Context;
+use frost_ed25519::{keys::VerifyingShare, Ed25519Group, Group, Identifier};
 use k256::{
-    ecdsa::{RecoveryId, Signature, VerifyingKey},
+    ecdsa::{RecoveryId, Signature},
     elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic},
-    Scalar, Secp256k1,
+    Secp256k1,
 };
 use near_account_id::AccountId;
 use sha3::{Digest, Sha3_256};
@@ -31,20 +34,20 @@ pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
     Tweak::new(hash)
 }
 
-pub fn derive_key(public_key: PublicKey, tweak: &Tweak) -> PublicKey {
-    let tweak = Scalar::from_non_biased(tweak.as_bytes());
+pub fn derive_key_secp256k1(
+    public_key: k256_types::PublicKey,
+    tweak: &Tweak,
+) -> k256_types::PublicKey {
+    let tweak = k256::Scalar::from_non_biased(tweak.as_bytes());
     (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key).to_affine()
 }
 
-pub(crate) fn derive_keygen_output(keygen_output: &KeygenOutput, tweak: [u8; 32]) -> KeygenOutput {
-    let tweak = Scalar::from_bytes_mod_order(tweak);
-    KeygenOutput {
-        key_package: derive_key_package(&keygen_output.key_package, tweak),
-        public_key_package: derive_public_key_package(&keygen_output.public_key_package, tweak),
-    }
-}
+pub fn derive_public_key_package_edd25519(
+    pubkey_package: &edd25519_types::PublicKey,
+    tweak: &Tweak,
+) -> edd25519_types::PublicKey {
+    let tweak = curve25519_dalek::Scalar::from_non_biased(tweak.as_bytes());
 
-fn derive_public_key_package(pubkey_package: &PublicKeyPackage, tweak: Scalar) -> PublicKeyPackage {
     let verifying_shares: BTreeMap<Identifier, VerifyingShare> = pubkey_package
         .verifying_shares()
         .iter()
@@ -55,11 +58,18 @@ fn derive_public_key_package(pubkey_package: &PublicKeyPackage, tweak: Scalar) -
             )
         })
         .collect();
-    let verifying_key = VerifyingKey::new(add_tweak(
+    let verifying_key = frost_ed25519::VerifyingKey::new(add_tweak(
         pubkey_package.verifying_key().to_element(),
         tweak,
     ));
-    PublicKeyPackage::new(verifying_shares, verifying_key)
+    edd25519_types::PublicKey::new(verifying_shares, verifying_key)
+}
+
+fn add_tweak(
+    point: curve25519_dalek::EdwardsPoint,
+    tweak: curve25519_dalek::Scalar,
+) -> curve25519_dalek::EdwardsPoint {
+    point + Ed25519Group::generator() * tweak
 }
 
 /// Get the x coordinate of a point, as a scalar
@@ -94,13 +104,36 @@ pub fn check_ec_signature(
     anyhow::bail!("cannot use either recovery id={recovery_id} to recover pubic key")
 }
 
+pub fn check_edd25519_signature(
+    expected_pk: &k256::AffinePoint,
+    big_r: &k256::AffinePoint,
+    s: &k256::Scalar,
+    msg_hash: &PayloadHash,
+    recovery_id: u8,
+) -> anyhow::Result<()> {
+    let public_key = expected_pk.to_encoded_point(false);
+    let signature = k256::ecdsa::Signature::from_scalars(x_coordinate(big_r), s)
+        .context("cannot create signature from cait_sith signature")?;
+    let found_pk = recover(
+        &msg_hash.as_bytes(),
+        &signature,
+        RecoveryId::try_from(recovery_id).context("invalid recovery ID")?,
+    )?
+    .to_encoded_point(false);
+    if public_key == found_pk {
+        return Ok(());
+    }
+
+    anyhow::bail!("cannot use either recovery id={recovery_id} to recover pubic key")
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn recover(
     prehash: &[u8],
     signature: &Signature,
     recovery_id: RecoveryId,
-) -> anyhow::Result<VerifyingKey> {
-    VerifyingKey::recover_from_prehash(prehash, signature, recovery_id)
+) -> anyhow::Result<k256::ecdsa::VerifyingKey> {
+    k256::ecdsa::VerifyingKey::recover_from_prehash(prehash, signature, recovery_id)
         .context("Unable to recover public key")
 }
 

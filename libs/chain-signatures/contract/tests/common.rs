@@ -7,7 +7,7 @@ use k256::{
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        derive_key, derive_tweak, k256_types, kdf::check_ec_signature, ScalarExt,
+        derive_key_secp256k1, derive_tweak, k256_types, kdf::check_ec_signature, ScalarExt,
         SerializableAffinePoint, SerializableScalar, SignatureResponse,
     },
     primitives::{
@@ -190,7 +190,7 @@ pub async fn create_response(
 
     let tweak = derive_tweak(predecessor_id, path);
     let derived_sk = derive_secret_key(sk, &tweak);
-    let derived_pk = derive_key(pk.into(), &tweak);
+    let derived_pk = derive_key_secp256k1(pk.into(), &tweak);
     let signing_key = k256::ecdsa::SigningKey::from(&derived_sk);
     let verifying_key =
         k256::ecdsa::VerifyingKey::from(&k256::PublicKey::from_affine(derived_pk).unwrap());
