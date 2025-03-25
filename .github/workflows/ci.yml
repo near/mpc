@@ -108,5 +108,5 @@ jobs:
         run: |
           source pytest/venv/bin/activate
           cd pytest 
-          pytest -m "not ci_excluded" -s 
+          pytest -m "not ci_excluded" -s -x
 
