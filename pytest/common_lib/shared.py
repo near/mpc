@@ -357,13 +357,13 @@ class MpcCluster:
         """
         Waits until the contract is in the desized state or the timeout is hit (60 seconds)
         """
-        timeout = 600  # one minute
+        timeout = 120  # two minutes, because ci is as turtle
         n = 0
         while not self.contract_state().is_state(state) and n < timeout:
             time.sleep(0.1)
             n += 1
         self.contract_state().print()
-        return n <= timeout
+        return n < timeout
 
     def add_domains(self, signature_schemes: List[str]):
         print(
