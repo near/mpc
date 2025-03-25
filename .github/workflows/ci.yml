@@ -96,6 +96,13 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+      - name: install wasm-opt
+      
+      - name: Install wasm-opt from crates.io
+        run: cargo install wasm-opt --locked
+
+      - name: Add wasm-opt to PATH
+        run: echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
 
       - name: Setup virtualenv
         run: |
