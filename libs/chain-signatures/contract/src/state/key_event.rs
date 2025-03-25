@@ -186,9 +186,15 @@ impl KeyEvent {
         self.instance.as_ref().unwrap().completed.len()
     }
 
-    #[cfg(test)]
     pub fn domain_id(&self) -> crate::primitives::domain::DomainId {
         self.domain.id
+    }
+    /// Returns the current key event instance (or none)
+    pub fn instance(&self) -> &Option<KeyEventInstance> {
+        &self.instance
+    }
+    pub fn next_attempt_id(&self) -> AttemptId {
+        self.next_attempt_id
     }
 }
 
@@ -227,9 +233,19 @@ impl KeyEventInstance {
             public_key: None,
         }
     }
+    pub fn completed(&self) -> &BTreeSet<AuthenticatedParticipantId> {
+        &self.completed
+    }
 
     pub fn active(&self) -> bool {
         env::block_height() < self.expires_on
+    }
+
+    pub fn attempt_id(&self) -> AttemptId {
+        self.attempt_id
+    }
+    pub fn expires_on(&self) -> u64 {
+        self.expires_on
     }
 
     /// Commits the vote of `candidate` to `public_key`, returning either Voted with the number of

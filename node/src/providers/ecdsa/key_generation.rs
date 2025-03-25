@@ -1,29 +1,16 @@
-use crate::config::MpcConfig;
 use crate::network::computation::MpcLeaderCentricComputation;
-use crate::network::{MeshNetworkClient, NetworkTaskChannel};
+use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
+use crate::providers::ecdsa::EcdsaSignatureProvider;
 use cait_sith::protocol::Participant;
 use cait_sith::KeygenOutput;
 use k256::Secp256k1;
-use std::sync::Arc;
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_generation_client_internal(
-        mpc_config: MpcConfig,
-        network_client: Arc<MeshNetworkClient>,
-        channel_receiver: &mut tokio::sync::mpsc::UnboundedReceiver<NetworkTaskChannel>,
+        threshold: usize,
+        channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
-        let channel = if mpc_config.is_leader_for_keygen() {
-            network_client.new_channel_for_task(
-                EcdsaTaskId::KeyGeneration,
-                network_client.all_participant_ids(),
-            )?
-        } else {
-            MeshNetworkClient::wait_for_task(channel_receiver, EcdsaTaskId::KeyGeneration).await
-        };
-
-        let threshold = mpc_config.participants.threshold as usize;
         let key = KeyGenerationComputation { threshold }
             .perform_leader_centric_computation(
                 channel,
@@ -76,6 +63,8 @@ mod tests {
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use cait_sith::KeygenOutput;
     use k256::Secp256k1;
+    use mpc_contract::primitives::domain::DomainId;
+    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
@@ -99,10 +88,18 @@ mod tests {
     ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
         let participant_id = client.my_participant_id();
         let all_participant_ids = client.all_participant_ids();
-
         // We'll have the first participant be the leader.
         let channel = if participant_id == all_participant_ids[0] {
-            client.new_channel_for_task(EcdsaTaskId::KeyGeneration, client.all_participant_ids())?
+            client.new_channel_for_task(
+                EcdsaTaskId::KeyGeneration {
+                    key_event: KeyEventId::new(
+                        EpochId::new(42),
+                        DomainId::legacy_ecdsa_id(),
+                        AttemptId::legacy_attempt_id(),
+                    ),
+                },
+                client.all_participant_ids(),
+            )?
         } else {
             channel_receiver
                 .recv()

@@ -6,19 +6,16 @@
 //!
 //! As a reference, check the existing implementations.
 
-mod ecdsa;
+pub mod ecdsa;
+use crate::config::ParticipantsConfig;
+use crate::network::NetworkTaskChannel;
+use crate::primitives::{MpcTaskId, ParticipantId};
+use crate::sign_request::SignatureId;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
-
-use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::sign_request::SignatureId;
+use k256::AffinePoint;
 use k256::Scalar;
 use std::sync::Arc;
-use tokio::sync::mpsc;
-
-use crate::config::MpcConfig;
-use crate::indexer::participants::ContractResharingState;
-use crate::primitives::{MpcTaskId, ParticipantId};
 
 /// This `keyshare_id` is used for persisting a key share.
 /// The returned value should be unique across all `SignatureProviders`.
@@ -53,20 +50,19 @@ pub trait SignatureProvider {
     ///
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_generation_client(
-        mpc_config: MpcConfig,
-        network_client: Arc<MeshNetworkClient>,
-        channel_receiver: &mut mpsc::UnboundedReceiver<NetworkTaskChannel>,
+        threshold: usize,
+        channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput>;
 
     /// Executes the key resharing protocol. This can only succeed if all new participants are online.
     /// Both leaders and followers call this function.
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_resharing_client(
-        config: Arc<MpcConfig>,
-        client: Arc<MeshNetworkClient>,
-        state: ContractResharingState,
-        my_share: Option<Scalar>,
-        channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
+        new_threshold: usize,
+        key_share: Option<Scalar>,
+        public_key: AffinePoint,
+        old_participants: &ParticipantsConfig,
+        channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput>;
 
     /// Expected to be called in a common loop that handles received channels and redirects them

@@ -18,12 +18,16 @@ from common_lib.constants import TIMEOUT
 
 PRESIGNATURES_TO_BUFFER = 8
 
+
 @pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
 def test_lost_assets(num_requests, num_respond_access_keys):
-    cluster = shared.start_cluster_with_mpc(2, 3, num_respond_access_keys,
-                                            load_mpc_contract(),
-                                            presignatures_to_buffer=PRESIGNATURES_TO_BUFFER)
-    cluster.init_contract(threshold=2)
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        2,
+        3,
+        num_respond_access_keys,
+        load_mpc_contract(),
+        presignatures_to_buffer=PRESIGNATURES_TO_BUFFER)
+    cluster.init_cluster(participants=mpc_nodes, threshold=2)
 
     # Cluster should connect in a full mesh, including self-connections
     cluster.mpc_nodes[0].wait_for_connection_count(3)
@@ -35,9 +39,11 @@ def test_lost_assets(num_requests, num_respond_access_keys):
     while True:
         assert time.time() - started < TIMEOUT, "Waiting for presignatures"
         try:
-            presignature_count = cluster.get_int_metric_value("mpc_owned_num_presignatures_available")
+            presignature_count = cluster.get_int_metric_value(
+                "mpc_owned_num_presignatures_available")
             print("Owned presignatures:", presignature_count)
-            if all(x and x == PRESIGNATURES_TO_BUFFER for x in presignature_count):
+            if all(x and x == PRESIGNATURES_TO_BUFFER
+                   for x in presignature_count):
                 break
         except requests.exceptions.ConnectionError:
             pass
@@ -60,12 +66,16 @@ def test_lost_assets(num_requests, num_respond_access_keys):
         try:
             cleanup_done = True
             for i in range(1, len(cluster.mpc_nodes)):
-                available = cluster.get_int_metric_value_for_node("mpc_owned_num_presignatures_available", i)
-                online = cluster.get_int_metric_value_for_node("mpc_owned_num_presignatures_online", i)
-                offline = cluster.get_int_metric_value_for_node("mpc_owned_num_presignatures_with_offline_participant", i)
-                print("node {} has owned presignatures available={} online={} with_offline_participant={}",
-                      (i, available, online, offline))
-                if not(online == PRESIGNATURES_TO_BUFFER and offline == 0):
+                available = cluster.get_int_metric_value_for_node(
+                    "mpc_owned_num_presignatures_available", i)
+                online = cluster.get_int_metric_value_for_node(
+                    "mpc_owned_num_presignatures_online", i)
+                offline = cluster.get_int_metric_value_for_node(
+                    "mpc_owned_num_presignatures_with_offline_participant", i)
+                print(
+                    "node {} has owned presignatures available={} online={} with_offline_participant={}",
+                    (i, available, online, offline))
+                if not (online == PRESIGNATURES_TO_BUFFER and offline == 0):
                     cleanup_done = False
             if cleanup_done:
                 break
@@ -83,7 +93,8 @@ def test_lost_assets(num_requests, num_respond_access_keys):
     # However, it is tricky to guarantee because we cannot control which nodes
     # are assigned as leaders for the requests.
 
-    presignatures_available = sum(cluster.get_int_metric_value('mpc_owned_num_presignatures_available'))
+    presignatures_available = sum(
+        cluster.get_int_metric_value('mpc_owned_num_presignatures_available'))
     cluster.send_and_await_signature_requests(presignatures_available // 2)
 
 

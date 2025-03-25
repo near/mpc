@@ -5,14 +5,19 @@ use super::participants::{
 use super::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use super::IndexerAPI;
 use crate::config::ParticipantsConfig;
+use crate::indexer::participants::ContractKeyEventInstance;
 use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use k256::Scalar;
+use mpc_contract::crypto_shared::ScalarExt;
+use mpc_contract::primitives::domain::DomainId;
+use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
 use near_crypto::PublicKey;
 use near_sdk::AccountId;
 use near_time::{Clock, Duration};
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -33,44 +38,76 @@ impl FakeMpcContractState {
             pending_signatures: BTreeMap::new(),
         }
     }
-
+    pub fn new_key_event(epoch: u64) -> ContractKeyEventInstance {
+        let id = KeyEventId::new(
+            EpochId::new(epoch),
+            DomainId::legacy_ecdsa_id(),
+            AttemptId::new(),
+        );
+        let completed = BTreeSet::new();
+        ContractKeyEventInstance {
+            id,
+            started: false,
+            completed,
+        }
+    }
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
         assert_eq!(self.state, ContractState::WaitingForSync);
-        let state = ContractState::Initializing(ContractInitializingState {
-            participants,
-            pk_votes: BTreeMap::new(),
-        });
-        self.state = state;
-    }
 
+        self.state = ContractState::Initializing(ContractInitializingState {
+            generated_keyset: Keyset {
+                epoch_id: EpochId::new(0),
+                domains: Vec::new(),
+            },
+            participants: participants.clone(),
+            key_event: Self::new_key_event(0),
+        });
+    }
     pub fn start_resharing(&mut self, new_participants: ParticipantsConfig) {
         let running_state = match &self.state {
             ContractState::Running(state) => state,
             _ => panic!("Cannot start resharing from non-running state"),
         };
-        let state = ContractState::Resharing(ContractResharingState {
-            old_epoch: running_state.epoch,
-            old_participants: running_state.participants.clone(),
-            public_key: running_state.root_public_key.clone(),
-            new_participants,
-            finished_votes: HashSet::new(),
+        self.state = ContractState::Resharing(ContractResharingState {
+            previous_running_state: running_state.clone(),
+            new_participants: new_participants.clone(),
+            reshared_keys: Keyset::new(running_state.keyset.epoch_id.next(), Vec::new()),
+            key_event: Self::new_key_event(running_state.keyset.epoch_id.next().get()),
         });
-        self.state = state;
     }
-
-    pub fn vote_pk(&mut self, account_id: AccountId, pk: PublicKey) {
+    pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, pk: PublicKey) {
         if let ContractState::Initializing(config) = &mut self.state {
-            config.pk_votes.entry(pk).or_default().insert(account_id);
-            for (key, voters) in &config.pk_votes {
-                if voters.len() >= config.participants.participants.len() {
-                    let new_config = ContractState::Running(ContractRunningState {
-                        epoch: 0,
-                        participants: config.participants.clone(),
-                        root_public_key: key.clone(),
-                    });
-                    self.state = new_config;
-                    return;
-                }
+            assert_eq!(key_id, config.key_event.id);
+            let id = config
+                .participants
+                .participants
+                .iter()
+                .find(|info| info.near_account_id == account_id)
+                .map(|info| info.id)
+                .unwrap();
+            config.key_event.completed.insert(id);
+            // assert pk matches
+            tracing::info!(
+                "received Pk vote: account_id: {}, key_id: {:?}, pk: {}",
+                account_id,
+                key_id,
+                pk
+            );
+            if config.key_event.completed.len() == config.participants.participants.len() {
+                let keyset = Keyset {
+                    epoch_id: key_id.epoch_id,
+                    domains: [KeyForDomain {
+                        domain_id: key_id.domain_id,
+                        key: near_sdk::PublicKey::from_str(&pk.to_string()).unwrap(),
+                        attempt: key_id.attempt_id,
+                    }]
+                    .into(),
+                };
+                let new_config = ContractState::Running(ContractRunningState {
+                    keyset,
+                    participants: config.participants.clone(),
+                });
+                self.state = new_config;
             }
         } else {
             tracing::warn!(
@@ -78,27 +115,36 @@ impl FakeMpcContractState {
             );
         }
     }
-
-    pub fn vote_reshared(&mut self, account_id: AccountId, new_epoch: u64) {
+    pub fn vote_start_keygen(&mut self) {
+        if let ContractState::Initializing(state) = &mut self.state {
+            assert!(!state.key_event.started);
+            state.key_event.started = true;
+        }
+    }
+    pub fn vote_start_reshare(&mut self) {
+        if let ContractState::Resharing(state) = &mut self.state {
+            assert!(!state.key_event.started);
+            state.key_event.started = true;
+        }
+    }
+    pub fn vote_reshared(&mut self, account_id: AccountId, key_id: KeyEventId) {
         if let ContractState::Resharing(config) = &mut self.state {
-            assert_eq!(new_epoch, config.old_epoch + 1);
-            if !config
+            assert_eq!(key_id, config.key_event.id);
+            let id = config
                 .new_participants
                 .participants
                 .iter()
-                .any(|p| p.near_account_id == account_id)
-            {
-                panic!(
-                    "vote_reshared received from account {} that is not a participant",
-                    account_id
-                );
-            }
-            config.finished_votes.insert(account_id);
-            if config.finished_votes.len() == config.new_participants.participants.len() {
+                .find(|info| info.near_account_id == account_id)
+                .map(|info| info.id)
+                .unwrap();
+            config.key_event.completed.insert(id);
+            if config.key_event.completed.len() == config.new_participants.participants.len() {
+                let mut keyset = config.previous_running_state.keyset.clone();
+                keyset.epoch_id = keyset.epoch_id.next();
+                // todo: multiple keys
                 let new_config = ContractState::Running(ContractRunningState {
-                    epoch: config.old_epoch + 1,
+                    keyset,
                     participants: config.new_participants.clone(),
-                    root_public_key: config.public_key.clone(),
                 });
                 self.state = new_config;
             }
@@ -219,29 +265,34 @@ impl FakeIndexerCore {
                 match txn {
                     ChainSendTransactionRequest::VotePk(vote_pk) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_pk(account_id, vote_pk.public_key);
+                        contract.vote_pk(account_id, vote_pk.key_event_id, vote_pk.public_key);
                     }
                     ChainSendTransactionRequest::Respond(respond) => {
                         let mut contract = contract.lock().await;
-                        let signature_id = contract
-                            .pending_signatures
-                            .remove(&respond.request.payload_hash.scalar);
+                        let signature_id = contract.pending_signatures.remove(
+                            &Scalar::from_bytes(respond.request.payload_hash.as_bytes()).unwrap(),
+                        );
                         if let Some(signature_id) = signature_id {
                             self.sign_response_sender.send(respond.clone()).unwrap();
                             block_update.completed_signatures.push(signature_id);
                         } else {
                             tracing::warn!(
                                 "Ignoring respond transaction for unknown (possibly already-responded-to) signature: {:?}",
-                                respond.request.payload_hash.scalar
+                                respond.request.payload_hash
                             );
                         }
                     }
                     ChainSendTransactionRequest::VoteReshared(reshared) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_reshared(account_id, reshared.epoch);
+                        contract.vote_reshared(account_id, reshared.key_event_id);
                     }
-                    _ => {
-                        panic!("Unexpected txn: {:?}", txn);
+                    ChainSendTransactionRequest::StartKeygen(_) => {
+                        let mut contract = contract.lock().await;
+                        contract.vote_start_keygen();
+                    }
+                    ChainSendTransactionRequest::StartReshare(_) => {
+                        let mut contract = contract.lock().await;
+                        contract.vote_start_reshare();
                     }
                 }
             }
