@@ -137,14 +137,17 @@ pub mod edd25519_types {
     use std::fmt;
 
     use super::*;
-    use curve25519_dalek::{edwards::CompressedEdwardsY, Scalar};
-    use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare, VerifyingShare};
+    use curve25519_dalek::{edwards::CompressedEdwardsY, EdwardsPoint, Scalar};
+    use frost_ed25519::{
+        keys::{KeyPackage, PublicKeyPackage, SigningShare, VerifyingShare},
+        VerifyingKey,
+    };
     use serde::{
         de::{Error, Visitor},
         ser, Deserializer, Serializer,
     };
 
-    pub type PublicKey = PublicKeyPackage;
+    pub type PublicKey = VerifyingKey;
 
     impl ScalarExt for Scalar {
         fn from_bytes(bytes: [u8; 32]) -> Option<Self> {

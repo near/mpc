@@ -19,6 +19,8 @@ use errors::{
     ConversionError, DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError,
     SignError,
 };
+use frost_ed25519::VerifyingKey;
+use k256::elliptic_curve::group::GroupEncoding;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::env::ed25519_verify;
@@ -397,10 +399,10 @@ impl VersionedMpcContract {
             _ => return Err(RespondError::SignatureSchemeMismatch.into()),
         }
 
+        let pk = self.public_key(Some(request.domain_id))?;
+
         let signature_is_valid = match &response {
             SignatureResponse::Secp256k1(signature_response) => {
-                let pk = self.public_key(Some(request.domain_id))?;
-
                 // generate the expected public key
                 let expected_public_key =
                     derive_key_secp256k1(near_public_key_to_affine_point(pk), &request.tweak);
@@ -416,20 +418,28 @@ impl VersionedMpcContract {
                 .is_ok()
             }
             SignatureResponse::Edd25519(signature_response) => {
-                let public_key_package = todo!("Need to change pk return type for this.");
-                let expected_public_key =
-                    derive_public_key_package_edd25519(public_key_package, &request.tweak);
+                let public_key_32_bytes: [u8; 32] =
+                    pk.as_bytes().try_into().expect("Public key is  32 bytes.");
+                let edwards_point =
+                    curve25519_dalek::EdwardsPoint::from_bytes(&public_key_32_bytes)
+                        .expect("Public key is a valid edwards point.");
 
-                let message = request.payload_hash.as_bytes();
-                let public_key: [u8; 32] = expected_public_key
-                    .verifying_key()
-                    .serialize()
-                    .expect("TODO; Can this fail?")
+                let derived_edwards_point =
+                    derive_public_key_package_edd25519(edwards_point, request.tweak);
+
+                let derived_public_key_32_bytes: [u8; 32] = derived_edwards_point
+                    .to_bytes()
                     .as_slice()
                     .try_into()
                     .expect("key must be 32 bytes");
 
-                ed25519_verify(&signature_response.to_bytes(), &message, &public_key)
+                let message = request.payload_hash.as_bytes();
+
+                ed25519_verify(
+                    &signature_response.to_bytes(),
+                    &message,
+                    &derived_public_key_32_bytes,
+                )
             }
         };
 

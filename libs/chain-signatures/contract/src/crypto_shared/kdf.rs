@@ -43,32 +43,10 @@ pub fn derive_key_secp256k1(
 }
 
 pub fn derive_public_key_package_edd25519(
-    pubkey_package: &edd25519_types::PublicKey,
-    tweak: &Tweak,
-) -> edd25519_types::PublicKey {
-    let tweak = curve25519_dalek::Scalar::from_non_biased(tweak.as_bytes());
-
-    let verifying_shares: BTreeMap<Identifier, VerifyingShare> = pubkey_package
-        .verifying_shares()
-        .iter()
-        .map(|(&identifier, &share)| {
-            (
-                identifier,
-                VerifyingShare::new(add_tweak(share.to_element(), tweak)),
-            )
-        })
-        .collect();
-    let verifying_key = frost_ed25519::VerifyingKey::new(add_tweak(
-        pubkey_package.verifying_key().to_element(),
-        tweak,
-    ));
-    edd25519_types::PublicKey::new(verifying_shares, verifying_key)
-}
-
-fn add_tweak(
     point: curve25519_dalek::EdwardsPoint,
-    tweak: curve25519_dalek::Scalar,
+    tweak: Tweak,
 ) -> curve25519_dalek::EdwardsPoint {
+    let tweak = curve25519_dalek::Scalar::from_non_biased(tweak.as_bytes());
     point + Ed25519Group::generator() * tweak
 }
 
