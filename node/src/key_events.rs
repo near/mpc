@@ -26,6 +26,12 @@ use crate::{
     },
 };
 
+/// Handles the leader side of an ECDSA key generation task.
+/// - Initiates a new network channel for key generation with all participants.
+/// - Broadcasts the start of the key generation process on-chain.
+/// - Executes the key generation protocol using the provided threshold.
+/// - Stores the generated keyshare in local storage.
+/// - Signals completion by voting on-chain with the generated public key.
 pub async fn keygen_leader(
     key_id: KeyEventId,
     chain_txn_sender: &mpsc::Sender<ChainSendTransactionRequest>,
@@ -68,6 +74,15 @@ pub async fn keygen_leader(
         .await?;
     Ok(())
 }
+
+/// Handles the follower side of an ECDSA key generation task.
+/// - Waits for a new network task channel from `channel_receiver`.
+/// - Ignores non-key generation tasks until a valid one is received.
+/// - Waits for the corresponding key event from `key_event_receiver` to begin.
+/// - Skips execution if this participant has already completed the key generation.
+/// - Executes the key generation protocol using the received channel and threshold.
+/// - Stores the generated keyshare in local storage.
+/// - Signals completion by voting on-chain with the generated public key.
 pub async fn keygen_follower(
     chain_txn_sender: &mpsc::Sender<ChainSendTransactionRequest>,
     threshold: usize,
@@ -123,6 +138,14 @@ pub async fn keygen_follower(
         .await?;
     Ok(())
 }
+
+/// Handles the leader side of a key resharing task.
+/// - Checks if the resharing has already started; exits if this participant has already completed it.
+/// - Initiates a new network channel for resharing with all participants.
+/// - Broadcasts the start of the resharing process on-chain.
+/// - Executes the resharing protocol using the existing keyshare and public key.
+/// - Stores the resulting new keyshare.
+/// - Signals resharing completion by voting on-chain.
 pub async fn resharing_leader(
     keys: &ResharingKeys,
     args: &ResharingArgs,
@@ -140,7 +163,12 @@ pub async fn resharing_leader(
         }
     }
     let key_id = contract_event.id;
-    tracing::info!("{} is starting ecdsa secp256k1 key resharing for key id {:?} as leader, with keyshare: {:?}",my_participant_id,key_id, keys.existing_keyshares);
+    tracing::info!(
+        "leader {} is starting resharing for key {:?} with keyshare {:?}",
+        my_participant_id,
+        key_id,
+        keys.existing_keyshares
+    );
     let channel = network_client.new_channel_for_task(
         EcdsaTaskId::KeyResharing { key_event: key_id },
         network_client.all_participant_ids(),
@@ -180,38 +208,51 @@ pub async fn resharing_leader(
         .await?;
     Ok(())
 }
-pub async fn wait_for_start(
+
+/// Waits for the specified key event to start.
+/// - Listens for updates on `key_event_receiver` until the event with `key_event_id` is marked as started.
+/// - Times out after 60 seconds if the event does not start.
+/// - Returns the updated `ContractKeyEventInstance` once started, or errors if the event ID changes or times out.
+async fn wait_for_start(
     key_event_receiver: &mut watch::Receiver<ContractKeyEventInstance>,
     key_event_id: KeyEventId,
 ) -> anyhow::Result<ContractKeyEventInstance> {
-    let contract_event: ContractKeyEventInstance = time::timeout(Duration::from_secs(60), async {
-        let mut contract_event = key_event_receiver.borrow_and_update().clone();
-        while !contract_event.started && contract_event.id == key_event_id {
-            key_event_receiver.changed().await?;
-            contract_event = key_event_receiver.borrow_and_update().clone();
-        }
-        Ok::<_, anyhow::Error>(contract_event)
-    })
-    .await??;
+    let contract_event = key_event_receiver
+        .wait_for(|contract_event| contract_event.started || (contract_event.id != key_event_id))
+        .await?;
     if contract_event.id != key_event_id {
-        anyhow::bail!("key event changed");
+        anyhow::bail!(
+            "Computation's key event ({:?}) does not match current from contract ({:?})",
+            key_event_id,
+            contract_event.id
+        );
     }
-    Ok(contract_event)
+    Ok(contract_event.clone())
 }
 
-pub fn convert(public_key: &near_sdk::PublicKey) -> anyhow::Result<AffinePoint> {
+fn convert(public_key: &near_sdk::PublicKey) -> anyhow::Result<AffinePoint> {
     let public_key = near_crypto::PublicKey::from_str(&String::from(public_key));
     public_key_to_affine_point(public_key.unwrap())
 }
+
 pub struct ResharingKeys {
     pub previous_keyset: Keyset,
     pub existing_keyshares: Vec<Keyshare>,
     pub keyshare_storage: KeyshareStorage,
 }
+
 pub struct ResharingArgs {
     pub new_threshold: usize,
     pub old_participants: ParticipantsConfig,
 }
+
+/// Handles the follower side of a key resharing task.
+/// - Waits for a new network task channel from `channel_receiver`.
+/// - Ignores non-resharing tasks until a resharing task is received.
+/// - Waits for the corresponding key event from `key_event_receiver` to begin.
+/// - Skips execution if this participant has already completed the resharing.
+/// - Executes the resharing protocol using existing keyshares and the provided channel.
+/// - Stores the new keyshare and signals completion via a chain transaction vote.
 pub async fn resharing_follower(
     keys: &ResharingKeys,
     args: &ResharingArgs,
