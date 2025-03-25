@@ -18,29 +18,35 @@ pub struct ContractKeyEventInstance {
     pub completed: BTreeSet<ParticipantId>,
 }
 
-pub fn convert_key_event_to_instance(key_event: &KeyEvent) -> ContractKeyEventInstance {
-    let (attempt_id, started, completed) = if let Some(current_instance) = key_event.instance() {
-        (
-            current_instance.attempt_id(),
-            true,
-            current_instance
-                .completed()
-                .iter()
-                .map(|p| p.get().into())
-                .collect(),
-        )
-    } else {
-        (key_event.next_attempt_id(), false, BTreeSet::new())
-    };
-    let id = KeyEventId {
-        epoch_id: key_event.epoch_id(),
-        domain_id: key_event.domain_id(),
-        attempt_id,
-    };
-    ContractKeyEventInstance {
-        id,
-        started,
-        completed,
+pub fn convert_key_event_to_instance(
+    key_event: &KeyEvent,
+    current_height: u64,
+) -> ContractKeyEventInstance {
+    match key_event.instance() {
+        Some(current_instance) if current_height < current_instance.expires_on() => {
+            ContractKeyEventInstance {
+                id: KeyEventId {
+                    epoch_id: key_event.epoch_id(),
+                    domain_id: key_event.domain_id(),
+                    attempt_id: current_instance.attempt_id(),
+                },
+                started: true,
+                completed: current_instance
+                    .completed()
+                    .iter()
+                    .map(|p| p.get().into())
+                    .collect(),
+            }
+        }
+        _ => ContractKeyEventInstance {
+            id: KeyEventId {
+                epoch_id: key_event.epoch_id(),
+                domain_id: key_event.domain_id(),
+                attempt_id: key_event.next_attempt_id(),
+            },
+            started: false,
+            completed: BTreeSet::new(),
+        },
     }
 }
 
@@ -127,7 +133,8 @@ async fn read_contract_state_from_chain(
     tracing::debug!(target: "indexer", "awaiting mpc contract state");
     wait_for_contract_code(mpc_contract_id.clone(), &view_client).await;
 
-    let state = get_mpc_contract_state(mpc_contract_id.clone(), &view_client).await?;
+    let (height, state) = get_mpc_contract_state(mpc_contract_id.clone(), &view_client).await?;
+
     tracing::debug!(target: "indexer", "got mpc contract state {:?}", state);
     let state = match state {
         ProtocolContractState::NotInitialized => ContractState::Invalid,
@@ -141,7 +148,7 @@ async fn read_contract_state_from_chain(
                     state.generating_key.proposed_parameters().clone(),
                     port_override,
                 )?,
-                key_event: convert_key_event_to_instance(&state.generating_key),
+                key_event: convert_key_event_to_instance(&state.generating_key, height),
             })
         }
         ProtocolContractState::Running(state) => ContractState::Running(ContractRunningState {
@@ -165,7 +172,7 @@ async fn read_contract_state_from_chain(
                     epoch_id: state.prospective_epoch_id(),
                     domains: state.reshared_keys.clone(),
                 },
-                key_event: convert_key_event_to_instance(&state.resharing_key),
+                key_event: convert_key_event_to_instance(&state.resharing_key, height),
             })
         }
     };

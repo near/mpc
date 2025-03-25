@@ -244,6 +244,9 @@ impl KeyEventInstance {
     pub fn attempt_id(&self) -> AttemptId {
         self.attempt_id
     }
+    pub fn expires_on(&self) -> u64 {
+        self.expires_on
+    }
 
     /// Commits the vote of `candidate` to `public_key`, returning either Voted with the number of
     /// votes already cast, or PublicKeyDisagreement if this vote conflicts with an earlier vote's
