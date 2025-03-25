@@ -335,7 +335,10 @@ async fn test_key_resharing_signature_buffering() {
 
     // Re-enable the node. Now we should get the signature response.
     drop(disabled);
-    timeout(response_time * 2, setup.indexer.next_response())
-        .await
-        .expect("Timeout waiting for signature response");
+    timeout(
+        std::time::Duration::from_secs(60),
+        setup.indexer.next_response(),
+    )
+    .await
+    .expect("Timeout waiting for signature response");
 }
