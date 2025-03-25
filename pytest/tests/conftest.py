@@ -57,6 +57,12 @@ def compile_contract():
                    check=True,
                    stdout=sys.stdout,
                    stderr=sys.stderr)
+    
+    subprocess.run(["wasm-opt", "-Oz", "target/wasm32-unknown-unknown/release/mpc_contract.wasm", "-o", "target/wasm32-unknown-unknown/release/mpc_contract.wasm"],
+                   cwd=chain_signatures,
+                   check=True,
+                   stdout=sys.stdout,
+                   stderr=sys.stderr)
 
     compiled_contract = chain_signatures / "target" / "wasm32-unknown-unknown" / "release" / "mpc_contract.wasm"
     os.makedirs(os.path.dirname(contracts.COMPILED_CONTRACT_PATH),
