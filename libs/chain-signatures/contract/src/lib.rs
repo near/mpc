@@ -20,19 +20,18 @@ use errors::{
 };
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::near;
 use near_sdk::store::{LookupMap, Vector};
 use near_sdk::{
     env, log, near_bindgen, AccountId, BlockHeight, CryptoHash, Gas, GasWeight, NearToken, Promise,
     PromiseError, PublicKey,
 };
+use near_sdk::{near, PromiseOrValue};
 use primitives::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
 use primitives::key_state::{EpochId, KeyEventId, Keyset};
 use primitives::signature::{PayloadHash, SignRequest, SignatureRequest, Tweak, YieldIndex};
 use primitives::thresholds::{Threshold, ThresholdParameters};
 use state::running::RunningContractState;
 use state::ProtocolContractState;
-use std::cmp;
 use storage_keys::StorageKey;
 
 //Gas requised for a sign request
@@ -40,7 +39,7 @@ const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
 // Register used to receive data id from `promise_await_data`.
 const DATA_ID_REGISTER: u64 = 0;
 // Prepaid gas for a `return_signature_and_clean_state_on_success` call
-const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(5);
+const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(4);
 // Prepaid gas for a `update_config` call
 const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 
@@ -61,7 +60,6 @@ impl Default for VersionedMpcContract {
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_requests: LookupMap<SignatureRequest, YieldIndex>,
-    request_by_block_height: Vector<(u64, SignatureRequest)>,
     proposed_updates: ProposedUpdates,
     config: Config,
 }
@@ -75,25 +73,7 @@ impl MpcContract {
         self.protocol_state.threshold()
     }
 
-    fn remove_timed_out_requests(&mut self, max_num_to_remove: u32) -> u32 {
-        let min_pending_request_height =
-            cmp::max(env::block_height(), self.config.request_timeout_blocks)
-                - self.config.request_timeout_blocks;
-        let mut i = 0;
-        for x in self.request_by_block_height.iter() {
-            if (min_pending_request_height <= x.0) || (i > max_num_to_remove) {
-                break;
-            }
-            self.pending_requests.remove(&x.1);
-            i += 1;
-        }
-        self.request_by_block_height.drain(..i);
-        cmp::max(i, 1) - 1
-    }
-
     fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) {
-        self.request_by_block_height
-            .push((env::block_height(), request.clone()));
         self.pending_requests
             .insert(request.clone(), YieldIndex { data_id });
         // todo: improve this logic.
@@ -121,7 +101,6 @@ impl MpcContract {
                 parameters,
             )),
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
-            request_by_block_height: Vector::new(StorageKey::RequestsByTimestamp),
             proposed_updates: ProposedUpdates::default(),
         }
     }
@@ -179,13 +158,6 @@ impl MpcContract {
 // User contract API
 #[near_bindgen]
 impl VersionedMpcContract {
-    pub fn remove_timed_out_requests(&mut self, max_num_to_remove: Option<u32>) -> u32 {
-        match self {
-            Self::V0(mpc_contract) => mpc_contract.remove_timed_out_requests(
-                max_num_to_remove.unwrap_or(mpc_contract.config.max_num_requests_to_remove),
-            ),
-        }
-    }
     /// `key_version` must be less than or equal to the value at `latest_key_version`
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each signature request.
@@ -251,8 +223,6 @@ impl VersionedMpcContract {
         let request = SignatureRequest::new(request.payload, &predecessor, &request.path);
 
         let Self::V0(mpc_contract) = self;
-        // Remove timed out requests
-        mpc_contract.remove_timed_out_requests(mpc_contract.config.max_num_requests_to_remove);
 
         // Check if the request already exists.
         if mpc_contract.pending_requests.contains_key(&request) {
@@ -368,15 +338,6 @@ impl VersionedMpcContract {
         }
         // First get the yield promise of the (potentially timed out) request.
         if let Some(YieldIndex { data_id }) = self.get_pending_request(&request) {
-            // Only then clean up the state.
-            // This order of execution ensures that the state is cleaned of the current
-            // response, even if it belongs to an already timed out signature request.
-            match self {
-                Self::V0(mpc_contract) => {
-                    mpc_contract
-                        .remove_timed_out_requests(mpc_contract.config.max_num_requests_to_remove);
-                }
-            }
             // Finally, resolve the promise. This will have no effect if the request already timed.
             env::promise_yield_resume(&data_id, &serde_json::to_vec(&response).unwrap());
             Ok(())
@@ -640,7 +601,6 @@ impl VersionedMpcContract {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 domains, keyset, parameters,
             )),
-            request_by_block_height: Vector::new(StorageKey::RequestsByTimestamp),
             pending_requests: LookupMap::new(StorageKey::PendingRequests),
             proposed_updates: ProposedUpdates::default(),
         }))
@@ -695,7 +655,6 @@ impl VersionedMpcContract {
                 config,
                 protocol_state: (&state.protocol_state).into(),
                 pending_requests,
-                request_by_block_height,
                 proposed_updates: ProposedUpdates::default(),
             }));
         }
@@ -729,38 +688,32 @@ impl VersionedMpcContract {
     }
 
     /// Upon success, removes the signature from state and returns it.
-    /// Returns an Error if the signature timed out.
-    /// Note that timed out signatures will need to be cleaned up from the state by a different function.
-    ///
-    /// Note: compared to V0 and V1, the argument types for this function are changed (simply
-    /// `SignatureRequest` now, no longer `ContractSignatureRequest`).
-    /// This should be fine, because the callback result is passed by the `respond`
-    /// function, which is part of V2. Only very few signatures are expected to break, namely if:
-    /// Block N:
-    /// 1. response submitted, triggers `return_signature_and_clean_state_on_success` with
-    ///    `ContractSignatureRequest`
-    /// 2. contract code updated
-    /// Block N+1:
-    /// 1. any calls to the contract get rejected
-    /// 2. migration function called
-    /// 3. `return_signature_and_clean_state_on_success` fails with `ContractSignatureRequest`
-    ///    argument.
+    /// If the signature request times out, removes the signature request from state and panics to fail the original transaction
     #[private]
-    #[handle_result]
     pub fn return_signature_and_clean_state_on_success(
         &mut self,
         request: SignatureRequest, // this change here should actually be ok.
         #[callback_result] signature: Result<SignatureResponse, PromiseError>,
-    ) -> Result<SignatureResponse, Error> {
+    ) -> PromiseOrValue<SignatureResponse> {
         let Self::V0(mpc_contract) = self;
+        mpc_contract.pending_requests.remove(&request);
         match signature {
-            Ok(signature) => {
-                log!("Signature is ready.");
-                mpc_contract.pending_requests.remove(&request);
-                Ok(signature)
+            Ok(signature) => PromiseOrValue::Value(signature),
+            Err(_) => {
+                PromiseOrValue::Promise(Promise::new(env::current_account_id()).function_call(
+                    "fail_on_timeout".to_string(),
+                    vec![],
+                    NearToken::from_near(0),
+                    Gas::from_tgas(1),
+                ))
             }
-            Err(_) => Err(SignError::Timeout.into()),
         }
+    }
+
+    #[private]
+    pub fn fail_on_timeout(&self) {
+        // To stay consistent with the old version of the timeout error
+        env::panic_str(&SignError::Timeout.to_string());
     }
 
     #[private]
@@ -786,5 +739,138 @@ impl VersionedMpcContract {
                 }
             },
         }
+    }
+}
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
+    use crate::primitives::test_utils::gen_participants;
+    use crypto_shared::kdf::derive_secret_key;
+    use k256::elliptic_curve::point::DecompactPoint;
+    use k256::{self, ecdsa::SigningKey};
+    use k256::{elliptic_curve, AffinePoint, Secp256k1};
+    use near_sdk::{test_utils::VMContextBuilder, testing_env, VMContext};
+    use primitives::key_state::{AttemptId, KeyForDomain};
+    use rand::rngs::OsRng;
+    use rand::RngCore;
+
+    fn basic_setup() -> (VMContext, VersionedMpcContract, SigningKey) {
+        let context = VMContextBuilder::new()
+            .attached_deposit(NearToken::from_yoctonear(1))
+            .build();
+        testing_env!(context.clone());
+        let secret_key = SigningKey::random(&mut OsRng);
+        let encoded_point = secret_key.verifying_key().to_encoded_point(false);
+        // The first byte of the binary representation of `EncodedPoint` is the tag, so we take the rest 64 bytes
+        let public_key_data = encoded_point.as_bytes()[1..].to_vec();
+        let domain_id = DomainId::legacy_ecdsa_id();
+        let domains = vec![DomainConfig {
+            id: domain_id,
+            scheme: SignatureScheme::Secp256k1,
+        }];
+        let epoch_id = EpochId::new(0);
+        let key_for_domain = KeyForDomain {
+            domain_id,
+            key: PublicKey::from_parts(near_sdk::CurveType::SECP256K1, public_key_data).unwrap(),
+            attempt: AttemptId::new(),
+        };
+        let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
+        let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+        let contract =
+            VersionedMpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
+        (context, contract, secret_key)
+    }
+
+    fn test_signature_common(success: bool) {
+        let (context, mut contract, secret_key) = basic_setup();
+        let mut payload = [0u8; 32];
+        OsRng.fill_bytes(&mut payload);
+        let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
+
+        let request = SignRequest {
+            payload,
+            path: key_path.clone(),
+            key_version: 0,
+        };
+        let signature_request = SignatureRequest::new(
+            Scalar::from_bytes(payload).unwrap(),
+            &context.predecessor_account_id,
+            &request.path,
+        );
+        contract.sign(request);
+        contract.get_pending_request(&signature_request).unwrap();
+
+        // simulate signature and response to the signing request
+        let derivation_path = derive_epsilon(&context.predecessor_account_id, &key_path);
+        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
+            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
+        let derived_secret_key = derive_secret_key(&secret_key_ec, derivation_path);
+        let secret_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
+        let (signature, recovery_id) = secret_key.sign_prehash_recoverable(&payload).unwrap();
+        let (r, s) = signature.split_bytes();
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(s.as_slice());
+        let signature_response = if success {
+            SignatureResponse::new(
+                AffinePoint::decompact(&r).unwrap(),
+                Scalar::from_bytes(bytes).unwrap(),
+                recovery_id.to_byte(),
+            )
+        } else {
+            // submit an incorrect signature to make the respond call fail
+            SignatureResponse::new(
+                AffinePoint::decompact(&r).unwrap(),
+                Scalar::from_bytes([0u8; 32]).unwrap(),
+                recovery_id.to_byte(),
+            )
+        };
+
+        match contract.respond(signature_request.clone(), signature_response.clone()) {
+            Ok(_) => {
+                assert!(success);
+                contract.return_signature_and_clean_state_on_success(
+                    signature_request.clone(),
+                    Ok(signature_response),
+                );
+
+                assert!(contract.get_pending_request(&signature_request).is_none(),);
+            }
+            Err(_) => assert!(!success),
+        }
+    }
+
+    #[test]
+    fn test_signature_simple() {
+        test_signature_common(true);
+        test_signature_common(false);
+    }
+
+    #[test]
+    fn test_signature_timeout() {
+        let (context, mut contract, _) = basic_setup();
+        let payload = [0u8; 32];
+        let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
+
+        let request = SignRequest {
+            payload,
+            path: key_path.clone(),
+            key_version: 0,
+        };
+        let signature_request = SignatureRequest::new(
+            Scalar::from_bytes(payload).unwrap(),
+            &context.predecessor_account_id,
+            &request.path,
+        );
+        contract.sign(request);
+        assert!(matches!(
+            contract.return_signature_and_clean_state_on_success(
+                signature_request.clone(),
+                Err(PromiseError::Failed)
+            ),
+            PromiseOrValue::Promise(_)
+        ));
+        assert!(contract.get_pending_request(&signature_request).is_none());
     }
 }

@@ -9,7 +9,7 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 anyhow = "1"
 borsh = "1.5.0"
-near-sdk = { version = "=5.2.1", features = [
+near-sdk = { version = "5.11.0", features = [
     "legacy",
     "unit-testing",
     "unstable",
