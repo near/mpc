@@ -19,7 +19,6 @@ use errors::{
     ConversionError, DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError,
     SignError,
 };
-use frost_ed25519::VerifyingKey;
 use k256::elliptic_curve::group::GroupEncoding;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
@@ -37,8 +36,6 @@ use primitives::thresholds::{Threshold, ThresholdParameters};
 use state::running::RunningContractState;
 use state::ProtocolContractState;
 use std::cmp;
-use std::fmt::format;
-use std::io::Read;
 use storage_keys::StorageKey;
 
 //Gas requised for a sign request
@@ -427,11 +424,8 @@ impl VersionedMpcContract {
                 let derived_edwards_point =
                     derive_public_key_package_edd25519(edwards_point, request.tweak);
 
-                let derived_public_key_32_bytes: [u8; 32] = derived_edwards_point
-                    .to_bytes()
-                    .as_slice()
-                    .try_into()
-                    .expect("key must be 32 bytes");
+                let derived_public_key_32_bytes =
+                    derived_edwards_point.compress().as_bytes().clone();
 
                 let message = request.payload_hash.as_bytes();
 

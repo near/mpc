@@ -1,10 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use curve25519_dalek::edwards::EdwardsPoint;
 use k256::{
     elliptic_curve::{bigint::ArrayEncoding, CurveArithmetic, PrimeField},
     AffinePoint, Secp256k1, U256,
 };
-use near_sdk::near;
 use serde::{Deserialize, Serialize};
 
 // TODO: This key will be much bigger. It's VerifyingKey plus "Frost header"
@@ -134,20 +132,10 @@ pub mod k256_types {
 }
 
 pub mod edd25519_types {
-    use std::fmt;
 
     use super::*;
-    use curve25519_dalek::{edwards::CompressedEdwardsY, EdwardsPoint, Scalar};
-    use frost_ed25519::{
-        keys::{KeyPackage, PublicKeyPackage, SigningShare, VerifyingShare},
-        VerifyingKey,
-    };
-    use serde::{
-        de::{Error, Visitor},
-        ser, Deserializer, Serializer,
-    };
-
-    pub type PublicKey = VerifyingKey;
+    use curve25519_dalek::{edwards::CompressedEdwardsY, Scalar};
+    use serde::{Deserializer, Serializer};
 
     impl ScalarExt for Scalar {
         fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
@@ -236,7 +224,7 @@ pub mod edd25519_types {
         where
             D: Deserializer<'de>,
         {
-            todo!()
+            unimplemented!()
         }
     }
 
@@ -263,123 +251,40 @@ pub mod edd25519_types {
         BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
     )]
     pub struct SignatureResponse {
-        edwards_point: SerializableEdwardsPoint,
+        r: SerializableEdwardsPoint,
         s: SerializableScalar,
     }
 
     impl SignatureResponse {
         pub fn to_bytes(&self) -> [u8; 64] {
-            let s: [u8; 32] = self.s.scalar.to_bytes();
-            let edwards_point: [u8; 32] = self.edwards_point.0.to_bytes();
+            let r_bytes: [u8; 32] = self.r.0.to_bytes();
+            let s_bytes: [u8; 32] = self.s.scalar.to_bytes();
             let mut bytes_repr = [0u8; 64];
 
-            bytes_repr[0..32].copy_from_slice(&s);
-            bytes_repr[32..64].copy_from_slice(&edwards_point);
+            bytes_repr[0..32].copy_from_slice(&r_bytes);
+            bytes_repr[32..64].copy_from_slice(&s_bytes);
 
             bytes_repr
         }
     }
-}
 
-// Ed25519 EdwardsPoint serialization (equivalent to AffinePoint for Ed25519)
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct SerializableEdwardsPoint {
-    pub edwards_point: EdwardsPoint,
-}
+    /// Make sure that [`SignatureResponse::to_bytes`] serializes to bytes
+    /// by concatenating (r, s) to a 64 byte array in correct order.
+    #[test]
+    fn test_edd25519_signature() {
+        let r_bytes = [10; 32];
+        let s_bytes = [20; 32];
 
-impl BorshSerialize for SerializableEdwardsPoint {
-    fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        let to_ser: [u8; 32] = self.edwards_point.compress().to_bytes();
-        BorshSerialize::serialize(&to_ser, writer)
+        let r = SerializableEdwardsPoint(CompressedEdwardsY::from_slice(&r_bytes).unwrap());
+        let s = SerializableScalar::new(Scalar::from_bytes_mod_order(s_bytes));
+
+        let signature_response = SignatureResponse { r, s: s.clone() };
+        let signature_bytes: [u8; 64] = signature_response.to_bytes();
+
+        assert_eq!(signature_bytes[0..32], r_bytes);
+        assert_eq!(signature_bytes[32..64], s.scalar.to_bytes());
     }
 }
-
-impl BorshDeserialize for SerializableEdwardsPoint {
-    fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let from_ser: [u8; 32] = BorshDeserialize::deserialize_reader(reader)?;
-        let compressed = curve25519_dalek::edwards::CompressedEdwardsY(from_ser);
-        let edwards_point = compressed.decompress().ok_or(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "Invalid compressed EdwardsPoint",
-        ))?;
-        Ok(SerializableEdwardsPoint { edwards_point })
-    }
-}
-
-// pub trait SignatureExt {}
-// impl SignatureExt for Secp256k1SignatureResponse {}
-// impl SignatureExt for Ed25519SignatureResponse {}
-
-// #[derive(BorshDeserialize, BorshSerialize, Debug, Clone, PartialEq, Eq)]
-// pub struct Ed25519SignatureResponse {
-//     pub big_r: SerializableEdwardsPoint,
-//     pub s: SerializableScalar<curve25519_dalek::Scalar>,
-// }
-
-// impl Ed25519SignatureResponse {
-//     pub fn new(big_r: EdwardsPoint, s: curve25519_dalek::Scalar) -> Self {
-//         Ed25519SignatureResponse {
-//             big_r: SerializableEdwardsPoint {
-//                 edwards_point: big_r,
-//             },
-//             s: s.into(),
-//         }
-//     }
-
-//     // Helper to convert from a standard Ed25519 signature
-//     pub fn from_signature(signature: &Ed25519Signature) -> std::io::Result<Self> {
-//         let sig_bytes = signature.to_bytes();
-//         // First 32 bytes are R (big_r), second 32 bytes are s
-//         let r_bytes = sig_bytes[0..32].try_into().map_err(|_| {
-//             std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid signature R bytes")
-//         })?;
-//         let s_bytes = sig_bytes[32..64].try_into().map_err(|_| {
-//             std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid signature S bytes")
-//         })?;
-
-//         // Convert R to EdwardsPoint
-//         let compressed_r = curve25519_dalek::edwards::CompressedEdwardsY(r_bytes);
-//         let edwards_r = compressed_r.decompress().ok_or(std::io::Error::new(
-//             std::io::ErrorKind::InvalidData,
-//             "Invalid R point in signature",
-//         ))?;
-
-//         // Convert s to Scalar
-//         let scalar_s = curve25519_dalek::Scalar::from_bytes(s_bytes).ok_or(std::io::Error::new(
-//             std::io::ErrorKind::InvalidData,
-//             "Invalid S scalar in signature",
-//         ))?;
-
-//         Ok(Self::new(edwards_r, scalar_s))
-//     }
-
-//     // Convert back to a standard Ed25519 signature
-//     pub fn to_signature(&self) -> Ed25519Signature {
-//         let r_bytes = self.big_r.edwards_point.compress().to_bytes();
-//         let s_bytes = self.s.scalar.to_bytes();
-
-//         let mut sig_bytes = [0u8; 64];
-//         sig_bytes[0..32].copy_from_slice(&r_bytes);
-//         sig_bytes[32..64].copy_from_slice(&s_bytes);
-
-//         Ed25519Signature::from_bytes(&sig_bytes)
-//     }
-// }
-
-// // For backward compatibility
-// // pub type SignatureResponse = Secp256k1SignatureResponse;
-// pub struct SignatureResponse<Scheme: SignatureExt> {
-//     inner: Scheme,
-// }
-
-// impl<Scheme> SignatureResponse<Scheme>
-// where
-//     Scheme: SignatureExt,
-// {
-//     pub fn new(signature: Scheme) -> Self {
-//         Self { inner: signature }
-//     }
-// }
 
 #[cfg(test)]
 mod test {
@@ -406,55 +311,4 @@ mod test {
             }
         }
     }
-
-    // TODO: Are the tests needed?
-    //
-    // #[test]
-    // fn serializeable_ed25519_scalar_roundtrip() {
-    //     let test_vec = vec![
-    //         curve25519_dalek::Scalar::ZERO,
-    //         curve25519_dalek::Scalar::ONE,
-    //         curve25519_dalek::Scalar::from_bytes_mod_order([3; 32]),
-    //     ];
-
-    //     for scalar in test_vec.into_iter() {
-    //         let input = SerializableScalar { scalar };
-    //         // Test borsh
-    //         {
-    //             let serialized = borsh::to_vec(&input).unwrap();
-    //             let output: SerializableScalar = borsh::from_slice(&serialized).unwrap();
-    //             assert_eq!(input, output, "Failed on {:?}", scalar);
-    //         }
-
-    //         // Test Serde via JSON
-    //         {
-    //             let serialized = serde_json::to_vec(&input).unwrap();
-    //             let output: SerializableScalar =
-    //                 serde_json::from_slice(&serialized).unwrap();
-    //             assert_eq!(input, output, "Failed on {:?}", scalar);
-    //         }
-    //     }
-    // }
-
-    // #[test]
-    // fn ed25519_signature_roundtrip() {
-    //     use rand::rngs::OsRng;
-
-    //     let mut csprng = OsRng;
-    //     let signing_key = SigningKey::generate(&mut csprng);
-    //     let verifying_key = signing_key.verifying_key();
-    //     let message = b"test message";
-
-    //     // Generate a signature
-    //     let signature = signing_key.sign(message);
-
-    //     // Convert to our custom format
-    //     let sig_response = Ed25519SignatureResponse::from_signature(&signature).unwrap();
-
-    //     // Convert back to standard signature
-    //     let recovered_signature = sig_response.to_signature();
-
-    //     // Verify it still works
-    //     assert!(verifying_key.verify(message, &recovered_signature).is_ok());
-    // }
 }

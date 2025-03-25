@@ -27,7 +27,3 @@ pub fn near_public_key_to_affine_point(pk: near_sdk::PublicKey) -> k256_types::P
     let point = EncodedPoint::from_bytes(bytes).unwrap();
     k256_types::PublicKey::from_encoded_point(&point).unwrap()
 }
-
-// pub fn near_public_key_to_affine_point(pk: near_sdk::PublicKey) -> Ed25519PublicKey {
-//     todo!()
-// }

@@ -1,11 +1,9 @@
-use std::collections::BTreeMap;
-
 use crate::{
-    crypto_shared::types::{edd25519_types, k256_types, ScalarExt},
+    crypto_shared::types::{k256_types, ScalarExt},
     primitives::signature::{PayloadHash, Tweak},
 };
 use anyhow::Context;
-use frost_ed25519::{keys::VerifyingShare, Ed25519Group, Group, Identifier};
+use frost_ed25519::{Ed25519Group, Group};
 use k256::{
     ecdsa::{RecoveryId, Signature},
     elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic},
