@@ -691,23 +691,8 @@ impl VersionedMpcContract {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
-    /// Upon success, removes the gature from state and returns it.
-    /// Returns an Error if the signature timed out.
-    /// Note that timed out signatures will need to be cleaned up from the state by a different function.
-    ///
-    /// Note: compared to V0 and V1, the argument types for this function are changed (simply
-    /// `SignatureRequest` now, no longer `ContractSignatureRequest`).
-    /// This should be fine, because the callback result is passed by the `respond`
-    /// function, which is part of V2. Only very few signatures are expected to break, namely if:
-    /// Block N:
-    /// 1. response submitted, triggers `return_signature_and_clean_state_on_success` with
-    ///    `ContractSignatureRequest`
-    /// 2. contract code updated
-    /// Block N+1:
-    /// 1. any calls to the contract get rejected
-    /// 2. migration function called
-    /// 3. `return_signature_and_clean_state_on_success` fails with `ContractSignatureRequest`
-    ///    argument.
+    /// Upon success, removes the signature from state and returns it.
+    /// If the signature request times out, removes the signature request from state and panics to fail the original transaction
     #[private]
     pub fn return_signature_and_clean_state_on_success(
         &mut self,
@@ -732,7 +717,7 @@ impl VersionedMpcContract {
     #[private]
     pub fn fail_on_timeout(&self) {
         // To stay consistent with the old version of the timeout error
-        panic!("{}", SignError::Timeout.to_string());
+        env::panic_str(&SignError::Timeout.to_string());
     }
 
     #[private]
