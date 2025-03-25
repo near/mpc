@@ -135,14 +135,14 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn run_key_resharing_client(
-        config: Arc<MpcConfig>,
+        new_threshold: usize,
         my_share: Option<Scalar>,
         public_key: AffinePoint,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         EcdsaSignatureProvider::run_key_resharing_client_internal(
-            config,
+            new_threshold,
             my_share,
             public_key,
             old_participants,

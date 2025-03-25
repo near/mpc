@@ -1,4 +1,4 @@
-use crate::config::{MpcConfig, ParticipantsConfig};
+use crate::config::ParticipantsConfig;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::ParticipantId;
@@ -8,18 +8,17 @@ use cait_sith::protocol::Participant;
 use cait_sith::KeygenOutput;
 use k256::elliptic_curve::sec1::FromEncodedPoint;
 use k256::{AffinePoint, EncodedPoint, Scalar, Secp256k1};
-use std::sync::Arc;
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
-        config: Arc<MpcConfig>,
+        new_threshold: usize,
         my_share: Option<Scalar>,
         public_key: AffinePoint,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
         let new_keyshare = KeyResharingComputation {
-            threshold: config.participants.threshold as usize,
+            threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
             old_threshold: old_participants.threshold as usize,
             my_share,

@@ -7,7 +7,6 @@
 //! As a reference, check the existing implementations.
 
 pub mod ecdsa;
-use crate::config::MpcConfig;
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
@@ -59,7 +58,7 @@ pub trait SignatureProvider {
     /// Both leaders and followers call this function.
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_resharing_client(
-        config: Arc<MpcConfig>,
+        new_threshold: usize,
         key_share: Option<Scalar>,
         public_key: AffinePoint,
         old_participants: &ParticipantsConfig,
