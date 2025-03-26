@@ -42,7 +42,7 @@ pub fn derive_key_secp256k1(
 
 pub fn derive_public_key_edwards_point_edd25519(
     point: curve25519_dalek::EdwardsPoint,
-    tweak: Tweak,
+    tweak: &Tweak,
 ) -> curve25519_dalek::EdwardsPoint {
     let tweak = curve25519_dalek::Scalar::from_non_biased(tweak.as_bytes());
     point + Ed25519Group::generator() * tweak
