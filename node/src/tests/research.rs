@@ -194,7 +194,7 @@ fn triple_network_research_best_case() {
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            cait_sith::triples::generate_triple_many::<Secp256k1, 64>(
+            cait_sith::triples::generate_triple_many::<Secp256k1, 4>(
                 &participants,
                 participants[i],
                 THRESHOLD,
