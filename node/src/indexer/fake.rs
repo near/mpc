@@ -16,6 +16,7 @@ use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyFor
 use near_crypto::PublicKey;
 use near_sdk::AccountId;
 use near_time::{Clock, Duration};
+use std::borrow::BorrowMut;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
@@ -38,6 +39,7 @@ impl FakeMpcContractState {
             pending_signatures: BTreeMap::new(),
         }
     }
+
     pub fn new_key_event(epoch: u64) -> ContractKeyEventInstance {
         let id = KeyEventId::new(
             EpochId::new(epoch),
@@ -51,6 +53,7 @@ impl FakeMpcContractState {
             completed,
         }
     }
+
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
         assert_eq!(self.state, ContractState::WaitingForSync);
 
@@ -63,6 +66,7 @@ impl FakeMpcContractState {
             key_event: Self::new_key_event(0),
         });
     }
+
     pub fn start_resharing(&mut self, new_participants: ParticipantsConfig) {
         let running_state = match &self.state {
             ContractState::Running(state) => state,
@@ -75,9 +79,11 @@ impl FakeMpcContractState {
             key_event: Self::new_key_event(running_state.keyset.epoch_id.next().get()),
         });
     }
+
     pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, pk: PublicKey) {
         if let ContractState::Initializing(config) = &mut self.state {
             assert_eq!(key_id, config.key_event.id);
+            assert!(config.key_event.started);
             let id = config
                 .participants
                 .participants
@@ -115,20 +121,51 @@ impl FakeMpcContractState {
             );
         }
     }
-    pub fn vote_start_keygen(&mut self) {
+
+    pub fn vote_start_keygen(&mut self, id: KeyEventId) {
         if let ContractState::Initializing(state) = &mut self.state {
             assert!(!state.key_event.started);
+            assert_eq!(state.key_event.id, id);
             state.key_event.started = true;
         }
     }
-    pub fn vote_start_reshare(&mut self) {
+
+    pub fn vote_abort_key_event(&mut self, id: KeyEventId) {
+        let next_key_event = ContractKeyEventInstance {
+            id: KeyEventId {
+                epoch_id: id.epoch_id,
+                domain_id: id.domain_id,
+                attempt_id: id.attempt_id.next(),
+            },
+            started: false,
+            completed: BTreeSet::new(),
+        };
+        match self.state.borrow_mut() {
+            ContractState::Initializing(state) => {
+                assert!(state.key_event.started);
+                assert_eq!(state.key_event.id, id);
+                state.key_event = next_key_event;
+            }
+            ContractState::Resharing(state) => {
+                assert!(state.key_event.started);
+                assert_eq!(state.key_event.id, id);
+                state.key_event = next_key_event;
+            }
+            _ => {}
+        }
+    }
+
+    pub fn vote_start_reshare(&mut self, id: KeyEventId) {
         if let ContractState::Resharing(state) = &mut self.state {
             assert!(!state.key_event.started);
+            assert_eq!(state.key_event.id, id);
             state.key_event.started = true;
         }
     }
+
     pub fn vote_reshared(&mut self, account_id: AccountId, key_id: KeyEventId) {
         if let ContractState::Resharing(config) = &mut self.state {
+            assert!(config.key_event.started);
             assert_eq!(key_id, config.key_event.id);
             let id = config
                 .new_participants
@@ -286,13 +323,18 @@ impl FakeIndexerCore {
                         let mut contract = contract.lock().await;
                         contract.vote_reshared(account_id, reshared.key_event_id);
                     }
-                    ChainSendTransactionRequest::StartKeygen(_) => {
+                    ChainSendTransactionRequest::StartKeygen(start) => {
+                        // todo: timeout logic in fake indexer?
                         let mut contract = contract.lock().await;
-                        contract.vote_start_keygen();
+                        contract.vote_start_keygen(start.key_event_id);
                     }
-                    ChainSendTransactionRequest::StartReshare(_) => {
+                    ChainSendTransactionRequest::StartReshare(start) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_start_reshare();
+                        contract.vote_start_reshare(start.key_event_id);
+                    }
+                    ChainSendTransactionRequest::VoteAbortKeyEvent(abort) => {
+                        let mut contract = contract.lock().await;
+                        contract.vote_abort_key_event(abort.key_event_id);
                     }
                 }
             }
