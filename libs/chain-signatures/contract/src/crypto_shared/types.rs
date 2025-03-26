@@ -202,7 +202,7 @@ pub mod edd25519_types {
 
     impl PartialOrd for SerializableScalar {
         fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-            self.scalar.as_bytes().partial_cmp(&other.scalar.as_bytes())
+            Some(self.cmp(other))
         }
     }
 
@@ -255,7 +255,7 @@ pub mod edd25519_types {
         let r = SerializableEdwardsPoint(CompressedEdwardsY::from_slice(&r_bytes).unwrap());
         let s = SerializableScalar::new(Scalar::from_bytes_mod_order(s_bytes));
 
-        let signature_response = SignatureResponse { r, s: s.clone() };
+        let signature_response = SignatureResponse { r, s };
         let signature_bytes: [u8; 64] = signature_response.to_bytes();
 
         assert_eq!(signature_bytes[0..32], r_bytes);
