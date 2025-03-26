@@ -132,10 +132,8 @@ pub mod k256_types {
 }
 
 pub mod edd25519_types {
-
     use super::*;
     use curve25519_dalek::{edwards::CompressedEdwardsY, Scalar};
-    use serde::{Deserializer, Serializer};
 
     impl ScalarExt for Scalar {
         fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
@@ -161,7 +159,7 @@ pub mod edd25519_types {
     }
 
     // Is there a better way to force a borsh serialization?
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
     pub struct SerializableScalar {
         scalar: Scalar,
     }
@@ -208,25 +206,25 @@ pub mod edd25519_types {
         }
     }
 
-    impl Serialize for SerializableScalar {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            // Convert the Scalar to bytes and serialize those
-            let bytes = self.scalar.to_bytes();
-            serializer.serialize_bytes(&bytes)
-        }
-    }
+    // impl Serialize for SerializableScalar {
+    //     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    //     where
+    //         S: Serializer,
+    //     {
+    //         // Convert the Scalar to bytes and serialize those
+    //         let bytes = self.scalar.to_bytes();
+    //         serializer.serialize_bytes(&bytes)
+    //     }
+    // }
 
-    impl<'de> Deserialize<'de> for SerializableScalar {
-        fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            unimplemented!()
-        }
-    }
+    // impl<'de> Deserialize<'de> for SerializableScalar {
+    //     fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    //     where
+    //         D: Deserializer<'de>,
+    //     {
+
+    //     }
+    // }
 
     // TODO: Is there a better way to force a borsh serialization?
     #[derive(Debug, PartialEq, Serialize, Deserialize, Eq, Clone, Copy)]
