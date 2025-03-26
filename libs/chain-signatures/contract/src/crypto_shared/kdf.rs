@@ -95,7 +95,7 @@ pub fn recover(
     prehash: &[u8],
     signature: &Signature,
     recovery_id: RecoveryId,
-) -> anyhow::Result<VerifyingKey> {
+) -> anyhow::Result<k256::ecdsa::VerifyingKey> {
     use k256::EncodedPoint;
     use near_sdk::env;
     // While this function also works on native code, it's a bit weird and unsafe.
@@ -103,7 +103,7 @@ pub fn recover(
     let recovered_key_bytes =
         env::ecrecover(prehash, &signature.to_bytes(), recovery_id.to_byte(), true)
             .context("Unable to recover public key")?;
-    VerifyingKey::from_encoded_point(&EncodedPoint::from_untagged_bytes(
+    k256::ecdsa::VerifyingKey::from_encoded_point(&EncodedPoint::from_untagged_bytes(
         &recovered_key_bytes.into(),
     ))
     .context("Failed to parse returned key")
