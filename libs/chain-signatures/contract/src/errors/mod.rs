@@ -27,6 +27,8 @@ pub enum RespondError {
 pub enum PublicKeyError {
     #[error("Derived key conversion failed.")]
     DerivedKeyConversionFailed,
+    #[error("The provided domain was not found.")]
+    DomainNotFound,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

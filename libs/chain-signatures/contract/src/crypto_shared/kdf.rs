@@ -40,7 +40,7 @@ pub fn derive_key_secp256k1(
     (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key).to_affine()
 }
 
-pub fn derive_public_key_package_edd25519(
+pub fn derive_public_key_edwards_point_edd25519(
     point: curve25519_dalek::EdwardsPoint,
     tweak: Tweak,
 ) -> curve25519_dalek::EdwardsPoint {
