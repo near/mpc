@@ -3,11 +3,11 @@ use magikitten::Transcript;
 use rand_core::OsRng;
 
 use crate::crypto::{Commitment, Randomizer};
-use crate::triples::multiplication::multiplication_many;
+use crate::ecdsa::triples::multiplication::multiplication_many;
 use crate::{
     compat::{CSCurve, SerializablePoint},
     crypto::{commit, hash, Digest},
-    math::{GroupPolynomial, Polynomial},
+    ecdsa::math::{GroupPolynomial, Polynomial},
     participants::{ParticipantCounter, ParticipantList, ParticipantMap},
     proofs::{dlog, dlogeq},
     protocol::{
@@ -746,9 +746,9 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
 
             big_e_j_zero_v[i].put(from, their_big_e.evaluate_zero());
 
-            big_e_v[i] += &their_big_e;
-            big_f_v[i] += &their_big_f;
-            big_l_v[i] += &their_big_l;
+            big_e_v[i] += their_big_e;
+            big_f_v[i] += their_big_f;
+            big_l_v[i] += their_big_l;
         }
     }
 
@@ -1082,9 +1082,9 @@ mod test {
     use k256::{ProjectivePoint, Secp256k1};
 
     use crate::{
+        ecdsa::triples::generate_triple,
         participants::ParticipantList,
         protocol::{run_protocol, Participant, Protocol, ProtocolError},
-        triples::generate_triple,
     };
 
     use super::{generate_triple_many, TripleGenerationOutput, TripleGenerationOutputMany};

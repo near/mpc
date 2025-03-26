@@ -3,12 +3,12 @@ use subtle::ConditionallySelectable;
 
 use crate::{
     compat::{self, CSCurve},
+    ecdsa::presign::PresignOutput,
     participants::{ParticipantCounter, ParticipantList},
     protocol::{
         internal::{make_protocol, Context, SharedChannel},
         InitializationError, Participant, Protocol, ProtocolError,
     },
-    PresignOutput,
 };
 
 /// Represents a signature with extra information, to support different variants of ECDSA.
@@ -128,9 +128,9 @@ pub async fn combine_signature_shares<C: CSCurve>(
     presignature_big_r: C::AffinePoint,
     msg_hash: C::Scalar,
 ) -> Result<FullSignature<C>, ProtocolError> {
-    let mut s: C::Scalar = shares[0].into();
+    let mut s: C::Scalar = shares[0];
     for s_j in shares.iter().skip(1) {
-        s += C::Scalar::from(*s_j)
+        s += *s_j
     }
 
     // Spec 2.3
@@ -197,9 +197,12 @@ mod test {
     };
     use rand_core::OsRng;
 
-    use crate::{compat::scalar_hash, math::Polynomial, protocol::run_protocol};
-
     use super::*;
+    use crate::ecdsa::test::{
+        assert_public_key_invariant, run_keygen, run_presign, run_reshare, run_sign,
+    };
+    use crate::ecdsa::triples::deal;
+    use crate::{compat::scalar_hash, ecdsa::math::Polynomial, protocol::run_protocol};
 
     #[test]
     fn test_sign() -> Result<(), Box<dyn Error>> {
@@ -251,6 +254,108 @@ mod test {
             VerifyingKey::from(&PublicKey::from_affine(public_key).unwrap())
                 .verify(&msg[..], &sig)?;
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
+        let participants = vec![
+            Participant::from(0u32),
+            Participant::from(1u32),
+            Participant::from(2u32),
+            Participant::from(3u32),
+            Participant::from(4u32),
+        ];
+        let threshold = 3;
+        let result0 = run_keygen(&participants, threshold)?;
+        assert_public_key_invariant(&result0)?;
+
+        let pub_key = result0[2].1.public_key_package.clone();
+
+        // Run heavy reshare
+        let new_threshold = 5;
+        let mut new_participant = participants.clone();
+        new_participant.push(Participant::from(31u32));
+        new_participant.push(Participant::from(32u32));
+        new_participant.push(Participant::from(33u32));
+        let mut key_packages = run_reshare(
+            &participants,
+            &pub_key,
+            result0,
+            threshold,
+            new_threshold,
+            new_participant.clone(),
+        )?;
+        assert_public_key_invariant(&key_packages)?;
+        key_packages.sort_by_key(|(p, _)| *p);
+
+        let public_key = key_packages[0].1.public_key_package.clone();
+        // Prepare triples
+        let (pub0, shares0) = deal(&mut OsRng, &new_participant, new_threshold);
+        let (pub1, shares1) = deal(&mut OsRng, &new_participant, new_threshold);
+
+        // Presign
+        let mut presign_result =
+            run_presign(key_packages, shares0, shares1, &pub0, &pub1, new_threshold);
+        presign_result.sort_by_key(|(p, _)| *p);
+
+        let msg = b"hello world";
+
+        run_sign(
+            presign_result,
+            public_key.verifying_key().to_element().to_affine(),
+            msg,
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
+        let participants = vec![
+            Participant::from(0u32),
+            Participant::from(1u32),
+            Participant::from(2u32),
+            Participant::from(3u32),
+            Participant::from(4u32),
+        ];
+        let threshold = 4;
+        let result0 = run_keygen(&participants, threshold)?;
+        assert_public_key_invariant(&result0)?;
+
+        let pub_key = result0[2].1.public_key_package.clone();
+
+        // Run heavy reshare
+        let new_threshold = 3;
+        let mut new_participant = participants.clone();
+        new_participant.pop();
+        let mut key_packages = run_reshare(
+            &participants,
+            &pub_key,
+            result0,
+            threshold,
+            new_threshold,
+            new_participant.clone(),
+        )?;
+        assert_public_key_invariant(&key_packages)?;
+        key_packages.sort_by_key(|(p, _)| *p);
+
+        let public_key = key_packages[0].1.public_key_package.clone();
+        // Prepare triples
+        let (pub0, shares0) = deal(&mut OsRng, &new_participant, new_threshold);
+        let (pub1, shares1) = deal(&mut OsRng, &new_participant, new_threshold);
+
+        // Presign
+        let mut presign_result =
+            run_presign(key_packages, shares0, shares1, &pub0, &pub1, new_threshold);
+        presign_result.sort_by_key(|(p, _)| *p);
+
+        let msg = b"hello world";
+
+        run_sign(
+            presign_result,
+            public_key.verifying_key().to_element().to_affine(),
+            msg,
+        );
         Ok(())
     }
 }

@@ -7,15 +7,35 @@
 //! to serialize the emssages it produces.
 use std::{collections::HashMap, error, fmt};
 
+use crate::compat::CSCurve;
 use ::serde::{Deserialize, Serialize};
 
-use crate::compat::CSCurve;
+use frost_core::serialization::SerializableScalar;
+use frost_core::{Ciphersuite, Identifier, Scalar};
 
 /// Represents an error which can happen when running a protocol.
 #[derive(Debug)]
 pub enum ProtocolError {
     /// Some assertion in the protocol failed.
     AssertionFailed(String),
+    /// The ciphersuite does not support DKG.
+    DKGNotSupported,
+    /// Could not extract the verification Key from a commitment.
+    ErrorExtractVerificationKey,
+    /// Incorrect number of commitments.
+    IncorrectNumberOfCommitments,
+    /// The identifier of the signer whose share validation failed.
+    InvalidProofOfKnowledge(Participant),
+    /// The validation of the secret share sent has failed
+    InvalidSecretShare(Participant),
+    /// The signing key is zero
+    MalformedElement,
+    /// Detected malicious participant
+    MaliciousParticipant(Participant),
+    /// The signing key is zero
+    MalformedSigningKey,
+    /// Error in serializing point
+    PointSerialization,
     /// Some generic error happened.
     Other(Box<dyn error::Error + Send + Sync>),
 }
@@ -25,6 +45,31 @@ impl fmt::Display for ProtocolError {
         match self {
             ProtocolError::Other(e) => write!(f, "{}", e),
             ProtocolError::AssertionFailed(e) => write!(f, "assertion failed {}", e),
+            ProtocolError::DKGNotSupported => write!(f, "the ciphersuite does not support DKG"),
+            ProtocolError::ErrorExtractVerificationKey => write!(
+                f,
+                "could not extract the verification Key from the commitment."
+            ),
+            ProtocolError::IncorrectNumberOfCommitments => {
+                write!(f, "incorrect number of commitments")
+            }
+            ProtocolError::InvalidProofOfKnowledge(p) => write!(
+                f,
+                "the proof of knowledge of participant {p:?} is not valid."
+            ),
+            ProtocolError::InvalidSecretShare(p) => {
+                write!(f, "participant {p:?} sent an invalid secret share.")
+            }
+            ProtocolError::MalformedElement => {
+                write!(f, "the element you are trying to construct is malformed.")
+            }
+            ProtocolError::MaliciousParticipant(p) => {
+                write!(f, "detected a malicious participant {p:?}.")
+            }
+            ProtocolError::MalformedSigningKey => write!(f, "the constructed signing key is null."),
+            ProtocolError::PointSerialization => {
+                write!(f, "The group element could not be serialized.")
+            }
         }
     }
 }
@@ -73,8 +118,30 @@ impl Participant {
     }
 
     /// Return the scalar associated with this participant.
+    /// The implementation follows the original cait-sith library
     pub fn scalar<C: CSCurve>(&self) -> C::Scalar {
         C::Scalar::from(self.0 as u64 + 1)
+    }
+
+    /// Return the scalar associated with this participant.
+    /// The implementation follows the original frost library
+    pub fn generic_scalar<C: Ciphersuite>(&self) -> Scalar<C> {
+        let mut bytes = vec![0u8; 32];
+        let id = (self.0 as u64) + 1;
+        bytes[..8].copy_from_slice(&id.to_le_bytes());
+
+        // transform the bytes into a scalar and fails if Scalar
+        // is not in the range [0, order - 1]
+        let scalar = SerializableScalar::<C>::deserialize(&bytes).expect("Cannot be zero");
+        scalar.0
+    }
+
+    /// Returns a Frost identifier used in the frost library
+    pub fn to_identifier<C: Ciphersuite>(&self) -> Identifier<C> {
+        let id = self.generic_scalar::<C>();
+        // creating an identifier as required by the syntax of frost_core
+        // cannot panic as the previous line ensures id is neq zero
+        Identifier::new(id).unwrap()
     }
 }
 
@@ -237,10 +304,3 @@ pub(crate) fn run_two_party_protocol<T0: fmt::Debug, T1: fmt::Debug>(
 }
 
 pub(crate) mod internal;
-
-#[cfg(feature = "internals")]
-pub use internal::make_protocol;
-#[cfg(feature = "internals")]
-pub use internal::Context;
-#[cfg(feature = "internals")]
-pub use internal::SharedChannel;

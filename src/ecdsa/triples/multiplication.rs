@@ -210,7 +210,7 @@ mod test {
     };
 
     use super::multiplication;
-    use crate::triples::multiplication::multiplication_many;
+    use crate::ecdsa::triples::multiplication::multiplication_many;
 
     #[test]
     fn test_multiplication() -> Result<(), ProtocolError> {

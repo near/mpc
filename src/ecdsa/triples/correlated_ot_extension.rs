@@ -93,7 +93,7 @@ fn run_correlated_ot(
 mod test {
     use rand_core::OsRng;
 
-    use crate::triples::batch_random_ot::run_batch_random_ot;
+    use crate::ecdsa::triples::batch_random_ot::run_batch_random_ot;
 
     use super::*;
     use k256::Secp256k1;

@@ -69,7 +69,7 @@ impl<C: CSCurve> Polynomial<C> {
     ///
     /// This is much more efficient than evaluating at other points.
     pub fn evaluate_zero(&self) -> C::Scalar {
-        self.coefficients.get(0).cloned().unwrap_or_default()
+        self.coefficients.first().cloned().unwrap_or_default()
     }
 
     /// Set the zero value of this polynomial to a new scalar
@@ -176,7 +176,7 @@ impl<C: CSCurve> GroupPolynomial<C> {
     ///
     /// This is more efficient than evaluating at an arbitrary point.
     pub fn evaluate_zero(&self) -> C::ProjectivePoint {
-        self.coefficients.get(0).cloned().unwrap_or_default()
+        self.coefficients.first().cloned().unwrap_or_default()
     }
 
     /// Evaluate this polynomial at a specific value.

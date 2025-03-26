@@ -46,12 +46,12 @@
 //! Then, the parties need to generate a key pair so that they can sign messages:
 //!
 //! - The parties run a distributed key generation protocol to setup a new key pair,
-//! which can be used for many signatures.
+//!   which can be used for many signatures.
 //!
 //! When the parties want to sign using a given key:
 //!
 //! - Using their shares of a private key, the parties can create a *presignature*,
-//! before knowing the message to sign.
+//!   before knowing the message to sign.
 //! - Once they know this message, they can use the presignature to create a complete signature.
 //!
 //! It's important that presignatures and triples are **never** reused.
@@ -119,29 +119,16 @@ mod compat;
 mod constants;
 mod crypto;
 
-#[cfg(feature = "internals")]
-pub mod echo_broadcast;
-#[cfg(not(feature = "internals"))]
 mod echo_broadcast;
 
-mod keyshare;
-mod math;
-
-#[cfg(feature = "internals")]
-pub mod participants;
-#[cfg(not(feature = "internals"))]
+mod generic_dkg;
 mod participants;
 
-mod presign;
 mod proofs;
 pub mod protocol;
 mod serde;
-mod sign;
-#[cfg(test)]
-mod test;
-pub mod triples;
 
 pub use compat::CSCurve;
-pub use keyshare::{keygen, refresh, reshare, KeygenOutput};
-pub use presign::{presign, PresignArguments, PresignOutput};
-pub use sign::{combine_signature_shares, sign, signature_share, FullSignature};
+
+pub mod ecdsa;
+pub mod eddsa;

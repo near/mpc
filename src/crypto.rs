@@ -21,7 +21,7 @@ impl<'a> MeowWriter<'a> {
     }
 }
 
-impl<'a> Write for MeowWriter<'a> {
+impl Write for MeowWriter<'_> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.0.ad(buf, true);
         Ok(buf.len())
