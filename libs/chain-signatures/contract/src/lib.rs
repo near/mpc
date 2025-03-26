@@ -180,10 +180,6 @@ impl MpcContract {
     }
 }
 
-// impl VersionedMpcContract {
-//     fn
-// }
-
 // User contract API
 #[near_bindgen]
 impl VersionedMpcContract {
@@ -427,8 +423,7 @@ impl VersionedMpcContract {
                 let derived_edwards_point =
                     derive_public_key_edwards_point_edd25519(edwards_point, request.tweak);
 
-                let derived_public_key_32_bytes =
-                    *derived_edwards_point.compress().as_bytes();
+                let derived_public_key_32_bytes = *derived_edwards_point.compress().as_bytes();
 
                 let message = request.payload_hash.as_bytes();
 
