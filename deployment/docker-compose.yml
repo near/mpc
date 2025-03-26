@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   mpc-node:
@@ -6,11 +5,10 @@ services:
     container_name: mpc-node
     network_mode: "host"
     volumes:
-      - ./data:/app/data
+      - /mnt/sdc/mpc:/data
     env_file:
-      - .env
+      - /mnt/sdc/mpc/.env
     environment:
-      - MPC_HOME_DIR=/app/data
+      - MPC_HOME_DIR=/data
       - RUST_LOG=info
-    command: ["./mpc-node", "start", "--home-dir", "/app/data"]
     restart: unless-stopped 
