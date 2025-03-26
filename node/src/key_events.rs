@@ -81,7 +81,7 @@ pub async fn keygen_leader(
                 public_key: near_crypto::PublicKey::from_str(&pk)?,
             }))
             .await?;
-        tracing::info!("Leader in posession of key {:?}, voted reshared", key_id);
+        tracing::info!("Leader in posession of key {:?}, voted pk", key_id);
         return Ok(());
     }
     tracing::info!("Leader is starting ecdsa secp256k1 keygen {:?}", key_id);
@@ -143,15 +143,26 @@ pub async fn keygen_follower(
         key_id,
         my_participant_id,
     );
+    if let Some(keyshare) = keyshare_storage.load_from_temporary(key_id).await? {
+        tracing::info!(
+            "Leader indexer is lagging behind. Follower already in posession of this keyshare."
+        );
+        let pk: String = (&keyshare.public_key()?).into();
+        chain_txn_sender
+            .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
+                key_event_id: keyshare.key_id,
+                public_key: near_crypto::PublicKey::from_str(&pk)?,
+            }))
+            .await?;
+        tracing::info!("Follower in posession of key {:?}, voted pk", key_id);
+        return Ok(());
+    }
     let contract_event = wait_for_start(key_event_receiver, key_id).await?;
     tracing::info!(
         "Key Generation {:?} started on contract. Our id: {}",
         key_id,
         my_participant_id
     );
-    if contract_event.completed.contains(&my_participant_id) {
-        anyhow::bail!("We already completed this key generation. Why is there a second attempt?");
-    }
     tracing::info!(
         "Joining ecdsa secp256k1 key generation for key id {:?} as follower: {:?}",
         contract_event.id,
@@ -333,11 +344,22 @@ pub async fn resharing_follower(
     // Same might be required for initializing?
     let channel = channel_receiver.recv().await.unwrap();
     let task_id = channel.task_id();
-
     let key_id = match task_id {
         MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { key_event }) => key_event,
         _ => anyhow::bail!("Expected key resharing task id, received: {:?}", task_id),
     };
+
+    if let Some(keyshare) = keys.keyshare_storage.load_from_temporary(key_id).await? {
+        chain_txn_sender
+            .send(ChainSendTransactionRequest::VoteReshared(
+                ChainVoteResharedArgs {
+                    key_event_id: keyshare.key_id,
+                },
+            ))
+            .await?;
+        tracing::info!("Follower in posession of key {:?}, voted reshared", key_id);
+        return Ok(());
+    }
 
     let contract_event = wait_for_start(key_event_receiver, key_id).await?;
     tracing::info!(
