@@ -1,8 +1,8 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::OperatingAccounts;
 use crate::cli::{
-    MpcDeployContractCmd, MpcJoinCmd, MpcViewContractCmd, MpcVoteJoinCmd, MpcVoteLeaveCmd, NewMpcNetworkCmd,
-    RemoveContractCmd, UpdateMpcNetworkCmd,
+    MpcDeployContractCmd, MpcJoinCmd, MpcViewContractCmd, MpcVoteJoinCmd, MpcVoteLeaveCmd,
+    NewMpcNetworkCmd, RemoveContractCmd, UpdateMpcNetworkCmd,
 };
 use crate::constants::ONE_NEAR;
 use crate::devnet::OperatingDevnetSetup;
