@@ -439,9 +439,85 @@ impl MpcVoteJoinCmd {
     }
 }
 
+impl MpcVoteLeaveCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        println!(
+            "Going to vote_leave MPC network {} for participant {}",
+            name, self.for_account_index
+        );
+        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} does not exist", name));
+        if self.for_account_index >= mpc_setup.participants.len() {
+            panic!(
+                "Target account index {} is out of bounds for {} participants",
+                self.for_account_index,
+                mpc_setup.participants.len()
+            );
+        }
+        let contract = mpc_setup
+            .contract
+            .clone()
+            .expect("Contract is not deployed");
+        let from_accounts = mpc_setup
+            .participants
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                *i != self.for_account_index && (self.voters.is_empty() || self.voters.contains(i))
+            })
+            .map(|(_, account_id)| account_id)
+            .collect::<Vec<_>>();
+
+        let mut futs = Vec::new();
+        for account_id in from_accounts {
+            let account = setup.accounts.account(account_id);
+            let mut key = account.any_access_key().await;
+            let contract = contract.clone();
+            let candidate = mpc_setup.participants[self.for_account_index].clone();
+            futs.push(async move {
+                key.submit_tx_to_call_function(
+                    &contract,
+                    "vote_leave",
+                    &serde_json::to_vec(&VoteLeaveArgs { candidate }).unwrap(),
+                    300,
+                    0,
+                    near_primitives::views::TxExecutionStatus::Final,
+                    true,
+                )
+                .await
+            });
+        }
+        let results = futures::future::join_all(futs).await;
+        for (i, result) in results.into_iter().enumerate() {
+            match result {
+                Ok(_) => {
+                    println!(
+                        "Participant {} vote_leave({}) succeed",
+                        i, self.for_account_index
+                    );
+                }
+                Err(err) => {
+                    println!(
+                        "Participant {} vote_leave({}) failed: {:?}",
+                        i, self.for_account_index, err
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct VoteJoinArgs {
     candidate: AccountId,
+}
+
+#[derive(Serialize)]
+struct VoteLeaveArgs {
+    kick: AccountId,
 }
 
 #[derive(Serialize)]
