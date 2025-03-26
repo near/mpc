@@ -51,6 +51,7 @@ impl FakeMpcContractState {
             id,
             started: false,
             completed,
+            completed_domains: Vec::new(),
         }
     }
 
@@ -139,16 +140,21 @@ impl FakeMpcContractState {
             },
             started: false,
             completed: BTreeSet::new(),
+            completed_domains: Vec::new(),
         };
         match self.state.borrow_mut() {
             ContractState::Initializing(state) => {
-                assert!(state.key_event.started);
-                assert_eq!(state.key_event.id, id);
+                if !state.key_event.started || state.key_event.id != id {
+                    tracing::info!("Ignoring stale vote_abort_key_event transaction; current ID {:?}, received ID {:?}", state.key_event.id, id);
+                    return;
+                }
                 state.key_event = next_key_event;
             }
             ContractState::Resharing(state) => {
-                assert!(state.key_event.started);
-                assert_eq!(state.key_event.id, id);
+                if !state.key_event.started || state.key_event.id != id {
+                    tracing::info!("Ignoring stale vote_abort_key_event transaction; current ID {:?}, received ID {:?}", state.key_event.id, id);
+                    return;
+                }
                 state.key_event = next_key_event;
             }
             _ => {}

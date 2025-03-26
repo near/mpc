@@ -158,6 +158,21 @@ impl MeshNetworkClient {
         result
     }
 
+    /// Waits until all participants in the network are connected to us.
+    ///
+    /// Only use this if the node is the leader of a key generation or resharing state.
+    /// For other states, use wait_for_ready for the underlying transport.
+    ///
+    /// This is different from NetworkTaskChannel::wait_for_all_participants_connected;
+    /// This function requires that all participants are simultaneously connected to us,
+    /// whereas the other function only requires each participant to be connected to at
+    /// some point (as it has its built-in connection breakage detection).
+    pub async fn leader_wait_for_all_connected(&self) -> anyhow::Result<()> {
+        self.transport_sender
+            .wait_for_ready(self.all_participant_ids().len())
+            .await
+    }
+
     /// Internal function to either return a new channel or a sender for the existing channel.
     /// A new channel is created only when the Start message is received for the first time.
     /// Otherwise, returns a Sender that'll send to the existing channel, or, if we receive
