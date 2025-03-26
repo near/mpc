@@ -108,6 +108,14 @@ impl KeyshareStorage {
         self.temporary.store_keyshare(key_share).await
     }
 
+    /// This function returns None or the keyshare with `key_id` from temporary storage.
+    pub async fn load_from_temporary(
+        &self,
+        key_id: KeyEventId,
+    ) -> anyhow::Result<Option<Keyshare>> {
+        self.temporary.load_keyshare(&key_id).await
+    }
+
     /// Before generating a key, we must call `ensure_can_generate_key` to check that we are able
     /// to generate that key and use it afterwards. This requires:
     ///  - The already generated keys exist either in permanent or temporary storage.
