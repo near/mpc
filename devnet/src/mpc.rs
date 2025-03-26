@@ -1,7 +1,7 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::OperatingAccounts;
 use crate::cli::{
-    MpcDeployContractCmd, MpcJoinCmd, MpcViewContractCmd, MpcVoteJoinCmd, NewMpcNetworkCmd,
+    MpcDeployContractCmd, MpcJoinCmd, MpcViewContractCmd, MpcVoteJoinCmd, MpcVoteLeaveCmd, NewMpcNetworkCmd,
     RemoveContractCmd, UpdateMpcNetworkCmd,
 };
 use crate::constants::ONE_NEAR;
@@ -476,12 +476,12 @@ impl MpcVoteLeaveCmd {
             let account = setup.accounts.account(account_id);
             let mut key = account.any_access_key().await;
             let contract = contract.clone();
-            let candidate = mpc_setup.participants[self.for_account_index].clone();
+            let kick = mpc_setup.participants[self.for_account_index].clone();
             futs.push(async move {
                 key.submit_tx_to_call_function(
                     &contract,
                     "vote_leave",
-                    &serde_json::to_vec(&VoteLeaveArgs { candidate }).unwrap(),
+                    &serde_json::to_vec(&VoteLeaveArgs { kick }).unwrap(),
                     300,
                     0,
                     near_primitives::views::TxExecutionStatus::Final,
