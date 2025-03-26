@@ -116,7 +116,7 @@ pub async fn keygen_leader(
 
 /// Handles the follower side of an ECDSA key generation task.
 /// - Waits for a new network task channel from `channel_receiver`.
-/// - Ignores non-key generation tasks until a valid one is received.
+/// - drops the channel and bails if the task_id received through it is not for keygen.
 /// - Waits for the corresponding key event from `key_event_receiver` to begin.
 /// - Skips execution if this participant has already completed the key generation.
 /// - Executes the key generation protocol using the received channel and threshold.
@@ -130,17 +130,13 @@ pub async fn keygen_follower(
     key_event_receiver: &mut watch::Receiver<ContractKeyEventInstance>,
     channel_receiver: &mut mpsc::UnboundedReceiver<NetworkTaskChannel>,
 ) -> anyhow::Result<()> {
+    // returing an error here because that seems to be required for resharing and we would
+    // expect this to also be a potential issue for adding domains.
     let channel = channel_receiver.recv().await.unwrap();
-    let key_id = loop {
-        let task_id = channel.task_id();
-        if let MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration { key_event: key_id }) = task_id {
-            break key_id;
-        } else {
-            tracing::info!(
-                "Expected Keygeneration task id, received: {:?}; ignoring.",
-                task_id,
-            );
-        };
+    let task_id = channel.task_id();
+    let key_id = match task_id {
+        MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration { key_event }) => key_event,
+        _ => anyhow::bail!("Expected key generation task id, received: {:?}", task_id),
     };
     tracing::info!(
         "Received Keygeneration task id: {:?}. Our id; {:?}",
@@ -318,7 +314,7 @@ pub struct ResharingArgs {
 
 /// Handles the follower side of a key resharing task.
 /// - Waits for a new network task channel from `channel_receiver`.
-/// - Ignores non-resharing tasks until a resharing task is received.
+/// - Drops the channel and bails if task id other than resharing is received.
 /// - Waits for the corresponding key event from `key_event_receiver` to begin.
 /// - Skips execution if this participant has already completed the resharing.
 /// - Executes the resharing protocol using existing keyshares and the provided channel.
@@ -331,17 +327,16 @@ pub async fn resharing_follower(
     key_event_receiver: &mut watch::Receiver<ContractKeyEventInstance>,
     channel_receiver: &mut mpsc::UnboundedReceiver<NetworkTaskChannel>,
 ) -> anyhow::Result<()> {
+    // during pytests, we had a situation where the leader would spam here with triple or
+    // presignature requests. Easiest solution was to just drop the channel and re-enter
+    // this function.
+    // Same might be required for initializing?
     let channel = channel_receiver.recv().await.unwrap();
-    let key_id = loop {
-        let task_id = channel.task_id();
-        if let MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { key_event: key_id }) = task_id {
-            break key_id;
-        } else {
-            tracing::info!(
-                "Expected Key resharing task id, received: {:?}; ignoring.",
-                task_id,
-            );
-        };
+    let task_id = channel.task_id();
+
+    let key_id = match task_id {
+        MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { key_event }) => key_event,
+        _ => anyhow::bail!("Expected key resharing task id, received: {:?}", task_id),
     };
 
     let contract_event = wait_for_start(key_event_receiver, key_id).await?;
