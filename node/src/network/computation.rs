@@ -33,9 +33,7 @@ pub trait MpcLeaderCentricComputation<T>: Sized + 'static {
 
         // We'll wrap the following future in a timeout below.
         let fut = async move {
-            if !sender.is_leader() {
-                sender.wait_for_all_participants_connected().await?;
-            }
+            sender.wait_for_all_participants_connected().await?;
             let result = self.compute(&mut channel).await;
             let result = match result {
                 Ok(result) => result,

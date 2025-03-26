@@ -137,13 +137,6 @@ impl DomainRegistry {
         Ok(registry)
     }
 
-    pub fn get_domain(&self, domain_id: &DomainId) -> Option<&DomainConfig> {
-        self.domains
-            .iter()
-            .find(|domain_config| domain_config.id == *domain_id)
-    }
-
-    #[cfg(test)]
     pub fn next_domain_id(&self) -> u64 {
         self.next_domain_id
     }

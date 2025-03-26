@@ -1,43 +1,26 @@
-use crate::config::MpcConfig;
-use crate::indexer::participants::ContractResharingState;
+use crate::config::ParticipantsConfig;
 use crate::network::computation::MpcLeaderCentricComputation;
-use crate::network::{MeshNetworkClient, NetworkTaskChannel};
+use crate::network::NetworkTaskChannel;
 use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
+use crate::providers::ecdsa::EcdsaSignatureProvider;
 use cait_sith::protocol::Participant;
 use cait_sith::KeygenOutput;
 use k256::elliptic_curve::sec1::FromEncodedPoint;
 use k256::{AffinePoint, EncodedPoint, Scalar, Secp256k1};
-use std::sync::Arc;
-use tokio::sync::mpsc;
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
-        config: Arc<MpcConfig>,
-        client: Arc<MeshNetworkClient>,
-        state: ContractResharingState,
+        new_threshold: usize,
         my_share: Option<Scalar>,
-        mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
+        public_key: AffinePoint,
+        old_participants: &ParticipantsConfig,
+        channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
-        let task_id = EcdsaTaskId::KeyResharing {
-            new_epoch: state.old_epoch + 1,
-        };
-        let channel = if config.is_leader_for_keygen() {
-            client.new_channel_for_task(task_id, client.all_participant_ids())?
-        } else {
-            MeshNetworkClient::wait_for_task(&mut channel_receiver, task_id).await
-        };
-        let public_key = public_key_to_affine_point(state.public_key)?;
         let new_keyshare = KeyResharingComputation {
-            threshold: config.participants.threshold as usize,
-            old_participants: state
-                .old_participants
-                .participants
-                .iter()
-                .map(|p| p.id)
-                .collect(),
-            old_threshold: state.old_participants.threshold as usize,
+            threshold: new_threshold,
+            old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
+            old_threshold: old_participants.threshold as usize,
             my_share,
             public_key,
         }
@@ -132,6 +115,8 @@ mod tests {
     use crate::providers::ecdsa::EcdsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
+    use mpc_contract::primitives::domain::DomainId;
+    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
@@ -154,12 +139,16 @@ mod tests {
                 let all_participant_ids = client.all_participant_ids();
                 let keyshare = keygens.get(&participant_id.into()).map(|k| k.private_share);
                 let old_participants = old_participants.clone();
-
+                let key_id = KeyEventId::new(
+                    EpochId::new(42),
+                    DomainId::legacy_ecdsa_id(),
+                    AttemptId::legacy_attempt_id(),
+                );
                 async move {
                     // We'll have the first participant be the leader.
                     let channel = if participant_id == all_participant_ids[0] {
                         client.new_channel_for_task(
-                            EcdsaTaskId::KeyResharing { new_epoch: 0 },
+                            EcdsaTaskId::KeyResharing { key_event: key_id },
                             client.all_participant_ids(),
                         )?
                     } else {

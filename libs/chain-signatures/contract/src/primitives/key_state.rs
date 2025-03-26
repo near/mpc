@@ -9,7 +9,7 @@ use near_sdk::{env, near, PublicKey};
 /// Locally on each node, each keyshare is uniquely identified by the tuple
 /// (EpochId, DomainId, AttemptId).
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct EpochId(u64);
 
 impl EpochId {
@@ -25,7 +25,7 @@ impl EpochId {
 }
 
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct AttemptId(u64);
 
 impl AttemptId {
@@ -56,7 +56,7 @@ impl Default for AttemptId {
 ///               yielded partially valid results. This is incremented for each attempt within the
 ///               same epoch and domain.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash)]
 pub struct KeyEventId {
     pub epoch_id: EpochId,
     pub domain_id: DomainId,
@@ -69,6 +69,15 @@ impl KeyEventId {
             epoch_id,
             domain_id,
             attempt_id,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn next_attempt(&self) -> Self {
+        KeyEventId {
+            epoch_id: self.epoch_id,
+            domain_id: self.domain_id,
+            attempt_id: self.attempt_id.next(),
         }
     }
 }

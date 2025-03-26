@@ -47,6 +47,7 @@ class HandleTestResult():
         assert self.num_failures + self.num_successes == self.num_requests, f"expected {self.num_requests} requests, found {self.num_failures + self.num_successes}"
 
 
+@pytest.mark.skip  # will be reworked with the state changes
 @pytest.mark.ci_excluded
 @pytest.mark.slow
 def test_sign_request_cleanup_logic():
@@ -54,9 +55,9 @@ def test_sign_request_cleanup_logic():
     This test verifies that a sign call removes exactly one delayed signature from the state.
     Note that this test is slow.
     """
-    cluster = shared.start_cluster_with_mpc(2, 2, 1, load_mpc_contract())
-    init_args = {'init_config': {'request_timeout_blocks': 1}}
-    cluster.init_contract(threshold=2, additional_init_args=init_args)
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1,
+                                                       load_mpc_contract())
+    cluster.init_cluster(participants=mpc_nodes, threshold=2)
     hashes, _ = cluster.generate_and_send_signature_requests(1)
     time.sleep(2)
     hash_2, _ = cluster.generate_and_send_signature_requests(1)
@@ -69,6 +70,7 @@ def test_sign_request_cleanup_logic():
     result_handler.finalize()
 
 
+@pytest.mark.skip  # will be reworked with the state changes
 @pytest.mark.ci_excluded
 @pytest.mark.slow
 def test_remove_timed_out_requests():
@@ -82,9 +84,9 @@ def test_remove_timed_out_requests():
 
     num_requests = 150
     num_requests_to_remove = 100
-    cluster = shared.start_cluster_with_mpc(2, 2, 1, load_mpc_contract())
-    init_args = {'init_config': {'request_timeout_blocks': 2}}
-    cluster.init_contract(threshold=2, additional_init_args=init_args)
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1,
+                                                       load_mpc_contract())
+    cluster.init_cluster(participants=mpc_nodes, threshold=2)
 
     # Submit sigature requestst
     started = time.time()

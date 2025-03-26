@@ -43,10 +43,15 @@ impl KeyEvent {
 
     /// Start a new key event instance as the leader, if one isn't already active.
     /// The leader is always the participant with the lowest participant ID.
-    pub fn start(&mut self, timeout_blocks: u64) -> Result<(), Error> {
+    pub fn start(&mut self, key_event_id: KeyEventId, timeout_blocks: u64) -> Result<(), Error> {
         self.cleanup_if_timed_out();
         if self.instance.is_some() {
             return Err(KeyEventError::ActiveKeyEvent.into());
+        }
+        let expected_key_event_id =
+            KeyEventId::new(self.epoch_id, self.domain.id, self.next_attempt_id);
+        if key_event_id != expected_key_event_id {
+            return Err(KeyEventError::KeyEventIdMismatch.into());
         }
         self.verify_leader()?;
         self.instance = Some(KeyEventInstance::new(self.next_attempt_id, timeout_blocks));
@@ -186,9 +191,15 @@ impl KeyEvent {
         self.instance.as_ref().unwrap().completed.len()
     }
 
-    #[cfg(test)]
     pub fn domain_id(&self) -> crate::primitives::domain::DomainId {
         self.domain.id
+    }
+    /// Returns the current key event instance (or none)
+    pub fn instance(&self) -> &Option<KeyEventInstance> {
+        &self.instance
+    }
+    pub fn next_attempt_id(&self) -> AttemptId {
+        self.next_attempt_id
     }
 }
 
@@ -227,9 +238,19 @@ impl KeyEventInstance {
             public_key: None,
         }
     }
+    pub fn completed(&self) -> &BTreeSet<AuthenticatedParticipantId> {
+        &self.completed
+    }
 
     pub fn active(&self) -> bool {
         env::block_height() < self.expires_on
+    }
+
+    pub fn attempt_id(&self) -> AttemptId {
+        self.attempt_id
+    }
+    pub fn expires_on(&self) -> u64 {
+        self.expires_on
     }
 
     /// Commits the vote of `candidate` to `public_key`, returning either Voted with the number of

@@ -96,6 +96,12 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+      
+      - name: Install wasm-opt from crates.io
+        run: cargo install wasm-opt --locked
+
+      - name: Add wasm-opt to PATH
+        run: echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
 
       - name: Setup virtualenv
         run: |
@@ -108,5 +114,5 @@ jobs:
         run: |
           source pytest/venv/bin/activate
           cd pytest 
-          pytest -m "not ci_excluded" -s 
+          pytest -m "not ci_excluded" -s -x
 
