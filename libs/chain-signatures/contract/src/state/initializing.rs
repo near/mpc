@@ -383,9 +383,7 @@ mod tests {
             .value() as usize;
         for (account, _, _) in &participants {
             env.set_signer(account);
-            state
-                .vote_pk(first_key_event_id, pk.clone())
-                .unwrap();
+            state.vote_pk(first_key_event_id, pk.clone()).unwrap();
         }
 
         // we should have 3 keys now.
