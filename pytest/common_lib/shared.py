@@ -391,13 +391,16 @@ class MpcCluster:
         assert self.wait_for_state('Initializing'), "failed to initialize"
         assert self.wait_for_state('Running'), "failed to run"
 
-    def do_resharing(self, new_participants: List[MpcNode],
-                     new_threshold: int):
+    def do_resharing(self, new_participants: List[MpcNode], new_threshold: int,
+                     prospective_epoch_id: int):
         self.define_candidate_set(new_participants)
         print(
             f"\033[91m(Vote Resharing) Voting to reshare with new threshold: \033[93m{new_threshold}\033[0m"
         )
-        args = {'proposal': self.make_threshold_parameters(new_threshold)}
+        args = {
+            'prospective_epoch_id': prospective_epoch_id,
+            'proposal': self.make_threshold_parameters(new_threshold)
+        }
         state = self.contract_state()
         assert state.is_state('Running'), "Require running state"
         old_threshold = state.threshold
