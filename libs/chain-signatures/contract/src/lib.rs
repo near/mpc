@@ -30,7 +30,7 @@ use near_sdk::{
     PromiseError, PublicKey,
 };
 use near_sdk::{near, CurveType};
-use primitives::domain::{self, DomainConfig, DomainId, DomainRegistry, SignatureScheme};
+use primitives::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
 use primitives::key_state::{EpochId, KeyEventId, Keyset};
 use primitives::signature::{PayloadHash, SignRequest, SignatureRequest, Tweak, YieldIndex};
 use primitives::thresholds::{Threshold, ThresholdParameters};

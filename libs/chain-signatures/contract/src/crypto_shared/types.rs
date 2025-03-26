@@ -178,7 +178,7 @@ pub mod edd25519_types {
 
     impl BorshSerialize for SerializableScalar {
         fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-            let to_ser: [u8; 32] = self.scalar.to_bytes().into();
+            let to_ser: [u8; 32] = self.scalar.to_bytes();
             BorshSerialize::serialize(&to_ser, writer)
         }
     }
@@ -206,27 +206,6 @@ pub mod edd25519_types {
         }
     }
 
-    // impl Serialize for SerializableScalar {
-    //     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    //     where
-    //         S: Serializer,
-    //     {
-    //         // Convert the Scalar to bytes and serialize those
-    //         let bytes = self.scalar.to_bytes();
-    //         serializer.serialize_bytes(&bytes)
-    //     }
-    // }
-
-    // impl<'de> Deserialize<'de> for SerializableScalar {
-    //     fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-    //     where
-    //         D: Deserializer<'de>,
-    //     {
-
-    //     }
-    // }
-
-    // TODO: Is there a better way to force a borsh serialization?
     #[derive(Debug, PartialEq, Serialize, Deserialize, Eq, Clone, Copy)]
     pub struct SerializableEdwardsPoint(CompressedEdwardsY);
 
