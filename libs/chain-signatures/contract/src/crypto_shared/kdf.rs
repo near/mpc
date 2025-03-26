@@ -33,7 +33,7 @@ pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
 }
 
 pub fn derive_key_secp256k1(
-    public_key: k256_types::PublicKey,
+    public_key: &k256_types::PublicKey,
     tweak: &Tweak,
 ) -> k256_types::PublicKey {
     let tweak = k256::Scalar::from_non_biased(tweak.as_bytes());
@@ -41,7 +41,7 @@ pub fn derive_key_secp256k1(
 }
 
 pub fn derive_public_key_edwards_point_edd25519(
-    point: curve25519_dalek::EdwardsPoint,
+    point: &curve25519_dalek::EdwardsPoint,
     tweak: &Tweak,
 ) -> curve25519_dalek::EdwardsPoint {
     let tweak = curve25519_dalek::Scalar::from_non_biased(tweak.as_bytes());
@@ -58,29 +58,6 @@ pub fn x_coordinate(
 }
 
 pub fn check_ec_signature(
-    expected_pk: &k256::AffinePoint,
-    big_r: &k256::AffinePoint,
-    s: &k256::Scalar,
-    msg_hash: &PayloadHash,
-    recovery_id: u8,
-) -> anyhow::Result<()> {
-    let public_key = expected_pk.to_encoded_point(false);
-    let signature = k256::ecdsa::Signature::from_scalars(x_coordinate(big_r), s)
-        .context("cannot create signature from cait_sith signature")?;
-    let found_pk = recover(
-        &msg_hash.as_bytes(),
-        &signature,
-        RecoveryId::try_from(recovery_id).context("invalid recovery ID")?,
-    )?
-    .to_encoded_point(false);
-    if public_key == found_pk {
-        return Ok(());
-    }
-
-    anyhow::bail!("cannot use either recovery id={recovery_id} to recover pubic key")
-}
-
-pub fn check_edd25519_signature(
     expected_pk: &k256::AffinePoint,
     big_r: &k256::AffinePoint,
     s: &k256::Scalar,

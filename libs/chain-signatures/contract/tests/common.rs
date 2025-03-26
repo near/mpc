@@ -190,7 +190,7 @@ pub async fn create_response(
 
     let tweak = derive_tweak(predecessor_id, path);
     let derived_sk = derive_secret_key(sk, &tweak);
-    let derived_pk = derive_key_secp256k1(pk.into(), &tweak);
+    let derived_pk = derive_key_secp256k1(&pk.into(), &tweak);
     let signing_key = k256::ecdsa::SigningKey::from(&derived_sk);
     let verifying_key =
         k256::ecdsa::VerifyingKey::from(&k256::PublicKey::from_affine(derived_pk).unwrap());

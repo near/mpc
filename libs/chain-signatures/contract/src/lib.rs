@@ -10,32 +10,33 @@ pub mod update;
 use crate::errors::Error;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 use config::{Config, InitConfig};
-use crypto_shared::kdf::derive_public_key_edwards_point_edd25519;
-use crypto_shared::near_public_key_to_edwards_point;
 use crypto_shared::{
-    derive_key_secp256k1, derive_tweak, kdf::check_ec_signature, near_public_key_to_affine_point,
-    types::SignatureResponse, ScalarExt as _,
+    derive_key_secp256k1, derive_tweak,
+    kdf::{check_ec_signature, derive_public_key_edwards_point_edd25519},
+    near_public_key_to_affine_point, near_public_key_to_edwards_point,
+    types::SignatureResponse,
+    ScalarExt as _,
 };
 use errors::{
     ConversionError, DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError,
     SignError,
 };
-use k256::elliptic_curve::group::GroupEncoding;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
-use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::env::ed25519_verify;
-use near_sdk::store::{LookupMap, Vector};
 use near_sdk::{
-    env, log, near_bindgen, AccountId, BlockHeight, CryptoHash, Gas, GasWeight, NearToken, Promise,
-    PromiseError, PublicKey,
+    borsh::{self, BorshDeserialize, BorshSerialize},
+    env::{self, ed25519_verify},
+    log, near, near_bindgen,
+    store::{LookupMap, Vector},
+    AccountId, BlockHeight, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise,
+    PromiseError, PromiseOrValue, PublicKey,
 };
-use near_sdk::{near, CurveType, PromiseOrValue};
-use primitives::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
-use primitives::key_state::{EpochId, KeyEventId, Keyset};
-use primitives::signature::{PayloadHash, SignRequest, SignatureRequest, Tweak, YieldIndex};
-use primitives::thresholds::{Threshold, ThresholdParameters};
-use state::running::RunningContractState;
-use state::ProtocolContractState;
+use primitives::{
+    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    key_state::{EpochId, KeyEventId, Keyset},
+    signature::{PayloadHash, SignRequest, SignatureRequest, Tweak, YieldIndex},
+    thresholds::{Threshold, ThresholdParameters},
+};
+use state::{running::RunningContractState, ProtocolContractState};
 use storage_keys::StorageKey;
 
 //Gas requised for a sign request
@@ -195,11 +196,13 @@ impl VersionedMpcContract {
             );
         };
 
+        let curve_type = public_key.curve_type();
+
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
         let payload_is_malformed = {
-            match public_key.curve_type() {
+            match &curve_type {
                 CurveType::SECP256K1 => {
                     k256::Scalar::from_bytes(request.payload.as_bytes()).is_none()
                 }
@@ -215,6 +218,10 @@ impl VersionedMpcContract {
                     .message("Payload hash cannot be convereted to Scalar")
                     .to_string(),
             );
+        }
+
+        if request.key_version > self.latest_key_version(Some(curve_type.into())) {
+            env::panic_str(&SignError::UnsupportedKeyVersion.to_string());
         }
 
         // Make sure sign call will not run out of gas doing yield/resume logic
@@ -314,7 +321,7 @@ impl VersionedMpcContract {
         let derived_public_key = match curve_type {
             CurveType::SECP256K1 => {
                 let derived_public_key =
-                    derive_key_secp256k1(near_public_key_to_affine_point(public_key), &tweak);
+                    derive_key_secp256k1(&near_public_key_to_affine_point(public_key), &tweak);
                 let encoded_point = derived_public_key.to_encoded_point(false);
                 let slice: &[u8] = &encoded_point.as_bytes()[1..65];
                 let mut data: Vec<u8> = vec![near_sdk::CurveType::SECP256K1 as u8];
@@ -324,7 +331,7 @@ impl VersionedMpcContract {
             CurveType::ED25519 => {
                 let public_key_edwards_point = near_public_key_to_edwards_point(public_key);
                 let derived_public_key_edwards_point =
-                    derive_public_key_edwards_point_edd25519(public_key_edwards_point, &tweak);
+                    derive_public_key_edwards_point_edd25519(&public_key_edwards_point, &tweak);
                 let encoded_point: [u8; 32] =
                     derived_public_key_edwards_point.compress().to_bytes();
 
@@ -333,6 +340,18 @@ impl VersionedMpcContract {
         };
 
         derived_public_key.map_err(|_| PublicKeyError::DerivedKeyConversionFailed.into())
+    }
+
+    /// Key versions refer new versions of the root key that we may choose to generate on cohort changes
+    /// Older key versions will always work but newer key versions were never held by older signers
+    /// Newer key versions may also add new security features, like only existing within a secure enclave.
+    /// The signature_scheme parameter specifies which signature scheme we're querying the latest version
+    /// for. The default is Secp256k1. The default is **NOT** to query across all signature schemes.
+    pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
+        self.state()
+            .most_recent_domain_for_signature_scheme(signature_scheme.unwrap_or_default())
+            .unwrap()
+            .0 as u32
     }
 }
 
@@ -351,9 +370,9 @@ impl VersionedMpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
 
-        let pk = self.public_key(Some(request.domain_id))?;
+        let public_key = self.public_key(Some(request.domain_id))?;
 
-        match (&response, pk.curve_type()) {
+        match (&response, public_key.curve_type()) {
             (SignatureResponse::Secp256k1(_), CurveType::SECP256K1)
             | (SignatureResponse::Edd25519(_), CurveType::ED25519) => {}
             _ => return Err(RespondError::SignatureSchemeMismatch.into()),
@@ -362,8 +381,10 @@ impl VersionedMpcContract {
         let signature_is_valid = match &response {
             SignatureResponse::Secp256k1(signature_response) => {
                 // generate the expected public key
-                let expected_public_key =
-                    derive_key_secp256k1(near_public_key_to_affine_point(pk), &request.tweak);
+                let expected_public_key = derive_key_secp256k1(
+                    &near_public_key_to_affine_point(public_key),
+                    &request.tweak,
+                );
 
                 // Check the signature is correct
                 check_ec_signature(
@@ -376,16 +397,14 @@ impl VersionedMpcContract {
                 .is_ok()
             }
             SignatureResponse::Edd25519(signature_response) => {
-                let public_key_32_bytes: [u8; 32] =
-                    pk.as_bytes().try_into().expect("Public key is  32 bytes.");
-                let edwards_point =
-                    curve25519_dalek::EdwardsPoint::from_bytes(&public_key_32_bytes)
-                        .expect("Public key is a valid edwards point.");
+                let public_key_edwards_point = near_public_key_to_edwards_point(public_key);
+                let derived_public_key_edwards_point = derive_public_key_edwards_point_edd25519(
+                    &public_key_edwards_point,
+                    &request.tweak,
+                );
 
-                let derived_edwards_point =
-                    derive_public_key_edwards_point_edd25519(edwards_point, &request.tweak);
-
-                let derived_public_key_32_bytes = *derived_edwards_point.compress().as_bytes();
+                let derived_public_key_32_bytes =
+                    *derived_public_key_edwards_point.compress().as_bytes();
 
                 let message = request.payload_hash.as_bytes();
 

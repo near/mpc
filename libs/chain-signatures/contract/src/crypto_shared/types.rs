@@ -5,9 +5,6 @@ use k256::{
 };
 use serde::{Deserialize, Serialize};
 
-// TODO: This key will be much bigger. It's VerifyingKey plus "Frost header"
-pub type Ed25519PublicKey = frost_ed25519::keys::PublicKeyPackage;
-
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum SignatureResponse {
     Secp256k1(k256_types::SignatureResponse),
@@ -18,7 +15,6 @@ pub trait ScalarExt: Sized {
     fn from_bytes(bytes: [u8; 32]) -> Option<Self>;
     fn from_non_biased(bytes: [u8; 32]) -> Self;
     fn to_bytes(&self) -> [u8; 32];
-    fn name() -> &'static str;
 }
 
 pub mod k256_types {
@@ -46,10 +42,6 @@ pub mod k256_types {
 
         fn to_bytes(&self) -> [u8; 32] {
             self.to_bytes().into()
-        }
-
-        fn name() -> &'static str {
-            "k256"
         }
     }
 
@@ -83,13 +75,12 @@ pub mod k256_types {
             let from_ser: [u8; 32] = BorshDeserialize::deserialize_reader(reader)?;
             let scalar = Scalar::from_bytes(from_ser).ok_or(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("The given scalar is not in the field of {}", Scalar::name(),),
+                "The given scalar is not in the field of Secp256k1",
             ))?;
             Ok(SerializableScalar { scalar })
         }
     }
 
-    // TODO: Is there a better way to force a borsh serialization?
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
     pub struct SerializableAffinePoint {
         pub affine_point: AffinePoint,
@@ -146,15 +137,12 @@ pub mod edd25519_types {
             // This should never happen.
             // The space of inputs is 2^256, the space of the field is ~2^256 - 2^129.
             // This mean that you'd have to run 2^127 hashes to find a value that causes this to fail.
-            Self::from_bytes(hash).expect("Derived scalar value falls outside of the field")
+            Self::from_bytes(hash)
+                .expect("Derived scalar value falls outside of the field of edd25519")
         }
 
         fn to_bytes(&self) -> [u8; 32] {
             self.to_bytes()
-        }
-
-        fn name() -> &'static str {
-            "edd25519"
         }
     }
 
@@ -188,7 +176,7 @@ pub mod edd25519_types {
             let from_ser: [u8; 32] = BorshDeserialize::deserialize_reader(reader)?;
             let scalar = Scalar::from_bytes(from_ser).ok_or(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("The given scalar is not in the field of {}", Scalar::name(),),
+                "The given scalar is not in the field of edd25519",
             ))?;
             Ok(SerializableScalar { scalar })
         }

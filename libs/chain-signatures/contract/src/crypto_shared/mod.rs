@@ -1,13 +1,11 @@
 pub mod kdf;
 pub mod types;
 
-use k256::elliptic_curve::CurveArithmetic;
-use k256::EncodedPoint;
-use k256::{elliptic_curve::sec1::FromEncodedPoint, Secp256k1};
+use k256::{elliptic_curve::sec1::FromEncodedPoint, EncodedPoint};
 pub use kdf::{derive_key_secp256k1, derive_tweak, x_coordinate};
 pub use types::{
-    k256_types, k256_types::SerializableAffinePoint, k256_types::SerializableScalar,
-    Ed25519PublicKey, ScalarExt, SignatureResponse,
+    k256_types::{self, SerializableAffinePoint, SerializableScalar},
+    ScalarExt, SignatureResponse,
 };
 
 // Our wasm runtime doesn't support good syncronous entropy.
@@ -22,9 +20,7 @@ pub fn randomness_unsupported(_: &mut [u8]) -> Result<(), Error> {
 #[cfg(target_arch = "wasm32")]
 register_custom_getrandom!(randomness_unsupported);
 
-pub fn near_public_key_to_affine_point(
-    pk: near_sdk::PublicKey,
-) -> <Secp256k1 as CurveArithmetic>::AffinePoint {
+pub fn near_public_key_to_affine_point(pk: near_sdk::PublicKey) -> k256_types::PublicKey {
     // TODO: We should encode the curve type as a generic parameter to the key,
     // to enforce this check at compile time.
     assert_eq!(
@@ -36,7 +32,7 @@ pub fn near_public_key_to_affine_point(
     let mut bytes = pk.into_bytes();
     bytes[0] = 0x04;
     let point = EncodedPoint::from_bytes(bytes).unwrap();
-    <Secp256k1 as CurveArithmetic>::AffinePoint::from_encoded_point(&point).unwrap()
+    k256_types::PublicKey::from_encoded_point(&point).unwrap()
 }
 
 pub fn near_public_key_to_edwards_point(pk: near_sdk::PublicKey) -> curve25519_dalek::EdwardsPoint {
