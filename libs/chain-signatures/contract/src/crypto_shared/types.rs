@@ -126,7 +126,6 @@ pub mod k256_types {
 pub mod edd25519_types {
     use super::*;
     use curve25519_dalek::{edwards::CompressedEdwardsY, Scalar};
-    use serde::Serializer;
 
     impl ScalarExt for Scalar {
         fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
