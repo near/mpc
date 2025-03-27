@@ -7,8 +7,8 @@ use k256::{
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        derive_key, derive_tweak, kdf::check_ec_signature, ScalarExt, SerializableAffinePoint,
-        SerializableScalar, SignatureResponse,
+        derive_key_secp256k1, derive_tweak, k256_types, kdf::check_ec_signature, ScalarExt,
+        SerializableAffinePoint, SerializableScalar, SignatureResponse,
     },
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
@@ -190,7 +190,7 @@ pub async fn create_response(
 
     let tweak = derive_tweak(predecessor_id, path);
     let derived_sk = derive_secret_key(sk, &tweak);
-    let derived_pk = derive_key(pk.into(), &tweak);
+    let derived_pk = derive_key_secp256k1(&pk.into(), &tweak);
     let signing_key = k256::ecdsa::SigningKey::from(&derived_sk);
     let verifying_key =
         k256::ecdsa::VerifyingKey::from(&k256::PublicKey::from_affine(derived_pk).unwrap());
@@ -201,7 +201,8 @@ pub async fn create_response(
 
     let s = signature.s();
     let (r_bytes, _s_bytes) = signature.split_bytes();
-    let respond_req = SignatureRequest::new(payload_hash.clone(), predecessor_id, path);
+    let respond_req =
+        SignatureRequest::new(DomainId(0), payload_hash.clone(), predecessor_id, path);
     let big_r =
         AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
     let s: k256::Scalar = *s.as_ref();
@@ -214,13 +215,13 @@ pub async fn create_response(
         panic!("unable to use recovery id of 0 or 1");
     };
 
-    let respond_resp = SignatureResponse {
+    let respond_resp = SignatureResponse::Secp256k1(k256_types::SignatureResponse {
         big_r: SerializableAffinePoint {
             affine_point: big_r,
         },
         s: SerializableScalar { scalar: s },
         recovery_id,
-    };
+    });
 
     (payload_hash, respond_req, respond_resp)
 }

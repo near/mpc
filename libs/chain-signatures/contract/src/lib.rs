@@ -11,27 +11,32 @@ use crate::errors::Error;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 use config::{Config, InitConfig};
 use crypto_shared::{
-    derive_key, derive_tweak, kdf::check_ec_signature, near_public_key_to_affine_point,
-    types::SignatureResponse, ScalarExt as _,
+    derive_key_secp256k1, derive_tweak,
+    kdf::{check_ec_signature, derive_public_key_edwards_point_edd25519},
+    near_public_key_to_affine_point, near_public_key_to_edwards_point,
+    types::SignatureResponse,
+    ScalarExt as _,
 };
 use errors::{
     ConversionError, DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError,
     SignError,
 };
 use k256::elliptic_curve::sec1::ToEncodedPoint;
-use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::store::{LookupMap, Vector};
 use near_sdk::{
-    env, log, near_bindgen, AccountId, BlockHeight, CryptoHash, Gas, GasWeight, NearToken, Promise,
-    PromiseError, PublicKey,
+    borsh::{self, BorshDeserialize, BorshSerialize},
+    env::{self, ed25519_verify},
+    log, near, near_bindgen,
+    store::{LookupMap, Vector},
+    AccountId, BlockHeight, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise,
+    PromiseError, PromiseOrValue, PublicKey,
 };
-use near_sdk::{near, PromiseOrValue};
-use primitives::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
-use primitives::key_state::{EpochId, KeyEventId, Keyset};
-use primitives::signature::{PayloadHash, SignRequest, SignatureRequest, Tweak, YieldIndex};
-use primitives::thresholds::{Threshold, ThresholdParameters};
-use state::running::RunningContractState;
-use state::ProtocolContractState;
+use primitives::{
+    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    key_state::{EpochId, KeyEventId, Keyset},
+    signature::{PayloadHash, SignRequest, SignatureRequest, Tweak, YieldIndex},
+    thresholds::{Threshold, ThresholdParameters},
+};
+use state::{running::RunningContractState, ProtocolContractState};
 use storage_keys::StorageKey;
 
 //Gas requised for a sign request
@@ -182,18 +187,45 @@ impl VersionedMpcContract {
             env::predecessor_account_id(),
             request
         );
+
+        let domain_id = request.domain_id.unwrap_or_default();
+
+        let Ok(public_key) = self.public_key(Some(domain_id)) else {
+            env::panic_str(
+                &InvalidParameters::DomainNotFound
+                    .message(format!(
+                        "No key was found for the provided domain_id {:?}.",
+                        request.domain_id,
+                    ))
+                    .to_string(),
+            );
+        };
+
+        let curve_type = public_key.curve_type();
+
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        if k256::Scalar::from_bytes(request.payload.as_bytes()).is_none() {
+        let payload_is_malformed = {
+            match &curve_type {
+                CurveType::SECP256K1 => {
+                    k256::Scalar::from_bytes(request.payload.as_bytes()).is_none()
+                }
+                CurveType::ED25519 => {
+                    curve25519_dalek::Scalar::from_bytes(request.payload.as_bytes()).is_none()
+                }
+            }
+        };
+
+        if payload_is_malformed {
             env::panic_str(
                 &InvalidParameters::MalformedPayload
                     .message("Payload hash cannot be convereted to Scalar")
                     .to_string(),
             );
-        };
+        }
 
-        if request.key_version > self.latest_key_version(None) {
+        if request.key_version > self.latest_key_version(Some(curve_type.into())) {
             env::panic_str(&SignError::UnsupportedKeyVersion.to_string());
         }
 
@@ -232,7 +264,8 @@ impl VersionedMpcContract {
             }
         }
 
-        let request = SignatureRequest::new(request.payload, &predecessor, &request.path);
+        let request =
+            SignatureRequest::new(domain_id, request.payload, &predecessor, &request.path);
 
         let Self::V0(mpc_contract) = self;
 
@@ -265,8 +298,8 @@ impl VersionedMpcContract {
     /// The domain parameter specifies which domain we're querying the public key for;
     /// the default is the first domain.
     #[handle_result]
-    pub fn public_key(&self, domain: Option<DomainId>) -> Result<PublicKey, Error> {
-        let domain = domain.unwrap_or_else(DomainId::legacy_ecdsa_id);
+    pub fn public_key(&self, domain_id: Option<DomainId>) -> Result<PublicKey, Error> {
+        let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
         match self {
             Self::V0(mpc_contract) => mpc_contract.public_key(domain),
         }
@@ -282,19 +315,37 @@ impl VersionedMpcContract {
         &self,
         path: String,
         predecessor: Option<AccountId>,
-        domain: Option<DomainId>,
+        domain_id: Option<DomainId>,
     ) -> Result<PublicKey, Error> {
-        let predecessor = predecessor.unwrap_or_else(env::predecessor_account_id);
+        let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
         let tweak = derive_tweak(&predecessor, &path);
-        let derived_public_key = derive_key(
-            near_public_key_to_affine_point(self.public_key(domain)?),
-            &tweak,
-        );
-        let encoded_point = derived_public_key.to_encoded_point(false);
-        let slice: &[u8] = &encoded_point.as_bytes()[1..65];
-        let mut data: Vec<u8> = vec![near_sdk::CurveType::SECP256K1 as u8];
-        data.extend(slice.to_vec());
-        PublicKey::try_from(data).map_err(|_| PublicKeyError::DerivedKeyConversionFailed.into())
+
+        let public_key = self.public_key(domain_id)?;
+        let curve_type = public_key.curve_type();
+
+        let derived_public_key = match curve_type {
+            CurveType::SECP256K1 => {
+                let derived_public_key =
+                    derive_key_secp256k1(&near_public_key_to_affine_point(public_key), &tweak);
+                let encoded_point = derived_public_key.to_encoded_point(false);
+                let slice: &[u8] = &encoded_point.as_bytes()[1..65];
+                let mut data: Vec<u8> = vec![near_sdk::CurveType::SECP256K1 as u8];
+                data.extend(slice.to_vec());
+
+                PublicKey::from_parts(CurveType::SECP256K1, data)
+            }
+            CurveType::ED25519 => {
+                let public_key_edwards_point = near_public_key_to_edwards_point(public_key);
+                let derived_public_key_edwards_point =
+                    derive_public_key_edwards_point_edd25519(&public_key_edwards_point, &tweak);
+                let encoded_point: [u8; 32] =
+                    derived_public_key_edwards_point.compress().to_bytes();
+
+                PublicKey::from_parts(CurveType::ED25519, encoded_point.into())
+            }
+        };
+
+        derived_public_key.map_err(|_| PublicKeyError::DerivedKeyConversionFailed.into())
     }
 
     /// Key versions refer new versions of the root key that we may choose to generate on cohort changes
@@ -304,9 +355,7 @@ impl VersionedMpcContract {
     /// for. The default is Secp256k1. The default is **NOT** to query across all signature schemes.
     pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
         self.state()
-            .most_recent_domain_for_signature_scheme(
-                signature_scheme.unwrap_or(SignatureScheme::Secp256k1),
-            )
+            .most_recent_domain_for_signature_scheme(signature_scheme.unwrap_or_default())
             .unwrap()
             .0 as u32
     }
@@ -322,30 +371,58 @@ impl VersionedMpcContract {
         response: SignatureResponse,
     ) -> Result<(), Error> {
         let signer = env::signer_account_id();
-        log!(
-            "respond: signer={}, request={:?} big_r={:?} s={:?}",
-            &signer,
-            &request,
-            &response.big_r,
-            &response.s
-        );
+        log!("respond: signer={}, request={:?}", &signer, &request);
         if !self.state().is_running() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
-        // generate the expected public key
-        let pk = self.public_key(None)?;
-        let expected_public_key = derive_key(near_public_key_to_affine_point(pk), &request.tweak);
 
-        // Check the signature is correct
-        if check_ec_signature(
-            &expected_public_key,
-            &response.big_r.affine_point,
-            &response.s.scalar,
-            &request.payload_hash,
-            response.recovery_id,
-        )
-        .is_err()
-        {
+        let public_key = self.public_key(Some(request.domain_id))?;
+
+        match (&response, public_key.curve_type()) {
+            (SignatureResponse::Secp256k1(_), CurveType::SECP256K1)
+            | (SignatureResponse::Edd25519(_), CurveType::ED25519) => {}
+            _ => return Err(RespondError::SignatureSchemeMismatch.into()),
+        }
+
+        let signature_is_valid = match &response {
+            SignatureResponse::Secp256k1(signature_response) => {
+                // generate the expected public key
+                let expected_public_key = derive_key_secp256k1(
+                    &near_public_key_to_affine_point(public_key),
+                    &request.tweak,
+                );
+
+                // Check the signature is correct
+                check_ec_signature(
+                    &expected_public_key,
+                    &signature_response.big_r.affine_point,
+                    &signature_response.s.scalar,
+                    &request.payload_hash,
+                    signature_response.recovery_id,
+                )
+                .is_ok()
+            }
+            SignatureResponse::Edd25519(signature_response) => {
+                let public_key_edwards_point = near_public_key_to_edwards_point(public_key);
+                let derived_public_key_edwards_point = derive_public_key_edwards_point_edd25519(
+                    &public_key_edwards_point,
+                    &request.tweak,
+                );
+
+                let derived_public_key_32_bytes =
+                    *derived_public_key_edwards_point.compress().as_bytes();
+
+                let message = request.payload_hash.as_bytes();
+
+                ed25519_verify(
+                    signature_response.as_bytes(),
+                    &message,
+                    &derived_public_key_32_bytes,
+                )
+            }
+        };
+
+        if !signature_is_valid {
             return Err(RespondError::InvalidSignature.into());
         }
         // First get the yield promise of the (potentially timed out) request.
@@ -666,6 +743,9 @@ impl VersionedMpcContract {
                 Vector::new(StorageKey::RequestsByTimestamp);
             let mut pending_requests: LookupMap<SignatureRequest, YieldIndex> =
                 LookupMap::new(StorageKey::PendingRequests);
+
+            let protocol_state: ProtocolContractState = (&state.protocol_state).into();
+
             for (created, request) in &state.request_by_block_height {
                 // check if request is still valid:
                 if created + config.request_timeout_blocks > env::block_height() {
@@ -680,6 +760,9 @@ impl VersionedMpcContract {
                             PayloadHash::new(request.payload_hash.scalar.to_bytes().into());
 
                         let request = SignatureRequest {
+                            domain_id: protocol_state
+                                .most_recent_domain_for_signature_scheme(SignatureScheme::Secp256k1)
+                                .expect("There exists a signature scheme for Secp256k1"),
                             payload_hash,
                             tweak,
                         };
@@ -691,7 +774,7 @@ impl VersionedMpcContract {
             }
             return Ok(VersionedMpcContract::V0(MpcContract {
                 config,
-                protocol_state: (&state.protocol_state).into(),
+                protocol_state,
                 pending_requests,
                 proposed_updates: ProposedUpdates::default(),
             }));
@@ -783,9 +866,9 @@ impl VersionedMpcContract {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto_shared::k256_types;
     use crate::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
     use crate::primitives::test_utils::gen_participants;
-    use crypto_shared::kdf::derive_secret_key;
     use k256::elliptic_curve::point::DecompactPoint;
     use k256::{self, ecdsa::SigningKey};
     use k256::{elliptic_curve, AffinePoint, Secp256k1};
@@ -793,6 +876,11 @@ mod tests {
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::rngs::OsRng;
     use rand::RngCore;
+
+    pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
+        let tweak = k256::Scalar::from_non_biased(tweak.as_bytes());
+        k256::SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
+    }
 
     fn basic_setup() -> (VMContext, VersionedMpcContract, SigningKey) {
         let context = VMContextBuilder::new()
@@ -825,15 +913,19 @@ mod tests {
         let (context, mut contract, secret_key) = basic_setup();
         let mut payload = [0u8; 32];
         OsRng.fill_bytes(&mut payload);
+        let payload = PayloadHash::new([0u8; 32]);
+
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
         let request = SignRequest {
-            payload,
+            payload: payload.clone(),
             path: key_path.clone(),
             key_version: 0,
+            domain_id: None,
         };
         let signature_request = SignatureRequest::new(
-            Scalar::from_bytes(payload).unwrap(),
+            DomainId::default(),
+            payload.clone(),
             &context.predecessor_account_id,
             &request.path,
         );
@@ -841,28 +933,30 @@ mod tests {
         contract.get_pending_request(&signature_request).unwrap();
 
         // simulate signature and response to the signing request
-        let derivation_path = derive_epsilon(&context.predecessor_account_id, &key_path);
+        let derivation_path = derive_tweak(&context.predecessor_account_id, &key_path);
         let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
             elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let derived_secret_key = derive_secret_key(&secret_key_ec, derivation_path);
+        let derived_secret_key = derive_secret_key(&secret_key_ec, &derivation_path);
         let secret_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
-        let (signature, recovery_id) = secret_key.sign_prehash_recoverable(&payload).unwrap();
+        let (signature, recovery_id) = secret_key
+            .sign_prehash_recoverable(&payload.as_bytes())
+            .unwrap();
         let (r, s) = signature.split_bytes();
         let mut bytes = [0u8; 32];
         bytes.copy_from_slice(s.as_slice());
         let signature_response = if success {
-            SignatureResponse::new(
+            SignatureResponse::Secp256k1(k256_types::SignatureResponse::new(
                 AffinePoint::decompact(&r).unwrap(),
-                Scalar::from_bytes(bytes).unwrap(),
+                k256::Scalar::from_bytes(bytes).unwrap(),
                 recovery_id.to_byte(),
-            )
+            ))
         } else {
             // submit an incorrect signature to make the respond call fail
-            SignatureResponse::new(
+            SignatureResponse::Secp256k1(k256_types::SignatureResponse::new(
                 AffinePoint::decompact(&r).unwrap(),
-                Scalar::from_bytes([0u8; 32]).unwrap(),
+                k256::Scalar::from_bytes([0u8; 32]).unwrap(),
                 recovery_id.to_byte(),
-            )
+            ))
         };
 
         match contract.respond(signature_request.clone(), signature_response.clone()) {
@@ -888,16 +982,18 @@ mod tests {
     #[test]
     fn test_signature_timeout() {
         let (context, mut contract, _) = basic_setup();
-        let payload = [0u8; 32];
+        let payload = PayloadHash::new([0u8; 32]);
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
         let request = SignRequest {
-            payload,
+            payload: payload.clone(),
             path: key_path.clone(),
             key_version: 0,
+            domain_id: None,
         };
         let signature_request = SignatureRequest::new(
-            Scalar::from_bytes(payload).unwrap(),
+            DomainId::default(),
+            payload,
             &context.predecessor_account_id,
             &request.path,
         );

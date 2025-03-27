@@ -1,5 +1,5 @@
 use crate::crypto_shared;
-
+use crate::DomainId;
 use crypto_shared::derive_tweak;
 use near_sdk::{near, AccountId, CryptoHash};
 
@@ -43,12 +43,19 @@ pub struct YieldIndex {
 pub struct SignatureRequest {
     pub tweak: Tweak,
     pub payload_hash: PayloadHash,
+    pub domain_id: DomainId,
 }
 
 impl SignatureRequest {
-    pub fn new(payload_hash: PayloadHash, predecessor_id: &AccountId, path: &str) -> Self {
+    pub fn new(
+        domain: DomainId,
+        payload_hash: PayloadHash,
+        predecessor_id: &AccountId,
+        path: &str,
+    ) -> Self {
         let tweak = derive_tweak(predecessor_id, path);
         SignatureRequest {
+            domain_id: domain,
             tweak,
             payload_hash,
         }
@@ -61,6 +68,7 @@ pub struct SignRequest {
     pub payload: PayloadHash,
     pub path: String,
     pub key_version: u32,
+    pub domain_id: Option<DomainId>,
 }
 
 #[derive(Clone, Debug)]

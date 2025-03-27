@@ -1,12 +1,13 @@
 use crate::{
-    crypto_shared::types::{PublicKey, ScalarExt},
+    crypto_shared::types::{k256_types, ScalarExt},
     primitives::signature::{PayloadHash, Tweak},
 };
 use anyhow::Context;
+use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 use k256::{
-    ecdsa::{RecoveryId, Signature, VerifyingKey},
+    ecdsa::{RecoveryId, Signature},
     elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic},
-    Scalar, Secp256k1,
+    Secp256k1,
 };
 use near_account_id::AccountId;
 use sha3::{Digest, Sha3_256};
@@ -31,9 +32,20 @@ pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
     Tweak::new(hash)
 }
 
-pub fn derive_key(public_key: PublicKey, tweak: &Tweak) -> PublicKey {
-    let tweak = Scalar::from_non_biased(tweak.as_bytes());
+pub fn derive_key_secp256k1(
+    public_key: &k256_types::PublicKey,
+    tweak: &Tweak,
+) -> k256_types::PublicKey {
+    let tweak = k256::Scalar::from_non_biased(tweak.as_bytes());
     (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key).to_affine()
+}
+
+pub fn derive_public_key_edwards_point_edd25519(
+    point: &curve25519_dalek::EdwardsPoint,
+    tweak: &Tweak,
+) -> curve25519_dalek::EdwardsPoint {
+    let tweak = curve25519_dalek::Scalar::from_non_biased(tweak.as_bytes());
+    point + ED25519_BASEPOINT_POINT * tweak
 }
 
 /// Get the x coordinate of a point, as a scalar
@@ -73,8 +85,8 @@ pub fn recover(
     prehash: &[u8],
     signature: &Signature,
     recovery_id: RecoveryId,
-) -> anyhow::Result<VerifyingKey> {
-    VerifyingKey::recover_from_prehash(prehash, signature, recovery_id)
+) -> anyhow::Result<k256::ecdsa::VerifyingKey> {
+    k256::ecdsa::VerifyingKey::recover_from_prehash(prehash, signature, recovery_id)
         .context("Unable to recover public key")
 }
 
@@ -83,7 +95,7 @@ pub fn recover(
     prehash: &[u8],
     signature: &Signature,
     recovery_id: RecoveryId,
-) -> anyhow::Result<VerifyingKey> {
+) -> anyhow::Result<k256::ecdsa::VerifyingKey> {
     use k256::EncodedPoint;
     use near_sdk::env;
     // While this function also works on native code, it's a bit weird and unsafe.
@@ -91,7 +103,7 @@ pub fn recover(
     let recovered_key_bytes =
         env::ecrecover(prehash, &signature.to_bytes(), recovery_id.to_byte(), true)
             .context("Unable to recover public key")?;
-    VerifyingKey::from_encoded_point(&EncodedPoint::from_untagged_bytes(
+    k256::ecdsa::VerifyingKey::from_encoded_point(&EncodedPoint::from_untagged_bytes(
         &recovered_key_bytes.into(),
     ))
     .context("Failed to parse returned key")

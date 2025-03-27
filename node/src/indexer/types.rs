@@ -7,8 +7,11 @@ use k256::{
     AffinePoint, Scalar, Secp256k1,
 };
 use legacy_mpc_contract;
-use mpc_contract::primitives::key_state::KeyEventId;
-use mpc_contract::primitives::signature::{PayloadHash, Tweak};
+use mpc_contract::primitives::{
+    domain::DomainId,
+    key_state::KeyEventId,
+    signature::{PayloadHash, Tweak},
+};
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
@@ -34,42 +37,35 @@ struct SerializableAffinePoint {
 pub struct ChainSignatureRequest {
     pub tweak: Tweak,
     pub payload_hash: PayloadHash,
+    pub domain_id: DomainId,
 }
 
 impl ChainSignatureRequest {
-    pub fn new(tweak: Tweak, payload_hash: PayloadHash) -> Self {
+    pub fn new(tweak: Tweak, payload_hash: PayloadHash, domain_id: DomainId) -> Self {
         ChainSignatureRequest {
             tweak,
             payload_hash,
+            domain_id,
         }
     }
 }
 
-/* The format in which the chain signatures contract expects
- * to receive the completed signature.
- */
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-struct ChainSignatureResponse {
-    pub big_r: SerializableAffinePoint,
-    pub s: SerializableScalar,
-    pub recovery_id: u8,
-}
+pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
+pub use mpc_contract::crypto_shared::k256_types;
 
 const MAX_RECOVERY_ID: u8 = 3;
 
-impl ChainSignatureResponse {
-    pub fn new(big_r: AffinePoint, s: Scalar, recovery_id: u8) -> anyhow::Result<Self> {
-        if recovery_id > MAX_RECOVERY_ID {
-            anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
-        }
-        Ok(ChainSignatureResponse {
-            big_r: SerializableAffinePoint {
-                affine_point: big_r,
-            },
-            s: SerializableScalar { scalar: s },
-            recovery_id,
-        })
+fn k256_signature_response(
+    big_r: AffinePoint,
+    s: Scalar,
+    recovery_id: u8,
+) -> anyhow::Result<ChainSignatureResponse> {
+    if recovery_id > MAX_RECOVERY_ID {
+        anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
     }
+
+    let k256_signature = k256_types::SignatureResponse::new(big_r, s, recovery_id);
+    Ok(ChainSignatureResponse::Secp256k1(k256_signature))
 }
 
 /* These arguments are passed to the `respond` function of the
@@ -165,9 +161,14 @@ impl ChainRespondArgs {
         public_key: &AffinePoint,
     ) -> anyhow::Result<Self> {
         let recovery_id = Self::brute_force_recovery_id(public_key, response, &request.msg_hash)?;
+        let domain_id = DomainId::legacy_ecdsa_id();
         Ok(ChainRespondArgs {
-            request: ChainSignatureRequest::new(request.tweak.clone(), request.msg_hash.clone()),
-            response: ChainSignatureResponse::new(response.big_r, response.s, recovery_id)?,
+            request: ChainSignatureRequest::new(
+                request.tweak.clone(),
+                request.msg_hash.clone(),
+                domain_id,
+            ),
+            response: k256_signature_response(response.big_r, response.s, recovery_id)?,
         })
     }
 

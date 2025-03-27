@@ -6,4 +6,3 @@ exclude = ["libs", "pytest"]
 [profile.dev-release]
 inherits = "release"
 debug = true
-

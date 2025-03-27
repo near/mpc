@@ -17,12 +17,18 @@ pub enum SignError {
 pub enum RespondError {
     #[error("The provided signature is invalid.")]
     InvalidSignature,
+    #[error("The provided signature scheme does not match the requestued key's scheme")]
+    SignatureSchemeMismatch,
+    #[error("The provided domain was not found.")]
+    DomainNotFound,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum PublicKeyError {
     #[error("Derived key conversion failed.")]
     DerivedKeyConversionFailed,
+    #[error("The provided domain was not found.")]
+    DomainNotFound,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -69,6 +75,8 @@ pub enum InvalidParameters {
     ParticipantAlreadyInSet,
     #[error("Participant id already used.")]
     ParticipantAlreadyUsed,
+    #[error("The provided domain was not found.")]
+    DomainNotFound,
     #[error("Provided Epoch Id does not match expected.")]
     EpochMismatch,
     #[error("Next domain ID mismatch")]

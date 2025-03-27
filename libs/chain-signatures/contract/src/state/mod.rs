@@ -4,9 +4,11 @@ pub mod resharing;
 pub mod running;
 
 use crate::errors::{DomainError, Error, InvalidState};
-use crate::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
-use crate::primitives::key_state::{AuthenticatedParticipantId, EpochId, KeyEventId};
-use crate::primitives::thresholds::{Threshold, ThresholdParameters};
+use crate::primitives::{
+    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
+    thresholds::{Threshold, ThresholdParameters},
+};
 use initializing::InitializingContractState;
 use near_sdk::{near, PublicKey};
 use resharing::ResharingContractState;
@@ -22,6 +24,15 @@ pub enum ProtocolContractState {
 }
 
 impl ProtocolContractState {
+    pub fn domain_registry(&self) -> Result<&DomainRegistry, Error> {
+        let domain_registry = match self {
+            ProtocolContractState::Running(state) => &state.domains,
+            ProtocolContractState::Resharing(state) => &state.previous_running_state.domains,
+            _ => return Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
+        };
+
+        Ok(domain_registry)
+    }
     pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKey, Error> {
         match self {
             ProtocolContractState::Running(state) => state.keyset.public_key(domain_id),
@@ -145,12 +156,7 @@ impl ProtocolContractState {
         &self,
         signature_scheme: SignatureScheme,
     ) -> Result<DomainId, Error> {
-        let domain_registry = match self {
-            ProtocolContractState::Running(state) => &state.domains,
-            ProtocolContractState::Resharing(state) => &state.previous_running_state.domains,
-            _ => return Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
-        };
-        domain_registry
+        self.domain_registry()?
             .most_recent_domain_for_signature_scheme(signature_scheme)
             .ok_or_else(|| DomainError::NoSuchDomain.into())
     }

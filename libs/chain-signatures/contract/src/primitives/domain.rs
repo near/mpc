@@ -1,13 +1,19 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
-use near_sdk::{log, near};
+use near_sdk::{log, near, CurveType};
 use std::collections::BTreeMap;
 
 /// Each domain corresponds to a specific root key in a specific signature scheme. There may be
 /// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DomainId(pub u64);
+
+impl Default for DomainId {
+    fn default() -> Self {
+        Self::legacy_ecdsa_id()
+    }
+}
 
 impl DomainId {
     /// Returns the DomainId of the single ECDSA key present in the contract before V2.
@@ -24,6 +30,21 @@ impl DomainId {
 pub enum SignatureScheme {
     Secp256k1,
     Ed25519,
+}
+
+impl From<CurveType> for SignatureScheme {
+    fn from(curve_type: CurveType) -> Self {
+        match curve_type {
+            CurveType::ED25519 => Self::Ed25519,
+            CurveType::SECP256K1 => Self::Secp256k1,
+        }
+    }
+}
+
+impl Default for SignatureScheme {
+    fn default() -> Self {
+        Self::Secp256k1
+    }
 }
 
 /// Describes the configuration of a domain: the domain ID and the signature scheme it uses.
