@@ -74,11 +74,11 @@ impl ParticipantList {
 
     // Return a participant of a given index from the order they
     // appear in the sorted list
-    pub fn get_participant(&self, index: &usize) -> Option<Participant> {
-        if *index >= self.participants.len() {
+    pub fn get_participant(&self, index: usize) -> Option<Participant> {
+        if index >= self.participants.len() {
             return None;
         }
-        Some(self.participants[*index])
+        Some(self.participants[index])
     }
 
     /// Get the lagrange coefficient for a participant, relative to this list.
