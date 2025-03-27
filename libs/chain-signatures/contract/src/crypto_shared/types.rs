@@ -4,6 +4,7 @@ use k256::{
     AffinePoint, Secp256k1, U256,
 };
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum SignatureResponse {
@@ -125,6 +126,7 @@ pub mod k256_types {
 pub mod edd25519_types {
     use super::*;
     use curve25519_dalek::{edwards::CompressedEdwardsY, Scalar};
+    use serde::Serializer;
 
     impl ScalarExt for Scalar {
         fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
@@ -212,42 +214,16 @@ pub mod edd25519_types {
         }
     }
 
+    #[serde_as]
     #[derive(
         BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
     )]
-    pub struct SignatureResponse {
-        r: SerializableEdwardsPoint,
-        s: SerializableScalar,
-    }
+    pub struct SignatureResponse(#[serde_as(as = "[_; 64]")] [u8; 64]);
 
     impl SignatureResponse {
-        pub fn to_bytes(&self) -> [u8; 64] {
-            let r_bytes: [u8; 32] = self.r.0.to_bytes();
-            let s_bytes: [u8; 32] = self.s.scalar.to_bytes();
-            let mut bytes_repr = [0u8; 64];
-
-            bytes_repr[0..32].copy_from_slice(&r_bytes);
-            bytes_repr[32..64].copy_from_slice(&s_bytes);
-
-            bytes_repr
+        pub fn as_bytes(&self) -> &[u8; 64] {
+            &self.0
         }
-    }
-
-    /// Make sure that [`SignatureResponse::to_bytes`] serializes to bytes
-    /// by concatenating (r, s) to a 64 byte array in correct order.
-    #[test]
-    fn test_edd25519_signature() {
-        let r_bytes = [10; 32];
-        let s_bytes = [20; 32];
-
-        let r = SerializableEdwardsPoint(CompressedEdwardsY::from_slice(&r_bytes).unwrap());
-        let s = SerializableScalar::new(Scalar::from_bytes_mod_order(s_bytes));
-
-        let signature_response = SignatureResponse { r, s };
-        let signature_bytes: [u8; 64] = signature_response.to_bytes();
-
-        assert_eq!(signature_bytes[0..32], r_bytes);
-        assert_eq!(signature_bytes[32..64], s.scalar.to_bytes());
     }
 }
 

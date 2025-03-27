@@ -409,7 +409,7 @@ impl VersionedMpcContract {
                 let message = request.payload_hash.as_bytes();
 
                 ed25519_verify(
-                    &signature_response.to_bytes(),
+                    signature_response.as_bytes(),
                     &message,
                     &derived_public_key_32_bytes,
                 )
