@@ -193,27 +193,3 @@ impl MpcLeaderCentricComputation<()> for FollowerSignComputation {
         false
     }
 }
-
-/// Simple ID generator for signatures. Generates monotonically increasing IDs.
-/// Does not persist state across restarts, so if the clock rewinds then the
-/// generated IDs can conflict with previously generated IDs.
-#[allow(dead_code)]
-pub struct SignatureIdGenerator {
-    last_id: Mutex<UniqueId>,
-}
-
-#[allow(dead_code)]
-impl SignatureIdGenerator {
-    pub fn new(my_participant_id: ParticipantId) -> Self {
-        Self {
-            last_id: Mutex::new(UniqueId::generate(my_participant_id)),
-        }
-    }
-
-    pub fn generate_signature_id(&self) -> UniqueId {
-        let mut last_id = self.last_id.lock().unwrap();
-        let new_id = last_id.pick_new_after();
-        *last_id = new_id;
-        new_id
-    }
-}
