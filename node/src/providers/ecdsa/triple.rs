@@ -9,8 +9,8 @@ use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
+use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::Participant;
-use cait_sith::triples::TripleGenerationOutput;
 use k256::Secp256k1;
 use std::sync::Arc;
 use std::time::Duration;
@@ -178,7 +178,7 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = cait_sith::triples::generate_triple_many::<Secp256k1, N>(
+        let protocol = cait_sith::ecdsa::triples::generate_triple_many::<Secp256k1, N>(
             &cs_participants,
             me.into(),
             self.threshold,

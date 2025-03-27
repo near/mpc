@@ -10,10 +10,7 @@ anyhow = "1.0.92"
 async-trait = "0.1.83"
 axum = "0.7.9"
 borsh = { version = "1.5.1", features = ["derive"] }
-cait-sith = { git = "https://github.com/Near-One/cait-sith.git", rev = "f5eca9dd715c53e19785c0300e50ae2686740811", features = [
-    "k256",
-    "internals",
-] }
+cait-sith = { git = "https://github.com/kuksag/cait-sith", rev = "84626e50b3bf9135275f9ae610d05674bcba661f" }
 clap = { version = "4.5.20", features = ["derive", "env"] }
 flume = "0.11.1"
 futures = "0.3.31"

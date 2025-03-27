@@ -1262,7 +1262,7 @@ dependencies = [
 [[package]]
 name = "cait-sith"
 version = "0.8.0"
-source = "git+https://github.com/Near-One/cait-sith.git?rev=f5eca9dd715c53e19785c0300e50ae2686740811#f5eca9dd715c53e19785c0300e50ae2686740811"
+source = "git+https://github.com/kuksag/cait-sith?rev=84626e50b3bf9135275f9ae610d05674bcba661f#84626e50b3bf9135275f9ae610d05674bcba661f"
 dependencies = [
  "auto_ops",
  "ck-meow",
@@ -1270,9 +1270,14 @@ dependencies = [
  "ecdsa",
  "elliptic-curve",
  "event-listener 2.5.3",
+ "frost-core",
+ "frost-ed25519",
+ "frost-secp256k1",
  "futures",
+ "itertools 0.14.0",
  "k256",
  "magikitten",
+ "rand 0.9.0",
  "rand_core 0.6.4",
  "rmp-serde",
  "serde",
@@ -2492,6 +2497,20 @@ dependencies = [
  "frost-core",
  "hex",
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "frost-secp256k1"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d4890a0cdd6897a4af81016ec3299e4eb3a459d6468933d2a385302241662b5"
+dependencies = [
+ "document-features",
+ "frost-core",
+ "frost-rerandomized",
+ "k256",
+ "rand_core 0.6.4",
+ "sha2",
 ]
 
 [[package]]

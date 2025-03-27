@@ -1,9 +1,8 @@
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::EcdsaSignatureProvider;
+use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use cait_sith::protocol::Participant;
-use cait_sith::KeygenOutput;
 use k256::Secp256k1;
 
 impl EcdsaSignatureProvider {
@@ -43,8 +42,11 @@ impl MpcLeaderCentricComputation<KeygenOutput<Secp256k1>> for KeyGenerationCompu
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = cait_sith::keygen::<Secp256k1>(&cs_participants, me.into(), self.threshold)?;
-        run_protocol("key generation", channel, protocol).await
+        let protocol =
+            cait_sith::ecdsa::dkg_ecdsa::keygen(&cs_participants, me.into(), self.threshold)?;
+        run_protocol("key generation", channel, protocol)
+            .await
+            .map(Into::into)
     }
 
     fn leader_waits_for_success(&self) -> bool {
@@ -58,10 +60,9 @@ mod tests {
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::providers::ecdsa::key_generation::KeyGenerationComputation;
-    use crate::providers::ecdsa::EcdsaTaskId;
+    use crate::providers::ecdsa::{EcdsaTaskId, KeygenOutput};
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use cait_sith::KeygenOutput;
     use k256::Secp256k1;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};

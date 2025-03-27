@@ -5,13 +5,13 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{participants_from_triples, ParticipantId};
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, TripleStorage};
+use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, TripleStorage};
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
+use cait_sith::ecdsa::presign::{presign, PresignArguments, PresignOutput};
+use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::Participant;
-use cait_sith::triples::TripleGenerationOutput;
-use cait_sith::{KeygenOutput, PresignArguments, PresignOutput};
 use k256::Secp256k1;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
@@ -175,7 +175,7 @@ impl MpcLeaderCentricComputation<PresignOutput<Secp256k1>> for PresignComputatio
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = cait_sith::presign::<Secp256k1>(
+        let protocol = presign(
             &cs_participants,
             me.into(),
             &cs_participants,

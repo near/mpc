@@ -1,7 +1,7 @@
 use crate::providers::EcdsaTaskId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::Participant;
-use cait_sith::triples::TripleGenerationOutput;
 use k256::Secp256k1;
 use rand::prelude::IteratorRandom;
 use serde::{Deserialize, Serialize};
