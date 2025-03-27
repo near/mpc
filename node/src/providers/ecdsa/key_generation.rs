@@ -44,9 +44,7 @@ impl MpcLeaderCentricComputation<KeygenOutput<Secp256k1>> for KeyGenerationCompu
         let me = channel.my_participant_id();
         let protocol =
             cait_sith::ecdsa::dkg_ecdsa::keygen(&cs_participants, me.into(), self.threshold)?;
-        run_protocol("key generation", channel, protocol)
-            .await
-            .map(Into::into)
+        run_protocol("key generation", channel, protocol).await
     }
 
     fn leader_waits_for_success(&self) -> bool {
