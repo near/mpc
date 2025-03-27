@@ -3,11 +3,10 @@ use crate::indexer::types::{
     ChainStartKeygenArgs, ChainStartReshareArgs, ChainVoteAbortKeyEventArgs,
 };
 use crate::network::MeshNetworkClient;
-use crate::providers::EcdsaTaskId;
+use crate::providers::{affine_point_to_public_key, EcdsaTaskId};
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{
     config::ParticipantsConfig,
-    hkdf::affine_point_to_public_key,
     indexer::{
         participants::ContractKeyEventInstance,
         types::{ChainSendTransactionRequest, ChainVotePkArgs, ChainVoteResharedArgs},
