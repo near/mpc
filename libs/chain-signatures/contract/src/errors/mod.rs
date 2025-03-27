@@ -81,6 +81,8 @@ pub enum InvalidParameters {
     EpochMismatch,
     #[error("Next domain ID mismatch")]
     NextDomainIdMismatch,
+    #[error("Invalid domain ID.")]
+    InvalidDomainId,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

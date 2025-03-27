@@ -30,10 +30,11 @@ use near_sdk::{
     AccountId, BlockHeight, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise,
     PromiseError, PromiseOrValue, PublicKey,
 };
+use primitives::signature::{Payload, SignRequestArgs};
 use primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{EpochId, KeyEventId, Keyset},
-    signature::{PayloadHash, SignRequest, SignatureRequest, Tweak, YieldIndex},
+    signature::{SignRequest, SignatureRequest, Tweak, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
@@ -181,16 +182,15 @@ impl VersionedMpcContract {
     /// The fee changes based on how busy the network is.
     #[handle_result]
     #[payable]
-    pub fn sign(&mut self, request: SignRequest) {
+    pub fn sign(&mut self, request: SignRequestArgs) {
         log!(
             "sign: predecessor={:?}, request={:?}",
             env::predecessor_account_id(),
             request
         );
 
-        let domain_id = request.domain_id.unwrap_or_default();
-
-        let Ok(public_key) = self.public_key(Some(domain_id)) else {
+        let request: SignRequest = request.try_into().unwrap();
+        let Ok(public_key) = self.public_key(Some(request.domain_id)) else {
             env::panic_str(
                 &InvalidParameters::DomainNotFound
                     .message(format!(
@@ -206,27 +206,15 @@ impl VersionedMpcContract {
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        let payload_is_malformed = {
-            match &curve_type {
-                CurveType::SECP256K1 => {
-                    k256::Scalar::from_bytes(request.payload.as_bytes()).is_none()
-                }
-                CurveType::ED25519 => {
-                    curve25519_dalek::Scalar::from_bytes(request.payload.as_bytes()).is_none()
-                }
+        match &curve_type {
+            CurveType::SECP256K1 => {
+                let hash = request.payload.as_ecdsa().expect("Payload is not Ecdsa");
+                k256::Scalar::from_bytes(*hash)
+                    .expect("Ecdsa payload cannot be converted to Scalar");
             }
-        };
-
-        if payload_is_malformed {
-            env::panic_str(
-                &InvalidParameters::MalformedPayload
-                    .message("Payload hash cannot be convereted to Scalar")
-                    .to_string(),
-            );
-        }
-
-        if request.key_version > self.latest_key_version(Some(curve_type.into())) {
-            env::panic_str(&SignError::UnsupportedKeyVersion.to_string());
+            CurveType::ED25519 => {
+                request.payload.as_eddsa().expect("Payload is not EdDSA");
+            }
         }
 
         // Make sure sign call will not run out of gas doing yield/resume logic
@@ -264,8 +252,12 @@ impl VersionedMpcContract {
             }
         }
 
-        let request =
-            SignatureRequest::new(domain_id, request.payload, &predecessor, &request.path);
+        let request = SignatureRequest::new(
+            request.domain_id,
+            request.payload,
+            &predecessor,
+            &request.path,
+        );
 
         let Self::V0(mpc_contract) = self;
 
@@ -392,12 +384,14 @@ impl VersionedMpcContract {
                     &request.tweak,
                 );
 
+                let payload_hash = request.payload.as_ecdsa().expect("Payload is not ECDSA");
+
                 // Check the signature is correct
                 check_ec_signature(
                     &expected_public_key,
                     &signature_response.big_r.affine_point,
                     &signature_response.s.scalar,
-                    &request.payload_hash,
+                    payload_hash,
                     signature_response.recovery_id,
                 )
                 .is_ok()
@@ -412,11 +406,11 @@ impl VersionedMpcContract {
                 let derived_public_key_32_bytes =
                     *derived_public_key_edwards_point.compress().as_bytes();
 
-                let message = request.payload_hash.as_bytes();
+                let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
                 ed25519_verify(
                     signature_response.as_bytes(),
-                    &message,
+                    message,
                     &derived_public_key_32_bytes,
                 )
             }
@@ -756,14 +750,12 @@ impl VersionedMpcContract {
                         };
 
                         let tweak = Tweak::new(request.epsilon.scalar.to_bytes().into());
-                        let payload_hash =
-                            PayloadHash::new(request.payload_hash.scalar.to_bytes().into());
+                        let payload_hash: [u8; 32] = request.payload_hash.scalar.to_bytes().into();
+                        let payload = Payload::from_legacy_ecdsa(payload_hash);
 
                         let request = SignatureRequest {
-                            domain_id: protocol_state
-                                .most_recent_domain_for_signature_scheme(SignatureScheme::Secp256k1)
-                                .expect("There exists a signature scheme for Secp256k1"),
-                            payload_hash,
+                            domain_id: DomainId::legacy_ecdsa_id(),
+                            payload,
                             tweak,
                         };
 
@@ -909,19 +901,28 @@ mod tests {
         (context, contract, secret_key)
     }
 
-    fn test_signature_common(success: bool) {
+    fn test_signature_common(success: bool, legacy_v1_api: bool) {
         let (context, mut contract, secret_key) = basic_setup();
-        let mut payload = [0u8; 32];
-        OsRng.fill_bytes(&mut payload);
-        let payload = PayloadHash::new([0u8; 32]);
+        let mut payload_hash = [0u8; 32];
+        OsRng.fill_bytes(&mut payload_hash);
+        let payload = Payload::from_legacy_ecdsa(payload_hash);
 
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
-        let request = SignRequest {
-            payload: payload.clone(),
-            path: key_path.clone(),
-            key_version: 0,
-            domain_id: None,
+        let request = if legacy_v1_api {
+            SignRequestArgs {
+                deprecated_payload: Some(payload_hash),
+                deprecated_key_version: Some(0),
+                path: key_path.clone(),
+                ..Default::default()
+            }
+        } else {
+            SignRequestArgs {
+                payload_v2: Some(payload.clone()),
+                path: key_path.clone(),
+                domain_id: Some(DomainId::legacy_ecdsa_id()),
+                ..Default::default()
+            }
         };
         let signature_request = SignatureRequest::new(
             DomainId::default(),
@@ -939,7 +940,7 @@ mod tests {
         let derived_secret_key = derive_secret_key(&secret_key_ec, &derivation_path);
         let secret_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
         let (signature, recovery_id) = secret_key
-            .sign_prehash_recoverable(&payload.as_bytes())
+            .sign_prehash_recoverable(payload.as_ecdsa().unwrap())
             .unwrap();
         let (r, s) = signature.split_bytes();
         let mut bytes = [0u8; 32];
@@ -975,21 +976,27 @@ mod tests {
 
     #[test]
     fn test_signature_simple() {
-        test_signature_common(true);
-        test_signature_common(false);
+        test_signature_common(true, false);
+        test_signature_common(false, false);
+    }
+
+    #[test]
+    fn test_signature_simple_legacy() {
+        test_signature_common(true, true);
+        test_signature_common(false, true);
     }
 
     #[test]
     fn test_signature_timeout() {
         let (context, mut contract, _) = basic_setup();
-        let payload = PayloadHash::new([0u8; 32]);
+        let payload = Payload::from_legacy_ecdsa([0u8; 32]);
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
-        let request = SignRequest {
-            payload: payload.clone(),
+        let request = SignRequestArgs {
+            payload_v2: Some(payload.clone()),
             path: key_path.clone(),
-            key_version: 0,
-            domain_id: None,
+            domain_id: Some(DomainId::legacy_ecdsa_id()),
+            ..Default::default()
         };
         let signature_request = SignatureRequest::new(
             DomainId::default(),

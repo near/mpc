@@ -1,6 +1,6 @@
 use crate::{
     crypto_shared::types::{k256_types, ScalarExt},
-    primitives::signature::{PayloadHash, Tweak},
+    primitives::signature::Tweak,
 };
 use anyhow::Context;
 use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
@@ -61,14 +61,14 @@ pub fn check_ec_signature(
     expected_pk: &k256::AffinePoint,
     big_r: &k256::AffinePoint,
     s: &k256::Scalar,
-    msg_hash: &PayloadHash,
+    msg_hash: &[u8; 32],
     recovery_id: u8,
 ) -> anyhow::Result<()> {
     let public_key = expected_pk.to_encoded_point(false);
     let signature = k256::ecdsa::Signature::from_scalars(x_coordinate(big_r), s)
         .context("cannot create signature from cait_sith signature")?;
     let found_pk = recover(
-        &msg_hash.as_bytes(),
+        msg_hash,
         &signature,
         RecoveryId::try_from(recovery_id).context("invalid recovery ID")?,
     )?

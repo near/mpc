@@ -4,6 +4,7 @@ use k256::{
     elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint},
     AffinePoint, FieldBytes, Scalar, Secp256k1, SecretKey,
 };
+use mpc_contract::primitives::signature::{Payload, SignRequestArgs};
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
@@ -14,7 +15,7 @@ use mpc_contract::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        signature::{PayloadHash, SignRequest, SignatureRequest, Tweak},
+        signature::{SignatureRequest, Tweak},
         thresholds::{Threshold, ThresholdParameters},
     },
     update::UpdateId,
@@ -164,13 +165,13 @@ pub async fn init_env_secp256k1(
     (worker, contract, accounts, secret_keys)
 }
 
-/// Process the message, creating the same hash with type of [`Digest`] and [`PayloadHash`]
-pub async fn process_message(msg: &str) -> (impl Digest, PayloadHash) {
+/// Process the message, creating the same hash with type of [`Digest`] and [`Payload`]
+pub async fn process_message(msg: &str) -> (impl Digest, Payload) {
     let msg = msg.as_bytes();
     let digest = <k256::Secp256k1 as ecdsa::hazmat::DigestPrimitive>::Digest::new_with_prefix(msg);
     let bytes: FieldBytes = digest.clone().finalize_fixed();
 
-    let payload_hash = PayloadHash::new(bytes.into());
+    let payload_hash = Payload::from_legacy_ecdsa(bytes.into());
     (digest, payload_hash)
 }
 
@@ -184,8 +185,8 @@ pub async fn create_response(
     msg: &str,
     path: &str,
     sk: &k256::SecretKey,
-) -> (PayloadHash, SignatureRequest, SignatureResponse) {
-    let (digest, payload_hash) = process_message(msg).await;
+) -> (Payload, SignatureRequest, SignatureResponse) {
+    let (digest, payload) = process_message(msg).await;
     let pk = sk.public_key();
 
     let tweak = derive_tweak(predecessor_id, path);
@@ -201,15 +202,16 @@ pub async fn create_response(
 
     let s = signature.s();
     let (r_bytes, _s_bytes) = signature.split_bytes();
-    let respond_req =
-        SignatureRequest::new(DomainId(0), payload_hash.clone(), predecessor_id, path);
+    let respond_req = SignatureRequest::new(DomainId(0), payload.clone(), predecessor_id, path);
     let big_r =
         AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
     let s: k256::Scalar = *s.as_ref();
 
-    let recovery_id = if check_ec_signature(&derived_pk, &big_r, &s, &payload_hash, 0).is_ok() {
+    let recovery_id = if check_ec_signature(&derived_pk, &big_r, &s, payload.as_ecdsa().unwrap(), 0)
+        .is_ok()
+    {
         0
-    } else if check_ec_signature(&derived_pk, &big_r, &s, &payload_hash, 1).is_ok() {
+    } else if check_ec_signature(&derived_pk, &big_r, &s, payload.as_ecdsa().unwrap(), 1).is_ok() {
         1
     } else {
         panic!("unable to use recovery id of 0 or 1");
@@ -223,11 +225,11 @@ pub async fn create_response(
         recovery_id,
     });
 
-    (payload_hash, respond_req, respond_resp)
+    (payload, respond_req, respond_resp)
 }
 
 pub async fn sign_and_validate(
-    request: &SignRequest,
+    request: &SignRequestArgs,
     respond: Option<(&SignatureRequest, &SignatureResponse)>,
     contract: &Contract,
 ) -> anyhow::Result<()> {
