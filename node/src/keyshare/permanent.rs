@@ -110,7 +110,7 @@ mod tests {
     use crate::keyshare::permanent::{
         LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend,
     };
-    use crate::keyshare::test_utils::{generate_dummy_keyshare, permanent_keyshare_from_keyshares};
+    use crate::keyshare::test_utils::{generate_dummy_keyshare, KeysetBuilder};
     use crate::keyshare::KeyshareData;
     use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
@@ -144,14 +144,14 @@ mod tests {
         assert!(storage.store(&permanent_keyshare).await.is_err());
         // Cannot store current epoch with fewer domains.
         let keys = vec![generate_dummy_keyshare(1, 0, 1)];
-        let permanent_keyshare = permanent_keyshare_from_keyshares(1, &keys);
+        let permanent_keyshare = KeysetBuilder::from_keyshares(1, &keys).permanent_key_data();
         assert!(storage.store(&permanent_keyshare).await.is_err());
         // Cannot store older epoch than current.
         let keys = vec![
             generate_dummy_keyshare(0, 0, 1),
             generate_dummy_keyshare(0, 2, 2),
         ];
-        let permanent_keyshare = permanent_keyshare_from_keyshares(0, &keys);
+        let permanent_keyshare = KeysetBuilder::from_keyshares(0, &keys).permanent_key_data();
         assert!(storage.store(&permanent_keyshare).await.is_err());
 
         // Can store newer epoch than current.
@@ -159,7 +159,7 @@ mod tests {
             generate_dummy_keyshare(2, 0, 1),
             generate_dummy_keyshare(2, 2, 2),
         ];
-        let permanent_keyshare = permanent_keyshare_from_keyshares(2, &keys);
+        let permanent_keyshare = KeysetBuilder::from_keyshares(2, &keys).permanent_key_data();
         storage.store(&permanent_keyshare).await.unwrap();
         let loaded = storage.load().await.unwrap().unwrap();
         assert_eq!(loaded, permanent_keyshare);
@@ -170,7 +170,7 @@ mod tests {
             generate_dummy_keyshare(2, 2, 2),
             generate_dummy_keyshare(2, 3, 5),
         ];
-        let permanent_keyshare = permanent_keyshare_from_keyshares(2, &keys);
+        let permanent_keyshare = KeysetBuilder::from_keyshares(2, &keys).permanent_key_data();
         storage.store(&permanent_keyshare).await.unwrap();
         let loaded = storage.load().await.unwrap().unwrap();
         assert_eq!(loaded, permanent_keyshare);

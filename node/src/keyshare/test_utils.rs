@@ -26,7 +26,7 @@ pub fn generate_dummy_keyshare(epoch_id: u64, domain_id: u64, attempt_id: u64) -
     }
 }
 
-pub fn permanent_keyshare_from_keyshares(
+fn permanent_keyshare_from_keyshares(
     epoch_id: u64,
     keyshares: &[Keyshare],
 ) -> PermanentKeyshareData {
@@ -36,7 +36,7 @@ pub fn permanent_keyshare_from_keyshares(
     }
 }
 
-pub fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
+fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
     let keys = permanent
         .keyshares
         .iter()
@@ -54,4 +54,46 @@ pub fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keys
         })
         .collect();
     Keyset::new(permanent.epoch_id, keys)
+}
+
+pub struct KeysetBuilder {
+    epoch_id: u64,
+    keys: Vec<Keyshare>,
+}
+
+impl KeysetBuilder {
+    pub fn new(epoch_id: u64) -> Self {
+        Self {
+            epoch_id,
+            keys: Vec::new(),
+        }
+    }
+
+    pub fn from_keyshares(epoch_id: u64, keyshares: &[Keyshare]) -> Self {
+        Self {
+            epoch_id,
+            keys: keyshares.to_vec(),
+        }
+    }
+
+    pub fn keyshares(&self) -> &[Keyshare] {
+        &self.keys
+    }
+
+    pub fn add_keyshare(&mut self, keyshare: Keyshare) -> &mut Self {
+        self.keys.push(keyshare);
+        self
+    }
+
+    pub fn keyset(&self) -> Keyset {
+        keyset_from_permanent_keyshare(&self.permanent_key_data())
+    }
+
+    pub fn permanent_key_data(&self) -> PermanentKeyshareData {
+        permanent_keyshare_from_keyshares(self.epoch_id, &self.keys)
+    }
+
+    pub fn generated(&self) -> Vec<KeyForDomain> {
+        self.keyset().domains
+    }
 }

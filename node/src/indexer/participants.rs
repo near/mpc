@@ -2,7 +2,7 @@ use crate::config::{ParticipantInfo, ParticipantsConfig};
 use crate::indexer::lib::{get_mpc_contract_state, wait_for_contract_code, wait_for_full_sync};
 use crate::primitives::ParticipantId;
 use anyhow::Context;
-use mpc_contract::primitives::key_state::{KeyEventId, Keyset};
+use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use mpc_contract::primitives::thresholds::ThresholdParameters;
 use mpc_contract::state::key_event::KeyEvent;
 use mpc_contract::state::ProtocolContractState;
@@ -16,11 +16,13 @@ pub struct ContractKeyEventInstance {
     pub id: KeyEventId,
     pub started: bool,
     pub completed: BTreeSet<ParticipantId>,
+    pub completed_domains: Vec<KeyForDomain>,
 }
 
 pub fn convert_key_event_to_instance(
     key_event: &KeyEvent,
     current_height: u64,
+    completed_domains: Vec<KeyForDomain>,
 ) -> ContractKeyEventInstance {
     match key_event.instance() {
         Some(current_instance) if current_height < current_instance.expires_on() => {
@@ -36,6 +38,7 @@ pub fn convert_key_event_to_instance(
                     .iter()
                     .map(|p| p.get().into())
                     .collect(),
+                completed_domains,
             }
         }
         _ => ContractKeyEventInstance {
@@ -46,8 +49,49 @@ pub fn convert_key_event_to_instance(
             },
             started: false,
             completed: BTreeSet::new(),
+            completed_domains,
         },
     }
+}
+
+impl ContractKeyEventInstance {
+    pub fn compare_to_expected_key_event_id(
+        &self,
+        expected: &KeyEventId,
+    ) -> KeyEventIdComparisonResult {
+        let contract_state = (
+            self.id.epoch_id.get(),
+            self.id.domain_id.0,
+            self.id.attempt_id.get(),
+        );
+        let expected_state = (
+            expected.epoch_id.get(),
+            expected.domain_id.0,
+            expected.attempt_id.get(),
+        );
+        if contract_state < expected_state {
+            KeyEventIdComparisonResult::RemoteBehind
+        } else if contract_state > expected_state {
+            KeyEventIdComparisonResult::RemoteAhead
+        } else if self.started {
+            KeyEventIdComparisonResult::RemoteMatches
+        } else {
+            KeyEventIdComparisonResult::RemoteBehind
+        }
+    }
+}
+
+#[allow(clippy::enum_variant_names)]
+pub enum KeyEventIdComparisonResult {
+    /// Contract has already moved past the expected key event ID, meaning that the computation
+    /// corresponding to the expected key event ID should be aborted.
+    RemoteAhead,
+    /// The active key event ID in the contract matches the expected. The computation should be
+    /// carried out.
+    RemoteMatches,
+    /// The active key event ID in the contract has not yet progressed to the expected. The
+    /// computation should wait.
+    RemoteBehind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,7 +192,11 @@ async fn read_contract_state_from_chain(
                     state.generating_key.proposed_parameters().clone(),
                     port_override,
                 )?,
-                key_event: convert_key_event_to_instance(&state.generating_key, height),
+                key_event: convert_key_event_to_instance(
+                    &state.generating_key,
+                    height,
+                    state.generated_keys.clone(),
+                ),
             })
         }
         ProtocolContractState::Running(state) => ContractState::Running(ContractRunningState {
@@ -172,7 +220,11 @@ async fn read_contract_state_from_chain(
                     epoch_id: state.prospective_epoch_id(),
                     domains: state.reshared_keys.clone(),
                 },
-                key_event: convert_key_event_to_instance(&state.resharing_key, height),
+                key_event: convert_key_event_to_instance(
+                    &state.resharing_key,
+                    height,
+                    state.reshared_keys.clone(),
+                ),
             })
         }
     };
