@@ -1,6 +1,6 @@
 use crate::sign_request::SignatureRequest;
 use anyhow::Context;
-use cait_sith::FullSignature;
+use cait_sith::ecdsa::sign::FullSignature;
 use k256::{
     ecdsa::{RecoveryId, VerifyingKey},
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
@@ -202,7 +202,7 @@ impl ChainRespondArgs {
 #[cfg(test)]
 mod recovery_id_tests {
     use crate::indexer::types::ChainRespondArgs;
-    use cait_sith::FullSignature;
+    use cait_sith::ecdsa::sign::FullSignature;
     use k256::ecdsa::{RecoveryId, SigningKey};
     use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
     use k256::AffinePoint;

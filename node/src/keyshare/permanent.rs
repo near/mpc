@@ -204,7 +204,7 @@ mod tests {
         assert_eq!(loaded.keyshares[0].key_id.attempt_id.get(), 0);
         assert_eq!(
             loaded.keyshares[0].data,
-            KeyshareData::Secp256k1(cait_sith::KeygenOutput {
+            KeyshareData::Secp256k1(cait_sith::ecdsa::KeygenOutput {
                 private_share: legacy_data.private_share,
                 public_key: legacy_data.public_key,
             })

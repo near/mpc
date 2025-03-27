@@ -9,7 +9,6 @@ mod cli;
 mod config;
 mod coordinator;
 mod db;
-mod frost;
 mod indexer;
 mod key_events;
 mod keyshare;

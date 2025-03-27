@@ -2,7 +2,7 @@ use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
 use crate::providers::affine_point_to_public_key;
 use crate::tests::TestGenerators;
-use cait_sith::KeygenOutput;
+use cait_sith::ecdsa::KeygenOutput;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
 

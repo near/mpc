@@ -5,11 +5,14 @@ use crate::network::NetworkTaskChannel;
 use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::kdf::{derive_public_key, derive_randomness};
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, PresignatureStorage};
+use crate::providers::ecdsa::{
+    EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, PresignatureStorage,
+};
 use crate::sign_request::{SignatureId, SignatureRequest};
 use anyhow::Context;
+use cait_sith::ecdsa::presign::PresignOutput;
+use cait_sith::ecdsa::sign::FullSignature;
 use cait_sith::protocol::Participant;
-use cait_sith::{FullSignature, KeygenOutput, PresignOutput};
 use k256::{AffinePoint, Scalar, Secp256k1};
 use mpc_contract::crypto_shared::ScalarExt;
 use mpc_contract::primitives::signature::{PayloadHash, Tweak};
@@ -139,7 +142,7 @@ impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, AffinePoint)> for Si
             sigma: (sigma + tweak * k) * inverted_delta,
         };
 
-        let protocol = cait_sith::sign::<Secp256k1>(
+        let protocol = cait_sith::ecdsa::sign::sign(
             &cs_participants,
             me.into(),
             public_key,

@@ -8,7 +8,7 @@ pub mod test_utils;
 
 use crate::providers::affine_point_to_public_key;
 use anyhow::Context;
-use cait_sith::KeygenOutput;
+use cait_sith::ecdsa::KeygenOutput;
 use k256::Secp256k1;
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};

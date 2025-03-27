@@ -1,6 +1,6 @@
 use super::permanent::LegacyRootKeyshareData;
 use super::{Keyshare, KeyshareData};
-use cait_sith::KeygenOutput;
+use cait_sith::ecdsa::KeygenOutput;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
 

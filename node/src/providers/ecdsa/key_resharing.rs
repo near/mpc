@@ -3,9 +3,8 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::EcdsaSignatureProvider;
+use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use cait_sith::protocol::Participant;
-use cait_sith::KeygenOutput;
 use k256::elliptic_curve::sec1::FromEncodedPoint;
 use k256::{AffinePoint, EncodedPoint, Scalar, Secp256k1};
 
@@ -72,16 +71,25 @@ impl MpcLeaderCentricComputation<Scalar> for KeyResharingComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let protocol = cait_sith::reshare::<Secp256k1>(
+        let old_signing_key = if let Some(scalar) = self.my_share {
+            Some(cait_sith::frost_secp256k1::SigningKey::from_scalar(scalar)?)
+        } else {
+            None
+        };
+        let old_public_key = cait_sith::frost_secp256k1::VerifyingKey::new(self.public_key.into());
+
+        let protocol = cait_sith::ecdsa::dkg_ecdsa::reshare(
             &old_participants,
             self.old_threshold,
+            old_signing_key,
+            old_public_key,
             &new_participants,
             self.threshold,
             me.into(),
-            self.my_share,
-            self.public_key,
         )?;
-        run_protocol("key resharing", channel, protocol).await
+        run_protocol("key resharing", channel, protocol)
+            .await
+            .map(|share| share.private_share)
     }
     fn leader_waits_for_success(&self) -> bool {
         false

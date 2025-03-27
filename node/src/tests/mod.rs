@@ -1,6 +1,7 @@
+use cait_sith::ecdsa::presign::PresignOutput;
+use cait_sith::ecdsa::triples::TripleGenerationOutput;
+use cait_sith::ecdsa::KeygenOutput;
 use cait_sith::protocol::{run_protocol, Participant, Protocol};
-use cait_sith::triples::TripleGenerationOutput;
-use cait_sith::{FullSignature, KeygenOutput, PresignArguments, PresignOutput};
 use k256::{AffinePoint, Scalar, Secp256k1};
 use mpc_contract::primitives::signature::PayloadHash;
 use std::collections::HashMap;
@@ -19,6 +20,8 @@ use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::start_web_server;
+use cait_sith::ecdsa::presign::PresignArguments;
+use cait_sith::ecdsa::sign::FullSignature;
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
 use near_sdk::AccountId;
@@ -71,7 +74,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::keygen::<Secp256k1>(
+                    cait_sith::ecdsa::dkg_ecdsa::keygen(
                         &self.participants,
                         *participant,
                         self.threshold,
@@ -90,7 +93,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::triples::generate_triple::<Secp256k1>(
+                    cait_sith::ecdsa::triples::generate_triple::<Secp256k1>(
                         &self.participants,
                         *participant,
                         self.threshold,
@@ -113,7 +116,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::presign::<Secp256k1>(
+                    cait_sith::ecdsa::presign::presign(
                         &self.participants,
                         *participant,
                         &self.participants,
@@ -143,7 +146,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::sign::<Secp256k1>(
+                    cait_sith::ecdsa::sign::sign(
                         &self.participants,
                         *participant,
                         public_key,

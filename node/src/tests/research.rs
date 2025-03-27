@@ -1,8 +1,6 @@
 use crate::tests::TestGenerators;
-use cait_sith::{
-    protocol::{Participant, Protocol},
-    PresignArguments,
-};
+use cait_sith::ecdsa::presign::PresignArguments;
+use cait_sith::protocol::{Participant, Protocol};
 use k256::elliptic_curve::PrimeField;
 use k256::{Scalar, Secp256k1};
 use serde::Serialize;
@@ -194,7 +192,7 @@ fn triple_network_research_best_case() {
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            cait_sith::triples::generate_triple_many::<Secp256k1, 4>(
+            cait_sith::ecdsa::triples::generate_triple_many::<Secp256k1, 4>(
                 &participants,
                 participants[i],
                 THRESHOLD,
@@ -223,7 +221,7 @@ fn triple_network_research_worst_case() {
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            cait_sith::triples::generate_triple_many::<Secp256k1, 4>(
+            cait_sith::ecdsa::triples::generate_triple_many::<Secp256k1, 4>(
                 &participants,
                 participants[i],
                 THRESHOLD,
@@ -258,7 +256,7 @@ fn presignature_network_research_best_case() {
 
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            cait_sith::presign::<Secp256k1>(
+            cait_sith::ecdsa::presign::presign(
                 &participants,
                 participants[i],
                 &participants,
@@ -299,7 +297,7 @@ fn signature_network_research_best_case() {
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            cait_sith::sign::<Secp256k1>(
+            cait_sith::ecdsa::sign::sign(
                 &participants,
                 participants[i],
                 keygens[&participants[i]].public_key,
