@@ -93,20 +93,6 @@ pub enum MpcTaskId {
     EcdsaTaskId(EcdsaTaskId),
 }
 
-pub fn choose_random_participants(
-    participants: Vec<ParticipantId>,
-    me: ParticipantId,
-    threshold: usize,
-) -> Vec<ParticipantId> {
-    assert!(participants.len() >= threshold);
-    let mut res = participants
-        .into_iter()
-        .filter(|p| p != &me)
-        .choose_multiple(&mut rand::thread_rng(), threshold - 1);
-    res.push(me);
-    res
-}
-
 pub fn participants_from_triples(
     triple0: &TripleGenerationOutput<Secp256k1>,
     triple1: &TripleGenerationOutput<Secp256k1>,

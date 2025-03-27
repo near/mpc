@@ -19,6 +19,7 @@ use std::collections::{HashMap, HashSet};
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use rand::prelude::IteratorRandom;
 use tokio::sync::mpsc;
 
 /// Abstraction of the networking layer, from the view of one client, the sender side.
@@ -156,6 +157,28 @@ impl MeshNetworkClient {
         result.push(self.my_participant_id());
         result.sort();
         result
+    }
+
+    pub fn select_random_active_participants_including_me(
+        &self,
+        total: usize,
+    ) -> anyhow::Result<Vec<ParticipantId>> {
+        let me = self.my_participant_id();
+        let participants = self.all_alive_participant_ids();
+
+        if participants.len() < total {
+            anyhow::bail!("Not enough active participants: need {}, got {}", total, participants.len());
+        }
+        if !participants.contains(&me) {
+            anyhow::bail!("There's no `me` in active participants");
+        }
+
+        let mut res = participants
+            .into_iter()
+            .filter(|p| p != &me)
+            .choose_multiple(&mut rand::thread_rng(), total - 1);
+        res.push(me);
+        Ok(res)
     }
 
     /// Returns once all participants in the network are simultaneously connected to us.
