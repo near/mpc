@@ -331,7 +331,8 @@ impl VersionedMpcContract {
                 let slice: &[u8] = &encoded_point.as_bytes()[1..65];
                 let mut data: Vec<u8> = vec![near_sdk::CurveType::SECP256K1 as u8];
                 data.extend(slice.to_vec());
-                PublicKey::try_from(data)
+
+                PublicKey::from_parts(CurveType::SECP256K1, data)
             }
             CurveType::ED25519 => {
                 let public_key_edwards_point = near_public_key_to_edwards_point(public_key);
