@@ -299,7 +299,7 @@ impl Coordinator {
             new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
-        if mpc_config.is_leader_for_keygen() {
+        if mpc_config.is_leader_for_key_event() {
             keygen_leader(
                 network_client,
                 keyshare_storage,
@@ -467,7 +467,7 @@ impl Coordinator {
             new_threshold: mpc_config.participants.threshold as usize,
             old_participants: resharing_state.previous_running_state.participants,
         });
-        if mpc_config.is_leader_for_keygen() {
+        if mpc_config.is_leader_for_key_event() {
             resharing_leader(
                 network_client,
                 keyshare_storage,

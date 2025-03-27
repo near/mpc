@@ -85,10 +85,7 @@ impl TemporaryKeyStorage {
         Ok(Some(keyshare))
     }
 
-    fn get_epoch_id_from_keyshare_filename(filename: &str) -> anyhow::Result<Option<EpochId>> {
-        if !filename.starts_with("keyshare_") {
-            return Ok(None);
-        }
+    fn get_epoch_id_from_filename(filename: &str) -> anyhow::Result<Option<EpochId>> {
         let parts: Vec<&str> = filename.split('_').collect();
         if parts.len() != 4 {
             anyhow::bail!("Invalid keyshare filename: {:?}", filename);
@@ -97,7 +94,12 @@ impl TemporaryKeyStorage {
         Ok(Some(EpochId::new(epoch_id)))
     }
 
-    /// Deletes all keyshares stored in temporary storage that have an epoch ID less than the given.
+    /// Deletes all keyshares and started markers stored in temporary storage that have an epoch ID
+    /// less than the given.
+    ///
+    /// This must only be called when the permanent keyshare has already advanced to the given
+    /// epoch. This is because once we do this, we lose the protection that each key ID can only be
+    /// generated once. But if the permanent keyshare has advanced
     pub async fn delete_keyshares_prior_to_epoch_id(
         &self,
         epoch_id: EpochId,
@@ -105,8 +107,7 @@ impl TemporaryKeyStorage {
         let mut readdir = tokio::fs::read_dir(&self.storage_dir).await?;
         while let Some(entry) = readdir.next_entry().await? {
             let filename = entry.file_name().to_string_lossy().to_string();
-            let Some(existing_epoch_id) = Self::get_epoch_id_from_keyshare_filename(&filename)?
-            else {
+            let Some(existing_epoch_id) = Self::get_epoch_id_from_filename(&filename)? else {
                 continue;
             };
             if existing_epoch_id.get() < epoch_id.get() {

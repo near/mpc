@@ -158,15 +158,9 @@ impl MeshNetworkClient {
         result
     }
 
-    /// Waits until all participants in the network are connected to us.
-    ///
-    /// Only use this if the node is the leader of a key generation or resharing state.
-    /// For other states, use wait_for_ready for the underlying transport.
-    ///
-    /// This is different from NetworkTaskChannel::wait_for_all_participants_connected;
-    /// This function requires that all participants are simultaneously connected to us,
-    /// whereas the other function only requires each participant to be connected to at
-    /// some point (as it has its built-in connection breakage detection).
+    /// Returns once all participants in the network are simultaneously connected to us.
+    /// Internally, this calls `wait_for_ready(total_num_participants)` on the underlying
+    /// `transport_sender`.
     pub async fn leader_wait_for_all_connected(&self) -> anyhow::Result<()> {
         self.transport_sender
             .wait_for_ready(self.all_participant_ids().len())
@@ -454,18 +448,32 @@ impl NetworkTaskChannelSender {
         self.my_participant_id == self.leader
     }
 
-    /// Waits for all participants involved in this task to be bidirectionally connected to us.
+    /// Waits for each participant involved in this task to be bidirectionally connected to us
+    /// at least once. This way, the connection version for each participant is properly established
+    /// and when we send messages to any participant we can rely on that connection version.
+    /// It is possible after this that some participant is no longer connected to us (with the
+    /// original connection), in which case the sending would then fail (due to outdated connection
+    /// version) immediately.
+    ///
     /// This should be called at the beginning of the computation if:
     ///  - This is a leader-centric computation, and we are a follower.
     ///    (Rationale: the leader already determined that the participants are online. We wait
     ///     for connections because even though the leader has connected to everyone, it is
     ///     possible we have yet to establish connections to everyone. We assume that if the
-    ///     leader can connect to two nodes B and C, then B and C can also connect to each other.)
+    ///     leader can connect to two nodes B and C, then B and C can also connect to each other.
+    ///     If it happens that a node is actually unavailable, then the leader would realize that
+    ///     too, and abort the computation.)
     ///
     /// This should NOT be called if:
     ///  - We are the leader. This is redundant because the leader already queried the alive
-    ///    participants when making the choice of participants to use in the computation.
-    async fn wait_for_all_participants_connected(&self) -> anyhow::Result<()> {
+    ///    participants when making the choice of participants to use in the computation. And in
+    ///    fact, if we have the leader also call this, then the leader may get stuck waiting
+    ///    forever (and having to rely on timeouts), because just because a participant was alive
+    ///    when the leader determines the participant list, doesn't mean that the participant is
+    ///    still alive by the time the computation is started. By not calling this at the leader,
+    ///    if a participant is disconnected, the leader will be able to abort when carrying out the
+    ///    computation.
+    async fn initialize_all_participants_connections(&self) -> anyhow::Result<()> {
         for &participant in &self.participants {
             if participant == self.my_participant_id {
                 continue;

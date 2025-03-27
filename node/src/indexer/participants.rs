@@ -70,27 +70,28 @@ impl ContractKeyEventInstance {
             expected.attempt_id.get(),
         );
         if contract_state < expected_state {
-            KeyEventIdComparisonResult::ExpectedIsFuture
+            KeyEventIdComparisonResult::RemoteBehind
         } else if contract_state > expected_state {
-            KeyEventIdComparisonResult::ContractIsPastExpected
+            KeyEventIdComparisonResult::RemoteAhead
         } else if self.started {
-            KeyEventIdComparisonResult::ExpectedIsCurrent
+            KeyEventIdComparisonResult::RemoteMatches
         } else {
-            KeyEventIdComparisonResult::ExpectedIsFuture
+            KeyEventIdComparisonResult::RemoteBehind
         }
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 pub enum KeyEventIdComparisonResult {
     /// Contract has already moved past the expected key event ID, meaning that the computation
     /// corresponding to the expected key event ID should be aborted.
-    ContractIsPastExpected,
+    RemoteAhead,
     /// The active key event ID in the contract matches the expected. The computation should be
     /// carried out.
-    ExpectedIsCurrent,
+    RemoteMatches,
     /// The active key event ID in the contract has not yet progressed to the expected. The
     /// computation should wait.
-    ExpectedIsFuture,
+    RemoteBehind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

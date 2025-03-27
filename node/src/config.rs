@@ -67,7 +67,7 @@ impl MpcConfig {
 
     /// When performing a key generation or key resharing protocol, someone has to create a channel.
     /// Don't confuse with Leader Centric Computations.
-    pub fn is_leader_for_keygen(&self) -> bool {
+    pub fn is_leader_for_key_event(&self) -> bool {
         let my_participant_id = self.my_participant_id;
         let participant_with_lowest_id = self
             .participants

@@ -26,7 +26,11 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
 
 /// The key generation computation (same for both leader and follower) for a single key generation
-/// attempt.
+/// attempt:
+/// - reserves the key_id in keyshare_storage and performs sanity checks
+/// - runs the distributed computation with other participants
+/// - commits the new keyshare to storage.
+/// - votes for the generated public key.
 pub async fn keygen_computation_inner(
     channel: NetworkTaskChannel,
     keyshare_storage: Arc<KeyshareStorage>,
@@ -75,7 +79,7 @@ async fn keygen_computation(
     key_id: KeyEventId,
     threshold: usize,
 ) -> anyhow::Result<()> {
-    let key_event = wait_for_start(&mut contract_key_event_id, key_id).await;
+    let key_event = wait_for_contract_catchup(&mut contract_key_event_id, key_id).await;
     let inner = keygen_computation_inner(
         channel,
         keyshare_storage,
@@ -113,7 +117,14 @@ pub struct ResharingArgs {
 }
 
 /// The key resharing computation (same for both leader and follower) for a single key resharing
-/// attempt.
+/// attempt:
+/// - reserves the key_id in keyshare_storage and performs sanity checks
+/// - runs the key resharing distributed computation with other participants
+/// - commits the new keyshare to storage
+/// - votes on the contract to conclude the resharing.
+///
+/// If existing keyshares in `ResharingArgs` is not None, then they must contain a matching keyshare
+/// of same domain as `key_id`.
 async fn resharing_computation_inner(
     channel: NetworkTaskChannel,
     keyshare_storage: Arc<KeyshareStorage>,
@@ -192,7 +203,7 @@ async fn resharing_computation(
     key_id: KeyEventId,
     args: Arc<ResharingArgs>,
 ) -> anyhow::Result<()> {
-    let key_event = wait_for_start(&mut contract_key_event_id, key_id).await;
+    let key_event = wait_for_contract_catchup(&mut contract_key_event_id, key_id).await;
     let inner = resharing_computation_inner(
         channel,
         keyshare_storage,
@@ -221,8 +232,11 @@ async fn resharing_computation(
     Ok(())
 }
 
-/// Waits as long as the key event ID is in the future relative to the contract.
-async fn wait_for_start(
+/// Waits until the contract is no longer behind the key event ID.
+///
+/// By the time this function exits, it's possible the contract is already ahead of the key event
+/// ID; that is fine.
+async fn wait_for_contract_catchup(
     key_event_receiver: &mut watch::Receiver<ContractKeyEventInstance>,
     key_event_id: KeyEventId,
 ) -> ContractKeyEventInstance {
@@ -230,7 +244,7 @@ async fn wait_for_start(
         .wait_for(|contract_event| {
             !matches!(
                 contract_event.compare_to_expected_key_event_id(&key_event_id),
-                KeyEventIdComparisonResult::ExpectedIsFuture
+                KeyEventIdComparisonResult::RemoteBehind
             )
         })
         .await
@@ -247,7 +261,7 @@ async fn key_event_id_expiration(
         .wait_for(|contract_event| {
             matches!(
                 contract_event.compare_to_expected_key_event_id(&key_event_id),
-                KeyEventIdComparisonResult::ContractIsPastExpected
+                KeyEventIdComparisonResult::RemoteAhead
             )
         })
         .await
@@ -294,12 +308,20 @@ pub async fn keygen_leader(
 
         match timeout(
             MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE,
-            key_event_receiver.wait_for(|contract_event| contract_event.id == key_event_id),
+            key_event_receiver.wait_for(|contract_event| contract_event.started),
         )
         .await
         {
             Ok(res) => {
-                res?;
+                let contract_key_event_id = res?.id;
+                if contract_key_event_id != key_event_id {
+                    tracing::warn!(
+                        "Activated key event {:?} does not match expected {:?}; retrying.",
+                        contract_key_event_id,
+                        key_event_id
+                    );
+                    continue;
+                }
             }
             Err(_) => {
                 tracing::warn!(
