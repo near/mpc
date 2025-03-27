@@ -133,6 +133,14 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Initializing))
     }
 
+    pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+        match self {
+            ProtocolContractState::Resharing(state) => state.vote_abort(key_event_id),
+            ProtocolContractState::Initializing(state) => state.vote_abort(key_event_id),
+            _ => Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
+        }
+    }
+
     pub fn vote_cancel_keygen(
         &mut self,
         next_domain_id: u64,

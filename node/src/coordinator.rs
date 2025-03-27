@@ -341,12 +341,6 @@ impl Coordinator {
         if mpc_config.is_leader_for_keygen() {
             loop {
                 let contract_event = key_event_receiver.borrow_and_update().clone();
-                if contract_event
-                    .completed
-                    .contains(&mpc_config.my_participant_id)
-                {
-                    continue;
-                }
                 if !contract_event.started {
                     keygen_leader(
                         contract_event.id,
@@ -356,9 +350,6 @@ impl Coordinator {
                         &keyshare_storage,
                     )
                     .await?;
-                } else {
-                    // todo: vote abort on the contract
-                    tracing::error!("should not happen");
                 }
                 if key_event_receiver.changed().await.is_err() {
                     return Ok(MpcJobResult::Done);
@@ -546,12 +537,6 @@ impl Coordinator {
         if is_leader {
             loop {
                 let contract_event = key_event_receiver.borrow_and_update().clone();
-                if contract_event
-                    .completed
-                    .contains(&mpc_config.my_participant_id)
-                {
-                    continue;
-                }
                 if !contract_event.started {
                     resharing_leader(
                         &keys,
@@ -562,9 +547,6 @@ impl Coordinator {
                         &network_client,
                     )
                     .await?;
-                } else {
-                    // todo: vote abort on the contract
-                    tracing::error!("should not happen");
                 }
                 if key_event_receiver.changed().await.is_err() {
                     return Ok(MpcJobResult::Done);

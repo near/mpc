@@ -22,19 +22,27 @@ def test_key_resharing():
     cluster.send_and_await_signature_requests(1)
 
     # third node joins
-    cluster.do_resharing(new_participants=mpc_nodes[:3], new_threshold=3)
+    cluster.do_resharing(new_participants=mpc_nodes[:3],
+                         new_threshold=3,
+                         prospective_epoch_id=1)
     cluster.send_and_await_signature_requests(1)
 
     # fourth node joins
-    cluster.do_resharing(new_participants=mpc_nodes, new_threshold=3)
+    cluster.do_resharing(new_participants=mpc_nodes,
+                         new_threshold=3,
+                         prospective_epoch_id=2)
     cluster.send_and_await_signature_requests(1)
 
     # first node gets kicked
-    cluster.do_resharing(new_participants=mpc_nodes[1:], new_threshold=2)
+    cluster.do_resharing(new_participants=mpc_nodes[1:],
+                         new_threshold=2,
+                         prospective_epoch_id=3)
     cluster.send_and_await_signature_requests(1)
 
     # second node gets kicked
-    cluster.do_resharing(new_participants=mpc_nodes[2:], new_threshold=2)
+    cluster.do_resharing(new_participants=mpc_nodes[2:],
+                         new_threshold=2,
+                         prospective_epoch_id=4)
     cluster.send_and_await_signature_requests(1)
 
     # bring down first two nodes; the cluster should still be able to sign

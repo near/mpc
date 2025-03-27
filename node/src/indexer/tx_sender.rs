@@ -136,6 +136,10 @@ async fn observe_tx_result(
             // we don't care. The contract state change will handle this.
             Ok(ChainTransactionState::Unknown)
         }
+        ChainSendTransactionRequest::VoteAbortKeyEvent(_) => {
+            // we don't care. The contract state change will handle this.
+            Ok(ChainTransactionState::Unknown)
+        }
     }
 }
 

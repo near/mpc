@@ -109,9 +109,20 @@ pub struct ChainVoteResharedArgs {
 }
 
 #[derive(Serialize, Debug)]
-pub struct ChainStartReshareArgs {}
+pub struct ChainStartReshareArgs {
+    pub key_event_id: KeyEventId,
+}
+
 #[derive(Serialize, Debug)]
-pub struct ChainStartKeygenArgs {}
+pub struct ChainStartKeygenArgs {
+    pub key_event_id: KeyEventId,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChainVoteAbortKeyEventArgs {
+    pub key_event_id: KeyEventId,
+}
+
 /// Request to send a transaction to the contract on chain.
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
@@ -121,6 +132,7 @@ pub enum ChainSendTransactionRequest {
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
     StartReshare(ChainStartReshareArgs),
+    VoteAbortKeyEvent(ChainVoteAbortKeyEventArgs),
 }
 
 impl ChainSendTransactionRequest {
@@ -131,6 +143,7 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
             ChainSendTransactionRequest::StartReshare(_) => "start_reshare_instance",
             ChainSendTransactionRequest::StartKeygen(_) => "start_keygen_instance",
+            ChainSendTransactionRequest::VoteAbortKeyEvent(_) => "vote_abort_key_event",
         }
     }
 
@@ -140,7 +153,8 @@ impl ChainSendTransactionRequest {
             | Self::VotePk(_)
             | Self::VoteReshared(_)
             | Self::StartReshare(_)
-            | Self::StartKeygen(_) => 300 * TGAS,
+            | Self::StartKeygen(_)
+            | Self::VoteAbortKeyEvent(_) => 300 * TGAS,
         }
     }
 }

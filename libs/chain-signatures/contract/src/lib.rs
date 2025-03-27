@@ -138,6 +138,11 @@ impl MpcContract {
         Ok(())
     }
 
+    pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+        self.protocol_state
+            .vote_abort_key_event_instance(key_event_id)
+    }
+
     pub fn vote_cancel_keygen(&mut self, next_domain_id: u64) -> Result<(), Error> {
         if let Some(new_state) = self.protocol_state.vote_cancel_keygen(next_domain_id)? {
             self.protocol_state = new_state;
@@ -563,6 +568,19 @@ impl VersionedMpcContract {
         log!("vote_cancel_keygen: signer={}", env::signer_account_id());
         match self {
             Self::V0(contract_state) => contract_state.vote_cancel_keygen(next_domain_id),
+        }
+    }
+
+    /// Casts a vote to abort the current key event instance. If succesful, the contract aborts the
+    /// instance and a new instance with the next attempt_id can be started.
+    #[handle_result]
+    pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+        log!(
+            "vote_abort_key_event_instance: signer={}",
+            env::signer_account_id()
+        );
+        match self {
+            Self::V0(contract_state) => contract_state.vote_abort_key_event_instance(key_event_id),
         }
     }
 

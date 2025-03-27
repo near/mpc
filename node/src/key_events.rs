@@ -6,12 +6,11 @@ use tokio::sync::{mpsc, watch};
 
 use crate::{
     config::ParticipantsConfig,
-    hkdf::affine_point_to_public_key,
     indexer::{
         participants::ContractKeyEventInstance,
         types::{
             ChainSendTransactionRequest, ChainStartKeygenArgs, ChainStartReshareArgs,
-            ChainVotePkArgs, ChainVoteResharedArgs,
+            ChainVoteAbortKeyEventArgs, ChainVotePkArgs, ChainVoteResharedArgs,
         },
     },
     keyshare::{Keyshare, KeyshareData, KeyshareStorage},
@@ -22,6 +21,42 @@ use crate::{
         SignatureProvider,
     },
 };
+
+/// If `key_id` matches a key in the temporary storage, then vote for its public key in the
+/// contract. Otherwise send VoteAbortKeyEvent.
+pub async fn vote_pk_with_key_or_abort(
+    key_id: KeyEventId,
+    keyshare_storage: &KeyshareStorage,
+    chain_txn_sender: &mpsc::Sender<ChainSendTransactionRequest>,
+) -> anyhow::Result<()> {
+    match keyshare_storage.load_from_temporary(key_id).await? {
+        None => {
+            tracing::info!(
+                "Participant not in posession of key {:?}, voting abort",
+                key_id
+            );
+            chain_txn_sender
+                .send(ChainSendTransactionRequest::VoteAbortKeyEvent(
+                    ChainVoteAbortKeyEventArgs {
+                        key_event_id: key_id,
+                    },
+                ))
+                .await?;
+            Ok(())
+        }
+        Some(keyshare) => {
+            tracing::info!("Participant in posession of key {:?}, voting pk", key_id);
+            let pk: String = (&keyshare.public_key()?).into();
+            chain_txn_sender
+                .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
+                    key_event_id: keyshare.key_id,
+                    public_key: near_crypto::PublicKey::from_str(&pk)?,
+                }))
+                .await?;
+            Ok(())
+        }
+    }
+}
 
 /// Handles the leader side of an ECDSA key generation task.
 /// - Initiates a new network channel for key generation with all participants.
@@ -36,6 +71,19 @@ pub async fn keygen_leader(
     threshold: usize,
     keyshare_storage: &KeyshareStorage,
 ) -> anyhow::Result<()> {
+    // if we have a matching keyshare, we vote public key and return.
+    if let Some(keyshare) = keyshare_storage.load_from_temporary(key_id).await? {
+        tracing::info!("Indexer is lagging. Leader already in posession of this keyshare.");
+        let pk: String = (&keyshare.public_key()?).into();
+        chain_txn_sender
+            .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
+                key_event_id: keyshare.key_id,
+                public_key: near_crypto::PublicKey::from_str(&pk)?,
+            }))
+            .await?;
+        tracing::info!("Leader in posession of key {:?}, voted pk", key_id);
+        return Ok(());
+    }
     tracing::info!("Leader is starting ecdsa secp256k1 keygen {:?}", key_id);
     // open the channel
     let channel = network_client.new_channel_for_task(
@@ -45,7 +93,9 @@ pub async fn keygen_leader(
     tracing::info!("leader vote starts keygen: {:?}", channel.task_id());
     chain_txn_sender
         .send(ChainSendTransactionRequest::StartKeygen(
-            ChainStartKeygenArgs {},
+            ChainStartKeygenArgs {
+                key_event_id: key_id,
+            },
         ))
         .await?;
     tracing::info!("sent start keygen, starting computation");
@@ -61,20 +111,12 @@ pub async fn keygen_leader(
     };
     keyshare_storage.store_key(keyshare).await?;
     tracing::info!("leader stored keyshare.");
-    let my_public_key = affine_point_to_public_key(res.public_key)?;
-    tracing::info!("Key generation complete; Leader calls vote_pk.");
-    chain_txn_sender
-        .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
-            key_event_id: key_id,
-            public_key: my_public_key,
-        }))
-        .await?;
-    Ok(())
+    vote_pk_with_key_or_abort(key_id, keyshare_storage, chain_txn_sender).await
 }
 
 /// Handles the follower side of an ECDSA key generation task.
 /// - Waits for a new network task channel from `channel_receiver`.
-/// - Ignores non-key generation tasks until a valid one is received.
+/// - drops the channel and bails if the task_id received through it is not for keygen.
 /// - Waits for the corresponding key event from `key_event_receiver` to begin.
 /// - Skips execution if this participant has already completed the key generation.
 /// - Executes the key generation protocol using the received channel and threshold.
@@ -88,32 +130,39 @@ pub async fn keygen_follower(
     key_event_receiver: &mut watch::Receiver<ContractKeyEventInstance>,
     channel_receiver: &mut mpsc::UnboundedReceiver<NetworkTaskChannel>,
 ) -> anyhow::Result<()> {
+    // returing an error here because that seems to be required for resharing and we would
+    // expect this to also be a potential issue for adding domains.
     let channel = channel_receiver.recv().await.unwrap();
-    let key_id = loop {
-        let task_id = channel.task_id();
-        if let MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration { key_event: key_id }) = task_id {
-            break key_id;
-        } else {
-            tracing::info!(
-                "Expected Keygeneration task id, received: {:?}; ignoring.",
-                task_id,
-            );
-        };
+    let task_id = channel.task_id();
+    let key_id = match task_id {
+        MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration { key_event }) => key_event,
+        _ => anyhow::bail!("Expected key generation task id, received: {:?}", task_id),
     };
     tracing::info!(
         "Received Keygeneration task id: {:?}. Our id; {:?}",
         key_id,
         my_participant_id,
     );
+    if let Some(keyshare) = keyshare_storage.load_from_temporary(key_id).await? {
+        tracing::info!(
+            "Leader indexer is lagging behind. Follower already in posession of this keyshare."
+        );
+        let pk: String = (&keyshare.public_key()?).into();
+        chain_txn_sender
+            .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
+                key_event_id: keyshare.key_id,
+                public_key: near_crypto::PublicKey::from_str(&pk)?,
+            }))
+            .await?;
+        tracing::info!("Follower in posession of key {:?}, voted pk", key_id);
+        return Ok(());
+    }
     let contract_event = wait_for_start(key_event_receiver, key_id).await?;
     tracing::info!(
         "Key Generation {:?} started on contract. Our id: {}",
         key_id,
         my_participant_id
     );
-    if contract_event.completed.contains(&my_participant_id) {
-        anyhow::bail!("We already completed this key generation. Why is there a second attempt?");
-    }
     tracing::info!(
         "Joining ecdsa secp256k1 key generation for key id {:?} as follower: {:?}",
         contract_event.id,
@@ -126,17 +175,49 @@ pub async fn keygen_follower(
         data: KeyshareData::Secp256k1(res.clone()),
     };
     keyshare_storage.store_key(keyshare).await?;
-    tracing::info!("Key generation complete; Follower calls vote_pk.");
-    chain_txn_sender
-        .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
-            key_event_id: contract_event.id,
-            public_key: affine_point_to_public_key(res.public_key)?,
-        }))
-        .await?;
-    Ok(())
+    vote_pk_with_key_or_abort(key_id, keyshare_storage, chain_txn_sender).await
 }
 
+/// if the `key_id` matches a key in the temporary storage, then send `VoteReshared` to the
+/// contract. Otherwise send VoteAbortKeyEvent.
+pub async fn vote_reshared_with_key_or_abort(
+    key_id: KeyEventId,
+    keyshare_storage: &KeyshareStorage,
+    chain_txn_sender: &mpsc::Sender<ChainSendTransactionRequest>,
+) -> anyhow::Result<()> {
+    match keyshare_storage.load_from_temporary(key_id).await? {
+        None => {
+            tracing::info!(
+                "Participant not in posession of key {:?}, voting abort",
+                key_id
+            );
+            chain_txn_sender
+                .send(ChainSendTransactionRequest::VoteAbortKeyEvent(
+                    ChainVoteAbortKeyEventArgs {
+                        key_event_id: key_id,
+                    },
+                ))
+                .await?;
+            Ok(())
+        }
+        Some(keyshare) => {
+            tracing::info!(
+                "Participant in posession of key {:?}, voting reshared",
+                key_id
+            );
+            chain_txn_sender
+                .send(ChainSendTransactionRequest::VoteReshared(
+                    ChainVoteResharedArgs {
+                        key_event_id: keyshare.key_id,
+                    },
+                ))
+                .await?;
+            Ok(())
+        }
+    }
+}
 /// Handles the leader side of a key resharing task.
+/// - if there is a matching key in temporary storage, vote for the resharing to complete
 /// - Checks if the resharing has already started; exits if this participant has already completed it.
 /// - Initiates a new network channel for resharing with all participants.
 /// - Broadcasts the start of the resharing process on-chain.
@@ -151,15 +232,19 @@ pub async fn resharing_leader(
     chain_txn_sender: &mpsc::Sender<ChainSendTransactionRequest>,
     network_client: &Arc<MeshNetworkClient>,
 ) -> anyhow::Result<()> {
-    if contract_event.started {
-        if !contract_event.completed.contains(&my_participant_id) {
-            // todo: vote abort on the contract
-            anyhow::bail!("should not happen");
-        } else {
-            return Ok(());
-        }
-    }
     let key_id = contract_event.id;
+    // if we have a matching keyshare, we vote reshared and ignore. Happens if indexer lags.
+    if let Some(keyshare) = keys.keyshare_storage.load_from_temporary(key_id).await? {
+        chain_txn_sender
+            .send(ChainSendTransactionRequest::VoteReshared(
+                ChainVoteResharedArgs {
+                    key_event_id: keyshare.key_id,
+                },
+            ))
+            .await?;
+        tracing::info!("Leader in posession of key {:?}, voted reshared", key_id);
+        return Ok(());
+    }
     tracing::info!(
         "leader {} is starting resharing for key {:?} with keyshare {:?}",
         my_participant_id,
@@ -172,7 +257,9 @@ pub async fn resharing_leader(
     )?;
     chain_txn_sender
         .send(ChainSendTransactionRequest::StartReshare(
-            ChainStartReshareArgs {},
+            ChainStartReshareArgs {
+                key_event_id: key_id,
+            },
         ))
         .await?;
     let my_share = keys
@@ -195,15 +282,8 @@ pub async fn resharing_leader(
         data: KeyshareData::Secp256k1(res.clone()),
     };
     keys.keyshare_storage.store_key(keyshare).await?;
-    tracing::info!("Key resharing complete; Leader votes for completion.");
-    chain_txn_sender
-        .send(ChainSendTransactionRequest::VoteReshared(
-            crate::indexer::types::ChainVoteResharedArgs {
-                key_event_id: key_id,
-            },
-        ))
-        .await?;
-    Ok(())
+    tracing::info!("Leader stored keyshare.");
+    vote_reshared_with_key_or_abort(key_id, &keys.keyshare_storage, chain_txn_sender).await
 }
 
 /// Waits for the specified key event to start.
@@ -245,7 +325,7 @@ pub struct ResharingArgs {
 
 /// Handles the follower side of a key resharing task.
 /// - Waits for a new network task channel from `channel_receiver`.
-/// - Ignores non-resharing tasks until a resharing task is received.
+/// - Drops the channel and bails if task id other than resharing is received.
 /// - Waits for the corresponding key event from `key_event_receiver` to begin.
 /// - Skips execution if this participant has already completed the resharing.
 /// - Executes the resharing protocol using existing keyshares and the provided channel.
@@ -258,23 +338,30 @@ pub async fn resharing_follower(
     key_event_receiver: &mut watch::Receiver<ContractKeyEventInstance>,
     channel_receiver: &mut mpsc::UnboundedReceiver<NetworkTaskChannel>,
 ) -> anyhow::Result<()> {
+    // during pytests, we had a situation where the leader would spam here with triple or
+    // presignature requests. Easiest solution was to just drop the channel and re-enter
+    // this function.
+    // Same might be required for initializing?
     let channel = channel_receiver.recv().await.unwrap();
-    let key_id = loop {
-        let task_id = channel.task_id();
-        if let MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { key_event: key_id }) = task_id {
-            break key_id;
-        } else {
-            tracing::info!(
-                "Expected Key resharing task id, received: {:?}; ignoring.",
-                task_id,
-            );
-        };
+    let task_id = channel.task_id();
+    let key_id = match task_id {
+        MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { key_event }) => key_event,
+        _ => anyhow::bail!("Expected key resharing task id, received: {:?}", task_id),
     };
-    let contract_event = wait_for_start(key_event_receiver, key_id).await?;
-    if contract_event.completed.contains(&my_participant_id) {
-        // just return and wait.
-        anyhow::bail!("We already completed this resharing. Why is there a second attempt?");
+
+    if let Some(keyshare) = keys.keyshare_storage.load_from_temporary(key_id).await? {
+        chain_txn_sender
+            .send(ChainSendTransactionRequest::VoteReshared(
+                ChainVoteResharedArgs {
+                    key_event_id: keyshare.key_id,
+                },
+            ))
+            .await?;
+        tracing::info!("Follower in posession of key {:?}, voted reshared", key_id);
+        return Ok(());
     }
+
+    let contract_event = wait_for_start(key_event_receiver, key_id).await?;
     tracing::info!(
         "Joining ecdsa secp256k1 key resharing for key id {:?} as follower: {} and keyshares: {:?}",
         contract_event.id,
@@ -303,13 +390,6 @@ pub async fn resharing_follower(
         data: KeyshareData::Secp256k1(res),
     };
     keys.keyshare_storage.store_key(keyshare).await?;
-    tracing::info!("Key resharing complete; Follower calls vote_pk.");
-    chain_txn_sender
-        .send(ChainSendTransactionRequest::VoteReshared(
-            ChainVoteResharedArgs {
-                key_event_id: contract_event.id,
-            },
-        ))
-        .await?;
-    Ok(())
+    tracing::info!("Key resharing complete; Follower calls vote reshared.");
+    vote_reshared_with_key_or_abort(key_id, &keys.keyshare_storage, chain_txn_sender).await
 }
