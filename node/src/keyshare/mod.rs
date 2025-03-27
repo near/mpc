@@ -6,7 +6,7 @@ mod temporary;
 #[cfg(test)]
 pub mod test_utils;
 
-use crate::hkdf::affine_point_to_public_key;
+use crate::providers::affine_point_to_public_key;
 use anyhow::Context;
 use cait_sith::KeygenOutput;
 use k256::Secp256k1;

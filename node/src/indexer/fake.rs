@@ -9,10 +9,9 @@ use crate::indexer::participants::ContractKeyEventInstance;
 use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
-use k256::Scalar;
-use mpc_contract::crypto_shared::ScalarExt;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
+use mpc_contract::primitives::signature::PayloadHash;
 use near_crypto::PublicKey;
 use near_sdk::AccountId;
 use near_time::{Clock, Duration};
@@ -28,7 +27,7 @@ pub struct FakeMpcContractState {
     pub state: ContractState,
     // Not a real MPC contract; here we only index by the payload.
     // We don't test signatures with the same payload anyway.
-    pub pending_signatures: BTreeMap<Scalar, SignatureId>,
+    pub pending_signatures: BTreeMap<PayloadHash, SignatureId>,
 }
 
 impl FakeMpcContractState {
@@ -296,7 +295,7 @@ impl FakeIndexerCore {
                 let signature_id = signature_request.signature_id;
                 contract
                     .pending_signatures
-                    .insert(signature_request.request.payload, signature_id);
+                    .insert(signature_request.request.payload.clone(), signature_id);
             }
 
             let mut block_update = ChainBlockUpdate {
@@ -312,9 +311,9 @@ impl FakeIndexerCore {
                     }
                     ChainSendTransactionRequest::Respond(respond) => {
                         let mut contract = contract.lock().await;
-                        let signature_id = contract.pending_signatures.remove(
-                            &Scalar::from_bytes(respond.request.payload_hash.as_bytes()).unwrap(),
-                        );
+                        let signature_id = contract
+                            .pending_signatures
+                            .remove(&respond.request.payload_hash);
                         if let Some(signature_id) = signature_id {
                             self.sign_response_sender.send(respond.clone()).unwrap();
                             block_update.completed_signatures.push(signature_id);

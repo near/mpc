@@ -1,6 +1,6 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
-use crate::hkdf::affine_point_to_public_key;
+use crate::providers::affine_point_to_public_key;
 use crate::tests::TestGenerators;
 use cait_sith::KeygenOutput;
 use mpc_contract::primitives::domain::DomainId;
