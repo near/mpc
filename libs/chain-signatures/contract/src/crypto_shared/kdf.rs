@@ -3,7 +3,7 @@ use crate::{
     primitives::signature::{PayloadHash, Tweak},
 };
 use anyhow::Context;
-use frost_ed25519::{Ed25519Group, Group};
+use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 use k256::{
     ecdsa::{RecoveryId, Signature},
     elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic},
@@ -45,7 +45,7 @@ pub fn derive_public_key_edwards_point_edd25519(
     tweak: &Tweak,
 ) -> curve25519_dalek::EdwardsPoint {
     let tweak = curve25519_dalek::Scalar::from_non_biased(tweak.as_bytes());
-    point + Ed25519Group::generator() * tweak
+    point + ED25519_BASEPOINT_POINT * tweak
 }
 
 /// Get the x coordinate of a point, as a scalar
