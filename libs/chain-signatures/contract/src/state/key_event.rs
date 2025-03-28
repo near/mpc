@@ -81,6 +81,10 @@ impl KeyEvent {
         self.epoch_id
     }
 
+    pub fn domain(&self) -> DomainConfig {
+        self.domain.clone()
+    }
+
     pub fn proposed_parameters(&self) -> &ThresholdParameters {
         &self.parameters
     }

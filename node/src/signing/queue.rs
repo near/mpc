@@ -443,6 +443,7 @@ mod tests {
     use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
     use crate::tests::TestGenerators;
     use crate::tracing::init_logging;
+    use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::signature::{Payload, Tweak};
     use near_indexer_primitives::CryptoHash;
     use near_time::{Duration, FakeClock};
@@ -468,6 +469,7 @@ mod tests {
                 payload: Payload::from_legacy_ecdsa([0; 32]),
                 timestamp_nanosec: 0,
                 tweak: Tweak::new([0; 32]),
+                domain: DomainId::legacy_ecdsa_id(),
             };
             let leader_selection_order =
                 QueuedSignatureRequest::leader_selection_order(participants, request.id);

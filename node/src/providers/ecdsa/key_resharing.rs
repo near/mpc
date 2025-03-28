@@ -5,8 +5,7 @@ use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use cait_sith::protocol::Participant;
-use k256::elliptic_curve::sec1::FromEncodedPoint;
-use k256::{AffinePoint, EncodedPoint, Scalar, Secp256k1};
+use k256::{AffinePoint, Scalar, Secp256k1};
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
@@ -91,23 +90,6 @@ impl MpcLeaderCentricComputation<Scalar> for KeyResharingComputation {
     }
     fn leader_waits_for_success(&self) -> bool {
         false
-    }
-}
-
-pub fn public_key_to_affine_point(key: near_crypto::PublicKey) -> anyhow::Result<AffinePoint> {
-    match key {
-        near_crypto::PublicKey::SECP256K1(key) => {
-            let mut bytes = [0u8; 65];
-            bytes[0] = 0x04;
-            bytes[1..65].copy_from_slice(key.as_ref());
-            match Option::from(AffinePoint::from_encoded_point(&EncodedPoint::from_bytes(
-                bytes,
-            )?)) {
-                Some(result) => Ok(result),
-                None => anyhow::bail!("Failed to convert public key to affine point"),
-            }
-        }
-        _ => anyhow::bail!("Unsupported public key type"),
     }
 }
 

@@ -13,7 +13,6 @@ use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::sign_request::SignatureId;
-pub use ecdsa::affine_point_to_public_key;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
 use std::sync::Arc;

@@ -2,7 +2,7 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
-use crate::sign_request::{SignatureId, SignatureRequest};
+use crate::sign_request::SignatureId;
 use anyhow::Context;
 use cait_sith::eddsa::KeygenOutput;
 use cait_sith::frost_ed25519::Signature;
@@ -31,8 +31,12 @@ impl EddsaSignatureProvider {
             .client
             .new_channel_for_task(EddsaTaskId::Signature { id }, participants)?;
 
+        let Some(keygen_output) = self.keyshares.get(&sign_request.domain).cloned() else {
+            anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
+        };
+
         let result = SignComputation {
-            keygen_output: self.keygen_output.clone(),
+            keygen_output,
             threshold,
             message: sign_request
                 .payload
@@ -61,7 +65,7 @@ impl EddsaSignatureProvider {
         channel: NetworkTaskChannel,
         id: SignatureId,
     ) -> anyhow::Result<()> {
-        let SignatureRequest { payload, tweak, .. } = timeout(
+        let sign_request = timeout(
             Duration::from_secs(self.config.signature.timeout_sec),
             self.sign_request_store.get(id),
         )
@@ -69,16 +73,21 @@ impl EddsaSignatureProvider {
 
         let threshold = self.mpc_config.participants.threshold as usize;
 
+        let Some(keygen_output) = self.keyshares.get(&sign_request.domain) else {
+            anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
+        };
+
         let _ = SignComputation {
-            keygen_output: self.keygen_output.clone(),
+            keygen_output: keygen_output.clone(),
             threshold,
-            message: payload
+            message: sign_request
+                .payload
                 .as_eddsa()
                 .ok_or_else(|| {
                     anyhow::anyhow!("Signature request payload is not an Eddsa payload")
                 })?
                 .to_vec(),
-            tweak,
+            tweak: sign_request.tweak,
         }
         .perform_leader_centric_computation(
             channel,

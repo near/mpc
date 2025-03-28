@@ -121,9 +121,14 @@ impl EcdsaSignatureProvider {
         id: UniqueId,
         paired_triple_id: UniqueId,
     ) -> anyhow::Result<()> {
+        let keyshares = self.keyshares.values().cloned().collect::<Vec<_>>();
+        let [keyshare] = keyshares.as_slice() else {
+            anyhow::bail!("Expected only 1 share of ecdsa")
+        };
+
         FollowerPresignComputation {
             threshold: self.mpc_config.participants.threshold as usize,
-            keygen_out: self.keygen_output.clone(),
+            keygen_out: keyshare.clone(),
             triple_store: self.triple_store.clone(),
             paired_triple_id,
             out_presignature_store: self.presignature_store.clone(),

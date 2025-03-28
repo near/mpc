@@ -4,13 +4,16 @@ use crate::indexer::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
+use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::sign_request::{SignRequestStorage, SignatureRequest};
 use crate::signing::queue::{PendingSignatureRequests, CHECK_EACH_SIGNATURE_REQUEST_INTERVAL};
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::web::{SignatureDebugRequest, SignatureDebugRequestKind};
 use mpc_contract::crypto_shared::derive_tweak;
+use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -29,6 +32,8 @@ pub struct MpcClient {
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
+    eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+    domain_to_scheme: HashMap<DomainId, SignatureScheme>,
 }
 
 impl MpcClient {
@@ -36,13 +41,17 @@ impl MpcClient {
         config: Arc<ConfigFile>,
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
-        ecdsa_secp256k1signature_provider: Arc<EcdsaSignatureProvider>,
+        ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
+        eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+        domain_to_scheme: HashMap<DomainId, SignatureScheme>,
     ) -> Self {
         Self {
             config,
             client,
             sign_request_store,
-            ecdsa_signature_provider: ecdsa_secp256k1signature_provider,
+            ecdsa_signature_provider,
+            eddsa_signature_provider,
+            domain_to_scheme,
         }
     }
 
@@ -90,10 +99,18 @@ impl MpcClient {
                 .spawn_background_tasks(),
         );
 
+        let eddsa_background_tasks = tracking::spawn(
+            "eddsa_background_tasks",
+            self.eddsa_signature_provider
+                .clone()
+                .spawn_background_tasks(),
+        );
+
         let _ = monitor_passive_channels.await?;
         metrics_emitter.await?;
         monitor_chain.await?;
         let _ = ecdsa_background_tasks.await?;
+        let _ = eddsa_background_tasks.await?;
 
         Ok(())
     }
@@ -125,7 +142,7 @@ impl MpcClient {
                         // indexer is being shutdown. So just quit this task.
                         break;
                     };
-                    self.client.update_indexer_height(block_update.block.height);
+                    self.client.clone().update_indexer_height(block_update.block.height);
                     let signature_requests = block_update
                         .signature_requests
                         .into_iter()
@@ -145,6 +162,7 @@ impl MpcClient {
                                 tweak: derive_tweak(&predecessor_id, &request.path),
                                 entropy,
                                 timestamp_nanosec,
+                                domain: request.domain_id,
                             }
                         })
                         .collect::<Vec<_>>();
@@ -204,23 +222,53 @@ impl MpcClient {
                                     .with_label_values(&["total"])
                                     .inc();
 
-                                let (signature, public_key) = timeout(
-                                    Duration::from_secs(this.config.signature.timeout_sec),
-                                    this.ecdsa_signature_provider
-                                        .clone()
-                                        .make_signature(signature_attempt.request.id),
-                                )
-                                .await??;
+                                let response = match this
+                                    .domain_to_scheme
+                                    .get(&signature_attempt.request.domain)
+                                {
+                                    Some(SignatureScheme::Secp256k1) => {
+                                        let (signature, public_key) = timeout(
+                                            Duration::from_secs(this.config.signature.timeout_sec),
+                                            this.ecdsa_signature_provider
+                                                .clone()
+                                                .make_signature(signature_attempt.request.id),
+                                        )
+                                        .await??;
+
+                                        let response = ChainRespondArgs::new_ecdsa(
+                                            &signature_attempt.request,
+                                            &signature,
+                                            &public_key,
+                                        )?;
+
+                                        Ok(response)
+                                    }
+                                    Some(SignatureScheme::Ed25519) => {
+                                        let (signature, _) = timeout(
+                                            Duration::from_secs(this.config.signature.timeout_sec),
+                                            this.eddsa_signature_provider
+                                                .clone()
+                                                .make_signature(signature_attempt.request.id),
+                                        )
+                                        .await??;
+
+                                        let response = ChainRespondArgs::new_eddsa(
+                                            &signature_attempt.request,
+                                            &signature,
+                                        )?;
+
+                                        Ok(response)
+                                    }
+                                    None => Err(anyhow::anyhow!(
+                                        "Signature scheme is not found for domain: {:?}",
+                                        signature_attempt.request.domain.clone()
+                                    )),
+                                }?;
 
                                 metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
                                     .with_label_values(&["succeeded"])
                                     .inc();
 
-                                let response = ChainRespondArgs::new(
-                                    &signature_attempt.request,
-                                    &signature,
-                                    &public_key,
-                                )?;
                                 signature_attempt
                                     .computation_progress
                                     .lock()
@@ -273,11 +321,10 @@ impl MpcClient {
                     .await?
             }
             MpcTaskId::EddsaTaskId(_) => {
-                unreachable!()
-                // self.eddsa_signature_provider
-                //     .clone()
-                //     .process_channel(channel)
-                //     .await?
+                self.eddsa_signature_provider
+                    .clone()
+                    .process_channel(channel)
+                    .await?
             }
         }
 

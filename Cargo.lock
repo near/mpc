@@ -1262,7 +1262,7 @@ dependencies = [
 [[package]]
 name = "cait-sith"
 version = "0.8.0"
-source = "git+https://github.com/kuksag/cait-sith?rev=e89e3d96900c52f4e1097d4031dd8ee3b1eb60df#e89e3d96900c52f4e1097d4031dd8ee3b1eb60df"
+source = "git+https://github.com/Near-One/cait-sith?rev=377b1d7c25a8fd1f111d7cced2ccf8efc4b54639#377b1d7c25a8fd1f111d7cced2ccf8efc4b54639"
 dependencies = [
  "auto_ops",
  "ck-meow",

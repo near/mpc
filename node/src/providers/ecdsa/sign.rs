@@ -7,7 +7,7 @@ use crate::providers::ecdsa::kdf::{derive_public_key, derive_randomness};
 use crate::providers::ecdsa::{
     EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, PresignatureStorage,
 };
-use crate::sign_request::{SignatureId, SignatureRequest};
+use crate::sign_request::SignatureId;
 use anyhow::Context;
 use cait_sith::ecdsa::presign::PresignOutput;
 use cait_sith::ecdsa::sign::FullSignature;
@@ -33,9 +33,13 @@ impl EcdsaSignatureProvider {
             },
             presignature.participants,
         )?;
-        let keygen_output = self.keygen_output.clone();
+
+        let Some(keygen_out) = self.keyshares.get(&sign_request.domain).cloned() else {
+            anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
+        };
+
         let (signature, public_key) = SignComputation {
-            keygen_out: keygen_output,
+            keygen_out,
             presign_out: presignature.presignature,
             msg_hash: *sign_request
                 .payload
@@ -60,27 +64,27 @@ impl EcdsaSignatureProvider {
         presignature_id: UniqueId,
     ) -> anyhow::Result<()> {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
-        let SignatureRequest {
-            payload,
-            tweak,
-            entropy,
-            ..
-        } = timeout(
+        let sign_request = timeout(
             Duration::from_secs(self.config.signature.timeout_sec),
             self.sign_request_store.get(id),
         )
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
+        let Some(keygen_out) = self.keyshares.get(&sign_request.domain).cloned() else {
+            anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
+        };
+
         FollowerSignComputation {
-            keygen_out: self.keygen_output.clone(),
+            keygen_out,
             presignature_store: self.presignature_store.clone(),
             presignature_id,
-            msg_hash: *payload
+            msg_hash: *sign_request
+                .payload
                 .as_ecdsa()
                 .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
-            tweak,
-            entropy,
+            tweak: sign_request.tweak,
+            entropy: sign_request.entropy,
         }
         .perform_leader_centric_computation(
             channel,

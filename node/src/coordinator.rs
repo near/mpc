@@ -16,14 +16,19 @@ use crate::metrics;
 use crate::mpc_client::MpcClient;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::new_tls_mesh_network;
+use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::EcdsaSignatureProvider;
 use crate::runtime::AsyncDroppableRuntime;
 use crate::sign_request::SignRequestStorage;
 use crate::tracking::{self};
 use crate::web::SignatureDebugRequest;
+use cait_sith::{ecdsa, eddsa};
 use futures::future::BoxFuture;
 use futures::FutureExt;
+use k256::Secp256k1;
+use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
+use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc, watch};
@@ -377,7 +382,25 @@ impl Coordinator {
             run_network_client(Arc::new(sender), Box::new(receiver));
 
         let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
-        let KeyshareData::Secp256k1(keyshare) = &keyshares.first().unwrap().data;
+
+        let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput<Secp256k1>> = HashMap::new();
+        let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
+        let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
+
+        for keyshare in keyshares {
+            let domain_id = keyshare.key_id.domain_id;
+            match keyshare.data {
+                KeyshareData::Secp256k1(data) => {
+                    ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                    domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
+                }
+                KeyshareData::Ed25519(data) => {
+                    eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                    domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
+                }
+            }
+        }
+
         let ecdsa_signature_provider = Arc::new(EcdsaSignatureProvider::new(
             config_file.clone().into(),
             mpc_config.clone().into(),
@@ -385,14 +408,24 @@ impl Coordinator {
             clock,
             secret_db,
             sign_request_store.clone(),
-            keyshare.clone(),
+            ecdsa_keyshares,
         )?);
+
+        let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
+            config_file.clone().into(),
+            mpc_config.clone().into(),
+            network_client.clone(),
+            sign_request_store.clone(),
+            eddsa_keyshares,
+        ));
 
         let mpc_client = Arc::new(MpcClient::new(
             config_file.clone().into(),
             network_client,
             sign_request_store,
             ecdsa_signature_provider,
+            eddsa_signature_provider,
+            domain_to_scheme,
         ));
         mpc_client
             .run(
@@ -469,6 +502,7 @@ impl Coordinator {
             existing_keyshares,
             new_threshold: mpc_config.participants.threshold as usize,
             old_participants: resharing_state.previous_running_state.participants,
+            domain: resharing_state.key_event.domain,
         });
         if mpc_config.is_leader_for_key_event() {
             resharing_leader(
