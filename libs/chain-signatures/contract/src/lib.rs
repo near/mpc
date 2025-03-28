@@ -26,15 +26,15 @@ use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     env::{self, ed25519_verify},
     log, near, near_bindgen,
-    store::{LookupMap, Vector},
-    AccountId, BlockHeight, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise,
-    PromiseError, PromiseOrValue, PublicKey,
+    store::LookupMap,
+    AccountId, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise, PromiseError,
+    PromiseOrValue, PublicKey,
 };
-use primitives::signature::{Payload, SignRequestArgs};
+use primitives::signature::SignRequestArgs;
 use primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{EpochId, KeyEventId, Keyset},
-    signature::{SignRequest, SignatureRequest, Tweak, YieldIndex},
+    signature::{SignRequest, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
@@ -106,7 +106,7 @@ impl MpcContract {
                 Keyset::new(EpochId::new(0), Vec::new()),
                 parameters,
             )),
-            pending_requests: LookupMap::new(StorageKey::PendingRequests),
+            pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
             proposed_updates: ProposedUpdates::default(),
         }
     }
@@ -707,7 +707,7 @@ impl VersionedMpcContract {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 domains, keyset, parameters,
             )),
-            pending_requests: LookupMap::new(StorageKey::PendingRequests),
+            pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
             proposed_updates: ProposedUpdates::default(),
         }))
     }
@@ -725,46 +725,21 @@ impl VersionedMpcContract {
         if let Some(legacy_contract_state::VersionedMpcContract::V1(state)) =
             env::state_read::<legacy_contract_state::VersionedMpcContract>()
         {
-            // migrate config
             let mut config = Config::default();
             config.request_timeout_blocks = state.config.request_timeout_blocks;
             config.max_num_requests_to_remove = state.config.max_num_requests_to_remove;
-            // migrate signature requests:
-            let mut request_by_block_height: Vector<(BlockHeight, SignatureRequest)> =
-                Vector::new(StorageKey::RequestsByTimestamp);
-            let mut pending_requests: LookupMap<SignatureRequest, YieldIndex> =
-                LookupMap::new(StorageKey::PendingRequests);
-
             let protocol_state: ProtocolContractState = (&state.protocol_state).into();
-
-            for (created, request) in &state.request_by_block_height {
-                // check if request is still valid:
-                if created + config.request_timeout_blocks > env::block_height() {
-                    // check if request is still pending:
-                    if let Some(data_id) = state.pending_requests.get(request) {
-                        let data_id = YieldIndex {
-                            data_id: data_id.data_id,
-                        };
-
-                        let tweak = Tweak::new(request.epsilon.scalar.to_bytes().into());
-                        let payload_hash: [u8; 32] = request.payload_hash.scalar.to_bytes().into();
-                        let payload = Payload::from_legacy_ecdsa(payload_hash);
-
-                        let request = SignatureRequest {
-                            domain_id: DomainId::legacy_ecdsa_id(),
-                            payload,
-                            tweak,
-                        };
-
-                        request_by_block_height.push((*created, request.clone()));
-                        pending_requests.insert(request, data_id);
-                    }
-                }
-            }
             return Ok(VersionedMpcContract::V0(MpcContract {
                 config,
                 protocol_state,
-                pending_requests,
+                // Start with a fresh pending requests map. Migrating the signature requests is
+                // tricky and possibly not going to work, and even if we did, these requests
+                // would just time out during the V2 upgrade process. (For future migrations we
+                // would still want to consider keeping the pending signature requests, though.)
+                // Note: the storage key is also different, as we want to avoid inheriting the
+                // previous state.
+                pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
+                // This inherits the previous proposed updates map.
                 proposed_updates: ProposedUpdates::default(),
             }));
         }
@@ -857,6 +832,7 @@ mod tests {
     use super::*;
     use crate::crypto_shared::k256_types;
     use crate::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
+    use crate::primitives::signature::{Payload, Tweak};
     use crate::primitives::test_utils::gen_participants;
     use k256::elliptic_curve::point::DecompactPoint;
     use k256::{self, ecdsa::SigningKey};
