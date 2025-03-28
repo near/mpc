@@ -9,12 +9,20 @@ use frost_core::keys::{
     CoefficientCommitment, PublicKeyPackage, SecretShare, SigningShare,
     VerifiableSecretSharingCommitment, VerifyingShare,
 };
-use frost_core::{
-    Challenge, Ciphersuite, Element, Error, Field, Group, Scalar, Signature, SigningKey,
-    VerifyingKey,
-};
+use frost_core::{Challenge, Element, Error, Field, Group, Scalar, Signature, SigningKey, VerifyingKey};
 use rand_core::OsRng;
 use std::ops::Index;
+
+pub enum BytesOrder {
+    BigEndian,
+    LittleEndian,
+}
+
+pub trait ScalarSerializationFormat {
+    fn bytes_order() -> BytesOrder;
+}
+
+pub trait Ciphersuite: frost_core::Ciphersuite + ScalarSerializationFormat {}
 
 const LABEL: &[u8] = b"Generic DKG";
 

@@ -1,7 +1,17 @@
 //! This module serves as a wrapper for Frost protocol.
+
 use frost_secp256k1::Secp256K1Sha256;
+use crate::generic_dkg::{BytesOrder, Ciphersuite, ScalarSerializationFormat};
 
 pub type KeygenOutput = crate::generic_dkg::KeygenOutput<Secp256K1Sha256>;
+
+impl ScalarSerializationFormat for Secp256K1Sha256 {
+    fn bytes_order() -> BytesOrder {
+        BytesOrder::BigEndian
+    }
+}
+
+impl Ciphersuite for Secp256K1Sha256 {}
 
 pub mod dkg_ecdsa;
 pub mod math;

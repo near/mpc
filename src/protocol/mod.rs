@@ -11,7 +11,8 @@ use crate::compat::CSCurve;
 use ::serde::{Deserialize, Serialize};
 
 use frost_core::serialization::SerializableScalar;
-use frost_core::{Ciphersuite, Identifier, Scalar};
+use frost_core::{Identifier, Scalar};
+use crate::generic_dkg::{BytesOrder, Ciphersuite};
 
 /// Represents an error which can happen when running a protocol.
 #[derive(Debug)]
@@ -124,11 +125,14 @@ impl Participant {
     }
 
     /// Return the scalar associated with this participant.
-    /// The implementation follows the original frost library
     pub fn generic_scalar<C: Ciphersuite>(&self) -> Scalar<C> {
-        let mut bytes = vec![0u8; 32];
+        let mut bytes = [0u8; 32];
         let id = (self.0 as u64) + 1;
-        bytes[..8].copy_from_slice(&id.to_le_bytes());
+
+        match C::bytes_order() {
+            BytesOrder::BigEndian => bytes[24..].copy_from_slice(&id.to_be_bytes()),
+            BytesOrder::LittleEndian => bytes[..8].copy_from_slice(&id.to_le_bytes())
+        }
 
         // transform the bytes into a scalar and fails if Scalar
         // is not in the range [0, order - 1]

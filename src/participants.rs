@@ -6,10 +6,11 @@
 
 use std::{collections::HashMap, mem, ops::Index};
 
-use frost_core::{Ciphersuite, Group, Scalar};
+use frost_core::{Group, Scalar};
 use serde::Serialize;
 
 use crate::{compat::CSCurve, protocol::Participant};
+use crate::generic_dkg::Ciphersuite;
 
 /// Represents a sorted list of participants.
 ///

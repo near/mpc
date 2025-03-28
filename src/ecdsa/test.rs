@@ -282,3 +282,41 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
     );
     Ok(())
 }
+
+#[test]
+fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
+    let participants_count = 3;
+    let mut participants: Vec<_> = (0..participants_count)
+        .map(|_| Participant::from(rand::random::<u32>()))
+        .collect();
+    participants.sort();
+    let threshold = 3;
+
+    let mut keygen_result = run_keygen(&participants.clone(), threshold)?;
+    keygen_result.sort_by_key(|(p, _)| *p);
+
+    let public_key = keygen_result[0].1.public_key_package.clone();
+    assert_eq!(
+        keygen_result[0].1.public_key_package,
+        keygen_result[1].1.public_key_package
+    );
+    assert_eq!(
+        keygen_result[1].1.public_key_package,
+        keygen_result[2].1.public_key_package
+    );
+
+    let (pub0, shares0) = triples::deal(&mut OsRng, &participants, threshold);
+    let (pub1, shares1) = triples::deal(&mut OsRng, &participants, threshold);
+
+    let mut presign_result = run_presign(keygen_result, shares0, shares1, &pub0, &pub1, threshold);
+    presign_result.sort_by_key(|(p, _)| *p);
+
+    let msg = b"hello world";
+
+    run_sign(
+        presign_result,
+        public_key.verifying_key().to_element().to_affine(),
+        msg,
+    );
+    Ok(())
+}
