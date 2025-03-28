@@ -1,6 +1,5 @@
 use cait_sith::ecdsa::presign::PresignOutput;
 use cait_sith::ecdsa::triples::TripleGenerationOutput;
-use cait_sith::ecdsa::KeygenOutput;
 use cait_sith::protocol::{run_protocol, Participant, Protocol};
 use k256::{AffinePoint, Scalar, Secp256k1};
 use mpc_contract::primitives::signature::PayloadHash;
@@ -29,6 +28,7 @@ use near_time::Clock;
 use rand::RngCore;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use cait_sith::{ecdsa, eddsa};
 use tokio::time::timeout;
 
 mod basic_cluster;
@@ -68,18 +68,36 @@ impl TestGenerators {
         self.participants.iter().map(|p| (*p).into()).collect()
     }
 
-    pub fn make_keygens(&self) -> HashMap<Participant, KeygenOutput<Secp256k1>> {
-        let mut protocols: Vec<ParticipantAndProtocol<KeygenOutput<Secp256k1>>> = Vec::new();
+    pub fn make_ecdsa_keygens(&self) -> HashMap<Participant, ecdsa::KeygenOutput<Secp256k1>> {
+        let mut protocols: Vec<ParticipantAndProtocol<ecdsa::KeygenOutput<Secp256k1>>> = Vec::new();
         for participant in &self.participants {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::ecdsa::dkg_ecdsa::keygen(
+                    ecdsa::dkg_ecdsa::keygen(
                         &self.participants,
                         *participant,
                         self.threshold,
                     )
-                    .unwrap(),
+                        .unwrap(),
+                ),
+            ));
+        }
+        run_protocol(protocols).unwrap().into_iter().collect()
+    }
+
+    pub fn make_eddsa_keygens(&self) -> HashMap<Participant, eddsa::KeygenOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<eddsa::KeygenOutput>> = Vec::new();
+        for participant in &self.participants {
+            protocols.push((
+                *participant,
+                Box::new(
+                    eddsa::dkg_ed25519::keygen(
+                        &self.participants,
+                        *participant,
+                        self.threshold,
+                    )
+                        .unwrap(),
                 ),
             ));
         }
@@ -93,7 +111,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::ecdsa::triples::generate_triple::<Secp256k1>(
+                    ecdsa::triples::generate_triple::<Secp256k1>(
                         &self.participants,
                         *participant,
                         self.threshold,
@@ -109,14 +127,14 @@ impl TestGenerators {
         &self,
         triple0s: &HashMap<Participant, TripleGenerationOutput<Secp256k1>>,
         triple1s: &HashMap<Participant, TripleGenerationOutput<Secp256k1>>,
-        keygens: &HashMap<Participant, KeygenOutput<Secp256k1>>,
+        keygens: &HashMap<Participant, ecdsa::KeygenOutput<Secp256k1>>,
     ) -> HashMap<Participant, PresignOutput<Secp256k1>> {
         let mut protocols: Vec<ParticipantAndProtocol<PresignOutput<Secp256k1>>> = Vec::new();
         for participant in &self.participants {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::ecdsa::presign::presign(
+                    ecdsa::presign::presign(
                         &self.participants,
                         *participant,
                         &self.participants,
@@ -146,7 +164,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::ecdsa::sign::sign(
+                    ecdsa::sign::sign(
                         &self.participants,
                         *participant,
                         public_key,

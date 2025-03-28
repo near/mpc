@@ -85,7 +85,7 @@ impl MpcLeaderCentricComputation<Scalar> for KeyResharingComputation {
             self.threshold,
             me.into(),
         )?;
-        run_protocol("key resharing", channel, protocol)
+        run_protocol("ecdsa key resharing", channel, protocol)
             .await
             .map(|share| share.private_share)
     }
@@ -131,7 +131,7 @@ mod tests {
         const THRESHOLD: usize = 3;
         const NUM_PARTICIPANTS: usize = 4;
         let gen = TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD);
-        let keygens = gen.make_keygens();
+        let keygens = gen.make_ecdsa_keygens();
         let pubkey = keygens.iter().next().unwrap().1.public_key;
         let old_participants = gen.participant_ids();
         let mut new_participants = gen.participant_ids();
