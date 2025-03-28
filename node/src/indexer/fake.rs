@@ -1,201 +1,228 @@
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
-use super::participants::{
-    ContractInitializingState, ContractResharingState, ContractRunningState, ContractState,
-};
+use super::participants::ContractState;
 use super::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use super::IndexerAPI;
 use crate::config::ParticipantsConfig;
-use crate::indexer::participants::ContractKeyEventInstance;
 use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset};
+use mpc_contract::config::Config;
+use mpc_contract::primitives::domain::{DomainConfig, DomainRegistry};
+use mpc_contract::primitives::key_state::{EpochId, KeyEventId, Keyset};
+use mpc_contract::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
 use mpc_contract::primitives::signature::Payload;
+use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
+use mpc_contract::state::initializing::InitializingContractState;
+use mpc_contract::state::key_event::tests::Environment;
+use mpc_contract::state::key_event::KeyEvent;
+use mpc_contract::state::resharing::ResharingContractState;
+use mpc_contract::state::running::RunningContractState;
+use mpc_contract::state::ProtocolContractState;
 use near_crypto::PublicKey;
 use near_sdk::AccountId;
 use near_time::{Clock, Duration};
-use std::borrow::BorrowMut;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
 /// A simplification of the real MPC contract state for testing.
 pub struct FakeMpcContractState {
-    pub state: ContractState,
-    // Not a real MPC contract; here we only index by the payload.
-    // We don't test signatures with the same payload anyway.
+    pub state: ProtocolContractState,
+    config: Config,
+    env: Environment,
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
 }
 
 impl FakeMpcContractState {
-    pub fn new() -> FakeMpcContractState {
-        let config = ContractState::WaitingForSync;
-        FakeMpcContractState {
-            state: config,
+    pub fn new() -> Self {
+        let state = ProtocolContractState::NotInitialized;
+        let config = Config {
+            key_event_timeout_blocks: 10,
+            request_timeout_blocks: 10,
+        };
+        let env = Environment::new(None, None, None);
+        Self {
+            state,
+            config,
+            env,
             pending_signatures: BTreeMap::new(),
         }
     }
 
-    pub fn new_key_event(epoch: u64) -> ContractKeyEventInstance {
-        let id = KeyEventId::new(
-            EpochId::new(epoch),
-            DomainId::legacy_ecdsa_id(),
-            AttemptId::new(),
-        );
-        let completed = BTreeSet::new();
-        ContractKeyEventInstance {
-            id,
-            started: false,
-            completed,
-            completed_domains: Vec::new(),
-        }
+    pub fn initialize(&mut self, participants: ParticipantsConfig) {
+        assert!(matches!(self.state, ProtocolContractState::NotInitialized));
+
+        self.state = ProtocolContractState::Running(RunningContractState::new(
+            DomainRegistry::default(),
+            Keyset::new(EpochId::new(0), Vec::new()),
+            participants_config_to_threshold_parameters(&participants),
+        ));
     }
 
-    pub fn initialize(&mut self, participants: ParticipantsConfig) {
-        assert_eq!(self.state, ContractState::WaitingForSync);
-
-        self.state = ContractState::Initializing(ContractInitializingState {
-            generated_keyset: Keyset {
-                epoch_id: EpochId::new(0),
-                domains: Vec::new(),
-            },
-            participants: participants.clone(),
-            key_event: Self::new_key_event(0),
-        });
+    pub fn add_domains(&mut self, domains: Vec<DomainConfig>) {
+        let state = match &mut self.state {
+            ProtocolContractState::Running(state) => state,
+            _ => panic!("Cannot add domains to non-running state"),
+        };
+        let new_state = InitializingContractState {
+            domains: state
+                .domains
+                .add_domains(domains.clone())
+                .expect("Failed to add domains"),
+            epoch_id: state.keyset.epoch_id,
+            generated_keys: state.keyset.domains.clone(),
+            generating_key: KeyEvent::new(
+                state.keyset.epoch_id,
+                domains[0].clone(),
+                state.parameters.clone(),
+            ),
+            cancel_votes: BTreeSet::new(),
+        };
+        self.state = ProtocolContractState::Initializing(new_state);
     }
 
     pub fn start_resharing(&mut self, new_participants: ParticipantsConfig) {
-        let running_state = match &self.state {
-            ContractState::Running(state) => state,
+        let (previous_running_state, prev_epoch_id) = match &self.state {
+            ProtocolContractState::Running(state) => (state, state.keyset.epoch_id),
+            ProtocolContractState::Resharing(state) => {
+                (&state.previous_running_state, state.prospective_epoch_id())
+            }
             _ => panic!("Cannot start resharing from non-running state"),
         };
-        self.state = ContractState::Resharing(ContractResharingState {
-            previous_running_state: running_state.clone(),
-            new_participants: new_participants.clone(),
-            reshared_keys: Keyset::new(running_state.keyset.epoch_id.next(), Vec::new()),
-            key_event: Self::new_key_event(running_state.keyset.epoch_id.next().get()),
+        self.state = ProtocolContractState::Resharing(ResharingContractState {
+            previous_running_state: RunningContractState::new(
+                previous_running_state.domains.clone(),
+                previous_running_state.keyset.clone(),
+                previous_running_state.parameters.clone(),
+            ),
+            reshared_keys: Vec::new(),
+            resharing_key: KeyEvent::new(
+                prev_epoch_id.next(),
+                previous_running_state
+                    .domains
+                    .get_domain_by_index(0)
+                    .unwrap()
+                    .clone(),
+                participants_config_to_threshold_parameters(&new_participants),
+            ),
         });
     }
 
     pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, pk: PublicKey) {
-        if let ContractState::Initializing(config) = &mut self.state {
-            assert_eq!(key_id, config.key_event.id);
-            assert!(config.key_event.started);
-            let id = config
-                .participants
-                .participants
-                .iter()
-                .find(|info| info.near_account_id == account_id)
-                .map(|info| info.id)
-                .unwrap();
-            config.key_event.completed.insert(id);
-            // assert pk matches
-            tracing::info!(
-                "received Pk vote: account_id: {}, key_id: {:?}, pk: {}",
-                account_id,
-                key_id,
-                pk
-            );
-            if config.key_event.completed.len() == config.participants.participants.len() {
-                let keyset = Keyset {
-                    epoch_id: key_id.epoch_id,
-                    domains: [KeyForDomain {
-                        domain_id: key_id.domain_id,
-                        key: near_sdk::PublicKey::from_str(&pk.to_string()).unwrap(),
-                        attempt: key_id.attempt_id,
-                    }]
-                    .into(),
+        match &mut self.state {
+            ProtocolContractState::Initializing(state) => {
+                self.env.set_signer(&account_id);
+                let result = match state.vote_pk(key_id, pk.to_string().parse().unwrap()) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        tracing::info!("vote_pk transaction failed: {}", e);
+                        return;
+                    }
                 };
-                let new_config = ContractState::Running(ContractRunningState {
-                    keyset,
-                    participants: config.participants.clone(),
-                });
-                self.state = new_config;
-            }
-        } else {
-            tracing::warn!(
-                "vote_pk transaction ignored because the contract is not in initializing state"
-            );
-        }
-    }
-
-    pub fn vote_start_keygen(&mut self, id: KeyEventId) {
-        if let ContractState::Initializing(state) = &mut self.state {
-            assert!(!state.key_event.started);
-            assert_eq!(state.key_event.id, id);
-            state.key_event.started = true;
-        }
-    }
-
-    pub fn vote_abort_key_event(&mut self, id: KeyEventId) {
-        let next_key_event = ContractKeyEventInstance {
-            id: KeyEventId {
-                epoch_id: id.epoch_id,
-                domain_id: id.domain_id,
-                attempt_id: id.attempt_id.next(),
-            },
-            started: false,
-            completed: BTreeSet::new(),
-            completed_domains: Vec::new(),
-        };
-        match self.state.borrow_mut() {
-            ContractState::Initializing(state) => {
-                if !state.key_event.started || state.key_event.id != id {
-                    tracing::info!("Ignoring stale vote_abort_key_event transaction; current ID {:?}, received ID {:?}", state.key_event.id, id);
-                    return;
+                if let Some(new_state) = result {
+                    self.state = ProtocolContractState::Running(new_state);
                 }
-                state.key_event = next_key_event;
             }
-            ContractState::Resharing(state) => {
-                if !state.key_event.started || state.key_event.id != id {
-                    tracing::info!("Ignoring stale vote_abort_key_event transaction; current ID {:?}, received ID {:?}", state.key_event.id, id);
-                    return;
-                }
-                state.key_event = next_key_event;
+            _ => {
+                tracing::info!(
+                    "vote_pk transaction ignored because the contract is not in initializing state"
+                );
             }
-            _ => {}
         }
     }
 
-    pub fn vote_start_reshare(&mut self, id: KeyEventId) {
-        if let ContractState::Resharing(state) = &mut self.state {
-            assert!(!state.key_event.started);
-            assert_eq!(state.key_event.id, id);
-            state.key_event.started = true;
+    pub fn vote_start_keygen(&mut self, account_id: AccountId, id: KeyEventId) {
+        match &mut self.state {
+            ProtocolContractState::Initializing(state) => {
+                self.env.set_signer(&account_id);
+                if let Err(e) = state.start(id, self.config.key_event_timeout_blocks) {
+                    tracing::info!("vote_start_keygen transaction failed: {}", e);
+                }
+            }
+            _ => {
+                tracing::info!(
+                    "vote_start_keygen transaction ignored because the contract is not in initializing state"
+                );
+            }
+        }
+    }
+
+    pub fn vote_abort_key_event(&mut self, account_id: AccountId, id: KeyEventId) {
+        match &mut self.state {
+            ProtocolContractState::Initializing(state) => {
+                self.env.set_signer(&account_id);
+                if let Err(e) = state.vote_abort(id) {
+                    tracing::info!("vote_abort_key_event transaction failed: {}", e);
+                }
+            }
+            _ => {
+                tracing::info!(
+                    "vote_abort_key_event transaction ignored because the contract is not in initializing state"
+                );
+            }
+        }
+    }
+
+    pub fn vote_start_reshare(&mut self, account_id: AccountId, id: KeyEventId) {
+        match &mut self.state {
+            ProtocolContractState::Resharing(state) => {
+                self.env.set_signer(&account_id);
+                if let Err(e) = state.start(id, self.config.key_event_timeout_blocks) {
+                    tracing::info!("vote_start_reshare transaction failed: {}", e);
+                }
+            }
+            _ => {
+                tracing::info!(
+                    "vote_start_reshare transaction ignored because the contract is not in resharing state"
+                );
+            }
         }
     }
 
     pub fn vote_reshared(&mut self, account_id: AccountId, key_id: KeyEventId) {
-        if let ContractState::Resharing(config) = &mut self.state {
-            assert!(config.key_event.started);
-            assert_eq!(key_id, config.key_event.id);
-            let id = config
-                .new_participants
-                .participants
-                .iter()
-                .find(|info| info.near_account_id == account_id)
-                .map(|info| info.id)
-                .unwrap();
-            config.key_event.completed.insert(id);
-            if config.key_event.completed.len() == config.new_participants.participants.len() {
-                let mut keyset = config.previous_running_state.keyset.clone();
-                keyset.epoch_id = keyset.epoch_id.next();
-                // todo: multiple keys
-                let new_config = ContractState::Running(ContractRunningState {
-                    keyset,
-                    participants: config.new_participants.clone(),
-                });
-                self.state = new_config;
+        match &mut self.state {
+            ProtocolContractState::Resharing(state) => {
+                self.env.set_signer(&account_id);
+                let result = match state.vote_reshared(key_id) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        tracing::info!("vote_reshared transaction failed: {}", e);
+                        return;
+                    }
+                };
+                if let Some(new_state) = result {
+                    self.state = ProtocolContractState::Running(new_state);
+                }
             }
-        } else {
-            tracing::warn!(
-                "vote_reshared transaction ignored because the contract is not in resharing state"
-            );
+            _ => {
+                tracing::info!(
+                    "vote_reshared transaction ignored because the contract is not in resharing state"
+                );
+            }
         }
     }
+}
+
+fn participants_config_to_threshold_parameters(
+    participants_config: &ParticipantsConfig,
+) -> ThresholdParameters {
+    let mut participants = Participants::new();
+    let mut infos = participants_config.participants.clone();
+    infos.sort_by_key(|info| info.id);
+    for info in infos {
+        participants
+            .insert_with_id(
+                info.near_account_id,
+                ParticipantInfo {
+                    sign_pk: info.p2p_public_key.to_string().parse().unwrap(),
+                    url: format!("http://{}:{}", info.address, info.port),
+                },
+                ParticipantId(info.id.raw()),
+            )
+            .expect("Failed to insert participant");
+    }
+    ThresholdParameters::new(participants, Threshold::new(participants_config.threshold)).unwrap()
 }
 
 /// Runs the fake indexer's shared state and logic. There's one instance of this per test.
@@ -233,7 +260,12 @@ impl FakeIndexerCore {
                 loop {
                     {
                         let state = contract.lock().await;
-                        let config = state.state.clone();
+                        let config = ContractState::from_contract_state(
+                            &state.state,
+                            state.env.block_height,
+                            None,
+                        )
+                        .expect("Failed to convert contract state");
                         state_change_sender.send(config).ok();
                     }
                     clock.sleep(Duration::seconds(1)).await;
@@ -303,6 +335,7 @@ impl FakeIndexerCore {
                 signature_requests,
                 completed_signatures: Vec::new(),
             };
+            contract.lock().await.env.set_block_height(block.height());
             for (txn, account_id) in transactions_to_process {
                 match txn {
                     ChainSendTransactionRequest::VotePk(vote_pk) => {
@@ -330,15 +363,15 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::StartKeygen(start) => {
                         // todo: timeout logic in fake indexer?
                         let mut contract = contract.lock().await;
-                        contract.vote_start_keygen(start.key_event_id);
+                        contract.vote_start_keygen(account_id, start.key_event_id);
                     }
                     ChainSendTransactionRequest::StartReshare(start) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_start_reshare(start.key_event_id);
+                        contract.vote_start_reshare(account_id, start.key_event_id);
                     }
                     ChainSendTransactionRequest::VoteAbortKeyEvent(abort) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_abort_key_event(abort.key_event_id);
+                        contract.vote_abort_key_event(account_id, abort.key_event_id);
                     }
                 }
             }

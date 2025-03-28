@@ -2,6 +2,7 @@ use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
+use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use near_o11y::testonly::init_integration_logger;
 use near_sdk::AccountId;
 use near_time::Clock;
@@ -32,11 +33,14 @@ async fn test_faulty_cluster() {
         PortSeed::FAULTY_CLUSTER_TEST,
     );
 
-    setup
-        .indexer
-        .contract_mut()
-        .await
-        .initialize(setup.participants);
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        contract.initialize(setup.participants);
+        contract.add_domains(vec![DomainConfig {
+            id: DomainId(0),
+            scheme: SignatureScheme::Secp256k1,
+        }]);
+    }
 
     let _runs = setup
         .configs

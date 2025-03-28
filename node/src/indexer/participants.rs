@@ -127,6 +127,63 @@ pub enum ContractState {
     Resharing(ContractResharingState),
 }
 
+impl ContractState {
+    pub fn from_contract_state(
+        state: &ProtocolContractState,
+        height: u64,
+        port_override: Option<u16>,
+    ) -> anyhow::Result<Self> {
+        Ok(match state {
+            ProtocolContractState::NotInitialized => ContractState::Invalid,
+            ProtocolContractState::Initializing(state) => {
+                ContractState::Initializing(ContractInitializingState {
+                    generated_keyset: Keyset {
+                        epoch_id: state.epoch_id,
+                        domains: state.generated_keys.clone(),
+                    },
+                    participants: convert_participant_infos(
+                        state.generating_key.proposed_parameters().clone(),
+                        port_override,
+                    )?,
+                    key_event: convert_key_event_to_instance(
+                        &state.generating_key,
+                        height,
+                        state.generated_keys.clone(),
+                    ),
+                })
+            }
+            ProtocolContractState::Running(state) => ContractState::Running(ContractRunningState {
+                keyset: state.keyset.clone(),
+                participants: convert_participant_infos(state.parameters.clone(), port_override)?,
+            }),
+            ProtocolContractState::Resharing(state) => {
+                ContractState::Resharing(ContractResharingState {
+                    previous_running_state: ContractRunningState {
+                        keyset: state.previous_running_state.keyset.clone(),
+                        participants: convert_participant_infos(
+                            state.previous_running_state.parameters.clone(),
+                            port_override,
+                        )?,
+                    },
+                    new_participants: convert_participant_infos(
+                        state.resharing_key.proposed_parameters().clone(),
+                        port_override,
+                    )?,
+                    reshared_keys: Keyset {
+                        epoch_id: state.prospective_epoch_id(),
+                        domains: state.reshared_keys.clone(),
+                    },
+                    key_event: convert_key_event_to_instance(
+                        &state.resharing_key,
+                        height,
+                        state.reshared_keys.clone(),
+                    ),
+                })
+            }
+        })
+    }
+}
+
 /// Continuously monitors the contract state. Every time the state changes,
 /// sends the new state via the provided sender. This is a long-running task.
 pub async fn monitor_chain_state(
@@ -180,54 +237,7 @@ async fn read_contract_state_from_chain(
     let (height, state) = get_mpc_contract_state(mpc_contract_id.clone(), &view_client).await?;
 
     tracing::debug!(target: "indexer", "got mpc contract state {:?}", state);
-    let state = match state {
-        ProtocolContractState::NotInitialized => ContractState::Invalid,
-        ProtocolContractState::Initializing(state) => {
-            ContractState::Initializing(ContractInitializingState {
-                generated_keyset: Keyset {
-                    epoch_id: state.epoch_id,
-                    domains: state.generated_keys.clone(),
-                },
-                participants: convert_participant_infos(
-                    state.generating_key.proposed_parameters().clone(),
-                    port_override,
-                )?,
-                key_event: convert_key_event_to_instance(
-                    &state.generating_key,
-                    height,
-                    state.generated_keys.clone(),
-                ),
-            })
-        }
-        ProtocolContractState::Running(state) => ContractState::Running(ContractRunningState {
-            keyset: state.keyset.clone(),
-            participants: convert_participant_infos(state.parameters.clone(), port_override)?,
-        }),
-        ProtocolContractState::Resharing(state) => {
-            ContractState::Resharing(ContractResharingState {
-                previous_running_state: ContractRunningState {
-                    keyset: state.previous_running_state.keyset.clone(),
-                    participants: convert_participant_infos(
-                        state.previous_running_state.parameters.clone(),
-                        port_override,
-                    )?,
-                },
-                new_participants: convert_participant_infos(
-                    state.resharing_key.proposed_parameters().clone(),
-                    port_override,
-                )?,
-                reshared_keys: Keyset {
-                    epoch_id: state.prospective_epoch_id(),
-                    domains: state.reshared_keys.clone(),
-                },
-                key_event: convert_key_event_to_instance(
-                    &state.resharing_key,
-                    height,
-                    state.reshared_keys.clone(),
-                ),
-            })
-        }
-    };
+    let state = ContractState::from_contract_state(&state, height, port_override)?;
     Ok(state)
 }
 

@@ -68,3 +68,4 @@ deranged = "=0.4.0"
 serial_test = "3.2.0"
 reqwest = "0.12.9"
 itertools = "0.12.1"
+mpc-contract = { path = "../libs/chain-signatures/contract/", features = ["test-utils"] }
