@@ -41,11 +41,13 @@ jobs:
           CARGO_TARGET_DIR="target/clippy" \
           RUSTFLAGS="-D warnings" \
           cargo clippy --all-features --all-targets --locked
+          cd ..
 
           cd libs/chain-signatures
           CARGO_TARGET_DIR="target/clippy" \
           RUSTFLAGS="-D warnings" \
           cargo clippy --all-features --all-targets --locked
+          cd ../..
 
       - name: Run Cargo fmt
         run: |
@@ -53,9 +55,11 @@ jobs:
 
           cd devnet
           cargo fmt -- --check
+          cd ..
 
           cd libs/chain-signatures
           cargo fmt -- --check
+          cd ../..
           
       - name: Install cargo-nextest
         run: cargo install cargo-nextest
