@@ -18,7 +18,7 @@ frost-ed25519 = "2.1.0"
 frost-secp256k1 = "2.1.0"
 futures = "0.3.31"
 itertools = "0.14.0"
-k256 = { version = "0.13.1", features = ["sha256", "ecdsa", "serde"], optional = true }
+k256 = { version = "0.13.1", features = ["sha256", "ecdsa", "serde"] }
 magikitten = "0.2.0"
 rand = "0.9.0"
 rand_core = { version = "0.6.4", features = ["getrandom"] }
@@ -34,10 +34,6 @@ haisou-chan = { git = "https://github.com/cronokirby/haisou-chan", rev = "d28c46
 structopt = "0.3.26"
 k256 = { version = "0.13.1", features = ["sha256", "ecdsa", "serde"], optional = false }
 
-[features]
-k256 = ["dep:k256"]
-
 [[example]]
 name = "network-benches"
 path = "examples/network-benches.rs"
-required-features = ["k256"]

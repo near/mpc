@@ -3,11 +3,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cait_sith::{
-    keygen, presign,
-    protocol::{Action, MessageData, Participant, Protocol},
-    sign, triples, PresignArguments,
-};
 use digest::{Digest, FixedOutput};
 use easy_parallel::Parallel;
 use ecdsa::hazmat::DigestPrimitive;
@@ -17,6 +12,11 @@ use haisou_chan::{channel, Bandwidth};
 use k256::{FieldBytes, Scalar, Secp256k1};
 use rand_core::OsRng;
 use structopt::StructOpt;
+use cait_sith::ecdsa::dkg_ecdsa::keygen;
+use cait_sith::ecdsa::presign::{presign, PresignArguments};
+use cait_sith::ecdsa::sign::sign;
+use cait_sith::ecdsa::triples;
+use cait_sith::protocol::{Action, MessageData, Participant, Protocol};
 
 fn scalar_hash(msg: &[u8]) -> Scalar {
     let digest = <Secp256k1 as DigestPrimitive>::Digest::new_with_prefix(msg);

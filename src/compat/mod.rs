@@ -41,7 +41,6 @@ pub trait CSCurve: PrimeCurve + CurveArithmetic {
     fn sample_scalar_constant_time<R: CryptoRngCore>(r: &mut R) -> Self::Scalar;
 }
 
-#[cfg(any(feature = "k256", test))]
 mod k256_impl {
     use super::*;
 
