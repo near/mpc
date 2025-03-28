@@ -177,13 +177,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 }
             },
 
-            // (#119): Temporary unreachable, since there's only one provider atm
-            #[allow(unreachable_patterns)]
-            _ => {
-                anyhow::bail!(
-                    "`process_channel_task` was expecting an `EcdsaSecp256k1TaskId` task"
-                );
-            }
+            _ => anyhow::bail!("eddsa task handler: received unexpected task id: {:?}", channel.task_id()),
         }
         Ok(())
     }
