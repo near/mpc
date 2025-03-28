@@ -471,6 +471,10 @@ impl NetworkTaskChannelSender {
         self.my_participant_id == self.leader
     }
 
+    pub fn get_leader(&self) -> ParticipantId {
+        self.leader
+    }
+
     /// Waits for each participant involved in this task to be bidirectionally connected to us
     /// at least once. This way, the connection version for each participant is properly established
     /// and when we send messages to any participant we can rely on that connection version.
