@@ -5,10 +5,11 @@ from borsh_construct import Vec, U8, CStruct, U64, Option, U32
 from .constants import MPC_REPO_DIR
 
 V0_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v0.wasm'
-V1_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v1.wasm'
+#V1_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v1.wasm'
 V1_0_1_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'v1.0.1.wasm'
 COMPILED_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'res' / 'mpc_contract.wasm'
-MIGRATE_CURRENT_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'migrate_from_v1.wasm'
+MIGRATE_CURRENT_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'migrate_from_v2.wasm'
+#DUMMY_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'compiled-contracts' / 'migrate_from_v2.wasm'
 
 
 def load_mpc_contract() -> bytearray:

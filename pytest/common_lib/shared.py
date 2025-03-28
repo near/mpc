@@ -73,7 +73,6 @@ class NearNode:
 
     def send_txn_and_check_success(self, txn, timeout=20):
         res = self.near_node.send_tx_and_wait(txn, timeout)
-        print(res)
         assert_txn_success(res)
         return res
 
@@ -98,6 +97,9 @@ class NearNode:
         return tx
 
 
+from ruamel.yaml import YAML
+
+
 class MpcNode(NearNode):
 
     class NodeStatus:
@@ -120,6 +122,23 @@ class MpcNode(NearNode):
         self.home_dir = self.near_node.node_dir
         self.is_running = False
         self.metrics = MetricsTracker(near_node)
+
+    def change_contract_id(self, new_contract_id: str):
+        yaml = YAML()
+        yaml.preserve_quotes = True  # optional: keeps any quotes if present in original file
+
+        path = pathlib.Path(self.home_dir) / 'config.yaml'
+        with path.open('r') as f:
+            config = yaml.load(f)
+
+        old_contract_id = config['indexer']['mpc_contract_id']
+        print(
+            f"changing contract_id from {old_contract_id} to {new_contract_id} for node {self.account_id}"
+        )
+        config['indexer']['mpc_contract_id'] = new_contract_id
+
+        with path.open('w') as f:
+            yaml.dump(config, f)
 
     def print(self):
         if not self.is_running:
@@ -210,6 +229,14 @@ def assert_signature_success(res):
 
 class MpcCluster:
     """Helper class"""
+
+    def run_all(self):
+        for node in self.nodes:
+            node.run()
+
+    def kill_all(self):
+        for node in self.mpc_nodes:
+            node.kill(False)
 
     def __init__(self, near_nodes: List[NearNode]):
         self.mpc_nodes: List[MpcNode] = []
@@ -517,7 +544,9 @@ class MpcCluster:
                     - If the indexers fail to observe the signature requests before `constants.TIMEOUT` is reached.
                     - If `sig_verification` raisese an AssertionError.
         """
-        print(f"\033[91mSending \033[93m{num_requests}\033[91m sign requests.")
+        print(
+            f"\033[91mSending \033[93m{num_requests}\033[91m sign requests.\033[0m"
+        )
         tx_hashes, _ = self.generate_and_send_signature_requests(
             num_requests, add_gas, add_deposit)
 

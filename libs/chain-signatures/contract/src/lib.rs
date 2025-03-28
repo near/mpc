@@ -721,6 +721,9 @@ impl VersionedMpcContract {
         }))
     }
 
+    fn state_read<T: borsh::BorshDeserialize>() -> Option<T> {
+        env::storage_read(b"STATE").and_then(|data| T::try_from_slice(&data).ok())
+    }
     /// This will be called internally by the contract to migrate the state when a new contract
     /// is deployed. This function should be changed every time state is changed to do the proper
     /// migrate flow.
@@ -732,7 +735,7 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
         if let Some(legacy_contract_state::VersionedMpcContract::V1(state)) =
-            env::state_read::<legacy_contract_state::VersionedMpcContract>()
+            Self::state_read::<legacy_contract_state::VersionedMpcContract>()
         {
             // migrate config
             let mut config = Config::default();
