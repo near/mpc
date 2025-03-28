@@ -42,12 +42,15 @@ def test_contract_update(initial_contract_path, update_args):
     cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1,
                                                        initial_contract)
     # Get the participant set from the mpc configs
-    participants = {}
-
     dot_near = pathlib.Path.home() / '.near'
     with open(pathlib.Path(dot_near / 'participants.json')) as file:
         participants_config = yaml.load(file,
                                         Loader=shared.SafeLoaderIgnoreUnknown)
+
+    participants_map = {}
+    account_to_participant_id = {}
+    next_id = 0
+
     for i, p in enumerate(participants_config['participants']):
         near_account = p['near_account_id']
         #assert near_account == f"test{i + num_validators}", \
@@ -56,7 +59,7 @@ def test_contract_update(initial_contract_path, update_args):
         my_addr = p['address']
         my_port = p['port']
 
-        participants[near_account] = {
+        participants_map[near_account] = {
             "account_id":
             near_account,
             "cipher_pk": [
@@ -68,15 +71,27 @@ def test_contract_update(initial_contract_path, update_args):
             "url":
             f"http://{my_addr}:{my_port}",
         }
-    # Initialize the mpc contract
-    init_args = {
-        'threshold': 2,
-        'candidates': participants,
+        account_to_participant_id[near_account] = next_id
+        next_id += 1
+    participants = {
+        "next_id": 2,
+        "participants": participants_map,
+        "account_to_participant_id": account_to_participant_id,
     }
 
-    tx = cluster.contract_node.sign_tx(cluster.mpc_contract_account(), 'init',
-                                       json.dumps(init_args).encode('utf-8'),
-                                       1, 150 * TGAS)
+    # Initialize the mpc contract
+    init_running_args = {
+        'epoch': 0,
+        'participants': participants,
+        'threshold': 2,
+        'public_key': 'ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae',
+        'init_config': None,
+    }
+
+    tx = cluster.contract_node.sign_tx(
+        cluster.mpc_contract_account(), 'init_running',
+        json.dumps(init_running_args).encode('utf-8'), 1, 150 * TGAS)
+
     res = cluster.contract_node.send_txn_and_check_success(tx, 20)
     assert ('SuccessValue' in res['result']['status'])
     cluster.assert_is_deployed(initial_contract)
@@ -91,9 +106,10 @@ def test_contract_update(initial_contract_path, update_args):
     cluster.vote_update(1, 0)
     time.sleep(2)
     # assert v1 is now deployed
-    if update_args.code() is not None:
-        print("ensuring contract code is updated")
-        cluster.assert_is_deployed(update_args.code())
+    #if update_args.code() is not None:
+    #    print("ensuring contract code is updated")
+    cluster.assert_is_deployed(update_args.code())
+    cluster.contract_state().print()
     #else:
     #cluster.init_contract(threshold=threshold)
     #self.add_domains(['Secp256k1'])
