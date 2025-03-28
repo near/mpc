@@ -161,7 +161,7 @@ pub(crate) fn test_run_signature_protocols(
         .collect::<Vec<_>>();
     let coordinators = ParticipantList::new(&coordinators).unwrap();
     for (participant, key_pair) in participants.iter().take(actual_signers) {
-        let protocol = if coordinators.contains(*participant){
+        let protocol = if coordinators.contains(*participant) {
             sign(
                 &participants_list,
                 threshold,
@@ -186,7 +186,6 @@ pub(crate) fn test_run_signature_protocols(
             )?
         };
         protocols.push((*participant, protocol))
-
     }
 
     Ok(run_protocol(protocols)?)

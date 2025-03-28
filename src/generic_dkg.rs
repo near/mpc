@@ -219,6 +219,21 @@ fn verify_proof_of_knowledge<C: Ciphersuite>(
         .map_err(|_| ProtocolError::InvalidProofOfKnowledge(participant))
 }
 
+/// Takes a commitment and a commitment hash and checks that
+/// H(commitment) = commitment_hash
+fn verify_commitment_hash<C: Ciphersuite>(
+    participant: Participant,
+    commitment: &VerifiableSecretSharingCommitment<C>,
+    all_hash_commitments: &ParticipantMap<'_, Digest>,
+) -> Result<(), ProtocolError> {
+    let actual_commitment_hash = all_hash_commitments.index(participant);
+    let commitment_hash = hash(&commitment);
+    if *actual_commitment_hash != commitment_hash {
+        return Err(ProtocolError::InvalidCommitmentHash);
+    }
+    Ok(())
+}
+
 /// This function is called when the commitment length is threshold -1
 /// i.e. when the new participant sent a polynomial with a non-existant constant term
 /// such a participant would do so as the identity is not serializable
@@ -410,6 +425,19 @@ async fn do_keyshare<C: Ciphersuite>(
     // Create the public polynomial = secret coefficients times G
     let commitment = VerifiableSecretSharingCommitment::new(coefficient_commitment);
 
+    // hash commitment and send it
+    let commitment_hash = hash(&commitment);
+    let wait_round_1 = chan.next_waitpoint();
+    chan.send_many(wait_round_1, &commitment_hash).await;
+    // receive commitment_hash
+    let mut all_hash_commitments = ParticipantMap::new(&participants);
+    all_hash_commitments.put(me, commitment_hash);
+    while !all_hash_commitments.full() {
+        let (from, their_commitment_hash) = chan.recv(wait_round_1).await?;
+        all_hash_commitments.put(from, their_commitment_hash);
+    }
+
+    // Start Round 2
     // add my commitment and proof to the map
     all_commitments.put(me, commitment.clone());
     all_proofs.put(me, proof_of_knowledge);
@@ -423,8 +451,8 @@ async fn do_keyshare<C: Ciphersuite>(
     )
     .await?;
 
-    // Start Round 2
-    let wait_round2 = chan.next_waitpoint();
+    // Start Round 3
+    let wait_round_3 = chan.next_waitpoint();
     for p in participants.others(me) {
         let (commitment_i, proof_i) = commitments_and_proofs_map.index(p);
 
@@ -439,6 +467,9 @@ async fn do_keyshare<C: Ciphersuite>(
             proof_i,
         )?;
 
+        // verify that the commitment sent hashes to the received commitment_hash in round 1
+        verify_commitment_hash(p, commitment_i, &all_hash_commitments)?;
+
         // add received commitment and proof to the map
         all_commitments.put(p, commitment_i.clone());
         all_proofs.put(p, *proof_i);
@@ -447,7 +478,8 @@ async fn do_keyshare<C: Ciphersuite>(
         // using the evaluation secret polynomial on the identifier of the recipient
         let signing_share_to_p = evaluate_polynomial::<C>(&secret_coefficients, p)?;
         // send the evaluation privately to participant p
-        chan.send_private(wait_round2, p, &signing_share_to_p).await;
+        chan.send_private(wait_round_3, p, &signing_share_to_p)
+            .await;
     }
 
     // compute transcript hash
@@ -467,7 +499,7 @@ async fn do_keyshare<C: Ciphersuite>(
     seen.put(me);
     while !seen.full() {
         let (from, signing_share_from): (Participant, SigningShare<C>) =
-            chan.recv(wait_round2).await?;
+            chan.recv(wait_round_3).await?;
         if !seen.put(from) {
             continue;
         }
@@ -489,8 +521,7 @@ async fn do_keyshare<C: Ciphersuite>(
         my_signing_share = my_signing_share + signing_share_from.to_scalar();
     }
 
-    // Start Round 3
-
+    // Start Round 4
     // receive all transcript hashes
     let transcript_list = do_broadcast(&mut chan, &participants, &me, my_transcript).await?;
     let transcript_list = transcript_list.into_vec_or_none().unwrap();
@@ -540,9 +571,8 @@ async fn do_keyshare<C: Ciphersuite>(
         };
     };
 
-    // Start Round 4
+    // Start Round 5
     broadcast_success_failure(&mut chan, &participants, &me, err).await?;
-
     // will never panic as broadcast_success_failure would panic before it
     let public_key_package = public_key_package.unwrap();
 

@@ -69,7 +69,8 @@ async fn do_sign_coordinator(
 
     let commit_waitpoint = chan.next_waitpoint();
     while !seen.full() {
-        let (from, commitment): (_, round1::SigningCommitments) = chan.recv(commit_waitpoint).await?;
+        let (from, commitment): (_, round1::SigningCommitments) =
+            chan.recv(commit_waitpoint).await?;
 
         if !seen.put(from) {
             continue;
@@ -138,8 +139,9 @@ async fn do_sign_participant(
     if coordinator == me {
         return Err(ProtocolError::AssertionFailed(
             "the do_sign_participant function cannot be called
-            for a coordinator".to_string()
-        ))
+            for a coordinator"
+                .to_string(),
+        ));
     }
 
     // create signing share out of private_share
@@ -220,42 +222,27 @@ pub fn sign(
 
     // ensure my presence in the participant list
     if !participants.contains(me) {
-        return Err(InitializationError::BadParameters(
-            format!("participant list must contain {me:?}")
-        ));
+        return Err(InitializationError::BadParameters(format!(
+            "participant list must contain {me:?}"
+        )));
     };
     // ensure the coordinator is a participant
     if !participants.contains(coordinator) {
-        return Err(InitializationError::BadParameters(
-            format!("participant list must contain coordinator {coordinator:?}")
-        ));
+        return Err(InitializationError::BadParameters(format!(
+            "participant list must contain coordinator {coordinator:?}"
+        )));
     };
 
     let ctx = Context::new();
     let chan = ctx.shared_channel();
-    if me == coordinator{
-        let fut = do_sign_coordinator(
-            chan,
-            participants,
-            threshold,
-            me,
-            keygen_output,
-            message,
-        );
+    if me == coordinator {
+        let fut = do_sign_coordinator(chan, participants, threshold, me, keygen_output, message);
         Ok(Box::new(make_protocol(ctx, fut)))
     } else {
-        let fut = do_sign_participant(
-            chan,
-            threshold,
-            me,
-            coordinator,
-            keygen_output,
-            message
-        );
+        let fut = do_sign_participant(chan, threshold, me, coordinator, keygen_output, message);
         Ok(Box::new(make_protocol(ctx, fut)))
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -266,7 +253,7 @@ mod tests {
 
     use crate::eddsa::test::{
         assert_public_key_invariant, build_key_packages_with_dealer, run_keygen, run_refresh,
-        run_reshare, test_run_signature_protocols
+        run_reshare, test_run_signature_protocols,
     };
     use crate::protocol::Participant;
     use std::error::Error;
@@ -298,7 +285,7 @@ mod tests {
         let msg_hash = hash(&msg);
 
         let key_packages = build_key_packages_with_dealer(max_signers, threshold);
-        let coordinators = vec!(key_packages[0].0);
+        let coordinators = vec![key_packages[0].0];
         let data = test_run_signature_protocols(
             &key_packages,
             actual_signers,
@@ -319,7 +306,7 @@ mod tests {
         for min_signers in 2..max_signers {
             for actual_signers in min_signers..=max_signers {
                 let key_packages = build_key_packages_with_dealer(max_signers, min_signers);
-                let coordinators = vec!(key_packages[0].0);
+                let coordinators = vec![key_packages[0].0];
                 let data = test_run_signature_protocols(
                     &key_packages,
                     actual_signers,
@@ -349,7 +336,7 @@ mod tests {
         // test dkg
         let key_packages = run_keygen(&participants, threshold)?;
         assert_public_key_invariant(&key_packages)?;
-        let coordinators = vec!(key_packages[0].0);
+        let coordinators = vec![key_packages[0].0];
         let data = test_run_signature_protocols(
             &key_packages,
             actual_signers,
@@ -404,7 +391,7 @@ mod tests {
         assert_public_key_invariant(&key_packages2)?;
         let msg = "hello_near_3";
         let msg_hash = hash(&msg);
-        let coordinators = vec!(key_packages2[0].0);
+        let coordinators = vec![key_packages2[0].0];
         let data = test_run_signature_protocols(
             &key_packages2,
             actual_signers,
@@ -482,7 +469,7 @@ mod tests {
         let msg = "hello_near";
         let msg_hash = hash(&msg);
 
-        let coordinators = vec!(key_packages[0].0);
+        let coordinators = vec![key_packages[0].0];
         let data = test_run_signature_protocols(
             &key_packages,
             actual_signers,
@@ -513,7 +500,7 @@ mod tests {
         let threshold = 4;
         let result0 = run_keygen(&participants, threshold)?;
         assert_public_key_invariant(&result0)?;
-        let coordinators = vec!(result0[0].0);
+        let coordinators = vec![result0[0].0];
 
         let pub_key = result0[2].1.public_key_package.clone();
 
