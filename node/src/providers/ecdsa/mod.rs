@@ -179,7 +179,10 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 }
             },
 
-            _ => anyhow::bail!("eddsa task handler: received unexpected task id: {:?}", channel.task_id()),
+            _ => anyhow::bail!(
+                "eddsa task handler: received unexpected task id: {:?}",
+                channel.task_id()
+            ),
         }
         Ok(())
     }

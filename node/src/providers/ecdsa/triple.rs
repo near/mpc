@@ -52,15 +52,19 @@ impl EcdsaSignatureProvider {
                 && in_flight_generations.num_in_flight()
                 < config.concurrency * 2 * SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE
             {
-                let participants = match client.select_random_active_participants_including_me(threshold) {
-                    Ok(participants) => participants,
-                    Err(e) => {
-                        tracing::warn!("Can't choose active participants for a triple: {}. Sleeping.", e);
-                        // that should not happen often, so sleeping here is okay
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                        continue;
-                    }
-                };
+                let participants =
+                    match client.select_random_active_participants_including_me(threshold) {
+                        Ok(participants) => participants,
+                        Err(e) => {
+                            tracing::warn!(
+                                "Can't choose active participants for a triple: {}. Sleeping.",
+                                e
+                            );
+                            // that should not happen often, so sleeping here is okay
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                            continue;
+                        }
+                    };
 
                 let id_start = triple_store
                     .generate_and_reserve_id_range(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32);

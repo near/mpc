@@ -71,9 +71,9 @@ impl MpcLeaderCentricComputation<Scalar> for KeyResharingComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let old_signing_key = self.my_share.map(|scalar|
-            cait_sith::frost_secp256k1::keys::SigningShare::new(scalar)
-        );
+        let old_signing_key = self
+            .my_share
+            .map(cait_sith::frost_secp256k1::keys::SigningShare::new);
         let old_public_key = cait_sith::frost_secp256k1::VerifyingKey::new(self.public_key.into());
 
         let protocol = cait_sith::ecdsa::dkg_ecdsa::reshare(

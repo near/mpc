@@ -27,7 +27,6 @@ use near_time::Clock;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc, watch};
-use crate::providers::eddsa::EddsaSignatureProvider;
 
 /// Main entry point for the MPC node logic. Assumes the existence of an
 /// indexer. Queries and monitors the contract for state transitions, and act

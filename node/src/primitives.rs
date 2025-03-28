@@ -1,12 +1,11 @@
+use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::EcdsaTaskId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::Participant;
 use k256::Secp256k1;
-use rand::prelude::IteratorRandom;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
-use crate::providers::eddsa::EddsaTaskId;
 
 #[derive(
     Clone,
@@ -92,7 +91,7 @@ pub struct MpcPeerMessage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum MpcTaskId {
     EcdsaTaskId(EcdsaTaskId),
-    EddsaTaskId(EddsaTaskId)
+    EddsaTaskId(EddsaTaskId),
 }
 
 pub fn participants_from_triples(

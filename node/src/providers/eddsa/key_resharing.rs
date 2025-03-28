@@ -91,14 +91,14 @@ mod tests {
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::ParticipantId;
+    use crate::providers::eddsa::key_resharing::KeyResharingComputation;
+    use crate::providers::eddsa::EddsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
     use tokio::sync::mpsc;
-    use crate::providers::eddsa::EddsaTaskId;
-    use crate::providers::eddsa::key_resharing::KeyResharingComputation;
 
     #[tokio::test]
     async fn test_key_resharing() {
@@ -144,8 +144,8 @@ mod tests {
                         my_share: keyshare,
                         public_key: pubkey,
                     }
-                        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
-                        .await?;
+                    .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
+                    .await?;
                     anyhow::Ok(key)
                 }
             };
@@ -156,6 +156,6 @@ mod tests {
                 .unwrap();
             println!("{:?}", results);
         })
-            .await;
+        .await;
     }
 }

@@ -2,7 +2,6 @@ use crate::assets::UniqueId;
 use crate::metrics;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
-use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::kdf::{derive_public_key, derive_randomness};
 use crate::providers::ecdsa::{
@@ -16,7 +15,7 @@ use cait_sith::protocol::Participant;
 use k256::{AffinePoint, Scalar, Secp256k1};
 use mpc_contract::crypto_shared::ScalarExt;
 use mpc_contract::primitives::signature::{PayloadHash, Tweak};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
 

@@ -14,12 +14,12 @@ use crate::tracking::{self, AutoAbortTask};
 use conn::{ConnectionVersion, NodeConnectivityInterface};
 use indexer_heights::IndexerHeightTracker;
 use lru::LruCache;
+use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use rand::prelude::IteratorRandom;
 use tokio::sync::mpsc;
 
 /// Abstraction of the networking layer, from the view of one client, the sender side.
@@ -167,7 +167,11 @@ impl MeshNetworkClient {
         let participants = self.all_alive_participant_ids();
 
         if participants.len() < total {
-            anyhow::bail!("Not enough active participants: need {}, got {}", total, participants.len());
+            anyhow::bail!(
+                "Not enough active participants: need {}, got {}",
+                total,
+                participants.len()
+            );
         }
         if !participants.contains(&me) {
             anyhow::bail!("There's no `me` in active participants");

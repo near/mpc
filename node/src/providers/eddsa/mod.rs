@@ -24,6 +24,7 @@ pub struct EddsaSignatureProvider {
 }
 
 impl EddsaSignatureProvider {
+    #[allow(dead_code)] // TODO: Remove after integrating
     pub fn new(
         config: Arc<ConfigFile>,
         mpc_config: Arc<MpcConfig>,

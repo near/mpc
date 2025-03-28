@@ -99,10 +99,7 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
     ) -> anyhow::Result<Option<(Signature, VerifyingKey)>> {
         let derived_keygen_output =
             cait_sith::eddsa::derive_keygen_output(&self.keygen_output, self.tweak.as_bytes());
-        let derived_verifying_key = derived_keygen_output
-            .public_key_package
-            .verifying_key()
-            .clone();
+        let derived_verifying_key = *derived_keygen_output.public_key_package.verifying_key();
 
         let cs_participants = channel
             .participants()

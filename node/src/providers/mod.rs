@@ -16,8 +16,6 @@ use crate::sign_request::SignatureId;
 pub use ecdsa::affine_point_to_public_key;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
-use k256::AffinePoint;
-use k256::Scalar;
 use std::sync::Arc;
 
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.

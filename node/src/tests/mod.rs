@@ -21,6 +21,7 @@ use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::start_web_server;
 use cait_sith::ecdsa::presign::PresignArguments;
 use cait_sith::ecdsa::sign::FullSignature;
+use cait_sith::{ecdsa, eddsa};
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
 use near_sdk::AccountId;
@@ -28,7 +29,6 @@ use near_time::Clock;
 use rand::RngCore;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use cait_sith::{ecdsa, eddsa};
 use tokio::time::timeout;
 
 mod basic_cluster;
@@ -74,11 +74,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    ecdsa::dkg_ecdsa::keygen(
-                        &self.participants,
-                        *participant,
-                        self.threshold,
-                    )
+                    ecdsa::dkg_ecdsa::keygen(&self.participants, *participant, self.threshold)
                         .unwrap(),
                 ),
             ));
@@ -92,11 +88,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    eddsa::dkg_ed25519::keygen(
-                        &self.participants,
-                        *participant,
-                        self.threshold,
-                    )
+                    eddsa::dkg_ed25519::keygen(&self.participants, *participant, self.threshold)
                         .unwrap(),
                 ),
             ));

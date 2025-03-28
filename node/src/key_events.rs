@@ -3,6 +3,7 @@ use crate::indexer::types::{
     ChainStartKeygenArgs, ChainStartReshareArgs, ChainVoteAbortKeyEventArgs,
 };
 use crate::network::MeshNetworkClient;
+use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::{affine_point_to_public_key, EcdsaTaskId};
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{
@@ -23,7 +24,6 @@ use std::time::Duration;
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
-use crate::providers::eddsa::EddsaTaskId;
 
 /// The key generation computation (same for both leader and follower) for a single key generation
 /// attempt:
@@ -378,12 +378,16 @@ pub async fn keygen_follower(
             .await
             .ok_or_else(|| anyhow::anyhow!("Channel receiver closed unexpectedly; exiting."))?;
         let key_event_id = match channel.task_id() {
-            crate::primitives::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration { key_event }) => key_event,
-            crate::primitives::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyGeneration { key_event }) => key_event,
+            crate::primitives::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration { key_event }) => {
+                key_event
+            }
+            crate::primitives::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyGeneration { key_event }) => {
+                key_event
+            }
             _ => {
                 tracing::info!("Ignoring non-keygen task {:?}", channel.task_id());
                 continue;
-            },
+            }
         };
 
         tasks.spawn_checked(
@@ -491,8 +495,12 @@ pub async fn resharing_follower(
             .await
             .ok_or_else(|| anyhow::anyhow!("Channel receiver closed unexpectedly; exiting."))?;
         let key_event_id = match channel.task_id() {
-            crate::primitives::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { key_event }) => key_event,
-            crate::primitives::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyResharing { key_event }) => key_event,
+            crate::primitives::MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { key_event }) => {
+                key_event
+            }
+            crate::primitives::MpcTaskId::EddsaTaskId(EddsaTaskId::KeyResharing { key_event }) => {
+                key_event
+            }
             _ => {
                 tracing::info!("Ignoring non-resharing task {:?}", channel.task_id());
                 continue;
