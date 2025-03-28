@@ -34,7 +34,13 @@ impl EddsaSignatureProvider {
         let result = SignComputation {
             keygen_output: self.keygen_output.clone(),
             threshold,
-            message: sign_request.msg_hash.as_bytes().to_vec(),
+            message: sign_request
+                .payload
+                .as_eddsa()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Signature request payload is not an Eddsa payload")
+                })?
+                .to_vec(),
             tweak: sign_request.tweak,
         }
         .perform_leader_centric_computation(
@@ -55,9 +61,7 @@ impl EddsaSignatureProvider {
         channel: NetworkTaskChannel,
         id: SignatureId,
     ) -> anyhow::Result<()> {
-        let SignatureRequest {
-            msg_hash, tweak, ..
-        } = timeout(
+        let SignatureRequest { payload, tweak, .. } = timeout(
             Duration::from_secs(self.config.signature.timeout_sec),
             self.sign_request_store.get(id),
         )
@@ -68,7 +72,12 @@ impl EddsaSignatureProvider {
         let _ = SignComputation {
             keygen_output: self.keygen_output.clone(),
             threshold,
-            message: msg_hash.as_bytes().to_vec(),
+            message: payload
+                .as_eddsa()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Signature request payload is not an Eddsa payload")
+                })?
+                .to_vec(),
             tweak,
         }
         .perform_leader_centric_computation(

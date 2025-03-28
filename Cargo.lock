@@ -3909,6 +3909,7 @@ dependencies = [
  "borsh",
  "curve25519-dalek",
  "getrandom 0.2.15",
+ "hex",
  "k256",
  "near-account-id",
  "near-gas 0.2.5",

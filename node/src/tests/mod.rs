@@ -2,7 +2,6 @@ use cait_sith::ecdsa::presign::PresignOutput;
 use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::{run_protocol, Participant, Protocol};
 use k256::{AffinePoint, Scalar, Secp256k1};
-use mpc_contract::primitives::signature::PayloadHash;
 use std::collections::HashMap;
 
 use crate::config::{
@@ -22,6 +21,8 @@ use crate::web::start_web_server;
 use cait_sith::ecdsa::presign::PresignArguments;
 use cait_sith::ecdsa::sign::FullSignature;
 use cait_sith::{ecdsa, eddsa};
+use mpc_contract::primitives::domain::DomainId;
+use mpc_contract::primitives::signature::Payload;
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
 use near_sdk::AccountId;
@@ -337,9 +338,9 @@ pub async fn request_signature_and_await_response(
         predecessor_id: user.parse().unwrap(),
         timestamp_nanosec: rand::random(),
         request: SignArgs {
-            key_version: 0,
+            domain_id: DomainId::legacy_ecdsa_id(),
             path: "m/44'/60'/0'/0/0".to_string(),
-            payload: PayloadHash::new(payload),
+            payload: Payload::from_legacy_ecdsa(payload),
         },
     };
     tracing::info!(
@@ -352,7 +353,7 @@ pub async fn request_signature_and_await_response(
     loop {
         match timeout(timeout_sec, indexer.next_response()).await {
             Ok(signature) => {
-                if signature.request.payload_hash != request.request.payload {
+                if signature.request.payload != request.request.payload {
                     // This can legitimately happen when multiple nodes submit responses
                     // for the same signature request. In tests this can happen if the
                     // secondary leader thinks the primary leader is offline when in fact
@@ -362,7 +363,7 @@ pub async fn request_signature_and_await_response(
                          Expected {:?}, actual {:?}",
                         user,
                         request.request.payload,
-                        signature.request.payload_hash
+                        signature.request.payload
                     );
                     continue;
                 }

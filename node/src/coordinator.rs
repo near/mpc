@@ -450,11 +450,14 @@ impl Coordinator {
             }
             None
         };
-        // Delete all presignatures from the previous epoch; they are no longer usable
-        // once we reshare keys.
-        tracing::info!("Deleting all presignatures...");
+        // Delete all triples and presignatures from the previous epoch;
+        // they are no longer usable once we reshare keys. Presignatures are dependent on key so
+        // those are completely invalidated, and triples may have different threshold or assume
+        // different participants, so it would be too much trouble to keep them around.
+        tracing::info!("Deleting all triples and presignatures...");
         let mut update = secret_db.update();
         let _ = update.delete_all(DBCol::Presignature);
+        let _ = update.delete_all(DBCol::Triple);
         let _ = update.commit();
         tracing::info!("Deleted all presignatures");
         let (sender, receiver) =

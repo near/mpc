@@ -466,9 +466,9 @@ class MpcCluster:
         for payload in payloads:
             sign_args = {
                 'request': {
-                    'key_version': 0,
+                    'domain_id': 0,
                     'path': 'test',
-                    'payload': payload,
+                    'payload_v2': payload,
                 }
             }
             nonce_offset += 1
@@ -530,10 +530,9 @@ class MpcCluster:
         """
             Sends signature requests and returns the transactions and the timestamp they were sent.
         """
-        payloads = [[
-            i, 1, 2, 0, 4, 5, 6, 8, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-            19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 44
-        ] for i in range(num_requests)]
+        payloads = [{
+            "Ecdsa": random.getrandbits(256).to_bytes(32, 'big').hex(),
+        } for _ in range(num_requests)]
         txs = self.make_sign_request_txns(payloads,
                                           add_gas=add_gas,
                                           add_deposit=add_deposit)

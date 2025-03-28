@@ -1908,6 +1908,7 @@ dependencies = [
  "digest",
  "ecdsa",
  "getrandom 0.2.15",
+ "hex",
  "k256",
  "near-account-id",
  "near-crypto 0.26.0",

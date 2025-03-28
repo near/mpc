@@ -443,7 +443,7 @@ mod tests {
     use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
     use crate::tests::TestGenerators;
     use crate::tracing::init_logging;
-    use mpc_contract::primitives::signature::{PayloadHash, Tweak};
+    use mpc_contract::primitives::signature::{Payload, Tweak};
     use near_indexer_primitives::CryptoHash;
     use near_time::{Duration, FakeClock};
     use std::collections::{HashMap, HashSet};
@@ -465,7 +465,7 @@ mod tests {
                 // All other fields are irrelevant for the test.
                 receipt_id: CryptoHash([0; 32]),
                 entropy: [0; 32],
-                msg_hash: PayloadHash::new([0; 32]),
+                payload: Payload::from_legacy_ecdsa([0; 32]),
                 timestamp_nanosec: 0,
                 tweak: Tweak::new([0; 32]),
             };
