@@ -7,7 +7,7 @@ use near_sdk::{near, BorshStorageKey};
 #[derive(Hash, Clone, Debug, PartialEq, Eq, BorshStorageKey)]
 pub enum StorageKey {
     _DeprecatedPendingRequests,
-    /// Proposed updates to the contract code.
+    /// Proposed updates to the contract code and config.
     ProposedUpdatesEntries,
     _DeprecatedRequestsByTimestamp,
     /// Pending signature requests.

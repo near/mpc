@@ -82,9 +82,6 @@ impl MpcContract {
     fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) {
         self.pending_requests
             .insert(request.clone(), YieldIndex { data_id });
-        // todo: improve this logic.
-        // If a user submits a request at t0 and submits the same request at t1 > t0,
-        // then the request might get removed from the state when cleaning up t0.
     }
 
     fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
@@ -113,12 +110,12 @@ impl MpcContract {
 
     pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         self.protocol_state
-            .start_keygen_instance(key_event_id, self.config.event_max_idle_blocks)
+            .start_keygen_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
 
     pub fn start_reshare_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         self.protocol_state
-            .start_reshare_instance(key_event_id, self.config.event_max_idle_blocks)
+            .start_reshare_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
 
     pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
@@ -727,7 +724,6 @@ impl VersionedMpcContract {
         {
             let mut config = Config::default();
             config.request_timeout_blocks = state.config.request_timeout_blocks;
-            config.max_num_requests_to_remove = state.config.max_num_requests_to_remove;
             let protocol_state: ProtocolContractState = (&state.protocol_state).into();
             return Ok(VersionedMpcContract::V0(MpcContract {
                 config,
@@ -740,6 +736,7 @@ impl VersionedMpcContract {
                 // previous state.
                 pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
                 // This inherits the previous proposed updates map.
+                // TODO(#318): This is problematic.
                 proposed_updates: ProposedUpdates::default(),
             }));
         }
