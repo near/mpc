@@ -14,6 +14,7 @@ use crate::tracking::{self, AutoAbortTask};
 use conn::{ConnectionVersion, NodeConnectivityInterface};
 use indexer_heights::IndexerHeightTracker;
 use lru::LruCache;
+use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::option::Option;
@@ -156,6 +157,32 @@ impl MeshNetworkClient {
         result.push(self.my_participant_id());
         result.sort();
         result
+    }
+
+    pub fn select_random_active_participants_including_me(
+        &self,
+        total: usize,
+    ) -> anyhow::Result<Vec<ParticipantId>> {
+        let me = self.my_participant_id();
+        let participants = self.all_alive_participant_ids();
+
+        if participants.len() < total {
+            anyhow::bail!(
+                "Not enough active participants: need {}, got {}",
+                total,
+                participants.len()
+            );
+        }
+        if !participants.contains(&me) {
+            anyhow::bail!("There's no `me` in active participants");
+        }
+
+        let mut res = participants
+            .into_iter()
+            .filter(|p| p != &me)
+            .choose_multiple(&mut rand::thread_rng(), total - 1);
+        res.push(me);
+        Ok(res)
     }
 
     /// Returns once all participants in the network are simultaneously connected to us.
@@ -446,6 +473,10 @@ impl NetworkTaskChannelSender {
 
     pub fn is_leader(&self) -> bool {
         self.my_participant_id == self.leader
+    }
+
+    pub fn get_leader(&self) -> ParticipantId {
+        self.leader
     }
 
     /// Waits for each participant involved in this task to be bidirectionally connected to us

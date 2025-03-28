@@ -245,7 +245,7 @@ fn triple_network_research_worst_case() {
 #[test]
 fn presignature_network_research_best_case() {
     let generator = TestGenerators::new_contiguous_participant_ids(NUM_PARTICIPANTS, THRESHOLD);
-    let keygens = generator.make_keygens();
+    let keygens = generator.make_ecdsa_keygens();
     let triple0s = generator.make_triples();
     let triple1s = generator.make_triples();
 
@@ -286,7 +286,7 @@ fn presignature_network_research_best_case() {
 #[test]
 fn signature_network_research_best_case() {
     let generator = TestGenerators::new_contiguous_participant_ids(NUM_PARTICIPANTS, THRESHOLD);
-    let keygens = generator.make_keygens();
+    let keygens = generator.make_ecdsa_keygens();
     let triple0s = generator.make_triples();
     let triple1s = generator.make_triples();
     let presignatures = generator.make_presignatures(&triple0s, &triple1s, &keygens);
