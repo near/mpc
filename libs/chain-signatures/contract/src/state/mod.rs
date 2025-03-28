@@ -59,22 +59,22 @@ impl ProtocolContractState {
     pub fn start_keygen_instance(
         &mut self,
         key_event_id: KeyEventId,
-        event_max_idle_blocks: u64,
+        key_event_timeout_blocks: u64,
     ) -> Result<(), Error> {
         let ProtocolContractState::Initializing(state) = self else {
             return Err(InvalidState::ProtocolStateNotInitializing.into());
         };
-        state.start(key_event_id, event_max_idle_blocks)
+        state.start(key_event_id, key_event_timeout_blocks)
     }
     pub fn start_reshare_instance(
         &mut self,
         key_event_id: KeyEventId,
-        event_max_idle_blocks: u64,
+        key_event_timeout_blocks: u64,
     ) -> Result<(), Error> {
         let ProtocolContractState::Resharing(state) = self else {
             return Err(InvalidState::ProtocolStateNotResharing.into());
         };
-        state.start(key_event_id, event_max_idle_blocks)
+        state.start(key_event_id, key_event_timeout_blocks)
     }
     pub fn vote_reshared(
         &mut self,

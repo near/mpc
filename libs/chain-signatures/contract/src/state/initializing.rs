@@ -46,10 +46,10 @@ impl InitializingContractState {
     pub fn start(
         &mut self,
         key_event_id: KeyEventId,
-        event_max_idle_blocks: u64,
+        key_event_timeout_blocks: u64,
     ) -> Result<(), Error> {
         self.generating_key
-            .start(key_event_id, event_max_idle_blocks)
+            .start(key_event_id, key_event_timeout_blocks)
     }
 
     /// Casts a vote for `public_key` for the attempt identified by `key_event_id`.
