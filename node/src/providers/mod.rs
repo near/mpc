@@ -7,6 +7,8 @@
 //! As a reference, check the existing implementations.
 
 pub mod ecdsa;
+pub mod eddsa;
+
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
