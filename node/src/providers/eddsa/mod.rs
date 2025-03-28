@@ -1,15 +1,16 @@
-mod sign;
 mod key_generation;
+mod key_resharing;
+mod sign;
 
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
-use crate::providers::{EcdsaTaskId, SignatureProvider};
+use crate::providers::SignatureProvider;
 use crate::sign_request::{SignRequestStorage, SignatureId};
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::eddsa::KeygenOutput;
+use frost_ed25519::keys::{PublicKeyPackage, SigningShare};
 use frost_ed25519::{Signature, VerifyingKey};
-use k256::{AffinePoint, Scalar};
 use mpc_contract::primitives::key_state::KeyEventId;
 use std::sync::Arc;
 
@@ -54,6 +55,8 @@ impl From<EddsaTaskId> for MpcTaskId {
 }
 
 impl SignatureProvider for EddsaSignatureProvider {
+    type PublicKey = PublicKeyPackage;
+    type SecretShare = SigningShare;
     type KeygenOutput = KeygenOutput;
     type SignatureOutput = (Signature, VerifyingKey);
     type TaskId = EddsaTaskId;
@@ -74,12 +77,19 @@ impl SignatureProvider for EddsaSignatureProvider {
 
     async fn run_key_resharing_client(
         new_threshold: usize,
-        key_share: Option<Scalar>,
-        public_key: AffinePoint,
+        key_share: Option<SigningShare>,
+        public_key: PublicKeyPackage,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        todo!()
+        Self::run_key_resharing_client_internal(
+            new_threshold,
+            key_share,
+            public_key,
+            old_participants,
+            channel,
+        )
+        .await
     }
 
     async fn process_channel(self: Arc<Self>, channel: NetworkTaskChannel) -> anyhow::Result<()> {
@@ -95,7 +105,10 @@ impl SignatureProvider for EddsaSignatureProvider {
                     self.make_signature_follower(channel, id).await?;
                 }
             },
-            _ => anyhow::bail!("eddsa task handler: received unexpected task id: {:?}", channel.task_id()),
+            _ => anyhow::bail!(
+                "eddsa task handler: received unexpected task id: {:?}",
+                channel.task_id()
+            ),
         }
 
         Ok(())

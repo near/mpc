@@ -44,7 +44,7 @@ impl MpcLeaderCentricComputation<KeygenOutput<Secp256k1>> for KeyGenerationCompu
         let me = channel.my_participant_id();
         let protocol =
             cait_sith::ecdsa::dkg_ecdsa::keygen(&cs_participants, me.into(), self.threshold)?;
-        run_protocol("key generation", channel, protocol).await
+        run_protocol("ecdsa key generation", channel, protocol).await
     }
 
     fn leader_waits_for_success(&self) -> bool {
@@ -68,7 +68,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     #[tokio::test]
-    async fn ecdsa_test_key_generation() {
+    async fn test_key_generation() {
         start_root_task_with_periodic_dump(async move {
             let results = run_test_clients(
                 TestGenerators::new(4, 3).participant_ids(),

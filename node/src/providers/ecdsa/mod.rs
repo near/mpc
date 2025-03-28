@@ -113,6 +113,8 @@ impl From<EcdsaTaskId> for MpcTaskId {
 }
 
 impl SignatureProvider for EcdsaSignatureProvider {
+    type PublicKey = AffinePoint;
+    type SecretShare = Scalar;
     type KeygenOutput = KeygenOutput<Secp256k1>;
     type SignatureOutput = (FullSignature<Secp256k1>, AffinePoint);
     type TaskId = EcdsaTaskId;

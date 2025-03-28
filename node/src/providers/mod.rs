@@ -22,7 +22,10 @@ use std::sync::Arc;
 
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
 pub trait SignatureProvider {
+    type PublicKey;
+    type SecretShare;
     type KeygenOutput;
+
     type SignatureOutput;
 
     /// Trait bound `Into<MpcTaskId>` serves as a way to see what logic needs to be added,
@@ -54,8 +57,8 @@ pub trait SignatureProvider {
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_resharing_client(
         new_threshold: usize,
-        key_share: Option<Scalar>,
-        public_key: AffinePoint,
+        key_share: Option<Self::SecretShare>,
+        public_key: Self::PublicKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput>;
