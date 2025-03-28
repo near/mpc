@@ -1,9 +1,10 @@
 mod sign;
+mod key_generation;
 
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
-use crate::providers::SignatureProvider;
+use crate::providers::{EcdsaTaskId, SignatureProvider};
 use crate::sign_request::{SignRequestStorage, SignatureId};
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::eddsa::KeygenOutput;
@@ -68,7 +69,7 @@ impl SignatureProvider for EddsaSignatureProvider {
         threshold: usize,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        todo!()
+        Self::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
@@ -85,16 +86,16 @@ impl SignatureProvider for EddsaSignatureProvider {
         match channel.task_id() {
             MpcTaskId::EddsaTaskId(task) => match task {
                 EddsaTaskId::KeyGeneration { .. } => {
-                    todo!()
+                    anyhow::bail!("Key generation rejected in normal node operation");
                 }
                 EddsaTaskId::KeyResharing { .. } => {
-                    todo!()
+                    anyhow::bail!("Key resharing rejected in normal node operation");
                 }
                 EddsaTaskId::Signature { id } => {
                     self.make_signature_follower(channel, id).await?;
                 }
             },
-            _ => anyhow::bail!("eddsa task handler: received unexpected task id"),
+            _ => anyhow::bail!("eddsa task handler: received unexpected task id: {:?}", channel.task_id()),
         }
 
         Ok(())
