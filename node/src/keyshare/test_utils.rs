@@ -8,7 +8,7 @@ use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Key
 
 pub fn generate_dummy_keyshare(epoch_id: u64, domain_id: u64, attempt_id: u64) -> Keyshare {
     let key = TestGenerators::new(2, 2)
-        .make_keygens()
+        .make_ecdsa_keygens()
         .into_iter()
         .next()
         .unwrap()

@@ -7,6 +7,8 @@
 //! As a reference, check the existing implementations.
 
 pub mod ecdsa;
+pub mod eddsa;
+
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
@@ -14,21 +16,14 @@ use crate::sign_request::SignatureId;
 pub use ecdsa::affine_point_to_public_key;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
-use k256::AffinePoint;
-use k256::Scalar;
 use std::sync::Arc;
 
-/// This `keyshare_id` is used for persisting a key share.
-/// The returned value should be unique across all `SignatureProviders`.
-#[allow(dead_code)] // TODO: To be fixed in #252 follow-up
-pub trait KeyshareId {
-    fn keyshare_id() -> &'static str;
-}
-
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
-#[allow(dead_code)] // TODO: To be fixed in #252 follow-up
 pub trait SignatureProvider {
-    type KeygenOutput: KeyshareId;
+    type PublicKey;
+    type SecretShare;
+    type KeygenOutput;
+
     type SignatureOutput;
 
     /// Trait bound `Into<MpcTaskId>` serves as a way to see what logic needs to be added,
@@ -60,8 +55,8 @@ pub trait SignatureProvider {
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_resharing_client(
         new_threshold: usize,
-        key_share: Option<Scalar>,
-        public_key: AffinePoint,
+        key_share: Option<Self::SecretShare>,
+        public_key: Self::PublicKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput>;

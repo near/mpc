@@ -14,7 +14,7 @@ use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::db::{DBCol, SecretDB};
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
-use crate::providers::{HasParticipants, KeyshareId, SignatureProvider};
+use crate::providers::{HasParticipants, SignatureProvider};
 use crate::sign_request::{SignRequestStorage, SignatureId};
 use crate::tracking;
 use anyhow::Context;
@@ -112,13 +112,9 @@ impl From<EcdsaTaskId> for MpcTaskId {
     }
 }
 
-impl KeyshareId for KeygenOutput<Secp256k1> {
-    fn keyshare_id() -> &'static str {
-        "ecdsa"
-    }
-}
-
 impl SignatureProvider for EcdsaSignatureProvider {
+    type PublicKey = AffinePoint;
+    type SecretShare = Scalar;
     type KeygenOutput = KeygenOutput<Secp256k1>;
     type SignatureOutput = (FullSignature<Secp256k1>, AffinePoint);
     type TaskId = EcdsaTaskId;
@@ -183,13 +179,10 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 }
             },
 
-            // (#119): Temporary unreachable, since there's only one provider atm
-            #[allow(unreachable_patterns)]
-            _ => {
-                anyhow::bail!(
-                    "`process_channel_task` was expecting an `EcdsaSecp256k1TaskId` task"
-                );
-            }
+            _ => anyhow::bail!(
+                "eddsa task handler: received unexpected task id: {:?}",
+                channel.task_id()
+            ),
         }
         Ok(())
     }
