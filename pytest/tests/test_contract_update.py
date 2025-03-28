@@ -48,16 +48,10 @@ def get_participants_from_near_config():
         my_port = p['port']
 
         participants_map[near_account] = {
-            "account_id":
-            near_account,
-            "cipher_pk": [
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-            ],
-            "sign_pk":
-            my_pk,
-            "url":
-            f"http://{my_addr}:{my_port}",
+            "account_id": near_account,
+            "cipher_pk": [0] * 32,
+            "sign_pk": my_pk,
+            "url": f"http://{my_addr}:{my_port}",
         }
         account_to_participant_id[near_account] = i
 
@@ -71,7 +65,6 @@ def get_participants_from_near_config():
 def test_contract_update():
     update_args = UpdateArgsV1(COMPILED_CONTRACT_PATH)
     cluster, mpc_nodes, public_key = deploy_and_init_v2()
-    #public_key = cluster.contract_state().keyset().keyset[0].key
     # migrate v2 to a dummy contract
     dummy_update_args = UpdateArgsV1(code_path=MIGRATE_CURRENT_CONTRACT_PATH)
     cluster.propose_update(dummy_update_args.borsh_serialize())
@@ -121,9 +114,7 @@ def test_contract_update():
 
     cluster.define_candidate_set(mpc_nodes[:2])
     cluster.update_participant_status(assert_contract=False)
-    #time.sleep(5)
     cluster.propose_update(update_args.borsh_serialize())
-    #time.sleep(5)
     cluster.vote_update(0, 0)
     cluster.vote_update(1, 0)
     time.sleep(2)
