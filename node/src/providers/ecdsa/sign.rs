@@ -15,7 +15,7 @@ use cait_sith::ecdsa::sign::FullSignature;
 use cait_sith::protocol::Participant;
 use k256::{AffinePoint, Scalar, Secp256k1};
 use mpc_contract::crypto_shared::ScalarExt;
-use mpc_contract::primitives::signature::{PayloadHash, Tweak};
+use mpc_contract::primitives::signature::Tweak;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::time::timeout;
@@ -38,7 +38,10 @@ impl EcdsaSignatureProvider {
         let (signature, public_key) = SignComputation {
             keygen_out: keygen_output,
             presign_out: presignature.presignature,
-            msg_hash: sign_request.msg_hash,
+            msg_hash: *sign_request
+                .payload
+                .as_ecdsa()
+                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
             tweak: sign_request.tweak,
             entropy: sign_request.entropy,
         }
@@ -59,7 +62,7 @@ impl EcdsaSignatureProvider {
     ) -> anyhow::Result<()> {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
         let SignatureRequest {
-            msg_hash,
+            payload,
             tweak,
             entropy,
             ..
@@ -74,7 +77,9 @@ impl EcdsaSignatureProvider {
             keygen_out: self.keygen_output.clone(),
             presignature_store: self.presignature_store.clone(),
             presignature_id,
-            msg_hash,
+            msg_hash: *payload
+                .as_ecdsa()
+                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
             tweak,
             entropy,
         }
@@ -95,7 +100,7 @@ impl EcdsaSignatureProvider {
 pub struct SignComputation {
     pub keygen_out: KeygenOutput<Secp256k1>,
     pub presign_out: PresignOutput<Secp256k1>,
-    pub msg_hash: PayloadHash,
+    pub msg_hash: [u8; 32],
     pub tweak: Tweak,
     pub entropy: [u8; 32],
 }
@@ -116,8 +121,8 @@ impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, AffinePoint)> for Si
 
         let tweak =
             Scalar::from_bytes(self.tweak.as_bytes()).context("Couldn't construct k256 point")?;
-        let msg_hash = Scalar::from_bytes(self.msg_hash.as_bytes())
-            .context("Couldn't construct k256 point")?;
+        let msg_hash =
+            Scalar::from_bytes(self.msg_hash).context("Couldn't construct k256 point")?;
 
         let public_key = derive_public_key(self.keygen_out.public_key, tweak);
 
@@ -165,7 +170,7 @@ pub struct FollowerSignComputation {
     pub keygen_out: KeygenOutput<Secp256k1>,
     pub presignature_id: UniqueId,
     pub presignature_store: Arc<PresignatureStorage>,
-    pub msg_hash: PayloadHash,
+    pub msg_hash: [u8; 32],
     pub tweak: Tweak,
     pub entropy: [u8; 32],
 }

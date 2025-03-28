@@ -3,6 +3,7 @@ use crate::errors::{Error, InvalidParameters};
 use crate::DomainId;
 use crypto_shared::derive_tweak;
 use near_sdk::{near, AccountId, CryptoHash};
+use std::fmt::Debug;
 
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 #[near(serializers=[borsh, json])]
@@ -18,6 +19,8 @@ impl Tweak {
     }
 }
 
+/// A signature payload; the right payload must be passed in for the curve.
+/// The json encoding for this payload converts the bytes to hex string.
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 #[near(serializers=[borsh, json])]
 pub enum Payload {
@@ -45,7 +48,11 @@ impl Payload {
     }
 }
 
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
+/// A byte array with a statically encoded minimum and maximum length.
+/// The `new` function as well as json deserialization checks that the length is within bounds.
+/// The borsh deserialization does not perform such checks, as the borsh serialization is only
+/// used for internal contract storage.
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 #[near(serializers=[borsh])]
 pub struct Bytes<const MIN_LEN: usize, const MAX_LEN: usize>(Vec<u8>);
 
@@ -65,6 +72,12 @@ impl<const MIN_LEN: usize, const MAX_LEN: usize> Bytes<MIN_LEN, MAX_LEN> {
 impl<const N: usize> Bytes<N, N> {
     pub fn as_fixed_bytes(&self) -> &[u8; N] {
         self.0.as_slice().try_into().unwrap()
+    }
+}
+
+impl<const MIN_LEN: usize, const MAX_LEN: usize> Debug for Bytes<MIN_LEN, MAX_LEN> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Bytes").field(&hex::encode(&self.0)).finish()
     }
 }
 

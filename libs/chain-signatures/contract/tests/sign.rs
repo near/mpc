@@ -292,6 +292,8 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
             .await?;
         dbg!(&status);
 
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
         // Call `respond` as if we are the MPC network itself.
         let respond = contract
             .call("respond")

@@ -1,6 +1,6 @@
 use crate::db::{DBCol, SecretDB};
 use crate::metrics;
-use mpc_contract::primitives::signature::{PayloadHash, Tweak};
+use mpc_contract::primitives::signature::{Payload, Tweak};
 use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -14,7 +14,7 @@ pub struct SignatureRequest {
     pub id: SignatureId,
     /// The receipt that generated the signature request, which can be used to look up on chain.
     pub receipt_id: CryptoHash,
-    pub msg_hash: PayloadHash,
+    pub payload: Payload,
     pub tweak: Tweak,
     pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,

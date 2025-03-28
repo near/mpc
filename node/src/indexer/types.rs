@@ -7,11 +7,7 @@ use k256::{
     AffinePoint, Scalar, Secp256k1,
 };
 use legacy_mpc_contract;
-use mpc_contract::primitives::{
-    domain::DomainId,
-    key_state::KeyEventId,
-    signature::{PayloadHash, Tweak},
-};
+use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak};
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
@@ -36,15 +32,15 @@ struct SerializableAffinePoint {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainSignatureRequest {
     pub tweak: Tweak,
-    pub payload_hash: PayloadHash,
+    pub payload: Payload,
     pub domain_id: DomainId,
 }
 
 impl ChainSignatureRequest {
-    pub fn new(tweak: Tweak, payload_hash: PayloadHash, domain_id: DomainId) -> Self {
+    pub fn new(tweak: Tweak, payload: Payload, domain_id: DomainId) -> Self {
         ChainSignatureRequest {
             tweak,
-            payload_hash,
+            payload,
             domain_id,
         }
     }
@@ -52,6 +48,7 @@ impl ChainSignatureRequest {
 
 pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
 pub use mpc_contract::crypto_shared::k256_types;
+use mpc_contract::primitives::signature::Payload;
 
 const MAX_RECOVERY_ID: u8 = 3;
 
@@ -160,12 +157,19 @@ impl ChainRespondArgs {
         response: &FullSignature<Secp256k1>,
         public_key: &AffinePoint,
     ) -> anyhow::Result<Self> {
-        let recovery_id = Self::brute_force_recovery_id(public_key, response, &request.msg_hash)?;
+        let recovery_id = Self::brute_force_recovery_id(
+            public_key,
+            response,
+            request
+                .payload
+                .as_ecdsa()
+                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
+        )?;
         let domain_id = DomainId::legacy_ecdsa_id();
         Ok(ChainRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
-                request.msg_hash.clone(),
+                request.payload.clone(),
                 domain_id,
             ),
             response: k256_signature_response(response.big_r, response.s, recovery_id)?,
@@ -176,7 +180,7 @@ impl ChainRespondArgs {
     pub(crate) fn brute_force_recovery_id(
         expected_pk: &AffinePoint,
         signature: &FullSignature<Secp256k1>,
-        msg_hash: &PayloadHash,
+        msg_hash: &[u8; 32],
     ) -> anyhow::Result<u8> {
         let partial_signature = k256::ecdsa::Signature::from_scalars(
             <<Secp256k1 as CurveArithmetic>::Scalar as Reduce<<Secp256k1 as Curve>::Uint>>
@@ -186,11 +190,7 @@ impl ChainRespondArgs {
             Ok(pk) => pk,
             _ => anyhow::bail!("The affine point cannot be transformed into a verifying key"),
         };
-        match RecoveryId::trial_recovery_from_prehash(
-            &expected_pk,
-            &msg_hash.as_bytes(),
-            &partial_signature,
-        ) {
+        match RecoveryId::trial_recovery_from_prehash(&expected_pk, msg_hash, &partial_signature) {
             Ok(rec_id) => Ok(rec_id.to_byte()),
             _ => anyhow::bail!(
                 "No recovery id found for such a tuple of public key, signature, message hash"
@@ -206,7 +206,6 @@ mod recovery_id_tests {
     use k256::ecdsa::{RecoveryId, SigningKey};
     use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
     use k256::AffinePoint;
-    use mpc_contract::primitives::signature::PayloadHash;
     use rand::rngs::OsRng;
 
     #[test]
@@ -237,7 +236,7 @@ mod recovery_id_tests {
                     let tested_recid = ChainRespondArgs::brute_force_recovery_id(
                         signing_key.verifying_key().as_affine(),
                         &full_sig,
-                        &PayloadHash::new(prehash),
+                        &prehash,
                     )
                     .unwrap();
 

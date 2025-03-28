@@ -141,7 +141,7 @@ impl MpcClient {
                             SignatureRequest {
                                 id: signature_id,
                                 receipt_id,
-                                msg_hash: request.payload,
+                                payload: request.payload,
                                 tweak: derive_tweak(&predecessor_id, &request.path),
                                 entropy,
                                 timestamp_nanosec,
