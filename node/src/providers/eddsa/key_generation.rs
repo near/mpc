@@ -1,15 +1,15 @@
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
+use crate::providers::eddsa::EddsaSignatureProvider;
+use cait_sith::eddsa::KeygenOutput;
 use cait_sith::protocol::Participant;
-use k256::Secp256k1;
 
-impl EcdsaSignatureProvider {
+impl EddsaSignatureProvider {
     pub(super) async fn run_key_generation_client_internal(
         threshold: usize,
         channel: NetworkTaskChannel,
-    ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+    ) -> anyhow::Result<KeygenOutput> {
         let key = KeyGenerationComputation { threshold }
             .perform_leader_centric_computation(
                 channel,
@@ -17,7 +17,7 @@ impl EcdsaSignatureProvider {
                 std::time::Duration::from_secs(60),
             )
             .await?;
-        tracing::info!("Ecdsa secp256k1 key generation completed");
+        tracing::info!("Eddsa key generation completed");
 
         Ok(key)
     }
@@ -30,11 +30,8 @@ pub struct KeyGenerationComputation {
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<KeygenOutput<Secp256k1>> for KeyGenerationComputation {
-    async fn compute(
-        self,
-        channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<KeygenOutput> {
         let cs_participants = channel
             .participants()
             .iter()
@@ -43,8 +40,8 @@ impl MpcLeaderCentricComputation<KeygenOutput<Secp256k1>> for KeyGenerationCompu
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
         let protocol =
-            cait_sith::ecdsa::dkg_ecdsa::keygen(&cs_participants, me.into(), self.threshold)?;
-        run_protocol("ecdsa key generation", channel, protocol).await
+            cait_sith::eddsa::dkg_ed25519::keygen(&cs_participants, me.into(), self.threshold)?;
+        run_protocol("eddsa key generation", channel, protocol).await
     }
 
     fn leader_waits_for_success(&self) -> bool {
@@ -57,18 +54,18 @@ mod tests {
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::providers::ecdsa::key_generation::KeyGenerationComputation;
-    use crate::providers::ecdsa::{EcdsaTaskId, KeygenOutput};
+    use crate::providers::eddsa::key_generation::KeyGenerationComputation;
+    use crate::providers::eddsa::EddsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use k256::Secp256k1;
+    use cait_sith::eddsa::KeygenOutput;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
     #[tokio::test]
-    async fn test_key_generation() {
+    async fn eddsa_test_key_generation() {
         start_root_task_with_periodic_dump(async move {
             let results = run_test_clients(
                 TestGenerators::new(4, 3).participant_ids(),
@@ -84,13 +81,13 @@ mod tests {
     async fn run_keygen_client(
         client: Arc<MeshNetworkClient>,
         mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-    ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+    ) -> anyhow::Result<KeygenOutput> {
         let participant_id = client.my_participant_id();
         let all_participant_ids = client.all_participant_ids();
         // We'll have the first participant be the leader.
         let channel = if participant_id == all_participant_ids[0] {
             client.new_channel_for_task(
-                EcdsaTaskId::KeyGeneration {
+                EddsaTaskId::KeyGeneration {
                     key_event: KeyEventId::new(
                         EpochId::new(42),
                         DomainId::legacy_ecdsa_id(),

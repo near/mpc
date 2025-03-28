@@ -272,6 +272,13 @@ impl MpcClient {
                     .process_channel(channel)
                     .await?
             }
+            MpcTaskId::EddsaTaskId(_) => {
+                unreachable!()
+                // self.eddsa_signature_provider
+                //     .clone()
+                //     .process_channel(channel)
+                //     .await?
+            }
         }
 
         Ok(())

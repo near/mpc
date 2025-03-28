@@ -3,19 +3,19 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
+use crate::providers::eddsa::EddsaSignatureProvider;
+use cait_sith::eddsa::KeygenOutput;
 use cait_sith::protocol::Participant;
-use k256::elliptic_curve::sec1::FromEncodedPoint;
-use k256::{AffinePoint, EncodedPoint, Scalar, Secp256k1};
+use frost_ed25519::keys::{PublicKeyPackage, SigningShare};
 
-impl EcdsaSignatureProvider {
+impl EddsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
         new_threshold: usize,
-        my_share: Option<Scalar>,
-        public_key: AffinePoint,
+        my_share: Option<SigningShare>,
+        public_key: PublicKeyPackage,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
-    ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+    ) -> anyhow::Result<KeygenOutput> {
         let new_keyshare = KeyResharingComputation {
             threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
@@ -31,10 +31,7 @@ impl EcdsaSignatureProvider {
         .await?;
         tracing::info!("Key resharing completed");
 
-        Ok(KeygenOutput {
-            private_share: new_keyshare,
-            public_key,
-        })
+        Ok(new_keyshare)
     }
 }
 
@@ -50,13 +47,13 @@ pub struct KeyResharingComputation {
     threshold: usize,
     old_participants: Vec<ParticipantId>,
     old_threshold: usize,
-    my_share: Option<Scalar>,
-    public_key: AffinePoint,
+    my_share: Option<SigningShare>,
+    public_key: PublicKeyPackage,
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<Scalar> for KeyResharingComputation {
-    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<Scalar> {
+impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<KeygenOutput> {
         let me = channel.my_participant_id();
         let new_participants = channel
             .participants()
@@ -71,43 +68,20 @@ impl MpcLeaderCentricComputation<Scalar> for KeyResharingComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let old_signing_key = self
-            .my_share
-            .map(cait_sith::frost_secp256k1::keys::SigningShare::new);
-        let old_public_key = cait_sith::frost_secp256k1::VerifyingKey::new(self.public_key.into());
-
-        let protocol = cait_sith::ecdsa::dkg_ecdsa::reshare(
+        let protocol = cait_sith::eddsa::dkg_ed25519::reshare(
             &old_participants,
             self.old_threshold,
-            old_signing_key,
-            old_public_key,
+            self.my_share,
+            self.public_key,
             &new_participants,
             self.threshold,
             me.into(),
         )?;
-        run_protocol("ecdsa key resharing", channel, protocol)
-            .await
-            .map(|share| share.private_share)
+        run_protocol("eddsa key resharing", channel, protocol).await
     }
+
     fn leader_waits_for_success(&self) -> bool {
         false
-    }
-}
-
-pub fn public_key_to_affine_point(key: near_crypto::PublicKey) -> anyhow::Result<AffinePoint> {
-    match key {
-        near_crypto::PublicKey::SECP256K1(key) => {
-            let mut bytes = [0u8; 65];
-            bytes[0] = 0x04;
-            bytes[1..65].copy_from_slice(key.as_ref());
-            match Option::from(AffinePoint::from_encoded_point(&EncodedPoint::from_bytes(
-                bytes,
-            )?)) {
-                Some(result) => Ok(result),
-                None => anyhow::bail!("Failed to convert public key to affine point"),
-            }
-        }
-        _ => anyhow::bail!("Unsupported public key type"),
     }
 }
 
@@ -117,8 +91,8 @@ mod tests {
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::ParticipantId;
-    use crate::providers::ecdsa::key_resharing::KeyResharingComputation;
-    use crate::providers::ecdsa::EcdsaTaskId;
+    use crate::providers::eddsa::key_resharing::KeyResharingComputation;
+    use crate::providers::eddsa::EddsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
@@ -131,8 +105,7 @@ mod tests {
         const THRESHOLD: usize = 3;
         const NUM_PARTICIPANTS: usize = 4;
         let gen = TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD);
-        let keygens = gen.make_ecdsa_keygens();
-        let pubkey = keygens.iter().next().unwrap().1.public_key;
+        let keygens = gen.make_eddsa_keygens();
         let old_participants = gen.participant_ids();
         let mut new_participants = gen.participant_ids();
         new_participants.push(ParticipantId::from_raw(rand::random()));
@@ -144,6 +117,7 @@ mod tests {
                 let participant_id = client.my_participant_id();
                 let all_participant_ids = client.all_participant_ids();
                 let keyshare = keygens.get(&participant_id.into()).map(|k| k.private_share);
+                let pubkey = keygens.iter().next().unwrap().1.clone().public_key_package;
                 let old_participants = old_participants.clone();
                 let key_id = KeyEventId::new(
                     EpochId::new(42),
@@ -154,7 +128,7 @@ mod tests {
                     // We'll have the first participant be the leader.
                     let channel = if participant_id == all_participant_ids[0] {
                         client.new_channel_for_task(
-                            EcdsaTaskId::KeyResharing { key_event: key_id },
+                            EddsaTaskId::KeyResharing { key_event: key_id },
                             client.all_participant_ids(),
                         )?
                     } else {
@@ -172,7 +146,6 @@ mod tests {
                     }
                     .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
                     .await?;
-
                     anyhow::Ok(key)
                 }
             };

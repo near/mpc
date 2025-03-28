@@ -2,7 +2,6 @@ use crate::assets::UniqueId;
 use crate::metrics;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
-use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::kdf::{derive_public_key, derive_randomness};
 use crate::providers::ecdsa::{
@@ -16,7 +15,7 @@ use cait_sith::protocol::Participant;
 use k256::{AffinePoint, Scalar, Secp256k1};
 use mpc_contract::crypto_shared::ScalarExt;
 use mpc_contract::primitives::signature::Tweak;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -196,29 +195,5 @@ impl MpcLeaderCentricComputation<()> for FollowerSignComputation {
 
     fn leader_waits_for_success(&self) -> bool {
         false
-    }
-}
-
-/// Simple ID generator for signatures. Generates monotonically increasing IDs.
-/// Does not persist state across restarts, so if the clock rewinds then the
-/// generated IDs can conflict with previously generated IDs.
-#[allow(dead_code)]
-pub struct SignatureIdGenerator {
-    last_id: Mutex<UniqueId>,
-}
-
-#[allow(dead_code)]
-impl SignatureIdGenerator {
-    pub fn new(my_participant_id: ParticipantId) -> Self {
-        Self {
-            last_id: Mutex::new(UniqueId::generate(my_participant_id)),
-        }
-    }
-
-    pub fn generate_signature_id(&self) -> UniqueId {
-        let mut last_id = self.last_id.lock().unwrap();
-        let new_id = last_id.pick_new_after();
-        *last_id = new_id;
-        new_id
     }
 }
