@@ -279,7 +279,7 @@ impl KeyEventInstance {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod tests {
     use crate::primitives::participants::ParticipantId;
     use crate::primitives::test_utils::{gen_account_id, gen_seed};
