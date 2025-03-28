@@ -11,6 +11,7 @@ import hashlib
 import pathlib
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from ruamel.yaml import YAML
 from common_lib import constants
 from common_lib.contract_state import ContractState, ProtocolState
 
@@ -95,9 +96,6 @@ class NearNode:
                                    function_name, encoded_args, gas, deposit,
                                    nonce, last_block_hash)
         return tx
-
-
-from ruamel.yaml import YAML
 
 
 class MpcNode(NearNode):
