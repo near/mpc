@@ -142,7 +142,7 @@ impl MpcClient {
                         // indexer is being shutdown. So just quit this task.
                         break;
                     };
-                    self.client.clone().update_indexer_height(block_update.block.height);
+                    self.client.update_indexer_height(block_update.block.height);
                     let signature_requests = block_update
                         .signature_requests
                         .into_iter()
