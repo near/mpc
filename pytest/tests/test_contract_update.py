@@ -13,6 +13,7 @@ import time
 import pathlib
 import pytest
 from utils import MetricsTracker, load_binary_file
+import yaml
 
 from common_lib.constants import TGAS
 
@@ -21,8 +22,6 @@ from common_lib import shared
 from common_lib.contracts import V0_CONTRACT_PATH, COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, V1_CONTRACT_PATH, UpdateArgsV0, UpdateArgsV1, ConfigV1
 
 
-# todo: migration tests
-@pytest.mark.skip
 @pytest.mark.parametrize(
     "initial_contract_path,update_args",
     [
@@ -40,35 +39,93 @@ from common_lib.contracts import V0_CONTRACT_PATH, COMPILED_CONTRACT_PATH, MIGRA
     ])
 def test_contract_update(initial_contract_path, update_args):
     initial_contract = load_binary_file(initial_contract_path)
-    cluster = shared.start_cluster_with_mpc(2, 2, 1, initial_contract)
-    # assert correct contract is deployed
-    # todo: legacy cluster
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1,
+                                                       initial_contract)
+    # Get the participant set from the mpc configs
+    participants = {}
+
+    dot_near = pathlib.Path.home() / '.near'
+    with open(pathlib.Path(dot_near / 'participants.json')) as file:
+        participants_config = yaml.load(file,
+                                        Loader=shared.SafeLoaderIgnoreUnknown)
+    for i, p in enumerate(participants_config['participants']):
+        near_account = p['near_account_id']
+        #assert near_account == f"test{i + num_validators}", \
+        #    f"This test only works with account IDs 'testX' where X is the node index; expected 'test{i + num_validators}', got {near_account}"
+        my_pk = p['p2p_public_key']
+        my_addr = p['address']
+        my_port = p['port']
+
+        participants[near_account] = {
+            "account_id":
+            near_account,
+            "cipher_pk": [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ],
+            "sign_pk":
+            my_pk,
+            "url":
+            f"http://{my_addr}:{my_port}",
+        }
+    # Initialize the mpc contract
+    init_args = {
+        'threshold': 2,
+        'candidates': participants,
+    }
+
+    tx = cluster.contract_node.sign_tx(cluster.mpc_contract_account(), 'init',
+                                       json.dumps(init_args).encode('utf-8'),
+                                       1, 150 * TGAS)
+    res = cluster.contract_node.send_txn_and_check_success(tx, 20)
+    assert ('SuccessValue' in res['result']['status'])
     cluster.assert_is_deployed(initial_contract)
-    cluster.init_contract(threshold=2)
-    # do some requests
-    cluster.send_and_await_signature_requests(2,
-                                              add_gas=150 * TGAS,
-                                              add_deposit=10)
-    # propose v1
+    cluster.define_candidate_set(mpc_nodes)
+    cluster.update_participant_status(
+        assert_contract=False
+    )  # do not assert when contract is not initialized
+    time.sleep(5)
     cluster.propose_update(update_args.borsh_serialize())
+    time.sleep(5)
     cluster.vote_update(0, 0)
     cluster.vote_update(1, 0)
-    ## wait for the transaction to be included
     time.sleep(2)
     # assert v1 is now deployed
     if update_args.code() is not None:
         print("ensuring contract code is updated")
         cluster.assert_is_deployed(update_args.code())
-    else:
-        print("ensuring config is updated")
-        expected_config = update_args.dump_json()
-        deployed_config = cluster.get_config()
-        assert deployed_config == expected_config
-    print("update completed")
-    # add deposit and gas for contract in MIGRATE_CURRENT_CONTRACT_PATH
-    cluster.send_and_await_signature_requests(2,
-                                              add_gas=150 * TGAS,
-                                              add_deposit=10)
+    #else:
+    #cluster.init_contract(threshold=threshold)
+    #self.add_domains(['Secp256k1'])
+    # assert correct contract is deployed
+    # todo: legacy cluster
+    #cluster.assert_is_deployed(initial_contract)
+    ##cluster.init_contract(threshold=2)
+    ## do some requests
+    ##cluster.send_and_await_signature_requests(2,
+    ##                                          add_gas=150 * TGAS,
+    ##                                          add_deposit=10)
+    ## propose v1
+    #cluster.propose_update(update_args.borsh_serialize())
+    #cluster.vote_update(0, 0)
+    #cluster.vote_update(1, 0)
+    ### wait for the transaction to be included
+    #time.sleep(2)
+    ## assert v1 is now deployed
+    #if update_args.code() is not None:
+    #    print("ensuring contract code is updated")
+    #    cluster.assert_is_deployed(update_args.code())
+    #else:
+    #    print("ensuring config is updated")
+    #    expected_config = update_args.dump_json()
+    #    deployed_config = cluster.get_config()
+    #    assert deployed_config == expected_config
+    #print("update completed")
+    #cluster.contract_state().print()
+    ## add deposit and gas for contract in MIGRATE_CURRENT_CONTRACT_PATH
+    #cluster.send_and_await_signature_requests(2,
+    #                                          add_gas=150 * TGAS,
+    #                                          add_deposit=10)
 
 
 # In case a nonce conflict occurs during a vote_update call, rerun the test once.

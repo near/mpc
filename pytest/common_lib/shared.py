@@ -73,6 +73,7 @@ class NearNode:
 
     def send_txn_and_check_success(self, txn, timeout=20):
         res = self.near_node.send_tx_and_wait(txn, timeout)
+        print(res)
         assert_txn_success(res)
         return res
 
