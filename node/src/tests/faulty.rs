@@ -33,13 +33,15 @@ async fn test_faulty_cluster() {
         PortSeed::FAULTY_CLUSTER_TEST,
     );
 
+    let domain = DomainConfig {
+        id: DomainId(0),
+        scheme: SignatureScheme::Secp256k1,
+    };
+
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants);
-        contract.add_domains(vec![DomainConfig {
-            id: DomainId(0),
-            scheme: SignatureScheme::Secp256k1,
-        }]);
+        contract.add_domains(vec![domain.clone()]);
     }
 
     let _runs = setup
@@ -58,6 +60,7 @@ async fn test_faulty_cluster() {
     let Some(signature_delay) = request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
+        &domain,
         std::time::Duration::from_secs(60),
     )
     .await
@@ -71,11 +74,14 @@ async fn test_faulty_cluster() {
     tracing::info!("Bringing down one node #{}", to_drop);
     let disabled1 = setup.indexer.disable(accounts[to_drop].clone()).await;
 
-    assert!(
-        request_signature_and_await_response(&mut setup.indexer, "user1", signature_delay * 2)
-            .await
-            .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user1",
+        &domain,
+        signature_delay * 2
+    )
+    .await
+    .is_some());
     tracing::info!("Step 1 complete");
 
     // Second step: drop another node, and make sure signatures cannot be generated
@@ -90,20 +96,26 @@ async fn test_faulty_cluster() {
         .indexer
         .disable(accounts[another_to_drop].clone())
         .await;
-    assert!(
-        request_signature_and_await_response(&mut setup.indexer, "user2", signature_delay * 2)
-            .await
-            .is_none()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user2",
+        &domain,
+        signature_delay * 2
+    )
+    .await
+    .is_none());
     tracing::info!("Step 2 complete");
 
     // Third step: bring up the dropped node in step 2, and make sure signatures can be generated again
     disabled2.reenable_and_wait_till_running().await;
-    assert!(
-        request_signature_and_await_response(&mut setup.indexer, "user3", signature_delay * 2)
-            .await
-            .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user3",
+        &domain,
+        signature_delay * 2
+    )
+    .await
+    .is_some());
     tracing::info!("Step 3 complete");
 
     drop(disabled1);

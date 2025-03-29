@@ -1,6 +1,7 @@
 use crate::assets::{DistributedAssetStorage, UniqueId};
 use crate::background::InFlightGenerationTracker;
 use crate::config::TripleConfig;
+use crate::db::SecretDB;
 use crate::metrics;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -12,10 +13,39 @@ use crate::tracking::AutoAbortTaskCollection;
 use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::Participant;
 use k256::Secp256k1;
+use near_time::Clock;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub type TripleStorage = DistributedAssetStorage<PairedTriple>;
+pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
+
+impl TripleStorage {
+    pub fn new(
+        clock: Clock,
+        db: Arc<SecretDB>,
+        my_participant_id: ParticipantId,
+        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self(DistributedAssetStorage::<PairedTriple>::new(
+            clock,
+            db,
+            crate::db::DBCol::Triple,
+            None,
+            my_participant_id,
+            |participants, pair| pair.is_subset_of_active_participants(participants),
+            alive_participant_ids_query,
+        )?))
+    }
+}
+
+impl Deref for TripleStorage {
+    type Target = DistributedAssetStorage<PairedTriple>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
 

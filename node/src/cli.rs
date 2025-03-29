@@ -190,7 +190,7 @@ impl StartCmd {
         .await?;
         let _web_server = tracking::spawn_checked("web server", web_server);
 
-        let secret_db = SecretDB::new(&home_dir, secrets.local_storage_aes_key)?;
+        let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
 
         let key_storage_config = KeyStorageConfig {
             home_dir: home_dir.clone(),

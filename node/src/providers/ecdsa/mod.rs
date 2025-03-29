@@ -14,10 +14,10 @@ pub use triple::TripleStorage;
 
 use crate::assets::UniqueId;
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
-use crate::db::{DBCol, SecretDB};
+use crate::db::SecretDB;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
-use crate::providers::{HasParticipants, SignatureProvider};
+use crate::providers::SignatureProvider;
 use crate::sign_request::{SignRequestStorage, SignatureId};
 use crate::tracking;
 use anyhow::Context;
@@ -30,15 +30,19 @@ use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
 
-#[derive(Clone)]
 pub struct EcdsaSignatureProvider {
     config: Arc<ConfigFile>,
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     triple_store: Arc<TripleStorage>,
-    presignature_store: Arc<PresignatureStorage>,
     sign_request_store: Arc<SignRequestStorage>,
-    keyshares: HashMap<DomainId, KeygenOutput<Secp256k1>>,
+    per_domain_data: HashMap<DomainId, PerDomainData>,
+}
+
+#[derive(Clone)]
+pub(super) struct PerDomainData {
+    pub keyshare: KeygenOutput<Secp256k1>,
+    pub presignature_store: Arc<PresignatureStorage>,
 }
 
 impl EcdsaSignatureProvider {
@@ -59,32 +63,43 @@ impl EcdsaSignatureProvider {
         let triple_store = Arc::new(TripleStorage::new(
             clock.clone(),
             db.clone(),
-            DBCol::Triple,
             client.my_participant_id(),
-            |participants, pair| pair.is_subset_of_active_participants(participants),
             active_participants_query.clone(),
         )?);
 
-        let presignature_store = Arc::new(PresignatureStorage::new(
-            clock,
-            db.clone(),
-            DBCol::Presignature,
-            client.my_participant_id(),
-            |participants, presignature| {
-                presignature.is_subset_of_active_participants(participants)
-            },
-            active_participants_query,
-        )?);
+        let mut per_domain_data = HashMap::new();
+        for (domain_id, keyshare) in keyshares {
+            let presignature_store = Arc::new(PresignatureStorage::new(
+                clock.clone(),
+                db.clone(),
+                client.my_participant_id(),
+                active_participants_query.clone(),
+                domain_id,
+            )?);
+            per_domain_data.insert(
+                domain_id,
+                PerDomainData {
+                    keyshare,
+                    presignature_store,
+                },
+            );
+        }
 
         Ok(Self {
             config,
             mpc_config,
             client,
             triple_store,
-            presignature_store,
             sign_request_store,
-            keyshares,
+            per_domain_data,
         })
+    }
+
+    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
+        self.per_domain_data
+            .get(&domain_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
     }
 }
 
@@ -102,6 +117,7 @@ pub enum EcdsaTaskId {
     },
     Presignature {
         id: UniqueId,
+        domain_id: DomainId,
         paired_triple_id: UniqueId,
     },
     Signature {
@@ -169,10 +185,16 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 }
                 EcdsaTaskId::Presignature {
                     id,
+                    domain_id,
                     paired_triple_id,
                 } => {
-                    self.run_presignature_generation_follower(channel, id, paired_triple_id)
-                        .await?;
+                    self.run_presignature_generation_follower(
+                        channel,
+                        id,
+                        domain_id,
+                        paired_triple_id,
+                    )
+                    .await?;
                 }
                 EcdsaTaskId::Signature {
                     id,
@@ -202,25 +224,29 @@ impl SignatureProvider for EcdsaSignatureProvider {
             ),
         );
 
-        let keyshares = self.keyshares.values().cloned().collect::<Vec<_>>();
-        let [keyshare] = keyshares.as_slice() else {
-            anyhow::bail!("Expected only 1 share of ecdsa")
-        };
-
-        let generate_presignatures = tracking::spawn(
-            "generate presignatures",
-            Self::run_background_presignature_generation(
-                self.client.clone(),
-                self.mpc_config.participants.threshold as usize,
-                self.config.presignature.clone().into(),
-                self.triple_store.clone(),
-                self.presignature_store.clone(),
-                keyshare.clone(),
-            ),
-        );
+        let generate_presignatures = self
+            .per_domain_data
+            .iter()
+            .map(|(domain_id, data)| {
+                tracking::spawn(
+                    &format!("generate presignatures for domain {}", domain_id.0),
+                    Self::run_background_presignature_generation(
+                        self.client.clone(),
+                        self.mpc_config.participants.threshold as usize,
+                        self.config.presignature.clone().into(),
+                        self.triple_store.clone(),
+                        *domain_id,
+                        data.presignature_store.clone(),
+                        data.keyshare.clone(),
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
 
         generate_triples.await??;
-        generate_presignatures.await??;
+        for task in generate_presignatures {
+            task.await??;
+        }
 
         Ok(())
     }

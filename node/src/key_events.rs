@@ -38,6 +38,7 @@ pub async fn keygen_computation_inner(
     domain: DomainConfig,
     threshold: usize,
 ) -> anyhow::Result<()> {
+    anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
     let keyshare_handle = keyshare_storage
         .start_generating_key(&generated_keys, key_id)
         .await?;
@@ -129,7 +130,6 @@ pub struct ResharingArgs {
     pub existing_keyshares: Option<Vec<Keyshare>>,
     pub new_threshold: usize,
     pub old_participants: ParticipantsConfig,
-    pub domain: DomainConfig,
 }
 
 /// The key resharing computation (same for both leader and follower) for a single key resharing
@@ -147,8 +147,10 @@ async fn resharing_computation_inner(
     chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     reshared_keys: Vec<KeyForDomain>,
     key_id: KeyEventId,
+    domain: DomainConfig,
     args: Arc<ResharingArgs>,
 ) -> anyhow::Result<()> {
+    anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
     let keyshare_handle = keyshare_storage
         .start_resharing_key(&reshared_keys, key_id)
         .await?;
@@ -174,7 +176,7 @@ async fn resharing_computation_inner(
         .public_key(key_id.domain_id)
         .map_err(|_| anyhow::anyhow!("Previous keyset does not contain key for {:?}", key_id))?;
 
-    let data = match args.domain.scheme {
+    let data = match domain.scheme {
         SignatureScheme::Secp256k1 => {
             let public_key = ecdsa::sdk_public_key_to_affine_point(previous_public_key)?;
             let my_share = existing_keyshare
@@ -249,6 +251,7 @@ async fn resharing_computation(
         chain_txn_sender.clone(),
         key_event.completed_domains,
         key_id,
+        key_event.domain,
         args,
     );
     let expiration = key_event_id_expiration(contract_key_event_id, key_id);

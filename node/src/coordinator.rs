@@ -1,10 +1,7 @@
-use crate::config::{ConfigFile, MpcConfig, SecretsConfig};
+use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig, SecretsConfig};
 use crate::db::{DBCol, SecretDB};
 use crate::indexer::handler::ChainBlockUpdate;
-use crate::indexer::participants::{
-    ContractInitializingState, ContractKeyEventInstance, ContractResharingState,
-    ContractRunningState, ContractState,
-};
+use crate::indexer::participants::{ContractKeyEventInstance, ContractRunningState, ContractState};
 use crate::indexer::types::ChainSendTransactionRequest;
 use crate::indexer::IndexerAPI;
 use crate::key_events::{
@@ -118,7 +115,7 @@ impl Coordinator {
                                 self.secrets.clone(),
                                 self.config_file.clone(),
                                 self.key_storage_config.create().await?.into(),
-                                state.clone(),
+                                state.participants.clone(),
                                 self.indexer.txn_sender.clone(),
                                 key_event_receiver,
                             ),
@@ -186,7 +183,8 @@ impl Coordinator {
                                 self.secrets.clone(),
                                 self.config_file.clone(),
                                 self.key_storage_config.create().await?.into(),
-                                state.clone(),
+                                state.previous_running_state.clone(),
+                                state.new_participants.clone(),
                                 self.indexer.txn_sender.clone(),
                                 key_event_receiver,
                             ),
@@ -283,12 +281,12 @@ impl Coordinator {
         secrets: SecretsConfig,
         config_file: ConfigFile,
         keyshare_storage: Arc<KeyshareStorage>,
-        contract_state: ContractInitializingState,
+        participants: ParticipantsConfig,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
         key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     ) -> anyhow::Result<MpcJobResult> {
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
-            contract_state.participants,
+            participants,
             &config_file.my_near_account_id,
         ) else {
             tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
@@ -440,26 +438,27 @@ impl Coordinator {
     }
 
     /// Entry point to handle the Resharing state of the contract.
+    #[allow(clippy::too_many_arguments)]
     async fn run_key_resharing(
         secret_db: Arc<SecretDB>,
         secrets: SecretsConfig,
         config_file: ConfigFile,
         keyshare_storage: Arc<KeyshareStorage>,
-        resharing_state: ContractResharingState,
+        previous_running_state: ContractRunningState,
+        new_participants: ParticipantsConfig,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
         key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     ) -> anyhow::Result<MpcJobResult> {
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
-            resharing_state.new_participants.clone(),
+            new_participants.clone(),
             &config_file.my_near_account_id,
         ) else {
             tracing::info!("We are not a participant in the new epoch; doing nothing until contract state change");
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        let previous_keyset = resharing_state.previous_running_state.keyset;
-        let was_participant_last_epoch = resharing_state
-            .previous_running_state
+        let previous_keyset = previous_running_state.keyset;
+        let was_participant_last_epoch = previous_running_state
             .participants
             .participants
             .iter()
@@ -501,8 +500,7 @@ impl Coordinator {
             previous_keyset,
             existing_keyshares,
             new_threshold: mpc_config.participants.threshold as usize,
-            old_participants: resharing_state.previous_running_state.participants,
-            domain: resharing_state.key_event.domain,
+            old_participants: previous_running_state.participants,
         });
         if mpc_config.is_leader_for_key_event() {
             resharing_leader(
