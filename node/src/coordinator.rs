@@ -311,6 +311,7 @@ impl Coordinator {
                 key_event_receiver,
                 chain_txn_sender,
                 mpc_config.participants.threshold as usize,
+                contract_state.key_event.domain,
             )
             .await?;
         } else {
