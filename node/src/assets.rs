@@ -517,7 +517,7 @@ where
     fn decode_key(key: &[u8], domain_id: Option<DomainId>) -> anyhow::Result<UniqueId> {
         let mut key = key;
         if domain_id.is_some() {
-            key = &key[8..];
+            key = &key[std::mem::size_of::<DomainId>()..];
         }
         Ok(UniqueId::try_from_slice(key)?)
     }
