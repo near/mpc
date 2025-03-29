@@ -2,6 +2,7 @@ use crate::config::{ParticipantInfo, ParticipantsConfig};
 use crate::indexer::lib::{get_mpc_contract_state, wait_for_contract_code, wait_for_full_sync};
 use crate::primitives::ParticipantId;
 use anyhow::Context;
+use mpc_contract::primitives::domain::DomainConfig;
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use mpc_contract::primitives::thresholds::ThresholdParameters;
 use mpc_contract::state::key_event::KeyEvent;
@@ -14,6 +15,7 @@ use url::Url;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractKeyEventInstance {
     pub id: KeyEventId,
+    pub domain: DomainConfig,
     pub started: bool,
     pub completed: BTreeSet<ParticipantId>,
     pub completed_domains: Vec<KeyForDomain>,
@@ -32,6 +34,7 @@ pub fn convert_key_event_to_instance(
                     domain_id: key_event.domain_id(),
                     attempt_id: current_instance.attempt_id(),
                 },
+                domain: key_event.domain(),
                 started: true,
                 completed: current_instance
                     .completed()
@@ -47,6 +50,7 @@ pub fn convert_key_event_to_instance(
                 domain_id: key_event.domain_id(),
                 attempt_id: key_event.next_attempt_id(),
             },
+            domain: key_event.domain(),
             started: false,
             completed: BTreeSet::new(),
             completed_domains,

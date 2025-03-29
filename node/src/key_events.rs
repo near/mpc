@@ -3,8 +3,8 @@ use crate::indexer::types::{
     ChainStartKeygenArgs, ChainStartReshareArgs, ChainVoteAbortKeyEventArgs,
 };
 use crate::network::MeshNetworkClient;
-use crate::providers::eddsa::EddsaTaskId;
-use crate::providers::{affine_point_to_public_key, EcdsaTaskId};
+use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
+use crate::providers::{ecdsa, eddsa, EcdsaTaskId};
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{
     config::ParticipantsConfig,
@@ -14,14 +14,12 @@ use crate::{
     },
     keyshare::{Keyshare, KeyshareData, KeyshareStorage},
     network::NetworkTaskChannel,
-    providers::{
-        ecdsa::key_resharing::public_key_to_affine_point, EcdsaSignatureProvider, SignatureProvider,
-    },
+    providers::{EcdsaSignatureProvider, SignatureProvider},
 };
-use k256::AffinePoint;
+use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
+use std::sync::Arc;
 use std::time::Duration;
-use std::{str::FromStr, sync::Arc};
 use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
 
@@ -37,6 +35,7 @@ pub async fn keygen_computation_inner(
     chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     generated_keys: Vec<KeyForDomain>,
     key_id: KeyEventId,
+    domain: DomainConfig,
     threshold: usize,
 ) -> anyhow::Result<()> {
     let keyshare_handle = keyshare_storage
@@ -46,12 +45,27 @@ pub async fn keygen_computation_inner(
         "Key generation attempt {:?}: starting key generation.",
         key_id
     );
-    let res = EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
+
+    let (keyshare, public_key) = match domain.scheme {
+        SignatureScheme::Secp256k1 => {
+            let keyshare =
+                EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
+            let public_key = ecdsa::affine_point_to_public_key(keyshare.public_key)?;
+            (KeyshareData::Secp256k1(keyshare), public_key)
+        }
+        SignatureScheme::Ed25519 => {
+            let keyshare =
+                EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
+            let public_key = eddsa::convert_to_near_pubkey(&keyshare.public_key_package)?;
+            (KeyshareData::Ed25519(keyshare), public_key)
+        }
+    };
+
     tracing::info!("Key generation attempt {:?}: committing keyshare.", key_id);
     keyshare_handle
         .commit_keyshare(Keyshare {
             key_id,
-            data: KeyshareData::Secp256k1(res.clone()),
+            data: keyshare,
         })
         .await?;
     tracing::info!(
@@ -61,7 +75,7 @@ pub async fn keygen_computation_inner(
     chain_txn_sender
         .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
             key_event_id: key_id,
-            public_key: affine_point_to_public_key(res.public_key)?,
+            public_key,
         }))
         .await?;
     Ok(())
@@ -86,6 +100,7 @@ async fn keygen_computation(
         chain_txn_sender.clone(),
         key_event.completed_domains,
         key_id,
+        key_event.domain,
         threshold,
     );
     let expiration = key_event_id_expiration(contract_key_event_id, key_id);
@@ -114,6 +129,7 @@ pub struct ResharingArgs {
     pub existing_keyshares: Option<Vec<Keyshare>>,
     pub new_threshold: usize,
     pub old_participants: ParticipantsConfig,
+    pub domain: DomainConfig,
 }
 
 /// The key resharing computation (same for both leader and follower) for a single key resharing
@@ -152,30 +168,53 @@ async fn resharing_computation_inner(
         ),
         None => None,
     };
-    let public_key = sdk_public_key_to_affine_point(
-        &args
-            .previous_keyset
-            .public_key(key_id.domain_id)
-            .map_err(|_| {
-                anyhow::anyhow!("Previous keyset does not contain key for {:?}", key_id)
-            })?,
-    )?;
-    let res = EcdsaSignatureProvider::run_key_resharing_client(
-        args.new_threshold,
-        existing_keyshare.map(|keyshare| match keyshare.data {
-            KeyshareData::Secp256k1(data) => data.private_share,
-        }),
-        public_key,
-        &args.old_participants,
-        channel,
-    )
-    .await?;
+
+    let previous_public_key = &args
+        .previous_keyset
+        .public_key(key_id.domain_id)
+        .map_err(|_| anyhow::anyhow!("Previous keyset does not contain key for {:?}", key_id))?;
+
+    let data = match args.domain.scheme {
+        SignatureScheme::Secp256k1 => {
+            let public_key = ecdsa::sdk_public_key_to_affine_point(previous_public_key)?;
+            let my_share = existing_keyshare
+                .map(|keyshare| match keyshare.data {
+                    KeyshareData::Secp256k1(data) => Ok(data.private_share),
+                    _ => Err(anyhow::anyhow!("Expected ecdsa keyshare!")),
+                })
+                .transpose()?;
+            let res = EcdsaSignatureProvider::run_key_resharing_client(
+                args.new_threshold,
+                my_share,
+                public_key,
+                &args.old_participants,
+                channel,
+            )
+            .await?;
+            KeyshareData::Secp256k1(res)
+        }
+        SignatureScheme::Ed25519 => {
+            let public_key = eddsa::convert_from_sdk_pubkey(previous_public_key)?;
+            let my_share = existing_keyshare
+                .map(|keyshare| match keyshare.data {
+                    KeyshareData::Ed25519(data) => Ok(data.private_share),
+                    _ => Err(anyhow::anyhow!("Expected eddsa keyshare!")),
+                })
+                .transpose()?;
+            let res = EddsaSignatureProvider::run_key_resharing_client(
+                args.new_threshold,
+                my_share,
+                public_key,
+                &args.old_participants,
+                channel,
+            )
+            .await?;
+            KeyshareData::Ed25519(res)
+        }
+    };
     tracing::info!("Key resharing attempt {:?}: committing keyshare.", key_id);
     keyshare_handle
-        .commit_keyshare(Keyshare {
-            key_id,
-            data: KeyshareData::Secp256k1(res),
-        })
+        .commit_keyshare(Keyshare { key_id, data })
         .await?;
     tracing::info!(
         "Key resharing attempt {:?}: sending vote_reshared transaction.",
@@ -266,11 +305,6 @@ async fn key_event_id_expiration(
         })
         .await
         .expect("Should not fail since closure does not panic");
-}
-
-fn sdk_public_key_to_affine_point(public_key: &near_sdk::PublicKey) -> anyhow::Result<AffinePoint> {
-    let public_key = near_crypto::PublicKey::from_str(&String::from(public_key));
-    public_key_to_affine_point(public_key.unwrap())
 }
 
 /// The leader waits for at most this amount of time for the start transaction to materialize,

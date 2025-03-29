@@ -6,9 +6,8 @@ mod temporary;
 #[cfg(test)]
 pub mod test_utils;
 
-use crate::providers::affine_point_to_public_key;
+use crate::providers::{ecdsa, eddsa};
 use anyhow::Context;
-use cait_sith::ecdsa::KeygenOutput;
 use k256::Secp256k1;
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};
@@ -18,7 +17,8 @@ use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum KeyshareData {
-    Secp256k1(KeygenOutput<Secp256k1>),
+    Secp256k1(cait_sith::ecdsa::KeygenOutput<Secp256k1>),
+    Ed25519(cait_sith::eddsa::KeygenOutput),
 }
 
 impl PartialEq for KeyshareData {
@@ -27,6 +27,10 @@ impl PartialEq for KeyshareData {
             (KeyshareData::Secp256k1(a), KeyshareData::Secp256k1(b)) => {
                 a.private_share == b.private_share && a.public_key == b.public_key
             }
+            (KeyshareData::Ed25519(a), KeyshareData::Ed25519(b)) => {
+                a.private_share == b.private_share && a.public_key_package == b.public_key_package
+            }
+            _ => false,
         }
     }
 }
@@ -42,12 +46,15 @@ pub struct Keyshare {
 
 impl Keyshare {
     pub fn public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
-        match &self.data {
+        let public_key = match &self.data {
             KeyshareData::Secp256k1(secp256k1_data) => {
-                let public_key = affine_point_to_public_key(secp256k1_data.public_key)?;
-                Ok(public_key.to_string().parse()?)
+                ecdsa::affine_point_to_public_key(secp256k1_data.public_key)?
             }
-        }
+            KeyshareData::Ed25519(ed25519_data) => {
+                eddsa::convert_to_near_pubkey(&ed25519_data.public_key_package)?
+            }
+        };
+        Ok(public_key.to_string().parse()?)
     }
 
     pub fn check_consistency(&self, epoch_id: EpochId, key: &KeyForDomain) -> anyhow::Result<()> {

@@ -1,5 +1,6 @@
 use crate::db::{DBCol, SecretDB};
 use crate::metrics;
+use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::{Payload, Tweak};
 use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,7 @@ pub struct SignatureRequest {
     pub tweak: Tweak,
     pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,
+    pub domain: DomainId,
 }
 
 pub struct SignRequestStorage {

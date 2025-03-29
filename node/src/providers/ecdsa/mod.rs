@@ -1,8 +1,11 @@
 pub mod key_generation;
 mod presign;
 mod sign;
+
 use mpc_contract::primitives::key_state::KeyEventId;
 pub use presign::PresignatureStorage;
+use std::collections::HashMap;
+use std::str::FromStr;
 mod kdf;
 pub mod key_resharing;
 pub mod triple;
@@ -21,8 +24,9 @@ use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::ecdsa::sign::FullSignature;
 use cait_sith::ecdsa::KeygenOutput;
-use k256::elliptic_curve::sec1::ToEncodedPoint;
-use k256::{AffinePoint, Scalar, Secp256k1};
+use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
+use k256::{AffinePoint, EncodedPoint, Scalar, Secp256k1};
+use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
 
@@ -34,7 +38,7 @@ pub struct EcdsaSignatureProvider {
     triple_store: Arc<TripleStorage>,
     presignature_store: Arc<PresignatureStorage>,
     sign_request_store: Arc<SignRequestStorage>,
-    keygen_output: KeygenOutput<Secp256k1>,
+    keyshares: HashMap<DomainId, KeygenOutput<Secp256k1>>,
 }
 
 impl EcdsaSignatureProvider {
@@ -45,7 +49,7 @@ impl EcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keygen_output: KeygenOutput<Secp256k1>,
+        keyshares: HashMap<DomainId, KeygenOutput<Secp256k1>>,
     ) -> anyhow::Result<Self> {
         let active_participants_query = {
             let network_client = client.clone();
@@ -79,7 +83,7 @@ impl EcdsaSignatureProvider {
             triple_store,
             presignature_store,
             sign_request_store,
-            keygen_output,
+            keyshares,
         })
     }
 }
@@ -198,6 +202,11 @@ impl SignatureProvider for EcdsaSignatureProvider {
             ),
         );
 
+        let keyshares = self.keyshares.values().cloned().collect::<Vec<_>>();
+        let [keyshare] = keyshares.as_slice() else {
+            anyhow::bail!("Expected only 1 share of ecdsa")
+        };
+
         let generate_presignatures = tracking::spawn(
             "generate presignatures",
             Self::run_background_presignature_generation(
@@ -206,7 +215,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 self.config.presignature.clone().into(),
                 self.triple_store.clone(),
                 self.presignature_store.clone(),
-                self.keygen_output.clone(),
+                keyshare.clone(),
             ),
         );
 
@@ -222,4 +231,28 @@ pub fn affine_point_to_public_key(point: AffinePoint) -> anyhow::Result<near_cry
         near_crypto::Secp256K1PublicKey::try_from(&point.to_encoded_point(false).as_bytes()[1..65])
             .context("Failed to convert affine point to public key")?,
     ))
+}
+
+pub fn public_key_to_affine_point(key: near_crypto::PublicKey) -> anyhow::Result<AffinePoint> {
+    match key {
+        near_crypto::PublicKey::SECP256K1(key) => {
+            let mut bytes = [0u8; 65];
+            bytes[0] = 0x04;
+            bytes[1..65].copy_from_slice(key.as_ref());
+            match Option::from(AffinePoint::from_encoded_point(&EncodedPoint::from_bytes(
+                bytes,
+            )?)) {
+                Some(result) => Ok(result),
+                None => anyhow::bail!("Failed to convert public key to affine point"),
+            }
+        }
+        _ => anyhow::bail!("Unsupported public key type"),
+    }
+}
+
+pub fn sdk_public_key_to_affine_point(
+    public_key: &near_sdk::PublicKey,
+) -> anyhow::Result<AffinePoint> {
+    let public_key = near_crypto::PublicKey::from_str(&String::from(public_key));
+    public_key_to_affine_point(public_key?)
 }

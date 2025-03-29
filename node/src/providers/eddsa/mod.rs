@@ -11,7 +11,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::eddsa::KeygenOutput;
 use frost_ed25519::keys::{PublicKeyPackage, SigningShare};
 use frost_ed25519::{Signature, VerifyingKey};
+use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::KeyEventId;
+use std::collections::{BTreeMap, HashMap};
+use std::str::FromStr;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -20,24 +23,23 @@ pub struct EddsaSignatureProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
-    keygen_output: KeygenOutput,
+    keyshares: HashMap<DomainId, KeygenOutput>,
 }
 
 impl EddsaSignatureProvider {
-    #[allow(dead_code)] // TODO: Remove after integrating
     pub fn new(
         config: Arc<ConfigFile>,
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
-        keygen_output: KeygenOutput,
+        keyshares: HashMap<DomainId, KeygenOutput>,
     ) -> Self {
         Self {
             config,
             mpc_config,
             client,
             sign_request_store,
-            keygen_output,
+            keyshares,
         }
     }
 }
@@ -118,4 +120,54 @@ impl SignatureProvider for EddsaSignatureProvider {
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
         Ok(())
     }
+}
+
+pub fn convert_to_near_pubkey(
+    public_key_package: &PublicKeyPackage,
+) -> anyhow::Result<near_crypto::PublicKey> {
+    let data = public_key_package.verifying_key().serialize()?;
+    let data: [u8; 32] = data
+        .try_into()
+        .or_else(|_| anyhow::bail!("Serialized public key is not 32 bytes."))?;
+    Ok(near_crypto::PublicKey::ED25519(
+        near_crypto::ED25519PublicKey::from(data),
+    ))
+}
+
+pub fn convert_from_near_pubkey(key: near_crypto::PublicKey) -> anyhow::Result<PublicKeyPackage> {
+    match key {
+        near_crypto::PublicKey::ED25519(key) => {
+            let verifying_key = VerifyingKey::deserialize(key.0.as_slice())?;
+            Ok(PublicKeyPackage::new(BTreeMap::new(), verifying_key))
+        }
+        _ => anyhow::bail!("Unsupported public key type"),
+    }
+}
+
+pub fn convert_from_sdk_pubkey(
+    public_key: &near_sdk::PublicKey,
+) -> anyhow::Result<PublicKeyPackage> {
+    let near_crypto = near_crypto::PublicKey::from_str(&String::from(public_key))?;
+    convert_from_near_pubkey(near_crypto)
+}
+
+#[test]
+fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
+    use crate::tests::TestGenerators;
+    let x = TestGenerators::new(4, 3)
+        .make_eddsa_keygens()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    convert_to_near_pubkey(&x.public_key_package)?;
+    Ok(())
+}
+
+#[test]
+fn check_pubkey_conversion_from_sdk() -> anyhow::Result<()> {
+    let near_sdk =
+        near_sdk::PublicKey::from_str("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")?;
+    let _ = convert_from_sdk_pubkey(&near_sdk)?;
+    Ok(())
 }

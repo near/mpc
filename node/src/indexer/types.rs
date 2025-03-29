@@ -48,6 +48,7 @@ impl ChainSignatureRequest {
 
 pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
 pub use mpc_contract::crypto_shared::k256_types;
+use mpc_contract::crypto_shared::{edd25519_types, SignatureResponse};
 use mpc_contract::primitives::signature::Payload;
 
 const MAX_RECOVERY_ID: u8 = 3;
@@ -152,7 +153,7 @@ impl ChainSendTransactionRequest {
 
 impl ChainRespondArgs {
     /// WARNING: this function assumes the input full signature is valid and comes from an authentic response
-    pub fn new(
+    pub fn new_ecdsa(
         request: &SignatureRequest,
         response: &FullSignature<Secp256k1>,
         public_key: &AffinePoint,
@@ -173,6 +174,24 @@ impl ChainRespondArgs {
                 domain_id,
             ),
             response: k256_signature_response(response.big_r, response.s, recovery_id)?,
+        })
+    }
+
+    pub fn new_eddsa(
+        request: &SignatureRequest,
+        response: &frost_ed25519::Signature,
+    ) -> anyhow::Result<Self> {
+        let response = response
+            .serialize()?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Response is not 64 bytes"))?;
+        Ok(ChainRespondArgs {
+            request: ChainSignatureRequest::new(
+                request.tweak.clone(),
+                request.payload.clone(),
+                request.domain,
+            ),
+            response: SignatureResponse::Edd25519(edd25519_types::SignatureResponse(response)),
         })
     }
 

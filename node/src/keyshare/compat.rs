@@ -19,7 +19,12 @@ pub fn legacy_ecdsa_key_from_keyshares(
             keyshare.key_id.domain_id
         );
     }
-    let KeyshareData::Secp256k1(secp256k1_data) = &keyshare.data;
+    let KeyshareData::Secp256k1(secp256k1_data) = &keyshare.data else {
+        anyhow::bail!(
+            "Expected keyshare for legacy ECDSA domain, got {:?}",
+            keyshare.key_id.domain_id
+        );
+    };
     Ok(LegacyRootKeyshareData {
         epoch: keyshare.key_id.epoch_id.get(),
         private_share: secp256k1_data.private_share,
