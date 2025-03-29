@@ -21,13 +21,13 @@ use crate::web::start_web_server;
 use cait_sith::ecdsa::presign::PresignArguments;
 use cait_sith::ecdsa::sign::FullSignature;
 use cait_sith::{ecdsa, eddsa};
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::signature::Payload;
+use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
+use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
 use near_sdk::AccountId;
 use near_time::Clock;
-use rand::RngCore;
+use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::time::timeout;
@@ -35,6 +35,7 @@ use tokio::time::timeout;
 mod basic_cluster;
 mod benchmark;
 mod faulty;
+mod multidomain;
 mod research;
 mod resharing;
 
@@ -327,10 +328,22 @@ impl IntegrationTestSetup {
 pub async fn request_signature_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,
+    domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
-    let mut payload = [0; 32];
-    rand::thread_rng().fill_bytes(payload.as_mut());
+    let payload = match domain.scheme {
+        SignatureScheme::Secp256k1 => {
+            let mut payload = [0; 32];
+            rand::thread_rng().fill_bytes(payload.as_mut());
+            Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
+        }
+        SignatureScheme::Ed25519 => {
+            let len = rand::thread_rng().gen_range(32..1232);
+            let mut payload = vec![0; len];
+            rand::thread_rng().fill_bytes(payload.as_mut());
+            Payload::Eddsa(Bytes::new(payload.to_vec()).unwrap())
+        }
+    };
     let request = SignatureRequestFromChain {
         entropy: rand::random(),
         signature_id: CryptoHash(rand::random()),
@@ -338,9 +351,9 @@ pub async fn request_signature_and_await_response(
         predecessor_id: user.parse().unwrap(),
         timestamp_nanosec: rand::random(),
         request: SignArgs {
-            domain_id: DomainId::legacy_ecdsa_id(),
+            domain_id: domain.id,
             path: "m/44'/60'/0'/0/0".to_string(),
-            payload: Payload::from_legacy_ecdsa(payload),
+            payload,
         },
     };
     tracing::info!(
@@ -364,6 +377,16 @@ pub async fn request_signature_and_await_response(
                         user,
                         request.request.payload,
                         signature.request.payload
+                    );
+                    continue;
+                }
+                if signature.request.domain_id != domain.id {
+                    tracing::info!(
+                        "Received signature is not for the domain we requested (user {})
+                         Expected {:?}, actual {:?}",
+                        user,
+                        domain.id,
+                        signature.request.domain_id
                     );
                     continue;
                 }

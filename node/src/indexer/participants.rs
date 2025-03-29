@@ -106,8 +106,6 @@ pub struct ContractRunningState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractInitializingState {
-    // we also need the domain.wait
-    pub generated_keyset: Keyset,
     pub participants: ParticipantsConfig,
     pub key_event: ContractKeyEventInstance,
 }
@@ -141,10 +139,6 @@ impl ContractState {
             ProtocolContractState::NotInitialized => ContractState::Invalid,
             ProtocolContractState::Initializing(state) => {
                 ContractState::Initializing(ContractInitializingState {
-                    generated_keyset: Keyset {
-                        epoch_id: state.epoch_id,
-                        domains: state.generated_keys.clone(),
-                    },
                     participants: convert_participant_infos(
                         state.generating_key.proposed_parameters().clone(),
                         port_override,

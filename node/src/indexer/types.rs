@@ -166,12 +166,11 @@ impl ChainRespondArgs {
                 .as_ecdsa()
                 .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
         )?;
-        let domain_id = DomainId::legacy_ecdsa_id();
         Ok(ChainRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
                 request.payload.clone(),
-                domain_id,
+                request.domain,
             ),
             response: k256_signature_response(response.big_r, response.s, recovery_id)?,
         })

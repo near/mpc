@@ -25,7 +25,8 @@ impl EcdsaSignatureProvider {
         id: SignatureId,
     ) -> anyhow::Result<(FullSignature<Secp256k1>, AffinePoint)> {
         let sign_request = self.sign_request_store.get(id).await?;
-        let (presignature_id, presignature) = self.presignature_store.take_owned().await;
+        let domain_data = self.domain_data(sign_request.domain)?;
+        let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
         let channel = self.client.new_channel_for_task(
             EcdsaTaskId::Signature {
                 id,
@@ -34,12 +35,8 @@ impl EcdsaSignatureProvider {
             presignature.participants,
         )?;
 
-        let Some(keygen_out) = self.keyshares.get(&sign_request.domain).cloned() else {
-            anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
-        };
-
         let (signature, public_key) = SignComputation {
-            keygen_out,
+            keygen_out: domain_data.keyshare,
             presign_out: presignature.presignature,
             msg_hash: *sign_request
                 .payload
@@ -71,13 +68,11 @@ impl EcdsaSignatureProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let Some(keygen_out) = self.keyshares.get(&sign_request.domain).cloned() else {
-            anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
-        };
+        let domain_data = self.domain_data(sign_request.domain)?;
 
         FollowerSignComputation {
-            keygen_out,
-            presignature_store: self.presignature_store.clone(),
+            keygen_out: domain_data.keyshare,
+            presignature_store: domain_data.presignature_store.clone(),
             presignature_id,
             msg_hash: *sign_request
                 .payload

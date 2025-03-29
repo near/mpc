@@ -26,13 +26,16 @@ async fn test_basic_cluster() {
         TXN_DELAY_BLOCKS,
         PortSeed::BASIC_CLUSTER_TEST,
     );
+
+    let domain = DomainConfig {
+        id: DomainId(0),
+        scheme: SignatureScheme::Secp256k1,
+    };
+
     {
         let mut contract = setup.indexer.contract_mut().await;
-        contract.initialize(setup.participants);
-        contract.add_domains(vec![DomainConfig {
-            id: DomainId(0),
-            scheme: SignatureScheme::Secp256k1,
-        }]);
+        contract.initialize(setup.participants.clone());
+        contract.add_domains(vec![domain.clone()]);
     }
 
     let _runs = setup
@@ -44,6 +47,7 @@ async fn test_basic_cluster() {
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
+        &domain,
         std::time::Duration::from_secs(60)
     )
     .await

@@ -633,6 +633,7 @@ pub mod testing {
         pub const KEY_RESHARING_SIMPLE_TEST: Self = Self(5);
         pub const KEY_RESHARING_MULTISTAGE_TEST: Self = Self(6);
         pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: Self = Self(7);
+        pub const BASIC_MULTIDOMAIN_TEST: Self = Self(8);
     }
 
     /// Converts a keypair to an ED25519 secret key, asserting that it is the

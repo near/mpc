@@ -149,16 +149,21 @@ impl FakeMpcContractState {
     }
 
     pub fn vote_abort_key_event(&mut self, account_id: AccountId, id: KeyEventId) {
+        self.env.set_signer(&account_id);
         match &mut self.state {
             ProtocolContractState::Initializing(state) => {
-                self.env.set_signer(&account_id);
+                if let Err(e) = state.vote_abort(id) {
+                    tracing::info!("vote_abort_key_event transaction failed: {}", e);
+                }
+            }
+            ProtocolContractState::Resharing(state) => {
                 if let Err(e) = state.vote_abort(id) {
                     tracing::info!("vote_abort_key_event transaction failed: {}", e);
                 }
             }
             _ => {
                 tracing::info!(
-                    "vote_abort_key_event transaction ignored because the contract is not in initializing state"
+                    "vote_abort_key_event transaction ignored because the contract is not in initializing or resharing state"
                 );
             }
         }
