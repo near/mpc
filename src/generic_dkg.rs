@@ -390,6 +390,7 @@ async fn broadcast_success_failure(
     participants: &ParticipantList,
     me: &Participant,
     err: Option<ProtocolError>,
+    session_id: Digest
 ) -> Result<(), ProtocolError> {
     match err {
         // Need for consistent Broadcast to prevent adversary from sending
@@ -397,19 +398,28 @@ async fn broadcast_success_failure(
         // that only some parties will drop out of the protocol but not others
         Some(err) => {
             // broadcast node me failed
-            do_broadcast(chan, participants, me, false).await?;
+            do_broadcast(chan, participants, me, (false, session_id)).await?;
             Err(err)
         }
         None => {
             // broadcast node me succeded
-            let vote_list = do_broadcast(chan, participants, me, true).await?;
+            let vote_list = do_broadcast(chan, participants, me, (true, session_id)).await?;
             // unwrap here would never fail as the broadcast protocol ends only when the map is full
             let vote_list = vote_list.into_vec_or_none().unwrap();
-            // go through all the list of votes and check if any is fail
-            if vote_list.contains(&false) {
+            // go through all the list of votes and check if any is fail or some does not contain the session id
+
+            if !vote_list.iter().all(|&(_, ref sid)| sid == &session_id){
                 return Err(ProtocolError::AssertionFailed(
                     "A participant
-                seems to have failed its checks. Aborting DKG!"
+                broadcast the wrong session id. Aborting Protocol!"
+                        .to_string(),
+                ));
+            };
+
+            if !vote_list.iter().all(|&(boolean,_)| boolean == true){
+                return Err(ProtocolError::AssertionFailed(
+                    "A participant
+                seems to have failed its checks. Aborting Protocol!"
                         .to_string(),
                 ));
             };
@@ -539,6 +549,7 @@ async fn do_keyshare<C: Ciphersuite>(
     let my_full_commitment = insert_identity_if_missing(threshold, all_commitments.index(me));
     all_full_commitments.put(me, my_full_commitment);
 
+    // Start Round 4
     // receive evaluations from all participants
     let mut seen = ParticipantCounter::new(&participants);
     seen.put(me);
@@ -568,7 +579,6 @@ async fn do_keyshare<C: Ciphersuite>(
         my_signing_share = my_signing_share + signing_share_from.to_scalar();
     }
 
-    // Start Round 4
     let mut err = None;
 
     // Construct the keypairs
@@ -601,7 +611,7 @@ async fn do_keyshare<C: Ciphersuite>(
     };
 
     // Start Round 5
-    broadcast_success_failure(&mut chan, &participants, &me, err).await?;
+    broadcast_success_failure(&mut chan, &participants, &me, err, session_id).await?;
     // will never panic as broadcast_success_failure would panic before it
     let public_key_package = public_key_package.unwrap();
 
