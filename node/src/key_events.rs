@@ -324,6 +324,7 @@ pub async fn keygen_leader(
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     threshold: usize,
+    domain: DomainConfig,
 ) -> anyhow::Result<()> {
     loop {
         // Wait for all participants to be connected. Otherwise, computations are most likely going
@@ -369,13 +370,23 @@ pub async fn keygen_leader(
             }
         }
 
+        let channel = match domain.scheme {
+            SignatureScheme::Secp256k1 => client.new_channel_for_task(
+                EcdsaTaskId::KeyGeneration {
+                    key_event: key_event_id,
+                },
+                client.all_participant_ids(),
+            ),
+            SignatureScheme::Ed25519 => client.new_channel_for_task(
+                EddsaTaskId::KeyGeneration {
+                    key_event: key_event_id,
+                },
+                client.all_participant_ids(),
+            ),
+        };
+
         // Start the keygen computation.
-        let Ok(channel) = client.new_channel_for_task(
-            EcdsaTaskId::KeyGeneration {
-                key_event: key_event_id,
-            },
-            client.all_participant_ids(),
-        ) else {
+        let Ok(channel) = channel else {
             tracing::warn!("Failed to create channel for keygen computation; retrying.");
             continue;
         };
@@ -486,13 +497,23 @@ pub async fn resharing_leader(
             }
         }
 
+        let channel = match args.domain.scheme {
+            SignatureScheme::Secp256k1 => client.new_channel_for_task(
+                EcdsaTaskId::KeyResharing {
+                    key_event: key_event_id,
+                },
+                client.all_participant_ids(),
+            ),
+            SignatureScheme::Ed25519 => client.new_channel_for_task(
+                EddsaTaskId::KeyResharing {
+                    key_event: key_event_id,
+                },
+                client.all_participant_ids(),
+            ),
+        };
+
         // Start the resharing computation.
-        let Ok(channel) = client.new_channel_for_task(
-            EcdsaTaskId::KeyResharing {
-                key_event: key_event_id,
-            },
-            client.all_participant_ids(),
-        ) else {
+        let Ok(channel) = channel else {
             tracing::warn!("Failed to create channel for resharing computation; retrying.");
             continue;
         };
