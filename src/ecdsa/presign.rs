@@ -223,9 +223,6 @@ mod test {
     use rand_core::OsRng;
 
     use crate::{ecdsa::math::Polynomial, ecdsa::triples, protocol::run_protocol};
-    use frost_secp256k1::keys::VerifyingShare;
-    use frost_secp256k1::Identifier;
-    use std::collections::BTreeMap;
 
     use k256::{ProjectivePoint, Secp256k1};
 
@@ -261,7 +258,6 @@ mod test {
             .zip(triple1_shares.into_iter())
         {
             let private_share = f.evaluate(&p.scalar::<Secp256k1>());
-            let dummy_tree: BTreeMap<Identifier, VerifyingShare> = BTreeMap::new();
             let keygen_out = KeygenOutput {
                 private_share,
                 public_key: big_x.into(),

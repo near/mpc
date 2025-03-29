@@ -10,9 +10,9 @@ use std::{collections::HashMap, error, fmt};
 use crate::compat::CSCurve;
 use ::serde::{Deserialize, Serialize};
 
+use crate::generic_dkg::{BytesOrder, Ciphersuite};
 use frost_core::serialization::SerializableScalar;
 use frost_core::{Identifier, Scalar};
-use crate::generic_dkg::{BytesOrder, Ciphersuite};
 
 /// Represents an error which can happen when running a protocol.
 #[derive(Debug)]
@@ -139,7 +139,7 @@ impl Participant {
 
         match C::bytes_order() {
             BytesOrder::BigEndian => bytes[24..].copy_from_slice(&id.to_be_bytes()),
-            BytesOrder::LittleEndian => bytes[..8].copy_from_slice(&id.to_le_bytes())
+            BytesOrder::LittleEndian => bytes[..8].copy_from_slice(&id.to_le_bytes()),
         }
 
         // transform the bytes into a scalar and fails if Scalar

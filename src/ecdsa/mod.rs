@@ -1,6 +1,5 @@
 //! This module serves as a wrapper for Frost protocol.
 
-use frost_secp256k1::Secp256K1Sha256;
 use crate::generic_dkg::{BytesOrder, Ciphersuite, ScalarSerializationFormat};
 use frost_secp256k1::*;
 use k256::Secp256k1;

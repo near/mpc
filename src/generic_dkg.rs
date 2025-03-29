@@ -3,14 +3,16 @@ use crate::echo_broadcast::do_broadcast;
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
 use crate::protocol::internal::SharedChannel;
 use crate::protocol::{InitializationError, Participant, ProtocolError};
-use crate::serde::encode;
 
 use frost_core::keys::{
     CoefficientCommitment, PublicKeyPackage, SecretShare, SigningShare,
     VerifiableSecretSharingCommitment, VerifyingShare,
 };
-use frost_core::{Challenge, Element, Error, Field, Group, Scalar, Signature, SigningKey, VerifyingKey};
-use rand_core::OsRng;
+use frost_core::{
+    Challenge, Element, Error, Field, Group, Scalar, Signature, SigningKey, VerifyingKey,
+};
+use rand_core::{OsRng, RngCore};
+use serde::Serialize;
 use std::ops::Index;
 
 /// Represents the output of the key generation protocol.
@@ -32,8 +34,6 @@ pub trait ScalarSerializationFormat {
 }
 
 pub trait Ciphersuite: frost_core::Ciphersuite + ScalarSerializationFormat {}
-
-const LABEL: &[u8] = b"Generic DKG";
 
 /// This function prevents calling keyshare function with inproper inputs
 fn assert_keyshare_inputs<C: Ciphersuite>(
@@ -68,6 +68,13 @@ fn assert_keyshare_inputs<C: Ciphersuite>(
         }
         Ok((None, None))
     }
+}
+
+/// Hashes using a domain separator
+/// The domain separator has to be manually incremented after the use of this function
+fn domain_separate_hash<T: Serialize>(domain_separator: u32, data: &T) -> Digest {
+    let preimage = (domain_separator, data);
+    hash(&preimage)
 }
 
 /// Creates a polynomial p of degree threshold - 1
@@ -108,6 +115,8 @@ fn generate_coefficient_commitment<C: Ciphersuite>(
 /// Generates the challenge for the proof of knowledge
 /// H(id, context_string, g^{secret} , R)
 fn challenge<C: Ciphersuite>(
+    session_id: &Digest,
+    domain_separator: u32,
     id: Scalar<C>,
     vk_share: &CoefficientCommitment<C>,
     big_r: &Element<C>,
@@ -133,6 +142,8 @@ fn challenge<C: Ciphersuite>(
         )
     })?;
 
+    preimage.extend_from_slice(&domain_separator.to_le_bytes());
+    preimage.extend_from_slice(session_id.as_ref());
     preimage.extend_from_slice(serialized_id.as_ref());
     preimage.extend_from_slice(serialized_vk_share.as_ref());
     preimage.extend_from_slice(serialized_big_r.as_ref());
@@ -147,6 +158,8 @@ fn challenge<C: Ciphersuite>(
 /// Compute mu = k + a_0 * H(id, context_string, g^{a_0} , R)
 /// Output (R, mu)
 fn proof_of_knowledge<C: Ciphersuite>(
+    session_id: &Digest,
+    domain_separator: u32,
     me: Participant,
     coefficients: &[Scalar<C>],
     coefficient_commitment: &[CoefficientCommitment<C>],
@@ -160,7 +173,7 @@ fn proof_of_knowledge<C: Ciphersuite>(
     let (k, big_r) = <C>::generate_nonce(rng);
 
     // compute H(id, context_string, g^{a_0} , R_id) as a scalar
-    let hash = challenge::<C>(id, &vk_share, &big_r)?;
+    let hash = challenge::<C>(session_id, domain_separator, id, &vk_share, &big_r)?;
     let a_0 = coefficients[0];
     let mu = k + a_0 * hash.to_scalar();
     Ok(Signature::new(big_r, mu))
@@ -170,6 +183,8 @@ fn proof_of_knowledge<C: Ciphersuite>(
 /// The proof of knowledge could be set to None in case the participant is new
 /// and thus its secret share is known (set to zero)
 fn compute_proof_of_knowledge<C: Ciphersuite>(
+    session_id: &Digest,
+    domain_separator: u32,
     me: Participant,
     old_participants: Option<ParticipantList>,
     coefficients: &[Scalar<C>],
@@ -181,8 +196,37 @@ fn compute_proof_of_knowledge<C: Ciphersuite>(
         return Ok(None);
     };
     // generate a proof of knowledge if the participant me is not holding a secret that is zero
-    let proof = proof_of_knowledge(me, coefficients, coefficient_commitment, rng)?;
+    let proof = proof_of_knowledge(
+        session_id,
+        domain_separator,
+        me,
+        coefficients,
+        coefficient_commitment,
+        rng,
+    )?;
     Ok(Some(proof))
+}
+
+/// Verifies the proof of knowledge of the secret coefficients used to generate the
+/// public secret sharing commitment.
+fn internal_verify_proof_of_knowledge<C: Ciphersuite>(
+    session_id: &Digest,
+    domain_separator: u32,
+    participant: Participant,
+    commitment: &VerifiableSecretSharingCommitment<C>,
+    proof_of_knowledge: &Signature<C>,
+) -> Result<(), ProtocolError> {
+    // creates an identifier for the participant
+    let id = participant.generic_scalar::<C>();
+    let vk_share = commitment.coefficients().first().unwrap();
+
+    let big_r = proof_of_knowledge.R();
+    let z = proof_of_knowledge.z();
+    let c = challenge::<C>(session_id, domain_separator, id, &vk_share, &big_r)?;
+    if *big_r != <C::Group>::generator() * *z - vk_share.value() * c.to_scalar() {
+        return Err(ProtocolError::InvalidProofOfKnowledge(participant));
+    }
+    Ok(())
 }
 
 /// Verifies the proof of knowledge of the secret coefficients used to generate the
@@ -190,6 +234,8 @@ fn compute_proof_of_knowledge<C: Ciphersuite>(
 /// if the proof of knowledge is none then make sure that the participant is
 /// performing reshare and does not exist in the set of old participants
 fn verify_proof_of_knowledge<C: Ciphersuite>(
+    session_id: &Digest,
+    domain_separator: u32,
     threshold: usize,
     participant: Participant,
     old_participants: Option<ParticipantList>,
@@ -223,20 +269,27 @@ fn verify_proof_of_knowledge<C: Ciphersuite>(
     // now we know the proof is not none
     let proof_of_knowledge = proof_of_knowledge.unwrap();
     // creating an identifier as required by the syntax of verify_proof_of_knowledge of frost_core
-    let id = participant.to_identifier::<C>();
-    frost_core::keys::dkg::verify_proof_of_knowledge(id, commitment, &proof_of_knowledge)
-        .map_err(|_| ProtocolError::InvalidProofOfKnowledge(participant))
+    internal_verify_proof_of_knowledge(
+        session_id,
+        domain_separator,
+        participant,
+        commitment,
+        &proof_of_knowledge,
+    )
 }
 
 /// Takes a commitment and a commitment hash and checks that
 /// H(commitment) = commitment_hash
 fn verify_commitment_hash<C: Ciphersuite>(
+    session_id: &Digest,
     participant: Participant,
+    domain_separator: u32,
     commitment: &VerifiableSecretSharingCommitment<C>,
     all_hash_commitments: &ParticipantMap<'_, Digest>,
 ) -> Result<(), ProtocolError> {
     let actual_commitment_hash = all_hash_commitments.index(participant);
-    let commitment_hash = hash(&commitment);
+    let commitment_hash =
+        domain_separate_hash(domain_separator, &(&participant, &commitment, &session_id));
     if *actual_commitment_hash != commitment_hash {
         return Err(ProtocolError::InvalidCommitmentHash);
     }
@@ -300,36 +353,6 @@ fn validate_received_share<C: Ciphersuite>(
         }
     })?;
     Ok(())
-}
-
-/// computes a transcript hash out of the public data
-fn compute_transcript_hash<C: Ciphersuite>(
-    participants: &ParticipantList,
-    threshold: usize,
-    all_commitments: &ParticipantMap<'_, VerifiableSecretSharingCommitment<C>>,
-    all_proofs: &ParticipantMap<'_, Option<Signature<C>>>,
-) -> Digest {
-    // transcript contains:
-    //      groupname
-    //      participants
-    //      threshold
-    //      commitments
-    //      zk proofs
-    // we do not need to include the master verification key mvk as it is directly extracted from commitments
-    let mut transcript = Vec::new();
-    transcript.extend_from_slice(LABEL);
-    transcript.extend_from_slice(b"group");
-    transcript.extend_from_slice(C::ID.as_bytes());
-    transcript.extend_from_slice(b"participants");
-    transcript.extend_from_slice(&encode(participants));
-    transcript.extend_from_slice(b"threshold");
-    transcript.extend_from_slice(&u64::try_from(threshold).unwrap().to_be_bytes());
-    transcript.extend_from_slice(b"all commitments");
-    transcript.extend_from_slice(b"commitment opening: big_f");
-    transcript.extend_from_slice(hash(all_commitments).as_ref());
-    transcript.extend_from_slice(b"proofs");
-    transcript.extend_from_slice(hash(all_proofs).as_ref());
-    hash(&transcript)
 }
 
 /// generates a verification key out of a public commited polynomial
@@ -407,35 +430,46 @@ async fn do_keyshare<C: Ciphersuite>(
     mut rng: OsRng,
 ) -> Result<(SigningShare<C>, PublicKeyPackage<C>), ProtocolError> {
     let mut all_commitments = ParticipantMap::new(&participants);
-    let mut all_proofs = ParticipantMap::new(&participants);
-
+    let mut domain_separator = 0;
     // Make sure you do not call do_keyshare with zero as secret on an old participant
     let (old_verification_key, old_participants) =
         assert_keyshare_inputs(me, &secret, old_reshare_package)?;
+
+    // Start Round 0
+    let mut my_session_id = [0u8; 32]; // 256 bits
+    OsRng.fill_bytes(&mut my_session_id);
+    let session_ids = do_broadcast(&mut chan, &participants, &me, my_session_id).await?;
 
     // Start Round 1
     // generate your secret polynomial p with the constant term set to the secret
     // and the rest of the coefficients are picked at random
     // because the library does not allow serializing the zero and identity term,
     // this function does not add the zero coefficient
+    let session_id = domain_separate_hash(domain_separator, &session_ids);
+    domain_separator += 1;
     let secret_coefficients = generate_secret_polynomial::<C>(secret, threshold, &mut rng);
 
     // Compute the multiplication of every coefficient of p with the generator G
     let coefficient_commitment = generate_coefficient_commitment::<C>(&secret_coefficients);
     // generate a proof of knowledge if the participant me is not holding a secret that is zero
+    let proof_domain_separator = domain_separator;
     let proof_of_knowledge = compute_proof_of_knowledge(
+        &session_id,
+        domain_separator,
         me,
         old_participants.clone(),
         &secret_coefficients,
         &coefficient_commitment,
         &mut rng,
     )?;
+    domain_separator += 1;
 
     // Create the public polynomial = secret coefficients times G
     let commitment = VerifiableSecretSharingCommitment::new(coefficient_commitment);
 
     // hash commitment and send it
-    let commitment_hash = hash(&commitment);
+    let commit_domain_separator = domain_separator;
+    let commitment_hash = domain_separate_hash(domain_separator, &(&me, &commitment, &session_id));
     let wait_round_1 = chan.next_waitpoint();
     chan.send_many(wait_round_1, &commitment_hash).await;
     // receive commitment_hash
@@ -449,7 +483,6 @@ async fn do_keyshare<C: Ciphersuite>(
     // Start Round 2
     // add my commitment and proof to the map
     all_commitments.put(me, commitment.clone());
-    all_proofs.put(me, proof_of_knowledge);
 
     // Broadcast to all the commitment and the proof of knowledge
     let commitments_and_proofs_map = do_broadcast(
@@ -469,6 +502,8 @@ async fn do_keyshare<C: Ciphersuite>(
         // if proof is none then make sure the participant is new
         // and performing a resharing not a DKG
         verify_proof_of_knowledge(
+            &session_id,
+            proof_domain_separator,
             threshold,
             p,
             old_participants.clone(),
@@ -477,11 +512,16 @@ async fn do_keyshare<C: Ciphersuite>(
         )?;
 
         // verify that the commitment sent hashes to the received commitment_hash in round 1
-        verify_commitment_hash(p, commitment_i, &all_hash_commitments)?;
+        verify_commitment_hash(
+            &session_id,
+            p,
+            commit_domain_separator,
+            commitment_i,
+            &all_hash_commitments,
+        )?;
 
         // add received commitment and proof to the map
         all_commitments.put(p, commitment_i.clone());
-        all_proofs.put(p, *proof_i);
 
         // Securely send to each other participant a secret share
         // using the evaluation secret polynomial on the identifier of the recipient
@@ -490,10 +530,6 @@ async fn do_keyshare<C: Ciphersuite>(
         chan.send_private(wait_round_3, p, &signing_share_to_p)
             .await;
     }
-
-    // compute transcript hash
-    let my_transcript =
-        compute_transcript_hash(&participants, threshold, &all_commitments, &all_proofs);
 
     // compute the my secret evaluation of my private polynomial
     let mut my_signing_share = evaluate_polynomial::<C>(&secret_coefficients, me)?.to_scalar();
@@ -520,6 +556,8 @@ async fn do_keyshare<C: Ciphersuite>(
         let full_commitment_from = insert_identity_if_missing(threshold, commitment_from);
 
         // Verify the share
+        // this deviates from the original FROST DKG paper
+        // however it matches the FROST implementation of ZCash
         validate_received_share::<C>(&me, &from, &signing_share_from, &full_commitment_from)?;
 
         // add full commitment
@@ -531,22 +569,7 @@ async fn do_keyshare<C: Ciphersuite>(
     }
 
     // Start Round 4
-    // receive all transcript hashes
-    let transcript_list = do_broadcast(&mut chan, &participants, &me, my_transcript).await?;
-    let transcript_list = transcript_list.into_vec_or_none().unwrap();
-    // verify that all the transcripts are the same
     let mut err = None;
-    // check transcript hashes
-    for their_transcript in transcript_list {
-        if my_transcript != their_transcript {
-            err = Some(ProtocolError::AssertionFailed(
-                "transcript
-            hash did not match expectation"
-                    .to_string(),
-            ));
-            break;
-        }
-    }
 
     // Construct the keypairs
     // Construct the signing share
@@ -571,9 +594,7 @@ async fn do_keyshare<C: Ciphersuite>(
             // check the equality between the old key and the new key without failing the unwrap
             if vk != *pk.verifying_key() {
                 err = Some(ProtocolError::AssertionFailed(
-                    "new public
-                key does not match old public key"
-                        .to_string(),
+                    "new public key does not match old public key".to_string(),
                 ));
             }
         };
@@ -736,4 +757,24 @@ pub(crate) fn reshare_assertions<C: Ciphersuite>(
         ));
     }
     Ok((participants, old_participants))
+}
+
+#[test]
+fn test_domain_separate_hash() {
+    let cnt = 1;
+    let participants_1 = vec![
+        Participant::from(0u32),
+        Participant::from(1u32),
+        Participant::from(2u32),
+    ];
+    let participants_2 = vec![
+        Participant::from(0u32),
+        Participant::from(1u32),
+        Participant::from(2u32),
+    ];
+    let hash_1 = domain_separate_hash(cnt, &participants_1);
+    let hash_2 = domain_separate_hash(cnt, &participants_2);
+    assert!(hash_1 == hash_2);
+    let hash_2 = domain_separate_hash(cnt+1, &participants_2);
+    assert!(hash_1 != hash_2);
 }
