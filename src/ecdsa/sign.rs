@@ -270,7 +270,7 @@ mod test {
         let result0 = run_keygen(&participants, threshold)?;
         assert_public_key_invariant(&result0)?;
 
-        let pub_key = result0[2].1.public_key;
+        let pub_key = result0[2].1.public_key.clone();
 
         // Run heavy reshare
         let new_threshold = 5;
@@ -289,7 +289,7 @@ mod test {
         assert_public_key_invariant(&key_packages)?;
         key_packages.sort_by_key(|(p, _)| *p);
 
-        let public_key = key_packages[0].1.public_key;
+        let public_key = key_packages[0].1.public_key.clone();
         // Prepare triples
         let (pub0, shares0) = deal(&mut OsRng, &new_participant, new_threshold);
         let (pub1, shares1) = deal(&mut OsRng, &new_participant, new_threshold);
@@ -301,11 +301,7 @@ mod test {
 
         let msg = b"hello world";
 
-        run_sign(
-            presign_result,
-            public_key,
-            msg,
-        );
+        run_sign(presign_result, public_key.to_element().to_affine(), msg);
         Ok(())
     }
 
@@ -322,7 +318,7 @@ mod test {
         let result0 = run_keygen(&participants, threshold)?;
         assert_public_key_invariant(&result0)?;
 
-        let pub_key = result0[2].1.public_key;
+        let pub_key = result0[2].1.public_key.clone();
 
         // Run heavy reshare
         let new_threshold = 3;
@@ -339,7 +335,7 @@ mod test {
         assert_public_key_invariant(&key_packages)?;
         key_packages.sort_by_key(|(p, _)| *p);
 
-        let public_key = key_packages[0].1.public_key;
+        let public_key = key_packages[0].1.public_key.clone();
         // Prepare triples
         let (pub0, shares0) = deal(&mut OsRng, &new_participant, new_threshold);
         let (pub1, shares1) = deal(&mut OsRng, &new_participant, new_threshold);
@@ -351,11 +347,7 @@ mod test {
 
         let msg = b"hello world";
 
-        run_sign(
-            presign_result,
-            public_key,
-            msg,
-        );
+        run_sign(presign_result, public_key.to_element().to_affine(), msg);
         Ok(())
     }
 }

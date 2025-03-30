@@ -1,12 +1,11 @@
-use frost_ed25519::*;
 use frost_ed25519::keys::SigningShare;
-use futures::FutureExt;
-use keys::PublicKeyPackage;
+use frost_ed25519::{Ed25519Sha512, VerifyingKey};
 
 use crate::eddsa::KeygenOutput;
 use crate::generic_dkg::*;
 use crate::protocol::internal::{make_protocol, Context};
 use crate::protocol::{InitializationError, Participant, Protocol};
+use futures::FutureExt;
 
 type E = Ed25519Sha512;
 
@@ -18,8 +17,8 @@ pub fn keygen(
 ) -> Result<impl Protocol<Output = KeygenOutput>, InitializationError> {
     let ctx = Context::new();
     let participants = assert_keygen_invariants(participants, me, threshold)?;
-    let fut = do_keygen(ctx.shared_channel(), participants, me, threshold)
-        .map(|x| x.map(Into::into));
+    let fut =
+        do_keygen(ctx.shared_channel(), participants, me, threshold).map(|x| x.map(Into::into));
     Ok(make_protocol(ctx, fut))
 }
 
@@ -28,14 +27,13 @@ pub fn reshare(
     old_participants: &[Participant],
     old_threshold: usize,
     old_signing_key: Option<SigningShare>,
-    old_public_key: PublicKeyPackage,
+    old_public_key: VerifyingKey,
     new_participants: &[Participant],
     new_threshold: usize,
     me: Participant,
 ) -> Result<impl Protocol<Output = KeygenOutput>, InitializationError> {
     let ctx = Context::new();
     let threshold = new_threshold;
-    let old_public_key = *old_public_key.verifying_key();
     let (participants, old_participants) = reshare_assertions::<E>(
         new_participants,
         me,
@@ -53,14 +51,14 @@ pub fn reshare(
         old_public_key,
         old_participants,
     )
-        .map(|x| x.map(Into::into));
+    .map(|x| x.map(Into::into));
     Ok(make_protocol(ctx, fut))
 }
 
 /// Performs the Ed25519 Refresh protocol
 pub fn refresh(
     old_signing_key: Option<SigningShare>,
-    old_public_key: PublicKeyPackage,
+    old_public_key: VerifyingKey,
     new_participants: &[Participant],
     new_threshold: usize,
     me: Participant,
@@ -72,7 +70,6 @@ pub fn refresh(
     }
     let ctx = Context::new();
     let threshold = new_threshold;
-    let old_public_key = *old_public_key.verifying_key();
     let (participants, old_participants) = reshare_assertions::<E>(
         new_participants,
         me,
@@ -90,7 +87,7 @@ pub fn refresh(
         old_public_key,
         old_participants,
     )
-        .map(|x| x.map(Into::into));
+    .map(|x| x.map(Into::into));
     Ok(make_protocol(ctx, fut))
 }
 
@@ -101,6 +98,8 @@ mod test {
     use crate::eddsa::test::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
     use crate::participants::ParticipantList;
     use crate::protocol::Participant;
+    use frost_core::Group;
+    use frost_ed25519::Ed25519Group;
     use std::error::Error;
 
     #[test]
@@ -116,16 +115,10 @@ mod test {
         assert_public_key_invariant(&result)?;
 
         assert!(result.len() == participants.len());
-        assert_eq!(
-            result[0].1.public_key_package,
-            result[1].1.public_key_package
-        );
-        assert_eq!(
-            result[1].1.public_key_package,
-            result[2].1.public_key_package
-        );
+        assert_eq!(result[0].1.public_key, result[1].1.public_key);
+        assert_eq!(result[1].1.public_key, result[2].1.public_key);
 
-        let pub_key = result[2].1.public_key_package.verifying_key().to_element();
+        let pub_key = result[2].1.public_key.to_element();
 
         let participants = vec![result[0].0, result[1].0, result[2].0];
         let shares = vec![
@@ -153,7 +146,7 @@ mod test {
         let result0 = run_keygen(&participants, threshold)?;
         assert_public_key_invariant(&result0)?;
 
-        let pub_key = result0[2].1.public_key_package.verifying_key().to_element();
+        let pub_key = result0[2].1.public_key.to_element();
 
         let result1 = run_refresh(&participants, result0, threshold)?;
         assert_public_key_invariant(&result1)?;
@@ -185,7 +178,7 @@ mod test {
         let result0 = run_keygen(&participants, threshold0)?;
         assert_public_key_invariant(&result0)?;
 
-        let pub_key = result0[2].1.public_key_package.clone();
+        let pub_key = result0[2].1.public_key.clone();
 
         let mut new_participant = participants.clone();
         new_participant.push(Participant::from(31u32));
@@ -211,10 +204,7 @@ mod test {
             + p_list.generic_lagrange::<E>(participants[1]) * shares[1]
             + p_list.generic_lagrange::<E>(participants[2]) * shares[2]
             + p_list.generic_lagrange::<E>(participants[3]) * shares[3];
-        assert_eq!(
-            <Ed25519Group>::generator() * x,
-            pub_key.verifying_key().to_element()
-        );
+        assert_eq!(<Ed25519Group>::generator() * x, pub_key.to_element());
 
         Ok(())
     }

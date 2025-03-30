@@ -5,8 +5,8 @@ use crate::protocol::internal::SharedChannel;
 use crate::protocol::{InitializationError, Participant, ProtocolError};
 
 use frost_core::keys::{
-    CoefficientCommitment, PublicKeyPackage, SecretShare, SigningShare,
-    VerifiableSecretSharingCommitment, VerifyingShare,
+    CoefficientCommitment, SecretShare, SigningShare,
+    VerifiableSecretSharingCommitment,
 };
 use frost_core::{
     Challenge, Element, Error, Field, Group, Scalar, Signature, SigningKey, VerifyingKey,
@@ -14,15 +14,6 @@ use frost_core::{
 use rand_core::{OsRng, RngCore};
 use serde::Serialize;
 use std::ops::Index;
-
-/// Represents the output of the key generation protocol.
-///
-/// This contains our share of the private key, along with the public key.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct KeygenOutput<C: Ciphersuite> {
-    pub private_share: SigningShare<C>,
-    pub public_key_package: PublicKeyPackage<C>,
-}
 
 pub enum BytesOrder {
     BigEndian,
@@ -356,28 +347,15 @@ fn validate_received_share<C: Ciphersuite>(
 }
 
 /// generates a verification key out of a public commited polynomial
-/// generates the verification shares of each participant
-fn public_key_package_from_commitments<C: Ciphersuite>(
-    participants: &ParticipantList,
+fn public_key_from_commitments<C: Ciphersuite>(
     commitments: Vec<&VerifiableSecretSharingCommitment<C>>,
-) -> Result<PublicKeyPackage<C>, ProtocolError> {
+) -> Result<VerifyingKey<C>, ProtocolError> {
     let commitment = frost_core::keys::sum_commitments(&commitments)
         .map_err(|_| ProtocolError::IncorrectNumberOfCommitments)?;
 
-    let verifying_shares = participants
-        .participants()
-        .iter()
-        .map(|p| {
-            (
-                p.to_identifier(),
-                VerifyingShare::from_commitment(p.to_identifier(), &commitment),
-            )
-        })
-        .collect();
-
     let vk = VerifyingKey::from_commitment(&commitment)
         .map_err(|_| ProtocolError::ErrorExtractVerificationKey)?;
-    Ok(PublicKeyPackage::new(verifying_shares, vk))
+    Ok(vk)
 }
 
 /// This function takes err as input.
@@ -385,48 +363,35 @@ fn public_key_package_from_commitments<C: Ciphersuite>(
 /// otherwise, broadcast failure
 /// If during broadcast it receives an error then propagates it
 /// This function is used in the final round of DKG
-async fn broadcast_success_failure(
+async fn broadcast_success(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
     me: &Participant,
-    err: Option<ProtocolError>,
-    session_id: Digest
+    session_id: Digest,
 ) -> Result<(), ProtocolError> {
-    match err {
-        // Need for consistent Broadcast to prevent adversary from sending
-        // that it failed to some honest parties but not the others implying
-        // that only some parties will drop out of the protocol but not others
-        Some(err) => {
-            // broadcast node me failed
-            do_broadcast(chan, participants, me, (false, session_id)).await?;
-            Err(err)
-        }
-        None => {
-            // broadcast node me succeded
-            let vote_list = do_broadcast(chan, participants, me, (true, session_id)).await?;
-            // unwrap here would never fail as the broadcast protocol ends only when the map is full
-            let vote_list = vote_list.into_vec_or_none().unwrap();
-            // go through all the list of votes and check if any is fail or some does not contain the session id
+    // broadcast node me succeded
+    let vote_list = do_broadcast(chan, participants, me, (true, session_id)).await?;
+    // unwrap here would never fail as the broadcast protocol ends only when the map is full
+    let vote_list = vote_list.into_vec_or_none().unwrap();
+    // go through all the list of votes and check if any is fail or some does not contain the session id
 
-            if !vote_list.iter().all(|&(_, ref sid)| sid == &session_id){
-                return Err(ProtocolError::AssertionFailed(
-                    "A participant
+    if !vote_list.iter().all(|&(_, ref sid)| sid == &session_id) {
+        return Err(ProtocolError::AssertionFailed(
+            "A participant
                 broadcast the wrong session id. Aborting Protocol!"
-                        .to_string(),
-                ));
-            };
+                .to_string(),
+        ));
+    };
 
-            if !vote_list.iter().all(|&(boolean,_)| boolean == true){
-                return Err(ProtocolError::AssertionFailed(
-                    "A participant
+    if !vote_list.iter().all(|&(boolean, _)| boolean == true) {
+        return Err(ProtocolError::AssertionFailed(
+            "A participant
                 seems to have failed its checks. Aborting Protocol!"
-                        .to_string(),
-                ));
-            };
-            // Wait for all the tasks to complete
-            Ok(())
-        }
-    }
+                .to_string(),
+        ));
+    };
+    // Wait for all the tasks to complete
+    Ok(())
 }
 
 /// Performs the heart of DKG, Reshare and Refresh protocols
@@ -438,7 +403,7 @@ async fn do_keyshare<C: Ciphersuite>(
     secret: Scalar<C>,
     old_reshare_package: Option<(VerifyingKey<C>, ParticipantList)>,
     mut rng: OsRng,
-) -> Result<(SigningShare<C>, PublicKeyPackage<C>), ProtocolError> {
+) -> Result<KeygenOutput<C>, ProtocolError> {
     let mut all_commitments = ParticipantMap::new(&participants);
     let mut domain_separator = 0;
     // Make sure you do not call do_keyshare with zero as secret on an old participant
@@ -579,44 +544,40 @@ async fn do_keyshare<C: Ciphersuite>(
         my_signing_share = my_signing_share + signing_share_from.to_scalar();
     }
 
-    let mut err = None;
-
-    // Construct the keypairs
-    // Construct the signing share
-    let signing_share = SigningShare::new(my_signing_share);
     // cannot fail as all_commitments at least contains my commitment
     let all_commitments_vec = all_full_commitments.into_vec_or_none().unwrap();
     let all_commitments_refs = all_commitments_vec.iter().collect();
 
-    // Calculate the public verification key.
-    let public_key_package =
-        match public_key_package_from_commitments(&participants, all_commitments_refs) {
-            Ok(vk) => Some(vk),
-            Err(e) => {
-                err = Some(e);
-                None
-            }
-        };
+    let verifying_key = public_key_from_commitments(all_commitments_refs)?;
 
     // In the case of Resharing, check if the old public key is the same as the new one
-    if let Some(vk) = old_verification_key {
-        if let Some(pk) = public_key_package.clone() {
-            // check the equality between the old key and the new key without failing the unwrap
-            if vk != *pk.verifying_key() {
-                err = Some(ProtocolError::AssertionFailed(
-                    "new public key does not match old public key".to_string(),
-                ));
-            }
-        };
+    if let Some(old_vk) = old_verification_key {
+        // check the equality between the old key and the new key without failing the unwrap
+        if old_vk != verifying_key {
+            return Err(ProtocolError::AssertionFailed(
+                "new public key does not match old public key".to_string(),
+            ));
+        }
     };
 
     // Start Round 5
-    broadcast_success_failure(&mut chan, &participants, &me, err, session_id).await?;
+    broadcast_success(&mut chan, &participants, &me, session_id).await?;
     // will never panic as broadcast_success_failure would panic before it
-    let public_key_package = public_key_package.unwrap();
 
     // unwrap cannot fail as round 4 ensures failing if verification_key is None
-    Ok((signing_share, public_key_package))
+    Ok(KeygenOutput {
+        private_share: SigningShare::new(my_signing_share),
+        public_key: verifying_key,
+    })
+}
+
+/// Represents the output of the key generation protocol.
+///
+/// This contains our share of the private key, along with the public key.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeygenOutput<C: Ciphersuite> {
+    pub private_share: SigningShare<C>,
+    pub public_key: VerifyingKey<C>,
 }
 
 pub(crate) async fn do_keygen<C: Ciphersuite>(
@@ -629,12 +590,9 @@ pub(crate) async fn do_keygen<C: Ciphersuite>(
     let mut rng = OsRng;
     let secret = SigningKey::<C>::new(&mut rng).to_scalar();
     // call keyshare
-    let (private_share, public_key_package) =
+    let keygen_output =
         do_keyshare::<C>(chan, participants, me, threshold, secret, None, rng).await?;
-    Ok(KeygenOutput {
-        private_share,
-        public_key_package,
-    })
+    Ok(keygen_output)
 }
 
 /// This function is to be called before running DKG
@@ -693,7 +651,7 @@ pub(crate) async fn do_reshare<C: Ciphersuite>(
         .unwrap_or(<C::Group as Group>::Field::zero());
 
     let old_reshare_package = Some((old_public_key, old_participants));
-    let (private_share, public_key_package) = do_keyshare::<C>(
+    let keygen_output = do_keyshare::<C>(
         chan,
         participants,
         me,
@@ -704,10 +662,7 @@ pub(crate) async fn do_reshare<C: Ciphersuite>(
     )
     .await?;
 
-    Ok(KeygenOutput {
-        private_share,
-        public_key_package,
-    })
+    Ok(keygen_output)
 }
 
 pub(crate) fn reshare_assertions<C: Ciphersuite>(
@@ -785,6 +740,6 @@ fn test_domain_separate_hash() {
     let hash_1 = domain_separate_hash(cnt, &participants_1);
     let hash_2 = domain_separate_hash(cnt, &participants_2);
     assert!(hash_1 == hash_2);
-    let hash_2 = domain_separate_hash(cnt+1, &participants_2);
+    let hash_2 = domain_separate_hash(cnt + 1, &participants_2);
     assert!(hash_1 != hash_2);
 }

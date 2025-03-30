@@ -9,6 +9,8 @@ use crate::{
     protocol::{Participant, ProtocolError},
 };
 use elliptic_curve::{Field, Group, ScalarPrimitive};
+use frost_secp256k1::keys::SigningShare;
+use frost_secp256k1::VerifyingKey;
 use serde::{Deserialize, Serialize};
 
 /// The output of the presigning protocol.
@@ -33,9 +35,34 @@ pub struct PresignArguments<C: CSCurve> {
     /// Ditto, for the second triple.
     pub triple1: (TripleShare<C>, TriplePub<C>),
     /// The output of key generation, i.e. our share of the secret key, and the public key package.
-    pub keygen_out: KeygenOutput<C>,
+    /// This is of type KeygenOutput<Secp256K1Sha256> from Frost implementation
+    pub keygen_out: KeygenOutput,
     /// The desired threshold for the presignature, which must match the original threshold
     pub threshold: usize,
+}
+
+/// Transforms a verification key of type Secp256k1SHA256 to CSCurve of cait-sith
+fn from_secp256k1sha256_to_cscurve_vk<C: CSCurve>(
+    verifying_key: &VerifyingKey,
+) -> Result<C::ProjectivePoint, ProtocolError> {
+    // serializes into a canonical byte array buf of length 33 bytes using the  affine point representation
+    let bytes = verifying_key
+        .serialize()
+        .map_err(|_| ProtocolError::PointSerialization)?;
+
+    let bytes: [u8; 33] = bytes.try_into().expect("Slice is not 33 bytes long");
+    let point = match C::from_bytes_to_affine(bytes) {
+        Some(point) => point,
+        _ => return Err(ProtocolError::PointSerialization),
+    };
+    Ok(point)
+}
+
+/// Transforms a secret key of type Secp256k1Sha256 to CSCurve of cait-sith
+fn from_secp256k1sha256_to_cscurve_sk<C: CSCurve>(private_share: &SigningShare) -> C::Scalar {
+    let bytes = private_share.to_scalar().to_bytes();
+    let bytes: [u8; 32] = bytes.try_into().expect("Slice is not 32 bytes long");
+    C::from_bytes_to_scalar(bytes).unwrap()
 }
 
 async fn do_presign<C: CSCurve>(
@@ -68,8 +95,9 @@ async fn do_presign<C: CSCurve>(
     let a_prime_i = bt_lambda * a_i;
     let b_prime_i = bt_lambda * b_i;
 
-    let big_x: C::ProjectivePoint = args.keygen_out.public_key.into();
-    let private_share = args.keygen_out.private_share;
+    let public_key = from_secp256k1sha256_to_cscurve_vk::<C>(&args.keygen_out.public_key)?;
+    let big_x: C::ProjectivePoint = public_key;
+    let private_share = from_secp256k1sha256_to_cscurve_sk::<C>(&args.keygen_out.private_share);
     let x_prime_i = sk_lambda * private_share;
 
     // Spec 1.4
@@ -223,6 +251,9 @@ mod test {
     use rand_core::OsRng;
 
     use crate::{ecdsa::math::Polynomial, ecdsa::triples, protocol::run_protocol};
+    use frost_secp256k1::keys::{PublicKeyPackage, VerifyingShare};
+    use frost_secp256k1::Identifier;
+    use std::collections::BTreeMap;
 
     use k256::{ProjectivePoint, Secp256k1};
 
@@ -258,9 +289,12 @@ mod test {
             .zip(triple1_shares.into_iter())
         {
             let private_share = f.evaluate(&p.scalar::<Secp256k1>());
+            let dummy_tree: BTreeMap<Identifier, VerifyingShare> = BTreeMap::new();
+            let verifying_key = VerifyingKey::new(big_x);
+            let public_key_package = PublicKeyPackage::new(dummy_tree, verifying_key);
             let keygen_out = KeygenOutput {
-                private_share,
-                public_key: big_x.into(),
+                private_share: SigningShare::new(private_share),
+                public_key: *public_key_package.verifying_key(),
             };
 
             let protocol = presign(

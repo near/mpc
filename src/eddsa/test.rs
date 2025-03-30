@@ -1,18 +1,13 @@
 use crate::eddsa::dkg_ed25519::{keygen, refresh, reshare};
+use crate::eddsa::sign::{sign, SignatureOutput};
 use crate::eddsa::KeygenOutput;
 use crate::participants::ParticipantList;
 use crate::protocol::{run_protocol, Participant, Protocol};
 
 use crate::crypto::Digest;
-use crate::eddsa::sign::{
-    do_sign_coordinator, do_sign_participant,
-};
-use crate::protocol::internal::{make_protocol, Context};
-use frost_ed25519::keys::{PublicKeyPackage, VerifyingShare};
-use frost_ed25519::{Group, Signature};
+use frost_ed25519::VerifyingKey;
 use rand_core::{OsRng, RngCore};
 use std::error::Error;
-use futures::FutureExt;
 
 /// this is a centralized key generation
 pub(crate) fn build_key_packages_with_dealer(
@@ -48,8 +43,8 @@ pub(crate) fn build_key_packages_with_dealer(
             (
                 from_frost_identifiers[&id],
                 KeygenOutput {
-                    private_share: share.signing_share().clone(),
-                    public_key_package: pubkey_package.clone(),
+                    private_share: *share.signing_share(),
+                    public_key: *pubkey_package.verifying_key(),
                 },
             )
         })
@@ -85,7 +80,7 @@ pub(crate) fn run_refresh(
     for (p, out) in keys.iter() {
         let protocol = refresh(
             Some(out.private_share),
-            out.public_key_package.clone(),
+            out.public_key,
             &participants,
             threshold,
             *p,
@@ -100,7 +95,7 @@ pub(crate) fn run_refresh(
 /// runs distributed reshare
 pub(crate) fn run_reshare(
     participants: &[Participant],
-    pub_key: &PublicKeyPackage,
+    pub_key: &VerifyingKey,
     keys: Vec<(Participant, KeygenOutput)>,
     old_threshold: usize,
     new_threshold: usize,
@@ -115,14 +110,14 @@ pub(crate) fn run_reshare(
             if p.clone() == new_participant.clone() {
                 setup.push((
                     p.clone(),
-                    (Some(k.private_share.clone()), k.public_key_package.clone()),
+                    (Some(k.private_share.clone()), k.public_key.clone()),
                 ));
                 is_break = true;
                 break;
             }
         }
         if !is_break {
-            setup.push((new_participant.clone(), (None, pub_key.clone())));
+            setup.push((new_participant.clone(), (None, *pub_key)));
         }
     }
 
@@ -134,7 +129,7 @@ pub(crate) fn run_reshare(
             &participants,
             old_threshold,
             out.0,
-            out.1.clone(),
+            out.1,
             &new_participants,
             new_threshold,
             *p,
@@ -145,8 +140,6 @@ pub(crate) fn run_reshare(
     let result = run_protocol(protocols)?;
     Ok(result)
 }
-
-pub type SignatureOutput = Option<Signature>; // None for participants and Some for coordinator
 
 pub(crate) fn test_run_signature_protocols(
     participants: &[(Participant, KeygenOutput)],
@@ -165,18 +158,15 @@ pub(crate) fn test_run_signature_protocols(
         .collect::<Vec<_>>();
     let coordinators = ParticipantList::new(&coordinators).unwrap();
     for (participant, key_pair) in participants.iter().take(actual_signers) {
-        let ctx = Context::new();
-        let protocol: Box<dyn Protocol<Output = SignatureOutput>> = if coordinators.contains(*participant) {
-            let participants_list = ParticipantList::new(participants_list.clone().as_slice()).unwrap();
-            let fut = do_sign_coordinator(
-                ctx.shared_channel(),
-                participants_list,
+        let protocol = if coordinators.contains(*participant) {
+            let protocol = sign(
+                &participants_list,
                 threshold,
+                *participant,
                 *participant,
                 key_pair.clone(),
                 msg_hash.as_ref().to_vec(),
-            ).map(|x| x.map(|y| Some(y)));
-            let protocol = make_protocol(ctx, fut);
+            )?;
             Box::new(protocol)
         } else {
             // pick any coordinator
@@ -184,16 +174,14 @@ pub(crate) fn test_run_signature_protocols(
             let index = rng.next_u32() as usize % coordinators.len();
             let coordinator = coordinators.get_participant(index).unwrap();
             // run the signing scheme
-            let fut = do_sign_participant(
-                ctx.shared_channel(),
+            let protocol = sign(
+                &participants_list,
                 threshold,
                 *participant,
                 coordinator,
                 key_pair.clone(),
                 msg_hash.as_ref().to_vec(),
-            )
-            .map(|x| x.map(|_| None));
-            let protocol = make_protocol(ctx, fut);
+            )?;
             Box::new(protocol)
         };
         protocols.push((*participant, protocol))
@@ -202,67 +190,20 @@ pub(crate) fn test_run_signature_protocols(
     Ok(run_protocol(protocols)?)
 }
 
-/// Assert that:
-///     1. Each participant has the same view of `PublicKeyPackage`
-///     2. Each participant is present in `PublicKeyPackage::verifying_shares()`
-///     3. No "other" participant is present in `PublicKeyPackage::verifying_shares()`
-///     4. For each participant their `verifying_share = secret_share * G`
-///     5. For each participant their `verifying_share` is the same across `KeyPackage` and `PublicKeyPackage`
+/// Assert that each participant has the same view of the public key
 pub(crate) fn assert_public_key_invariant(
     participants: &[(Participant, KeygenOutput)],
 ) -> Result<(), Box<dyn Error>> {
-    let public_key_package = participants.first().unwrap().1.public_key_package.clone();
+    let public_key_package = participants.first().unwrap().1.public_key.clone();
 
     if participants
         .iter()
-        .any(|(_, key_pair)| key_pair.public_key_package != public_key_package)
+        .any(|(_, key_pair)| key_pair.public_key != public_key_package)
     {
         assert!(
             false,
             "public key package is not the same for all participants"
         );
-    }
-
-    if public_key_package.verifying_shares().len() != participants.len() {
-        assert!(
-            false,
-            "public key package has different number of verifying shares than participants"
-        );
-    }
-
-    for (participant, key_pair) in participants {
-        let scalar = key_pair.private_share.to_scalar();
-        let actual_verifying_share = {
-            let point = frost_ed25519::Ed25519Group::generator() * scalar;
-            VerifyingShare::new(point)
-        };
-
-        let verifying_share = key_pair
-            .public_key_package
-            .verifying_shares()
-            .get(&participant.to_identifier())
-            .unwrap()
-            .clone();
-        if actual_verifying_share != verifying_share {
-            assert!(
-                false,
-                "verifying share in `KeyPackage` is not equal to secret share * G"
-            );
-        }
-
-        {
-            let expected_verifying_share = key_pair
-                .public_key_package
-                .verifying_shares()
-                .get(&participant.to_identifier())
-                .unwrap();
-            if actual_verifying_share != *expected_verifying_share {
-                assert!(
-                    false,
-                    "verifying share in `PublicKeyPackage` is not equal to secret share * G"
-                );
-            }
-        }
     }
 
     Ok(())
