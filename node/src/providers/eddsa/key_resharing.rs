@@ -5,14 +5,15 @@ use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use cait_sith::eddsa::KeygenOutput;
+use cait_sith::frost_ed25519::keys::SigningShare;
+use cait_sith::frost_ed25519::VerifyingKey;
 use cait_sith::protocol::Participant;
-use frost_ed25519::keys::{PublicKeyPackage, SigningShare};
 
 impl EddsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
         new_threshold: usize,
         my_share: Option<SigningShare>,
-        public_key: PublicKeyPackage,
+        public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
@@ -31,6 +32,11 @@ impl EddsaSignatureProvider {
         .await?;
         tracing::info!("Key resharing completed");
 
+        anyhow::ensure!(
+            new_keyshare.public_key == public_key,
+            "Public key should not change after key resharing"
+        );
+
         Ok(new_keyshare)
     }
 }
@@ -48,7 +54,7 @@ pub struct KeyResharingComputation {
     old_participants: Vec<ParticipantId>,
     old_threshold: usize,
     my_share: Option<SigningShare>,
-    public_key: PublicKeyPackage,
+    public_key: VerifyingKey,
 }
 
 #[async_trait::async_trait]
@@ -117,7 +123,7 @@ mod tests {
                 let participant_id = client.my_participant_id();
                 let all_participant_ids = client.all_participant_ids();
                 let keyshare = keygens.get(&participant_id.into()).map(|k| k.private_share);
-                let pubkey = keygens.iter().next().unwrap().1.clone().public_key_package;
+                let pubkey = keygens.iter().next().unwrap().1.clone().public_key;
                 let old_participants = old_participants.clone();
                 let key_id = KeyEventId::new(
                     EpochId::new(42),

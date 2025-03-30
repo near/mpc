@@ -22,7 +22,6 @@ use crate::web::SignatureDebugRequest;
 use cait_sith::{ecdsa, eddsa};
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use k256::Secp256k1;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
 use std::collections::HashMap;
@@ -309,7 +308,6 @@ impl Coordinator {
                 key_event_receiver,
                 chain_txn_sender,
                 mpc_config.participants.threshold as usize,
-                contract_state.key_event.domain,
             )
             .await?;
         } else {
@@ -382,7 +380,7 @@ impl Coordinator {
 
         let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
 
-        let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput<Secp256k1>> = HashMap::new();
+        let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
         let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
         let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
 

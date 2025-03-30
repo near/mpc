@@ -1,6 +1,8 @@
 use super::permanent::LegacyRootKeyshareData;
 use super::{Keyshare, KeyshareData};
 use cait_sith::ecdsa::KeygenOutput;
+use cait_sith::frost_core::keys::SigningShare;
+use cait_sith::frost_secp256k1::VerifyingKey;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
 
@@ -27,8 +29,8 @@ pub fn legacy_ecdsa_key_from_keyshares(
     };
     Ok(LegacyRootKeyshareData {
         epoch: keyshare.key_id.epoch_id.get(),
-        private_share: secp256k1_data.private_share,
-        public_key: secp256k1_data.public_key,
+        private_share: secp256k1_data.private_share.to_scalar(),
+        public_key: secp256k1_data.public_key.to_element().to_affine(),
     })
 }
 
@@ -42,8 +44,8 @@ impl Keyshare {
                 AttemptId::legacy_attempt_id(),
             ),
             data: KeyshareData::Secp256k1(KeygenOutput {
-                private_share: legacy.private_share,
-                public_key: legacy.public_key,
+                private_share: SigningShare::new(legacy.private_share),
+                public_key: VerifyingKey::new(legacy.public_key.into()),
             }),
         }
     }

@@ -5,7 +5,6 @@ mod sign;
 use mpc_contract::primitives::key_state::KeyEventId;
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
-use std::str::FromStr;
 mod kdf;
 pub mod key_resharing;
 pub mod triple;
@@ -17,15 +16,17 @@ use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
-use crate::providers::SignatureProvider;
+use crate::providers::{PublicKeyConversion, SignatureProvider};
 use crate::sign_request::{SignRequestStorage, SignatureId};
 use crate::tracking;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::ecdsa::sign::FullSignature;
 use cait_sith::ecdsa::KeygenOutput;
+use cait_sith::frost_secp256k1::keys::SigningShare;
+use cait_sith::frost_secp256k1::VerifyingKey;
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
-use k256::{AffinePoint, EncodedPoint, Scalar, Secp256k1};
+use k256::{AffinePoint, EncodedPoint, Secp256k1};
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
@@ -41,7 +42,7 @@ pub struct EcdsaSignatureProvider {
 
 #[derive(Clone)]
 pub(super) struct PerDomainData {
-    pub keyshare: KeygenOutput<Secp256k1>,
+    pub keyshare: KeygenOutput,
     pub presignature_store: Arc<PresignatureStorage>,
 }
 
@@ -53,7 +54,7 @@ impl EcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput<Secp256k1>>,
+        keyshares: HashMap<DomainId, KeygenOutput>,
     ) -> anyhow::Result<Self> {
         let active_participants_query = {
             let network_client = client.clone();
@@ -133,16 +134,16 @@ impl From<EcdsaTaskId> for MpcTaskId {
 }
 
 impl SignatureProvider for EcdsaSignatureProvider {
-    type PublicKey = AffinePoint;
-    type SecretShare = Scalar;
-    type KeygenOutput = KeygenOutput<Secp256k1>;
-    type SignatureOutput = (FullSignature<Secp256k1>, AffinePoint);
+    type PublicKey = VerifyingKey;
+    type SecretShare = SigningShare;
+    type KeygenOutput = KeygenOutput;
+    type Signature = FullSignature<Secp256k1>;
     type TaskId = EcdsaTaskId;
 
     async fn make_signature(
         self: Arc<Self>,
         id: SignatureId,
-    ) -> anyhow::Result<Self::SignatureOutput> {
+    ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
         self.make_signature_leader(id).await
     }
 
@@ -155,8 +156,8 @@ impl SignatureProvider for EcdsaSignatureProvider {
 
     async fn run_key_resharing_client(
         new_threshold: usize,
-        my_share: Option<Scalar>,
-        public_key: AffinePoint,
+        my_share: Option<SigningShare>,
+        public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
@@ -252,33 +253,53 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 }
 
-pub fn affine_point_to_public_key(point: AffinePoint) -> anyhow::Result<near_crypto::PublicKey> {
-    Ok(near_crypto::PublicKey::SECP256K1(
-        near_crypto::Secp256K1PublicKey::try_from(&point.to_encoded_point(false).as_bytes()[1..65])
-            .context("Failed to convert affine point to public key")?,
-    ))
-}
+impl PublicKeyConversion for VerifyingKey {
+    fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey> {
+        let bytes = self.to_element().to_encoded_point(false).to_bytes();
+        anyhow::ensure!(bytes[0] == 0x04);
+        Ok(near_crypto::PublicKey::SECP256K1(
+            near_crypto::Secp256K1PublicKey::try_from(&bytes[1..65])
+                .context("Failed to convert public key to near crypto type")?,
+        ))
+    }
 
-pub fn public_key_to_affine_point(key: near_crypto::PublicKey) -> anyhow::Result<AffinePoint> {
-    match key {
-        near_crypto::PublicKey::SECP256K1(key) => {
-            let mut bytes = [0u8; 65];
-            bytes[0] = 0x04;
-            bytes[1..65].copy_from_slice(key.as_ref());
-            match Option::from(AffinePoint::from_encoded_point(&EncodedPoint::from_bytes(
-                bytes,
-            )?)) {
-                Some(result) => Ok(result),
-                None => anyhow::bail!("Failed to convert public key to affine point"),
+    fn from_near_crypto(public_key: &near_crypto::PublicKey) -> anyhow::Result<Self> {
+        match public_key {
+            near_crypto::PublicKey::SECP256K1(key) => {
+                let mut bytes = [0u8; 65];
+                bytes[0] = 0x04;
+                bytes[1..65].copy_from_slice(key.as_ref());
+
+                let encoded_point = EncodedPoint::from_bytes(bytes)?;
+                let affine_point = AffinePoint::from_encoded_point(&encoded_point)
+                    .into_option()
+                    .ok_or(anyhow::anyhow!(
+                        "Failed to convert encoded point to affine point"
+                    ))?;
+                Ok(VerifyingKey::new(affine_point.into()))
             }
+            _ => anyhow::bail!("Unsupported public key type"),
         }
-        _ => anyhow::bail!("Unsupported public key type"),
     }
 }
 
-pub fn sdk_public_key_to_affine_point(
-    public_key: &near_sdk::PublicKey,
-) -> anyhow::Result<AffinePoint> {
-    let public_key = near_crypto::PublicKey::from_str(&String::from(public_key));
-    public_key_to_affine_point(public_key?)
+#[test]
+fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
+    use crate::tests::TestGenerators;
+    let x = TestGenerators::new(4, 3)
+        .make_ecdsa_keygens()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    x.public_key.to_near_public_key()?;
+    Ok(())
+}
+
+#[test]
+fn check_conversion_from_sdk() -> anyhow::Result<()> {
+    let near_sdk: near_sdk::PublicKey = "secp256k1:5TJSTQwYwe3MgTCep9DbLxLT6UjB6LFn3SStpBMgdfGjBopNjxL7mpNK92R6cdyByjz7vUQdRgtLiu9w84kopNqn"
+                .parse()?;
+    let _ = VerifyingKey::from_near_sdk(&near_sdk)?;
+    Ok(())
 }

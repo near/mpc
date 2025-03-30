@@ -34,7 +34,14 @@ fn benchmark_single_threaded_signature_generation() {
     for _ in 0..COUNT {
         let _ = generator.make_signature(
             &presignatures,
-            keygens.iter().next().unwrap().1.public_key,
+            keygens
+                .iter()
+                .next()
+                .unwrap()
+                .1
+                .public_key
+                .to_element()
+                .to_affine(),
             Scalar::random(&mut rand::thread_rng()),
         );
     }

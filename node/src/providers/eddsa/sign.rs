@@ -1,13 +1,15 @@
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
+use crate::providers::eddsa::kdf::derive_keygen_output;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::sign_request::SignatureId;
 use anyhow::Context;
+use cait_sith::eddsa::sign::sign;
 use cait_sith::eddsa::KeygenOutput;
 use cait_sith::frost_ed25519::Signature;
+use cait_sith::frost_ed25519::VerifyingKey;
 use cait_sith::protocol::Participant;
-use frost_ed25519::VerifyingKey;
 use mpc_contract::primitives::signature::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
@@ -116,8 +118,7 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
         channel: &mut NetworkTaskChannel,
     ) -> anyhow::Result<Option<(Signature, VerifyingKey)>> {
         let derived_keygen_output =
-            cait_sith::eddsa::derive_keygen_output(&self.keygen_output, self.tweak.as_bytes());
-        let derived_verifying_key = *derived_keygen_output.public_key_package.verifying_key();
+            derive_keygen_output(&self.keygen_output, self.tweak.as_bytes());
 
         let cs_participants = channel
             .participants()
@@ -126,35 +127,19 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        if channel.sender().is_leader() {
-            let protocol = cait_sith::eddsa::sign::sign_coordinator(
-                cs_participants.as_slice(),
-                self.threshold,
-                channel.my_participant_id().into(),
-                channel.sender().get_leader().into(),
-                derived_keygen_output,
-                self.message,
-            )?;
+        let protocol = sign(
+            cs_participants.as_slice(),
+            self.threshold,
+            channel.my_participant_id().into(),
+            channel.sender().get_leader().into(),
+            derived_keygen_output.clone(),
+            self.message,
+        )?;
 
-            // TODO(#306): metrics
-            let signature = run_protocol("eddsa sign", channel, protocol).await?;
+        // TODO(#306): metrics
+        let signature: Option<Signature> = run_protocol("eddsa sign", channel, protocol).await?;
 
-            Ok(Some((signature, derived_verifying_key)))
-        } else {
-            let protocol = cait_sith::eddsa::sign::sign_participant(
-                cs_participants.as_slice(),
-                self.threshold,
-                channel.my_participant_id().into(),
-                channel.sender().get_leader().into(),
-                derived_keygen_output,
-                self.message,
-            )?;
-
-            // TODO(#306): metrics
-            let _ = run_protocol("eddsa sign", channel, protocol).await?;
-
-            Ok(None)
-        }
+        Ok(signature.map(|signature| (signature, derived_keygen_output.public_key)))
     }
 
     fn leader_waits_for_success(&self) -> bool {

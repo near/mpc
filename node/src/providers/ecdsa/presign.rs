@@ -74,7 +74,7 @@ impl EcdsaSignatureProvider {
         triple_store: Arc<TripleStorage>,
         domain_id: DomainId,
         presignature_store: Arc<PresignatureStorage>,
-        keygen_out: KeygenOutput<Secp256k1>,
+        keygen_out: KeygenOutput,
     ) -> anyhow::Result<()> {
         let in_flight_generations = InFlightGenerationTracker::new();
         let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
@@ -200,7 +200,7 @@ pub struct PresignComputation {
     threshold: usize,
     triple0: TripleGenerationOutput<Secp256k1>,
     triple1: TripleGenerationOutput<Secp256k1>,
-    keygen_out: KeygenOutput<Secp256k1>,
+    keygen_out: KeygenOutput,
 }
 
 #[async_trait::async_trait]
@@ -244,7 +244,7 @@ impl MpcLeaderCentricComputation<PresignOutput<Secp256k1>> for PresignComputatio
 pub struct FollowerPresignComputation {
     pub threshold: usize,
     pub paired_triple_id: UniqueId,
-    pub keygen_out: KeygenOutput<Secp256k1>,
+    pub keygen_out: KeygenOutput,
     pub triple_store: Arc<TripleStorage>,
 
     pub out_presignature_store: Arc<PresignatureStorage>,

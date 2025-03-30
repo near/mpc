@@ -1,8 +1,10 @@
 use crate::sign_request::SignatureRequest;
 use anyhow::Context;
 use cait_sith::ecdsa::sign::FullSignature;
+use cait_sith::frost_ed25519;
+use cait_sith::frost_secp256k1::VerifyingKey;
 use k256::{
-    ecdsa::{RecoveryId, VerifyingKey},
+    ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
@@ -156,10 +158,10 @@ impl ChainRespondArgs {
     pub fn new_ecdsa(
         request: &SignatureRequest,
         response: &FullSignature<Secp256k1>,
-        public_key: &AffinePoint,
+        public_key: &VerifyingKey,
     ) -> anyhow::Result<Self> {
         let recovery_id = Self::brute_force_recovery_id(
-            public_key,
+            &public_key.to_element().to_affine(),
             response,
             request
                 .payload
@@ -204,7 +206,7 @@ impl ChainRespondArgs {
             <<Secp256k1 as CurveArithmetic>::Scalar as Reduce<<Secp256k1 as Curve>::Uint>>
             ::reduce_bytes(&signature.big_r.x()), signature.s)
             .context("Cannot create signature from cait_sith signature")?;
-        let expected_pk = match VerifyingKey::from_affine(*expected_pk) {
+        let expected_pk = match k256::ecdsa::VerifyingKey::from_affine(*expected_pk) {
             Ok(pk) => pk,
             _ => anyhow::bail!("The affine point cannot be transformed into a verifying key"),
         };

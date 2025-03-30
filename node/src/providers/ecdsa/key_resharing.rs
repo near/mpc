@@ -4,17 +4,18 @@ use crate::network::NetworkTaskChannel;
 use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
+use cait_sith::frost_secp256k1::keys::SigningShare;
+use cait_sith::frost_secp256k1::VerifyingKey;
 use cait_sith::protocol::Participant;
-use k256::{AffinePoint, Scalar, Secp256k1};
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
         new_threshold: usize,
-        my_share: Option<Scalar>,
-        public_key: AffinePoint,
+        my_share: Option<SigningShare>,
+        public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
-    ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+    ) -> anyhow::Result<KeygenOutput> {
         let new_keyshare = KeyResharingComputation {
             threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
@@ -30,10 +31,12 @@ impl EcdsaSignatureProvider {
         .await?;
         tracing::info!("Key resharing completed");
 
-        Ok(KeygenOutput {
-            private_share: new_keyshare,
-            public_key,
-        })
+        anyhow::ensure!(
+            new_keyshare.public_key == public_key,
+            "Public key should not change after key resharing"
+        );
+
+        Ok(new_keyshare)
     }
 }
 
@@ -49,13 +52,13 @@ pub struct KeyResharingComputation {
     threshold: usize,
     old_participants: Vec<ParticipantId>,
     old_threshold: usize,
-    my_share: Option<Scalar>,
-    public_key: AffinePoint,
+    my_share: Option<SigningShare>,
+    public_key: VerifyingKey,
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<Scalar> for KeyResharingComputation {
-    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<Scalar> {
+impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<KeygenOutput> {
         let me = channel.my_participant_id();
         let new_participants = channel
             .participants()
@@ -70,23 +73,16 @@ impl MpcLeaderCentricComputation<Scalar> for KeyResharingComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let old_signing_key = self
-            .my_share
-            .map(cait_sith::frost_secp256k1::keys::SigningShare::new);
-        let old_public_key = cait_sith::frost_secp256k1::VerifyingKey::new(self.public_key.into());
-
         let protocol = cait_sith::ecdsa::dkg_ecdsa::reshare(
             &old_participants,
             self.old_threshold,
-            old_signing_key,
-            old_public_key,
+            self.my_share,
+            self.public_key,
             &new_participants,
             self.threshold,
             me.into(),
         )?;
-        run_protocol("ecdsa key resharing", channel, protocol)
-            .await
-            .map(|share| share.private_share)
+        run_protocol("ecdsa key resharing", channel, protocol).await
     }
     fn leader_waits_for_success(&self) -> bool {
         false

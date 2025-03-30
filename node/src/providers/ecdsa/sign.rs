@@ -11,8 +11,9 @@ use crate::sign_request::SignatureId;
 use anyhow::Context;
 use cait_sith::ecdsa::presign::PresignOutput;
 use cait_sith::ecdsa::sign::FullSignature;
+use cait_sith::frost_secp256k1::VerifyingKey;
 use cait_sith::protocol::Participant;
-use k256::{AffinePoint, Scalar, Secp256k1};
+use k256::{Scalar, Secp256k1};
 use mpc_contract::crypto_shared::ScalarExt;
 use mpc_contract::primitives::signature::Tweak;
 use std::sync::Arc;
@@ -23,7 +24,7 @@ impl EcdsaSignatureProvider {
     pub(super) async fn make_signature_leader(
         self: Arc<Self>,
         id: SignatureId,
-    ) -> anyhow::Result<(FullSignature<Secp256k1>, AffinePoint)> {
+    ) -> anyhow::Result<(FullSignature<Secp256k1>, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
         let domain_data = self.domain_data(sign_request.domain)?;
         let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
@@ -96,7 +97,7 @@ impl EcdsaSignatureProvider {
 /// The entropy is used to rerandomize the presignature (inspired by [GS21])
 /// The tweak allows key derivation
 pub struct SignComputation {
-    pub keygen_out: KeygenOutput<Secp256k1>,
+    pub keygen_out: KeygenOutput,
     pub presign_out: PresignOutput<Secp256k1>,
     pub msg_hash: [u8; 32],
     pub tweak: Tweak,
@@ -104,11 +105,11 @@ pub struct SignComputation {
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, AffinePoint)> for SignComputation {
+impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, VerifyingKey)> for SignComputation {
     async fn compute(
         self,
         channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<(FullSignature<Secp256k1>, AffinePoint)> {
+    ) -> anyhow::Result<(FullSignature<Secp256k1>, VerifyingKey)> {
         let cs_participants = channel
             .participants()
             .iter()
@@ -122,7 +123,8 @@ impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, AffinePoint)> for Si
         let msg_hash =
             Scalar::from_bytes(self.msg_hash).context("Couldn't construct k256 point")?;
 
-        let public_key = derive_public_key(self.keygen_out.public_key, tweak);
+        let public_key =
+            derive_public_key(self.keygen_out.public_key.to_element().to_affine(), tweak);
 
         // rerandomize the presignature: a variant of [GS21]
         let PresignOutput { big_r, k, sigma } = self.presign_out;
@@ -154,7 +156,7 @@ impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, AffinePoint)> for Si
         )?;
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
         let signature = run_protocol("sign", channel, protocol).await?;
-        Ok((signature, public_key))
+        Ok((signature, VerifyingKey::new(public_key.into())))
     }
 
     fn leader_waits_for_success(&self) -> bool {
@@ -165,7 +167,7 @@ impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, AffinePoint)> for Si
 /// Performs an MPC signature operation as a follower.
 /// The difference is that the follower needs to look up the presignature, which may fail.
 pub struct FollowerSignComputation {
-    pub keygen_out: KeygenOutput<Secp256k1>,
+    pub keygen_out: KeygenOutput,
     pub presignature_id: UniqueId,
     pub presignature_store: Arc<PresignatureStorage>,
     pub msg_hash: [u8; 32],

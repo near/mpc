@@ -15,15 +15,16 @@ use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::sign_request::SignatureId;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
+use std::str::FromStr;
 use std::sync::Arc;
 
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
 pub trait SignatureProvider {
-    type PublicKey;
+    type PublicKey: PublicKeyConversion;
     type SecretShare;
     type KeygenOutput;
 
-    type SignatureOutput;
+    type Signature;
 
     /// Trait bound `Into<MpcTaskId>` serves as a way to see what logic needs to be added,
     /// when introducing new `TaskId`. Implementation of the trait should be trivial.
@@ -35,7 +36,7 @@ pub trait SignatureProvider {
     async fn make_signature(
         self: Arc<Self>,
         id: SignatureId,
-    ) -> anyhow::Result<Self::SignatureOutput>;
+    ) -> anyhow::Result<(Self::Signature, Self::PublicKey)>;
 
     /// Executes the key generation protocol.
     /// Returns once key generation is complete or encounters an error.
@@ -74,4 +75,16 @@ pub trait SignatureProvider {
 /// This trait helps check whether the current set of participants contains `A`.
 pub trait HasParticipants {
     fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool;
+}
+
+/// Helper functions to convert back and forth public key types
+pub trait PublicKeyConversion: Sized {
+    fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey>;
+    fn from_near_crypto(public_key: &near_crypto::PublicKey) -> anyhow::Result<Self>;
+
+    // Don't implement it
+    fn from_near_sdk(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
+        let near_crypto = near_crypto::PublicKey::from_str(&String::from(public_key))?;
+        Self::from_near_crypto(&near_crypto)
+    }
 }

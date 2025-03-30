@@ -1,6 +1,6 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
-use crate::providers::{ecdsa, eddsa};
+use crate::providers::PublicKeyConversion;
 use crate::tests::TestGenerators;
 use cait_sith::ecdsa::KeygenOutput;
 use mpc_contract::primitives::domain::DomainId;
@@ -42,12 +42,8 @@ fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
         .iter()
         .map(|keyshare| {
             let key = match &keyshare.data {
-                KeyshareData::Secp256k1(data) => {
-                    ecdsa::affine_point_to_public_key(data.public_key).unwrap()
-                }
-                KeyshareData::Ed25519(data) => {
-                    eddsa::convert_to_near_pubkey(&data.public_key_package).unwrap()
-                }
+                KeyshareData::Secp256k1(data) => data.public_key.to_near_public_key().unwrap(),
+                KeyshareData::Ed25519(data) => data.public_key.to_near_public_key().unwrap(),
             };
             KeyForDomain {
                 domain_id: keyshare.key_id.domain_id,

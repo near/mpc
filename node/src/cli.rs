@@ -447,11 +447,12 @@ mod tests {
     fn create_test_keyshare() -> LegacyRootKeyshareData {
         // Create a dummy private key - this is only for testing
         let private_share = Scalar::ONE;
-        let public_key = AffinePoint::default();
+        // Do some computation to get non-identity public key
+        let public_key = AffinePoint::GENERATOR * private_share;
         LegacyRootKeyshareData {
             epoch: 1,
             private_share,
-            public_key,
+            public_key: public_key.to_affine(),
         }
     }
 

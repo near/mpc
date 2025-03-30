@@ -1,3 +1,4 @@
+mod kdf;
 mod key_generation;
 mod key_resharing;
 mod sign;
@@ -5,16 +6,15 @@ mod sign;
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
-use crate::providers::SignatureProvider;
+use crate::providers::{PublicKeyConversion, SignatureProvider};
 use crate::sign_request::{SignRequestStorage, SignatureId};
 use borsh::{BorshDeserialize, BorshSerialize};
 use cait_sith::eddsa::KeygenOutput;
-use frost_ed25519::keys::{PublicKeyPackage, SigningShare};
-use frost_ed25519::{Signature, VerifyingKey};
+use cait_sith::frost_ed25519::keys::SigningShare;
+use cait_sith::frost_ed25519::{Signature, VerifyingKey};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::KeyEventId;
-use std::collections::{BTreeMap, HashMap};
-use std::str::FromStr;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -58,16 +58,16 @@ impl From<EddsaTaskId> for MpcTaskId {
 }
 
 impl SignatureProvider for EddsaSignatureProvider {
-    type PublicKey = PublicKeyPackage;
+    type PublicKey = VerifyingKey;
     type SecretShare = SigningShare;
     type KeygenOutput = KeygenOutput;
-    type SignatureOutput = (Signature, VerifyingKey);
+    type Signature = Signature;
     type TaskId = EddsaTaskId;
 
     async fn make_signature(
         self: Arc<Self>,
         id: SignatureId,
-    ) -> anyhow::Result<Self::SignatureOutput> {
+    ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
         self.make_signature_leader(id).await
     }
 
@@ -81,7 +81,7 @@ impl SignatureProvider for EddsaSignatureProvider {
     async fn run_key_resharing_client(
         new_threshold: usize,
         key_share: Option<SigningShare>,
-        public_key: PublicKeyPackage,
+        public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
@@ -122,33 +122,25 @@ impl SignatureProvider for EddsaSignatureProvider {
     }
 }
 
-pub fn convert_to_near_pubkey(
-    public_key_package: &PublicKeyPackage,
-) -> anyhow::Result<near_crypto::PublicKey> {
-    let data = public_key_package.verifying_key().serialize()?;
-    let data: [u8; 32] = data
-        .try_into()
-        .or_else(|_| anyhow::bail!("Serialized public key is not 32 bytes."))?;
-    Ok(near_crypto::PublicKey::ED25519(
-        near_crypto::ED25519PublicKey::from(data),
-    ))
-}
-
-pub fn convert_from_near_pubkey(key: near_crypto::PublicKey) -> anyhow::Result<PublicKeyPackage> {
-    match key {
-        near_crypto::PublicKey::ED25519(key) => {
-            let verifying_key = VerifyingKey::deserialize(key.0.as_slice())?;
-            Ok(PublicKeyPackage::new(BTreeMap::new(), verifying_key))
-        }
-        _ => anyhow::bail!("Unsupported public key type"),
+impl PublicKeyConversion for VerifyingKey {
+    fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey> {
+        let data = self.serialize()?;
+        let data: [u8; 32] = data
+            .try_into()
+            .or_else(|_| anyhow::bail!("Serialized public key is not 32 bytes."))?;
+        Ok(near_crypto::PublicKey::ED25519(
+            near_crypto::ED25519PublicKey::from(data),
+        ))
     }
-}
 
-pub fn convert_from_sdk_pubkey(
-    public_key: &near_sdk::PublicKey,
-) -> anyhow::Result<PublicKeyPackage> {
-    let near_crypto = near_crypto::PublicKey::from_str(&String::from(public_key))?;
-    convert_from_near_pubkey(near_crypto)
+    fn from_near_crypto(public_key: &near_crypto::PublicKey) -> anyhow::Result<Self> {
+        match public_key {
+            near_crypto::PublicKey::ED25519(key) => {
+                Ok(VerifyingKey::deserialize(key.0.as_slice())?)
+            }
+            _ => anyhow::bail!("Unsupported public key type"),
+        }
+    }
 }
 
 #[test]
@@ -160,14 +152,15 @@ fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
         .next()
         .unwrap()
         .clone();
-    convert_to_near_pubkey(&x.public_key_package)?;
+    x.public_key.to_near_public_key()?;
     Ok(())
 }
 
 #[test]
 fn check_pubkey_conversion_from_sdk() -> anyhow::Result<()> {
+    use std::str::FromStr;
     let near_sdk =
         near_sdk::PublicKey::from_str("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")?;
-    let _ = convert_from_sdk_pubkey(&near_sdk)?;
+    let _ = VerifyingKey::from_near_sdk(&near_sdk)?;
     Ok(())
 }
