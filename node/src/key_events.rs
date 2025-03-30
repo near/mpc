@@ -52,13 +52,13 @@ pub async fn keygen_computation_inner(
         SignatureScheme::Secp256k1 => {
             let keyshare =
                 EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.to_near_crypto()?;
+            let public_key = keyshare.public_key.to_near_public_key()?;
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
         SignatureScheme::Ed25519 => {
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.to_near_crypto()?;
+            let public_key = keyshare.public_key.to_near_public_key()?;
             (KeyshareData::Ed25519(keyshare), public_key)
         }
     };

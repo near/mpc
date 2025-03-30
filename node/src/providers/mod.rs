@@ -79,7 +79,7 @@ pub trait HasParticipants {
 
 /// Helper functions to convert back and forth public key types
 pub trait PublicKeyConversion: Sized {
-    fn to_near_crypto(&self) -> anyhow::Result<near_crypto::PublicKey>;
+    fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey>;
     fn from_near_crypto(public_key: &near_crypto::PublicKey) -> anyhow::Result<Self>;
 
     // Don't implement it

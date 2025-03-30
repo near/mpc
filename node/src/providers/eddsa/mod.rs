@@ -123,7 +123,7 @@ impl SignatureProvider for EddsaSignatureProvider {
 }
 
 impl PublicKeyConversion for VerifyingKey {
-    fn to_near_crypto(&self) -> anyhow::Result<near_crypto::PublicKey> {
+    fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey> {
         let data = self.serialize()?;
         let data: [u8; 32] = data
             .try_into()
@@ -152,7 +152,7 @@ fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
         .next()
         .unwrap()
         .clone();
-    x.public_key.to_near_crypto()?;
+    x.public_key.to_near_public_key()?;
     Ok(())
 }
 

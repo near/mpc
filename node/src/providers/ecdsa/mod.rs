@@ -254,7 +254,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
 }
 
 impl PublicKeyConversion for VerifyingKey {
-    fn to_near_crypto(&self) -> anyhow::Result<near_crypto::PublicKey> {
+    fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey> {
         let bytes = self.to_element().to_encoded_point(false).to_bytes();
         anyhow::ensure!(bytes[0] == 0x04);
         Ok(near_crypto::PublicKey::SECP256K1(
@@ -292,7 +292,7 @@ fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
         .next()
         .unwrap()
         .clone();
-    x.public_key.to_near_crypto()?;
+    x.public_key.to_near_public_key()?;
     Ok(())
 }
 

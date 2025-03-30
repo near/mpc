@@ -42,8 +42,8 @@ fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
         .iter()
         .map(|keyshare| {
             let key = match &keyshare.data {
-                KeyshareData::Secp256k1(data) => data.public_key.to_near_crypto().unwrap(),
-                KeyshareData::Ed25519(data) => data.public_key.to_near_crypto().unwrap(),
+                KeyshareData::Secp256k1(data) => data.public_key.to_near_public_key().unwrap(),
+                KeyshareData::Ed25519(data) => data.public_key.to_near_public_key().unwrap(),
             };
             KeyForDomain {
                 domain_id: keyshare.key_id.domain_id,
