@@ -1262,7 +1262,7 @@ dependencies = [
 [[package]]
 name = "cait-sith"
 version = "0.8.0"
-source = "git+https://github.com/Near-One/cait-sith?rev=27b9ae1ae394ad9d8f40e75a5fbab46242409165#27b9ae1ae394ad9d8f40e75a5fbab46242409165"
+source = "git+https://github.com/kuksag/cait-sith?rev=b61d5969fb33b0c9eb4e41f9224cee41fe48a6b5#b61d5969fb33b0c9eb4e41f9224cee41fe48a6b5"
 dependencies = [
  "auto_ops",
  "ck-meow",
@@ -3938,7 +3938,6 @@ dependencies = [
  "curve25519-dalek",
  "deranged",
  "flume",
- "frost-ed25519",
  "futures",
  "futures-util",
  "gcloud-sdk",

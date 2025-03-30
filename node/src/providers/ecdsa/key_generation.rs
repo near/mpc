@@ -3,13 +3,12 @@ use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use cait_sith::protocol::Participant;
-use k256::Secp256k1;
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_generation_client_internal(
         threshold: usize,
         channel: NetworkTaskChannel,
-    ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+    ) -> anyhow::Result<KeygenOutput> {
         let key = KeyGenerationComputation { threshold }
             .perform_leader_centric_computation(
                 channel,
@@ -30,11 +29,8 @@ pub struct KeyGenerationComputation {
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<KeygenOutput<Secp256k1>> for KeyGenerationComputation {
-    async fn compute(
-        self,
-        channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<KeygenOutput> {
         let cs_participants = channel
             .participants()
             .iter()
@@ -61,7 +57,6 @@ mod tests {
     use crate::providers::ecdsa::{EcdsaTaskId, KeygenOutput};
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use k256::Secp256k1;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
@@ -84,7 +79,7 @@ mod tests {
     async fn run_keygen_client(
         client: Arc<MeshNetworkClient>,
         mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-    ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+    ) -> anyhow::Result<KeygenOutput> {
         let participant_id = client.my_participant_id();
         let all_participant_ids = client.all_participant_ids();
         // We'll have the first participant be the leader.

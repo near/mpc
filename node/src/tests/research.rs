@@ -300,7 +300,10 @@ fn signature_network_research_best_case() {
             cait_sith::ecdsa::sign::sign(
                 &participants,
                 participants[i],
-                keygens[&participants[i]].public_key,
+                keygens[&participants[i]]
+                    .public_key
+                    .to_element()
+                    .to_affine(),
                 presignatures[&participants[i]].clone(),
                 Scalar::from_u128(100000),
             )

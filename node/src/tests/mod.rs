@@ -70,8 +70,8 @@ impl TestGenerators {
         self.participants.iter().map(|p| (*p).into()).collect()
     }
 
-    pub fn make_ecdsa_keygens(&self) -> HashMap<Participant, ecdsa::KeygenOutput<Secp256k1>> {
-        let mut protocols: Vec<ParticipantAndProtocol<ecdsa::KeygenOutput<Secp256k1>>> = Vec::new();
+    pub fn make_ecdsa_keygens(&self) -> HashMap<Participant, ecdsa::KeygenOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<ecdsa::KeygenOutput>> = Vec::new();
         for participant in &self.participants {
             protocols.push((
                 *participant,
@@ -121,7 +121,7 @@ impl TestGenerators {
         &self,
         triple0s: &HashMap<Participant, TripleGenerationOutput<Secp256k1>>,
         triple1s: &HashMap<Participant, TripleGenerationOutput<Secp256k1>>,
-        keygens: &HashMap<Participant, ecdsa::KeygenOutput<Secp256k1>>,
+        keygens: &HashMap<Participant, ecdsa::KeygenOutput>,
     ) -> HashMap<Participant, PresignOutput<Secp256k1>> {
         let mut protocols: Vec<ParticipantAndProtocol<PresignOutput<Secp256k1>>> = Vec::new();
         for participant in &self.participants {

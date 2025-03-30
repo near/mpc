@@ -112,6 +112,8 @@ mod tests {
     };
     use crate::keyshare::test_utils::{generate_dummy_keyshare, KeysetBuilder};
     use crate::keyshare::KeyshareData;
+    use cait_sith::frost_secp256k1::keys::SigningShare;
+    use cait_sith::frost_secp256k1::VerifyingKey;
     use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
     use mpc_contract::primitives::key_state::EpochId;
@@ -185,10 +187,13 @@ mod tests {
                 .await
                 .unwrap();
         // Write a legacy keyshare.
+        let private_share = Scalar::random(&mut rand::thread_rng());
+        let public_key = AffinePoint::GENERATOR * private_share;
         let legacy_data = LegacyRootKeyshareData {
             epoch: 1,
-            private_share: Scalar::random(&mut rand::thread_rng()),
-            public_key: AffinePoint::IDENTITY,
+            private_share,
+            // Do some computation to get non-identity public key
+            public_key: public_key.to_affine(),
         };
         let legacy_data_json = serde_json::to_vec(&legacy_data).unwrap();
         let identifier = "whatever";
@@ -205,8 +210,8 @@ mod tests {
         assert_eq!(
             loaded.keyshares[0].data,
             KeyshareData::Secp256k1(cait_sith::ecdsa::KeygenOutput {
-                private_share: legacy_data.private_share,
-                public_key: legacy_data.public_key,
+                private_share: SigningShare::new(legacy_data.private_share),
+                public_key: VerifyingKey::new(legacy_data.public_key.into()),
             })
         );
     }

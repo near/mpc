@@ -4,7 +4,7 @@ use crate::indexer::types::{
 };
 use crate::network::MeshNetworkClient;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
-use crate::providers::{ecdsa, eddsa, EcdsaTaskId};
+use crate::providers::{EcdsaTaskId, PublicKeyConversion};
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{
     config::ParticipantsConfig,
@@ -16,6 +16,7 @@ use crate::{
     network::NetworkTaskChannel,
     providers::{EcdsaSignatureProvider, SignatureProvider},
 };
+use cait_sith::{frost_ed25519, frost_secp256k1};
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use std::sync::Arc;
@@ -51,13 +52,13 @@ pub async fn keygen_computation_inner(
         SignatureScheme::Secp256k1 => {
             let keyshare =
                 EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = ecdsa::affine_point_to_public_key(keyshare.public_key)?;
+            let public_key = keyshare.public_key.to_near_crypto()?;
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
         SignatureScheme::Ed25519 => {
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = eddsa::convert_to_near_pubkey(&keyshare.public_key_package)?;
+            let public_key = keyshare.public_key.to_near_crypto()?;
             (KeyshareData::Ed25519(keyshare), public_key)
         }
     };
@@ -178,7 +179,7 @@ async fn resharing_computation_inner(
 
     let data = match domain.scheme {
         SignatureScheme::Secp256k1 => {
-            let public_key = ecdsa::sdk_public_key_to_affine_point(previous_public_key)?;
+            let public_key = frost_secp256k1::VerifyingKey::from_near_sdk(previous_public_key)?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Secp256k1(data) => Ok(data.private_share),
@@ -196,7 +197,7 @@ async fn resharing_computation_inner(
             KeyshareData::Secp256k1(res)
         }
         SignatureScheme::Ed25519 => {
-            let public_key = eddsa::convert_from_sdk_pubkey(previous_public_key)?;
+            let public_key = frost_ed25519::VerifyingKey::from_near_sdk(previous_public_key)?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Ed25519(data) => Ok(data.private_share),
@@ -324,7 +325,6 @@ pub async fn keygen_leader(
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     threshold: usize,
-    domain: DomainConfig,
 ) -> anyhow::Result<()> {
     loop {
         // Wait for all participants to be connected. Otherwise, computations are most likely going
@@ -370,23 +370,13 @@ pub async fn keygen_leader(
             }
         }
 
-        let channel = match domain.scheme {
-            SignatureScheme::Secp256k1 => client.new_channel_for_task(
-                EcdsaTaskId::KeyGeneration {
-                    key_event: key_event_id,
-                },
-                client.all_participant_ids(),
-            ),
-            SignatureScheme::Ed25519 => client.new_channel_for_task(
-                EddsaTaskId::KeyGeneration {
-                    key_event: key_event_id,
-                },
-                client.all_participant_ids(),
-            ),
-        };
-
         // Start the keygen computation.
-        let Ok(channel) = channel else {
+        let Ok(channel) = client.new_channel_for_task(
+            EcdsaTaskId::KeyGeneration {
+                key_event: key_event_id,
+            },
+            client.all_participant_ids(),
+        ) else {
             tracing::warn!("Failed to create channel for keygen computation; retrying.");
             continue;
         };
@@ -497,23 +487,13 @@ pub async fn resharing_leader(
             }
         }
 
-        let channel = match args.domain.scheme {
-            SignatureScheme::Secp256k1 => client.new_channel_for_task(
-                EcdsaTaskId::KeyResharing {
-                    key_event: key_event_id,
-                },
-                client.all_participant_ids(),
-            ),
-            SignatureScheme::Ed25519 => client.new_channel_for_task(
-                EddsaTaskId::KeyResharing {
-                    key_event: key_event_id,
-                },
-                client.all_participant_ids(),
-            ),
-        };
-
         // Start the resharing computation.
-        let Ok(channel) = channel else {
+        let Ok(channel) = client.new_channel_for_task(
+            EcdsaTaskId::KeyResharing {
+                key_event: key_event_id,
+            },
+            client.all_participant_ids(),
+        ) else {
             tracing::warn!("Failed to create channel for resharing computation; retrying.");
             continue;
         };
