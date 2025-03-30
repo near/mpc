@@ -1,5 +1,3 @@
-extern crate core;
-
 use clap::Parser;
 use tracing::init_logging;
 
