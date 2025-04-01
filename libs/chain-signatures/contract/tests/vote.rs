@@ -1,6 +1,9 @@
 pub mod common;
 
 use common::{check_call_success, init_env_secp256k1};
+use curve25519_dalek::EdwardsPoint;
+use k256::elliptic_curve::group::GroupEncoding;
+use mpc_contract::crypto_shared::types::PublicKeyExtended;
 use mpc_contract::primitives::participants::ParticipantInfo;
 use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
 use mpc_contract::state::ProtocolContractState;
@@ -52,14 +55,27 @@ async fn test_keygen() -> anyhow::Result<()> {
             .await?,
     );
 
-    let pk = PublicKey::from_str("ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae").unwrap();
+    let near_public_key =
+        PublicKey::from_str("ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae").unwrap();
+    let public_key_bytes = near_public_key.as_bytes()[1..]
+        .try_into()
+        .expect("pk is 32 bytes.");
+
+    let edwards_point = EdwardsPoint::from_bytes(public_key_bytes)
+        .expect("Public key bytes are valid edwards point.");
+
+    let public_key = PublicKeyExtended::Edd25519 {
+        near_public_key,
+        edwards_point,
+    };
+
     let vote_pk_args = json!( {
         "key_event_id": {
             "epoch_id": 5,
             "domain_id": 2,
             "attempt_id": 0,
         },
-        "public_key": pk,
+        "public_key": public_key,
     });
 
     for account in &accounts[0..3] {

@@ -3,6 +3,7 @@ pub mod key_event;
 pub mod resharing;
 pub mod running;
 
+use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
@@ -10,7 +11,7 @@ use crate::primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use initializing::InitializingContractState;
-use near_sdk::{near, PublicKey};
+use near_sdk::near;
 use resharing::ResharingContractState;
 use running::RunningContractState;
 
@@ -33,7 +34,7 @@ impl ProtocolContractState {
 
         Ok(domain_registry)
     }
-    pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKey, Error> {
+    pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKeyExtended, Error> {
         match self {
             ProtocolContractState::Running(state) => state.keyset.public_key(domain_id),
             ProtocolContractState::Resharing(state) => {
@@ -93,7 +94,7 @@ impl ProtocolContractState {
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
-        public_key: PublicKey,
+        public_key: PublicKeyExtended,
     ) -> Result<Option<ProtocolContractState>, Error> {
         let ProtocolContractState::Initializing(state) = self else {
             return Err(InvalidState::ProtocolStateNotResharing.into());

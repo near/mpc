@@ -4,7 +4,6 @@ use k256::{
     elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint},
     AffinePoint, FieldBytes, Scalar, Secp256k1, SecretKey,
 };
-use mpc_contract::primitives::signature::{Payload, SignRequestArgs};
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
@@ -19,6 +18,10 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
     update::UpdateId,
+};
+use mpc_contract::{
+    crypto_shared::types::PublicKeyExtended,
+    primitives::signature::{Payload, SignRequestArgs},
 };
 use near_crypto::KeyType;
 use near_sdk::log;
@@ -100,6 +103,7 @@ pub async fn init_with_candidates(
             });
 
             let pk = near_sdk::PublicKey::from_str(&format!("{}", pk)).unwrap();
+            let pk = PublicKeyExtended::Secp256k1 { near_public_key: pk };
             let key = KeyForDomain {
                 attempt: AttemptId::new(),
                 domain_id,
