@@ -103,7 +103,9 @@ pub async fn init_with_candidates(
             });
 
             let pk = near_sdk::PublicKey::from_str(&format!("{}", pk)).unwrap();
-            let pk = PublicKeyExtended::Secp256k1 { near_public_key: pk };
+            let pk = PublicKeyExtended::Secp256k1 {
+                near_public_key: pk,
+            };
             let key = KeyForDomain {
                 attempt: AttemptId::new(),
                 domain_id,
