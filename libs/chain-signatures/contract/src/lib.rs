@@ -722,6 +722,7 @@ impl VersionedMpcContract {
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
+        log!("migrating contract");
         if let Some(legacy_contract_state::VersionedMpcContract::V1(state)) =
             Self::state_read::<legacy_contract_state::VersionedMpcContract>()
         {
