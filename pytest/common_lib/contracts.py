@@ -76,9 +76,6 @@ class UpdateArgsV1:
 
 
 class ConfigV2:
-    """
-    Helper class to json-serialize `Config` for mpc-contract v1.
-    """
 
     def __init__(self, max_num_requests_to_remove, request_timeout_blocks):
         self.max_num_requests_to_remove = max_num_requests_to_remove

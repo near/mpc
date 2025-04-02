@@ -12,6 +12,7 @@ import json
 import sys
 import time
 import pathlib
+import pytest
 from utils import load_binary_file
 import yaml
 
@@ -111,18 +112,25 @@ def migrate_from_v2_to_dummy(cluster):
         assert False
 
 
-def migrate_from_v1_to_v2(cluster, proposal_id_offset):
+def migrate_from_v1_to_v2(cluster):
     update_args = UpdateArgsV1(COMPILED_CONTRACT_PATH)
-    cluster.propose_update(update_args.borsh_serialize())
-    cluster.vote_update(0, proposal_id_offset)
-    cluster.vote_update(1, proposal_id_offset)
-    time.sleep(2)
+    id = cluster.propose_update(update_args.borsh_serialize())
+    cluster.vote_update(0, id)
+    cluster.vote_update(1, id)
+    time.sleep(10)
     cluster.assert_is_deployed(update_args.code())
     print("Succesfully migrated from V1 to V2")
     cluster.contract_state().print()
 
 
-def test_contract_update():
+@pytest.mark.parametrize("test_trailing_sigs", [
+    False,
+    pytest.param(
+        True,
+        marks=[pytest.mark.slow, pytest.mark.ci_excluded],
+    ),
+])
+def test_contract_update(test_trailing_sigs):
     # deploy V2, generate keys and update V2 to dummy contract
     cluster, mpc_nodes = deploy_and_init_v2()
     cluster.send_and_await_signature_requests(1)
@@ -141,8 +149,11 @@ def test_contract_update():
     # deploy legacy contract to new contract account and update legacy to V2
     deploy_and_init_v1(cluster, public_key)
     # add some update proposals for state:
-    update_v2_code_args = UpdateArgsV2(code_path=MIGRATE_CURRENT_CONTRACT_PATH)
-    cluster.propose_update(update_v2_code_args.borsh_serialize())
+    n_updates = 10
+    for _ in range(n_updates):
+        update_v1_code_args = UpdateArgsV1(
+            code_path=MIGRATE_CURRENT_CONTRACT_PATH)
+        cluster.propose_update(update_v1_code_args.borsh_serialize())
 
     def make_legacy_sign_request_txs(payloads,
                                      nonce_offset=1,
@@ -187,17 +198,26 @@ def test_contract_update():
     # add some signature requests for state:
     tx_hashes, _ = generate_and_send_legacy_signature_requests(10)
 
-    def assert_sig_failure(res):
-        print("res sig failure: ", json.dumps(res, indent=1))
+    def assert_tx_failure(res):
         assert 'result' in res, json.dumps(res, indent=1)
         assert 'status' in res['result'], json.dumps(res['result'], indent=1)
         assert 'Failure' in res['result']['status'], json.dumps(
             res['result']['status'])
 
-    migrate_from_v1_to_v2(cluster, 1)
+    migrate_from_v1_to_v2(cluster)
 
-    results = cluster.await_txs_responses(tx_hashes)
-    shared.verify_txs(results, assert_sig_failure)
+    if test_trailing_sigs:
+        results = cluster.await_txs_responses(tx_hashes)
+        shared.verify_txs(results, assert_tx_failure)
+
+    # assert previous updates can no longer be voted for:
+    for i in range(n_updates):
+        vote_update_args = {'id': i}
+        node = cluster.mpc_nodes[0]
+        tx = node.sign_tx(cluster.mpc_contract_account(), 'vote_update',
+                          vote_update_args)
+        res = node.near_node.send_tx_and_wait(tx, 20)
+        assert_tx_failure(res)
     cluster.send_and_await_signature_requests(1)
 
 
