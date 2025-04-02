@@ -725,8 +725,7 @@ impl VersionedMpcContract {
         if let Some(legacy_contract_state::VersionedMpcContract::V1(state)) =
             Self::state_read::<legacy_contract_state::VersionedMpcContract>()
         {
-            let mut config = Config::default();
-            config.request_timeout_blocks = state.config.request_timeout_blocks;
+            let config = Config::default();
             let protocol_state: ProtocolContractState = (&state.protocol_state).into();
             return Ok(VersionedMpcContract::V0(MpcContract {
                 config,
