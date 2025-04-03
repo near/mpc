@@ -19,6 +19,16 @@ edit it:
     available throughput.
 * Set the directory of your local clone of the infra-ops repository.
   This is used for Terraform deployment of the test cluster.
+* Set `rpcs` to point to your RPC endpoints
+* (Optional) Configure a `funding_account` to use a specific account for funding operations:
+  ```yaml
+  funding_account:
+    account_id: your-account.testnet
+    access_keys:
+      - ed25519:xxxxxx  # Your private key
+    kind: funding_account
+  ```
+  If not provided, the devnet will create a funding account from the testnet faucet.
 
 ## How the CLI Works
 This CLI is somewhat similar to Terraform in spirit. As soon as you
