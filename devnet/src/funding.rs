@@ -1,8 +1,9 @@
-use crate::account::{make_random_account_name, OperatingAccounts};
+use crate::account::{make_random_account_name, OperatingAccount, OperatingAccounts};
 use crate::constants::{
     MINIMUM_BALANCE_TO_REMAIN_IN_ACCOUNTS, ONE_NEAR,
     PERCENT_OF_ORIGINAL_BALANCE_BELOW_WHICH_TO_REFILL,
 };
+use crate::types::NearAccount;
 use near_sdk::AccountId;
 use std::collections::VecDeque;
 
@@ -48,6 +49,7 @@ impl AccountToFund {
 pub async fn fund_accounts(
     accounts: &mut OperatingAccounts,
     desired_funding: Vec<AccountToFund>,
+    funding_account: Option<NearAccount>,
 ) -> Vec<AccountId> {
     // Funding accounts that we already have, and their usable balances.
     // We assume that MINIMUM_BALANCE_TO_REMAIN_IN_ACCOUNTS is enough to cover transfer fees.
@@ -101,21 +103,44 @@ pub async fn fund_accounts(
     }
 
     while !accounts_to_be_funded.is_empty() {
-        // Make sure we have at least 1 funding account; if not, we create one from the faucet.
+        // Make sure we have at least 1 funding account; if not, use the provided one or create from faucet
         if funding_accounts.is_empty() {
-            let funding_account = make_random_account_name("", ".testnet");
-            println!(
-                "Creating new funding account {} from faucet",
-                funding_account
-            );
-            accounts
-                .create_funding_account_from_faucet(&funding_account)
-                .await;
-            let balance = accounts.get_account_balance(&funding_account).await;
-            funding_accounts.push_back((
-                funding_account,
-                balance.saturating_sub(MINIMUM_BALANCE_TO_REMAIN_IN_ACCOUNTS),
-            ));
+            if let Some(funding_account) = &funding_account {
+                println!(
+                    "Using provided funding account {} from config",
+                    funding_account.account_id
+                );
+                // Add the account to our operating accounts if not already there
+                if !accounts.accounts.contains_key(&funding_account.account_id) {
+                    accounts.accounts.insert(
+                        funding_account.account_id.clone(),
+                        OperatingAccount::new(
+                            funding_account.clone(),
+                            accounts.recent_block_hash,
+                            accounts.client.clone(),
+                        ),
+                    );
+                }
+                let balance = accounts.get_account_balance(&funding_account.account_id).await;
+                funding_accounts.push_back((
+                    funding_account.account_id.clone(),
+                    balance.saturating_sub(MINIMUM_BALANCE_TO_REMAIN_IN_ACCOUNTS),
+                ));
+            } else {
+                let funding_account = make_random_account_name("", ".testnet");
+                println!(
+                    "Creating new funding account {} from faucet",
+                    funding_account
+                );
+                accounts
+                    .create_funding_account_from_faucet(&funding_account)
+                    .await;
+                let balance = accounts.get_account_balance(&funding_account).await;
+                funding_accounts.push_back((
+                    funding_account,
+                    balance.saturating_sub(MINIMUM_BALANCE_TO_REMAIN_IN_ACCOUNTS),
+                ));
+            }
         }
 
         // Look at the first funding account we have, and try to use that to fund as much of the

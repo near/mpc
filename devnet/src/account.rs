@@ -410,9 +410,12 @@ impl OperatingAccount {
 
 /// Represents the live state of the collection of all accounts the CLI knows.
 pub struct OperatingAccounts {
-    accounts: HashMap<AccountId, OperatingAccount>,
-    recent_block_hash: CryptoHash,
-    client: Arc<NearRpcClients>,
+    /// The current view of the account data. This is persisted at the end of the CLI run.
+    pub accounts: HashMap<AccountId, OperatingAccount>,
+    /// A recent block hash for submitting transactions to chain.
+    pub recent_block_hash: CryptoHash,
+    /// RPC for submitting transactions.
+    pub client: Arc<NearRpcClients>,
 }
 
 impl OperatingAccounts {

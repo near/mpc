@@ -8,7 +8,7 @@ use crate::constants::ONE_NEAR;
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
 use crate::mpc::SignArgs;
-use crate::types::{LoadtestSetup, ParsedConfig};
+use crate::types::{LoadtestSetup, NearAccount, ParsedConfig};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use legacy_mpc_contract::primitives::SignRequest;
@@ -25,6 +25,7 @@ async fn update_loadtest_setup(
     accounts: &mut OperatingAccounts,
     loadtest_setup: &mut LoadtestSetup,
     desired_num_accounts: usize,
+    funding_account: Option<NearAccount>,
 ) {
     // First create any accounts we don't already have, and refill existing.
     let mut accounts_to_fund = Vec::new();
@@ -41,7 +42,7 @@ async fn update_loadtest_setup(
             ));
         }
     }
-    let funded_accounts = fund_accounts(accounts, accounts_to_fund).await;
+    let funded_accounts = fund_accounts(accounts, accounts_to_fund, funding_account).await;
 
     loadtest_setup.load_senders = funded_accounts.clone();
 
@@ -76,7 +77,7 @@ impl NewLoadtestCmd {
         loadtest_setup.desired_balance_per_account = self.near_per_account * ONE_NEAR;
         loadtest_setup.desired_keys_per_account = self.keys_per_account;
 
-        update_loadtest_setup(name, &mut setup.accounts, loadtest_setup, self.num_accounts).await;
+        update_loadtest_setup(name, &mut setup.accounts, loadtest_setup, self.num_accounts, config.funding_account).await;
     }
 }
 
@@ -105,6 +106,7 @@ impl UpdateLoadtestCmd {
             &mut setup.accounts,
             loadtest_setup,
             desired_num_accounts,
+            config.funding_account,
         )
         .await;
     }
@@ -148,7 +150,7 @@ impl DeployParallelSignContractCmd {
             } else {
                 AccountToFund::from_new(self.deposit_near * ONE_NEAR, format!("par-sign-{}-", name))
             };
-        let contract_account = fund_accounts(&mut setup.accounts, vec![contract_account_to_fund])
+        let contract_account = fund_accounts(&mut setup.accounts, vec![contract_account_to_fund], config.funding_account)
             .await
             .into_iter()
             .next()
