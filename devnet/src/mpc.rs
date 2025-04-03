@@ -7,7 +7,7 @@ use crate::cli::{
 use crate::constants::ONE_NEAR;
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
-use crate::types::{MpcNetworkSetup, MpcParticipantSetup, ParsedConfig, NearAccount};
+use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use legacy_mpc_contract::config::InitConfigV1;
 use legacy_mpc_contract::primitives::{self, CandidateInfo, SignRequest};
 use near_crypto::SecretKey;
@@ -122,7 +122,14 @@ impl NewMpcNetworkCmd {
                 desired_balance_per_responding_account: self.near_per_responding_account * ONE_NEAR,
                 nomad_server_url: None,
             });
-        update_mpc_network(name, &mut setup.accounts, mpc_setup, self.num_participants, config.funding_account).await;
+        update_mpc_network(
+            name,
+            &mut setup.accounts,
+            mpc_setup,
+            self.num_participants,
+            config.funding_account,
+        )
+        .await;
     }
 }
 
@@ -157,7 +164,14 @@ impl UpdateMpcNetworkCmd {
                 near_per_responding_account * ONE_NEAR;
         }
 
-        update_mpc_network(name, &mut setup.accounts, mpc_setup, num_participants, config.funding_account).await;
+        update_mpc_network(
+            name,
+            &mut setup.accounts,
+            mpc_setup,
+            num_participants,
+            config.funding_account,
+        )
+        .await;
     }
 }
 
@@ -196,11 +210,15 @@ impl MpcDeployContractCmd {
                 format!("mpc-contract-{}-", name),
             )
         };
-        let contract_account = fund_accounts(&mut setup.accounts, vec![contract_account_to_fund], config.funding_account)
-            .await
-            .into_iter()
-            .next()
-            .unwrap();
+        let contract_account = fund_accounts(
+            &mut setup.accounts,
+            vec![contract_account_to_fund],
+            config.funding_account,
+        )
+        .await
+        .into_iter()
+        .next()
+        .unwrap();
         mpc_setup.contract = Some(contract_account.clone());
 
         setup

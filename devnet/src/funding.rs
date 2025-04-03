@@ -121,7 +121,9 @@ pub async fn fund_accounts(
                         ),
                     );
                 }
-                let balance = accounts.get_account_balance(&funding_account.account_id).await;
+                let balance = accounts
+                    .get_account_balance(&funding_account.account_id)
+                    .await;
                 funding_accounts.push_back((
                     funding_account.account_id.clone(),
                     balance.saturating_sub(MINIMUM_BALANCE_TO_REMAIN_IN_ACCOUNTS),

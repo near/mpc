@@ -77,7 +77,14 @@ impl NewLoadtestCmd {
         loadtest_setup.desired_balance_per_account = self.near_per_account * ONE_NEAR;
         loadtest_setup.desired_keys_per_account = self.keys_per_account;
 
-        update_loadtest_setup(name, &mut setup.accounts, loadtest_setup, self.num_accounts, config.funding_account).await;
+        update_loadtest_setup(
+            name,
+            &mut setup.accounts,
+            loadtest_setup,
+            self.num_accounts,
+            config.funding_account,
+        )
+        .await;
     }
 }
 
@@ -150,11 +157,15 @@ impl DeployParallelSignContractCmd {
             } else {
                 AccountToFund::from_new(self.deposit_near * ONE_NEAR, format!("par-sign-{}-", name))
             };
-        let contract_account = fund_accounts(&mut setup.accounts, vec![contract_account_to_fund], config.funding_account)
-            .await
-            .into_iter()
-            .next()
-            .unwrap();
+        let contract_account = fund_accounts(
+            &mut setup.accounts,
+            vec![contract_account_to_fund],
+            config.funding_account,
+        )
+        .await
+        .into_iter()
+        .next()
+        .unwrap();
         loadtest_setup.parallel_signatures_contract = Some(contract_account.clone());
 
         setup

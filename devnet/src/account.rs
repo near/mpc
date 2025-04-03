@@ -497,8 +497,14 @@ impl OperatingAccounts {
             .unwrap();
         if result.status() != StatusCode::OK {
             let status = result.status();
-            let error_text = result.text().await.unwrap_or_else(|_| "No error message".to_string());
-            println!("Faucet RPC request failed: status {}, {}", status, error_text);
+            let error_text = result
+                .text()
+                .await
+                .unwrap_or_else(|_| "No error message".to_string());
+            println!(
+                "Faucet RPC request failed: status {}, {}",
+                status, error_text
+            );
             std::process::exit(1);
         }
         let new_account = NearAccount {
