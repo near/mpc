@@ -179,7 +179,7 @@ async fn resharing_computation_inner(
 
     let near_public_key = previous_public_key.near_public_key_ref();
 
-    let data = match domain.scheme {
+    let keyshare_data = match domain.scheme {
         SignatureScheme::Secp256k1 => {
             let public_key = frost_secp256k1::VerifyingKey::from_near_sdk(near_public_key)?;
             let my_share = existing_keyshare
@@ -219,7 +219,10 @@ async fn resharing_computation_inner(
     };
     tracing::info!("Key resharing attempt {:?}: committing keyshare.", key_id);
     keyshare_handle
-        .commit_keyshare(Keyshare { key_id, data })
+        .commit_keyshare(Keyshare {
+            key_id,
+            data: keyshare_data,
+        })
         .await?;
     tracing::info!(
         "Key resharing attempt {:?}: sending vote_reshared transaction.",
