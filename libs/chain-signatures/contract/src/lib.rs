@@ -10,7 +10,7 @@ pub mod update;
 use crate::errors::Error;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 use config::{Config, InitConfig};
-use crypto_shared::types::PublicKeyExtended;
+use crypto_shared::types::{PublicKeyExtended, PublicKeyExtendedConversionError};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
     kdf::{check_ec_signature, derive_public_key_edwards_point_edd25519},
@@ -132,11 +132,19 @@ impl MpcContract {
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
-        public_key: PublicKeyExtended,
+        public_key: PublicKey,
     ) -> Result<(), Error> {
-        if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, public_key)? {
+        let extended_key =
+            public_key
+                .try_into()
+                .map_err(|err: PublicKeyExtendedConversionError| {
+                    InvalidParameters::MalformedPayload.message(err.to_string())
+                })?;
+
+        if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
             self.protocol_state = new_state;
         }
+
         Ok(())
     }
 
@@ -510,7 +518,7 @@ impl VersionedMpcContract {
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
-        public_key: PublicKeyExtended,
+        public_key: PublicKey,
     ) -> Result<(), Error> {
         log!(
             "vote_pk: signer={}, key_event_id={:?}, public_key={:?}",

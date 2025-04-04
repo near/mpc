@@ -1,10 +1,12 @@
+use std::fmt::Display;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use curve25519_dalek::EdwardsPoint;
 use k256::{
-    elliptic_curve::{bigint::ArrayEncoding, CurveArithmetic, PrimeField},
+    elliptic_curve::{bigint::ArrayEncoding, group::GroupEncoding, CurveArithmetic, PrimeField},
     AffinePoint, Secp256k1, U256,
 };
-use near_sdk::{near, PublicKey};
+use near_sdk::near;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -23,6 +25,52 @@ pub enum PublicKeyExtended {
         near_public_key: near_sdk::PublicKey,
         edwards_point: EdwardsPoint,
     },
+}
+
+pub enum PublicKeyExtendedConversionError {
+    PublicKeyLengthMalformed,
+    FailedDecompressingToEdwardsPoint,
+}
+
+impl Display for PublicKeyExtendedConversionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::PublicKeyLengthMalformed => "Provided public key has malformed length.",
+            Self::FailedDecompressingToEdwardsPoint => {
+                "The provided compressed key can not be decompressed to an edwards point."
+            }
+        };
+
+        f.write_str(message)
+    }
+}
+
+impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
+    type Error = PublicKeyExtendedConversionError;
+    fn try_from(near_public_key: near_sdk::PublicKey) -> Result<Self, Self::Error> {
+        let extended_key = match near_public_key.curve_type() {
+            near_sdk::CurveType::ED25519 => {
+                let public_key_bytes: &[u8; 32] = near_public_key
+                    .as_bytes()
+                    .get(1..)
+                    .map(TryInto::try_into)
+                    .ok_or(PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?
+                    .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
+
+                let edwards_point = curve25519_dalek::EdwardsPoint::from_bytes(public_key_bytes)
+                    .into_option()
+                    .ok_or(PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint)?;
+
+                Self::Edd25519 {
+                    near_public_key,
+                    edwards_point,
+                }
+            }
+            near_sdk::CurveType::SECP256K1 => Self::Secp256k1 { near_public_key },
+        };
+
+        Ok(extended_key)
+    }
 }
 
 mod serialize {
@@ -72,7 +120,7 @@ mod serialize {
     }
 
     impl PublicKeyExtended {
-        pub fn near_public_key(self) -> PublicKey {
+        pub fn near_public_key(self) -> near_sdk::PublicKey {
             match self {
                 PublicKeyExtended::Secp256k1 {
                     near_public_key: key,
