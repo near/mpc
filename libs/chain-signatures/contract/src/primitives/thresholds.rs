@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 /// Minimum absolute threshold required.
 const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 
-/// Stores the cryptographig threshold for a distributed key.
+/// Stores the cryptographic threshold for a distributed key.
 /// ```
 /// use mpc_contract::primitives::thresholds::Threshold;
 /// let dt = Threshold::new(8);
@@ -39,7 +39,7 @@ pub struct ThresholdParameters {
 
 impl ThresholdParameters {
     /// Constructs Threshold parameters from `participants` and `threshold` if the
-    /// threshold meets the absolute and relavite validation criteria.
+    /// threshold meets the absolute and relative validation criteria.
     pub fn new(participants: Participants, threshold: Threshold) -> Result<Self, Error> {
         match Self::validate_threshold(participants.len() as u64, threshold.clone()) {
             Ok(_) => Ok(ThresholdParameters {
