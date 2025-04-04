@@ -119,11 +119,12 @@ impl ProposedUpdates {
         Some(&entry.votes)
     }
 
-    pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
-        let entry = self.entries.remove(id)?;
+    fn remove(&mut self, id: &UpdateId) -> Option<UpdateEntry> {
+        self.entries.remove(id)
+    }
 
-        //
-        self.entries.clear();
+    pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
+        let entry = self.remove(id)?;
 
         let mut promise = Promise::new(env::current_account_id());
         for update in entry.updates {

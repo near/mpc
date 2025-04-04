@@ -163,12 +163,11 @@ impl ThresholdParameters {
 #[cfg(test)]
 mod tests {
     use crate::primitives::participants::tests::assert_participant_migration;
-    use crate::primitives::test_utils::{
-        gen_legacy_participants, gen_participants, gen_threshold_params,
-    };
+    use crate::primitives::test_utils::{gen_legacy_participants, gen_participant, gen_participants, gen_threshold_params};
     use crate::primitives::thresholds::{Threshold, ThresholdParameters};
     use crate::state::running::running_tests::gen_valid_params_proposal;
     use rand::Rng;
+    use crate::primitives::participants::{ParticipantId, Participants};
 
     #[test]
     fn test_threshold() {
@@ -288,5 +287,128 @@ mod tests {
         let proposal =
             ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
         assert!(params.validate_incoming_proposal(&proposal).is_err());
+    }
+
+    #[test]
+    fn test_proposal_non_contiguous_new_ids_fail() {
+        // Test that the lowest new id equals to the `next_id` of the previous set.
+
+        let params = gen_threshold_params(10);
+
+        let wrong_id = params.participants.next_id().0 + 1;
+
+        let (account_id, participant_info) = gen_participant(wrong_id as usize);
+
+        let mut tampered_participants = params.participants.clone();
+        tampered_participants.insert_with_id(
+            account_id,
+            participant_info,
+            ParticipantId(wrong_id),
+        ).unwrap();
+
+        let tampered_params = ThresholdParameters {
+            participants: tampered_participants,
+            threshold: params.threshold.clone(),
+        };
+
+        let result = params.validate_incoming_proposal(&tampered_params);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_proposal_non_unique_ids() {
+        let params = gen_threshold_params(10);
+
+        // Add duplicate participants
+        let tampered_participants = Participants::init(
+            params.participants.next_id(),
+            params
+                .participants
+                .participants()
+                .iter()
+                .chain(
+                    params
+                        .participants
+                        .participants()
+                        .iter()
+                )
+                .cloned()
+                .collect(),
+        );
+        assert!(tampered_participants.validate().is_err());
+
+        let tampered_params = ThresholdParameters {
+            participants: tampered_participants,
+            threshold: params.threshold.clone(),
+        };
+        assert!(params.validate_incoming_proposal(&tampered_params).is_err());
+    }
+
+    #[test]
+    fn test_remove_only() {
+        let params = ThresholdParameters::new(
+            gen_participants(5),
+            Threshold::new(3)
+        ).unwrap();
+
+        let new_participants = params.participants.subset(0..params.threshold.value() as usize);
+
+        let new_params = ThresholdParameters {
+            participants: new_participants,
+            threshold: params.threshold.clone(),
+        };
+
+        let result = params.validate_incoming_proposal(&new_params);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_simultaneous_remove_and_insert() {
+        let n = 5;
+        let params = ThresholdParameters::new(
+            gen_participants(n),
+            Threshold::new(3),
+        ).unwrap();
+
+        let mut new_participants = params
+            .participants.clone();
+        new_participants.add_random_participants_till_n(n + 2);
+        let new_participants = new_participants.subset(2..n + 2);
+
+        let new_params = ThresholdParameters {
+            participants: new_participants,
+            threshold: params.threshold.clone(),
+        };
+
+        let result = params.validate_incoming_proposal(&new_params);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_new_participant_id_too_high() {
+        // Test the logic that `next_id` should only be equal to `max_id + 1`
+
+        let n = 5;
+        let params = ThresholdParameters::new(
+            gen_participants(n),
+            Threshold::new(3),
+        ).unwrap();
+
+        for i in 0..=params.participants.next_id().0 + 2 {
+            let new_participants = Participants::init(
+                ParticipantId(i),
+                params.participants.participants().clone()
+            );
+            let new_params = ThresholdParameters {
+                participants: new_participants,
+                threshold: params.threshold.clone(),
+            };
+            let result = params.validate_incoming_proposal(&new_params);
+            if i >= params.participants.next_id().0 {
+                assert!(result.is_ok());
+            } else {
+                assert!(result.is_err(), "i: {}, max_id: {}", i, new_params.participants.next_id().0);
+            }
+        }
     }
 }
