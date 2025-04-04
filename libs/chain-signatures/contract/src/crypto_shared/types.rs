@@ -21,12 +21,13 @@ pub enum PublicKeyExtended {
     Secp256k1 {
         near_public_key: near_sdk::PublicKey,
     },
-    Edd25519 {
+    Ed25519 {
         near_public_key: near_sdk::PublicKey,
         edwards_point: EdwardsPoint,
     },
 }
 
+#[derive(Clone, Debug)]
 pub enum PublicKeyExtendedConversionError {
     PublicKeyLengthMalformed,
     FailedDecompressingToEdwardsPoint,
@@ -42,6 +43,17 @@ impl Display for PublicKeyExtendedConversionError {
         };
 
         f.write_str(message)
+    }
+}
+
+impl From<PublicKeyExtended> for near_sdk::PublicKey {
+    fn from(public_key_extended: PublicKeyExtended) -> Self {
+        match public_key_extended {
+            PublicKeyExtended::Secp256k1 { near_public_key } => near_public_key,
+            PublicKeyExtended::Ed25519 {
+                near_public_key, ..
+            } => near_public_key,
+        }
     }
 }
 
@@ -61,7 +73,7 @@ impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
                     .into_option()
                     .ok_or(PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint)?;
 
-                Self::Edd25519 {
+                Self::Ed25519 {
                     near_public_key,
                     edwards_point,
                 }
@@ -94,7 +106,7 @@ mod serialize {
                 PublicKeyExtended::Secp256k1 {
                     near_public_key: key,
                 } => Self::Secp256k1 { key },
-                PublicKeyExtended::Edd25519 {
+                PublicKeyExtended::Ed25519 {
                     near_public_key: key,
                     edwards_point,
                 } => Self::Edd25519 {
@@ -111,7 +123,7 @@ mod serialize {
                 PublicKeyExtendedHelper::Secp256k1 { key } => Self::Secp256k1 {
                     near_public_key: key,
                 },
-                PublicKeyExtendedHelper::Edd25519 { key, edwards_point } => Self::Edd25519 {
+                PublicKeyExtendedHelper::Edd25519 { key, edwards_point } => Self::Ed25519 {
                     near_public_key: key,
                     edwards_point: edwards_point.0,
                 },
@@ -125,7 +137,7 @@ mod serialize {
                 PublicKeyExtended::Secp256k1 {
                     near_public_key: key,
                 } => key,
-                PublicKeyExtended::Edd25519 {
+                PublicKeyExtended::Ed25519 {
                     near_public_key: key,
                     ..
                 } => key,

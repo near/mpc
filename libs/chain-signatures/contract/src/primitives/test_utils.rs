@@ -21,7 +21,7 @@ pub fn bogus_edd25519_public_key_extended() -> PublicKeyExtended {
     )
     .unwrap();
 
-    PublicKeyExtended::Edd25519 {
+    PublicKeyExtended::Ed25519 {
         near_public_key,
         edwards_point,
     }

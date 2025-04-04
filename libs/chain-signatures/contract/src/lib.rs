@@ -339,7 +339,7 @@ impl VersionedMpcContract {
                 let slice: &[u8] = &encoded_point.as_bytes()[1..65];
                 PublicKey::from_parts(CurveType::SECP256K1, slice.to_vec())
             }
-            PublicKeyExtended::Edd25519 { edwards_point, .. } => {
+            PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
                     derive_public_key_edwards_point_edd25519(&edwards_point, &tweak);
                 let encoded_point: [u8; 32] =
@@ -407,7 +407,7 @@ impl VersionedMpcContract {
             }
             (
                 SignatureResponse::Edd25519(signature_response),
-                PublicKeyExtended::Edd25519 {
+                PublicKeyExtended::Ed25519 {
                     edwards_point: public_key_edwards_point,
                     ..
                 },
