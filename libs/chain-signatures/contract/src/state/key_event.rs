@@ -1,3 +1,4 @@
+use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::Error;
 use crate::errors::KeyEventError;
 use crate::errors::VoteError;
@@ -6,8 +7,8 @@ use crate::primitives::key_state::KeyEventId;
 use crate::primitives::key_state::{AttemptId, EpochId};
 use crate::primitives::thresholds::ThresholdParameters;
 use crate::state::AuthenticatedParticipantId;
+use near_sdk::BlockHeight;
 use near_sdk::{env, log, near};
-use near_sdk::{BlockHeight, PublicKey};
 use std::collections::BTreeSet;
 
 /// Maintains the state for the current key generation or resharing.
@@ -96,7 +97,7 @@ impl KeyEvent {
     pub fn vote_success(
         &mut self,
         key_event_id: &KeyEventId,
-        public_key: PublicKey,
+        public_key: PublicKeyExtended,
     ) -> Result<bool, Error> {
         let candidate = self.verify_vote(key_event_id)?;
         match self
@@ -229,7 +230,7 @@ pub struct KeyEventInstance {
     /// The participants that voted that they successfully completed the keygen or resharing.
     completed: BTreeSet<AuthenticatedParticipantId>,
     /// The public key currently voted for. This is None iff no one has voted.
-    public_key: Option<PublicKey>,
+    public_key: Option<PublicKeyExtended>,
 }
 
 impl KeyEventInstance {
@@ -264,7 +265,7 @@ impl KeyEventInstance {
     fn vote_success(
         &mut self,
         candidate: AuthenticatedParticipantId,
-        public_key: PublicKey,
+        public_key: PublicKeyExtended,
     ) -> Result<VoteSuccessResult, Error> {
         if let Some(existing_public_key) = &self.public_key {
             if existing_public_key != &public_key {

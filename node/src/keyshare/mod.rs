@@ -45,7 +45,7 @@ impl Keyshare {
                 key_id
             );
         }
-        if self.public_key()? != key.key {
+        if self.public_key()? != key.key.clone().into() {
             anyhow::bail!(
                 "Keyshare has incorrect public key {:?}, should be {:?}",
                 self.public_key()?,

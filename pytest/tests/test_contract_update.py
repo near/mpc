@@ -28,7 +28,12 @@ def deploy_and_init_v2():
     cluster.init_cluster(participants=mpc_nodes[:2], threshold=2)
     cluster.contract_state().print()
     cluster.send_and_await_signature_requests(1)
-    public_key = cluster.contract_state().keyset().keyset[0].key
+
+    public_key_extended = cluster.contract_state().keyset().keyset[0].key
+    # The public key in the state is encoded as a `PublicKeyExtended` struct.
+    # We need to extract the inner field which contains the public key.
+    public_key = public_key_extended["Secp256k1"]["near_public_key"]
+
     return cluster, mpc_nodes, public_key
 
 
