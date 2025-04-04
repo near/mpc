@@ -21,7 +21,7 @@ pub enum PublicKeyExtended {
     Secp256k1 {
         near_public_key: near_sdk::PublicKey,
     },
-    // Invariant: `edwards_point` is always the decompressed representation of `near_public_key_compressed`/
+    // Invariant: `edwards_point` is always the decompressed representation of `near_public_key_compressed`.
     Ed25519 {
         /// Serialized compressed Edwards-y point.
         near_public_key_compressed: near_sdk::PublicKey,
