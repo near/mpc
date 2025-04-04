@@ -119,8 +119,9 @@ impl Participants {
 
 #[cfg(test)]
 impl Participants {
-    pub fn init(next_id: ParticipantId,
-                participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
+    pub fn init(
+        next_id: ParticipantId,
+        participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
     ) -> Self {
         Self {
             next_id,
