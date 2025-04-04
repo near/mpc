@@ -156,7 +156,7 @@ mod serialize {
                 },
             };
 
-            Ok(public_key_extended.into())
+            Ok(public_key_extended)
         }
     }
 
