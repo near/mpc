@@ -73,6 +73,7 @@ pub struct LoadtestSetup {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub rpcs: Vec<RpcConfig>,
+    pub funding_account: Option<NearAccount>,
     // Path of the Near-One/infra-ops repository.
     // Used only for terraform deployment commands.
     pub infra_ops_path: String,
@@ -90,6 +91,7 @@ pub struct RpcConfig {
 pub struct ParsedConfig {
     pub rpc: Arc<NearRpcClients>,
     pub infra_ops_path: PathBuf,
+    pub funding_account: Option<NearAccount>,
 }
 
 pub async fn load_config() -> ParsedConfig {
@@ -100,5 +102,6 @@ pub async fn load_config() -> ParsedConfig {
     ParsedConfig {
         rpc: client,
         infra_ops_path: PathBuf::from(config.infra_ops_path),
+        funding_account: config.funding_account,
     }
 }
