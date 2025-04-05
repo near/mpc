@@ -41,11 +41,11 @@ pub fn derive_key_secp256k1(
 }
 
 pub fn derive_public_key_edwards_point_edd25519(
-    point: &curve25519_dalek::EdwardsPoint,
+    public_key_edwards_point: &curve25519_dalek::EdwardsPoint,
     tweak: &Tweak,
 ) -> curve25519_dalek::EdwardsPoint {
-    let tweak = curve25519_dalek::Scalar::from_non_biased(tweak.as_bytes());
-    point + ED25519_BASEPOINT_POINT * tweak
+    let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(tweak.as_bytes());
+    public_key_edwards_point + ED25519_BASEPOINT_POINT * tweak
 }
 
 /// Get the x coordinate of a point, as a scalar

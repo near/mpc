@@ -195,9 +195,9 @@ pub mod k256_types {
     impl ScalarExt for Scalar {
         /// Returns nothing if the bytes are greater than the field size of Secp256k1.
         /// This will be very rare with random bytes as the field size is 2^256 - 2^32 - 2^9 - 2^8 - 2^7 - 2^6 - 2^4 - 1
-        fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
+        fn from_bytes(bytes: [u8; 32]) -> Option<k256::Scalar> {
             let bytes = U256::from_be_slice(bytes.as_slice());
-            Self::from_repr(bytes.to_be_byte_array()).into_option()
+            k256::Scalar::from_repr(bytes.to_be_byte_array()).into_option()
         }
 
         /// When the user can't directly select the value, this will always work
@@ -300,14 +300,8 @@ pub mod edd25519_types {
             Self::from_repr(bytes).into_option()
         }
 
-        /// When the user can't directly select the value, this will always work
-        /// Use cases are things that we know have been hashed
         fn from_non_biased(hash: [u8; 32]) -> Self {
-            // This should never happen.
-            // The space of inputs is 2^256, the space of the field is ~2^256 - 2^129.
-            // This mean that you'd have to run 2^127 hashes to find a value that causes this to fail.
-            Self::from_bytes(hash)
-                .expect("Derived scalar value falls outside of the field of edd25519")
+            Self::from_bytes(hash).unwrap()
         }
 
         fn to_bytes(&self) -> [u8; 32] {
@@ -367,11 +361,15 @@ pub mod edd25519_types {
     #[derive(
         BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
     )]
-    pub struct SignatureResponse(#[serde_as(as = "[_; 64]")] pub [u8; 64]);
+    pub struct SignatureResponse(#[serde_as(as = "[_; 64]")] [u8; 64]);
 
     impl SignatureResponse {
         pub fn as_bytes(&self) -> &[u8; 64] {
             &self.0
+        }
+
+        pub fn new(bytes: [u8; 64]) -> Self {
+            Self(bytes)
         }
     }
 }

@@ -428,8 +428,11 @@ impl VersionedMpcContract {
                     &derived_public_key_32_bytes,
                 )
             }
-            _ => {
-                return Err(RespondError::SignatureSchemeMismatch.into());
+            (signature_response, public_key_requested) => {
+                return Err(RespondError::SignatureSchemeMismatch.message(format!(
+                    "Signature response from MPC: {:?}. Key requested by user {:?}",
+                    signature_response, public_key_requested
+                )));
             }
         };
 

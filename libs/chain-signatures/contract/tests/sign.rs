@@ -1,5 +1,8 @@
 pub mod common;
-use common::{candidates, create_response, init, init_env_secp256k1, sign_and_validate};
+use common::{
+    candidates, create_response, create_response_ed25519, init, init_env_edd25519,
+    init_env_secp256k1, sign_and_validate,
+};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::SignRequestArgs;
 use mpc_contract::{
@@ -369,6 +372,59 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         result.is_failure(),
         "initializing with valid candidates again should fail"
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
+    let (_, contract, _, sks) = init_env_edd25519(1).await;
+    let predecessor_id = contract.id();
+    let path = "test";
+
+    let messages = [
+        "hello world",
+        "hello world!",
+        "hello world!!",
+        "hello world!!!",
+        "hello world!!!!",
+    ];
+
+    for msg in messages {
+        println!("submitting: {msg}");
+        let (payload, respond_req, respond_resp) =
+            create_response_ed25519(predecessor_id, msg, path, &sks[0]).await;
+
+        let request = SignRequestArgs {
+            payload_v2: Some(payload),
+            path: path.into(),
+            domain_id: Some(DomainId(0)),
+            ..Default::default()
+        };
+
+        sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    }
+
+    // // check duplicate requests can also be signed:
+    // let duplicate_msg = "welp";
+    // let (payload, respond_req, respond_resp) =
+    //     create_response_edd25519(predecessor_id, duplicate_msg, path, &sks[0]).await;
+    // let request = SignRequestArgs {
+    //     payload_v2: Some(payload),
+    //     path: path.into(),
+    //     domain_id: Some(DomainId(0)),
+    //     ..Default::default()
+    // };
+    // sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    // sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+
+    // // Check that a sign with no response from MPC network properly errors out:
+    // let err = sign_and_validate(&request, None, &contract)
+    //     .await
+    //     .expect_err("should have failed with timeout");
+    // assert!(err
+    //     .to_string()
+    //     .contains(&errors::SignError::Timeout.to_string()));
 
     Ok(())
 }
