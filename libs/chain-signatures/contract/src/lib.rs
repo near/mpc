@@ -822,7 +822,34 @@ impl VersionedMpcContract {
                     proposed_updates: ProposedUpdates::default(),
                 }))
             }
-            VersionedMpcContract::V1(_) => Ok(old),
+            VersionedMpcContract::V1(old) => {
+                let ProtocolContractState::Resharing(ResharingContractState {
+                    old_epoch,
+                    old_participants,
+                    threshold,
+                    public_key,
+                    ..
+                }) = old.protocol_state
+                else {
+                    env::panic_str("expected resharing state");
+                };
+                let protocol_state = state::ProtocolContractState::Running(RunningContractState {
+                    epoch: old_epoch,
+                    participants: old_participants,
+                    threshold,
+                    public_key,
+                    candidates: Candidates::new(),
+                    join_votes: Votes::new(),
+                    leave_votes: Votes::new(),
+                });
+                Ok(VersionedMpcContract::V1(MpcContractV1 {
+                    protocol_state,
+                    pending_requests: old.pending_requests,
+                    request_by_block_height: old.request_by_block_height,
+                    proposed_updates: old.proposed_updates,
+                    config: old.config,
+                }))
+            }
         }
     }
 

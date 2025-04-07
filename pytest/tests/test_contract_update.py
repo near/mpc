@@ -7,6 +7,7 @@ votes on the contract update.
 Verifies that the update was executed.
 """
 
+import base64
 import json
 import sys
 import time
@@ -18,7 +19,7 @@ from common_lib.constants import TGAS
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
-from common_lib.contracts import V0_CONTRACT_PATH, COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, V1_CONTRACT_PATH, UpdateArgsV0, UpdateArgsV1, ConfigV1
+from common_lib.contracts import V0_CONTRACT_PATH, COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, V1_0_1_CONTRACT_PATH, V1_CONTRACT_PATH, UpdateArgsV0, UpdateArgsV1, ConfigV1
 
 
 @pytest.mark.parametrize("initial_contract_path,update_args", [
@@ -146,3 +147,49 @@ def test_contract_update_trailing_sigs(initial_contract_path, update_args):
     verif_helper = VerificationHelper()
     shared.verify_txs(results, verif_helper.verify)
     verif_helper.final_verification()
+
+
+def test_reshare_update():
+    v1_0_1 = load_binary_file(V1_0_1_CONTRACT_PATH)
+    cluster = shared.start_cluster_with_mpc(2, 3, 1, v1_0_1)
+    cluster.assert_is_deployed(v1_0_1)
+
+    def assert_state(expected_state: str):
+        node = cluster.mpc_nodes[0]
+        tx = node.sign_tx(cluster.mpc_contract_account(), 'state', {})
+        res = node.send_txn_and_check_success(tx)
+        state = json.loads(
+            base64.b64decode(res['result']['status']['SuccessValue']).decode())
+        if state.get(expected_state):
+            print(f"The contract state is {expected_state}.")
+        else:
+            assert False, f"expected {expected_state}, {json.dumps(state)}"
+
+    # start with 2 nodes
+    all_mpc_nodes = cluster.mpc_nodes
+    cluster.mpc_nodes = all_mpc_nodes[:2]
+
+    cluster.init_contract(threshold=2)
+    cluster.send_and_await_signature_requests(1)
+    assert_state("Running")
+    # propose to join
+    cluster.propose_join(all_mpc_nodes[2])
+    # kill the node
+    all_mpc_nodes[2].kill(False)
+    cluster.vote_join(0, all_mpc_nodes[2].account_id())
+    cluster.vote_join(1, all_mpc_nodes[2].account_id())
+    assert_state("Resharing")
+
+    time.sleep(2)
+
+    update_args = UpdateArgsV1(code_path=COMPILED_CONTRACT_PATH)
+    cluster.propose_update(update_args.borsh_serialize())
+    cluster.vote_update(0, 0)
+    cluster.vote_update(1, 0)
+    cluster.assert_is_deployed(update_args.code())
+    assert_state("Running")
+    print("update completed")
+    time.sleep(2)
+    cluster.send_and_await_signature_requests(1)
+    print("success")
+    time.sleep(2)
