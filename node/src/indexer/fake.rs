@@ -109,10 +109,13 @@ impl FakeMpcContractState {
     }
 
     pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, pk: PublicKey) {
+        let near_sdk_pk: near_sdk::PublicKey = pk.to_string().parse().unwrap();
+        let contract_extended_pk = near_sdk_pk.try_into().unwrap();
+
         match &mut self.state {
             ProtocolContractState::Initializing(state) => {
                 self.env.set_signer(&account_id);
-                let result = match state.vote_pk(key_id, pk.to_string().parse().unwrap()) {
+                let result = match state.vote_pk(key_id, contract_extended_pk) {
                     Ok(result) => result,
                     Err(e) => {
                         tracing::info!("vote_pk transaction failed: {}", e);

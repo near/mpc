@@ -1,8 +1,12 @@
+use std::fmt::Display;
+
 use borsh::{BorshDeserialize, BorshSerialize};
+use curve25519_dalek::EdwardsPoint;
 use k256::{
-    elliptic_curve::{bigint::ArrayEncoding, CurveArithmetic, PrimeField},
+    elliptic_curve::{bigint::ArrayEncoding, group::GroupEncoding, CurveArithmetic, PrimeField},
     AffinePoint, Secp256k1, U256,
 };
+use near_sdk::near;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -10,6 +14,170 @@ use serde_with::serde_as;
 pub enum SignatureResponse {
     Secp256k1(k256_types::SignatureResponse),
     Edd25519(edd25519_types::SignatureResponse),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub enum PublicKeyExtended {
+    Secp256k1 {
+        near_public_key: near_sdk::PublicKey,
+    },
+    Ed25519 {
+        near_public_key: near_sdk::PublicKey,
+        edwards_point: EdwardsPoint,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum PublicKeyExtendedConversionError {
+    PublicKeyLengthMalformed,
+    FailedDecompressingToEdwardsPoint,
+}
+
+impl Display for PublicKeyExtendedConversionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::PublicKeyLengthMalformed => "Provided public key has malformed length.",
+            Self::FailedDecompressingToEdwardsPoint => {
+                "The provided compressed key can not be decompressed to an edwards point."
+            }
+        };
+
+        f.write_str(message)
+    }
+}
+
+impl From<PublicKeyExtended> for near_sdk::PublicKey {
+    fn from(public_key_extended: PublicKeyExtended) -> Self {
+        match public_key_extended {
+            PublicKeyExtended::Secp256k1 { near_public_key } => near_public_key,
+            PublicKeyExtended::Ed25519 {
+                near_public_key, ..
+            } => near_public_key,
+        }
+    }
+}
+
+impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
+    type Error = PublicKeyExtendedConversionError;
+    fn try_from(near_public_key: near_sdk::PublicKey) -> Result<Self, Self::Error> {
+        let extended_key = match near_public_key.curve_type() {
+            near_sdk::CurveType::ED25519 => {
+                let public_key_bytes: &[u8; 32] = near_public_key
+                    .as_bytes()
+                    .get(1..)
+                    .map(TryInto::try_into)
+                    .ok_or(PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?
+                    .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
+
+                let edwards_point = curve25519_dalek::EdwardsPoint::from_bytes(public_key_bytes)
+                    .into_option()
+                    .ok_or(PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint)?;
+
+                Self::Ed25519 {
+                    near_public_key,
+                    edwards_point,
+                }
+            }
+            near_sdk::CurveType::SECP256K1 => Self::Secp256k1 { near_public_key },
+        };
+
+        Ok(extended_key)
+    }
+}
+
+mod serialize {
+    use super::*;
+
+    #[near(serializers=[borsh, json])]
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    pub enum PublicKeyExtendedHelper {
+        Secp256k1 {
+            key: near_sdk::PublicKey,
+        },
+        Edd25519 {
+            key: near_sdk::PublicKey,
+            edwards_point: SerializableEdwardsPoint,
+        },
+    }
+
+    impl From<PublicKeyExtended> for PublicKeyExtendedHelper {
+        fn from(value: PublicKeyExtended) -> Self {
+            match value {
+                PublicKeyExtended::Secp256k1 {
+                    near_public_key: key,
+                } => Self::Secp256k1 { key },
+                PublicKeyExtended::Ed25519 {
+                    near_public_key: key,
+                    edwards_point,
+                } => Self::Edd25519 {
+                    key,
+                    edwards_point: SerializableEdwardsPoint(edwards_point),
+                },
+            }
+        }
+    }
+
+    impl From<PublicKeyExtendedHelper> for PublicKeyExtended {
+        fn from(value: PublicKeyExtendedHelper) -> Self {
+            match value {
+                PublicKeyExtendedHelper::Secp256k1 { key } => Self::Secp256k1 {
+                    near_public_key: key,
+                },
+                PublicKeyExtendedHelper::Edd25519 { key, edwards_point } => Self::Ed25519 {
+                    near_public_key: key,
+                    edwards_point: edwards_point.0,
+                },
+            }
+        }
+    }
+
+    impl PublicKeyExtended {
+        pub fn near_public_key(self) -> near_sdk::PublicKey {
+            match self {
+                PublicKeyExtended::Secp256k1 {
+                    near_public_key: key,
+                } => key,
+                PublicKeyExtended::Ed25519 {
+                    near_public_key: key,
+                    ..
+                } => key,
+            }
+        }
+    }
+
+    impl BorshSerialize for PublicKeyExtended {
+        fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+            let helper_representation: PublicKeyExtendedHelper = self.clone().into();
+            let to_ser: Vec<u8> = serde_json::to_vec(&helper_representation)?;
+            BorshSerialize::serialize(&to_ser, writer)
+        }
+    }
+
+    impl BorshDeserialize for PublicKeyExtended {
+        fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
+            let from_ser: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
+            let public_key_extended: PublicKeyExtendedHelper = serde_json::from_slice(&from_ser)?;
+            Ok(public_key_extended.into())
+        }
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize, Eq, Clone, Copy)]
+    pub struct SerializableEdwardsPoint(EdwardsPoint);
+
+    impl BorshSerialize for SerializableEdwardsPoint {
+        fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+            let to_ser: Vec<u8> = serde_json::to_vec(&self.0)?;
+            BorshSerialize::serialize(&to_ser, writer)
+        }
+    }
+
+    impl BorshDeserialize for SerializableEdwardsPoint {
+        fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
+            let from_ser: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
+            let edwards_point = serde_json::from_slice(&from_ser)?;
+            Ok(SerializableEdwardsPoint(edwards_point))
+        }
+    }
 }
 
 pub trait ScalarExt: Sized {
@@ -125,7 +293,7 @@ pub mod k256_types {
 
 pub mod edd25519_types {
     use super::*;
-    use curve25519_dalek::{edwards::CompressedEdwardsY, Scalar};
+    use curve25519_dalek::Scalar;
 
     impl ScalarExt for Scalar {
         fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
@@ -192,24 +360,6 @@ pub mod edd25519_types {
     impl PartialOrd for SerializableScalar {
         fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
             Some(self.cmp(other))
-        }
-    }
-
-    #[derive(Debug, PartialEq, Serialize, Deserialize, Eq, Clone, Copy)]
-    pub struct SerializableEdwardsPoint(CompressedEdwardsY);
-
-    impl BorshSerialize for SerializableEdwardsPoint {
-        fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-            let to_ser: Vec<u8> = serde_json::to_vec(&self.0)?;
-            BorshSerialize::serialize(&to_ser, writer)
-        }
-    }
-
-    impl BorshDeserialize for SerializableEdwardsPoint {
-        fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
-            let from_ser: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
-            let edwards_point = serde_json::from_slice(&from_ser)?;
-            Ok(SerializableEdwardsPoint(edwards_point))
         }
     }
 

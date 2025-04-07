@@ -1,7 +1,8 @@
 use super::domain::DomainId;
 use super::participants::{ParticipantId, Participants};
+use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
-use near_sdk::{env, near, PublicKey};
+use near_sdk::{env, near};
 
 /// An EpochId uniquely identifies a ThresholdParameters (but not vice-versa).
 /// Every time we change the ThresholdParameters (participants and threshold),
@@ -92,7 +93,7 @@ pub struct KeyForDomain {
     pub domain_id: DomainId,
     /// Identifies the public key. Although technically redundant given that we have the AttemptId,
     /// we keep it here in the contract so that it can be verified against and queried.
-    pub key: PublicKey,
+    pub key: PublicKeyExtended,
     /// The attempt ID that generated (initially or as a result of resharing) this distributed key.
     /// Nodes may have made multiple attempts to generate the distributed key, and this uniquely
     /// identifies which one should ultimately be used.
@@ -112,7 +113,7 @@ impl Keyset {
         Keyset { epoch_id, domains }
     }
 
-    pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKey, Error> {
+    pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKeyExtended, Error> {
         Ok(self
             .domains
             .iter()
@@ -147,13 +148,12 @@ impl AuthenticatedParticipantId {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::domain::DomainId;
-    use crate::primitives::key_state::{AttemptId, AuthenticatedParticipantId, KeyForDomain};
-    use crate::primitives::key_state::{EpochId, Keyset};
-    use crate::primitives::test_utils::gen_account_id;
-    use crate::primitives::test_utils::{gen_pk, gen_threshold_params};
-    use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::testing_env;
+    use crate::primitives::{
+        domain::DomainId,
+        key_state::{AttemptId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset},
+        test_utils::{bogus_edd25519_public_key_extended, gen_account_id, gen_threshold_params},
+    };
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rand::Rng;
 
     const MAX_N: usize = 900;
@@ -176,8 +176,8 @@ pub mod tests {
     fn test_keyset() {
         let domain_id0 = DomainId(0);
         let domain_id1 = DomainId(3);
-        let key0 = gen_pk();
-        let key1 = gen_pk();
+        let key0 = bogus_edd25519_public_key_extended();
+        let key1 = bogus_edd25519_public_key_extended();
         let keyset = Keyset::new(
             EpochId::new(5),
             vec![

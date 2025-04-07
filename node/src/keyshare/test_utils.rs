@@ -1,6 +1,5 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
-use crate::providers::PublicKeyConversion;
 use crate::tests::TestGenerators;
 use cait_sith::ecdsa::KeygenOutput;
 use mpc_contract::primitives::domain::DomainId;
@@ -40,16 +39,10 @@ fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
     let keys = permanent
         .keyshares
         .iter()
-        .map(|keyshare| {
-            let key = match &keyshare.data {
-                KeyshareData::Secp256k1(data) => data.public_key.to_near_public_key().unwrap(),
-                KeyshareData::Ed25519(data) => data.public_key.to_near_public_key().unwrap(),
-            };
-            KeyForDomain {
-                domain_id: keyshare.key_id.domain_id,
-                key: key.to_string().parse().unwrap(),
-                attempt: keyshare.key_id.attempt_id,
-            }
+        .map(|keyshare| KeyForDomain {
+            domain_id: keyshare.key_id.domain_id,
+            key: keyshare.public_key().unwrap().try_into().unwrap(),
+            attempt: keyshare.key_id.attempt_id,
         })
         .collect();
     Keyset::new(permanent.epoch_id, keys)

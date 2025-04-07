@@ -35,22 +35,3 @@ pub fn near_public_key_to_affine_point(pk: near_sdk::PublicKey) -> k256_types::P
     let point = EncodedPoint::from_bytes(bytes).unwrap();
     k256_types::PublicKey::from_encoded_point(&point).unwrap()
 }
-
-pub fn near_public_key_to_edwards_point(pk: near_sdk::PublicKey) -> curve25519_dalek::EdwardsPoint {
-    // TODO: We should encode the curve type as a generic parameter to the key,
-    // to enforce this check at compile time.
-    assert_eq!(
-        pk.curve_type(),
-        near_sdk::CurveType::ED25519,
-        "Expected a key on the ED25519 curve"
-    );
-
-    let bytes = pk.into_bytes();
-    // discard  the curve type prefix
-    let key_bytes: [u8; 32] = bytes[1..].try_into().expect("Invalid ED25519 key length");
-
-    // Convert bytes to an EdwardsPoint using the compressed representation
-    curve25519_dalek::edwards::CompressedEdwardsY(key_bytes)
-        .decompress()
-        .expect("The key is a valid y coordinate of a curve point")
-}

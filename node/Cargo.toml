@@ -10,7 +10,9 @@ anyhow = "1.0.92"
 async-trait = "0.1.83"
 axum = "0.7.9"
 borsh = { version = "1.5.1", features = ["derive"] }
-cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "5e0ce40a16dc3e0889277f66bb2a6400d6ef36a5", features = ["k256"] }
+cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "5e0ce40a16dc3e0889277f66bb2a6400d6ef36a5", features = [
+    "k256",
+] }
 clap = { version = "4.5.20", features = ["derive", "env"] }
 flume = "0.11.1"
 futures = "0.3.31"
@@ -37,7 +39,7 @@ serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
 serde_yaml = "0.9.34"
 sha3 = "0.10.8"
-tempfile = "3.14.0"
+tempfile = "=3.14.0"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-util = "0.7.12"
 tokio-rustls = { version = "0.26.1", default-features = false }
@@ -67,4 +69,6 @@ deranged = "=0.4.0"
 serial_test = "3.2.0"
 reqwest = "0.12.9"
 itertools = "0.12.1"
-mpc-contract = { path = "../libs/chain-signatures/contract/", features = ["test-utils"] }
+mpc-contract = { path = "../libs/chain-signatures/contract/", features = [
+    "test-utils",
+] }

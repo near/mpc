@@ -1,3 +1,8 @@
+# IDE configs
+.idea
+venv
+.vscode
+
 /target/
 /pytest/output.log
 /pytest/venv/

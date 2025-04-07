@@ -6,9 +6,8 @@ set -eo pipefail
 # It will initialize the Near node in case it is not initialized yet and start the MPC node.
 
 
-HOME_DIR="/data"
-MPC_NODE_CONFIG_FILE="$HOME_DIR/config.yaml"
-NEAR_NODE_CONFIG_FILE="$HOME_DIR/config.json"
+MPC_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.yaml"
+NEAR_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.json"
 
 initialize_near_node() {
     ./mpc-node init --dir $1 --chain-id $MPC_ENV --download-genesis --download-config
@@ -62,7 +61,7 @@ if [ -r "$NEAR_NODE_CONFIG_FILE" ]; then
     echo "Near node is already initialized"
 else
     echo "Initializing Near node"
-    initialize_near_node $HOME_DIR && echo "Near node initialized"
+    initialize_near_node $MPC_HOME_DIR && echo "Near node initialized"
 fi
 
 # Check and initialize MPC config if needed

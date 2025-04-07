@@ -1,6 +1,7 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
+use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidParameters};
 use crate::legacy_contract_state;
 use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
@@ -35,8 +36,13 @@ pub struct RunningContractState {
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
 }
+
 impl From<&legacy_contract_state::RunningContractState> for RunningContractState {
     fn from(state: &legacy_contract_state::RunningContractState) -> Self {
+        let key = match state.public_key.curve_type() {
+            near_sdk::CurveType::ED25519 => unreachable!("Legacy contract does not have any ED25519 keys in its state. An EdwardsPoint can not be constructed within the max gas limit."),
+            near_sdk::CurveType::SECP256K1 => PublicKeyExtended::Secp256k1 { near_public_key: state.public_key.clone() },
+        };
         RunningContractState {
             domains: DomainRegistry::new_single_ecdsa_key_from_legacy(),
             keyset: Keyset::new(
@@ -44,7 +50,7 @@ impl From<&legacy_contract_state::RunningContractState> for RunningContractState
                 vec![KeyForDomain {
                     attempt: AttemptId::default(),
                     domain_id: DomainId::legacy_ecdsa_id(),
-                    key: state.public_key.clone(),
+                    key,
                 }],
             ),
             parameters: ThresholdParameters::migrate_from_legacy(
@@ -165,7 +171,9 @@ pub mod running_tests {
     use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::{gen_participant, gen_pk, gen_threshold_params};
+    use crate::primitives::test_utils::{
+        bogus_edd25519_public_key_extended, gen_participant, gen_threshold_params,
+    };
     use crate::primitives::thresholds::{Threshold, ThresholdParameters};
     use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
@@ -187,7 +195,7 @@ pub mod running_tests {
             keys.push(KeyForDomain {
                 attempt,
                 domain_id: domain.id,
-                key: gen_pk(),
+                key: bogus_edd25519_public_key_extended(),
             });
         }
         let max_n = 30;

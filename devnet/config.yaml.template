@@ -2,4 +2,12 @@ rpcs:
   - url: http://replace_me:3030
     rate_limit: 5
     max_concurrency: 30
+
 infra_ops_path: /replace_me/infra-ops
+
+# Optional own funding account
+# funding_account:
+# account_id: your-funding-account.testnet
+# kind: FundingAccount
+# access_keys:
+#   - ed25519:your_private_key_here

@@ -10,10 +10,11 @@ pub mod update;
 use crate::errors::Error;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, UpdateId};
 use config::{Config, InitConfig};
+use crypto_shared::types::{PublicKeyExtended, PublicKeyExtendedConversionError};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
     kdf::{check_ec_signature, derive_public_key_edwards_point_edd25519},
-    near_public_key_to_affine_point, near_public_key_to_edwards_point,
+    near_public_key_to_affine_point,
     types::SignatureResponse,
     ScalarExt as _,
 };
@@ -71,7 +72,10 @@ pub struct MpcContract {
 }
 
 impl MpcContract {
-    fn public_key(&self, domain_id: DomainId) -> Result<PublicKey, Error> {
+    pub(crate) fn public_key_extended(
+        &self,
+        domain_id: DomainId,
+    ) -> Result<PublicKeyExtended, Error> {
         self.protocol_state.public_key(domain_id)
     }
 
@@ -130,9 +134,17 @@ impl MpcContract {
         key_event_id: KeyEventId,
         public_key: PublicKey,
     ) -> Result<(), Error> {
-        if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, public_key)? {
+        let extended_key =
+            public_key
+                .try_into()
+                .map_err(|err: PublicKeyExtendedConversionError| {
+                    InvalidParameters::MalformedPayload.message(err.to_string())
+                })?;
+
+        if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
             self.protocol_state = new_state;
         }
+
         Ok(())
     }
 
@@ -288,9 +300,14 @@ impl VersionedMpcContract {
     /// the default is the first domain.
     #[handle_result]
     pub fn public_key(&self, domain_id: Option<DomainId>) -> Result<PublicKey, Error> {
+        self.public_key_extended(domain_id)
+            .map(PublicKeyExtended::near_public_key)
+    }
+
+    fn public_key_extended(&self, domain_id: Option<DomainId>) -> Result<PublicKeyExtended, Error> {
         let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
         match self {
-            Self::V0(mpc_contract) => mpc_contract.public_key(domain),
+            Self::V0(mpc_contract) => mpc_contract.public_key_extended(domain),
         }
     }
 
@@ -309,21 +326,22 @@ impl VersionedMpcContract {
         let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
         let tweak = derive_tweak(&predecessor, &path);
 
-        let public_key = self.public_key(domain_id)?;
-        let curve_type = public_key.curve_type();
+        let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
+        let public_key = match self {
+            Self::V0(mpc_contract) => mpc_contract.public_key_extended(domain),
+        }?;
 
-        let derived_public_key = match curve_type {
-            CurveType::SECP256K1 => {
+        let derived_public_key = match public_key {
+            PublicKeyExtended::Secp256k1 { near_public_key } => {
                 let derived_public_key =
-                    derive_key_secp256k1(&near_public_key_to_affine_point(public_key), &tweak);
+                    derive_key_secp256k1(&near_public_key_to_affine_point(near_public_key), &tweak);
                 let encoded_point = derived_public_key.to_encoded_point(false);
                 let slice: &[u8] = &encoded_point.as_bytes()[1..65];
                 PublicKey::from_parts(CurveType::SECP256K1, slice.to_vec())
             }
-            CurveType::ED25519 => {
-                let public_key_edwards_point = near_public_key_to_edwards_point(public_key);
+            PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
-                    derive_public_key_edwards_point_edd25519(&public_key_edwards_point, &tweak);
+                    derive_public_key_edwards_point_edd25519(&edwards_point, &tweak);
                 let encoded_point: [u8; 32] =
                     derived_public_key_edwards_point.compress().to_bytes();
 
@@ -362,19 +380,16 @@ impl VersionedMpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
 
-        let public_key = self.public_key(Some(request.domain_id))?;
+        let public_key = self.public_key_extended(Some(request.domain_id))?;
 
-        match (&response, public_key.curve_type()) {
-            (SignatureResponse::Secp256k1(_), CurveType::SECP256K1)
-            | (SignatureResponse::Edd25519(_), CurveType::ED25519) => {}
-            _ => return Err(RespondError::SignatureSchemeMismatch.into()),
-        }
-
-        let signature_is_valid = match &response {
-            SignatureResponse::Secp256k1(signature_response) => {
+        let signature_is_valid = match (&response, public_key) {
+            (
+                SignatureResponse::Secp256k1(signature_response),
+                PublicKeyExtended::Secp256k1 { near_public_key },
+            ) => {
                 // generate the expected public key
                 let expected_public_key = derive_key_secp256k1(
-                    &near_public_key_to_affine_point(public_key),
+                    &near_public_key_to_affine_point(near_public_key),
                     &request.tweak,
                 );
 
@@ -390,8 +405,13 @@ impl VersionedMpcContract {
                 )
                 .is_ok()
             }
-            SignatureResponse::Edd25519(signature_response) => {
-                let public_key_edwards_point = near_public_key_to_edwards_point(public_key);
+            (
+                SignatureResponse::Edd25519(signature_response),
+                PublicKeyExtended::Ed25519 {
+                    edwards_point: public_key_edwards_point,
+                    ..
+                },
+            ) => {
                 let derived_public_key_edwards_point = derive_public_key_edwards_point_edd25519(
                     &public_key_edwards_point,
                     &request.tweak,
@@ -407,6 +427,9 @@ impl VersionedMpcContract {
                     message,
                     &derived_public_key_32_bytes,
                 )
+            }
+            _ => {
+                return Err(RespondError::SignatureSchemeMismatch.into());
             }
         };
 
@@ -862,9 +885,11 @@ mod tests {
             scheme: SignatureScheme::Secp256k1,
         }];
         let epoch_id = EpochId::new(0);
+        let near_public_key =
+            PublicKey::from_parts(near_sdk::CurveType::SECP256K1, public_key_data).unwrap();
         let key_for_domain = KeyForDomain {
             domain_id,
-            key: PublicKey::from_parts(near_sdk::CurveType::SECP256K1, public_key_data).unwrap(),
+            key: PublicKeyExtended::Secp256k1 { near_public_key },
             attempt: AttemptId::new(),
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);

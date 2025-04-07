@@ -134,7 +134,10 @@ def test_contract_update(test_trailing_sigs):
     # deploy V2, generate keys and update V2 to dummy contract
     cluster, mpc_nodes = deploy_and_init_v2()
     cluster.send_and_await_signature_requests(1)
-    public_key = cluster.contract_state().keyset().keyset[0].key
+    public_key_extended = cluster.contract_state().keyset().keyset[0].key
+    # The public key in the state is encoded as a `PublicKeyExtended` struct.
+    # We need to extract the inner field which contains the public key.
+    public_key = public_key_extended["Secp256k1"]["near_public_key"]
     migrate_from_v2_to_dummy(cluster)
 
     # kill nodes and change the contract account
