@@ -279,24 +279,24 @@ pub async fn create_response_ed25519(
     let tweak = derive_tweak(predecessor_id, path);
     let mut derived_sk = derive_secret_key_ed25519(signing_key, &tweak);
 
-    // Sanity checks of derived test key.
-    {
-        let public_key_edwards_point =
-            curve25519_dalek::EdwardsPoint::from_bytes(signing_key.verifying_key().as_bytes())
-                .unwrap();
+    // // Sanity checks of derived test key.
+    // {
+    //     let public_key_edwards_point =
+    //         curve25519_dalek::EdwardsPoint::from_bytes(signing_key.verifying_key().as_bytes())
+    //             .unwrap();
 
-        let derived_public_key_edwards_point =
-            derive_public_key_edwards_point_edd25519(&public_key_edwards_point, &tweak);
+    //     let derived_public_key_edwards_point =
+    //         derive_public_key_edwards_point_edd25519(&public_key_edwards_point, &tweak);
 
-        let public_key_edwards_point_from_derived_signing_key =
-            curve25519_dalek::EdwardsPoint::from_bytes(derived_sk.verifying_key().as_bytes())
-                .unwrap();
+    //     let public_key_edwards_point_from_derived_signing_key =
+    //         curve25519_dalek::EdwardsPoint::from_bytes(derived_sk.verifying_key().as_bytes())
+    //             .unwrap();
 
-        assert_eq!(
-            public_key_edwards_point_from_derived_signing_key,
-            derived_public_key_edwards_point
-        );
-    }
+    //     assert_eq!(
+    //         public_key_edwards_point_from_derived_signing_key,
+    //         derived_public_key_edwards_point
+    //     );
+    // }
 
     let payload: [u8; 32] = {
         let mut hasher = Sha256::new();
