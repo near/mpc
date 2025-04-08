@@ -378,7 +378,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env_secp256k1(1).await;
+    let (_, contract, _, sks) = init_env_edd25519(1).await;
     let predecessor_id = contract.id();
     let path = "test";
 
@@ -393,7 +393,7 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
     for msg in messages {
         println!("submitting: {msg}");
         let (payload, respond_req, respond_resp) =
-            create_response(predecessor_id, msg, path, &sks[0]).await;
+            create_response_ed25519(predecessor_id, msg, path, &sks[0]).await;
 
         let request = SignRequestArgs {
             payload_v2: Some(payload),
