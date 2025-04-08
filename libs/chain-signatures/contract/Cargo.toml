@@ -54,5 +54,7 @@ digest = "0.10.7"
 near-crypto = "0.26.0"
 near-workspaces = "0.14.1"
 
+rstest = "0.25.0"
+
 [features]
 test-utils = ["rand"]

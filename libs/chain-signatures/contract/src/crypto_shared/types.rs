@@ -165,16 +165,23 @@ mod serialize {
 
     impl BorshSerialize for SerializableEdwardsPoint {
         fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-            let to_ser: Vec<u8> = serde_json::to_vec(&self.0)?;
-            BorshSerialize::serialize(&to_ser, writer)
+            let bytes = self.0.to_bytes();
+            BorshSerialize::serialize(&bytes, writer)
         }
     }
 
     impl BorshDeserialize for SerializableEdwardsPoint {
         fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
-            let from_ser: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
-            let edwards_point = serde_json::from_slice(&from_ser)?;
-            Ok(SerializableEdwardsPoint(edwards_point))
+            let bytes: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
+            let bytes = bytes.try_into().unwrap();
+
+            EdwardsPoint::from_bytes(&bytes)
+                .into_option()
+                .ok_or(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "The provided bytes is not a valid edwards point.",
+                ))
+                .map(SerializableEdwardsPoint)
         }
     }
 }
@@ -399,5 +406,25 @@ mod test {
                 assert_eq!(input, output, "Failed on {:?}", scalar);
             }
         }
+    }
+
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("secp256k1:qMoRgcoXai4mBPsdbHi1wfyxF9TdbPCF4qSDQTRP3TfescSRoUdSx6nmeQoN3aiwGzwMyGXAb1gUjBTv5AY8DXj")]
+    #[case("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")]
+    /// Tests the serialization and deserialization of [`PublicKeyExtended`] works.
+    fn test_serialization_of_public_key_extended_secp256k1(
+        #[case] near_public_key: near_sdk::PublicKey,
+    ) {
+        let public_key_extended = PublicKeyExtended::try_from(near_public_key).unwrap();
+        let mut buffer: Vec<u8> = vec![];
+        BorshSerialize::serialize(&public_key_extended, &mut buffer).unwrap();
+
+        let mut slice_ref = &buffer[..];
+        let deserialized =
+            <PublicKeyExtended as BorshDeserialize>::deserialize(&mut slice_ref).unwrap();
+
+        assert_eq!(deserialized, public_key_extended);
     }
 }
