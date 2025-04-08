@@ -808,12 +808,13 @@ impl VersionedMpcContract {
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
-                PromiseOrValue::Promise(Promise::new(env::current_account_id()).function_call(
+                let promise = Promise::new(env::current_account_id()).function_call(
                     "fail_on_timeout".to_string(),
                     vec![],
                     NearToken::from_near(0),
                     Gas::from_tgas(1),
-                ))
+                );
+                near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
         }
     }
