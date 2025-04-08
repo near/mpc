@@ -15,3 +15,34 @@ pub(crate) fn derive_keygen_output(keygen_output: &KeygenOutput, tweak: [u8; 32]
         public_key,
     }
 }
+
+#[cfg(test)]
+mod test {
+    use rand::Rng;
+
+    use super::*;
+
+    #[test]
+    fn test_private_key_derivation() {
+        let random_bytes: [u8; 32] = rand::thread_rng().gen();
+
+        let scalar = Scalar::from_bytes_mod_order(random_bytes);
+        let private_share = SigningShare::new(scalar);
+
+        let public_key_element = Ed25519Group::generator() * scalar;
+        let public_key = VerifyingKey::new(public_key_element);
+
+        let keygen_output = KeygenOutput {
+            private_share,
+            public_key,
+        };
+
+        let tweak: [u8; 32] = rand::thread_rng().gen();
+        let derived_keygen_output = derive_keygen_output(&keygen_output, tweak);
+
+        assert_eq!(
+            derived_keygen_output.public_key.to_element(),
+            derived_keygen_output.private_share.to_scalar() * Ed25519Group::generator(),
+        );
+    }
+}
