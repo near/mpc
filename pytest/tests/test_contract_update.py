@@ -157,6 +157,7 @@ def test_contract_update(test_trailing_sigs):
         update_v1_code_args = UpdateArgsV1(
             code_path=MIGRATE_CURRENT_CONTRACT_PATH)
         cluster.propose_update(update_v1_code_args.borsh_serialize())
+        time.sleep(0.1)  # near node seems to get overwhelmed otherwise
 
     def make_legacy_sign_request_txs(payloads,
                                      nonce_offset=1,
