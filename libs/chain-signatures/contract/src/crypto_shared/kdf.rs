@@ -44,7 +44,7 @@ pub fn derive_public_key_edwards_point_edd25519(
     point: &curve25519_dalek::EdwardsPoint,
     tweak: &Tweak,
 ) -> curve25519_dalek::EdwardsPoint {
-    let tweak = curve25519_dalek::Scalar::from_canonical_bytes(tweak.as_bytes()).unwrap();
+    let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(tweak.as_bytes());
     point + ED25519_BASEPOINT_POINT * tweak
 }
 
@@ -111,50 +111,70 @@ pub fn recover(
 
 #[cfg(test)]
 mod tests {
-    use ed25519_dalek::{SigningKey, VerifyingKey};
-    use k256::elliptic_curve::group::GroupEncoding;
-    use rand::rngs::OsRng;
-
     use super::*;
+    use cait_sith::eddsa::KeygenOutput;
+    use cait_sith::frost_core::keys::SigningShare;
+    use cait_sith::frost_core::VerifyingKey;
+    use cait_sith::frost_ed25519::{Ed25519Group, Ed25519Sha512, Group};
+    use curve25519_dalek::Scalar;
+    use rand::rngs::OsRng;
+    use rand::Rng;
 
-    fn derive_secret_key_ed25519(
-        secret_key: &ed25519_dalek::SigningKey,
-        tweak: &Tweak,
-    ) -> ed25519_dalek::SigningKey {
-        let sk_scalar = secret_key.to_scalar();
-        let tweak_scalar =
-            curve25519_dalek::scalar::Scalar::from_canonical_bytes(tweak.as_bytes()).unwrap();
-        let derived_scalar = sk_scalar + tweak_scalar;
-        ed25519_dalek::SigningKey::from_bytes(&derived_scalar.to_bytes())
+    pub(crate) fn derive_keygen_output(
+        keygen_output: &KeygenOutput,
+        tweak: [u8; 32],
+    ) -> KeygenOutput {
+        let tweak = Scalar::from_bytes_mod_order(tweak);
+        let private_share = SigningShare::new(keygen_output.private_share.to_scalar() + tweak);
+        let public_key = VerifyingKey::new(
+            keygen_output.public_key.to_element() + Ed25519Group::generator() * tweak,
+        );
+        KeygenOutput {
+            private_share,
+            public_key,
+        }
     }
 
     #[test]
-    fn test_pubkey_derivation_matches_derived_secret_key() {
-        // panic!();
-        // Generate a random secret key
-        let secret_key = SigningKey::generate(&mut OsRng);
+    fn test_derivation() {
+        let random_bytes: [u8; 32] = rand::thread_rng().gen();
 
-        // Extract public key
-        let public_key = VerifyingKey::from(&secret_key);
+        let scalar = Scalar::from_bytes_mod_order(random_bytes);
+        let private_share = SigningShare::<Ed25519Sha512>::new(scalar);
 
-        // Create a random tweak
+        let public_key_element = Ed25519Group::generator() * scalar;
+        let public_key = VerifyingKey::<Ed25519Sha512>::new(public_key_element);
+
+        let keygen_output = KeygenOutput {
+            private_share,
+            public_key,
+        };
+
         let tweak = derive_tweak(&"hello".parse().unwrap(), "my-path");
+        let derived_keygen_output = derive_keygen_output(&keygen_output, tweak.as_bytes());
 
-        let derived_secret_key = derive_secret_key_ed25519(&secret_key, &tweak);
-
-        let public_key_point =
-            curve25519_dalek::EdwardsPoint::from_bytes(public_key.as_bytes()).unwrap();
-        let edwards_point_from_derived_public_key =
-            derive_public_key_edwards_point_edd25519(&public_key_point, &tweak);
-
-        let edwards_point_from_derived_secret_key = curve25519_dalek::EdwardsPoint::from_bytes(
-            derived_secret_key.verifying_key().as_bytes(),
-        )
-        .unwrap();
+        let derived_public_key =
+            derive_public_key_edwards_point_edd25519(&public_key_element, &tweak);
 
         assert_eq!(
-            edwards_point_from_derived_secret_key.to_bytes(),
-            edwards_point_from_derived_public_key.to_bytes(),
+            derived_public_key,
+            derived_keygen_output.public_key.to_element()
         );
+
+        // Sanity check of our private key generator.
+        assert_eq!(
+            derived_keygen_output.public_key.to_element(),
+            derived_keygen_output.private_share.to_scalar() * &Ed25519Group::generator(),
+            "Sanity check failed."
+        );
+
+        let message = [1, 2, 3, 4];
+        let signer =
+            frost_ed25519::SigningKey::from_scalar(derived_keygen_output.private_share.to_scalar())
+                .unwrap();
+
+        let signature = signer.sign(&mut OsRng, &message);
+        let derived_verifying_key = frost_ed25519::VerifyingKey::new(derived_public_key);
+        derived_verifying_key.verify(&message, &signature).unwrap();
     }
 }

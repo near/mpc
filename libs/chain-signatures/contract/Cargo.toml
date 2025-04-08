@@ -37,6 +37,7 @@ thiserror = "1"
 sha3 = "0.10.8"
 hex = "0.4.3"
 
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.12", features = ["custom"] }
 
@@ -54,6 +55,10 @@ digest = "0.10.7"
 # near dependencies
 near-crypto = "0.26.0"
 near-workspaces = "0.14.1"
+cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "5e0ce40a16dc3e0889277f66bb2a6400d6ef36a5", features = [
+    "k256",
+] }
+frost-ed25519 = "2.1.0"
 
 [features]
 test-utils = ["rand"]
