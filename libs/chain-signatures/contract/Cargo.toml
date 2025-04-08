@@ -46,7 +46,6 @@ rand = "0.8"
 tokio = { version = "1", features = ["full"] }
 
 sha2 = "0.10.8"
-ed25519-dalek = { version = "2.1.1", features = ["serde", "digest"] }
 
 # crypto dependencies
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
