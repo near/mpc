@@ -384,10 +384,10 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
 
     let messages = [
         "hello world",
-        // "hello world!",
-        // "hello world!!",
-        // "hello world!!!",
-        // "hello world!!!!",
+        "hello world!",
+        "hello world!!",
+        "hello world!!!",
+        "hello world!!!!",
     ];
 
     for msg in messages {
@@ -405,26 +405,26 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
         sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
     }
 
-    // // check duplicate requests can also be signed:
-    // let duplicate_msg = "welp";
-    // let (payload, respond_req, respond_resp) =
-    //     create_response_edd25519(predecessor_id, duplicate_msg, path, &sks[0]).await;
-    // let request = SignRequestArgs {
-    //     payload_v2: Some(payload),
-    //     path: path.into(),
-    //     domain_id: Some(DomainId(0)),
-    //     ..Default::default()
-    // };
-    // sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
-    // sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    // check duplicate requests can also be signed:
+    let duplicate_msg = "welp";
+    let (payload, respond_req, respond_resp) =
+        create_response_ed25519(predecessor_id, duplicate_msg, path, &sks[0]).await;
+    let request = SignRequestArgs {
+        payload_v2: Some(payload),
+        path: path.into(),
+        domain_id: Some(DomainId(0)),
+        ..Default::default()
+    };
+    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
 
-    // // Check that a sign with no response from MPC network properly errors out:
-    // let err = sign_and_validate(&request, None, &contract)
-    //     .await
-    //     .expect_err("should have failed with timeout");
-    // assert!(err
-    //     .to_string()
-    //     .contains(&errors::SignError::Timeout.to_string()));
+    // Check that a sign with no response from MPC network properly errors out:
+    let err = sign_and_validate(&request, None, &contract)
+        .await
+        .expect_err("should have failed with timeout");
+    assert!(err
+        .to_string()
+        .contains(&errors::SignError::Timeout.to_string()));
 
     Ok(())
 }
