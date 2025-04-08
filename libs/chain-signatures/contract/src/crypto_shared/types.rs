@@ -89,8 +89,8 @@ impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
     }
 }
 
-impl PublicKeyExtended {
-    pub fn near_public_key_ref(&self) -> &near_sdk::PublicKey {
+impl AsRef<near_sdk::PublicKey> for PublicKeyExtended {
+    fn as_ref(&self) -> &near_sdk::PublicKey {
         match self {
             PublicKeyExtended::Secp256k1 { near_public_key } => near_public_key,
             PublicKeyExtended::Ed25519 {

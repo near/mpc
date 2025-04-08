@@ -177,7 +177,7 @@ async fn resharing_computation_inner(
         .public_key(key_id.domain_id)
         .map_err(|_| anyhow::anyhow!("Previous keyset does not contain key for {:?}", key_id))?;
 
-    let near_public_key = previous_public_key.near_public_key_ref();
+    let near_public_key = previous_public_key.as_ref();
 
     let keyshare_data = match domain.scheme {
         SignatureScheme::Secp256k1 => {
