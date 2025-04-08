@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::fmt;
 
+use crate::crypto_shared::kdf::TweakNotOnCurve;
+
 use super::{
     ConversionError, DomainError, Error, ErrorKind, ErrorRepr, InvalidCandidateSet,
     InvalidParameters, InvalidState, InvalidThreshold, KeyEventError, PublicKeyError, RespondError,
@@ -157,5 +159,17 @@ impl From<InvalidCandidateSet> for Error {
 impl From<DomainError> for Error {
     fn from(code: DomainError) -> Self {
         Self::simple(ErrorKind::DomainError(code))
+    }
+}
+
+impl From<TweakNotOnCurve> for PublicKeyError {
+    fn from(_: TweakNotOnCurve) -> Self {
+        Self::TweakNotOnCurve
+    }
+}
+
+impl From<TweakNotOnCurve> for RespondError {
+    fn from(_: TweakNotOnCurve) -> Self {
+        Self::TweakNotOnCurve
     }
 }

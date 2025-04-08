@@ -16,13 +16,13 @@ use crypto_shared::{
     kdf::{check_ec_signature, derive_public_key_edwards_point_edd25519},
     near_public_key_to_affine_point,
     types::SignatureResponse,
-    ScalarExt as _,
 };
 use errors::{
     ConversionError, DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError,
     SignError,
 };
 use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::elliptic_curve::PrimeField;
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     env::{self, ed25519_verify},
@@ -217,8 +217,9 @@ impl VersionedMpcContract {
         // This allows users to get the error message
         match &curve_type {
             CurveType::SECP256K1 => {
-                let hash = request.payload.as_ecdsa().expect("Payload is not Ecdsa");
-                k256::Scalar::from_bytes(*hash)
+                let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
+                k256::Scalar::from_repr(hash.into())
+                    .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
             }
             CurveType::ED25519 => {
@@ -334,14 +335,18 @@ impl VersionedMpcContract {
         let derived_public_key = match public_key {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
                 let derived_public_key =
-                    derive_key_secp256k1(&near_public_key_to_affine_point(near_public_key), &tweak);
+                    derive_key_secp256k1(&near_public_key_to_affine_point(near_public_key), &tweak)
+                        .map_err(PublicKeyError::from)?;
+
                 let encoded_point = derived_public_key.to_encoded_point(false);
                 let slice: &[u8] = &encoded_point.as_bytes()[1..65];
                 PublicKey::from_parts(CurveType::SECP256K1, slice.to_vec())
             }
             PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
-                    derive_public_key_edwards_point_edd25519(&edwards_point, &tweak);
+                    derive_public_key_edwards_point_edd25519(&edwards_point, &tweak)
+                        .map_err(PublicKeyError::from)?;
+
                 let encoded_point: [u8; 32] =
                     derived_public_key_edwards_point.compress().to_bytes();
 
@@ -391,7 +396,8 @@ impl VersionedMpcContract {
                 let expected_public_key = derive_key_secp256k1(
                     &near_public_key_to_affine_point(near_public_key),
                     &request.tweak,
-                );
+                )
+                .map_err(RespondError::from)?;
 
                 let payload_hash = request.payload.as_ecdsa().expect("Payload is not ECDSA");
 
@@ -415,7 +421,8 @@ impl VersionedMpcContract {
                 let derived_public_key_edwards_point = derive_public_key_edwards_point_edd25519(
                     &public_key_edwards_point,
                     &request.tweak,
-                );
+                )
+                .map_err(RespondError::from)?;
 
                 let derived_public_key_32_bytes =
                     *derived_public_key_edwards_point.compress().as_bytes();
@@ -749,11 +756,11 @@ impl VersionedMpcContract {
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
+        log!("migrating contract");
         if let Some(legacy_contract_state::VersionedMpcContract::V1(state)) =
             Self::state_read::<legacy_contract_state::VersionedMpcContract>()
         {
-            let mut config = Config::default();
-            config.request_timeout_blocks = state.config.request_timeout_blocks;
+            let config = Config::default();
             let protocol_state: ProtocolContractState = (&state.protocol_state).into();
             return Ok(VersionedMpcContract::V0(MpcContract {
                 config,
@@ -812,12 +819,13 @@ impl VersionedMpcContract {
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
-                PromiseOrValue::Promise(Promise::new(env::current_account_id()).function_call(
+                let promise = Promise::new(env::current_account_id()).function_call(
                     "fail_on_timeout".to_string(),
                     vec![],
                     NearToken::from_near(0),
                     Gas::from_tgas(1),
-                ))
+                );
+                near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
         }
     }
@@ -870,7 +878,7 @@ mod tests {
     use rand::RngCore;
 
     pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
-        let tweak = k256::Scalar::from_non_biased(tweak.as_bytes());
+        let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();
         k256::SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
     }
 
@@ -950,14 +958,14 @@ mod tests {
         let signature_response = if success {
             SignatureResponse::Secp256k1(k256_types::SignatureResponse::new(
                 AffinePoint::decompact(&r).unwrap(),
-                k256::Scalar::from_bytes(bytes).unwrap(),
+                k256::Scalar::from_repr(bytes.into()).unwrap(),
                 recovery_id.to_byte(),
             ))
         } else {
             // submit an incorrect signature to make the respond call fail
             SignatureResponse::Secp256k1(k256_types::SignatureResponse::new(
                 AffinePoint::decompact(&r).unwrap(),
-                k256::Scalar::from_bytes([0u8; 32]).unwrap(),
+                k256::Scalar::from_repr([0u8; 32].into()).unwrap(),
                 recovery_id.to_byte(),
             ))
         };

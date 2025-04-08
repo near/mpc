@@ -3,8 +3,8 @@ use std::fmt::Display;
 use borsh::{BorshDeserialize, BorshSerialize};
 use curve25519_dalek::EdwardsPoint;
 use k256::{
-    elliptic_curve::{bigint::ArrayEncoding, group::GroupEncoding, CurveArithmetic, PrimeField},
-    AffinePoint, Secp256k1, U256,
+    elliptic_curve::{group::GroupEncoding, CurveArithmetic, PrimeField},
+    AffinePoint, Secp256k1,
 };
 use near_sdk::near;
 use serde::{Deserialize, Serialize};
@@ -180,39 +180,11 @@ mod serialize {
     }
 }
 
-pub trait ScalarExt: Sized {
-    fn from_bytes(bytes: [u8; 32]) -> Option<Self>;
-    fn from_non_biased(bytes: [u8; 32]) -> Self;
-    fn to_bytes(&self) -> [u8; 32];
-}
-
 pub mod k256_types {
     use super::*;
     use k256::Scalar;
 
     pub type PublicKey = <Secp256k1 as CurveArithmetic>::AffinePoint;
-
-    impl ScalarExt for Scalar {
-        /// Returns nothing if the bytes are greater than the field size of Secp256k1.
-        /// This will be very rare with random bytes as the field size is 2^256 - 2^32 - 2^9 - 2^8 - 2^7 - 2^6 - 2^4 - 1
-        fn from_bytes(bytes: [u8; 32]) -> Option<k256::Scalar> {
-            let bytes = U256::from_be_slice(bytes.as_slice());
-            k256::Scalar::from_repr(bytes.to_be_byte_array()).into_option()
-        }
-
-        /// When the user can't directly select the value, this will always work
-        /// Use cases are things that we know have been hashed
-        fn from_non_biased(hash: [u8; 32]) -> Self {
-            // This should never happen.
-            // The space of inputs is 2^256, the space of the field is ~2^256 - 2^129.
-            // This mean that you'd have to run 2^127 hashes to find a value that causes this to fail.
-            Self::from_bytes(hash).expect("Derived scalar value falls outside of the field")
-        }
-
-        fn to_bytes(&self) -> [u8; 32] {
-            self.to_bytes().into()
-        }
-    }
 
     // Is there a better way to force a borsh serialization?
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy, Ord, PartialOrd)]
@@ -242,10 +214,13 @@ pub mod k256_types {
     impl BorshDeserialize for SerializableScalar {
         fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
             let from_ser: [u8; 32] = BorshDeserialize::deserialize_reader(reader)?;
-            let scalar = Scalar::from_bytes(from_ser).ok_or(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "The given scalar is not in the field of Secp256k1",
-            ))?;
+            let scalar =
+                Scalar::from_repr(from_ser.into())
+                    .into_option()
+                    .ok_or(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "The given scalar is not in the field of Secp256k1",
+                    ))?;
             Ok(SerializableScalar { scalar })
         }
     }
@@ -295,20 +270,6 @@ pub mod edd25519_types {
     use super::*;
     use curve25519_dalek::Scalar;
 
-    impl ScalarExt for Scalar {
-        fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
-            Self::from_repr(bytes).into_option()
-        }
-
-        fn from_non_biased(hash: [u8; 32]) -> Self {
-            Self::from_bytes(hash).unwrap()
-        }
-
-        fn to_bytes(&self) -> [u8; 32] {
-            self.to_bytes()
-        }
-    }
-
     // Is there a better way to force a borsh serialization?
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
     pub struct SerializableScalar {
@@ -337,10 +298,12 @@ pub mod edd25519_types {
     impl BorshDeserialize for SerializableScalar {
         fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
             let from_ser: [u8; 32] = BorshDeserialize::deserialize_reader(reader)?;
-            let scalar = Scalar::from_bytes(from_ser).ok_or(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "The given scalar is not in the field of edd25519",
-            ))?;
+            let scalar = Scalar::from_repr(from_ser)
+                .into_option()
+                .ok_or(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "The given scalar is not in the field of edd25519",
+                ))?;
             Ok(SerializableScalar { scalar })
         }
     }
@@ -385,7 +348,7 @@ mod test {
             k256::Scalar::ZERO,
             k256::Scalar::ONE,
             k256::Scalar::from_u128(u128::MAX),
-            k256::Scalar::from_bytes([3; 32]).unwrap(),
+            k256::Scalar::from_repr([3; 32].into()).unwrap(),
         ];
 
         for scalar in test_vec.into_iter() {

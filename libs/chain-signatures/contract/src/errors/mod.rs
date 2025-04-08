@@ -21,6 +21,8 @@ pub enum RespondError {
     SignatureSchemeMismatch,
     #[error("The provided domain was not found.")]
     DomainNotFound,
+    #[error("The provided tweak is not on the curve of the public key.")]
+    TweakNotOnCurve,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -29,6 +31,8 @@ pub enum PublicKeyError {
     DerivedKeyConversionFailed,
     #[error("The provided domain was not found.")]
     DomainNotFound,
+    #[error("The provided tweak is not on the curve of the public key.")]
+    TweakNotOnCurve,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

@@ -1,14 +1,17 @@
+use cait_sith::eddsa::KeygenOutput;
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
+use frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey};
 use k256::{
-    elliptic_curve::{group::GroupEncoding, point::DecompressPoint as _, sec1::ToEncodedPoint},
-    AffinePoint, FieldBytes, Scalar, Secp256k1,
+    elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint, PrimeField},
+    AffinePoint, FieldBytes, Scalar, Secp256k1, SecretKey,
 };
+use mpc_contract::primitives::signature::{Payload, SignRequestArgs};
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
         derive_key_secp256k1, derive_tweak, edd25519_types, k256_types, kdf::check_ec_signature,
-        ScalarExt, SerializableAffinePoint, SerializableScalar, SignatureResponse,
+        SerializableAffinePoint, SerializableScalar, SignatureResponse,
     },
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
@@ -19,10 +22,6 @@ use mpc_contract::{
     },
     update::UpdateId,
 };
-use mpc_contract::{
-    crypto_shared::kdf::derive_public_key_edwards_point_edd25519,
-    primitives::signature::{Payload, SignRequestArgs},
-};
 use near_crypto::KeyType;
 use near_sdk::log;
 use near_workspaces::{
@@ -31,8 +30,9 @@ use near_workspaces::{
     types::{AccountId, NearToken},
     Account, Contract, Worker,
 };
+use rand::rngs::OsRng;
 use sha2::Sha256;
-use signature::{DigestSigner, SignerMut};
+use signature::DigestSigner;
 use std::str::FromStr;
 
 pub const CONTRACT_FILE_PATH: &str = "../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
@@ -173,24 +173,25 @@ pub async fn init_env_secp256k1(
 
 pub async fn init_env_edd25519(
     num_domains: usize,
-) -> (
-    Worker<Sandbox>,
-    Contract,
-    Vec<Account>,
-    Vec<ed25519_dalek::SigningKey>,
-) {
+) -> (Worker<Sandbox>, Contract, Vec<Account>, Vec<KeygenOutput>) {
     let mut public_keys = Vec::new();
     let mut secret_keys = Vec::new();
     for _ in 0..num_domains {
-        let mut rand = rand::thread_rng();
-        let signing_key_eddsa = ed25519_dalek::SigningKey::generate(&mut rand);
-        let pk = signing_key_eddsa.verifying_key().as_bytes().clone();
+        let scalar = curve25519_dalek::Scalar::random(&mut OsRng);
+        let private_share = SigningShare::new(scalar);
+        let public_key_element = Ed25519Group::generator() * scalar;
+        let public_key = VerifyingKey::new(public_key_element);
+
+        let keygen_output = KeygenOutput {
+            private_share,
+            public_key,
+        };
 
         public_keys.push(near_crypto::PublicKey::ED25519(
-            near_crypto::ED25519PublicKey::from(pk),
+            near_crypto::ED25519PublicKey::from(public_key.to_element().compress().to_bytes()),
         ));
 
-        secret_keys.push(signing_key_eddsa);
+        secret_keys.push(keygen_output);
     }
     let (worker, contract, accounts) = init_with_candidates(public_keys).await;
 
@@ -208,18 +209,20 @@ pub async fn process_message(msg: &str) -> (impl Digest, Payload) {
 }
 
 pub fn derive_secret_key_secp256k1(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
-    let tweak = Scalar::from_non_biased(tweak.as_bytes());
-    k256::SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
+    let tweak = Scalar::from_repr(tweak.as_bytes().into()).unwrap();
+    SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
 }
 
-fn derive_secret_key_ed25519(
-    secret_key: &ed25519_dalek::SigningKey,
-    tweak: &Tweak,
-) -> ed25519_dalek::SigningKey {
-    let sk_scalar = secret_key.to_scalar();
-    let tweak_scalar = curve25519_dalek::scalar::Scalar::from_bytes_mod_order(tweak.as_bytes());
-    let derived_scalar = sk_scalar + tweak_scalar;
-    ed25519_dalek::SigningKey::from_bytes(&derived_scalar.to_bytes())
+pub fn derive_secret_key_ed25519(secret_key: &KeygenOutput, tweak: &Tweak) -> KeygenOutput {
+    let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(tweak.as_bytes());
+    let private_share = SigningShare::new(secret_key.private_share.to_scalar() + tweak);
+    let public_key =
+        VerifyingKey::new(secret_key.public_key.to_element() + Ed25519Group::generator() * tweak);
+
+    KeygenOutput {
+        private_share,
+        public_key,
+    }
 }
 
 pub async fn create_response(
@@ -233,7 +236,7 @@ pub async fn create_response(
 
     let tweak = derive_tweak(predecessor_id, path);
     let derived_sk = derive_secret_key_secp256k1(sk, &tweak);
-    let derived_pk = derive_key_secp256k1(&pk.into(), &tweak);
+    let derived_pk = derive_key_secp256k1(&pk.into(), &tweak).unwrap();
     let signing_key = k256::ecdsa::SigningKey::from(&derived_sk);
     let verifying_key =
         k256::ecdsa::VerifyingKey::from(&k256::PublicKey::from_affine(derived_pk).unwrap());
@@ -274,29 +277,10 @@ pub async fn create_response_ed25519(
     predecessor_id: &AccountId,
     msg: &str,
     path: &str,
-    signing_key: &ed25519_dalek::SigningKey,
+    signing_key: &KeygenOutput,
 ) -> (Payload, SignatureRequest, SignatureResponse) {
     let tweak = derive_tweak(predecessor_id, path);
-    let mut derived_sk = derive_secret_key_ed25519(signing_key, &tweak);
-
-    // // Sanity checks of derived test key.
-    // {
-    //     let public_key_edwards_point =
-    //         curve25519_dalek::EdwardsPoint::from_bytes(signing_key.verifying_key().as_bytes())
-    //             .unwrap();
-
-    //     let derived_public_key_edwards_point =
-    //         derive_public_key_edwards_point_edd25519(&public_key_edwards_point, &tweak);
-
-    //     let public_key_edwards_point_from_derived_signing_key =
-    //         curve25519_dalek::EdwardsPoint::from_bytes(derived_sk.verifying_key().as_bytes())
-    //             .unwrap();
-
-    //     assert_eq!(
-    //         public_key_edwards_point_from_derived_signing_key,
-    //         derived_public_key_edwards_point
-    //     );
-    // }
+    let derived_signing_key = derive_secret_key_ed25519(signing_key, &tweak);
 
     let payload: [u8; 32] = {
         let mut hasher = Sha256::new();
@@ -304,7 +288,17 @@ pub async fn create_response_ed25519(
         hasher.clone().finalize().into()
     };
 
-    let signature = derived_sk.sign(&payload).to_bytes();
+    let derived_signing_key =
+        frost_ed25519::SigningKey::from_scalar(derived_signing_key.private_share.to_scalar())
+            .unwrap();
+
+    let signature = derived_signing_key
+        .sign(OsRng, &payload)
+        .serialize()
+        .unwrap()
+        .try_into()
+        .unwrap();
+
     let bytes = Bytes::new(payload.into()).unwrap();
     let payload = Payload::Eddsa(bytes);
 
