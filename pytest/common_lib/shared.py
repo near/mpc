@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from ruamel.yaml import YAML
 from common_lib import constants
 from common_lib import signature
-from common_lib.contract_state import ContractState, ProtocolState
+from common_lib.contract_state import ContractState, Domains, ProtocolState, SignatureScheme
 from common_lib.signature import generate_sign_args
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -216,16 +216,6 @@ class MpcNode(NearNode):
         file_path.touch()
 
 
-#def assert_signature_success(res):
-#    assert_txn_success(res)
-#    signature_base64 = res['result']['status']['SuccessValue']
-#    while len(signature_base64) % 4 != 0:
-#        signature_base64 += '='
-#    signature = base64.b64decode(signature_base64)
-#    signature = json.loads(signature)
-#    print("\033[96mSign Response ✓\033[0m")
-
-
 class MpcCluster:
     """Helper class"""
 
@@ -401,7 +391,9 @@ class MpcCluster:
         self.contract_state().print()
         return n < n_attempts
 
-    def add_domains(self, signature_schemes: List[str], wait_for_running=True):
+    def add_domains(self,
+                    signature_schemes: List[SignatureScheme],
+                    wait_for_running=True):
         print(
             f"\033[91m(Vote Domains) Adding domains: \033[93m{signature_schemes}\033[0m"
         )
@@ -473,11 +465,11 @@ class MpcCluster:
         running = ContractState(self.get_contract_state())
         running.print()
 
-    def generate_sign_request_txns(self,
-                                   requests_per_domains: int,
-                                   nonce_offset: int = 1,
-                                   add_gas: Optional[int] = None,
-                                   add_deposit: Optional[int] = None):
+    def make_sign_request_txns(self,
+                               requests_per_domains: int,
+                               nonce_offset: int = 1,
+                               add_gas: Optional[int] = None,
+                               add_deposit: Optional[int] = None):
         """
         Creates signature transactions for each domain and request count pair.
 
@@ -489,6 +481,9 @@ class MpcCluster:
         deposit = constants.SIGNATURE_DEPOSIT + (add_deposit or 0)
         domains = self.contract_state().get_running_domains()
         for domain in domains:
+            # todo: remove below lines to test signature requests for eddsa
+            if domain.scheme != 'Secp256k1':
+                continue
             print(
                 f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m sign requests for {domain}.\033[0m"
             )
@@ -512,10 +507,7 @@ class MpcCluster:
         )
 
         def send_tx(tx):
-            res = self.sign_request_node.send_tx(tx)['result']
-            print(res)
-            return res
-            #return self.sign_request_node.send_tx(tx)['result']
+            return self.sign_request_node.send_tx(tx)['result']
 
         with ThreadPoolExecutor() as executor:
             tx_hashes = list(executor.map(send_tx, txs))
@@ -549,9 +541,9 @@ class MpcCluster:
         """
             Sends signature requests and returns the transactions and the timestamp they were sent.
         """
-        txs = self.generate_sign_request_txns(requests_per_domains,
-                                              add_gas=add_gas,
-                                              add_deposit=add_deposit)
+        txs = self.make_sign_request_txns(requests_per_domains,
+                                          add_gas=add_gas,
+                                          add_deposit=add_deposit)
         return self.send_sign_request_txns(txs), time.time()
 
     def observe_signature_requests(self, num_requests, started, tx_sent):
