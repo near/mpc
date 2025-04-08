@@ -44,7 +44,7 @@ pub fn derive_public_key_edwards_point_edd25519(
     point: &curve25519_dalek::EdwardsPoint,
     tweak: &Tweak,
 ) -> curve25519_dalek::EdwardsPoint {
-    let tweak = curve25519_dalek::Scalar::from_non_biased(tweak.as_bytes());
+    let tweak = curve25519_dalek::Scalar::from_canonical_bytes(tweak.as_bytes()).unwrap();
     point + ED25519_BASEPOINT_POINT * tweak
 }
 
@@ -107,4 +107,54 @@ pub fn recover(
         &recovered_key_bytes.into(),
     ))
     .context("Failed to parse returned key")
+}
+
+#[cfg(test)]
+mod tests {
+    use ed25519_dalek::{SigningKey, VerifyingKey};
+    use k256::elliptic_curve::group::GroupEncoding;
+    use rand::rngs::OsRng;
+
+    use super::*;
+
+    fn derive_secret_key_ed25519(
+        secret_key: &ed25519_dalek::SigningKey,
+        tweak: &Tweak,
+    ) -> ed25519_dalek::SigningKey {
+        let sk_scalar = secret_key.to_scalar();
+        let tweak_scalar =
+            curve25519_dalek::scalar::Scalar::from_canonical_bytes(tweak.as_bytes()).unwrap();
+        let derived_scalar = sk_scalar + tweak_scalar;
+        ed25519_dalek::SigningKey::from_bytes(&derived_scalar.to_bytes())
+    }
+
+    #[test]
+    fn test_pubkey_derivation_matches_derived_secret_key() {
+        // panic!();
+        // Generate a random secret key
+        let secret_key = SigningKey::generate(&mut OsRng);
+
+        // Extract public key
+        let public_key = VerifyingKey::from(&secret_key);
+
+        // Create a random tweak
+        let tweak = derive_tweak(&"hello".parse().unwrap(), "my-path");
+
+        let derived_secret_key = derive_secret_key_ed25519(&secret_key, &tweak);
+
+        let public_key_point =
+            curve25519_dalek::EdwardsPoint::from_bytes(public_key.as_bytes()).unwrap();
+        let edwards_point_from_derived_public_key =
+            derive_public_key_edwards_point_edd25519(&public_key_point, &tweak);
+
+        let edwards_point_from_derived_secret_key = curve25519_dalek::EdwardsPoint::from_bytes(
+            derived_secret_key.verifying_key().as_bytes(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            edwards_point_from_derived_secret_key.to_bytes(),
+            edwards_point_from_derived_public_key.to_bytes(),
+        );
+    }
 }
