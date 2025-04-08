@@ -50,10 +50,7 @@ pub fn derive_public_key_edwards_point_edd25519(
     public_key_edwards_point: &curve25519_dalek::EdwardsPoint,
     tweak: &Tweak,
 ) -> Result<curve25519_dalek::EdwardsPoint, TweakNotOnCurve> {
-    let tweak = curve25519_dalek::Scalar::from_canonical_bytes(tweak.as_bytes())
-        .into_option()
-        .ok_or(TweakNotOnCurve)?;
-
+    let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(tweak.as_bytes());
     Ok(public_key_edwards_point + ED25519_BASEPOINT_POINT * tweak)
 }
 

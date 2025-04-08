@@ -433,8 +433,7 @@ impl VersionedMpcContract {
                     signature_response.as_bytes(),
                     message,
                     &derived_public_key_32_bytes,
-                );
-                true
+                )
             }
             (signature_response, public_key_requested) => {
                 return Err(RespondError::SignatureSchemeMismatch.message(format!(
