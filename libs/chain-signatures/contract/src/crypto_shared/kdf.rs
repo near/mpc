@@ -1,12 +1,9 @@
-use crate::{
-    crypto_shared::types::{k256_types, ScalarExt},
-    primitives::signature::Tweak,
-};
+use crate::{crypto_shared::types::k256_types, primitives::signature::Tweak};
 use anyhow::Context;
 use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 use k256::{
     ecdsa::{RecoveryId, Signature},
-    elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic},
+    elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic, PrimeField},
     Secp256k1,
 };
 use near_account_id::AccountId;
@@ -32,20 +29,32 @@ pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
     Tweak::new(hash)
 }
 
+#[derive(Debug, Clone)]
+pub struct TweakNotOnCurve;
+
 pub fn derive_key_secp256k1(
     public_key: &k256_types::PublicKey,
     tweak: &Tweak,
-) -> k256_types::PublicKey {
-    let tweak = k256::Scalar::from_non_biased(tweak.as_bytes());
-    (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key).to_affine()
+) -> Result<k256_types::PublicKey, TweakNotOnCurve> {
+    let tweak = k256::Scalar::from_repr(tweak.as_bytes().into())
+        .into_option()
+        .ok_or(TweakNotOnCurve)?;
+
+    Ok(
+        (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key)
+            .to_affine(),
+    )
 }
 
 pub fn derive_public_key_edwards_point_edd25519(
     point: &curve25519_dalek::EdwardsPoint,
     tweak: &Tweak,
-) -> curve25519_dalek::EdwardsPoint {
-    let tweak = curve25519_dalek::Scalar::from_non_biased(tweak.as_bytes());
-    point + ED25519_BASEPOINT_POINT * tweak
+) -> Result<curve25519_dalek::EdwardsPoint, TweakNotOnCurve> {
+    let tweak = curve25519_dalek::Scalar::from_canonical_bytes(tweak.as_bytes())
+        .into_option()
+        .ok_or(TweakNotOnCurve)?;
+
+    Ok(point + ED25519_BASEPOINT_POINT * tweak)
 }
 
 /// Get the x coordinate of a point, as a scalar
