@@ -42,7 +42,7 @@ mod test {
 
         assert_eq!(
             derived_keygen_output.public_key.to_element(),
-            derived_keygen_output.private_share.to_scalar() * &Ed25519Group::generator(),
+            derived_keygen_output.private_share.to_scalar() * Ed25519Group::generator(),
         );
     }
 }

@@ -164,7 +164,7 @@ mod tests {
         // Sanity check of our private key generator.
         assert_eq!(
             derived_keygen_output.public_key.to_element(),
-            derived_keygen_output.private_share.to_scalar() * &Ed25519Group::generator(),
+            derived_keygen_output.private_share.to_scalar() * Ed25519Group::generator(),
             "Sanity check failed."
         );
 
@@ -173,7 +173,7 @@ mod tests {
             frost_ed25519::SigningKey::from_scalar(derived_keygen_output.private_share.to_scalar())
                 .unwrap();
 
-        let signature = signer.sign(&mut OsRng, &message);
+        let signature = signer.sign(OsRng, &message);
         let derived_verifying_key = frost_ed25519::VerifyingKey::new(derived_public_key);
         derived_verifying_key.verify(&message, &signature).unwrap();
     }
