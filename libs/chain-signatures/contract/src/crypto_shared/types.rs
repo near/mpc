@@ -324,11 +324,15 @@ pub mod edd25519_types {
     #[derive(
         BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
     )]
-    pub struct SignatureResponse(#[serde_as(as = "[_; 64]")] pub [u8; 64]);
+    pub struct SignatureResponse(#[serde_as(as = "[_; 64]")] [u8; 64]);
 
     impl SignatureResponse {
         pub fn as_bytes(&self) -> &[u8; 64] {
             &self.0
+        }
+
+        pub fn new(bytes: [u8; 64]) -> Self {
+            Self(bytes)
         }
     }
 }

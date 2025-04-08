@@ -90,6 +90,15 @@ impl InvalidParameters {
     }
 }
 
+impl RespondError {
+    pub(crate) fn message<T>(self, msg: T) -> Error
+    where
+        T: Into<Cow<'static, str>>,
+    {
+        Error::message(ErrorKind::Respond(self), msg)
+    }
+}
+
 impl From<InvalidState> for Error {
     fn from(code: InvalidState) -> Self {
         Self::simple(ErrorKind::InvalidState(code))
