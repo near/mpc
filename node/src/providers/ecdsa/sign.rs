@@ -13,8 +13,8 @@ use cait_sith::ecdsa::presign::PresignOutput;
 use cait_sith::ecdsa::sign::FullSignature;
 use cait_sith::frost_secp256k1::VerifyingKey;
 use cait_sith::protocol::Participant;
+use k256::elliptic_curve::PrimeField;
 use k256::{Scalar, Secp256k1};
-use mpc_contract::crypto_shared::ScalarExt;
 use mpc_contract::primitives::signature::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
@@ -118,10 +118,12 @@ impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, VerifyingKey)> for S
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
 
-        let tweak =
-            Scalar::from_bytes(self.tweak.as_bytes()).context("Couldn't construct k256 point")?;
-        let msg_hash =
-            Scalar::from_bytes(self.msg_hash).context("Couldn't construct k256 point")?;
+        let tweak = Scalar::from_repr(self.tweak.as_bytes().into())
+            .into_option()
+            .context("Couldn't construct k256 point")?;
+        let msg_hash = Scalar::from_repr(self.msg_hash.into())
+            .into_option()
+            .context("Couldn't construct k256 point")?;
 
         let public_key =
             derive_public_key(self.keygen_out.public_key.to_element().to_affine(), tweak);

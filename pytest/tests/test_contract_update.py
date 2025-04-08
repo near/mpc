@@ -25,10 +25,12 @@ from common_lib import shared
 from common_lib.contracts import COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, V1_0_1_CONTRACT_PATH, UpdateArgsV1, UpdateArgsV2
 
 
-def deploy_and_init_v2():
+def deploy_and_init_v2(domains=['Secp256k1', 'Ed25519']):
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
         2, 4, 1, contracts.load_mpc_contract())
-    cluster.init_cluster(participants=mpc_nodes[:2], threshold=2)
+    cluster.init_cluster(participants=mpc_nodes[:2],
+                         threshold=2,
+                         domains=domains)
     cluster.contract_state().print()
     return cluster, mpc_nodes
 
@@ -97,7 +99,7 @@ def get_participants_from_near_config():
 
 
 def migrate_from_v2_to_dummy(cluster):
-    dummy_update_args = UpdateArgsV1(code_path=MIGRATE_CURRENT_CONTRACT_PATH)
+    dummy_update_args = UpdateArgsV2(code_path=MIGRATE_CURRENT_CONTRACT_PATH)
     cluster.propose_update(dummy_update_args.borsh_serialize())
     cluster.vote_update(0, 0)
     cluster.vote_update(1, 0)
@@ -132,7 +134,7 @@ def migrate_from_v1_to_v2(cluster):
 ])
 def test_contract_update(test_trailing_sigs):
     # deploy V2, generate keys and update V2 to dummy contract
-    cluster, mpc_nodes = deploy_and_init_v2()
+    cluster, mpc_nodes = deploy_and_init_v2(domains=['Secp256k1'])
     cluster.send_and_await_signature_requests(1)
     public_key_extended = cluster.contract_state().keyset().keyset[0].key
     # The public key in the state is encoded as a `PublicKeyExtended` struct.
@@ -157,6 +159,7 @@ def test_contract_update(test_trailing_sigs):
         update_v1_code_args = UpdateArgsV1(
             code_path=MIGRATE_CURRENT_CONTRACT_PATH)
         cluster.propose_update(update_v1_code_args.borsh_serialize())
+        time.sleep(0.1)  # near node seems to get overwhelmed otherwise
 
     def make_legacy_sign_request_txs(payloads,
                                      nonce_offset=1,

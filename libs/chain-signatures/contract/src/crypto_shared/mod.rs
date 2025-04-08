@@ -6,7 +6,7 @@ pub use kdf::{derive_key_secp256k1, derive_tweak, x_coordinate};
 pub use types::{
     edd25519_types,
     k256_types::{self, SerializableAffinePoint, SerializableScalar},
-    ScalarExt, SignatureResponse,
+    SignatureResponse,
 };
 
 // Our wasm runtime doesn't support good syncronous entropy.

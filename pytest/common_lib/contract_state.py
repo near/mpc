@@ -3,6 +3,8 @@ from typing import List, Literal
 
 ProtocolState = Literal['Initializing', 'Running', 'Resharing']
 
+SignatureScheme = Literal['Secp256k1', 'Ed25519']
+
 
 @dataclass
 class KeyForDomain:
@@ -37,7 +39,7 @@ class Keyset:
 @dataclass
 class Domain:
     id: int
-    scheme: str
+    scheme: SignatureScheme
 
 
 @dataclass
@@ -344,6 +346,11 @@ class InitializingProtocolState:
 
 
 class ContractState:
+
+    def get_running_domains(self) -> List[Domain]:
+        if self.state != "Running":
+            assert False, "expected running state"
+        return self.protocol_state.domains.domains
 
     def is_state(self, state: ProtocolState) -> bool:
         return self.state == state
