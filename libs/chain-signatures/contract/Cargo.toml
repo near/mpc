@@ -48,6 +48,7 @@ tokio = { version = "1", features = ["full"] }
 sha2 = "0.10.8"
 
 # crypto dependencies
+ed25519-dalek = { version = "2.1.1", features = ["serde", "digest"] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
 signature = "2.2.0"
 digest = "0.10.7"
@@ -55,7 +56,6 @@ digest = "0.10.7"
 # near dependencies
 near-crypto = "0.26.0"
 near-workspaces = "0.14.1"
-
 cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "5e0ce40a16dc3e0889277f66bb2a6400d6ef36a5", features = [
     "k256",
 ] }
