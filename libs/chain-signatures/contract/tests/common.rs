@@ -1,13 +1,13 @@
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use k256::{
-    elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint},
+    elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint, PrimeField},
     AffinePoint, FieldBytes, Scalar, Secp256k1, SecretKey,
 };
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        derive_key_secp256k1, derive_tweak, k256_types, kdf::check_ec_signature, ScalarExt,
+        derive_key_secp256k1, derive_tweak, k256_types, kdf::check_ec_signature,
         SerializableAffinePoint, SerializableScalar, SignatureResponse,
     },
     primitives::{
@@ -182,7 +182,7 @@ pub async fn process_message(msg: &str) -> (impl Digest, Payload) {
 }
 
 pub fn derive_secret_key(secret_key: &SecretKey, tweak: &Tweak) -> SecretKey {
-    let tweak = Scalar::from_non_biased(tweak.as_bytes());
+    let tweak = Scalar::from_repr(tweak.as_bytes().into()).unwrap();
     SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
 }
 
@@ -197,7 +197,7 @@ pub async fn create_response(
 
     let tweak = derive_tweak(predecessor_id, path);
     let derived_sk = derive_secret_key(sk, &tweak);
-    let derived_pk = derive_key_secp256k1(&pk.into(), &tweak);
+    let derived_pk = derive_key_secp256k1(&pk.into(), &tweak).unwrap();
     let signing_key = k256::ecdsa::SigningKey::from(&derived_sk);
     let verifying_key =
         k256::ecdsa::VerifyingKey::from(&k256::PublicKey::from_affine(derived_pk).unwrap());
