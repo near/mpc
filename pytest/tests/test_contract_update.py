@@ -97,7 +97,7 @@ def get_participants_from_near_config():
 
 
 def migrate_from_v2_to_dummy(cluster):
-    dummy_update_args = UpdateArgsV1(code_path=MIGRATE_CURRENT_CONTRACT_PATH)
+    dummy_update_args = UpdateArgsV2(code_path=MIGRATE_CURRENT_CONTRACT_PATH)
     cluster.propose_update(dummy_update_args.borsh_serialize())
     cluster.vote_update(0, 0)
     cluster.vote_update(1, 0)
