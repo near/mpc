@@ -289,7 +289,10 @@ class MpcCluster:
             gas=300 * TGAS)
         return self.secondary_contract_node.near_node.send_tx_and_wait(tx, 20)
 
-    def init_cluster(self, participants: List[MpcNode], threshold: int):
+    def init_cluster(self,
+                     participants: List[MpcNode],
+                     threshold: int,
+                     domains=['Secp256k1', 'Ed25519']):
         """
         initializes the contract with `participants` and `threshold`.
         Adds `Secp256k1` to the contract domains.
@@ -299,7 +302,7 @@ class MpcCluster:
             assert_contract=False
         )  # do not assert when contract is not initialized
         self.init_contract(threshold=threshold)
-        self.add_domains(['Secp256k1', 'Ed25519'])
+        self.add_domains(domains)
 
     def define_candidate_set(self, mpc_nodes: List[MpcNode]):
         """
