@@ -344,8 +344,7 @@ impl VersionedMpcContract {
             }
             PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
-                    derive_public_key_edwards_point_edd25519(&edwards_point, &tweak)
-                        .map_err(PublicKeyError::from)?;
+                    derive_public_key_edwards_point_edd25519(&edwards_point, &tweak);
 
                 let encoded_point: [u8; 32] =
                     derived_public_key_edwards_point.compress().to_bytes();
@@ -421,9 +420,7 @@ impl VersionedMpcContract {
                 let derived_public_key_edwards_point = derive_public_key_edwards_point_edd25519(
                     &public_key_edwards_point,
                     &request.tweak,
-                )
-                .map_err(RespondError::from)?;
-
+                );
                 let derived_public_key_32_bytes =
                     *derived_public_key_edwards_point.compress().as_bytes();
 

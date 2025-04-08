@@ -192,7 +192,7 @@ impl ChainRespondArgs {
                 request.payload.clone(),
                 request.domain,
             ),
-            response: SignatureResponse::Edd25519(edd25519_types::SignatureResponse(response)),
+            response: SignatureResponse::Edd25519(edd25519_types::SignatureResponse::new(response)),
         })
     }
 
