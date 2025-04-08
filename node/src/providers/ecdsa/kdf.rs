@@ -2,8 +2,8 @@ use crate::primitives::ParticipantId;
 use hex_literal::hex;
 use hkdf::Hkdf;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::elliptic_curve::PrimeField;
 use k256::{AffinePoint, Scalar};
-use mpc_contract::crypto_shared::ScalarExt;
 use sha3::Sha3_256;
 
 /// The following salt is picked by hashing with sha256
@@ -58,7 +58,7 @@ pub fn derive_randomness(
         hk.expand(&concatenation, &mut okm).unwrap();
 
         // derive the randomness delta
-        delta = Scalar::from_bytes(okm).unwrap_or(
+        delta = Scalar::from_repr(okm.into()).unwrap_or(
             // if delta falls outside the field
             // probability is negligible: in the order of 1/2^224
             Scalar::ZERO,
