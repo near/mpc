@@ -6,6 +6,7 @@ Deploys a test contract with a function that makes parallel sign calls.
 Calls the test function and ensures a successful response.
 """
 
+import json
 import sys
 import base64
 import pytest
@@ -21,12 +22,13 @@ def load_parallel_sign_contract() -> bytearray:
     """
     returns test contract for parallel sign
     """
-    path = constants.MPC_REPO_DIR / 'pytest/tests/test_contracts/parallel/res/contract.wasm'
+    path = constants.MPC_REPO_DIR / 'pytest/tests/test_contracts/parallel/res/contract-0.2.0.wasm'
     return load_binary_file(path)
 
 
-@pytest.mark.parametrize("num_parallel_signatures", [5])
+@pytest.mark.parametrize("num_parallel_signatures", [6])
 def test_parallel_sign_calls(num_parallel_signatures):
+    assert num_parallel_signatures % 2 == 0, "expected even number"
     # start cluster and deploy mpc contract
     mpc_contract = contracts.load_mpc_contract()
     cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1, mpc_contract)
@@ -39,7 +41,12 @@ def test_parallel_sign_calls(num_parallel_signatures):
         function_name='make_parallel_sign_calls',
         args={
             'target_contract': cluster.mpc_contract_account(),
-            'num_calls': num_parallel_signatures,
+            'ecdsa_calls_by_domain': {
+                0: int(num_parallel_signatures / 2)
+            },
+            'eddsa_calls_by_domain': {
+                1: int(num_parallel_signatures / 2)
+            },
             'seed': 23,
         })
 
