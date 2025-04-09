@@ -10,7 +10,7 @@ use near_sdk::near;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum SignatureResponse {
     Secp256k1(k256_types::SignatureResponse),
     Edd25519(edd25519_types::SignatureResponse),
@@ -228,44 +228,9 @@ pub mod k256_types {
         }
     }
 
-    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
-    pub struct SerializableAffinePoint {
-        pub affine_point: AffinePoint,
-    }
-
-    impl BorshSerialize for SerializableAffinePoint {
-        fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-            let bytes = self.affine_point.to_bytes();
-            BorshSerialize::serialize(bytes.as_slice(), writer)
-        }
-    }
-
-    impl BorshDeserialize for SerializableAffinePoint {
-        fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
-            let bytes: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
-            let byte_array = k256::CompressedPoint::from_exact_iter(bytes.into_iter()).ok_or(
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Incorrect number of bytes.",
-                ),
-            )?;
-
-            let affine_point =
-                AffinePoint::from_bytes(&byte_array)
-                    .into_option()
-                    .ok_or(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "Could not deserialize to an Affinepoint.",
-                    ))?;
-
-            Ok(SerializableAffinePoint { affine_point })
-        }
-    }
-    #[derive(
-        BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
-    )]
+    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
     pub struct SignatureResponse {
-        pub big_r: SerializableAffinePoint,
+        pub big_r: AffinePoint,
         pub s: SerializableScalar,
         pub recovery_id: u8,
     }
@@ -273,28 +238,11 @@ pub mod k256_types {
     impl SignatureResponse {
         pub fn new(big_r: AffinePoint, s: k256::Scalar, recovery_id: u8) -> Self {
             SignatureResponse {
-                big_r: SerializableAffinePoint {
-                    affine_point: big_r,
-                },
+                big_r,
                 s: s.into(),
                 recovery_id,
             }
         }
-    }
-
-    #[test]
-    fn test_serialization_of_affinepoint() {
-        let public_key_extended = SerializableAffinePoint {
-            affine_point: k256::AffinePoint::IDENTITY,
-        };
-        let mut buffer: Vec<u8> = vec![];
-        BorshSerialize::serialize(&public_key_extended, &mut buffer).unwrap();
-
-        let mut slice_ref = &buffer[..];
-        let deserialized =
-            <SerializableAffinePoint as BorshDeserialize>::deserialize(&mut slice_ref).unwrap();
-
-        assert_eq!(deserialized, public_key_extended);
     }
 }
 

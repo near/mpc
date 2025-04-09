@@ -11,7 +11,7 @@ use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
         derive_key_secp256k1, derive_tweak, edd25519_types, k256_types, kdf::check_ec_signature,
-        SerializableAffinePoint, SerializableScalar, SignatureResponse,
+        SerializableScalar, SignatureResponse,
     },
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
@@ -263,9 +263,7 @@ pub async fn create_response(
     };
 
     let respond_resp = SignatureResponse::Secp256k1(k256_types::SignatureResponse {
-        big_r: SerializableAffinePoint {
-            affine_point: big_r,
-        },
+        big_r,
         s: SerializableScalar { scalar: s },
         recovery_id,
     });
