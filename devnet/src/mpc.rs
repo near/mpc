@@ -980,7 +980,7 @@ impl MpcDescribeCmd {
                     Self::print_parameters(&state.parameters);
                 }
                 ProtocolContractState::Resharing(state) => {
-                    println!("Contract is in Initializing state (key generation)");
+                    println!("Contract is in Resharing state");
                     println!(
                         "  Epoch transition: original {} --> prospective {}",
                         state.previous_running_state.keyset.epoch_id,
