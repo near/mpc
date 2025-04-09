@@ -1,4 +1,5 @@
 use cait_sith::eddsa::KeygenOutput;
+use core::panic;
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey};
@@ -77,6 +78,10 @@ pub async fn accounts(worker: &Worker<Sandbox>) -> (Vec<Account>, Participants) 
 }
 
 pub async fn init() -> (Worker<Sandbox>, Contract) {
+    panic!(
+        "CURRENT WORKING DIRECTORY: {:?}",
+        std::env::current_dir().unwrap()
+    );
     let worker = near_workspaces::sandbox().await.unwrap();
     let wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
     let contract = worker.dev_deploy(&wasm).await.unwrap();
