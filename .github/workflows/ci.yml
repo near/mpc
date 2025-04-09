@@ -49,27 +49,14 @@ jobs:
           cargo install wasm-opt --locked
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Run cargo-nextest
-        run: cargo nextest run --release --locked
-      
-      - name: Run contract tests
+      - name: Build contract
         run: |
           cargo build -p mpc-contract --release --locked --target=wasm32-unknown-unknown
           wasm-opt -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm
 
-          # Debug information with a distinct marker
-          echo "===== MPC WASM DEBUG INFO ====="
-          echo "PWD environment variable: $PWD"
-          echo "Current working directory: $(pwd)"
-          echo "WASM file location check:"
-          echo "Contents of target/wasm32-unknown-unknown/release/:"
-          ls -la target/wasm32-unknown-unknown/release/
-          echo "All WASM files in project:"
-          find . -name "*.wasm" -type f | sort
-          echo "===== END MPC WASM DEBUG INFO ====="
-          
-          cargo nextest run -p mpc-contract --release --locked
-
+      - name: Run cargo-nextest
+        run: cargo nextest run --release --locked
+      
       - name: Download near core binary from S3
         id: download-neard
         continue-on-error: true
