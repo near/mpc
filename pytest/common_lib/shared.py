@@ -484,9 +484,6 @@ class MpcCluster:
         deposit = constants.SIGNATURE_DEPOSIT + (add_deposit or 0)
         domains = self.contract_state().get_running_domains()
         for domain in domains:
-            # todo: remove below lines to test signature requests for eddsa
-            if domain.scheme != 'Secp256k1':
-                continue
             print(
                 f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m sign requests for {domain}.\033[0m"
             )
