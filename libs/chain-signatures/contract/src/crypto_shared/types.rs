@@ -170,8 +170,7 @@ mod serialize {
 
     impl BorshDeserialize for SerializableEdwardsPoint {
         fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
-            let bytes: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
-            let bytes = bytes.try_into().unwrap();
+            let bytes: [u8; 32] = BorshDeserialize::deserialize_reader(reader)?;
 
             EdwardsPoint::from_bytes(&bytes)
                 .into_option()
@@ -402,9 +401,7 @@ mod test {
     #[case("secp256k1:qMoRgcoXai4mBPsdbHi1wfyxF9TdbPCF4qSDQTRP3TfescSRoUdSx6nmeQoN3aiwGzwMyGXAb1gUjBTv5AY8DXj")]
     #[case("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")]
     /// Tests the serialization and deserialization of [`PublicKeyExtended`] works.
-    fn test_serialization_of_public_key_extended_secp256k1(
-        #[case] near_public_key: near_sdk::PublicKey,
-    ) {
+    fn test_serialization_of_public_key_extended(#[case] near_public_key: near_sdk::PublicKey) {
         let public_key_extended = PublicKeyExtended::try_from(near_public_key).unwrap();
         let mut buffer: Vec<u8> = vec![];
         BorshSerialize::serialize(&public_key_extended, &mut buffer).unwrap();
