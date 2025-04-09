@@ -1,7 +1,8 @@
 [profile.release]
 codegen-units = 1
-# Tell `rustc` to optimize for small code size.
-opt-level = "z"
+# optimize for binary size.
+# See https://doc.rust-lang.org/rustc/codegen-options/index.html#opt-level
+opt-level = "s"
 lto = true
 debug = false
 panic = "abort"
