@@ -47,7 +47,7 @@ def compile_contract():
     print("compiling contract")
     git_repo = git.Repo('.', search_parent_directories=True)
     git_root = Path(git_repo.git.rev_parse("--show-toplevel"))
-    chain_signatures = git_root / "libs" / "chain-signatures"
+    chain_signatures = git_root
 
     subprocess.run([
         "cargo", "build", "-p", "mpc-contract",
