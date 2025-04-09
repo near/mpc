@@ -1,13 +1,21 @@
+use std::collections::BTreeMap;
+
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
+use near_sdk::serde::Serialize;
 use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise, PromiseResult};
-use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 #[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum Payload {
+    Ecdsa(String),
+    Eddsa(String),
+}
+#[derive(Serialize)]
 pub struct SignRequest {
-    pub payload: [u8; 32],
     pub path: String,
-    pub key_version: u32,
+    pub payload_v2: Option<Payload>,
+    pub domain_id: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -24,29 +32,59 @@ impl TestContract {
     pub fn make_parallel_sign_calls(
         &self,
         target_contract: AccountId,
-        num_calls: u64,
+        ecdsa_calls_by_domain: BTreeMap<u64, u64>,
+        eddsa_calls_by_domain: BTreeMap<u64, u64>,
         seed: u64,
     ) -> Promise {
-        // Construct `num_calls`-many sign function call promises
-        let mut promises = (0..num_calls)
-            .map(|i| {
-                let mut hasher = Sha256::new();
-                hasher.update(format!("{seed}-{i}").as_str());
-                let args = SignArgs {
-                    request: SignRequest {
-                        payload: hasher.finalize().into(),
-                        path: "".to_string(),
-                        key_version: 0,
-                    },
-                };
-                Promise::new(target_contract.clone()).function_call(
-                    "sign".to_string(),
-                    serde_json::to_vec(&args).unwrap(),
-                    NearToken::from_yoctonear(1),
-                    Gas::from_tgas(30),
-                )
-            })
-            .collect::<Vec<_>>();
+        fn build_calls<F>(
+            target_contract: &AccountId,
+            domain_map: &BTreeMap<u64, u64>,
+            seed: u64,
+            payload_builder: &F,
+        ) -> Vec<Promise>
+        where
+            F: Fn(String) -> Payload,
+        {
+            domain_map
+                .iter()
+                .flat_map(|(domain_id, num_calls)| {
+                    (0..*num_calls).map(move |i| {
+                        let mut hasher = Sha256::new();
+                        hasher.update(format!("{seed}-{i}").as_str());
+                        let hex_payload = hex::encode(hasher.finalize());
+
+                        let args = SignArgs {
+                            request: SignRequest {
+                                payload_v2: Some(payload_builder(hex_payload)),
+                                path: "".to_string(),
+                                domain_id: Some(*domain_id), // assuming DomainId is Copy
+                            },
+                        };
+
+                        Promise::new(target_contract.clone()).function_call(
+                            "sign".to_string(),
+                            serde_json::to_vec(&args).unwrap(),
+                            NearToken::from_yoctonear(1),
+                            Gas::from_tgas(30),
+                        )
+                    })
+                })
+                .collect()
+        }
+
+        let mut promises = Vec::new();
+        promises.extend(build_calls(
+            &target_contract,
+            &ecdsa_calls_by_domain,
+            seed,
+            &|hex| Payload::Ecdsa(hex),
+        ));
+        promises.extend(build_calls(
+            &target_contract,
+            &eddsa_calls_by_domain,
+            seed + 1_000_000, // tweak seed offset to avoid collision if needed
+            &|hex| Payload::Eddsa(hex),
+        ));
 
         // Combine the calls using promise::and
         promises.reverse();

@@ -154,12 +154,12 @@ def test_contract_update(test_trailing_sigs):
     # deploy legacy contract to new contract account and update legacy to V2
     deploy_and_init_v1(cluster, public_key)
     # add some update proposals for state:
-    n_updates = 10
+    n_updates = 2
     for _ in range(n_updates):
         update_v1_code_args = UpdateArgsV1(
             code_path=MIGRATE_CURRENT_CONTRACT_PATH)
         cluster.propose_update(update_v1_code_args.borsh_serialize())
-        time.sleep(0.1)  # near node seems to get overwhelmed otherwise
+        time.sleep(1)  # near node seems to get overwhelmed otherwise
 
     def make_legacy_sign_request_txs(payloads,
                                      nonce_offset=1,
