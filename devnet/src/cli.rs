@@ -60,6 +60,9 @@ impl Cli {
                     MpcNetworkSubCmd::DestroyInfra(cmd) => {
                         cmd.run(&name, config).await;
                     }
+                    MpcNetworkSubCmd::Describe(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
                 }
             }
             Cli::Loadtest(cmd) => {
@@ -126,6 +129,8 @@ pub enum MpcNetworkSubCmd {
     DeployNomad(MpcTerraformDeployNomadCmd),
     /// Destroy the GCP nodes previously deployed.
     DestroyInfra(MpcTerraformDestroyInfraCmd),
+    /// Prints out useful information about the contract and/or the deployed infra.
+    Describe(MpcDescribeCmd),
 }
 
 #[derive(clap::Parser)]
@@ -307,6 +312,9 @@ pub struct MpcTerraformDeployNomadCmd {
 
 #[derive(clap::Parser)]
 pub struct MpcTerraformDestroyInfraCmd {}
+
+#[derive(clap::Parser)]
+pub struct MpcDescribeCmd {}
 
 #[derive(clap::Parser)]
 pub struct NewLoadtestCmd {

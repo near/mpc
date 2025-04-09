@@ -3,6 +3,7 @@ use super::participants::{ParticipantId, Participants};
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use near_sdk::{env, near};
+use std::fmt::Display;
 
 /// An EpochId uniquely identifies a ThresholdParameters (but not vice-versa).
 /// Every time we change the ThresholdParameters (participants and threshold),
@@ -22,6 +23,12 @@ impl EpochId {
     }
     pub fn get(&self) -> u64 {
         self.0
+    }
+}
+
+impl Display for EpochId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -47,6 +54,12 @@ impl AttemptId {
 impl Default for AttemptId {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Display for AttemptId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
