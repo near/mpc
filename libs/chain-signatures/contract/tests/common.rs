@@ -82,10 +82,10 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
         "CURRENT WORKING DIRECTORY: {:?}",
         std::env::current_dir().unwrap()
     );
-    let worker = near_workspaces::sandbox().await.unwrap();
-    let wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
-    let contract = worker.dev_deploy(&wasm).await.unwrap();
-    (worker, contract)
+    // let worker = near_workspaces::sandbox().await.unwrap();
+    // let wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
+    // let contract = worker.dev_deploy(&wasm).await.unwrap();
+    // (worker, contract)
 }
 
 pub async fn init_with_candidates(
