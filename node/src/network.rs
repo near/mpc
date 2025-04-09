@@ -489,11 +489,11 @@ impl NetworkTaskChannelSender {
     /// This should be called at the beginning of the computation if:
     ///  - This is a leader-centric computation, and we are a follower.
     ///    (Rationale: the leader already determined that the participants are online. We wait
-    ///     for connections because even though the leader has connected to everyone, it is
-    ///     possible we have yet to establish connections to everyone. We assume that if the
-    ///     leader can connect to two nodes B and C, then B and C can also connect to each other.
-    ///     If it happens that a node is actually unavailable, then the leader would realize that
-    ///     too, and abort the computation.)
+    ///    for connections because even though the leader has connected to everyone, it is
+    ///    possible we have yet to establish connections to everyone. We assume that if the
+    ///    leader can connect to two nodes B and C, then B and C can also connect to each other.
+    ///    If it happens that a node is actually unavailable, then the leader would realize that
+    ///    too, and abort the computation.)
     ///
     /// This should NOT be called if:
     ///  - We are the leader. This is redundant because the leader already queried the alive

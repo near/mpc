@@ -50,7 +50,7 @@ async fn submit_tx(
     );
 
     let response = indexer_state
-        .client
+        .tx_processor
         .send(
             near_client::ProcessTxRequest {
                 transaction,
