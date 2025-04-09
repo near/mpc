@@ -4,6 +4,7 @@ use crate::{
 };
 use near_sdk::{log, near, AccountId, PublicKey};
 use std::collections::BTreeSet;
+use std::fmt::Display;
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
@@ -36,6 +37,12 @@ impl ParticipantId {
     }
     pub fn next(&self) -> Self {
         ParticipantId(self.0 + 1)
+    }
+}
+
+impl Display for ParticipantId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
