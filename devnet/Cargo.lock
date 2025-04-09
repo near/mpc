@@ -210,9 +210,9 @@ dependencies = [
 
 [[package]]
 name = "borsh"
-version = "1.5.5"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5430e3be710b68d984d1391c854eb431a9d548640711faa54eecb1df93db91cc"
+checksum = "ad8646f98db542e39fc66e68a20b2144f6a732636df7c2354e74645faaa433ce"
 dependencies = [
  "borsh-derive",
  "cfg_aliases",
@@ -220,9 +220,9 @@ dependencies = [
 
 [[package]]
 name = "borsh-derive"
-version = "1.5.5"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8b668d39970baad5356d7c83a86fee3a539e6f93bf6764c97368243e17a0487"
+checksum = "fdd1d3c0c2f5833f22386f252fe8ed005c7f59fdcddeef025c01b4c3b9fd9ac3"
 dependencies = [
  "once_cell",
  "proc-macro-crate",
@@ -479,7 +479,10 @@ dependencies = [
  "curve25519-dalek-derive",
  "digest",
  "fiat-crypto",
+ "group",
+ "rand_core 0.6.4",
  "rustc_version",
+ "serde",
  "subtle",
  "zeroize",
 ]
@@ -599,11 +602,13 @@ name = "devnet"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "borsh",
  "clap",
  "flume",
  "futures",
  "hex",
- "mpc-contract",
+ "mpc-contract 1.0.1",
+ "mpc-contract 2.0.0-alpha",
  "near-crypto 0.28.0",
  "near-jsonrpc-client",
  "near-jsonrpc-primitives",
@@ -1565,6 +1570,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "mpc-contract"
+version = "2.0.0-alpha"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "curve25519-dalek",
+ "getrandom 0.2.15",
+ "hex",
+ "k256",
+ "near-account-id",
+ "near-gas 0.2.5",
+ "near-sdk",
+ "rand 0.8.5",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "sha3",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "nanorand"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1982,9 +2009,9 @@ checksum = "d0906c4a3962bc31e9737da0884e3595065b37eb3117848c6d73be3746cc734b"
 
 [[package]]
 name = "near-sdk"
-version = "5.9.0"
+version = "5.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d50771049af7a22bd71c71e080412b7a0b7fcc018499b46386a601bf0bcb3eab"
+checksum = "a4abce1ab6350c53dccd865c3a123198915cb5ed1f68719e2012806846127dc6"
 dependencies = [
  "base64 0.22.1",
  "borsh",
@@ -2007,9 +2034,9 @@ dependencies = [
 
 [[package]]
 name = "near-sdk-macros"
-version = "5.9.0"
+version = "5.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f83d000fc665eeb2d674aed42dd415f7365f848514bb7b487cb25ce78c1978df"
+checksum = "47fd8e09047cb19312e2b561f97761a92aab5257fc9746a4b67f709365e36f0e"
 dependencies = [
  "Inflector",
  "darling",

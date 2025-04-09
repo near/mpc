@@ -7,13 +7,16 @@ use crate::cli::{
 use crate::constants::ONE_NEAR;
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
-use crate::mpc::SignArgs;
+use crate::mpc::read_contract_state_v2;
 use crate::types::{LoadtestSetup, NearAccount, ParsedConfig};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use legacy_mpc_contract::primitives::SignRequest;
+use mpc_contract::primitives::domain::SignatureScheme;
+use mpc_contract::primitives::signature::{Bytes, Payload, SignRequestArgs};
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_sdk::AccountId;
+use rand::RngCore;
 use serde::Serialize;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -196,6 +199,29 @@ impl RunLoadtestCmd {
             name, self.mpc_network, mpc_account, self.qps
         );
 
+        if self.domain_id.is_some() && self.signatures_per_contract_call.is_some() {
+            panic!("Parallel signature contract does not yet support domain ID.");
+        }
+        let domain_config = if let Some(domain_id) = self.domain_id {
+            let contract_state = read_contract_state_v2(&setup.accounts, &mpc_account).await;
+            match contract_state {
+                mpc_contract::state::ProtocolContractState::Running(state) => Some(
+                    state
+                        .domains
+                        .domains()
+                        .iter()
+                        .find(|domain| domain.id.0 == domain_id)
+                        .expect("no such domain")
+                        .clone(),
+                ),
+                _ => {
+                    panic!("MPC network is not running");
+                }
+            }
+        } else {
+            None
+        };
+
         let mut keys = Vec::new();
         for account_id in &loadtest_setup.load_senders {
             let account = setup.accounts.account(account_id);
@@ -243,6 +269,43 @@ impl RunLoadtestCmd {
                 }
                 .boxed()
             })
+        } else if let Some(domain_config) = domain_config {
+            Arc::new(move |key: &mut OperatingAccessKey| {
+                let mpc_contract = mpc_account.clone();
+                let domain_config = domain_config.clone();
+                async move {
+                    let payload = match domain_config.scheme {
+                        SignatureScheme::Secp256k1 => {
+                            Payload::Ecdsa(Bytes::new(rand::random::<[u8; 32]>().to_vec()).unwrap())
+                        }
+                        SignatureScheme::Ed25519 => {
+                            let len = rand::random_range(32..=1232);
+                            let mut payload = vec![0; len];
+                            rand::rng().fill_bytes(&mut payload);
+                            Payload::Eddsa(Bytes::new(payload).unwrap())
+                        }
+                    };
+                    key.submit_tx_to_call_function(
+                        &mpc_contract,
+                        "sign",
+                        &serde_json::to_vec(&SignArgsV2 {
+                            request: SignRequestArgs {
+                                domain_id: Some(domain_config.id),
+                                path: "".to_string(),
+                                payload_v2: Some(payload),
+                                ..Default::default()
+                            },
+                        })
+                        .unwrap(),
+                        30,
+                        1,
+                        near_primitives::views::TxExecutionStatus::Included,
+                        false,
+                    )
+                    .await
+                }
+                .boxed()
+            })
         } else {
             Arc::new(move |key: &mut OperatingAccessKey| {
                 let mpc_contract = mpc_account.clone();
@@ -250,7 +313,7 @@ impl RunLoadtestCmd {
                     key.submit_tx_to_call_function(
                         &mpc_contract,
                         "sign",
-                        &serde_json::to_vec(&SignArgs {
+                        &serde_json::to_vec(&SignArgsV1 {
                             request: SignRequest {
                                 key_version: 0,
                                 path: "".to_string(),
@@ -271,6 +334,16 @@ impl RunLoadtestCmd {
 
         send_load(keys, tx_per_sec, sender).await;
     }
+}
+
+#[derive(Serialize)]
+pub struct SignArgsV1 {
+    pub request: SignRequest,
+}
+
+#[derive(Serialize)]
+pub struct SignArgsV2 {
+    pub request: SignRequestArgs,
 }
 
 impl DrainExpiredRequestsCmd {

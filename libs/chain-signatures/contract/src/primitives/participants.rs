@@ -117,7 +117,7 @@ impl Participants {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 impl Participants {
     pub fn init(
         next_id: ParticipantId,
@@ -170,6 +170,15 @@ impl Participants {
             let (account, pinfo) =
                 crate::primitives::test_utils::gen_participant(rand::Rng::gen(&mut rng));
             self.insert(account, pinfo).unwrap();
+        }
+    }
+    pub fn remove(&mut self, account: &AccountId) {
+        if let Some(pos) = self
+            .participants
+            .iter()
+            .position(|(a_id, _, _)| a_id == account)
+        {
+            self.participants.remove(pos);
         }
     }
 }

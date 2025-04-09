@@ -30,13 +30,25 @@ impl Cli {
                     MpcNetworkSubCmd::ViewContract(cmd) => {
                         cmd.run(&name, config).await;
                     }
-                    MpcNetworkSubCmd::Join(cmd) => {
+                    MpcNetworkSubCmd::V1Join(cmd) => {
                         cmd.run(&name, config).await;
                     }
-                    MpcNetworkSubCmd::VoteJoin(cmd) => {
+                    MpcNetworkSubCmd::V1VoteJoin(cmd) => {
                         cmd.run(&name, config).await;
                     }
-                    MpcNetworkSubCmd::VoteLeave(cmd) => {
+                    MpcNetworkSubCmd::V1VoteLeave(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
+                    MpcNetworkSubCmd::ProposeUpdateContract(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
+                    MpcNetworkSubCmd::VoteUpdate(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
+                    MpcNetworkSubCmd::VoteAddDomains(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
+                    MpcNetworkSubCmd::VoteNewParameters(cmd) => {
                         cmd.run(&name, config).await;
                     }
                     MpcNetworkSubCmd::DeployInfra(cmd) => {
@@ -95,11 +107,19 @@ pub enum MpcNetworkSubCmd {
     /// View the contract state.
     ViewContract(MpcViewContractCmd),
     /// Send a join() transaction to the contract to propose adding a participant.
-    Join(MpcJoinCmd),
+    V1Join(MpcV1JoinCmd),
     /// Send vote_join() transactions to the contract to vote on adding a participant.
-    VoteJoin(MpcVoteJoinCmd),
+    V1VoteJoin(MpcV1VoteJoinCmd),
     /// Send vote_leave() transactions to the contract to vote on removing a participant.
-    VoteLeave(MpcVoteLeaveCmd),
+    V1VoteLeave(MpcV1VoteLeaveCmd),
+    /// Send a propose_update() transaction to propose an update to the contract.
+    ProposeUpdateContract(MpcProposeUpdateContractCmd),
+    /// Send vote_update() transactions to the contract to vote on an update.
+    VoteUpdate(MpcVoteUpdateCmd),
+    /// Send vote_add_domains() transactions to vote for adding domains.
+    VoteAddDomains(MpcVoteAddDomainsCmd),
+    /// Send vote_new_parameters() transactions to vote for new parameters.
+    VoteNewParameters(MpcVoteNewParametersCmd),
     /// Deploy the GCP nodes with Terraform to host Nomad jobs to run this network.
     DeployInfra(MpcTerraformDeployInfraCmd),
     /// Deploy the Nomad jobs to run this network.
@@ -196,13 +216,13 @@ pub struct RemoveContractCmd {}
 pub struct MpcViewContractCmd {}
 
 #[derive(clap::Parser)]
-pub struct MpcJoinCmd {
+pub struct MpcV1JoinCmd {
     /// The index of the participant that proposes to join the network.
     pub account_index: usize,
 }
 
 #[derive(clap::Parser)]
-pub struct MpcVoteJoinCmd {
+pub struct MpcV1VoteJoinCmd {
     /// The index of the participant that is joining the network.
     pub for_account_index: usize,
     /// The indices of the voters; leave empty to vote from every other participant.
@@ -211,9 +231,57 @@ pub struct MpcVoteJoinCmd {
 }
 
 #[derive(clap::Parser)]
-pub struct MpcVoteLeaveCmd {
+pub struct MpcV1VoteLeaveCmd {
     /// The index of the participant that is leaving the network.
     pub for_account_index: usize,
+    /// The indices of the voters; leave empty to vote from every other participant.
+    #[clap(long, value_delimiter = ',')]
+    pub voters: Vec<usize>,
+}
+
+#[derive(clap::Parser)]
+pub struct MpcProposeUpdateContractCmd {
+    /// The index of the participant that proposes the update.
+    #[clap(long, default_value = "0")]
+    pub proposer_index: usize,
+    /// The file path to the new contract wasm code.
+    #[clap(long)]
+    pub path: String,
+    /// The deposit to send along with the proposal.
+    #[clap(long, default_value = "8")]
+    pub deposit_near: u128,
+}
+
+#[derive(clap::Parser)]
+pub struct MpcVoteUpdateCmd {
+    /// The ID of the update, as printed by the propose-update-contract command.
+    #[clap(long)]
+    pub update_id: u64,
+    /// The indices of the voters; leave empty to vote from every other participant.
+    #[clap(long, value_delimiter = ',')]
+    pub voters: Vec<usize>,
+}
+
+#[derive(clap::Parser)]
+pub struct MpcVoteAddDomainsCmd {
+    #[clap(long, value_delimiter = ',')]
+    pub signature_schemes: Vec<String>,
+    /// The indices of the voters; leave empty to vote from every other participant.
+    #[clap(long, value_delimiter = ',')]
+    pub voters: Vec<usize>,
+}
+
+#[derive(clap::Parser)]
+pub struct MpcVoteNewParametersCmd {
+    /// The new threshold to set; if not set, the current threshold will be used.
+    #[clap(long)]
+    pub set_threshold: Option<u64>,
+    /// The indices of the participants to add to the network.
+    #[clap(long)]
+    pub add: Vec<usize>,
+    /// The indices of the participants to remove from the network.
+    #[clap(long)]
+    pub remove: Vec<usize>,
     /// The indices of the voters; leave empty to vote from every other participant.
     #[clap(long, value_delimiter = ',')]
     pub voters: Vec<usize>,
@@ -297,6 +365,9 @@ pub struct RunLoadtestCmd {
     /// This will be divided into the QPS, so you don't need to change the QPS flag.
     #[clap(long)]
     pub signatures_per_contract_call: Option<usize>,
+    /// Domain ID. If missing, use legacy signature format.
+    #[clap(long)]
+    pub domain_id: Option<u64>,
 }
 
 #[derive(clap::Parser)]
