@@ -58,6 +58,8 @@ legacy-mpc-contract = { workspace = true }
 # Pinned to resolve compilation errors with conflicting implementations of PartialOrd trait
 # See error E0283 with multiple impls satisfying `u128: std::cmp::PartialOrd<_>`
 deranged = "=0.4.0"
+mpc-contract = { path = "../libs/chain-signatures/contract/" }
+
 
 [dev-dependencies]
 serial_test = { workspace = true }
