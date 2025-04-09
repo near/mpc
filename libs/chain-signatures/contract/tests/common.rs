@@ -35,7 +35,8 @@ use sha2::Sha256;
 use signature::DigestSigner;
 use std::str::FromStr;
 
-pub const CONTRACT_FILE_PATH: &str = "../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
+pub const CONTRACT_FILE_PATH: &str =
+    "../../../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {

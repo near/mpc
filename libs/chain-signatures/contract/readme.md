@@ -95,7 +95,7 @@ These functions require the caller to be a participant or candidate.
 ## Development
 Run tests with `cargo nextest run`. This includes the integration tests, for which it is necessary to compile the contract first:
 ```
-cargo build --release --target=wasm32-unknown-unknown
+cargo build --package mpc-contract --release --target=wasm32-unknown-unknown
 wasm-opt -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm
 ```
 Note that due to the Rust compiler version used in this project and a lack of compatibility with the runtime version used in near-workspaces,
