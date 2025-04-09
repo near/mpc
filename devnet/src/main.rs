@@ -10,6 +10,7 @@ mod loadtest;
 mod mpc;
 mod rpc;
 mod terraform;
+mod tx;
 mod types;
 
 #[tokio::main]

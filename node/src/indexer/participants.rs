@@ -1,5 +1,5 @@
 use crate::config::{ParticipantInfo, ParticipantsConfig};
-use crate::indexer::lib::{get_mpc_contract_state, wait_for_contract_code, wait_for_full_sync};
+use crate::indexer::lib::{get_mpc_contract_state, wait_for_full_sync};
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use mpc_contract::primitives::domain::DomainConfig;
@@ -225,16 +225,13 @@ async fn read_contract_state_from_chain(
 ) -> anyhow::Result<ContractState> {
     // We wait first to catch up to the chain to avoid reading the participants from an outdated state.
     // We currently assume the participant set is static and do not detect or support any updates.
-    tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
+    tracing::debug!(target: "mpc", "awaiting full sync to read mpc contract state");
     wait_for_full_sync(&client).await;
 
-    // In tests it is possible to catch up to the chain before the contract is even deployed.
-    tracing::debug!(target: "indexer", "awaiting mpc contract state");
-    wait_for_contract_code(mpc_contract_id.clone(), &view_client).await;
-
+    tracing::debug!(target: "mpc", "querying contract state");
     let (height, state) = get_mpc_contract_state(mpc_contract_id.clone(), &view_client).await?;
 
-    tracing::debug!(target: "indexer", "got mpc contract state {:?}", state);
+    tracing::debug!(target: "mpc", "got mpc contract state {:?}", state);
     let state = ContractState::from_contract_state(&state, height, port_override)?;
     Ok(state)
 }
