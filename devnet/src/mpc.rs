@@ -931,6 +931,7 @@ impl MpcDescribeCmd {
                     println!("  Domains:");
                     for (i, domain) in state.domains.domains().iter().enumerate() {
                         print!("    Domain {}: {:?}, ", domain.id, domain.scheme);
+                        #[allow(clippy::comparison_chain)]
                         if i < state.generated_keys.len() {
                             println!(
                                 "key generated (attempt ID {})",
@@ -1001,6 +1002,7 @@ impl MpcDescribeCmd {
                             state.previous_running_state.keyset.domains[i].attempt
                         );
 
+                        #[allow(clippy::comparison_chain)]
                         if i < state.reshared_keys.len() {
                             println!("reshared (attempt ID {})", state.reshared_keys[i].attempt);
                         } else if i == state.reshared_keys.len() {

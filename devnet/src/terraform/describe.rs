@@ -54,8 +54,8 @@ pub(super) struct Other {}
 impl GoogleComputeInstance {
     pub fn nat_ip(&self) -> Option<String> {
         self.network_interface
-            .get(0)
-            .and_then(|ni| ni.access_config.get(0))
+            .first()
+            .and_then(|ni| ni.access_config.first())
             .map(|ac| ac.nat_ip.clone())
     }
 }
