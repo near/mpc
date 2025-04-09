@@ -132,16 +132,14 @@ mod serialize {
                     edwards_point: SerializableEdwardsPoint(edwards_point),
                 },
             };
-            let to_ser: Vec<u8> = serde_json::to_vec(&serializable_helper_representation)?;
-            BorshSerialize::serialize(&to_ser, writer)
+            BorshSerialize::serialize(&serializable_helper_representation, writer)
         }
     }
 
     impl BorshDeserialize for PublicKeyExtended {
         fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
-            let from_ser: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
             let deserializable_helper_representation: PublicKeyExtendedHelper =
-                serde_json::from_slice(&from_ser)?;
+                BorshDeserialize::deserialize_reader(reader)?;
 
             let public_key_extended = match deserializable_helper_representation {
                 PublicKeyExtendedHelper::Secp256k1 { near_public_key } => {
@@ -238,15 +236,29 @@ pub mod k256_types {
 
     impl BorshSerialize for SerializableAffinePoint {
         fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-            let to_ser: Vec<u8> = serde_json::to_vec(&self.affine_point)?;
-            BorshSerialize::serialize(&to_ser, writer)
+            let bytes = self.affine_point.to_bytes();
+            BorshSerialize::serialize(bytes.as_slice(), writer)
         }
     }
 
     impl BorshDeserialize for SerializableAffinePoint {
         fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
-            let from_ser: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
-            let affine_point = serde_json::from_slice(&from_ser)?;
+            let bytes: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
+            let byte_array = k256::CompressedPoint::from_exact_iter(bytes.into_iter()).ok_or(
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Incorrect number of bytes.",
+                ),
+            )?;
+
+            let affine_point =
+                AffinePoint::from_bytes(&byte_array)
+                    .into_option()
+                    .ok_or(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Could not deserialize to an Affinepoint.",
+                    ))?;
+
             Ok(SerializableAffinePoint { affine_point })
         }
     }
@@ -269,6 +281,21 @@ pub mod k256_types {
                 recovery_id,
             }
         }
+    }
+
+    #[test]
+    fn test_serialization_of_affinepoint() {
+        let public_key_extended = SerializableAffinePoint {
+            affine_point: k256::AffinePoint::IDENTITY,
+        };
+        let mut buffer: Vec<u8> = vec![];
+        BorshSerialize::serialize(&public_key_extended, &mut buffer).unwrap();
+
+        let mut slice_ref = &buffer[..];
+        let deserialized =
+            <SerializableAffinePoint as BorshDeserialize>::deserialize(&mut slice_ref).unwrap();
+
+        assert_eq!(deserialized, public_key_extended);
     }
 }
 
