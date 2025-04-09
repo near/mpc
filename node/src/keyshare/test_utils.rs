@@ -1,14 +1,13 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
-use crate::hkdf::affine_point_to_public_key;
 use crate::tests::TestGenerators;
-use cait_sith::KeygenOutput;
+use cait_sith::ecdsa::KeygenOutput;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
 
 pub fn generate_dummy_keyshare(epoch_id: u64, domain_id: u64, attempt_id: u64) -> Keyshare {
     let key = TestGenerators::new(2, 2)
-        .make_keygens()
+        .make_ecdsa_keygens()
         .into_iter()
         .next()
         .unwrap()
@@ -26,7 +25,7 @@ pub fn generate_dummy_keyshare(epoch_id: u64, domain_id: u64, attempt_id: u64) -
     }
 }
 
-pub fn permanent_keyshare_from_keyshares(
+fn permanent_keyshare_from_keyshares(
     epoch_id: u64,
     keyshares: &[Keyshare],
 ) -> PermanentKeyshareData {
@@ -36,22 +35,57 @@ pub fn permanent_keyshare_from_keyshares(
     }
 }
 
-pub fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
+fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
     let keys = permanent
         .keyshares
         .iter()
-        .map(|keyshare| {
-            let key = match &keyshare.data {
-                KeyshareData::Secp256k1(secp256k1_data) => {
-                    affine_point_to_public_key(secp256k1_data.public_key).unwrap()
-                }
-            };
-            KeyForDomain {
-                domain_id: keyshare.key_id.domain_id,
-                key: key.to_string().parse().unwrap(),
-                attempt: keyshare.key_id.attempt_id,
-            }
+        .map(|keyshare| KeyForDomain {
+            domain_id: keyshare.key_id.domain_id,
+            key: keyshare.public_key().unwrap().try_into().unwrap(),
+            attempt: keyshare.key_id.attempt_id,
         })
         .collect();
     Keyset::new(permanent.epoch_id, keys)
+}
+
+pub struct KeysetBuilder {
+    epoch_id: u64,
+    keys: Vec<Keyshare>,
+}
+
+impl KeysetBuilder {
+    pub fn new(epoch_id: u64) -> Self {
+        Self {
+            epoch_id,
+            keys: Vec::new(),
+        }
+    }
+
+    pub fn from_keyshares(epoch_id: u64, keyshares: &[Keyshare]) -> Self {
+        Self {
+            epoch_id,
+            keys: keyshares.to_vec(),
+        }
+    }
+
+    pub fn keyshares(&self) -> &[Keyshare] {
+        &self.keys
+    }
+
+    pub fn add_keyshare(&mut self, keyshare: Keyshare) -> &mut Self {
+        self.keys.push(keyshare);
+        self
+    }
+
+    pub fn keyset(&self) -> Keyset {
+        keyset_from_permanent_keyshare(&self.permanent_key_data())
+    }
+
+    pub fn permanent_key_data(&self) -> PermanentKeyshareData {
+        permanent_keyshare_from_keyshares(self.epoch_id, &self.keys)
+    }
+
+    pub fn generated(&self) -> Vec<KeyForDomain> {
+        self.keyset().domains
+    }
 }

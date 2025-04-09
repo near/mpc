@@ -190,7 +190,7 @@ impl StartCmd {
         .await?;
         let _web_server = tracking::spawn_checked("web server", web_server);
 
-        let secret_db = SecretDB::new(&home_dir, secrets.local_storage_aes_key)?;
+        let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
 
         let key_storage_config = KeyStorageConfig {
             home_dir: home_dir.clone(),
@@ -447,11 +447,12 @@ mod tests {
     fn create_test_keyshare() -> LegacyRootKeyshareData {
         // Create a dummy private key - this is only for testing
         let private_share = Scalar::ONE;
-        let public_key = AffinePoint::default();
+        // Do some computation to get non-identity public key
+        let public_key = AffinePoint::GENERATOR * private_share;
         LegacyRootKeyshareData {
             epoch: 1,
             private_share,
-            public_key,
+            public_key: public_key.to_affine(),
         }
     }
 

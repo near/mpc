@@ -1,12 +1,16 @@
 pub mod common;
-use common::{candidates, create_response, init, init_env_secp256k1, sign_and_validate};
+use common::{
+    candidates, create_response, create_response_ed25519, init, init_env_edd25519,
+    init_env_secp256k1, sign_and_validate,
+};
+use mpc_contract::primitives::domain::DomainId;
+use mpc_contract::primitives::signature::SignRequestArgs;
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::SignatureResponse,
     errors,
     primitives::{
         participants::Participants,
-        signature::SignRequest,
         thresholds::{Threshold, ThresholdParameters},
     },
 };
@@ -28,12 +32,13 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
     for msg in messages {
         println!("submitting: {msg}");
-        let (payload_hash, respond_req, respond_resp) =
+        let (payload, respond_req, respond_resp) =
             create_response(predecessor_id, msg, path, &sks[0]).await;
-        let request = SignRequest {
-            payload: payload_hash,
+        let request = SignRequestArgs {
+            payload_v2: Some(payload),
             path: path.into(),
-            key_version: 0,
+            domain_id: Some(DomainId::legacy_ecdsa_id()),
+            ..Default::default()
         };
 
         sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
@@ -41,12 +46,13 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
     // check duplicate requests can also be signed:
     let duplicate_msg = "welp";
-    let (payload_hash, respond_req, respond_resp) =
+    let (payload, respond_req, respond_resp) =
         create_response(predecessor_id, duplicate_msg, path, &sks[0]).await;
-    let request = SignRequest {
-        payload: payload_hash,
+    let request = SignRequestArgs {
+        payload_v2: Some(payload),
         path: path.into(),
-        key_version: 0,
+        domain_id: Some(DomainId::legacy_ecdsa_id()),
+        ..Default::default()
     };
     sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
     sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
@@ -72,12 +78,13 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 
     let msg = "hello world!";
     println!("submitting: {msg}");
-    let (payload_hash, respond_req, respond_resp) =
+    let (payload, respond_req, respond_resp) =
         create_response(alice.id(), msg, path, &sks[0]).await;
-    let request = SignRequest {
-        payload: payload_hash,
+    let request = SignRequestArgs {
+        payload_v2: Some(payload),
         path: path.into(),
-        key_version: 0,
+        domain_id: Some(DomainId::legacy_ecdsa_id()),
+        ..Default::default()
     };
 
     let status = alice
@@ -147,11 +154,12 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 
     let msg = "hello world!";
     println!("submitting: {msg}");
-    let (payload_hash, _, _) = create_response(alice.id(), msg, path, &sks[0]).await;
-    let request = SignRequest {
-        payload: payload_hash,
+    let (payload, _, _) = create_response(alice.id(), msg, path, &sks[0]).await;
+    let request = SignRequestArgs {
+        payload_v2: Some(payload),
         path: path.into(),
-        key_version: 0,
+        domain_id: Some(DomainId::legacy_ecdsa_id()),
+        ..Default::default()
     };
 
     let status = alice
@@ -206,12 +214,13 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
 
     // Try to sign with no deposit, should fail.
     let msg = "without-deposit";
-    let (payload_hash, respond_req, respond_resp) =
+    let (payload, respond_req, respond_resp) =
         create_response(predecessor_id, msg, path, &sks[0]).await;
-    let request = SignRequest {
-        payload: payload_hash,
+    let request = SignRequestArgs {
+        payload_v2: Some(payload),
         path: path.into(),
-        key_version: 0,
+        domain_id: Some(DomainId::legacy_ecdsa_id()),
+        ..Default::default()
     };
 
     let status = contract
@@ -250,6 +259,67 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
         .to_string()
         .contains(&errors::InvalidParameters::InsufficientDeposit.to_string()));
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
+    let (_, contract, _, sks) = init_env_secp256k1(1).await;
+    let predecessor_id = contract.id();
+    let path = "test";
+
+    let messages = [
+        "hello world",
+        "hello world!",
+        "hello world!!",
+        "hello world!!!",
+        "hello world!!!!",
+    ];
+
+    for msg in messages {
+        println!("submitting: {msg}");
+        let (payload, respond_req, respond_resp) =
+            create_response(predecessor_id, msg, path, &sks[0]).await;
+        let status = contract
+            .call("sign")
+            .args_json(serde_json::json!({
+                "request": {
+                    "payload": *payload.as_ecdsa().unwrap(),
+                    "path": path,
+                    "key_version": 0,
+                },
+            }))
+            .deposit(NearToken::from_yoctonear(1))
+            .max_gas()
+            .transact_async()
+            .await?;
+        dbg!(&status);
+
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        // Call `respond` as if we are the MPC network itself.
+        let respond = contract
+            .call("respond")
+            .args_json(serde_json::json!({
+                "request": respond_req,
+                "response": respond_resp
+            }))
+            .max_gas()
+            .transact()
+            .await?;
+        dbg!(&respond);
+
+        let execution = status.await?;
+        dbg!(&execution);
+        let execution = execution.into_result()?;
+
+        // Finally wait the result:
+        let returned_resp: SignatureResponse = execution.json()?;
+        assert_eq!(
+            returned_resp, respond_resp,
+            "Returned signature request does not match"
+        );
+    }
     Ok(())
 }
 
@@ -302,6 +372,59 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         result.is_failure(),
         "initializing with valid candidates again should fail"
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
+    let (_, contract, _, sks) = init_env_edd25519(1).await;
+    let predecessor_id = contract.id();
+    let path = "test";
+
+    let messages = [
+        "hello world",
+        "hello world!",
+        "hello world!!",
+        "hello world!!!",
+        "hello world!!!!",
+    ];
+
+    for msg in messages {
+        println!("submitting: {msg}");
+        let (payload, respond_req, respond_resp) =
+            create_response_ed25519(predecessor_id, msg, path, &sks[0]).await;
+
+        let request = SignRequestArgs {
+            payload_v2: Some(payload),
+            path: path.into(),
+            domain_id: Some(DomainId(0)),
+            ..Default::default()
+        };
+
+        sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    }
+
+    // check duplicate requests can also be signed:
+    let duplicate_msg = "welp";
+    let (payload, respond_req, respond_resp) =
+        create_response_ed25519(predecessor_id, duplicate_msg, path, &sks[0]).await;
+    let request = SignRequestArgs {
+        payload_v2: Some(payload),
+        path: path.into(),
+        domain_id: Some(DomainId(0)),
+        ..Default::default()
+    };
+    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+
+    // Check that a sign with no response from MPC network properly errors out:
+    let err = sign_and_validate(&request, None, &contract)
+        .await
+        .expect_err("should have failed with timeout");
+    assert!(err
+        .to_string()
+        .contains(&errors::SignError::Timeout.to_string()));
 
     Ok(())
 }

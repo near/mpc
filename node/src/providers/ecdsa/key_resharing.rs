@@ -3,20 +3,19 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::EcdsaSignatureProvider;
+use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
+use cait_sith::frost_secp256k1::keys::SigningShare;
+use cait_sith::frost_secp256k1::VerifyingKey;
 use cait_sith::protocol::Participant;
-use cait_sith::KeygenOutput;
-use k256::elliptic_curve::sec1::FromEncodedPoint;
-use k256::{AffinePoint, EncodedPoint, Scalar, Secp256k1};
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
         new_threshold: usize,
-        my_share: Option<Scalar>,
-        public_key: AffinePoint,
+        my_share: Option<SigningShare>,
+        public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
-    ) -> anyhow::Result<KeygenOutput<Secp256k1>> {
+    ) -> anyhow::Result<KeygenOutput> {
         let new_keyshare = KeyResharingComputation {
             threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
@@ -32,10 +31,12 @@ impl EcdsaSignatureProvider {
         .await?;
         tracing::info!("Key resharing completed");
 
-        Ok(KeygenOutput {
-            private_share: new_keyshare,
-            public_key,
-        })
+        anyhow::ensure!(
+            new_keyshare.public_key == public_key,
+            "Public key should not change after key resharing"
+        );
+
+        Ok(new_keyshare)
     }
 }
 
@@ -51,13 +52,13 @@ pub struct KeyResharingComputation {
     threshold: usize,
     old_participants: Vec<ParticipantId>,
     old_threshold: usize,
-    my_share: Option<Scalar>,
-    public_key: AffinePoint,
+    my_share: Option<SigningShare>,
+    public_key: VerifyingKey,
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<Scalar> for KeyResharingComputation {
-    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<Scalar> {
+impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<KeygenOutput> {
         let me = channel.my_participant_id();
         let new_participants = channel
             .participants()
@@ -72,36 +73,19 @@ impl MpcLeaderCentricComputation<Scalar> for KeyResharingComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let protocol = cait_sith::reshare::<Secp256k1>(
+        let protocol = cait_sith::ecdsa::dkg_ecdsa::reshare(
             &old_participants,
             self.old_threshold,
+            self.my_share,
+            self.public_key,
             &new_participants,
             self.threshold,
             me.into(),
-            self.my_share,
-            self.public_key,
         )?;
-        run_protocol("key resharing", channel, protocol).await
+        run_protocol("ecdsa key resharing", channel, protocol).await
     }
     fn leader_waits_for_success(&self) -> bool {
         false
-    }
-}
-
-pub fn public_key_to_affine_point(key: near_crypto::PublicKey) -> anyhow::Result<AffinePoint> {
-    match key {
-        near_crypto::PublicKey::SECP256K1(key) => {
-            let mut bytes = [0u8; 65];
-            bytes[0] = 0x04;
-            bytes[1..65].copy_from_slice(key.as_ref());
-            match Option::from(AffinePoint::from_encoded_point(&EncodedPoint::from_bytes(
-                bytes,
-            )?)) {
-                Some(result) => Ok(result),
-                None => anyhow::bail!("Failed to convert public key to affine point"),
-            }
-        }
-        _ => anyhow::bail!("Unsupported public key type"),
     }
 }
 
@@ -125,7 +109,7 @@ mod tests {
         const THRESHOLD: usize = 3;
         const NUM_PARTICIPANTS: usize = 4;
         let gen = TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD);
-        let keygens = gen.make_keygens();
+        let keygens = gen.make_ecdsa_keygens();
         let pubkey = keygens.iter().next().unwrap().1.public_key;
         let old_participants = gen.participant_ids();
         let mut new_participants = gen.participant_ids();

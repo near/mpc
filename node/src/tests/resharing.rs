@@ -3,6 +3,7 @@ use crate::metrics;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
+use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
 use serial_test::serial;
@@ -32,11 +33,16 @@ async fn test_key_resharing_simple() {
     let mut initial_participants = setup.participants.clone();
     initial_participants.participants.pop();
 
-    setup
-        .indexer
-        .contract_mut()
-        .await
-        .initialize(initial_participants);
+    let domain = DomainConfig {
+        id: DomainId(0),
+        scheme: SignatureScheme::Secp256k1,
+    };
+
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        contract.initialize(setup.participants.clone());
+        contract.add_domains(vec![domain.clone()]);
+    }
 
     let _runs = setup
         .configs
@@ -48,6 +54,7 @@ async fn test_key_resharing_simple() {
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
+        &domain,
         std::time::Duration::from_secs(60)
     )
     .await
@@ -75,6 +82,7 @@ async fn test_key_resharing_simple() {
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user1",
+        &domain,
         std::time::Duration::from_secs(60)
     )
     .await
@@ -87,7 +95,7 @@ async fn test_key_resharing_simple() {
 async fn test_key_resharing_multistage() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 6;
-    const THRESHOLD: usize = 3;
+    const THRESHOLD: usize = 4;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -105,12 +113,18 @@ async fn test_key_resharing_multistage() {
     let mut participants_1 = setup.participants.clone();
     participants_1.participants.pop();
     participants_1.participants.pop();
+    participants_1.threshold = 3;
 
-    setup
-        .indexer
-        .contract_mut()
-        .await
-        .initialize(participants_1);
+    let domain = DomainConfig {
+        id: DomainId(0),
+        scheme: SignatureScheme::Secp256k1,
+    };
+
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        contract.initialize(setup.participants.clone());
+        contract.add_domains(vec![domain.clone()]);
+    }
 
     let _runs = setup
         .configs
@@ -122,6 +136,7 @@ async fn test_key_resharing_multistage() {
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
+        &domain,
         std::time::Duration::from_secs(60)
     )
     .await
@@ -130,6 +145,7 @@ async fn test_key_resharing_multistage() {
     // Have the fifth node join.
     let mut participants_2 = setup.participants.clone();
     participants_2.participants.pop();
+    participants_1.threshold = 3;
     setup
         .indexer
         .contract_mut()
@@ -152,6 +168,7 @@ async fn test_key_resharing_multistage() {
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user1",
+        &domain,
         std::time::Duration::from_secs(60)
     )
     .await
@@ -179,6 +196,7 @@ async fn test_key_resharing_multistage() {
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user2",
+        &domain,
         std::time::Duration::from_secs(60)
     )
     .await
@@ -187,6 +205,7 @@ async fn test_key_resharing_multistage() {
     // Have the first node quit.
     let mut participants_3 = setup.participants.clone();
     participants_3.participants.remove(0);
+    participants_3.threshold = 3;
     setup
         .indexer
         .contract_mut()
@@ -209,6 +228,7 @@ async fn test_key_resharing_multistage() {
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user1",
+        &domain,
         std::time::Duration::from_secs(60)
     )
     .await
@@ -218,6 +238,7 @@ async fn test_key_resharing_multistage() {
     let mut participants_4 = setup.participants.clone();
     participants_4.participants.remove(0);
     participants_4.participants.remove(0);
+    participants_4.threshold = 3;
     setup
         .indexer
         .contract_mut()
@@ -240,6 +261,7 @@ async fn test_key_resharing_multistage() {
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user1",
+        &domain,
         std::time::Duration::from_secs(60)
     )
     .await
@@ -270,11 +292,16 @@ async fn test_key_resharing_signature_buffering() {
     let mut initial_participants = setup.participants.clone();
     initial_participants.participants.pop();
 
-    setup
-        .indexer
-        .contract_mut()
-        .await
-        .initialize(initial_participants);
+    let domain = DomainConfig {
+        id: DomainId(0),
+        scheme: SignatureScheme::Secp256k1,
+    };
+
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        contract.initialize(setup.participants.clone());
+        contract.add_domains(vec![domain.clone()]);
+    }
 
     let _runs = setup
         .configs
@@ -285,6 +312,7 @@ async fn test_key_resharing_signature_buffering() {
     let response_time = request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
+        &domain,
         std::time::Duration::from_secs(60),
     )
     .await
@@ -327,11 +355,14 @@ async fn test_key_resharing_signature_buffering() {
     }
 
     // Send a request for signature. This should timeout.
-    assert!(
-        request_signature_and_await_response(&mut setup.indexer, "user1", response_time * 2)
-            .await
-            .is_none()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user1",
+        &domain,
+        response_time * 2
+    )
+    .await
+    .is_none());
 
     // Re-enable the node. Now we should get the signature response.
     drop(disabled);

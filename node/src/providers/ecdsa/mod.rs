@@ -1,8 +1,10 @@
 pub mod key_generation;
 mod presign;
 mod sign;
+
 use mpc_contract::primitives::key_state::KeyEventId;
 pub use presign::PresignatureStorage;
+use std::collections::HashMap;
 mod kdf;
 pub mod key_resharing;
 pub mod triple;
@@ -11,27 +13,37 @@ pub use triple::TripleStorage;
 
 use crate::assets::UniqueId;
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
-use crate::db::{DBCol, SecretDB};
+use crate::db::SecretDB;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
-use crate::providers::{HasParticipants, KeyshareId, SignatureProvider};
+use crate::providers::{PublicKeyConversion, SignatureProvider};
 use crate::sign_request::{SignRequestStorage, SignatureId};
 use crate::tracking;
+use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
-use cait_sith::{FullSignature, KeygenOutput};
-use k256::{AffinePoint, Scalar, Secp256k1};
+use cait_sith::ecdsa::sign::FullSignature;
+use cait_sith::ecdsa::KeygenOutput;
+use cait_sith::frost_secp256k1::keys::SigningShare;
+use cait_sith::frost_secp256k1::VerifyingKey;
+use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
+use k256::{AffinePoint, EncodedPoint, Secp256k1};
+use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
 
-#[derive(Clone)]
 pub struct EcdsaSignatureProvider {
     config: Arc<ConfigFile>,
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     triple_store: Arc<TripleStorage>,
-    presignature_store: Arc<PresignatureStorage>,
     sign_request_store: Arc<SignRequestStorage>,
-    keygen_output: KeygenOutput<Secp256k1>,
+    per_domain_data: HashMap<DomainId, PerDomainData>,
+}
+
+#[derive(Clone)]
+pub(super) struct PerDomainData {
+    pub keyshare: KeygenOutput,
+    pub presignature_store: Arc<PresignatureStorage>,
 }
 
 impl EcdsaSignatureProvider {
@@ -42,7 +54,7 @@ impl EcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keygen_output: KeygenOutput<Secp256k1>,
+        keyshares: HashMap<DomainId, KeygenOutput>,
     ) -> anyhow::Result<Self> {
         let active_participants_query = {
             let network_client = client.clone();
@@ -52,32 +64,43 @@ impl EcdsaSignatureProvider {
         let triple_store = Arc::new(TripleStorage::new(
             clock.clone(),
             db.clone(),
-            DBCol::Triple,
             client.my_participant_id(),
-            |participants, pair| pair.is_subset_of_active_participants(participants),
             active_participants_query.clone(),
         )?);
 
-        let presignature_store = Arc::new(PresignatureStorage::new(
-            clock,
-            db.clone(),
-            DBCol::Presignature,
-            client.my_participant_id(),
-            |participants, presignature| {
-                presignature.is_subset_of_active_participants(participants)
-            },
-            active_participants_query,
-        )?);
+        let mut per_domain_data = HashMap::new();
+        for (domain_id, keyshare) in keyshares {
+            let presignature_store = Arc::new(PresignatureStorage::new(
+                clock.clone(),
+                db.clone(),
+                client.my_participant_id(),
+                active_participants_query.clone(),
+                domain_id,
+            )?);
+            per_domain_data.insert(
+                domain_id,
+                PerDomainData {
+                    keyshare,
+                    presignature_store,
+                },
+            );
+        }
 
         Ok(Self {
             config,
             mpc_config,
             client,
             triple_store,
-            presignature_store,
             sign_request_store,
-            keygen_output,
+            per_domain_data,
         })
+    }
+
+    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
+        self.per_domain_data
+            .get(&domain_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
     }
 }
 
@@ -95,6 +118,7 @@ pub enum EcdsaTaskId {
     },
     Presignature {
         id: UniqueId,
+        domain_id: DomainId,
         paired_triple_id: UniqueId,
     },
     Signature {
@@ -109,21 +133,17 @@ impl From<EcdsaTaskId> for MpcTaskId {
     }
 }
 
-impl KeyshareId for KeygenOutput<Secp256k1> {
-    fn keyshare_id() -> &'static str {
-        "ecdsa"
-    }
-}
-
 impl SignatureProvider for EcdsaSignatureProvider {
-    type KeygenOutput = KeygenOutput<Secp256k1>;
-    type SignatureOutput = (FullSignature<Secp256k1>, AffinePoint);
+    type PublicKey = VerifyingKey;
+    type SecretShare = SigningShare;
+    type KeygenOutput = KeygenOutput;
+    type Signature = FullSignature<Secp256k1>;
     type TaskId = EcdsaTaskId;
 
     async fn make_signature(
         self: Arc<Self>,
         id: SignatureId,
-    ) -> anyhow::Result<Self::SignatureOutput> {
+    ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
         self.make_signature_leader(id).await
     }
 
@@ -136,8 +156,8 @@ impl SignatureProvider for EcdsaSignatureProvider {
 
     async fn run_key_resharing_client(
         new_threshold: usize,
-        my_share: Option<Scalar>,
-        public_key: AffinePoint,
+        my_share: Option<SigningShare>,
+        public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
@@ -166,10 +186,16 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 }
                 EcdsaTaskId::Presignature {
                     id,
+                    domain_id,
                     paired_triple_id,
                 } => {
-                    self.run_presignature_generation_follower(channel, id, paired_triple_id)
-                        .await?;
+                    self.run_presignature_generation_follower(
+                        channel,
+                        id,
+                        domain_id,
+                        paired_triple_id,
+                    )
+                    .await?;
                 }
                 EcdsaTaskId::Signature {
                     id,
@@ -180,13 +206,10 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 }
             },
 
-            // (#119): Temporary unreachable, since there's only one provider atm
-            #[allow(unreachable_patterns)]
-            _ => {
-                anyhow::bail!(
-                    "`process_channel_task` was expecting an `EcdsaSecp256k1TaskId` task"
-                );
-            }
+            _ => anyhow::bail!(
+                "eddsa task handler: received unexpected task id: {:?}",
+                channel.task_id()
+            ),
         }
         Ok(())
     }
@@ -202,21 +225,81 @@ impl SignatureProvider for EcdsaSignatureProvider {
             ),
         );
 
-        let generate_presignatures = tracking::spawn(
-            "generate presignatures",
-            Self::run_background_presignature_generation(
-                self.client.clone(),
-                self.mpc_config.participants.threshold as usize,
-                self.config.presignature.clone().into(),
-                self.triple_store.clone(),
-                self.presignature_store.clone(),
-                self.keygen_output.clone(),
-            ),
-        );
+        let generate_presignatures = self
+            .per_domain_data
+            .iter()
+            .map(|(domain_id, data)| {
+                tracking::spawn(
+                    &format!("generate presignatures for domain {}", domain_id.0),
+                    Self::run_background_presignature_generation(
+                        self.client.clone(),
+                        self.mpc_config.participants.threshold as usize,
+                        self.config.presignature.clone().into(),
+                        self.triple_store.clone(),
+                        *domain_id,
+                        data.presignature_store.clone(),
+                        data.keyshare.clone(),
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
 
         generate_triples.await??;
-        generate_presignatures.await??;
+        for task in generate_presignatures {
+            task.await??;
+        }
 
         Ok(())
     }
+}
+
+impl PublicKeyConversion for VerifyingKey {
+    fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey> {
+        let bytes = self.to_element().to_encoded_point(false).to_bytes();
+        anyhow::ensure!(bytes[0] == 0x04);
+        Ok(near_crypto::PublicKey::SECP256K1(
+            near_crypto::Secp256K1PublicKey::try_from(&bytes[1..65])
+                .context("Failed to convert public key to near crypto type")?,
+        ))
+    }
+
+    fn from_near_crypto(public_key: &near_crypto::PublicKey) -> anyhow::Result<Self> {
+        match public_key {
+            near_crypto::PublicKey::SECP256K1(key) => {
+                let mut bytes = [0u8; 65];
+                bytes[0] = 0x04;
+                bytes[1..65].copy_from_slice(key.as_ref());
+
+                let encoded_point = EncodedPoint::from_bytes(bytes)?;
+                let affine_point = AffinePoint::from_encoded_point(&encoded_point)
+                    .into_option()
+                    .ok_or(anyhow::anyhow!(
+                        "Failed to convert encoded point to affine point"
+                    ))?;
+                Ok(VerifyingKey::new(affine_point.into()))
+            }
+            _ => anyhow::bail!("Unsupported public key type"),
+        }
+    }
+}
+
+#[test]
+fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
+    use crate::tests::TestGenerators;
+    let x = TestGenerators::new(4, 3)
+        .make_ecdsa_keygens()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    x.public_key.to_near_public_key()?;
+    Ok(())
+}
+
+#[test]
+fn check_conversion_from_sdk() -> anyhow::Result<()> {
+    let near_sdk: near_sdk::PublicKey = "secp256k1:5TJSTQwYwe3MgTCep9DbLxLT6UjB6LFn3SStpBMgdfGjBopNjxL7mpNK92R6cdyByjz7vUQdRgtLiu9w84kopNqn"
+                .parse()?;
+    let _ = VerifyingKey::from_near_sdk(&near_sdk)?;
+    Ok(())
 }

@@ -7,28 +7,24 @@
 //! As a reference, check the existing implementations.
 
 pub mod ecdsa;
+pub mod eddsa;
+
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::sign_request::SignatureId;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
-use k256::AffinePoint;
-use k256::Scalar;
+use std::str::FromStr;
 use std::sync::Arc;
 
-/// This `keyshare_id` is used for persisting a key share.
-/// The returned value should be unique across all `SignatureProviders`.
-#[allow(dead_code)] // TODO: To be fixed in #252 follow-up
-pub trait KeyshareId {
-    fn keyshare_id() -> &'static str;
-}
-
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
-#[allow(dead_code)] // TODO: To be fixed in #252 follow-up
 pub trait SignatureProvider {
-    type KeygenOutput: KeyshareId;
-    type SignatureOutput;
+    type PublicKey: PublicKeyConversion;
+    type SecretShare;
+    type KeygenOutput;
+
+    type Signature;
 
     /// Trait bound `Into<MpcTaskId>` serves as a way to see what logic needs to be added,
     /// when introducing new `TaskId`. Implementation of the trait should be trivial.
@@ -40,7 +36,7 @@ pub trait SignatureProvider {
     async fn make_signature(
         self: Arc<Self>,
         id: SignatureId,
-    ) -> anyhow::Result<Self::SignatureOutput>;
+    ) -> anyhow::Result<(Self::Signature, Self::PublicKey)>;
 
     /// Executes the key generation protocol.
     /// Returns once key generation is complete or encounters an error.
@@ -59,8 +55,8 @@ pub trait SignatureProvider {
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_resharing_client(
         new_threshold: usize,
-        key_share: Option<Scalar>,
-        public_key: AffinePoint,
+        key_share: Option<Self::SecretShare>,
+        public_key: Self::PublicKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput>;
@@ -79,4 +75,16 @@ pub trait SignatureProvider {
 /// This trait helps check whether the current set of participants contains `A`.
 pub trait HasParticipants {
     fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool;
+}
+
+/// Helper functions to convert back and forth public key types
+pub trait PublicKeyConversion: Sized {
+    fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey>;
+    fn from_near_crypto(public_key: &near_crypto::PublicKey) -> anyhow::Result<Self>;
+
+    // Don't implement it
+    fn from_near_sdk(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
+        let near_crypto = near_crypto::PublicKey::from_str(&String::from(public_key))?;
+        Self::from_near_crypto(&near_crypto)
+    }
 }

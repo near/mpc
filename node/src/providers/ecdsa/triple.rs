@@ -1,21 +1,51 @@
 use crate::assets::{DistributedAssetStorage, UniqueId};
 use crate::background::InFlightGenerationTracker;
 use crate::config::TripleConfig;
+use crate::db::SecretDB;
 use crate::metrics;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{choose_random_participants, participants_from_triples, ParticipantId};
+use crate::primitives::{participants_from_triples, ParticipantId};
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
+use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::Participant;
-use cait_sith::triples::TripleGenerationOutput;
 use k256::Secp256k1;
+use near_time::Clock;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub type TripleStorage = DistributedAssetStorage<PairedTriple>;
+pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
+
+impl TripleStorage {
+    pub fn new(
+        clock: Clock,
+        db: Arc<SecretDB>,
+        my_participant_id: ParticipantId,
+        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self(DistributedAssetStorage::<PairedTriple>::new(
+            clock,
+            db,
+            crate::db::DBCol::Triple,
+            None,
+            my_participant_id,
+            |participants, pair| pair.is_subset_of_active_participants(participants),
+            alive_participant_ids_query,
+        )?))
+    }
+}
+
+impl Deref for TripleStorage {
+    type Target = DistributedAssetStorage<PairedTriple>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
 
@@ -52,23 +82,26 @@ impl EcdsaSignatureProvider {
                 && in_flight_generations.num_in_flight()
                 < config.concurrency * 2 * SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE
             {
-                let current_active_participants_ids = client.all_alive_participant_ids();
-                if current_active_participants_ids.len() < threshold {
-                    // that should not happen often, so sleeping here is okay
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                    continue;
-                }
+                let participants =
+                    match client.select_random_active_participants_including_me(threshold) {
+                        Ok(participants) => participants,
+                        Err(e) => {
+                            tracing::warn!(
+                                "Can't choose active participants for a triple: {}. Sleeping.",
+                                e
+                            );
+                            // that should not happen often, so sleeping here is okay
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                            continue;
+                        }
+                    };
+
                 let id_start = triple_store
                     .generate_and_reserve_id_range(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32);
                 let task_id = EcdsaTaskId::ManyTriples {
                     start: id_start,
                     count: SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32,
                 };
-                let participants = choose_random_participants(
-                    current_active_participants_ids,
-                    client.my_participant_id(),
-                    threshold,
-                );
                 let channel = client.new_channel_for_task(task_id, participants)?;
                 let in_flight =
                     in_flight_generations.in_flight(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE);
@@ -178,7 +211,7 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = cait_sith::triples::generate_triple_many::<Secp256k1, N>(
+        let protocol = cait_sith::ecdsa::triples::generate_triple_many::<Secp256k1, N>(
             &cs_participants,
             me.into(),
             self.threshold,

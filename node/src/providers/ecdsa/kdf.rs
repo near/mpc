@@ -1,8 +1,8 @@
-use crate::hkdf::ScalarExt;
 use crate::primitives::ParticipantId;
 use hex_literal::hex;
 use hkdf::Hkdf;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::elliptic_curve::PrimeField;
 use k256::{AffinePoint, Scalar};
 use sha3::Sha3_256;
 
@@ -58,12 +58,11 @@ pub fn derive_randomness(
         hk.expand(&concatenation, &mut okm).unwrap();
 
         // derive the randomness delta
-        delta = match Scalar::from_bytes(okm) {
-            Some(delta) => delta,
+        delta = Scalar::from_repr(okm.into()).unwrap_or(
             // if delta falls outside the field
             // probability is negligible: in the order of 1/2^224
-            None => Scalar::ZERO,
-        }
+            Scalar::ZERO,
+        )
     }
     delta
 }

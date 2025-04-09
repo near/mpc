@@ -3,12 +3,15 @@ pub mod key_event;
 pub mod resharing;
 pub mod running;
 
+use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
-use crate::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
-use crate::primitives::key_state::{AuthenticatedParticipantId, EpochId, KeyEventId};
-use crate::primitives::thresholds::{Threshold, ThresholdParameters};
+use crate::primitives::{
+    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
+    thresholds::{Threshold, ThresholdParameters},
+};
 use initializing::InitializingContractState;
-use near_sdk::{near, PublicKey};
+use near_sdk::near;
 use resharing::ResharingContractState;
 use running::RunningContractState;
 
@@ -22,7 +25,16 @@ pub enum ProtocolContractState {
 }
 
 impl ProtocolContractState {
-    pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKey, Error> {
+    pub fn domain_registry(&self) -> Result<&DomainRegistry, Error> {
+        let domain_registry = match self {
+            ProtocolContractState::Running(state) => &state.domains,
+            ProtocolContractState::Resharing(state) => &state.previous_running_state.domains,
+            _ => return Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
+        };
+
+        Ok(domain_registry)
+    }
+    pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKeyExtended, Error> {
         match self {
             ProtocolContractState::Running(state) => state.keyset.public_key(domain_id),
             ProtocolContractState::Resharing(state) => {
@@ -48,22 +60,22 @@ impl ProtocolContractState {
     pub fn start_keygen_instance(
         &mut self,
         key_event_id: KeyEventId,
-        event_max_idle_blocks: u64,
+        key_event_timeout_blocks: u64,
     ) -> Result<(), Error> {
         let ProtocolContractState::Initializing(state) = self else {
             return Err(InvalidState::ProtocolStateNotInitializing.into());
         };
-        state.start(key_event_id, event_max_idle_blocks)
+        state.start(key_event_id, key_event_timeout_blocks)
     }
     pub fn start_reshare_instance(
         &mut self,
         key_event_id: KeyEventId,
-        event_max_idle_blocks: u64,
+        key_event_timeout_blocks: u64,
     ) -> Result<(), Error> {
         let ProtocolContractState::Resharing(state) = self else {
             return Err(InvalidState::ProtocolStateNotResharing.into());
         };
-        state.start(key_event_id, event_max_idle_blocks)
+        state.start(key_event_id, key_event_timeout_blocks)
     }
     pub fn vote_reshared(
         &mut self,
@@ -82,7 +94,7 @@ impl ProtocolContractState {
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
-        public_key: PublicKey,
+        public_key: PublicKeyExtended,
     ) -> Result<Option<ProtocolContractState>, Error> {
         let ProtocolContractState::Initializing(state) = self else {
             return Err(InvalidState::ProtocolStateNotResharing.into());
@@ -122,6 +134,14 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Initializing))
     }
 
+    pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+        match self {
+            ProtocolContractState::Resharing(state) => state.vote_abort(key_event_id),
+            ProtocolContractState::Initializing(state) => state.vote_abort(key_event_id),
+            _ => Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
+        }
+    }
+
     pub fn vote_cancel_keygen(
         &mut self,
         next_domain_id: u64,
@@ -137,12 +157,7 @@ impl ProtocolContractState {
         &self,
         signature_scheme: SignatureScheme,
     ) -> Result<DomainId, Error> {
-        let domain_registry = match self {
-            ProtocolContractState::Running(state) => &state.domains,
-            ProtocolContractState::Resharing(state) => &state.previous_running_state.domains,
-            _ => return Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
-        };
-        domain_registry
+        self.domain_registry()?
             .most_recent_domain_for_signature_scheme(signature_scheme)
             .ok_or_else(|| DomainError::NoSuchDomain.into())
     }

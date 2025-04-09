@@ -1,12 +1,10 @@
-use crate::{
-    crypto_shared::types::{PublicKey, ScalarExt},
-    primitives::signature::{PayloadHash, Tweak},
-};
+use crate::{crypto_shared::types::k256_types, primitives::signature::Tweak};
 use anyhow::Context;
+use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 use k256::{
-    ecdsa::{RecoveryId, Signature, VerifyingKey},
-    elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic},
-    Scalar, Secp256k1,
+    ecdsa::{RecoveryId, Signature},
+    elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic, PrimeField},
+    Secp256k1,
 };
 use near_account_id::AccountId;
 use sha3::{Digest, Sha3_256};
@@ -31,9 +29,29 @@ pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
     Tweak::new(hash)
 }
 
-pub fn derive_key(public_key: PublicKey, tweak: &Tweak) -> PublicKey {
-    let tweak = Scalar::from_non_biased(tweak.as_bytes());
-    (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key).to_affine()
+#[derive(Debug, Clone)]
+pub struct TweakNotOnCurve;
+
+pub fn derive_key_secp256k1(
+    public_key: &k256_types::PublicKey,
+    tweak: &Tweak,
+) -> Result<k256_types::PublicKey, TweakNotOnCurve> {
+    let tweak = k256::Scalar::from_repr(tweak.as_bytes().into())
+        .into_option()
+        .ok_or(TweakNotOnCurve)?;
+
+    Ok(
+        (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key)
+            .to_affine(),
+    )
+}
+
+pub fn derive_public_key_edwards_point_edd25519(
+    public_key_edwards_point: &curve25519_dalek::EdwardsPoint,
+    tweak: &Tweak,
+) -> curve25519_dalek::EdwardsPoint {
+    let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(tweak.as_bytes());
+    public_key_edwards_point + ED25519_BASEPOINT_POINT * tweak
 }
 
 /// Get the x coordinate of a point, as a scalar
@@ -49,14 +67,14 @@ pub fn check_ec_signature(
     expected_pk: &k256::AffinePoint,
     big_r: &k256::AffinePoint,
     s: &k256::Scalar,
-    msg_hash: &PayloadHash,
+    msg_hash: &[u8; 32],
     recovery_id: u8,
 ) -> anyhow::Result<()> {
     let public_key = expected_pk.to_encoded_point(false);
     let signature = k256::ecdsa::Signature::from_scalars(x_coordinate(big_r), s)
         .context("cannot create signature from cait_sith signature")?;
     let found_pk = recover(
-        &msg_hash.as_bytes(),
+        msg_hash,
         &signature,
         RecoveryId::try_from(recovery_id).context("invalid recovery ID")?,
     )?
@@ -73,8 +91,8 @@ pub fn recover(
     prehash: &[u8],
     signature: &Signature,
     recovery_id: RecoveryId,
-) -> anyhow::Result<VerifyingKey> {
-    VerifyingKey::recover_from_prehash(prehash, signature, recovery_id)
+) -> anyhow::Result<k256::ecdsa::VerifyingKey> {
+    k256::ecdsa::VerifyingKey::recover_from_prehash(prehash, signature, recovery_id)
         .context("Unable to recover public key")
 }
 
@@ -83,7 +101,7 @@ pub fn recover(
     prehash: &[u8],
     signature: &Signature,
     recovery_id: RecoveryId,
-) -> anyhow::Result<VerifyingKey> {
+) -> anyhow::Result<k256::ecdsa::VerifyingKey> {
     use k256::EncodedPoint;
     use near_sdk::env;
     // While this function also works on native code, it's a bit weird and unsafe.
@@ -91,8 +109,78 @@ pub fn recover(
     let recovered_key_bytes =
         env::ecrecover(prehash, &signature.to_bytes(), recovery_id.to_byte(), true)
             .context("Unable to recover public key")?;
-    VerifyingKey::from_encoded_point(&EncodedPoint::from_untagged_bytes(
+    k256::ecdsa::VerifyingKey::from_encoded_point(&EncodedPoint::from_untagged_bytes(
         &recovered_key_bytes.into(),
     ))
     .context("Failed to parse returned key")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cait_sith::eddsa::KeygenOutput;
+    use cait_sith::frost_core::keys::SigningShare;
+    use cait_sith::frost_core::VerifyingKey;
+    use cait_sith::frost_ed25519::{Ed25519Group, Ed25519Sha512, Group};
+    use curve25519_dalek::Scalar;
+    use rand::rngs::OsRng;
+    use rand::Rng;
+
+    pub(crate) fn derive_keygen_output(
+        keygen_output: &KeygenOutput,
+        tweak: [u8; 32],
+    ) -> KeygenOutput {
+        let tweak = Scalar::from_bytes_mod_order(tweak);
+        let private_share = SigningShare::new(keygen_output.private_share.to_scalar() + tweak);
+        let public_key = VerifyingKey::new(
+            keygen_output.public_key.to_element() + Ed25519Group::generator() * tweak,
+        );
+        KeygenOutput {
+            private_share,
+            public_key,
+        }
+    }
+
+    #[test]
+    fn test_derivation() {
+        let random_bytes: [u8; 32] = rand::thread_rng().gen();
+
+        let scalar = Scalar::from_bytes_mod_order(random_bytes);
+        let private_share = SigningShare::<Ed25519Sha512>::new(scalar);
+
+        let public_key_element = Ed25519Group::generator() * scalar;
+        let public_key = VerifyingKey::<Ed25519Sha512>::new(public_key_element);
+
+        let keygen_output = KeygenOutput {
+            private_share,
+            public_key,
+        };
+
+        let tweak = derive_tweak(&"hello".parse().unwrap(), "my-path");
+        let derived_keygen_output = derive_keygen_output(&keygen_output, tweak.as_bytes());
+
+        let derived_public_key =
+            derive_public_key_edwards_point_edd25519(&public_key_element, &tweak);
+
+        assert_eq!(
+            derived_public_key,
+            derived_keygen_output.public_key.to_element()
+        );
+
+        // Sanity check of our private key generator.
+        assert_eq!(
+            derived_keygen_output.public_key.to_element(),
+            derived_keygen_output.private_share.to_scalar() * Ed25519Group::generator(),
+            "Sanity check failed."
+        );
+
+        let message = [1, 2, 3, 4];
+        let signer =
+            frost_ed25519::SigningKey::from_scalar(derived_keygen_output.private_share.to_scalar())
+                .unwrap();
+
+        let signature = signer.sign(OsRng, &message);
+        let derived_verifying_key = frost_ed25519::VerifyingKey::new(derived_public_key);
+        derived_verifying_key.verify(&message, &signature).unwrap();
+    }
 }

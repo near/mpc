@@ -110,8 +110,10 @@ mod tests {
     use crate::keyshare::permanent::{
         LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend,
     };
-    use crate::keyshare::test_utils::{generate_dummy_keyshare, permanent_keyshare_from_keyshares};
+    use crate::keyshare::test_utils::{generate_dummy_keyshare, KeysetBuilder};
     use crate::keyshare::KeyshareData;
+    use cait_sith::frost_secp256k1::keys::SigningShare;
+    use cait_sith::frost_secp256k1::VerifyingKey;
     use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
     use mpc_contract::primitives::key_state::EpochId;
@@ -144,14 +146,14 @@ mod tests {
         assert!(storage.store(&permanent_keyshare).await.is_err());
         // Cannot store current epoch with fewer domains.
         let keys = vec![generate_dummy_keyshare(1, 0, 1)];
-        let permanent_keyshare = permanent_keyshare_from_keyshares(1, &keys);
+        let permanent_keyshare = KeysetBuilder::from_keyshares(1, &keys).permanent_key_data();
         assert!(storage.store(&permanent_keyshare).await.is_err());
         // Cannot store older epoch than current.
         let keys = vec![
             generate_dummy_keyshare(0, 0, 1),
             generate_dummy_keyshare(0, 2, 2),
         ];
-        let permanent_keyshare = permanent_keyshare_from_keyshares(0, &keys);
+        let permanent_keyshare = KeysetBuilder::from_keyshares(0, &keys).permanent_key_data();
         assert!(storage.store(&permanent_keyshare).await.is_err());
 
         // Can store newer epoch than current.
@@ -159,7 +161,7 @@ mod tests {
             generate_dummy_keyshare(2, 0, 1),
             generate_dummy_keyshare(2, 2, 2),
         ];
-        let permanent_keyshare = permanent_keyshare_from_keyshares(2, &keys);
+        let permanent_keyshare = KeysetBuilder::from_keyshares(2, &keys).permanent_key_data();
         storage.store(&permanent_keyshare).await.unwrap();
         let loaded = storage.load().await.unwrap().unwrap();
         assert_eq!(loaded, permanent_keyshare);
@@ -170,7 +172,7 @@ mod tests {
             generate_dummy_keyshare(2, 2, 2),
             generate_dummy_keyshare(2, 3, 5),
         ];
-        let permanent_keyshare = permanent_keyshare_from_keyshares(2, &keys);
+        let permanent_keyshare = KeysetBuilder::from_keyshares(2, &keys).permanent_key_data();
         storage.store(&permanent_keyshare).await.unwrap();
         let loaded = storage.load().await.unwrap().unwrap();
         assert_eq!(loaded, permanent_keyshare);
@@ -185,10 +187,13 @@ mod tests {
                 .await
                 .unwrap();
         // Write a legacy keyshare.
+        let private_share = Scalar::random(&mut rand::thread_rng());
+        let public_key = AffinePoint::GENERATOR * private_share;
         let legacy_data = LegacyRootKeyshareData {
             epoch: 1,
-            private_share: Scalar::random(&mut rand::thread_rng()),
-            public_key: AffinePoint::IDENTITY,
+            private_share,
+            // Do some computation to get non-identity public key
+            public_key: public_key.to_affine(),
         };
         let legacy_data_json = serde_json::to_vec(&legacy_data).unwrap();
         let identifier = "whatever";
@@ -204,9 +209,9 @@ mod tests {
         assert_eq!(loaded.keyshares[0].key_id.attempt_id.get(), 0);
         assert_eq!(
             loaded.keyshares[0].data,
-            KeyshareData::Secp256k1(cait_sith::KeygenOutput {
-                private_share: legacy_data.private_share,
-                public_key: legacy_data.public_key,
+            KeyshareData::Secp256k1(cait_sith::ecdsa::KeygenOutput {
+                private_share: SigningShare::new(legacy_data.private_share),
+                public_key: VerifyingKey::new(legacy_data.public_key.into()),
             })
         );
     }

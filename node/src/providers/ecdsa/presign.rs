@@ -1,24 +1,60 @@
 use crate::assets::{DistributedAssetStorage, UniqueId};
 use crate::background::InFlightGenerationTracker;
 use crate::config::PresignatureConfig;
+use crate::db::SecretDB;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{participants_from_triples, ParticipantId};
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, TripleStorage};
+use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, TripleStorage};
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
+use cait_sith::ecdsa::presign::{presign, PresignArguments, PresignOutput};
+use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::Participant;
-use cait_sith::triples::TripleGenerationOutput;
-use cait_sith::{KeygenOutput, PresignArguments, PresignOutput};
 use k256::Secp256k1;
+use mpc_contract::primitives::domain::DomainId;
+use near_time::Clock;
 use serde::{Deserialize, Serialize};
+use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
 use std::time::Duration;
 
-pub type PresignatureStorage = DistributedAssetStorage<PresignOutputWithParticipants>;
+pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
+
+impl PresignatureStorage {
+    pub fn new(
+        clock: Clock,
+        db: Arc<SecretDB>,
+        my_participant_id: ParticipantId,
+        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
+        domain_id: DomainId,
+    ) -> anyhow::Result<Self> {
+        Ok(Self(DistributedAssetStorage::<
+            PresignOutputWithParticipants,
+        >::new(
+            clock,
+            db,
+            crate::db::DBCol::Presignature,
+            Some(domain_id),
+            my_participant_id,
+            |participants, presignature| {
+                presignature.is_subset_of_active_participants(participants)
+            },
+            alive_participant_ids_query,
+        )?))
+    }
+}
+
+impl Deref for PresignatureStorage {
+    type Target = DistributedAssetStorage<PresignOutputWithParticipants>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl EcdsaSignatureProvider {
     /// Continuously generates presignatures, trying to maintain the desired number of
@@ -36,8 +72,9 @@ impl EcdsaSignatureProvider {
         threshold: usize,
         config: Arc<PresignatureConfig>,
         triple_store: Arc<TripleStorage>,
+        domain_id: DomainId,
         presignature_store: Arc<PresignatureStorage>,
-        keygen_out: KeygenOutput<Secp256k1>,
+        keygen_out: KeygenOutput,
     ) -> anyhow::Result<()> {
         let in_flight_generations = InFlightGenerationTracker::new();
         let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
@@ -71,6 +108,7 @@ impl EcdsaSignatureProvider {
                 let participants = participants_from_triples(&triple0, &triple1);
                 let task_id = EcdsaTaskId::Presignature {
                     id,
+                    domain_id,
                     paired_triple_id,
                 };
                 let channel = client.new_channel_for_task(task_id, participants.clone())?;
@@ -119,14 +157,17 @@ impl EcdsaSignatureProvider {
         self: Arc<Self>,
         channel: NetworkTaskChannel,
         id: UniqueId,
+        domain_id: DomainId,
         paired_triple_id: UniqueId,
     ) -> anyhow::Result<()> {
+        let domain_data = self.domain_data(domain_id)?;
+
         FollowerPresignComputation {
             threshold: self.mpc_config.participants.threshold as usize,
-            keygen_out: self.keygen_output.clone(),
+            keygen_out: domain_data.keyshare,
             triple_store: self.triple_store.clone(),
             paired_triple_id,
-            out_presignature_store: self.presignature_store.clone(),
+            out_presignature_store: domain_data.presignature_store,
             out_presignature_id: id,
         }
         .perform_leader_centric_computation(
@@ -159,7 +200,7 @@ pub struct PresignComputation {
     threshold: usize,
     triple0: TripleGenerationOutput<Secp256k1>,
     triple1: TripleGenerationOutput<Secp256k1>,
-    keygen_out: KeygenOutput<Secp256k1>,
+    keygen_out: KeygenOutput,
 }
 
 #[async_trait::async_trait]
@@ -175,7 +216,7 @@ impl MpcLeaderCentricComputation<PresignOutput<Secp256k1>> for PresignComputatio
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = cait_sith::presign::<Secp256k1>(
+        let protocol = presign(
             &cs_participants,
             me.into(),
             &cs_participants,
@@ -203,7 +244,7 @@ impl MpcLeaderCentricComputation<PresignOutput<Secp256k1>> for PresignComputatio
 pub struct FollowerPresignComputation {
     pub threshold: usize,
     pub paired_triple_id: UniqueId,
-    pub keygen_out: KeygenOutput<Secp256k1>,
+    pub keygen_out: KeygenOutput,
     pub triple_store: Arc<TripleStorage>,
 
     pub out_presignature_store: Arc<PresignatureStorage>,

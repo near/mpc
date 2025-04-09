@@ -1,10 +1,10 @@
-use crate::hkdf::ScalarExt;
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::BlockViewLite;
 use futures::StreamExt;
-use k256::Scalar;
+use mpc_contract::primitives::domain::DomainId;
+use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
 use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
@@ -14,25 +14,17 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
-/// Arguments passed to a `sign` function call on-chain
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-struct UnvalidatedSignArgsInner {
-    pub payload: [u8; 32],
-    pub path: String,
-    pub key_version: u32,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct UnvalidatedSignArgs {
-    request: UnvalidatedSignArgsInner,
+    request: SignRequestArgs,
 }
 
 /// A validated version of the signature request
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SignArgs {
-    pub payload: Scalar,
+    pub payload: Payload,
     pub path: String,
-    pub key_version: u32,
+    pub domain_id: DomainId,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -174,13 +166,13 @@ fn maybe_get_sign_args(
             return None;
         }
     };
-    let Some(payload) = Scalar::from_bytes(sign_args.request.payload) else {
-        tracing::warn!(
-            target: "mpc",
-            "`sign` did not produce payload correctly: {:?}",
-            sign_args.request.payload,
-        );
-        return None;
+
+    let sign_request: SignRequest = match sign_args.request.try_into() {
+        Ok(request) => request,
+        Err(err) => {
+            tracing::warn!(target: "mpc", %err, "failed to parse `sign` arguments");
+            return None;
+        }
     };
 
     tracing::info!(
@@ -188,16 +180,15 @@ fn maybe_get_sign_args(
         receipt_id = %receipt.receipt_id,
         next_receipt_id = %next_receipt_id,
         caller_id = receipt.predecessor_id.to_string(),
-        payload = hex::encode(sign_args.request.payload),
-        key_version = sign_args.request.key_version,
+        request = ?sign_request,
         "indexed new `sign` function call"
     );
     Some((
         next_receipt_id,
         SignArgs {
-            payload,
-            path: sign_args.request.path,
-            key_version: sign_args.request.key_version,
+            payload: sign_request.payload,
+            path: sign_request.path,
+            domain_id: sign_request.domain_id,
         },
     ))
 }

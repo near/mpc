@@ -29,7 +29,7 @@ impl From<&legacy_contract_state::ParticipantInfo> for ParticipantInfo {
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct ParticipantId(u32);
+pub struct ParticipantId(pub u32);
 impl ParticipantId {
     pub fn get(&self) -> u32 {
         self.0
@@ -119,6 +119,16 @@ impl Participants {
 
 #[cfg(test)]
 impl Participants {
+    pub fn init(
+        next_id: ParticipantId,
+        participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
+    ) -> Self {
+        Self {
+            next_id,
+            participants,
+        }
+    }
+
     pub fn id(&self, account_id: &AccountId) -> Result<ParticipantId, Error> {
         self.participants
             .iter()

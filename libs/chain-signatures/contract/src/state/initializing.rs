@@ -1,12 +1,13 @@
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
+use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidParameters};
 use crate::legacy_contract_state;
 use crate::primitives::domain::DomainRegistry;
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
-use near_sdk::{near, PublicKey};
+use near_sdk::near;
 use std::collections::BTreeSet;
 
 /// In this state, we generate a new key for each new domain. At any given point of time, we are
@@ -46,10 +47,10 @@ impl InitializingContractState {
     pub fn start(
         &mut self,
         key_event_id: KeyEventId,
-        event_max_idle_blocks: u64,
+        key_event_timeout_blocks: u64,
     ) -> Result<(), Error> {
         self.generating_key
-            .start(key_event_id, event_max_idle_blocks)
+            .start(key_event_id, key_event_timeout_blocks)
     }
 
     /// Casts a vote for `public_key` for the attempt identified by `key_event_id`.
@@ -70,7 +71,7 @@ impl InitializingContractState {
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
-        public_key: PublicKey,
+        public_key: PublicKeyExtended,
     ) -> Result<Option<RunningContractState>, Error> {
         if self
             .generating_key
@@ -153,7 +154,7 @@ mod tests {
     use crate::primitives::domain::tests::gen_domains_to_add;
     use crate::primitives::domain::{AddDomainsVotes, DomainId};
     use crate::primitives::key_state::{AttemptId, KeyEventId};
-    use crate::primitives::test_utils::{gen_account_id, gen_pk};
+    use crate::primitives::test_utils::{bogus_edd25519_public_key_extended, gen_account_id};
     use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::{find_leader, Environment};
     use crate::state::running::running_tests::gen_running_state;
@@ -211,10 +212,12 @@ mod tests {
             for c in &candidates {
                 env.set_signer(c);
                 // verify that no votes can be cast before the keygen started.
-                assert!(state.vote_pk(first_key_event_id.clone(), gen_pk()).is_err());
-                assert!(state.vote_abort(first_key_event_id.clone()).is_err());
+                assert!(state
+                    .vote_pk(first_key_event_id, bogus_edd25519_public_key_extended())
+                    .is_err());
+                assert!(state.vote_abort(first_key_event_id).is_err());
                 if *c != leader.0 {
-                    assert!(state.start(first_key_event_id.clone(), 1).is_err());
+                    assert!(state.start(first_key_event_id, 1).is_err());
                 } else {
                     // Also check that starting with the wrong KeyEventId fails.
                     assert!(state.start(first_key_event_id.next_attempt(), 1).is_err());
@@ -222,15 +225,17 @@ mod tests {
             }
             // start the keygen; verify that the keygen is for the right epoch and domain ID.
             env.set_signer(&leader.0);
-            assert!(state.start(first_key_event_id.clone(), 0).is_ok());
+            assert!(state.start(first_key_event_id, 0).is_ok());
             let key_event = state.generating_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
             // check that randos can't vote.
             for _ in 0..20 {
                 env.set_signer(&gen_account_id());
-                assert!(state.vote_pk(key_event.clone(), gen_pk()).is_err());
-                assert!(state.vote_abort(key_event.clone()).is_err());
+                assert!(state
+                    .vote_pk(key_event, bogus_edd25519_public_key_extended())
+                    .is_err());
+                assert!(state.vote_abort(key_event).is_err());
             }
 
             // check that timing out will abort the instance
@@ -238,8 +243,10 @@ mod tests {
             assert!(!state.generating_key.is_active());
             for c in &candidates {
                 env.set_signer(c);
-                assert!(state.vote_pk(key_event.clone(), gen_pk()).is_err());
-                assert!(state.vote_abort(key_event.clone()).is_err());
+                assert!(state
+                    .vote_pk(key_event, bogus_edd25519_public_key_extended())
+                    .is_err());
+                assert!(state.vote_abort(key_event).is_err());
                 assert!(!state.generating_key.is_active());
             }
 
@@ -267,8 +274,10 @@ mod tests {
             for bad_key_event in bad_key_events {
                 for c in &candidates {
                     env.set_signer(c);
-                    assert!(state.vote_pk(bad_key_event.clone(), gen_pk()).is_err());
-                    assert!(state.vote_abort(bad_key_event.clone()).is_err());
+                    assert!(state
+                        .vote_pk(bad_key_event, bogus_edd25519_public_key_extended())
+                        .is_err());
+                    assert!(state.vote_abort(bad_key_event).is_err());
                 }
             }
             assert_eq!(state.generating_key.num_completed(), 0);
@@ -276,7 +285,7 @@ mod tests {
             // assert that voting for different keys will fail
             for (j, account) in candidates.iter().enumerate() {
                 env.set_signer(account);
-                let res = state.vote_pk(key_event.clone(), gen_pk());
+                let res = state.vote_pk(key_event, bogus_edd25519_public_key_extended());
                 // the first vote goes through, the second vote resets the instance; the third and subsequent ones fail.
                 if j < 2 {
                     assert!(res.expect("Should not fail").is_none());
@@ -291,20 +300,20 @@ mod tests {
             assert!(state.start(key_event.next_attempt(), 0).is_ok());
             let key_event = state.generating_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
-            assert!(state.vote_abort(key_event.clone()).is_ok());
+            assert!(state.vote_abort(key_event).is_ok());
             assert!(!state.generating_key.is_active());
 
             // assert that valid votes get counted correctly
             env.set_signer(&leader.0);
             assert!(state.start(key_event.next_attempt(), 0).is_ok());
             let key_event = state.generating_key.current_key_event_id().unwrap();
-            let pk = gen_pk();
+            let pk = bogus_edd25519_public_key_extended();
             for (i, c) in candidates.clone().into_iter().enumerate() {
                 env.set_signer(&c);
                 assert!(resulting_running_state.is_none());
                 assert_eq!(state.generating_key.num_completed(), i);
-                resulting_running_state = state.vote_pk(key_event.clone(), pk.clone()).unwrap();
-                assert!(state.vote_abort(key_event.clone()).is_err());
+                resulting_running_state = state.vote_pk(key_event, pk.clone()).unwrap();
+                assert!(state.vote_abort(key_event).is_err());
             }
         }
 
@@ -367,9 +376,9 @@ mod tests {
             domain_id: state.domains.get_domain_by_index(2).unwrap().id,
             epoch_id: state.epoch_id,
         };
-        assert!(state.start(first_key_event_id.clone(), 0).is_ok());
+        assert!(state.start(first_key_event_id, 0).is_ok());
 
-        let pk = gen_pk();
+        let pk = bogus_edd25519_public_key_extended();
         let participants = state
             .generating_key
             .proposed_parameters()
@@ -383,9 +392,7 @@ mod tests {
             .value() as usize;
         for (account, _, _) in &participants {
             env.set_signer(account);
-            state
-                .vote_pk(first_key_event_id.clone(), pk.clone())
-                .unwrap();
+            state.vote_pk(first_key_event_id, pk.clone()).unwrap();
         }
 
         // we should have 3 keys now.

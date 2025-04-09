@@ -36,6 +36,9 @@ impl Cli {
                     MpcNetworkSubCmd::VoteJoin(cmd) => {
                         cmd.run(&name, config).await;
                     }
+                    MpcNetworkSubCmd::VoteLeave(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
                     MpcNetworkSubCmd::DeployInfra(cmd) => {
                         cmd.run(&name, config).await;
                     }
@@ -95,6 +98,8 @@ pub enum MpcNetworkSubCmd {
     Join(MpcJoinCmd),
     /// Send vote_join() transactions to the contract to vote on adding a participant.
     VoteJoin(MpcVoteJoinCmd),
+    /// Send vote_leave() transactions to the contract to vote on removing a participant.
+    VoteLeave(MpcVoteLeaveCmd),
     /// Deploy the GCP nodes with Terraform to host Nomad jobs to run this network.
     DeployInfra(MpcTerraformDeployInfraCmd),
     /// Deploy the Nomad jobs to run this network.
@@ -199,6 +204,15 @@ pub struct MpcJoinCmd {
 #[derive(clap::Parser)]
 pub struct MpcVoteJoinCmd {
     /// The index of the participant that is joining the network.
+    pub for_account_index: usize,
+    /// The indices of the voters; leave empty to vote from every other participant.
+    #[clap(long, value_delimiter = ',')]
+    pub voters: Vec<usize>,
+}
+
+#[derive(clap::Parser)]
+pub struct MpcVoteLeaveCmd {
+    /// The index of the participant that is leaving the network.
     pub for_account_index: usize,
     /// The indices of the voters; leave empty to vote from every other participant.
     #[clap(long, value_delimiter = ',')]

@@ -1,9 +1,9 @@
+use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::EcdsaTaskId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::Participant;
-use cait_sith::triples::TripleGenerationOutput;
 use k256::Secp256k1;
-use rand::prelude::IteratorRandom;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
 
@@ -91,20 +91,7 @@ pub struct MpcPeerMessage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum MpcTaskId {
     EcdsaTaskId(EcdsaTaskId),
-}
-
-pub fn choose_random_participants(
-    participants: Vec<ParticipantId>,
-    me: ParticipantId,
-    threshold: usize,
-) -> Vec<ParticipantId> {
-    assert!(participants.len() >= threshold);
-    let mut res = participants
-        .into_iter()
-        .filter(|p| p != &me)
-        .choose_multiple(&mut rand::thread_rng(), threshold - 1);
-    res.push(me);
-    res
+    EddsaTaskId(EddsaTaskId),
 }
 
 pub fn participants_from_triples(

@@ -8,13 +8,19 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 anyhow = "1"
+curve25519-dalek = { version = "4.1.3", features = [
+    "group",
+    "serde",
+], default-features = false }
 borsh = "1.5.0"
 near-sdk = { version = "5.11.0", features = [
     "legacy",
     "unit-testing",
     "unstable",
 ] }
+rand = { version = "0.8", optional = true }
 serde = { version = "1", features = ["derive"] }
+serde_with = { version = "3.12.0" }
 serde_json = "1"
 schemars = "0.8"
 k256 = { version = "0.13.4", features = [
@@ -24,10 +30,12 @@ k256 = { version = "0.13.4", features = [
     "arithmetic",
     "expose-field",
 ] }
+
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-account-id = "1"
 thiserror = "1"
 sha3 = "0.10.8"
+hex = "0.4.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.12", features = ["custom"] }
@@ -37,7 +45,10 @@ getrandom = { version = "0.2.12", features = ["custom"] }
 rand = "0.8"
 tokio = { version = "1", features = ["full"] }
 
+sha2 = "0.10.8"
+
 # crypto dependencies
+ed25519-dalek = { version = "2.1.1", features = ["serde", "digest"] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
 signature = "2.2.0"
 digest = "0.10.7"
@@ -45,3 +56,10 @@ digest = "0.10.7"
 # near dependencies
 near-crypto = "0.26.0"
 near-workspaces = "0.14.1"
+cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "5e0ce40a16dc3e0889277f66bb2a6400d6ef36a5", features = [
+    "k256",
+] }
+frost-ed25519 = "2.1.0"
+
+[features]
+test-utils = ["rand"]

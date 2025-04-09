@@ -7,150 +7,224 @@ votes on the contract update.
 Verifies that the update was executed.
 """
 
+import base64
 import json
 import sys
 import time
 import pathlib
 import pytest
-from utils import MetricsTracker, load_binary_file
+from utils import load_binary_file
+import yaml
 
+from common_lib import contracts
+from common_lib import constants
 from common_lib.constants import TGAS
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
-from common_lib.contracts import V0_CONTRACT_PATH, COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, V1_CONTRACT_PATH, UpdateArgsV0, UpdateArgsV1, ConfigV1
+from common_lib.contracts import COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, V1_0_1_CONTRACT_PATH, UpdateArgsV1, UpdateArgsV2
 
 
-# todo: migration tests
-@pytest.mark.skip
-@pytest.mark.parametrize(
-    "initial_contract_path,update_args",
-    [
-        pytest.param(V1_CONTRACT_PATH,
-                     UpdateArgsV0(COMPILED_CONTRACT_PATH),
-                     id="update v1 to current"),
-        #pytest.param(COMPILED_CONTRACT_PATH,
-        #             UpdateArgsV1(code_path=MIGRATE_CURRENT_CONTRACT_PATH),
-        #             id="update current code"),
-        #pytest.param(COMPILED_CONTRACT_PATH,
-        #             UpdateArgsV1(code_path=None,
-        #                          config=ConfigV1(max_num_requests_to_remove=2,
-        #                                          request_timeout_blocks=10)),
-        #             id="update current config"),
-    ])
-def test_contract_update(initial_contract_path, update_args):
-    initial_contract = load_binary_file(initial_contract_path)
-    cluster = shared.start_cluster_with_mpc(2, 2, 1, initial_contract)
-    # assert correct contract is deployed
-    # todo: legacy cluster
+def deploy_and_init_v2(domains=['Secp256k1', 'Ed25519']):
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        2, 4, 1, contracts.load_mpc_contract())
+    cluster.init_cluster(participants=mpc_nodes[:2],
+                         threshold=2,
+                         domains=domains)
+    cluster.contract_state().print()
+    return cluster, mpc_nodes
+
+
+def deploy_and_init_v1(cluster, public_key):
+    # deploy legacy contract
+    initial_contract = load_binary_file(V1_0_1_CONTRACT_PATH)
+    cluster.deploy_contract(initial_contract)
     cluster.assert_is_deployed(initial_contract)
-    cluster.init_contract(threshold=2)
-    # do some requests
-    cluster.send_and_await_signature_requests(2,
-                                              add_gas=150 * TGAS,
-                                              add_deposit=10)
-    # propose v1
-    cluster.propose_update(update_args.borsh_serialize())
+
+    # Initialize the legacy contract
+    participants = get_participants_from_near_config()
+    init_running_args = {
+        'epoch': 0,
+        'participants': participants,
+        'threshold': 2,
+        'public_key': public_key,
+        'init_config': None,
+    }
+
+    tx = cluster.contract_node.sign_tx(
+        cluster.mpc_contract_account(), 'init_running',
+        json.dumps(init_running_args).encode('utf-8'), 1, 150 * TGAS)
+    cluster.contract_node.send_txn_and_check_success(tx, 20)
+
+    # additional sanity check: query version
+    tx = cluster.contract_node.sign_tx(cluster.mpc_contract_account(),
+                                       'version',
+                                       json.dumps({}).encode('utf-8'), 1,
+                                       150 * TGAS)
+    res = cluster.contract_node.send_txn_and_check_success(tx, 20)
+    val = res["result"]["status"]["SuccessValue"]
+    res = base64.b64decode(val).decode("utf-8")
+    assert res == '"1.0.1"', res
+    print(f"Deployed V1: {res}")
+
+
+def get_participants_from_near_config():
+    # Get the participant set from the mpc configs
+    dot_near = pathlib.Path.home() / '.near'
+    with open(pathlib.Path(dot_near / 'participants.json')) as file:
+        participants_config = yaml.load(file,
+                                        Loader=shared.SafeLoaderIgnoreUnknown)
+
+    participants_map = {}
+    account_to_participant_id = {}
+    for i, p in enumerate(participants_config['participants']):
+        near_account = p['near_account_id']
+        my_pk = p['p2p_public_key']
+        my_addr = p['address']
+        my_port = p['port']
+
+        participants_map[near_account] = {
+            "account_id": near_account,
+            "cipher_pk": [0] * 32,
+            "sign_pk": my_pk,
+            "url": f"http://{my_addr}:{my_port}",
+        }
+        account_to_participant_id[near_account] = i
+
+    return {
+        "next_id": 2,
+        "participants": participants_map,
+        "account_to_participant_id": account_to_participant_id,
+    }
+
+
+def migrate_from_v2_to_dummy(cluster):
+    dummy_update_args = UpdateArgsV2(code_path=MIGRATE_CURRENT_CONTRACT_PATH)
+    cluster.propose_update(dummy_update_args.borsh_serialize())
     cluster.vote_update(0, 0)
     cluster.vote_update(1, 0)
-    ## wait for the transaction to be included
     time.sleep(2)
-    # assert v1 is now deployed
-    if update_args.code() is not None:
-        print("ensuring contract code is updated")
-        cluster.assert_is_deployed(update_args.code())
+    cluster.assert_is_deployed(dummy_update_args.code())
+    # ensure sign transactions are rejected:
+    try:
+        cluster.send_and_await_signature_requests(1)
+    except:
+        print("Succesfully migrated from V2 to a different contract code.")
     else:
-        print("ensuring config is updated")
-        expected_config = update_args.dump_json()
-        deployed_config = cluster.get_config()
-        assert deployed_config == expected_config
-    print("update completed")
-    # add deposit and gas for contract in MIGRATE_CURRENT_CONTRACT_PATH
-    cluster.send_and_await_signature_requests(2,
-                                              add_gas=150 * TGAS,
-                                              add_deposit=10)
+        assert False
 
 
-# In case a nonce conflict occurs during a vote_update call, rerun the test once.
-# todo: migration tests
-@pytest.mark.skip
-@pytest.mark.parametrize("initial_contract_path,update_args", [
-    pytest.param(V1_CONTRACT_PATH,
-                 UpdateArgsV0(COMPILED_CONTRACT_PATH),
-                 id="update v0 to current"),
+def migrate_from_v1_to_v2(cluster):
+    update_args = UpdateArgsV1(COMPILED_CONTRACT_PATH)
+    id = cluster.propose_update(update_args.borsh_serialize())
+    cluster.vote_update(0, id)
+    cluster.vote_update(1, id)
+    time.sleep(10)
+    cluster.assert_is_deployed(update_args.code())
+    print("Succesfully migrated from V1 to V2")
+    cluster.contract_state().print()
+
+
+@pytest.mark.parametrize("test_trailing_sigs", [
+    False,
+    pytest.param(
+        True,
+        marks=[pytest.mark.slow, pytest.mark.ci_excluded],
+    ),
 ])
-def test_contract_update_trailing_sigs(initial_contract_path, update_args):
-    """
-    Tests if signatures submitted to V1 that are a response to requests submitted to V0 are successully handled by the contract.
-    """
-    num_requests = 100
-    initial_contract = load_binary_file(initial_contract_path)
-    # todo: legacy cluster
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1,
-                                                       initial_contract)
-    cluster.set_active_mpc_nodes(mpc_nodes)
+def test_contract_update(test_trailing_sigs):
+    # deploy V2, generate keys and update V2 to dummy contract
+    cluster, mpc_nodes = deploy_and_init_v2(domains=['Secp256k1'])
+    cluster.send_and_await_signature_requests(1)
+    public_key_extended = cluster.contract_state().keyset().keyset[0].key
+    # The public key in the state is encoded as a `PublicKeyExtended` struct.
+    # We need to extract the inner field which contains the public key.
+    public_key = public_key_extended["Secp256k1"]["near_public_key"]
+    migrate_from_v2_to_dummy(cluster)
 
-    # assert correct contract is deployed
-    cluster.assert_is_deployed(initial_contract)
-    cluster.init_contract(threshold=2)
-    cluster.add_domains(['Secp256k1'])
-    # propose and vote on contract update (avoid nonce conflicts)
-    time.sleep(2)
+    # kill nodes and change the contract account
+    cluster.kill_all()
+    cluster.contract_node = cluster.secondary_contract_node
+    for node in cluster.mpc_nodes:
+        node.change_contract_id(cluster.secondary_contract_node.account_id())
+    cluster.run_all()
 
-    def try_send(func, *args, max_tries=20, sleep_duration=0.1):
-        n_tries = 0
-        while n_tries < max_tries:
-            try:
-                func(*args)
-            except:
-                time.sleep(sleep_duration)
-                n_tries += 1
-            else:
-                break
+    cluster.define_candidate_set(mpc_nodes[:2])
+    cluster.update_participant_status(assert_contract=False)
+    # deploy legacy contract to new contract account and update legacy to V2
+    deploy_and_init_v1(cluster, public_key)
+    # add some update proposals for state:
+    n_updates = 10
+    for _ in range(n_updates):
+        update_v1_code_args = UpdateArgsV1(
+            code_path=MIGRATE_CURRENT_CONTRACT_PATH)
+        cluster.propose_update(update_v1_code_args.borsh_serialize())
+        time.sleep(0.1)  # near node seems to get overwhelmed otherwise
 
-        if n_tries < max_tries:
-            print(f"succeeded after {n_tries+1} tries")
-        else:
-            assert False, "failed to send"
+    def make_legacy_sign_request_txs(payloads,
+                                     nonce_offset=1,
+                                     add_gas=None,
+                                     add_deposit=None):
+        nonce_offset = 1
+        txs = []
+        gas = constants.GAS_FOR_SIGN_CALL * TGAS
+        deposit = constants.SIGNATURE_DEPOSIT
+        if add_gas is not None:
+            gas += add_gas
+        if add_deposit is not None:
+            deposit += add_deposit
+        for payload in payloads:
+            sign_args = {
+                'request': {
+                    'key_version': 0,
+                    'path': 'test',
+                    'payload': payload,
+                }
+            }
+            nonce_offset += 1
 
-    try_send(cluster.propose_update, update_args.borsh_serialize())
-    time.sleep(2)
-    try_send(cluster.vote_update, 0, 0)
+            tx = cluster.sign_request_node.sign_tx(
+                cluster.mpc_contract_account(),
+                'sign',
+                sign_args,
+                nonce_offset=nonce_offset,
+                deposit=deposit,
+                gas=gas)
+            txs.append(tx)
+        return txs
 
-    # do some requests
-    started = time.time()
-    tx_hashes, tx_sent = cluster.generate_and_send_signature_requests(
-        num_requests, add_gas=150 * TGAS, add_deposit=10)
-    print(f"sent {num_requests} signature requests")
-    cluster.observe_signature_requests(num_requests, started, tx_sent)
-    try_send(cluster.vote_update, 1, 0)
-    time.sleep(2)
-    if update_args.code() is not None:
-        print("ensuring contract code is updated")
-        cluster.assert_is_deployed(update_args.code())
-    else:
-        print("ensuring config is updated")
-        expected_config = update_args.dump_json()
-        deployed_config = cluster.get_config()
-        assert deployed_config == expected_config
-    print("update completed")
+    def generate_and_send_legacy_signature_requests(num_requests):
+        payloads = [[
+            i, 1, 2, 0, 4, 5, 6, 8, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+            19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 44
+        ] for i in range(num_requests)]
+        txs = make_legacy_sign_request_txs(payloads)
+        return cluster.send_sign_request_txns(txs), time.time()
 
-    class VerificationHelper:
+    # add some signature requests for state:
+    tx_hashes, _ = generate_and_send_legacy_signature_requests(10)
 
-        def __init__(self):
-            self.num_trailing_sigs = 0
+    def assert_tx_failure(res):
+        assert 'result' in res, json.dumps(res, indent=1)
+        assert 'status' in res['result'], json.dumps(res['result'], indent=1)
+        assert 'Failure' in res['result']['status'], json.dumps(
+            res['result']['status'])
 
-        def verify(self, tx_res):
-            shared.assert_signature_success(tx_res)
-            target = "This function is deprecated and shall only be called to handle signature requests submitted to V0 contract"
-            if target in json.dumps(tx_res):
-                self.num_trailing_sigs += 1
+    migrate_from_v1_to_v2(cluster)
 
-        def final_verification(self):
-            print(f"Found {self.num_trailing_sigs} trailing signatures")
-            assert self.num_trailing_sigs > 0, "failed to find trailing signatures"
+    if test_trailing_sigs:
+        results = cluster.await_txs_responses(tx_hashes)
+        shared.verify_txs(results, assert_tx_failure)
 
-    results = cluster.await_txs_responses(tx_hashes)
-    verif_helper = VerificationHelper()
-    shared.verify_txs(results, verif_helper.verify)
-    verif_helper.final_verification()
+    # assert previous updates can no longer be voted for:
+    for i in range(n_updates):
+        vote_update_args = {'id': i}
+        node = cluster.mpc_nodes[0]
+        tx = node.sign_tx(cluster.mpc_contract_account(), 'vote_update',
+                          vote_update_args)
+        res = node.near_node.send_tx_and_wait(tx, 20)
+        assert_tx_failure(res)
+    cluster.send_and_await_signature_requests(1)
+
+
+# todo: comprehensive test with entire cluster & node + config updates

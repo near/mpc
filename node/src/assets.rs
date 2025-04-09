@@ -3,6 +3,7 @@ use crate::primitives::ParticipantId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use futures::FutureExt;
+use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -443,6 +444,7 @@ where
 {
     db: Arc<SecretDB>,
     col: DBCol,
+    domain_id: Option<DomainId>,
     my_participant_id: ParticipantId,
     owned_queue: DoubleQueue<T, Vec<ParticipantId>>,
     last_id: Mutex<Option<UniqueId>>,
@@ -456,6 +458,7 @@ where
         clock: Clock,
         db: Arc<SecretDB>,
         col: DBCol,
+        domain_id: Option<DomainId>,
         my_participant_id: ParticipantId,
         condition: fn(&Vec<ParticipantId>, &T) -> bool,
         alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
@@ -466,15 +469,10 @@ where
         // but it's the simplest way to implement a multi-consumer, multi-producer queue that
         // supports asynchronous blocking when an asset isn't available.
         let mut last_id = None;
-        for item in db.iter_range(
-            col,
-            &UniqueId::prefix_for_participant_id(my_participant_id),
-            &UniqueId::prefix_for_participant_id(ParticipantId::from_raw(
-                my_participant_id.raw().checked_add(1).unwrap(),
-            )),
-        ) {
+        let (start, end) = Self::make_prefix_range(my_participant_id, domain_id);
+        for item in db.iter_range(col, &start, &end) {
             let (key, value) = item?;
-            let id = UniqueId::try_from_slice(&key)?;
+            let id = Self::decode_key(&key, domain_id)?;
             let value = serde_json::from_slice(&value)?;
             owned_queue.add_owned(id, value);
             last_id = Some(id);
@@ -483,10 +481,45 @@ where
         Ok(Self {
             db,
             col,
+            domain_id,
             my_participant_id,
             owned_queue,
             last_id: Mutex::new(last_id),
         })
+    }
+
+    fn make_prefix_range(
+        participant_id: ParticipantId,
+        domain_id: Option<DomainId>,
+    ) -> (Vec<u8>, Vec<u8>) {
+        let mut start = Vec::new();
+        let mut end = Vec::new();
+        if let Some(domain_id) = domain_id {
+            start.extend_from_slice(&domain_id.0.to_be_bytes());
+            end.extend_from_slice(&domain_id.0.to_be_bytes());
+        }
+        start.extend_from_slice(&UniqueId::prefix_for_participant_id(participant_id));
+        end.extend_from_slice(&UniqueId::prefix_for_participant_id(
+            ParticipantId::from_raw(participant_id.raw().checked_add(1).unwrap()),
+        ));
+        (start, end)
+    }
+
+    fn make_key(&self, id: UniqueId) -> Vec<u8> {
+        let mut key = Vec::new();
+        if let Some(domain_id) = self.domain_id {
+            key.extend_from_slice(&domain_id.0.to_be_bytes());
+        }
+        key.extend_from_slice(&borsh::to_vec(&id).unwrap());
+        key
+    }
+
+    fn decode_key(key: &[u8], domain_id: Option<DomainId>) -> anyhow::Result<UniqueId> {
+        let mut key = key;
+        if domain_id.is_some() {
+            key = &key[std::mem::size_of::<DomainId>()..];
+        }
+        Ok(UniqueId::try_from_slice(key)?)
     }
 
     /// Generates an ID that won't conflict with existing ones, and reserves it
@@ -535,7 +568,7 @@ where
     pub async fn take_owned(&self) -> (UniqueId, T) {
         let (id, asset) = self.owned_queue.take_owned().await;
         let mut update = self.db.update();
-        update.delete(self.col, &borsh::to_vec(&id).unwrap());
+        update.delete(self.col, &self.make_key(id));
         update
             .commit()
             .expect("Unrecoverable error writing to database");
@@ -544,7 +577,7 @@ where
 
     /// Adds an owned asset to the storage.
     pub fn add_owned(&self, id: UniqueId, value: T) {
-        let key = borsh::to_vec(&id).unwrap();
+        let key = self.make_key(id);
         let value_ser = serde_json::to_vec(&value).unwrap();
         let mut update = self.db.update();
         update.put(self.col, &key, &value_ser);
@@ -559,6 +592,7 @@ where
     /// If any are found not to satisfy the current condition, they are discarded.
     /// Otherwise, they are kept aside as ready for immediate use.
     pub async fn maybe_discard_owned(&self, num_assets_to_process: usize) {
+        // TODO(#320): These should also be deleted from disk.
         self.owned_queue
             .maybe_discard_owned(num_assets_to_process)
             .await;
@@ -566,7 +600,7 @@ where
 
     /// Adds an unowned asset to the storage.
     pub fn add_unowned(&self, id: UniqueId, value: T) {
-        let key = borsh::to_vec(&id).unwrap();
+        let key = self.make_key(id);
         let value_ser = serde_json::to_vec(&value).unwrap();
         let mut update = self.db.update();
         update.put(self.col, &key, &value_ser);
@@ -578,7 +612,7 @@ where
     /// Removes an unowned asset from the storage and returns it. Returns
     /// an error if we do not have the asset in our database.
     pub fn take_unowned(&self, id: UniqueId) -> anyhow::Result<T> {
-        let key = borsh::to_vec(&id).unwrap();
+        let key = self.make_key(id);
         let value_ser = self.db.get(self.col, &key)?.ok_or_else(|| {
             anyhow::anyhow!("Unowned {} not found in the database: {:?}", self.col, id)
         })?;
@@ -593,7 +627,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{ColdQueue, DoubleQueue, UniqueId};
+    use super::{ColdQueue, DistributedAssetStorage, DomainId, DoubleQueue, UniqueId};
     use crate::async_testing::{run_future_once, MaybeReady};
     use crate::primitives::ParticipantId;
     use crate::providers::HasParticipants;
@@ -841,10 +875,11 @@ mod tests {
             ParticipantId::from_raw(3),
         ];
         let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
-        let store = super::DistributedAssetStorage::<ParticipantsWithI32>::new(
+        let store = DistributedAssetStorage::<ParticipantsWithI32>::new(
             clock.clock(),
             db,
             crate::db::DBCol::Triple,
+            None,
             ParticipantId::from_raw(42),
             |cond, val| val.is_subset_of_active_participants(cond),
             {
@@ -975,10 +1010,11 @@ mod tests {
     fn test_distributed_store_add_take_owned() {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = super::DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
             crate::db::DBCol::Triple,
+            None,
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1021,10 +1057,11 @@ mod tests {
     fn test_distributed_store_add_owned_different_order() {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = super::DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db.clone(),
             crate::db::DBCol::Triple,
+            None,
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1070,10 +1107,11 @@ mod tests {
         // be based on the key. It doesn't have to be this way, but we test it
         // here just to clarify the current behavior.
         drop(store);
-        let store = super::DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
             crate::db::DBCol::Triple,
+            None,
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1087,10 +1125,11 @@ mod tests {
     fn test_distribtued_store_add_take_unowned() {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = super::DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
             crate::db::DBCol::Triple,
+            None,
             ParticipantId::from_raw(42),
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1119,10 +1158,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let myself = ParticipantId::from_raw(42);
-        let store = super::DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db.clone(),
             crate::db::DBCol::Triple,
+            None,
             myself,
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1142,10 +1182,11 @@ mod tests {
         store.add_unowned(UniqueId::new(other, 4, 0), 8);
 
         drop(store);
-        let store = super::DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
             crate::db::DBCol::Triple,
+            None,
             myself,
             |_, _| true,
             Arc::new(std::vec::Vec::new),
@@ -1167,5 +1208,73 @@ mod tests {
         );
 
         assert_eq!(store.take_unowned(UniqueId::new(other, 1, 0)).unwrap(), 5);
+    }
+
+    #[test]
+    fn test_multiple_domains() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let myself = ParticipantId::from_raw(42);
+        let other = ParticipantId::from_raw(43);
+
+        for i in 0..4 {
+            let domain_id = Some(DomainId(i));
+            let store = DistributedAssetStorage::<u64>::new(
+                FakeClock::default().clock(),
+                db.clone(),
+                crate::db::DBCol::Presignature,
+                domain_id,
+                myself,
+                |_, _| true,
+                Arc::new(std::vec::Vec::new),
+            )
+            .unwrap();
+
+            for j in 0..10 {
+                store.add_owned(UniqueId::new(myself, j, 0), 10000 + i * 100 + j);
+                store.add_unowned(UniqueId::new(other, j, 0), 20000 + i * 100 + j);
+            }
+            for j in 0..10 {
+                assert_eq!(
+                    store.take_owned().now_or_never().unwrap().1,
+                    10000 + i * 100 + j
+                );
+                assert_eq!(
+                    store.take_unowned(UniqueId::new(other, j, 0)).unwrap(),
+                    20000 + i * 100 + j
+                );
+            }
+            for j in 0..10 {
+                store.add_owned(UniqueId::new(myself, 100 + j, 0), 30000 + i * 100 + j);
+                store.add_unowned(UniqueId::new(other, 100 + j, 0), 40000 + i * 100 + j);
+            }
+        }
+
+        for i in 0..4 {
+            let domain_id = Some(DomainId(i));
+            let store = DistributedAssetStorage::<u64>::new(
+                FakeClock::default().clock(),
+                db.clone(),
+                crate::db::DBCol::Presignature,
+                domain_id,
+                myself,
+                |_, _| true,
+                Arc::new(std::vec::Vec::new),
+            )
+            .unwrap();
+
+            for j in 0..10 {
+                assert_eq!(
+                    store.take_owned().now_or_never().unwrap().1,
+                    30000 + i * 100 + j
+                );
+                assert_eq!(
+                    store
+                        .take_unowned(UniqueId::new(other, 100 + j, 0))
+                        .unwrap(),
+                    40000 + i * 100 + j
+                );
+            }
+        }
     }
 }

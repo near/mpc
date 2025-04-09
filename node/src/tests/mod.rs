@@ -1,8 +1,7 @@
+use cait_sith::ecdsa::presign::PresignOutput;
+use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::{run_protocol, Participant, Protocol};
-use cait_sith::triples::TripleGenerationOutput;
-use cait_sith::{FullSignature, KeygenOutput, PresignArguments, PresignOutput};
 use k256::{AffinePoint, Scalar, Secp256k1};
-use mpc_contract::primitives::signature::PayloadHash;
 use std::collections::HashMap;
 
 use crate::config::{
@@ -19,11 +18,16 @@ use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::start_web_server;
-use k256::elliptic_curve::Field;
+use cait_sith::ecdsa::presign::PresignArguments;
+use cait_sith::ecdsa::sign::FullSignature;
+use cait_sith::{ecdsa, eddsa};
+use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
+use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
 use near_sdk::AccountId;
 use near_time::Clock;
+use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::time::timeout;
@@ -31,6 +35,7 @@ use tokio::time::timeout;
 mod basic_cluster;
 mod benchmark;
 mod faulty;
+mod multidomain;
 mod research;
 mod resharing;
 
@@ -65,18 +70,28 @@ impl TestGenerators {
         self.participants.iter().map(|p| (*p).into()).collect()
     }
 
-    pub fn make_keygens(&self) -> HashMap<Participant, KeygenOutput<Secp256k1>> {
-        let mut protocols: Vec<ParticipantAndProtocol<KeygenOutput<Secp256k1>>> = Vec::new();
+    pub fn make_ecdsa_keygens(&self) -> HashMap<Participant, ecdsa::KeygenOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<ecdsa::KeygenOutput>> = Vec::new();
         for participant in &self.participants {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::keygen::<Secp256k1>(
-                        &self.participants,
-                        *participant,
-                        self.threshold,
-                    )
-                    .unwrap(),
+                    ecdsa::dkg_ecdsa::keygen(&self.participants, *participant, self.threshold)
+                        .unwrap(),
+                ),
+            ));
+        }
+        run_protocol(protocols).unwrap().into_iter().collect()
+    }
+
+    pub fn make_eddsa_keygens(&self) -> HashMap<Participant, eddsa::KeygenOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<eddsa::KeygenOutput>> = Vec::new();
+        for participant in &self.participants {
+            protocols.push((
+                *participant,
+                Box::new(
+                    eddsa::dkg_ed25519::keygen(&self.participants, *participant, self.threshold)
+                        .unwrap(),
                 ),
             ));
         }
@@ -90,7 +105,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::triples::generate_triple::<Secp256k1>(
+                    ecdsa::triples::generate_triple::<Secp256k1>(
                         &self.participants,
                         *participant,
                         self.threshold,
@@ -106,14 +121,14 @@ impl TestGenerators {
         &self,
         triple0s: &HashMap<Participant, TripleGenerationOutput<Secp256k1>>,
         triple1s: &HashMap<Participant, TripleGenerationOutput<Secp256k1>>,
-        keygens: &HashMap<Participant, KeygenOutput<Secp256k1>>,
+        keygens: &HashMap<Participant, ecdsa::KeygenOutput>,
     ) -> HashMap<Participant, PresignOutput<Secp256k1>> {
         let mut protocols: Vec<ParticipantAndProtocol<PresignOutput<Secp256k1>>> = Vec::new();
         for participant in &self.participants {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::presign::<Secp256k1>(
+                    ecdsa::presign::presign(
                         &self.participants,
                         *participant,
                         &self.participants,
@@ -143,7 +158,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    cait_sith::sign::<Secp256k1>(
+                    ecdsa::sign::sign(
                         &self.participants,
                         *participant,
                         public_key,
@@ -313,8 +328,22 @@ impl IntegrationTestSetup {
 pub async fn request_signature_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,
+    domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
+    let payload = match domain.scheme {
+        SignatureScheme::Secp256k1 => {
+            let mut payload = [0; 32];
+            rand::thread_rng().fill_bytes(payload.as_mut());
+            Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
+        }
+        SignatureScheme::Ed25519 => {
+            let len = rand::thread_rng().gen_range(32..1232);
+            let mut payload = vec![0; len];
+            rand::thread_rng().fill_bytes(payload.as_mut());
+            Payload::Eddsa(Bytes::new(payload.to_vec()).unwrap())
+        }
+    };
     let request = SignatureRequestFromChain {
         entropy: rand::random(),
         signature_id: CryptoHash(rand::random()),
@@ -322,9 +351,9 @@ pub async fn request_signature_and_await_response(
         predecessor_id: user.parse().unwrap(),
         timestamp_nanosec: rand::random(),
         request: SignArgs {
-            key_version: 0,
+            domain_id: domain.id,
             path: "m/44'/60'/0'/0/0".to_string(),
-            payload: Scalar::random(&mut rand::thread_rng()),
+            payload,
         },
     };
     tracing::info!(
@@ -337,9 +366,7 @@ pub async fn request_signature_and_await_response(
     loop {
         match timeout(timeout_sec, indexer.next_response()).await {
             Ok(signature) => {
-                if signature.request.payload_hash
-                    != PayloadHash::new(request.request.payload.to_bytes().into())
-                {
+                if signature.request.payload != request.request.payload {
                     // This can legitimately happen when multiple nodes submit responses
                     // for the same signature request. In tests this can happen if the
                     // secondary leader thinks the primary leader is offline when in fact
@@ -349,7 +376,17 @@ pub async fn request_signature_and_await_response(
                          Expected {:?}, actual {:?}",
                         user,
                         request.request.payload,
-                        signature.request.payload_hash
+                        signature.request.payload
+                    );
+                    continue;
+                }
+                if signature.request.domain_id != domain.id {
+                    tracing::info!(
+                        "Received signature is not for the domain we requested (user {})
+                         Expected {:?}, actual {:?}",
+                        user,
+                        domain.id,
+                        signature.request.domain_id
                     );
                     continue;
                 }

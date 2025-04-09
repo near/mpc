@@ -5,7 +5,7 @@ use k256::Scalar;
 #[test]
 fn benchmark_single_threaded_presignature_generation() {
     let generator = TestGenerators::new(10, 7);
-    let keygens = generator.make_keygens();
+    let keygens = generator.make_ecdsa_keygens();
     let triple0s = generator.make_triples();
     let triple1s = generator.make_triples();
 
@@ -24,7 +24,7 @@ fn benchmark_single_threaded_presignature_generation() {
 #[test]
 fn benchmark_single_threaded_signature_generation() {
     let generator = TestGenerators::new(10, 7);
-    let keygens = generator.make_keygens();
+    let keygens = generator.make_ecdsa_keygens();
     let triple0s = generator.make_triples();
     let triple1s = generator.make_triples();
     let presignatures = generator.make_presignatures(&triple0s, &triple1s, &keygens);
@@ -34,7 +34,14 @@ fn benchmark_single_threaded_signature_generation() {
     for _ in 0..COUNT {
         let _ = generator.make_signature(
             &presignatures,
-            keygens.iter().next().unwrap().1.public_key,
+            keygens
+                .iter()
+                .next()
+                .unwrap()
+                .1
+                .public_key
+                .to_element()
+                .to_affine(),
             Scalar::random(&mut rand::thread_rng()),
         );
     }

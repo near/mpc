@@ -1,13 +1,13 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::OperatingAccounts;
 use crate::cli::{
-    MpcDeployContractCmd, MpcJoinCmd, MpcViewContractCmd, MpcVoteJoinCmd, NewMpcNetworkCmd,
-    RemoveContractCmd, UpdateMpcNetworkCmd,
+    MpcDeployContractCmd, MpcJoinCmd, MpcViewContractCmd, MpcVoteJoinCmd, MpcVoteLeaveCmd,
+    NewMpcNetworkCmd, RemoveContractCmd, UpdateMpcNetworkCmd,
 };
 use crate::constants::ONE_NEAR;
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
-use crate::types::{MpcNetworkSetup, MpcParticipantSetup, ParsedConfig};
+use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use legacy_mpc_contract::config::InitConfigV1;
 use legacy_mpc_contract::primitives::{self, CandidateInfo, SignRequest};
 use near_crypto::SecretKey;
@@ -22,6 +22,7 @@ async fn update_mpc_network(
     accounts: &mut OperatingAccounts,
     mpc_setup: &mut MpcNetworkSetup,
     desired_num_participants: usize,
+    funding_account: Option<NearAccount>,
 ) {
     if desired_num_participants < mpc_setup.participants.len() {
         panic!(
@@ -60,7 +61,7 @@ async fn update_mpc_network(
             ));
         }
     }
-    let funded_accounts = fund_accounts(accounts, accounts_to_fund).await;
+    let funded_accounts = fund_accounts(accounts, accounts_to_fund, funding_account).await;
 
     for i in mpc_setup.participants.len()..desired_num_participants {
         let account_id = funded_accounts[i * 2].clone();
@@ -121,7 +122,14 @@ impl NewMpcNetworkCmd {
                 desired_balance_per_responding_account: self.near_per_responding_account * ONE_NEAR,
                 nomad_server_url: None,
             });
-        update_mpc_network(name, &mut setup.accounts, mpc_setup, self.num_participants).await;
+        update_mpc_network(
+            name,
+            &mut setup.accounts,
+            mpc_setup,
+            self.num_participants,
+            config.funding_account,
+        )
+        .await;
     }
 }
 
@@ -156,7 +164,14 @@ impl UpdateMpcNetworkCmd {
                 near_per_responding_account * ONE_NEAR;
         }
 
-        update_mpc_network(name, &mut setup.accounts, mpc_setup, num_participants).await;
+        update_mpc_network(
+            name,
+            &mut setup.accounts,
+            mpc_setup,
+            num_participants,
+            config.funding_account,
+        )
+        .await;
     }
 }
 
@@ -195,11 +210,15 @@ impl MpcDeployContractCmd {
                 format!("mpc-contract-{}-", name),
             )
         };
-        let contract_account = fund_accounts(&mut setup.accounts, vec![contract_account_to_fund])
-            .await
-            .into_iter()
-            .next()
-            .unwrap();
+        let contract_account = fund_accounts(
+            &mut setup.accounts,
+            vec![contract_account_to_fund],
+            config.funding_account,
+        )
+        .await
+        .into_iter()
+        .next()
+        .unwrap();
         mpc_setup.contract = Some(contract_account.clone());
 
         setup
@@ -439,9 +458,85 @@ impl MpcVoteJoinCmd {
     }
 }
 
+impl MpcVoteLeaveCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        println!(
+            "Going to vote_leave MPC network {} for participant {}",
+            name, self.for_account_index
+        );
+        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} does not exist", name));
+        if self.for_account_index >= mpc_setup.participants.len() {
+            panic!(
+                "Target account index {} is out of bounds for {} participants",
+                self.for_account_index,
+                mpc_setup.participants.len()
+            );
+        }
+        let contract = mpc_setup
+            .contract
+            .clone()
+            .expect("Contract is not deployed");
+        let from_accounts = mpc_setup
+            .participants
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                *i != self.for_account_index && (self.voters.is_empty() || self.voters.contains(i))
+            })
+            .map(|(_, account_id)| account_id)
+            .collect::<Vec<_>>();
+
+        let mut futs = Vec::new();
+        for account_id in from_accounts {
+            let account = setup.accounts.account(account_id);
+            let mut key = account.any_access_key().await;
+            let contract = contract.clone();
+            let kick = mpc_setup.participants[self.for_account_index].clone();
+            futs.push(async move {
+                key.submit_tx_to_call_function(
+                    &contract,
+                    "vote_leave",
+                    &serde_json::to_vec(&VoteLeaveArgs { kick }).unwrap(),
+                    300,
+                    0,
+                    near_primitives::views::TxExecutionStatus::Final,
+                    true,
+                )
+                .await
+            });
+        }
+        let results = futures::future::join_all(futs).await;
+        for (i, result) in results.into_iter().enumerate() {
+            match result {
+                Ok(_) => {
+                    println!(
+                        "Participant {} vote_leave({}) succeed",
+                        i, self.for_account_index
+                    );
+                }
+                Err(err) => {
+                    println!(
+                        "Participant {} vote_leave({}) failed: {:?}",
+                        i, self.for_account_index, err
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct VoteJoinArgs {
     candidate: AccountId,
+}
+
+#[derive(Serialize)]
+struct VoteLeaveArgs {
+    kick: AccountId,
 }
 
 #[derive(Serialize)]

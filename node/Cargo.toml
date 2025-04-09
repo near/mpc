@@ -44,9 +44,8 @@ tracing-subscriber = { workspace = true }
 url = { workspace = true }
 x509-parser = { workspace = true }
 
-frost-ed25519 = { workspace = true }
-curve25519-dalek = { workspace = true }
 
+curve25519-dalek = "4.1.3"
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-client = { workspace = true }
@@ -56,9 +55,15 @@ near-o11y = { workspace = true }
 near-time = { workspace = true }
 # todo: update once 1.1.0 is pulbished (though the api did not change)
 legacy-mpc-contract = { workspace = true }
-mpc-contract = { path = "../libs/chain-signatures/contract/" }
+# Pinned to resolve compilation errors with conflicting implementations of PartialOrd trait
+# See error E0283 with multiple impls satisfying `u128: std::cmp::PartialOrd<_>`
+deranged = "=0.4.0"
 
 [dev-dependencies]
 serial_test = { workspace = true }
+
 reqwest = { workspace = true }
 itertools = { workspace = true }
+mpc-contract = { path = "../libs/chain-signatures/contract/", features = [
+    "test-utils",
+] }

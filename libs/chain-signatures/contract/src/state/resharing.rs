@@ -86,10 +86,10 @@ impl ResharingContractState {
     pub fn start(
         &mut self,
         key_event_id: KeyEventId,
-        event_max_idle_blocks: u64,
+        key_event_timeout_blocks: u64,
     ) -> Result<(), Error> {
         self.resharing_key
-            .start(key_event_id, event_max_idle_blocks)
+            .start(key_event_id, key_event_timeout_blocks)
     }
 
     /// Casts a successfully-reshared vote for for the attempt identified by `key_event_id`.
@@ -216,10 +216,10 @@ mod tests {
             for c in &candidates {
                 env.set_signer(c);
                 // verify that no votes can be cast before the resharing started.
-                assert!(state.vote_reshared(first_key_event_id.clone()).is_err());
-                assert!(state.vote_abort(first_key_event_id.clone()).is_err());
+                assert!(state.vote_reshared(first_key_event_id).is_err());
+                assert!(state.vote_abort(first_key_event_id).is_err());
                 if *c != leader.0 {
-                    assert!(state.start(first_key_event_id.clone(), 1).is_err());
+                    assert!(state.start(first_key_event_id, 1).is_err());
                 } else {
                     // Also check that starting with the wrong KeyEventId fails.
                     assert!(state.start(first_key_event_id.next_attempt(), 1).is_err());
@@ -227,15 +227,15 @@ mod tests {
             }
             // start the resharing; verify that the resharing is for the right epoch and domain ID.
             env.set_signer(&leader.0);
-            assert!(state.start(first_key_event_id.clone(), 0).is_ok());
+            assert!(state.start(first_key_event_id, 0).is_ok());
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
             // check that randos can't vote.
             for _ in 0..20 {
                 env.set_signer(&gen_account_id());
-                assert!(state.vote_reshared(key_event.clone()).is_err());
-                assert!(state.vote_abort(key_event.clone()).is_err());
+                assert!(state.vote_reshared(key_event).is_err());
+                assert!(state.vote_abort(key_event).is_err());
             }
 
             // check that timing out will abort the instance
@@ -243,8 +243,8 @@ mod tests {
             assert!(!state.resharing_key.is_active());
             for c in &candidates {
                 env.set_signer(c);
-                assert!(state.vote_reshared(key_event.clone()).is_err());
-                assert!(state.vote_abort(key_event.clone()).is_err());
+                assert!(state.vote_reshared(key_event).is_err());
+                assert!(state.vote_abort(key_event).is_err());
                 assert!(!state.resharing_key.is_active());
             }
 
@@ -272,8 +272,8 @@ mod tests {
             for bad_key_event in bad_key_events {
                 for c in &candidates {
                     env.set_signer(c);
-                    assert!(state.vote_reshared(bad_key_event.clone()).is_err());
-                    assert!(state.vote_abort(bad_key_event.clone()).is_err());
+                    assert!(state.vote_reshared(bad_key_event).is_err());
+                    assert!(state.vote_abort(bad_key_event).is_err());
                 }
             }
             assert_eq!(state.resharing_key.num_completed(), 0);
@@ -284,7 +284,7 @@ mod tests {
             assert!(state.start(key_event.next_attempt(), 0).is_ok());
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
-            assert!(state.vote_abort(key_event.clone()).is_ok());
+            assert!(state.vote_abort(key_event).is_ok());
             assert!(!state.resharing_key.is_active());
 
             // assert that valid votes get counted correctly
@@ -295,8 +295,8 @@ mod tests {
                 env.set_signer(&c);
                 assert!(resulting_running_state.is_none());
                 assert_eq!(state.resharing_key.num_completed(), i);
-                resulting_running_state = state.vote_reshared(key_event.clone()).unwrap();
-                assert!(state.vote_abort(key_event.clone()).is_err());
+                resulting_running_state = state.vote_reshared(key_event).unwrap();
+                assert!(state.vote_abort(key_event).is_err());
             }
         }
 
@@ -351,7 +351,7 @@ mod tests {
                 .id,
             epoch_id: state.prospective_epoch_id(),
         };
-        assert!(state.start(first_key_event_id.clone(), 0).is_ok());
+        assert!(state.start(first_key_event_id, 0).is_ok());
 
         let old_participants = state
             .previous_running_state
@@ -368,7 +368,7 @@ mod tests {
                 .clone();
             for (account, _, _) in new_participants {
                 env.set_signer(&account);
-                state.vote_reshared(first_key_event_id.clone()).unwrap();
+                state.vote_reshared(first_key_event_id).unwrap();
             }
         }
         assert!(state.reshared_keys.len() == 1);

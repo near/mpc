@@ -46,19 +46,28 @@ stateDiagram-v2
 ### Contract API
 #### User API
 
-| Function                                                                                     | Behavior                                                                                                                                  | Return Value                                                              | Gas requirement | Effective Gas Cost              |
-| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | --------------- | ------------------------------- |
-| `remove_timed_out_requests(max_num_to_remove: Option<u32>)`                                  | Removes at most `max_num_to_remove` timed out signature requests from the contract state (defaulting to the value defined in the config). | `32`: number of signature requests that have been removed from the state. | -               | `~0.4 Tgas` per removed request |
-| `sign(request: SignRequest)`                                                                 | Submits a signature request to the contract. Requires a deposit of 1 yoctonear                                                            | deferred to promise                                                       | `10 Tgas`       | `~6 Tgas`                       |
-| `public_key(domain: Option<DomainId>)`                                                       | Read-only function; returns the public key used for the given domain (defaulting to first).                                               | `Result<PublicKey, Error>`                                                |                 |                                 |
-| `derived_public_key(path: String, predecessor: Option<AccountId>, domain: Option<DomainId>)` | Generates a derived public key for a given path and account, for the given domain (defaulting to first).                                  | `Result<PublicKey, Error>`                                                |                 |                                 |
+| Function                                                                                     | Behavior                                                                                                 | Return Value               | Gas requirement | Effective Gas Cost |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------- | --------------- | ------------------ |
+| `sign(request: SignRequestArgs)`                                                             | Submits a signature request to the contract. Requires a deposit of 1 yoctonear                           | deferred to promise        | `10 Tgas`       | `~6 Tgas`          |
+| `public_key(domain: Option<DomainId>)`                                                       | Read-only function; returns the public key used for the given domain (defaulting to first).              | `Result<PublicKey, Error>` |                 |                    |
+| `derived_public_key(path: String, predecessor: Option<AccountId>, domain: Option<DomainId>)` | Generates a derived public key for a given path and account, for the given domain (defaulting to first). | `Result<PublicKey, Error>` |                 |                    |
 
+#### SignRequestArgs (Latest version)
+The sign request takes the following arguments:
+* `path` (String): the derivation path.
+* `payload_v2`: either `{"Ecdsa": "<hex encoded 32 bytes>"}` or `{"Eddsa": "<hex encoded between 32 and 1232 bytes>"}`
+* `domain_id` (integer): the domain ID that identifies the key and signature scheme to use for signing.
+
+#### SignRequestArgs (Legacy version for backwards compatibility with V1)
+* The legacy argument `payload` can be used in place of `payload_v2`; the format for that is an array of 32 integer bytes. This argument can only be used
+  to pass in an ECDSA payload.
+* The legacy argument `key_version` can be used in place of `domain_id` and means the same thing.
 
 #### Participants API
 These functions require the caller to be a participant or candidate.
 
 | Function                                                                            | Behavior                                                                                                                                                                                                                                | Return Value              | Gas Requirement | Effective Gas Cost |
-|-------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------| ------------------------- | --------------- | ------------------ |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | --------------- | ------------------ |
 | `respond(request: SignatureRequest, response: SignatureResponse)`                   | Processes a response to a signature request, verifying its validity and ensuring proper state cleanup.                                                                                                                                  | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
 | `vote_add_domains(domains: Vec<DomainConfig>)`                                      | Votes to add new domains (new keys) to the MPC network; newly proposed domain IDs must start from next_domain_id and be contiguous.                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_new_parameters(prospective_epoch_id: EpochId, proposal: ThresholdParameters)` | Votes to change the set of participants as well as the new threshold for the network. (Prospective epoch ID must be 1 plus current)                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
