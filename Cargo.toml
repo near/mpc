@@ -7,14 +7,6 @@ exclude = ["libs/nearcore", "pytest"]
 inherits = "release"
 debug = true
 
-[profile.dev.package.mpc-contract]
-# lto = "fat"
-codegen-units = 1
-strip = true
-# panic = "abort"
-opt-level = "s"
-
-
 [workspace.dependencies]
 actix = "0.13.0"
 aes-gcm = "0.10.3"

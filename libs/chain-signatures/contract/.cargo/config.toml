@@ -5,5 +5,6 @@ codegen-units = 1
 opt-level = "z"
 lto = true
 debug = false
+strip = true
 panic = "abort"
 overflow-checks = true
