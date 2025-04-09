@@ -37,29 +37,9 @@ jobs:
           RUSTFLAGS="-D warnings" \
           cargo clippy --all-features --all-targets --locked
 
-          cd devnet
-          CARGO_TARGET_DIR="target/clippy" \
-          RUSTFLAGS="-D warnings" \
-          cargo clippy --all-features --all-targets --locked
-          cd ..
-
-          cd libs/chain-signatures
-          CARGO_TARGET_DIR="target/clippy" \
-          RUSTFLAGS="-D warnings" \
-          cargo clippy --all-features --all-targets --locked
-          cd ../..
-
       - name: Run Cargo fmt
         run: |
           cargo fmt -- --check
-
-          cd devnet
-          cargo fmt -- --check
-          cd ..
-
-          cd libs/chain-signatures
-          cargo fmt -- --check
-          cd ../..
           
       - name: Install cargo-nextest
         run: cargo install cargo-nextest
@@ -74,7 +54,6 @@ jobs:
       
       - name: Run contract tests
         run: |
-          cd libs/chain-signatures
           cargo build -p mpc-contract --release --locked --target=wasm32-unknown-unknown
           wasm-opt -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm
           cargo nextest run -p mpc-contract --release --locked
