@@ -297,7 +297,7 @@ impl RunLoadtestCmd {
                             },
                         })
                         .unwrap(),
-                        30,
+                        10,
                         1,
                         near_primitives::views::TxExecutionStatus::Included,
                         false,

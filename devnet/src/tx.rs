@@ -2,6 +2,7 @@ use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use std::fmt::Debug;
 
 pub trait IntoReturnValueExt {
+    /// Converts the RPC call result to a return value, or error if the result is anything else.
     fn into_return_value(self) -> anyhow::Result<Vec<u8>>;
 }
 
@@ -15,22 +16,16 @@ impl<E: Debug> IntoReturnValueExt for Result<RpcTransactionResponse, E> {
                 let outcome = outcome.into_outcome();
                 match outcome.status {
                     near_primitives::views::FinalExecutionStatus::Failure(tx_execution_error) => {
-                        return Err(anyhow::anyhow!(
+                        Err(anyhow::anyhow!(
                             "Transaction failed: {:?}",
                             tx_execution_error
-                        ));
+                        ))
                     }
-                    near_primitives::views::FinalExecutionStatus::SuccessValue(value) => {
-                        return Ok(value);
-                    }
-                    _ => {
-                        return Err(anyhow::anyhow!("Transaction failed: {:?}", outcome.status));
-                    }
+                    near_primitives::views::FinalExecutionStatus::SuccessValue(value) => Ok(value),
+                    _ => Err(anyhow::anyhow!("Transaction failed: {:?}", outcome.status)),
                 }
             }
-            Err(e) => {
-                return Err(anyhow::anyhow!("Transaction failed: {:?}", e));
-            }
+            Err(e) => Err(anyhow::anyhow!("Transaction failed: {:?}", e)),
         }
     }
 }

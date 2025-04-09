@@ -1,5 +1,5 @@
 use crate::config::{ParticipantInfo, ParticipantsConfig};
-use crate::indexer::lib::{get_mpc_contract_state, wait_for_contract_code, wait_for_full_sync};
+use crate::indexer::lib::{get_mpc_contract_state, wait_for_full_sync};
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use mpc_contract::primitives::domain::DomainConfig;

@@ -397,9 +397,11 @@ struct JoinArgs {
     sign_pk: near_sdk::PublicKey,
 }
 
+/// Gets a list of voters who would send the vote txn, based on the cmdline flag (empty list means
+/// all participants; otherwise it's the precise list of participant indices).
 fn get_voter_account_ids<'a>(
     mpc_setup: &'a MpcNetworkSetup,
-    voters: &Vec<usize>,
+    voters: &[usize],
 ) -> Vec<&'a AccountId> {
     mpc_setup
         .participants
@@ -562,6 +564,7 @@ impl MpcProposeUpdateContractCmd {
         let contract_code = std::fs::read(&self.path).unwrap();
         let proposer_account_id = &mpc_setup.participants[self.proposer_index];
 
+        // Fund the proposer account with additional tokens first to cover the additional deposit.
         let account_to_fund = AccountToFund::from_existing(
             proposer_account_id.clone(),
             mpc_setup.desired_balance_per_account + self.deposit_near * ONE_NEAR,
@@ -698,6 +701,8 @@ impl MpcVoteAddDomainsCmd {
             .clone()
             .expect("Contract is not deployed");
 
+        // Query the contract state and use the next_domain_id to construct the domain IDs we should
+        // use for the proposal.
         let contract_state = read_contract_state_v2(&setup.accounts, &contract).await;
         let domains = match contract_state {
             ProtocolContractState::Running(running_contract_state) => {
@@ -775,6 +780,10 @@ impl MpcVoteNewParametersCmd {
             .contract
             .clone()
             .expect("Contract is not deployed");
+
+        // Query the contract state so we can incrementally construct the new parameters. This is
+        // because the existing participants must have the same participant IDs, and the new
+        // participants must have contiguous participant IDs.
         let contract_state = read_contract_state_v2(&setup.accounts, &contract).await;
         let prospective_epoch_id = match &contract_state {
             ProtocolContractState::Running(state) => state.keyset.epoch_id.next(),
