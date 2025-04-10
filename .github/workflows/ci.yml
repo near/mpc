@@ -51,8 +51,8 @@ jobs:
 
       - name: Build contract
         run: |
-          cargo build -p mpc-contract --release --locked --target=wasm32-unknown-unknown
-          wasm-opt -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm
+          cargo build -p mpc-contract --profile release-contract --locked --target=wasm32-unknown-unknown
+          wasm-opt -Oz -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm
 
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked
