@@ -228,7 +228,10 @@ impl Coordinator {
                             }
                         }
                     }
-                    _ = self.indexer.contract_state_receiver.changed() => {
+                    res = self.indexer.contract_state_receiver.changed() => {
+                        if res.is_err() {
+                            anyhow::bail!("[{}] contract state receiver closed", job.name);
+                        }
                         if (job.stop_fn)(&self.indexer.contract_state_receiver.borrow()) {
                             tracing::info!(
                                 "[{}] contract state changed incompatibly, stopping",

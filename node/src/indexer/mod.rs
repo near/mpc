@@ -18,11 +18,13 @@ use tokio::sync::{mpsc, watch};
 use types::ChainSendTransactionRequest;
 
 pub(crate) struct IndexerState {
-    /// ViewClientActor address
+    /// For querying blockchain state.
     view_client: actix::Addr<near_client::ViewClientActor>,
-    /// ClientActor address
+    /// For querying blockchain sync status.
     client: actix::Addr<near_client::ClientActor>,
-    /// AccountId for the mpc contract
+    /// For sending txs to the chain.
+    tx_processor: actix::Addr<near_client::TxRequestHandlerActor>,
+    /// AccountId for the mpc contract.
     mpc_contract_id: AccountId,
 }
 
@@ -30,11 +32,13 @@ impl IndexerState {
     pub fn new(
         view_client: actix::Addr<near_client::ViewClientActor>,
         client: actix::Addr<near_client::ClientActor>,
+        tx_processor: actix::Addr<near_client::TxRequestHandlerActor>,
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
             view_client,
             client,
+            tx_processor,
             mpc_contract_id,
         }
     }

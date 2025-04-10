@@ -11,9 +11,12 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "scheme")]
 pub enum SignatureResponse {
-    Secp256k1(k256_types::SignatureResponse),
-    Edd25519(edd25519_types::SignatureResponse),
+    Secp256k1(k256_types::Signature),
+    Edd25519 {
+        signature: edd25519_types::Signature,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -228,17 +231,24 @@ pub mod k256_types {
         }
     }
 
+    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
+    pub struct SerializableAffinePoint {
+        pub affine_point: AffinePoint,
+    }
+
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-    pub struct SignatureResponse {
-        pub big_r: AffinePoint,
+    pub struct Signature {
+        pub big_r: SerializableAffinePoint,
         pub s: SerializableScalar,
         pub recovery_id: u8,
     }
 
-    impl SignatureResponse {
+    impl Signature {
         pub fn new(big_r: AffinePoint, s: k256::Scalar, recovery_id: u8) -> Self {
-            SignatureResponse {
-                big_r,
+            Signature {
+                big_r: SerializableAffinePoint {
+                    affine_point: big_r,
+                },
                 s: s.into(),
                 recovery_id,
             }
@@ -304,9 +314,9 @@ pub mod edd25519_types {
     #[derive(
         BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
     )]
-    pub struct SignatureResponse(#[serde_as(as = "[_; 64]")] [u8; 64]);
+    pub struct Signature(#[serde_as(as = "[_; 64]")] [u8; 64]);
 
-    impl SignatureResponse {
+    impl Signature {
         pub fn as_bytes(&self) -> &[u8; 64] {
             &self.0
         }

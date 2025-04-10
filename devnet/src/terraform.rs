@@ -1,10 +1,15 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
+
+mod describe;
+
 use crate::account::OperatingAccounts;
 use crate::cli::{
-    MpcTerraformDeployInfraCmd, MpcTerraformDeployNomadCmd, MpcTerraformDestroyInfraCmd,
+    MpcDescribeCmd, MpcTerraformDeployInfraCmd, MpcTerraformDeployNomadCmd,
+    MpcTerraformDestroyInfraCmd,
 };
 use crate::devnet::OperatingDevnetSetup;
 use crate::types::{MpcNetworkSetup, ParsedConfig};
+use describe::TerraformInfraShowOutput;
 use near_crypto::{PublicKey, SecretKey};
 use near_sdk::AccountId;
 use serde::Serialize;
@@ -252,6 +257,59 @@ impl MpcTerraformDestroyInfraCmd {
             .print_and_run();
 
         mpc_setup.nomad_server_url = None;
+    }
+}
+
+impl MpcDescribeCmd {
+    pub async fn describe_terraform(&self, name: &str, config: &ParsedConfig) {
+        // Invoke terraform
+        let infra_ops_path = &config.infra_ops_path;
+        let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
+
+        std::process::Command::new("terraform")
+            .arg("init")
+            .current_dir(&infra_dir)
+            .output()
+            .unwrap();
+
+        std::process::Command::new("terraform")
+            .arg("workspace")
+            .arg("select")
+            .arg("-or-create")
+            .arg(name)
+            .current_dir(&infra_dir)
+            .output()
+            .unwrap();
+
+        let output = std::process::Command::new("terraform")
+            .arg("show")
+            .arg("-json")
+            .current_dir(&infra_dir)
+            .output()
+            .expect("Failed to run terraform show -json");
+
+        let output: TerraformInfraShowOutput =
+            serde_json::from_slice(&output.stdout).expect("Failed to parse terraform show output");
+
+        for resource in &output.values.root_module.resources {
+            if let Some(instance) = resource.as_mpc_nomad_server() {
+                println!(
+                    "Nomad server: http://{}",
+                    instance.nat_ip().unwrap_or_default()
+                );
+            }
+        }
+        for resource in &output.values.root_module.resources {
+            if let Some((index, instance)) = resource.as_mpc_nomad_client() {
+                println!(
+                    "Nomad client #{}: zone {}, instance type {}, debug: http://{}:8080/debug/tasks",
+                    index,
+                    instance.zone,
+                    instance.machine_type,
+                    instance.nat_ip().unwrap_or_default()
+                );
+            }
+        }
     }
 }
 

@@ -184,7 +184,7 @@ impl KeyEvent {
     }
 
     /// Returns whether an attempt is active ()and not timed out).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn is_active(&self) -> bool {
         self.current_key_event_id().is_some()
     }

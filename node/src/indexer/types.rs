@@ -64,7 +64,7 @@ fn k256_signature_response(
         anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
     }
 
-    let k256_signature = k256_types::SignatureResponse::new(big_r, s, recovery_id);
+    let k256_signature = k256_types::Signature::new(big_r, s, recovery_id);
     Ok(ChainSignatureResponse::Secp256k1(k256_signature))
 }
 
@@ -192,7 +192,9 @@ impl ChainRespondArgs {
                 request.payload.clone(),
                 request.domain,
             ),
-            response: SignatureResponse::Edd25519(edd25519_types::SignatureResponse::new(response)),
+            response: SignatureResponse::Edd25519 {
+                signature: edd25519_types::Signature::new(response),
+            },
         })
     }
 
