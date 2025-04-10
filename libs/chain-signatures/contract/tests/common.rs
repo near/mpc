@@ -304,8 +304,9 @@ pub async fn create_response_ed25519(
 
     let respond_req = SignatureRequest::new(DomainId(0), payload.clone(), predecessor_id, path);
 
-    let signature_response =
-        SignatureResponse::Edd25519(edd25519_types::SignatureResponse::new(signature));
+    let signature_response = SignatureResponse::Edd25519 {
+        signature: edd25519_types::Signature::new(signature),
+    };
 
     (payload, respond_req, signature_response)
 }
