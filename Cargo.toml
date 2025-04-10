@@ -9,14 +9,13 @@ debug = true
 
 [profile.release-contract]
 inherits = "release"
+lto = "fat"
 codegen-units = 1
-# optimize for binary size.
-# See https://doc.rust-lang.org/rustc/codegen-options/index.html#opt-level
-opt-level = "z"
-lto = true
 strip = true
 panic = "abort"
-overflow-checks = true
+# optimize for binary size.
+# See https://doc.rust-lang.org/rustc/codegen-options/index.html#opt-level
+opt-level="s"
 
 [workspace.dependencies]
 actix = "0.13.0"
