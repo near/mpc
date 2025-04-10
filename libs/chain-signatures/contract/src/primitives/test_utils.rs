@@ -10,7 +10,7 @@ use near_sdk::{AccountId, CurveType, PublicKey};
 use rand::{distributions::Uniform, Rng};
 use std::collections::{BTreeMap, HashSet};
 
-pub fn bogus_edd25519_public_key_extended() -> PublicKeyExtended {
+pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     let rng = rand::thread_rng();
 
     let edwards_point = EdwardsPoint::random(rng);
@@ -27,14 +27,14 @@ pub fn bogus_edd25519_public_key_extended() -> PublicKeyExtended {
     }
 }
 
-pub fn bogus_edd25519_near_public_key() -> PublicKey {
-    bogus_edd25519_public_key_extended().into()
+pub fn bogus_ed25519_near_public_key() -> PublicKey {
+    bogus_ed25519_public_key_extended().into()
 }
 
 #[test]
 fn test_random_public_key() {
-    let pk1 = bogus_edd25519_near_public_key();
-    let pk2 = bogus_edd25519_near_public_key();
+    let pk1 = bogus_ed25519_near_public_key();
+    let pk2 = bogus_ed25519_near_public_key();
     assert_ne!(pk1, pk2, "Random keys should be different");
 }
 
@@ -61,7 +61,7 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
         gen_account_id(),
         ParticipantInfo {
             url: format!("near{}", i),
-            sign_pk: bogus_edd25519_near_public_key(),
+            sign_pk: bogus_ed25519_near_public_key(),
         },
     )
 }
@@ -111,7 +111,7 @@ pub fn gen_legacy_candidates(n: usize) -> legacy_contract_state::Candidates {
                     account_id: account_id.clone(),
                     url: format!("127.0.0.1:{}", i),
                     cipher_pk: [0; 32],
-                    sign_pk: bogus_edd25519_near_public_key(),
+                    sign_pk: bogus_ed25519_near_public_key(),
                 },
             );
         }
@@ -150,7 +150,7 @@ pub fn gen_legacy_initializing_state(
         _ => rand::thread_rng().gen_range(1..n_pk_votes),
     };
     let pks: Vec<PublicKey> = (0..n_pks)
-        .map(|_| bogus_edd25519_near_public_key())
+        .map(|_| bogus_ed25519_near_public_key())
         .collect();
     for i in 0..n_pk_votes {
         let pk_id = i % n_pks;
@@ -169,7 +169,7 @@ pub fn gen_legacy_running_state(n: usize, k: usize) -> legacy_contract_state::Ru
         epoch: rand::thread_rng().gen(),
         participants: gen_legacy_participants(n),
         threshold: k,
-        public_key: bogus_edd25519_near_public_key(),
+        public_key: bogus_ed25519_near_public_key(),
         candidates: gen_legacy_candidates(rand::thread_rng().gen_range(0..n + 5)),
         join_votes: legacy_contract_state::Votes::default(),
         leave_votes: legacy_contract_state::Votes::default(),
@@ -184,7 +184,7 @@ pub fn gen_legacy_resharing_state(
         old_participants: gen_legacy_participants(n),
         new_participants: gen_legacy_participants(n),
         threshold: k,
-        public_key: bogus_edd25519_near_public_key(),
+        public_key: bogus_ed25519_near_public_key(),
         finished_votes: HashSet::new(),
     }
 }

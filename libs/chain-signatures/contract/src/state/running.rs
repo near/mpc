@@ -172,7 +172,7 @@ pub mod running_tests {
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
-        bogus_edd25519_public_key_extended, gen_participant, gen_threshold_params,
+        bogus_ed25519_public_key_extended, gen_participant, gen_threshold_params,
     };
     use crate::primitives::thresholds::{Threshold, ThresholdParameters};
     use crate::primitives::votes::ThresholdParametersVotes;
@@ -195,7 +195,7 @@ pub mod running_tests {
             keys.push(KeyForDomain {
                 attempt,
                 domain_id: domain.id,
-                key: bogus_edd25519_public_key_extended(),
+                key: bogus_ed25519_public_key_extended(),
             });
         }
         let max_n = 30;

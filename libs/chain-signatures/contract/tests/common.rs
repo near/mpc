@@ -9,7 +9,7 @@ use k256::{
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        derive_key_secp256k1, derive_tweak, edd25519_types, k256_types, kdf::check_ec_signature,
+        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
         SerializableScalar, SignatureResponse,
     },
     primitives::{
@@ -174,7 +174,7 @@ pub async fn init_env_secp256k1(
     (worker, contract, accounts, secret_keys)
 }
 
-pub async fn init_env_edd25519(
+pub async fn init_env_ed25519(
     num_domains: usize,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>, Vec<KeygenOutput>) {
     let mut public_keys = Vec::new();
@@ -307,8 +307,8 @@ pub async fn create_response_ed25519(
 
     let respond_req = SignatureRequest::new(DomainId(0), payload.clone(), predecessor_id, path);
 
-    let signature_response = SignatureResponse::Edd25519 {
-        signature: edd25519_types::Signature::new(signature),
+    let signature_response = SignatureResponse::Ed25519 {
+        signature: ed25519_types::Signature::new(signature),
     };
 
     (payload, respond_req, signature_response)

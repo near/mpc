@@ -14,9 +14,7 @@ use serde_with::serde_as;
 #[serde(tag = "scheme")]
 pub enum SignatureResponse {
     Secp256k1(k256_types::Signature),
-    Edd25519 {
-        signature: edd25519_types::Signature,
-    },
+    Ed25519 { signature: ed25519_types::Signature },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -256,7 +254,7 @@ pub mod k256_types {
     }
 }
 
-pub mod edd25519_types {
+pub mod ed25519_types {
     use super::*;
     use curve25519_dalek::Scalar;
 
@@ -292,7 +290,7 @@ pub mod edd25519_types {
                 .into_option()
                 .ok_or(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "The given scalar is not in the field of edd25519",
+                    "The given scalar is not in the field of ed25519",
                 ))?;
             Ok(SerializableScalar { scalar })
         }
@@ -399,18 +397,18 @@ mod test {
     }
 
     /// This serves as a regression test to detect breaking changes to
-    /// serialization of [`SignatureResponse::Edd25519`].
+    /// serialization of [`SignatureResponse::Ed25519`].
     #[test]
-    fn test_edd2519_signature_serialization() {
+    fn test_ed2519_signature_serialization() {
         let signature_bytes = [1; 64];
-        let signature_response = SignatureResponse::Edd25519 {
-            signature: edd25519_types::Signature::new(signature_bytes),
+        let signature_response = SignatureResponse::Ed25519 {
+            signature: ed25519_types::Signature::new(signature_bytes),
         };
         let serialization = serde_json::to_value(&signature_response).unwrap();
 
         // DO NOT UPDATE THIS EXPECTATION IF IT IS A BREAKING CHANGE
         let exptected_serialization = json!({
-            "scheme": "Edd25519",
+            "scheme": "Ed25519",
             "signature": signature_bytes.to_vec(),
         });
 

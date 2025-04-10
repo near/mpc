@@ -50,7 +50,7 @@ impl ChainSignatureRequest {
 
 pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
 pub use mpc_contract::crypto_shared::k256_types;
-use mpc_contract::crypto_shared::{edd25519_types, SignatureResponse};
+use mpc_contract::crypto_shared::{ed25519_types, SignatureResponse};
 use mpc_contract::primitives::signature::Payload;
 
 const MAX_RECOVERY_ID: u8 = 3;
@@ -192,8 +192,8 @@ impl ChainRespondArgs {
                 request.payload.clone(),
                 request.domain,
             ),
-            response: SignatureResponse::Edd25519 {
-                signature: edd25519_types::Signature::new(response),
+            response: SignatureResponse::Ed25519 {
+                signature: ed25519_types::Signature::new(response),
             },
         })
     }
