@@ -6,12 +6,11 @@ use k256::{
     elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint, PrimeField},
     AffinePoint, FieldBytes, Scalar, Secp256k1, SecretKey,
 };
-use mpc_contract::primitives::signature::{Payload, SignRequestArgs};
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
         derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
-        SerializableAffinePoint, SerializableScalar, SignatureResponse,
+        SerializableScalar, SignatureResponse,
     },
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
@@ -21,6 +20,10 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
     update::UpdateId,
+};
+use mpc_contract::{
+    crypto_shared::k256_types::SerializableAffinePoint,
+    primitives::signature::{Payload, SignRequestArgs},
 };
 use near_crypto::KeyType;
 use near_sdk::log;

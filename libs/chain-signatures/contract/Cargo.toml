@@ -61,7 +61,7 @@ cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "5e0ce40a16dc
     "k256",
 ] }
 frost-ed25519 = "2.1.0"
-
+rstest = "0.25.0"
 
 [features]
 test-utils = ["rand"]
