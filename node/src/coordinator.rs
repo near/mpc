@@ -229,7 +229,7 @@ impl Coordinator {
                         }
                     }
                     res = self.indexer.contract_state_receiver.changed() => {
-                        if let Err(_) = res {
+                        if res.is_err() {
                             anyhow::bail!("[{}] contract state receiver closed", job.name);
                         }
                         if (job.stop_fn)(&self.indexer.contract_state_receiver.borrow()) {
