@@ -14,7 +14,6 @@ codegen-units = 1
 # See https://doc.rust-lang.org/rustc/codegen-options/index.html#opt-level
 opt-level = "z"
 lto = true
-debug = false
 strip = true
 panic = "abort"
 overflow-checks = true
