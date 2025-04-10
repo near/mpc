@@ -7,6 +7,18 @@ exclude = ["libs/nearcore", "pytest"]
 inherits = "release"
 debug = true
 
+[profile.release-contract]
+inherits = "release"
+codegen-units = 1
+# optimize for binary size.
+# See https://doc.rust-lang.org/rustc/codegen-options/index.html#opt-level
+opt-level = "z"
+lto = true
+debug = false
+strip = true
+panic = "abort"
+overflow-checks = true
+
 [workspace.dependencies]
 actix = "0.13.0"
 aes-gcm = "0.10.3"
@@ -40,7 +52,7 @@ near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
 near-sdk = "5.2.1"
 prometheus = "0.13.4"
-rand = "0.8.5"
+rand = { version = "0.9.0", features = ["thread_rng"] }
 rand_xorshift = "0.3"
 rcgen = "0.13.1"
 reqwest = "0.12.9"
