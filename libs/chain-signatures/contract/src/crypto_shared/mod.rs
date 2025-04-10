@@ -5,7 +5,7 @@ use k256::{elliptic_curve::sec1::FromEncodedPoint, EncodedPoint};
 pub use kdf::{derive_key_secp256k1, derive_tweak, x_coordinate};
 pub use types::{
     ed25519_types,
-    k256_types::{self, SerializableAffinePoint, SerializableScalar},
+    k256_types::{self, SerializableScalar},
     SignatureResponse,
 };
 
