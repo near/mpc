@@ -164,7 +164,7 @@ pub mod tests {
     use crate::primitives::{
         domain::DomainId,
         key_state::{AttemptId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset},
-        test_utils::{bogus_edd25519_public_key_extended, gen_account_id, gen_threshold_params},
+        test_utils::{bogus_ed25519_public_key_extended, gen_account_id, gen_threshold_params},
     };
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rand::Rng;
@@ -189,8 +189,8 @@ pub mod tests {
     fn test_keyset() {
         let domain_id0 = DomainId(0);
         let domain_id1 = DomainId(3);
-        let key0 = bogus_edd25519_public_key_extended();
-        let key1 = bogus_edd25519_public_key_extended();
+        let key0 = bogus_ed25519_public_key_extended();
+        let key1 = bogus_ed25519_public_key_extended();
         let keyset = Keyset::new(
             EpochId::new(5),
             vec![

@@ -14,9 +14,7 @@ use serde_with::serde_as;
 #[serde(tag = "scheme")]
 pub enum SignatureResponse {
     Secp256k1(k256_types::Signature),
-    Edd25519 {
-        signature: edd25519_types::Signature,
-    },
+    Ed25519 { signature: ed25519_types::Signature },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -97,7 +95,7 @@ mod serialize {
         Secp256k1 {
             key: near_sdk::PublicKey,
         },
-        Edd25519 {
+        Ed25519 {
             key: near_sdk::PublicKey,
             edwards_point: SerializableEdwardsPoint,
         },
@@ -112,7 +110,7 @@ mod serialize {
                 PublicKeyExtended::Ed25519 {
                     near_public_key: key,
                     edwards_point,
-                } => Self::Edd25519 {
+                } => Self::Ed25519 {
                     key,
                     edwards_point: SerializableEdwardsPoint(edwards_point),
                 },
@@ -126,7 +124,7 @@ mod serialize {
                 PublicKeyExtendedHelper::Secp256k1 { key } => Self::Secp256k1 {
                     near_public_key: key,
                 },
-                PublicKeyExtendedHelper::Edd25519 { key, edwards_point } => Self::Ed25519 {
+                PublicKeyExtendedHelper::Ed25519 { key, edwards_point } => Self::Ed25519 {
                     near_public_key: key,
                     edwards_point: edwards_point.0,
                 },
@@ -269,7 +267,7 @@ pub mod k256_types {
     }
 }
 
-pub mod edd25519_types {
+pub mod ed25519_types {
     use super::*;
     use curve25519_dalek::Scalar;
 
@@ -305,7 +303,7 @@ pub mod edd25519_types {
                 .into_option()
                 .ok_or(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "The given scalar is not in the field of edd25519",
+                    "The given scalar is not in the field of ed25519",
                 ))?;
             Ok(SerializableScalar { scalar })
         }
