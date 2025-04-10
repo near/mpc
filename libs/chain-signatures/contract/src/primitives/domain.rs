@@ -2,6 +2,7 @@ use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use near_sdk::{log, near, CurveType};
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 /// Each domain corresponds to a specific root key in a specific signature scheme. There may be
 /// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
@@ -19,6 +20,12 @@ impl DomainId {
     /// Returns the DomainId of the single ECDSA key present in the contract before V2.
     pub fn legacy_ecdsa_id() -> Self {
         Self(0)
+    }
+}
+
+impl Display for DomainId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 

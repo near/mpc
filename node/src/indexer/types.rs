@@ -50,7 +50,7 @@ impl ChainSignatureRequest {
 
 pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
 pub use mpc_contract::crypto_shared::k256_types;
-use mpc_contract::crypto_shared::{edd25519_types, SignatureResponse};
+use mpc_contract::crypto_shared::{ed25519_types, SignatureResponse};
 use mpc_contract::primitives::signature::Payload;
 
 const MAX_RECOVERY_ID: u8 = 3;
@@ -64,7 +64,7 @@ fn k256_signature_response(
         anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
     }
 
-    let k256_signature = k256_types::SignatureResponse::new(big_r, s, recovery_id);
+    let k256_signature = k256_types::Signature::new(big_r, s, recovery_id);
     Ok(ChainSignatureResponse::Secp256k1(k256_signature))
 }
 
@@ -192,7 +192,9 @@ impl ChainRespondArgs {
                 request.payload.clone(),
                 request.domain,
             ),
-            response: SignatureResponse::Edd25519(edd25519_types::SignatureResponse::new(response)),
+            response: SignatureResponse::Ed25519 {
+                signature: ed25519_types::Signature::new(response),
+            },
         })
     }
 

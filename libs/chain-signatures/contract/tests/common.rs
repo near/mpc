@@ -10,7 +10,7 @@ use mpc_contract::primitives::signature::{Payload, SignRequestArgs};
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        derive_key_secp256k1, derive_tweak, edd25519_types, k256_types, kdf::check_ec_signature,
+        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
         SerializableAffinePoint, SerializableScalar, SignatureResponse,
     },
     primitives::{
@@ -172,7 +172,7 @@ pub async fn init_env_secp256k1(
     (worker, contract, accounts, secret_keys)
 }
 
-pub async fn init_env_edd25519(
+pub async fn init_env_ed25519(
     num_domains: usize,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>, Vec<KeygenOutput>) {
     let mut public_keys = Vec::new();
@@ -263,7 +263,7 @@ pub async fn create_response(
         panic!("unable to use recovery id of 0 or 1");
     };
 
-    let respond_resp = SignatureResponse::Secp256k1(k256_types::SignatureResponse {
+    let respond_resp = SignatureResponse::Secp256k1(k256_types::Signature {
         big_r: SerializableAffinePoint {
             affine_point: big_r,
         },
@@ -305,8 +305,9 @@ pub async fn create_response_ed25519(
 
     let respond_req = SignatureRequest::new(DomainId(0), payload.clone(), predecessor_id, path);
 
-    let signature_response =
-        SignatureResponse::Edd25519(edd25519_types::SignatureResponse::new(signature));
+    let signature_response = SignatureResponse::Ed25519 {
+        signature: ed25519_types::Signature::new(signature),
+    };
 
     (payload, respond_req, signature_response)
 }

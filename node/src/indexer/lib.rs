@@ -60,18 +60,3 @@ pub(crate) async fn get_mpc_contract_state(
         }
     }
 }
-
-pub(crate) async fn wait_for_contract_code(
-    contract_id: AccountId,
-    client: &actix::Addr<near_client::ViewClientActor>,
-) {
-    loop {
-        time::sleep(INTERVAL).await;
-        if get_mpc_contract_state(contract_id.clone(), client)
-            .await
-            .is_ok()
-        {
-            return;
-        }
-    }
-}

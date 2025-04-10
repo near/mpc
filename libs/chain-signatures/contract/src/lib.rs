@@ -13,7 +13,7 @@ use config::{Config, InitConfig};
 use crypto_shared::types::{PublicKeyExtended, PublicKeyExtendedConversionError};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
-    kdf::{check_ec_signature, derive_public_key_edwards_point_edd25519},
+    kdf::{check_ec_signature, derive_public_key_edwards_point_ed25519},
     near_public_key_to_affine_point,
     types::SignatureResponse,
 };
@@ -344,7 +344,7 @@ impl VersionedMpcContract {
             }
             PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
-                    derive_public_key_edwards_point_edd25519(&edwards_point, &tweak);
+                    derive_public_key_edwards_point_ed25519(&edwards_point, &tweak);
 
                 let encoded_point: [u8; 32] =
                     derived_public_key_edwards_point.compress().to_bytes();
@@ -411,13 +411,13 @@ impl VersionedMpcContract {
                 .is_ok()
             }
             (
-                SignatureResponse::Edd25519(signature_response),
+                SignatureResponse::Ed25519 { signature },
                 PublicKeyExtended::Ed25519 {
                     edwards_point: public_key_edwards_point,
                     ..
                 },
             ) => {
-                let derived_public_key_edwards_point = derive_public_key_edwards_point_edd25519(
+                let derived_public_key_edwards_point = derive_public_key_edwards_point_ed25519(
                     &public_key_edwards_point,
                     &request.tweak,
                 );
@@ -426,11 +426,7 @@ impl VersionedMpcContract {
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
-                ed25519_verify(
-                    signature_response.as_bytes(),
-                    message,
-                    &derived_public_key_32_bytes,
-                )
+                ed25519_verify(signature.as_bytes(), message, &derived_public_key_32_bytes)
             }
             (signature_response, public_key_requested) => {
                 return Err(RespondError::SignatureSchemeMismatch.message(format!(
@@ -952,14 +948,14 @@ mod tests {
         let mut bytes = [0u8; 32];
         bytes.copy_from_slice(s.as_slice());
         let signature_response = if success {
-            SignatureResponse::Secp256k1(k256_types::SignatureResponse::new(
+            SignatureResponse::Secp256k1(k256_types::Signature::new(
                 AffinePoint::decompact(&r).unwrap(),
                 k256::Scalar::from_repr(bytes.into()).unwrap(),
                 recovery_id.to_byte(),
             ))
         } else {
             // submit an incorrect signature to make the respond call fail
-            SignatureResponse::Secp256k1(k256_types::SignatureResponse::new(
+            SignatureResponse::Secp256k1(k256_types::Signature::new(
                 AffinePoint::decompact(&r).unwrap(),
                 k256::Scalar::from_repr([0u8; 32].into()).unwrap(),
                 recovery_id.to_byte(),

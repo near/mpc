@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
+borsh = { version = "1.5.7", features = ["derive"] }
 clap = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
@@ -20,4 +21,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true }
+mpc-contract = { path = "../libs/chain-signatures/contract", features = [
+    "test-utils",
+] }
 legacy-mpc-contract = { workspace = true }

@@ -1,6 +1,6 @@
 pub mod common;
 use common::{
-    candidates, create_response, create_response_ed25519, init, init_env_edd25519,
+    candidates, create_response, create_response_ed25519, init, init_env_ed25519,
     init_env_secp256k1, sign_and_validate,
 };
 use mpc_contract::primitives::domain::DomainId;
@@ -378,7 +378,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env_edd25519(1).await;
+    let (_, contract, _, sks) = init_env_ed25519(1).await;
     let predecessor_id = contract.id();
     let path = "test";
 

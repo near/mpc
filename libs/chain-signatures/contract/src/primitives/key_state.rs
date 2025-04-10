@@ -3,6 +3,7 @@ use super::participants::{ParticipantId, Participants};
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use near_sdk::{env, near};
+use std::fmt::Display;
 
 /// An EpochId uniquely identifies a ThresholdParameters (but not vice-versa).
 /// Every time we change the ThresholdParameters (participants and threshold),
@@ -22,6 +23,12 @@ impl EpochId {
     }
     pub fn get(&self) -> u64 {
         self.0
+    }
+}
+
+impl Display for EpochId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -47,6 +54,12 @@ impl AttemptId {
 impl Default for AttemptId {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Display for AttemptId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -151,7 +164,7 @@ pub mod tests {
     use crate::primitives::{
         domain::DomainId,
         key_state::{AttemptId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset},
-        test_utils::{bogus_edd25519_public_key_extended, gen_account_id, gen_threshold_params},
+        test_utils::{bogus_ed25519_public_key_extended, gen_account_id, gen_threshold_params},
     };
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rand::Rng;
@@ -176,8 +189,8 @@ pub mod tests {
     fn test_keyset() {
         let domain_id0 = DomainId(0);
         let domain_id1 = DomainId(3);
-        let key0 = bogus_edd25519_public_key_extended();
-        let key1 = bogus_edd25519_public_key_extended();
+        let key0 = bogus_ed25519_public_key_extended();
+        let key1 = bogus_ed25519_public_key_extended();
         let keyset = Keyset::new(
             EpochId::new(5),
             vec![

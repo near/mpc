@@ -1,17 +1,26 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::OperatingAccounts;
 use crate::cli::{
-    MpcDeployContractCmd, MpcJoinCmd, MpcViewContractCmd, MpcVoteJoinCmd, MpcVoteLeaveCmd,
-    NewMpcNetworkCmd, RemoveContractCmd, UpdateMpcNetworkCmd,
+    MpcDeployContractCmd, MpcDescribeCmd, MpcProposeUpdateContractCmd, MpcV1JoinCmd,
+    MpcV1VoteJoinCmd, MpcV1VoteLeaveCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd,
+    MpcVoteNewParametersCmd, MpcVoteUpdateCmd, NewMpcNetworkCmd, RemoveContractCmd,
+    UpdateMpcNetworkCmd,
 };
 use crate::constants::ONE_NEAR;
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
+use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
+use borsh::{BorshDeserialize, BorshSerialize};
 use legacy_mpc_contract::config::InitConfigV1;
-use legacy_mpc_contract::primitives::{self, CandidateInfo, SignRequest};
+use legacy_mpc_contract::primitives::{self, CandidateInfo};
+use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
+use mpc_contract::primitives::key_state::EpochId;
+use mpc_contract::primitives::participants::ParticipantInfo;
+use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
+use mpc_contract::state::ProtocolContractState;
 use near_crypto::SecretKey;
-use near_sdk::AccountId;
+use near_sdk::{borsh, AccountId};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::str::FromStr;
@@ -262,6 +271,7 @@ impl MpcDeployContractCmd {
                 true,
             )
             .await
+            .into_return_value()
             .unwrap();
     }
 }
@@ -329,7 +339,7 @@ impl MpcViewContractCmd {
     }
 }
 
-impl MpcJoinCmd {
+impl MpcV1JoinCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
             "Going to join MPC network {} as participant {}",
@@ -376,6 +386,7 @@ impl MpcJoinCmd {
             true,
         )
         .await
+        .into_return_value()
         .unwrap();
     }
 }
@@ -387,7 +398,22 @@ struct JoinArgs {
     sign_pk: near_sdk::PublicKey,
 }
 
-impl MpcVoteJoinCmd {
+/// Gets a list of voters who would send the vote txn, based on the cmdline flag (empty list means
+/// all participants; otherwise it's the precise list of participant indices).
+fn get_voter_account_ids<'a>(
+    mpc_setup: &'a MpcNetworkSetup,
+    voters: &[usize],
+) -> Vec<&'a AccountId> {
+    mpc_setup
+        .participants
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| voters.is_empty() || voters.contains(i))
+        .map(|(_, account_id)| account_id)
+        .collect::<Vec<_>>()
+}
+
+impl MpcV1VoteJoinCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
             "Going to vote_join MPC network {} for participant {}",
@@ -409,15 +435,8 @@ impl MpcVoteJoinCmd {
             .contract
             .clone()
             .expect("Contract is not deployed");
-        let from_accounts = mpc_setup
-            .participants
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| {
-                *i != self.for_account_index && (self.voters.is_empty() || self.voters.contains(i))
-            })
-            .map(|(_, account_id)| account_id)
-            .collect::<Vec<_>>();
+        // This may make some voters that aren't part of the network vote, but that's OK.
+        let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);
 
         let mut futs = Vec::new();
         for account_id in from_accounts {
@@ -440,7 +459,7 @@ impl MpcVoteJoinCmd {
         }
         let results = futures::future::join_all(futs).await;
         for (i, result) in results.into_iter().enumerate() {
-            match result {
+            match result.into_return_value() {
                 Ok(_) => {
                     println!(
                         "Participant {} vote_join({}) succeed",
@@ -458,7 +477,7 @@ impl MpcVoteJoinCmd {
     }
 }
 
-impl MpcVoteLeaveCmd {
+impl MpcV1VoteLeaveCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
             "Going to vote_leave MPC network {} for participant {}",
@@ -480,15 +499,7 @@ impl MpcVoteLeaveCmd {
             .contract
             .clone()
             .expect("Contract is not deployed");
-        let from_accounts = mpc_setup
-            .participants
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| {
-                *i != self.for_account_index && (self.voters.is_empty() || self.voters.contains(i))
-            })
-            .map(|(_, account_id)| account_id)
-            .collect::<Vec<_>>();
+        let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);
 
         let mut futs = Vec::new();
         for account_id in from_accounts {
@@ -511,7 +522,7 @@ impl MpcVoteLeaveCmd {
         }
         let results = futures::future::join_all(futs).await;
         for (i, result) in results.into_iter().enumerate() {
-            match result {
+            match result.into_return_value() {
                 Ok(_) => {
                     println!(
                         "Participant {} vote_leave({}) succeed",
@@ -539,7 +550,503 @@ struct VoteLeaveArgs {
     kick: AccountId,
 }
 
+impl MpcProposeUpdateContractCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        println!("Going to propose update contract for MPC network {}", name);
+        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} does not exist", name));
+        let contract = mpc_setup
+            .contract
+            .clone()
+            .expect("Contract is not deployed");
+        let contract_code = std::fs::read(&self.path).unwrap();
+        let proposer_account_id = &mpc_setup.participants[self.proposer_index];
+
+        // Fund the proposer account with additional tokens first to cover the additional deposit.
+        let account_to_fund = AccountToFund::from_existing(
+            proposer_account_id.clone(),
+            mpc_setup.desired_balance_per_account + self.deposit_near * ONE_NEAR,
+        );
+        fund_accounts(
+            &mut setup.accounts,
+            vec![account_to_fund],
+            config.funding_account,
+        )
+        .await;
+        let proposer = setup.accounts.account(proposer_account_id);
+
+        let result = proposer
+            .any_access_key()
+            .await
+            .submit_tx_to_call_function(
+                &contract,
+                "propose_update",
+                &borsh::to_vec(&ProposeUpdateArgs {
+                    contract: Some(contract_code),
+                    config: None,
+                })
+                .unwrap(),
+                300,
+                self.deposit_near * ONE_NEAR,
+                near_primitives::views::TxExecutionStatus::Final,
+                false,
+            )
+            .await
+            .into_return_value()
+            .expect("Failed to propose update");
+        let update_id: u64 = serde_json::from_slice(&result).expect(&format!(
+            "Failed to deserialize result: {}",
+            String::from_utf8_lossy(&result)
+        ));
+        println!("Proposed update with ID {}", update_id);
+        println!("Run the following command to vote for the update:");
+        let self_exe = std::env::current_exe()
+            .expect("Failed to get current executable path")
+            .to_str()
+            .expect("Failed to convert path to string")
+            .to_string();
+        println!(
+            "{} mpc {} vote-update --update-id={}",
+            self_exe, name, update_id
+        );
+    }
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct ProposeUpdateArgs {
+    pub contract: Option<Vec<u8>>,
+    pub config: Option<()>, // unsupported
+}
+
+impl MpcVoteUpdateCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        println!(
+            "Going to vote update contract for MPC network {} with update ID {}",
+            name, self.update_id
+        );
+        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} does not exist", name));
+        let contract = mpc_setup
+            .contract
+            .clone()
+            .expect("Contract is not deployed");
+        let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);
+
+        let mut futs = Vec::new();
+        for account_id in from_accounts {
+            let account = setup.accounts.account(account_id);
+            let mut key = account.any_access_key().await;
+            let contract = contract.clone();
+            futs.push(async move {
+                key.submit_tx_to_call_function(
+                    &contract,
+                    "vote_update",
+                    &serde_json::to_vec(&VoteUpdateArgs { id: self.update_id }).unwrap(),
+                    300,
+                    0,
+                    near_primitives::views::TxExecutionStatus::Final,
+                    true,
+                )
+                .await
+            });
+        }
+        let results = futures::future::join_all(futs).await;
+        for (i, result) in results.into_iter().enumerate() {
+            match result.into_return_value() {
+                Ok(_) => {
+                    println!("Participant {} vote_update({}) succeed", i, self.update_id);
+                }
+                Err(err) => {
+                    println!(
+                        "Participant {} vote_update({}) failed: {:?}",
+                        i, self.update_id, err
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[derive(Serialize)]
-pub struct SignArgs {
-    pub request: SignRequest,
+struct VoteUpdateArgs {
+    id: u64,
+}
+
+impl MpcVoteAddDomainsCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        println!(
+            "Going to vote_add_domains MPC network {} for signature schemes {:?}",
+            name, self.signature_schemes
+        );
+        let signature_schemes: Vec<SignatureScheme> = self
+            .signature_schemes
+            .iter()
+            .map(|scheme| {
+                serde_json::from_str(&format!("\"{}\"", scheme))
+                    .expect(&format!("Failed to parse signature scheme {}", scheme))
+            })
+            .collect::<Vec<_>>();
+        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} does not exist", name));
+        let contract = mpc_setup
+            .contract
+            .clone()
+            .expect("Contract is not deployed");
+
+        // Query the contract state and use the next_domain_id to construct the domain IDs we should
+        // use for the proposal.
+        let contract_state = read_contract_state_v2(&setup.accounts, &contract).await;
+        let domains = match contract_state {
+            ProtocolContractState::Running(running_contract_state) => {
+                running_contract_state.domains
+            }
+            _ => {
+                panic!(
+                    "Cannot add domains when not in the running state: {:?}",
+                    contract_state
+                );
+            }
+        };
+        let mut proposal = Vec::new();
+        let mut next_domain = domains.next_domain_id();
+        for signature_scheme in &signature_schemes {
+            proposal.push(DomainConfig {
+                id: DomainId(next_domain),
+                scheme: *signature_scheme,
+            });
+            next_domain += 1;
+        }
+
+        let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);
+
+        let mut futs = Vec::new();
+        for account_id in from_accounts {
+            let account = setup.accounts.account(account_id);
+            let mut key = account.any_access_key().await;
+            let contract = contract.clone();
+            let proposal = proposal.clone();
+            futs.push(async move {
+                key.submit_tx_to_call_function(
+                    &contract,
+                    "vote_add_domains",
+                    &serde_json::to_vec(&VoteAddDomainsArgs { domains: proposal }).unwrap(),
+                    300,
+                    0,
+                    near_primitives::views::TxExecutionStatus::Final,
+                    true,
+                )
+                .await
+            });
+        }
+        let results = futures::future::join_all(futs).await;
+        for (i, result) in results.into_iter().enumerate() {
+            match result.into_return_value() {
+                Ok(_) => {
+                    println!("Participant {} vote_add_domains succeed", i);
+                }
+                Err(err) => {
+                    println!("Participant {} vote_add_domains failed: {:?}", i, err);
+                }
+            }
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct VoteAddDomainsArgs {
+    domains: Vec<DomainConfig>,
+}
+
+impl MpcVoteNewParametersCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        println!(
+            "Going to vote_new_parameters for MPC network {}, adding participants {:?}, removing participants {:?}, and overriding threshold with {:?}",
+            name, self.add, self.remove, self.set_threshold
+        );
+        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} does not exist", name));
+        let contract = mpc_setup
+            .contract
+            .clone()
+            .expect("Contract is not deployed");
+
+        // Query the contract state so we can incrementally construct the new parameters. This is
+        // because the existing participants must have the same participant IDs, and the new
+        // participants must have contiguous participant IDs.
+        let contract_state = read_contract_state_v2(&setup.accounts, &contract).await;
+        let prospective_epoch_id = match &contract_state {
+            ProtocolContractState::Running(state) => state.keyset.epoch_id.next(),
+            ProtocolContractState::Resharing(state) => state.prospective_epoch_id().next(),
+            _ => panic!(),
+        };
+        let parameters = match contract_state {
+            ProtocolContractState::Running(state) => state.parameters,
+            ProtocolContractState::Resharing(state) => state.previous_running_state.parameters,
+            _ => {
+                panic!(
+                    "Cannot vote for new parameters when not in the running or resharing state: {:?}",
+                    contract_state
+                );
+            }
+        };
+
+        let mut participants = parameters.participants().clone();
+        for participant_index in &self.remove {
+            let account_id = mpc_setup.participants[*participant_index].clone();
+            assert!(
+                participants.is_participant(&account_id),
+                "Participant {} is not in the network",
+                account_id
+            );
+            participants.remove(&account_id);
+        }
+        for participant_index in &self.add {
+            let account_id = mpc_setup.participants[*participant_index].clone();
+            assert!(
+                !participants.is_participant(&account_id),
+                "Participant {} is already in the network",
+                account_id
+            );
+            participants
+                .insert(
+                    account_id.clone(),
+                    ParticipantInfo {
+                        url: format!(
+                            "http://mpc-node-{}.service.mpc.consul:3000",
+                            participant_index
+                        ),
+                        sign_pk: near_sdk::PublicKey::from_str(
+                            &setup
+                                .accounts
+                                .account(&account_id)
+                                .get_mpc_participant()
+                                .unwrap()
+                                .p2p_private_key
+                                .public_key()
+                                .to_string(),
+                        )
+                        .unwrap(),
+                    },
+                )
+                .unwrap();
+        }
+        let threshold = if let Some(threshold) = self.set_threshold {
+            Threshold::new(threshold)
+        } else {
+            parameters.threshold()
+        };
+        let proposal =
+            ThresholdParameters::new(participants, threshold).expect("New parameters invalid");
+
+        let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);
+
+        let mut futs = Vec::new();
+        for account_id in from_accounts {
+            let account = setup.accounts.account(account_id);
+            let mut key = account.any_access_key().await;
+            let contract = contract.clone();
+            let proposal = proposal.clone();
+            futs.push(async move {
+                key.submit_tx_to_call_function(
+                    &contract,
+                    "vote_new_parameters",
+                    &serde_json::to_vec(&VoteNewParametersArgs {
+                        prospective_epoch_id,
+                        proposal,
+                    })
+                    .unwrap(),
+                    300,
+                    0,
+                    near_primitives::views::TxExecutionStatus::Final,
+                    true,
+                )
+                .await
+            });
+        }
+        let results = futures::future::join_all(futs).await;
+        for (i, result) in results.into_iter().enumerate() {
+            match result.into_return_value() {
+                Ok(_) => {
+                    println!("Participant {} vote_new_parameters succeed", i);
+                }
+                Err(err) => {
+                    println!("Participant {} vote_new_parameters failed: {:?}", i, err);
+                }
+            }
+        }
+    }
+}
+
+/// Read the contract state from the contract and deserialize it into the V2 state format.
+pub async fn read_contract_state_v2(
+    accounts: &OperatingAccounts,
+    contract: &AccountId,
+) -> ProtocolContractState {
+    let contract_state = accounts
+        .account(contract)
+        .query_contract("state", b"{}".to_vec())
+        .await
+        .expect("state() call failed");
+    serde_json::from_slice(&contract_state.result).expect(&format!(
+        "Failed to deserialize contract state: {}",
+        String::from_utf8_lossy(&contract_state.result)
+    ))
+}
+
+#[derive(Serialize)]
+struct VoteNewParametersArgs {
+    prospective_epoch_id: EpochId,
+    proposal: ThresholdParameters,
+}
+
+impl MpcDescribeCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        let setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get(name)
+            .expect(&format!("MPC network {} does not exist", name));
+        if let Some(contract) = &mpc_setup.contract {
+            println!("MPC contract deployed at: {}", contract);
+            let contract_state = read_contract_state_v2(&setup.accounts, contract).await;
+            match contract_state {
+                ProtocolContractState::NotInitialized => {
+                    println!("Contract is not initialized");
+                }
+                ProtocolContractState::Initializing(state) => {
+                    println!("Contract is in Initializing state (key generation)");
+                    println!("  Epoch: {}", state.generating_key.epoch_id());
+                    println!("  Domains:");
+                    for (i, domain) in state.domains.domains().iter().enumerate() {
+                        print!("    Domain {}: {:?}, ", domain.id, domain.scheme);
+                        #[allow(clippy::comparison_chain)]
+                        if i < state.generated_keys.len() {
+                            println!(
+                                "key generated (attempt ID {})",
+                                state.generated_keys[i].attempt
+                            );
+                        } else if i == state.generated_keys.len() {
+                            print!("generating key: ");
+                            if state.generating_key.is_active() {
+                                println!(
+                                    "active; current attempt ID: {}",
+                                    state
+                                        .generating_key
+                                        .current_key_event_id()
+                                        .unwrap()
+                                        .attempt_id
+                                );
+                            } else {
+                                println!(
+                                    "not active; next attempt ID: {}",
+                                    state.generating_key.next_attempt_id()
+                                );
+                            }
+                        } else {
+                            println!("queued for generation");
+                        }
+                    }
+                    println!("  Parameters:");
+                    Self::print_parameters(state.generating_key.proposed_parameters());
+                    println!("  Warning: this tool does not calculate automatic timeouts for key generation attempts");
+                }
+                ProtocolContractState::Running(state) => {
+                    println!("Contract is in Running state");
+                    println!("  Epoch: {}", state.keyset.epoch_id);
+                    println!("  Keyset:");
+                    for (domain, key) in state
+                        .domains
+                        .domains()
+                        .iter()
+                        .zip(state.keyset.domains.iter())
+                    {
+                        println!(
+                            "    Domain {}: {:?}, key from attempt {}",
+                            domain.id, domain.scheme, key.attempt
+                        );
+                    }
+                    println!("  Parameters:");
+                    Self::print_parameters(&state.parameters);
+                }
+                ProtocolContractState::Resharing(state) => {
+                    println!("Contract is in Resharing state");
+                    println!(
+                        "  Epoch transition: original {} --> prospective {}",
+                        state.previous_running_state.keyset.epoch_id,
+                        state.prospective_epoch_id()
+                    );
+                    println!("  Domains:");
+                    for (i, domain) in state
+                        .previous_running_state
+                        .domains
+                        .domains()
+                        .iter()
+                        .enumerate()
+                    {
+                        print!(
+                            "    Domain {}: {:?}, original key from attempt {}, ",
+                            domain.id,
+                            domain.scheme,
+                            state.previous_running_state.keyset.domains[i].attempt
+                        );
+
+                        #[allow(clippy::comparison_chain)]
+                        if i < state.reshared_keys.len() {
+                            println!("reshared (attempt ID {})", state.reshared_keys[i].attempt);
+                        } else if i == state.reshared_keys.len() {
+                            print!("resharing key: ");
+                            if state.resharing_key.is_active() {
+                                println!(
+                                    "active; current attempt ID: {}",
+                                    state
+                                        .resharing_key
+                                        .current_key_event_id()
+                                        .unwrap()
+                                        .attempt_id
+                                );
+                            } else {
+                                println!(
+                                    "not active; next attempt ID: {}",
+                                    state.resharing_key.next_attempt_id()
+                                );
+                            }
+                        } else {
+                            println!("queued for resharing");
+                        }
+                    }
+                    println!("  Previous Parameters:");
+                    Self::print_parameters(&state.previous_running_state.parameters);
+                    println!("  Proposed Parameters:");
+                    Self::print_parameters(state.resharing_key.proposed_parameters());
+
+                    println!("  Warning: this tool does not calculate automatic timeouts for resharing attempts");
+                }
+            }
+        } else {
+            println!("MPC contract is not deployed");
+        }
+        println!();
+
+        self.describe_terraform(name, &config).await;
+    }
+
+    fn print_parameters(parameters: &ThresholdParameters) {
+        println!("    Participants:");
+        for (account_id, id, info) in parameters.participants().participants() {
+            println!("      ID {}: {} ({})", id, account_id, info.url);
+        }
+        println!("    Threshold: {}", parameters.threshold().value());
+    }
 }

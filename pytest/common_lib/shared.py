@@ -671,8 +671,8 @@ def verify_txs(results, verification_callback, verbose=False):
 
 
 # Output is deserializable into the rust type near_crypto::SecretKey
-def serialize_key(key):
-    full_key = bytes(key.decoded_sk()) + bytes(key.decoded_pk())
+def serialize_key(key: Key):
+    full_key = bytes(key.decoded_sk())
     return 'ed25519:' + base58.b58encode(full_key).decode('ascii')
 
 
