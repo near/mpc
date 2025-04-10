@@ -262,7 +262,7 @@ pub async fn create_response(
         panic!("unable to use recovery id of 0 or 1");
     };
 
-    let respond_resp = SignatureResponse::Secp256k1(k256_types::SignatureResponse {
+    let respond_resp = SignatureResponse::Secp256k1(k256_types::Signature {
         big_r: SerializableAffinePoint {
             affine_point: big_r,
         },
@@ -304,8 +304,9 @@ pub async fn create_response_ed25519(
 
     let respond_req = SignatureRequest::new(DomainId(0), payload.clone(), predecessor_id, path);
 
-    let signature_response =
-        SignatureResponse::Edd25519(edd25519_types::SignatureResponse::new(signature));
+    let signature_response = SignatureResponse::Edd25519 {
+        signature: edd25519_types::Signature::new(signature),
+    };
 
     (payload, respond_req, signature_response)
 }
