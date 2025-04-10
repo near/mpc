@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "signature_scheme")]
 pub enum SignatureResponse {
     Secp256k1(k256_types::SignatureResponse),
     Edd25519(edd25519_types::SignatureResponse),
