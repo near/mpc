@@ -330,6 +330,8 @@ pub mod edd25519_types {
 #[cfg(test)]
 mod test {
     use super::*;
+    use rstest::rstest;
+    use serde_json::json;
 
     #[test]
     fn serializeable_scalar_roundtrip() {
@@ -353,12 +355,10 @@ mod test {
         }
     }
 
-    use rstest::rstest;
-
+    /// Tests the serialization and deserialization of [`PublicKeyExtended`] works.
     #[rstest]
     #[case("secp256k1:qMoRgcoXai4mBPsdbHi1wfyxF9TdbPCF4qSDQTRP3TfescSRoUdSx6nmeQoN3aiwGzwMyGXAb1gUjBTv5AY8DXj")]
     #[case("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")]
-    /// Tests the serialization and deserialization of [`PublicKeyExtended`] works.
     fn test_serialization_of_public_key_extended(#[case] near_public_key: near_sdk::PublicKey) {
         let public_key_extended = PublicKeyExtended::try_from(near_public_key).unwrap();
         let mut buffer: Vec<u8> = vec![];
@@ -369,5 +369,51 @@ mod test {
             <PublicKeyExtended as BorshDeserialize>::deserialize(&mut slice_ref).unwrap();
 
         assert_eq!(deserialized, public_key_extended);
+    }
+
+    /// This serves as a regression test to detect breaking changes to
+    /// serialization of [`SignatureResponse::Secp256k1`].
+    #[test]
+    fn test_secp256k1_signature_serialization() {
+        let signature_response = SignatureResponse::Secp256k1(k256_types::Signature::new(
+            AffinePoint::IDENTITY,
+            k256::Scalar::ONE,
+            1,
+        ));
+
+        let serialization = serde_json::to_value(&signature_response).unwrap();
+
+        // DO NOT UPDATE THIS EXPECTATION IF IT IS A BREAKING CHANGE
+        let exptected_serialization = json!({
+            "scheme": "Secp256k1",
+            "big_r": {
+                "affine_point": "00"
+            },
+            "s": {
+                "scalar": "0000000000000000000000000000000000000000000000000000000000000001"
+            },
+            "recovery_id": 1
+        });
+
+        assert_eq!(serialization, exptected_serialization);
+    }
+
+    /// This serves as a regression test to detect breaking changes to
+    /// serialization of [`SignatureResponse::Edd25519`].
+    #[test]
+    fn test_edd2519_signature_serialization() {
+        let signature_bytes = [1; 64];
+        let signature_response = SignatureResponse::Edd25519 {
+            signature: edd25519_types::Signature::new(signature_bytes),
+        };
+        let serialization = serde_json::to_value(&signature_response).unwrap();
+
+        // DO NOT UPDATE THIS EXPECTATION IF IT IS A BREAKING CHANGE
+        let exptected_serialization = json!({
+            "scheme": "Edd25519",
+            "signature": signature_bytes.to_vec(),
+        });
+
+        assert_eq!(serialization, exptected_serialization);
     }
 }
