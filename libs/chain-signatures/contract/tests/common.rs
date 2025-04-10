@@ -262,7 +262,7 @@ pub async fn create_response(
         panic!("unable to use recovery id of 0 or 1");
     };
 
-    let respond_resp = SignatureResponse::Secp256k1(k256_types::SignatureResponse {
+    let respond_resp = SignatureResponse::Secp256k1(k256_types::Signature {
         big_r: SerializableAffinePoint {
             affine_point: big_r,
         },
