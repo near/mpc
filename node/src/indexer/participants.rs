@@ -1,3 +1,4 @@
+use super::IndexerState;
 use crate::config::{ParticipantInfo, ParticipantsConfig};
 use crate::indexer::lib::{get_mpc_contract_state, wait_for_full_sync};
 use crate::primitives::ParticipantId;
@@ -7,9 +8,9 @@ use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use mpc_contract::primitives::thresholds::ThresholdParameters;
 use mpc_contract::state::key_event::KeyEvent;
 use mpc_contract::state::ProtocolContractState;
-use near_indexer_primitives::types::AccountId;
 use std::collections::BTreeSet;
 use std::str::FromStr;
+use std::sync::Arc;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,22 +186,14 @@ impl ContractState {
 /// Continuously monitors the contract state. Every time the state changes,
 /// sends the new state via the provided sender. This is a long-running task.
 pub async fn monitor_chain_state(
-    mpc_contract_id: AccountId,
+    indexer_state: Arc<IndexerState>,
     port_override: Option<u16>,
-    view_client: actix::Addr<near_client::ViewClientActor>,
-    client: actix::Addr<near_client::ClientActor>,
     contract_state_sender: tokio::sync::watch::Sender<ContractState>,
 ) -> anyhow::Result<()> {
     const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
     let mut prev_state = ContractState::Invalid;
     loop {
-        let result = read_contract_state_from_chain(
-            mpc_contract_id.clone(),
-            port_override,
-            view_client.clone(),
-            client.clone(),
-        )
-        .await;
+        let result = read_contract_state_from_chain(indexer_state.clone(), port_override).await;
         match result {
             Ok(state) => {
                 if state != prev_state {
@@ -218,18 +211,20 @@ pub async fn monitor_chain_state(
 }
 
 async fn read_contract_state_from_chain(
-    mpc_contract_id: AccountId,
+    indexer_state: Arc<IndexerState>,
     port_override: Option<u16>,
-    view_client: actix::Addr<near_client::ViewClientActor>,
-    client: actix::Addr<near_client::ClientActor>,
 ) -> anyhow::Result<ContractState> {
     // We wait first to catch up to the chain to avoid reading the participants from an outdated state.
     // We currently assume the participant set is static and do not detect or support any updates.
     tracing::debug!(target: "mpc", "awaiting full sync to read mpc contract state");
-    wait_for_full_sync(&client).await;
+    wait_for_full_sync(&indexer_state.client).await;
 
     tracing::debug!(target: "mpc", "querying contract state");
-    let (height, state) = get_mpc_contract_state(mpc_contract_id.clone(), &view_client).await?;
+    let (height, state) = get_mpc_contract_state(
+        indexer_state.mpc_contract_id.clone(),
+        &indexer_state.view_client,
+    )
+    .await?;
 
     tracing::debug!(target: "mpc", "got mpc contract state {:?}", state);
     let state = ContractState::from_contract_state(&state, height, port_override)?;

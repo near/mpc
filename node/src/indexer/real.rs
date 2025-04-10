@@ -39,27 +39,26 @@ pub fn spawn_real_indexer(
                     }
                 }
                 Err(err) => {
-                    panic!("respond.yaml is provided but failed to parse: {err}");
+                    panic!("respond.yaml is provided but failed to parse: {err:?}");
                 }
             };
             let stream = indexer.streamer();
-            let (view_client, client) = indexer.client_actors();
+            let (view_client, client, tx_processor) = indexer.client_actors();
             let indexer_state = Arc::new(IndexerState::new(
-                view_client.clone(),
-                client.clone(),
+                view_client,
+                client,
+                tx_processor,
                 indexer_config.mpc_contract_id.clone(),
             ));
             // TODO: migrate this into IndexerState
             let stats: Arc<Mutex<IndexerStats>> = Arc::new(Mutex::new(IndexerStats::new()));
 
             actix::spawn(monitor_chain_state(
-                indexer_config.mpc_contract_id.clone(),
+                indexer_state.clone(),
                 indexer_config.port_override,
-                view_client.clone(),
-                client.clone(),
                 chain_config_sender,
             ));
-            actix::spawn(indexer_logger(Arc::clone(&stats), view_client.clone()));
+            actix::spawn(indexer_logger(Arc::clone(&stats), indexer_state.view_client.clone()));
             actix::spawn(handle_txn_requests(
                 chain_txn_receiver,
                 my_near_account_id,
