@@ -4157,7 +4157,7 @@ dependencies = [
  "near-sdk",
  "near-time 2.6.0-rc.1",
  "prometheus",
- "rand 0.9.0",
+ "rand 0.8.5",
  "rand_xorshift",
  "rcgen",
  "reqwest 0.12.15",

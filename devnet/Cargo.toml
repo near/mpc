@@ -15,7 +15,7 @@ near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
 near-sdk = { workspace = true }
-rand = { workspace = true }
+rand = "0.9.0"
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

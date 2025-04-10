@@ -51,7 +51,7 @@ near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
 near-sdk = "5.2.1"
 prometheus = "0.13.4"
-rand = { version = "0.9.0", features = ["thread_rng"] }
+rand = { version = "0.8.5" }
 rand_xorshift = "0.3"
 rcgen = "0.13.1"
 reqwest = "0.12.9"
