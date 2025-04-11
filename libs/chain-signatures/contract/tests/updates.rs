@@ -4,7 +4,6 @@ use mpc_contract::config::Config;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_workspaces::types::NearToken;
-use crate::common::accounts;
 
 pub fn dummy_contract() -> ProposeUpdateArgs {
     ProposeUpdateArgs {
@@ -256,7 +255,6 @@ async fn test_propose_update_contract_many() {
     dbg!(state);
 }
 
-
 #[tokio::test]
 async fn test_propose_incorrect_updates() {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
@@ -366,8 +364,8 @@ async fn only_one_vote_from_participant() {
     let execution = accounts[0]
         .call(contract.id(), "vote_update")
         .args_json(serde_json::json!({
-                "id": proposal_a,
-            }))
+            "id": proposal_a,
+        }))
         .max_gas()
         .transact()
         .await
@@ -380,8 +378,8 @@ async fn only_one_vote_from_participant() {
     let execution = accounts[0]
         .call(contract.id(), "vote_update")
         .args_json(serde_json::json!({
-                "id": proposal_b,
-            }))
+            "id": proposal_b,
+        }))
         .max_gas()
         .transact()
         .await
@@ -394,8 +392,8 @@ async fn only_one_vote_from_participant() {
     let execution = accounts[1]
         .call(contract.id(), "vote_update")
         .args_json(serde_json::json!({
-                "id": proposal_a,
-            }))
+            "id": proposal_a,
+        }))
         .max_gas()
         .transact()
         .await
@@ -408,8 +406,8 @@ async fn only_one_vote_from_participant() {
     let execution = accounts[1]
         .call(contract.id(), "vote_update")
         .args_json(serde_json::json!({
-                "id": proposal_b,
-            }))
+            "id": proposal_b,
+        }))
         .max_gas()
         .transact()
         .await

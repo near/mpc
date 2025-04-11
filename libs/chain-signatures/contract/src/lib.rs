@@ -18,8 +18,7 @@ use crypto_shared::{
     types::SignatureResponse,
 };
 use errors::{
-    DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError,
-    SignError,
+    DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, SignError,
 };
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::elliptic_curve::PrimeField;

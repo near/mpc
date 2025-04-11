@@ -4,11 +4,11 @@ use std::hash::Hash;
 use crate::config::Config;
 use crate::storage_keys::StorageKey;
 
+use crate::errors::{ConversionError, Error};
 use borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::IterableMap;
 use near_sdk::{env, near, AccountId, Gas, NearToken, Promise};
-use crate::errors::{ConversionError, Error};
 
 #[derive(
     Copy,
@@ -63,14 +63,14 @@ impl TryFrom<ProposeUpdateArgs> for Update {
         let update = match (code, config) {
             (Some(contract), None) => Update::Contract(contract),
             (None, Some(config)) => Update::Config(config),
-            (Some(_), Some(_)) => return Err(
-                ConversionError::DataConversion
-                    .message("Code and config updates are not allowed at the same time")
-            ),
-            _ => return Err(
-                ConversionError::DataConversion
-                    .message("Expected either code or config update, received none of them")
-            ),
+            (Some(_), Some(_)) => {
+                return Err(ConversionError::DataConversion
+                    .message("Code and config updates are not allowed at the same time"))
+            }
+            _ => {
+                return Err(ConversionError::DataConversion
+                    .message("Expected either code or config update, received none of them"))
+            }
         };
         Ok(update)
     }
@@ -132,11 +132,7 @@ impl ProposedUpdates {
     pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<&HashSet<AccountId>> {
         // If participant has voted before, remove their vote
         if let Some(previous_id) = self.vote_by_participant.get(&voter) {
-            self
-                .entries
-                .get_mut(&previous_id)?
-                .votes
-                .remove(&voter);
+            self.entries.get_mut(previous_id)?.votes.remove(&voter);
         }
         self.vote_by_participant.insert(voter.clone(), *id);
 
