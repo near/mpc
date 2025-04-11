@@ -379,15 +379,23 @@ where
         }
     }
 
-    pub async fn maybe_discard_owned(&self, mut num_elements_to_process: usize) {
+    /// Process `num_elements_to_process`, removing any that doesn't satisfy condition.
+    /// Return ids, that were removed from cold storage.
+    pub async fn maybe_discard_owned(&self, mut num_elements_to_process: usize) -> Vec<UniqueId> {
         self.cold_queue.lock().unwrap().update_condition_value();
+
+        let mut removed_from_cold_queue: Vec<UniqueId> = vec![];
 
         // First process elements in the cold queue
         while num_elements_to_process > 0 {
             let discarded = self.cold_queue.lock().unwrap().discard();
             match discarded {
-                ColdQueueDiscardResult::Discarded(_)
-                | ColdQueueDiscardResult::NotDiscardedButSomeMayBeAvailable => {
+                ColdQueueDiscardResult::Discarded((id, _)) => {
+                    removed_from_cold_queue.push(id);
+                    num_elements_to_process -= 1;
+                    continue;
+                }
+                ColdQueueDiscardResult::NotDiscardedButSomeMayBeAvailable => {
                     num_elements_to_process -= 1;
                     continue;
                 }
@@ -411,6 +419,8 @@ where
                 break;
             }
         }
+
+        removed_from_cold_queue
     }
 
     pub fn available(&self) -> usize {
@@ -592,10 +602,20 @@ where
     /// If any are found not to satisfy the current condition, they are discarded.
     /// Otherwise, they are kept aside as ready for immediate use.
     pub async fn maybe_discard_owned(&self, num_assets_to_process: usize) {
-        // TODO(#320): These should also be deleted from disk.
-        self.owned_queue
+        let removed_cold_ids = self
+            .owned_queue
             .maybe_discard_owned(num_assets_to_process)
             .await;
+        if !removed_cold_ids.is_empty() {
+            let mut update = self.db.update();
+            for id in removed_cold_ids {
+                let key = self.make_key(id);
+                update.delete(self.col, &key)
+            }
+            update
+                .commit()
+                .expect("Unrecoverable error writing to database");
+        }
     }
 
     /// Adds an unowned asset to the storage.
