@@ -1211,6 +1211,47 @@ mod tests {
     }
 
     #[test]
+    fn test_maybe_discard_unowned_persistence() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let myself = ParticipantId::from_raw(42);
+
+        let store = DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
+            db.clone(),
+            crate::db::DBCol::Triple,
+            None,
+            myself,
+            |_, x| *x != 1,
+            Arc::new(Vec::new),
+        )
+            .unwrap();
+
+        // Push asset to the cold queue
+        let id1 = store.generate_and_reserve_id_range(2);
+        store.add_owned(id1, 1);
+        store.add_owned(id1.add_to_counter(1).unwrap(), 2);
+        assert_eq!(store.take_owned().now_or_never().unwrap().1, 2);
+        assert_eq!(store.num_owned_offline(), 1);
+
+        store.maybe_discard_owned(1).now_or_never().unwrap();
+
+        drop(store);
+        let store = DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
+            db,
+            crate::db::DBCol::Triple,
+            None,
+            myself,
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
+        )
+            .unwrap();
+
+        assert_eq!(store.num_owned(), 0);
+    }
+
+    #[test]
     fn test_multiple_domains() {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
