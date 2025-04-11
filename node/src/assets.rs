@@ -1245,7 +1245,7 @@ mod tests {
             |_, x| *x != 1,
             Arc::new(Vec::new),
         )
-            .unwrap();
+        .unwrap();
 
         // Push asset to the cold queue
         let id1 = store.generate_and_reserve_id_range(2);
@@ -1266,7 +1266,7 @@ mod tests {
             |_, _| true,
             Arc::new(std::vec::Vec::new),
         )
-            .unwrap();
+        .unwrap();
 
         assert_eq!(store.num_owned(), 0);
     }
