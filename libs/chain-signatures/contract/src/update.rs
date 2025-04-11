@@ -148,8 +148,9 @@ impl ProposedUpdates {
     pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
         let entry = self.entries.remove(id)?;
 
-        // Clear other entries as they might be no longer valid
+        // Clear all entries as they might be no longer valid
         self.entries.clear();
+        self.vote_by_participant.clear();
 
         let mut promise = Promise::new(env::current_account_id());
         match entry.update {
