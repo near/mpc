@@ -1,18 +1,34 @@
-use crate::indexer::stats::IndexerStats;
-use crate::metrics;
-use crate::sign_request::SignatureId;
-use crate::signing::recent_blocks_tracker::BlockViewLite;
-use futures::StreamExt;
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
-use near_indexer_primitives::types::AccountId;
-use near_indexer_primitives::views::{
-    ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
+use crate::{
+    indexer::stats::IndexerStats, metrics, sign_request::SignatureId,
+    signing::recent_blocks_tracker::BlockViewLite,
 };
-use near_indexer_primitives::CryptoHash;
+use futures::StreamExt;
+use mpc_contract::primitives::{
+    domain::DomainId,
+    signature::{Payload, SignRequest, SignRequestArgs},
+};
+use near_indexer_primitives::{
+    types::AccountId,
+    views::{
+        ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
+    },
+    CryptoHash,
+};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use std::{collections::HashMap, sync::Arc, time::Duration};
+use tokio::{
+    select,
+    sync::{
+        mpsc::{self, channel, Receiver, Sender},
+        Mutex,
+    },
+};
+use tokio_util::time::delay_queue::{self, DelayQueue};
+
+const SIGN_REQUEST_DELAY_QUEUE_DURATION_SECS: u64 = 120; // 2 min
+const SIGN_REQUEST_DELAY_QUEUE_DURATION: Duration =
+    Duration::from_secs(SIGN_REQUEST_DELAY_QUEUE_DURATION_SECS);
+const SIGN_REQUEST_DELAY_TRACKER_CHANNEL_BUFFER_SIZE: usize = 1000;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct UnvalidatedSignArgs {
@@ -51,6 +67,13 @@ pub(crate) async fn listen_blocks(
     mpc_contract_id: AccountId,
     block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
 ) {
+    let (sign_request_delay_tracker_sender, sign_request_delay_tracker_receiver) =
+        channel(SIGN_REQUEST_DELAY_TRACKER_CHANNEL_BUFFER_SIZE);
+
+    actix::spawn(monitor_completion_delay(
+        sign_request_delay_tracker_receiver,
+    ));
+
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
             handle_message(
@@ -58,6 +81,7 @@ pub(crate) async fn listen_blocks(
                 Arc::clone(&stats),
                 &mpc_contract_id,
                 block_update_sender.clone(),
+                sign_request_delay_tracker_sender.clone(),
             )
         })
         .buffer_unordered(usize::from(concurrency.get()));
@@ -70,6 +94,7 @@ async fn handle_message(
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: &AccountId,
     block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
+    signature_request_status_sender: Sender<SignatureStatus>,
 ) -> anyhow::Result<()> {
     let block_height = streamer_message.block.header.height;
     let mut stats_lock = stats.lock().await;
@@ -96,11 +121,35 @@ async fn handle_message(
                     timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
                 });
                 metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
+
+                let _ = signature_request_status_sender
+                    .try_send(SignatureStatus::IncomingRequest {
+                        block_height,
+                        signature_id,
+                    })
+                    .inspect_err(|err| {
+                        tracing::info!(
+                            "Failed to send status to request status tracker: {:?}.",
+                            err
+                        )
+                    });
             } else if let Some(signature_id) =
                 maybe_get_signature_completion(&receipt, mpc_contract_id)
             {
                 completed_signatures.push(signature_id);
                 metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
+
+                let _ = signature_request_status_sender
+                    .try_send(SignatureStatus::Completion {
+                        block_height,
+                        signature_id,
+                    })
+                    .inspect_err(|err| {
+                        tracing::info!(
+                            "Failed to send status to request status tracker: {:?}.",
+                            err
+                        )
+                    });
             }
         }
     }
@@ -218,4 +267,49 @@ fn maybe_get_signature_completion(
     tracing::debug!(target: "mpc", "found `return_signature_and_clean_state_on_success` function call");
 
     Some(receipt.receipt_id)
+}
+
+#[derive(Debug)]
+enum SignatureStatus {
+    IncomingRequest {
+        block_height: u64,
+        signature_id: SignatureId,
+    },
+    Completion {
+        block_height: u64,
+        signature_id: SignatureId,
+    },
+}
+
+async fn monitor_completion_delay(mut signature_update_sender: Receiver<SignatureStatus>) {
+    let mut delay_queue: DelayQueue<SignatureId> = DelayQueue::new();
+    let mut seen_requests_height: HashMap<SignatureId, (delay_queue::Key, u64)> = HashMap::new();
+
+    select! {
+        Some(expired_signature_id) = delay_queue.next() => {
+            seen_requests_height.remove(expired_signature_id.get_ref());
+        },
+        signature_update = signature_update_sender.recv() => {
+            let Some(signature_update) = signature_update else {
+                return;
+            };
+
+            match signature_update {
+                SignatureStatus::IncomingRequest { block_height, signature_id } => {
+                    let delay_queue_key = delay_queue.insert(signature_id, SIGN_REQUEST_DELAY_QUEUE_DURATION);
+                    seen_requests_height
+                        .entry(signature_id)
+                        .or_insert((delay_queue_key, block_height));
+                }
+                SignatureStatus::Completion { block_height, signature_id } => {
+                    let Some((delay_queue_key, sign_height)) = seen_requests_height.remove(&signature_id) else {
+                        return;
+                    };
+                    delay_queue.remove(&delay_queue_key);
+                    let response_delay = block_height - sign_height;
+                    metrics::SIGNATURE_REQUEST_BLOCK_DELAY.observe(response_delay as f64);
+                }
+            }
+        }
+    }
 }

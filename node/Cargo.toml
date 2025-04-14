@@ -41,7 +41,7 @@ serde_yaml = "0.9.34"
 sha3 = "0.10.8"
 tempfile = "=3.14.0"
 tokio = { version = "1.41.0", features = ["full"] }
-tokio-util = "0.7.12"
+tokio-util = { version = "0.7.12", features = ["time"] }
 tokio-rustls = { version = "0.26.1", default-features = false }
 tokio-stream = { version = "0.1" }
 tracing = "0.1.40"

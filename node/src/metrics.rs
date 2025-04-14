@@ -1,4 +1,5 @@
 use lazy_static::lazy_static;
+use prometheus::{exponential_buckets, linear_buckets};
 
 lazy_static! {
     pub static ref MPC_NUM_TRIPLES_GENERATED: prometheus::IntCounter =
@@ -204,4 +205,21 @@ lazy_static! {
             &["my_participant_id", "peer_participant_id"],
         )
         .unwrap();
+}
+
+lazy_static! {
+    pub static ref SIGNATURE_REQUEST_BLOCK_DELAY: prometheus::Histogram = {
+        // High resolution for 1-9 blocks
+        let mut buckets = linear_buckets(1.0, 1.0, 9).unwrap();
+        // 10, 15, 22.5, 33.75, 50, ..., 256, 384
+        let exponential_buckets  = exponential_buckets(10.0, 1.5, 91).unwrap();
+        buckets.extend(exponential_buckets);
+
+        prometheus::register_histogram!(
+            "mpc_number_of_blocks_between_sign_request_and_response",
+            "The number of blocks between when a signature request is seen and when the corresponding response is seen.",
+            buckets).
+            unwrap()
+
+    };
 }
