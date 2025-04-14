@@ -274,15 +274,22 @@ impl PendingSignatureRequests {
                 return;
             }
         };
+
         metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED.inc();
         for (_, buffered_block_data) in add_result.new_final_blocks {
             metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED.inc();
             metrics::MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED
                 .inc_by(buffered_block_data.completed_requests.len() as u64);
+
             for request_id in &buffered_block_data.completed_requests {
                 tracing::debug!(target: "signing", "Removing completed request {:?}", request_id);
                 if let Some(request) = self.requests.remove(request_id) {
                     metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED.inc();
+
+                    let response_latency_blocks = block.height - request.block_height;
+                    metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS
+                        .observe(response_latency_blocks as f64);
+
                     self.recently_completed_requests.add_completed_request(
                         CompletedSignatureRequest {
                             indexed_block_height: request.block_height,
