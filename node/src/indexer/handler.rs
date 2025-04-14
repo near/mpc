@@ -79,6 +79,7 @@ pub(crate) async fn listen_blocks(
 
     actix::spawn(monitor_completion_delay(
         sign_request_delay_tracker_receiver,
+        SIGN_REQUEST_DELAY_QUEUE_DURATION,
         child,
     ));
 
@@ -289,8 +290,14 @@ enum SignatureStatus {
     },
 }
 
+/// Event loop that tracks the number of blocks between a signature request, [`SignatureStatus::IncomingRequest`]
+/// and its corresponding response, [`SignatureStatus::Completion`] through the provided [`Receiver`].
+///
+/// Requests will be tracked for a maximum [`Duration`] of `tracking_duration` before
+/// the tracking of it is discarded.
 async fn monitor_completion_delay(
     mut signature_update_sender: Receiver<SignatureStatus>,
+    tracking_timeout_duration: Duration,
     cancellation_token: CancellationToken,
 ) {
     let mut delay_queue: DelayQueue<SignatureId> = DelayQueue::new();
@@ -308,7 +315,7 @@ async fn monitor_completion_delay(
 
                 match signature_update {
                     SignatureStatus::IncomingRequest { block_height, signature_id } => {
-                        let delay_queue_key = delay_queue.insert(signature_id, SIGN_REQUEST_DELAY_QUEUE_DURATION);
+                        let delay_queue_key = delay_queue.insert(signature_id, tracking_timeout_duration);
                         seen_requests_height
                             .entry(signature_id)
                             .or_insert((delay_queue_key, block_height));
