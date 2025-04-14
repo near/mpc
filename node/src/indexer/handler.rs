@@ -77,7 +77,7 @@ pub(crate) async fn listen_blocks(
     let child = cancellation_token.child_token();
     let _drop_guard = cancellation_token.drop_guard();
 
-    actix::spawn(monitor_completion_delay(
+    actix::spawn(track_signature_completion_latency(
         sign_request_delay_tracker_receiver,
         SIGN_REQUEST_DELAY_QUEUE_DURATION,
         child,
@@ -295,7 +295,9 @@ enum SignatureStatus {
 ///
 /// Requests will be tracked for a maximum [`Duration`] of `tracking_duration` before
 /// the tracking of it is discarded.
-async fn monitor_completion_delay(
+///
+/// The tracked latencies are registered in [`metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS`].
+async fn track_signature_completion_latency(
     mut signature_update_sender: Receiver<SignatureStatus>,
     tracking_timeout_duration: Duration,
     cancellation_token: CancellationToken,
@@ -326,7 +328,7 @@ async fn monitor_completion_delay(
                         };
                         delay_queue.remove(&delay_queue_key);
                         let response_delay = block_height - sign_height;
-                        metrics::SIGNATURE_REQUEST_BLOCK_DELAY.observe(response_delay as f64);
+                        metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS.observe(response_delay as f64);
                     }
                 }
             }

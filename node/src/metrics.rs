@@ -208,7 +208,7 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub static ref SIGNATURE_REQUEST_BLOCK_DELAY: prometheus::Histogram = {
+    pub static ref SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS: prometheus::Histogram = {
         // High resolution for 1-9 blocks
         let mut buckets = linear_buckets(1.0, 1.0, 9).unwrap();
         // 10, 15, 22.5, 33.75, 50, ..., 256, 384
@@ -216,7 +216,7 @@ lazy_static! {
         buckets.extend(exponential_buckets);
 
         prometheus::register_histogram!(
-            "mpc_number_of_blocks_between_sign_request_and_response",
+            "mpc_signature_request_response_latency_blocks",
             "The number of blocks between when a signature request is seen and when the corresponding response is seen.",
             buckets).
             unwrap()
