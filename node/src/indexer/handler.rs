@@ -23,7 +23,10 @@ use tokio::{
         Mutex,
     },
 };
-use tokio_util::time::delay_queue::{self, DelayQueue};
+use tokio_util::{
+    sync::CancellationToken,
+    time::delay_queue::{self, DelayQueue},
+};
 
 const SIGN_REQUEST_DELAY_QUEUE_DURATION_SECS: u64 = 120; // 2 min
 const SIGN_REQUEST_DELAY_QUEUE_DURATION: Duration =
@@ -70,8 +73,13 @@ pub(crate) async fn listen_blocks(
     let (sign_request_delay_tracker_sender, sign_request_delay_tracker_receiver) =
         channel(SIGN_REQUEST_DELAY_TRACKER_CHANNEL_BUFFER_SIZE);
 
+    let cancellation_token = CancellationToken::new();
+    let child = cancellation_token.child_token();
+    let _drop_guard = cancellation_token.drop_guard();
+
     actix::spawn(monitor_completion_delay(
         sign_request_delay_tracker_receiver,
+        child,
     ));
 
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
@@ -281,34 +289,42 @@ enum SignatureStatus {
     },
 }
 
-async fn monitor_completion_delay(mut signature_update_sender: Receiver<SignatureStatus>) {
+async fn monitor_completion_delay(
+    mut signature_update_sender: Receiver<SignatureStatus>,
+    cancellation_token: CancellationToken,
+) {
     let mut delay_queue: DelayQueue<SignatureId> = DelayQueue::new();
     let mut seen_requests_height: HashMap<SignatureId, (delay_queue::Key, u64)> = HashMap::new();
 
-    select! {
-        Some(expired_signature_id) = delay_queue.next() => {
-            seen_requests_height.remove(expired_signature_id.get_ref());
-        },
-        signature_update = signature_update_sender.recv() => {
-            let Some(signature_update) = signature_update else {
-                return;
-            };
+    loop {
+        select! {
+            Some(expired_signature_id) = delay_queue.next() => {
+                seen_requests_height.remove(expired_signature_id.get_ref());
+            },
+            signature_update = signature_update_sender.recv() => {
+                let Some(signature_update) = signature_update else {
+                    return;
+                };
 
-            match signature_update {
-                SignatureStatus::IncomingRequest { block_height, signature_id } => {
-                    let delay_queue_key = delay_queue.insert(signature_id, SIGN_REQUEST_DELAY_QUEUE_DURATION);
-                    seen_requests_height
-                        .entry(signature_id)
-                        .or_insert((delay_queue_key, block_height));
+                match signature_update {
+                    SignatureStatus::IncomingRequest { block_height, signature_id } => {
+                        let delay_queue_key = delay_queue.insert(signature_id, SIGN_REQUEST_DELAY_QUEUE_DURATION);
+                        seen_requests_height
+                            .entry(signature_id)
+                            .or_insert((delay_queue_key, block_height));
+                    }
+                    SignatureStatus::Completion { block_height, signature_id } => {
+                        let Some((delay_queue_key, sign_height)) = seen_requests_height.remove(&signature_id) else {
+                            continue;
+                        };
+                        delay_queue.remove(&delay_queue_key);
+                        let response_delay = block_height - sign_height;
+                        metrics::SIGNATURE_REQUEST_BLOCK_DELAY.observe(response_delay as f64);
+                    }
                 }
-                SignatureStatus::Completion { block_height, signature_id } => {
-                    let Some((delay_queue_key, sign_height)) = seen_requests_height.remove(&signature_id) else {
-                        return;
-                    };
-                    delay_queue.remove(&delay_queue_key);
-                    let response_delay = block_height - sign_height;
-                    metrics::SIGNATURE_REQUEST_BLOCK_DELAY.observe(response_delay as f64);
-                }
+            }
+            _ = cancellation_token.cancelled() => {
+                return;
             }
         }
     }
