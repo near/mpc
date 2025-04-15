@@ -17,6 +17,7 @@ use crate::tracking::{self, start_root_task};
 use crate::web::start_web_server;
 use clap::Parser;
 use hex::FromHex;
+use mpc_contract::state::ProtocolContractState;
 use near_crypto::SecretKey;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
@@ -132,11 +133,14 @@ impl StartCmd {
             SecretsConfig::from_cli(&self.secret_store_key_hex, self.p2p_private_key.clone())?;
         let config = load_config_file(&home_dir)?;
 
+        let (web_contract_sender, web_contract_receiver) =
+            tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
         let (indexer_handle, indexer_api) = spawn_real_indexer(
             home_dir.clone(),
             config.indexer.clone(),
             config.my_near_account_id.clone(),
             self.account_secret_key.clone(),
+            web_contract_sender,
         );
 
         let root_future = Self::create_root_future(
@@ -146,6 +150,7 @@ impl StartCmd {
             indexer_api,
             self.gcp_keyshare_secret_id.clone(),
             self.gcp_project_id.clone(),
+            web_contract_receiver,
         );
 
         let root_runtime = tokio::runtime::Builder::new_multi_thread()
@@ -179,6 +184,7 @@ impl StartCmd {
         indexer_api: IndexerAPI,
         gcp_keyshare_secret_id: Option<String>,
         gcp_project_id: Option<String>,
+        web_contract_receiver: tokio::sync::watch::Receiver<ProtocolContractState>,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
         let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
@@ -186,6 +192,7 @@ impl StartCmd {
             root_task_handle,
             signature_debug_request_sender.clone(),
             config.web_ui.clone(),
+            web_contract_receiver,
         )
         .await?;
         let _web_server = tracking::spawn_checked("web server", web_server);

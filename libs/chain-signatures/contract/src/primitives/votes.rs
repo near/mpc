@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 /// Each current participant can maintain one vote.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Default, PartialEq)]
+#[cfg_attr(feature = "dev-utils", derive(Clone))]
 pub struct ThresholdParametersVotes {
     proposal_by_account: BTreeMap<AuthenticatedParticipantId, ThresholdParameters>,
 }

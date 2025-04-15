@@ -20,6 +20,7 @@ use mpc_contract::primitives::key_state::EpochId;
 use mpc_contract::primitives::participants::{ParticipantInfo, Participants};
 use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
 use mpc_contract::state::ProtocolContractState;
+use mpc_contract::utils::protocol_state_to_string;
 use near_crypto::SecretKey;
 use near_sdk::{borsh, AccountId};
 use serde::Serialize;
@@ -952,132 +953,12 @@ impl MpcDescribeCmd {
         if let Some(contract) = &mpc_setup.contract {
             println!("MPC contract deployed at: {}", contract);
             let contract_state = read_contract_state_v2(&setup.accounts, contract).await;
-            match contract_state {
-                ProtocolContractState::NotInitialized => {
-                    println!("Contract is not initialized");
-                }
-                ProtocolContractState::Initializing(state) => {
-                    println!("Contract is in Initializing state (key generation)");
-                    println!("  Epoch: {}", state.generating_key.epoch_id());
-                    println!("  Domains:");
-                    for (i, domain) in state.domains.domains().iter().enumerate() {
-                        print!("    Domain {}: {:?}, ", domain.id, domain.scheme);
-                        #[allow(clippy::comparison_chain)]
-                        if i < state.generated_keys.len() {
-                            println!(
-                                "key generated (attempt ID {})",
-                                state.generated_keys[i].attempt
-                            );
-                        } else if i == state.generated_keys.len() {
-                            print!("generating key: ");
-                            if state.generating_key.is_active() {
-                                println!(
-                                    "active; current attempt ID: {}",
-                                    state
-                                        .generating_key
-                                        .current_key_event_id()
-                                        .unwrap()
-                                        .attempt_id
-                                );
-                            } else {
-                                println!(
-                                    "not active; next attempt ID: {}",
-                                    state.generating_key.next_attempt_id()
-                                );
-                            }
-                        } else {
-                            println!("queued for generation");
-                        }
-                    }
-                    println!("  Parameters:");
-                    Self::print_parameters(state.generating_key.proposed_parameters());
-                    println!("  Warning: this tool does not calculate automatic timeouts for key generation attempts");
-                }
-                ProtocolContractState::Running(state) => {
-                    println!("Contract is in Running state");
-                    println!("  Epoch: {}", state.keyset.epoch_id);
-                    println!("  Keyset:");
-                    for (domain, key) in state
-                        .domains
-                        .domains()
-                        .iter()
-                        .zip(state.keyset.domains.iter())
-                    {
-                        println!(
-                            "    Domain {}: {:?}, key from attempt {}",
-                            domain.id, domain.scheme, key.attempt
-                        );
-                    }
-                    println!("  Parameters:");
-                    Self::print_parameters(&state.parameters);
-                }
-                ProtocolContractState::Resharing(state) => {
-                    println!("Contract is in Resharing state");
-                    println!(
-                        "  Epoch transition: original {} --> prospective {}",
-                        state.previous_running_state.keyset.epoch_id,
-                        state.prospective_epoch_id()
-                    );
-                    println!("  Domains:");
-                    for (i, domain) in state
-                        .previous_running_state
-                        .domains
-                        .domains()
-                        .iter()
-                        .enumerate()
-                    {
-                        print!(
-                            "    Domain {}: {:?}, original key from attempt {}, ",
-                            domain.id,
-                            domain.scheme,
-                            state.previous_running_state.keyset.domains[i].attempt
-                        );
-
-                        #[allow(clippy::comparison_chain)]
-                        if i < state.reshared_keys.len() {
-                            println!("reshared (attempt ID {})", state.reshared_keys[i].attempt);
-                        } else if i == state.reshared_keys.len() {
-                            print!("resharing key: ");
-                            if state.resharing_key.is_active() {
-                                println!(
-                                    "active; current attempt ID: {}",
-                                    state
-                                        .resharing_key
-                                        .current_key_event_id()
-                                        .unwrap()
-                                        .attempt_id
-                                );
-                            } else {
-                                println!(
-                                    "not active; next attempt ID: {}",
-                                    state.resharing_key.next_attempt_id()
-                                );
-                            }
-                        } else {
-                            println!("queued for resharing");
-                        }
-                    }
-                    println!("  Previous Parameters:");
-                    Self::print_parameters(&state.previous_running_state.parameters);
-                    println!("  Proposed Parameters:");
-                    Self::print_parameters(state.resharing_key.proposed_parameters());
-
-                    println!("  Warning: this tool does not calculate automatic timeouts for resharing attempts");
-                }
-            }
+            print!("{}", protocol_state_to_string(&contract_state));
         } else {
             println!("MPC contract is not deployed");
         }
         println!();
 
         self.describe_terraform(name, &config).await;
-    }
-
-    fn print_parameters(parameters: &ThresholdParameters) {
-        println!("    Participants:");
-        for (account_id, id, info) in parameters.participants().participants() {
-            println!("      ID {}: {} ({})", id, account_id, info.url);
-        }
-        println!("    Threshold: {}", parameters.threshold().value());
     }
 }

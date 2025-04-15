@@ -2,6 +2,7 @@ use cait_sith::ecdsa::presign::PresignOutput;
 use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::{run_protocol, Participant, Protocol};
 use k256::{AffinePoint, Scalar, Secp256k1};
+use mpc_contract::state::ProtocolContractState;
 use std::collections::HashMap;
 
 use crate::config::{
@@ -206,10 +207,13 @@ impl OneNodeTestConfig {
             let root_future = async move {
                 let root_task_handle = tracking::current_task();
                 let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+                let (_, web_contract_receiver) =
+                    tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
                 let web_server = start_web_server(
                     root_task_handle,
                     signature_debug_request_sender.clone(),
                     config.web_ui.clone(),
+                    web_contract_receiver.clone(),
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);

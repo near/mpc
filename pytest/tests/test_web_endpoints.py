@@ -37,3 +37,6 @@ def test_web_endpoints():
         response = requests.get(f'http://localhost:{port}/debug/signatures')
         assert 'Recent Signatures:' in response.text, response.text
         assert 'id:' in response.text, response.text
+
+        response = requests.get(f'http://localhost:{port}/debug/contract')
+        assert 'Contract is in Running state' in response.text, response.text

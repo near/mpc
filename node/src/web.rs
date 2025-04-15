@@ -6,10 +6,12 @@ use axum::http::{Response, StatusCode};
 use axum::response::IntoResponse;
 use axum::serve;
 use futures::future::BoxFuture;
+use mpc_contract::state::ProtocolContractState;
+use mpc_contract::utils::protocol_state_to_string;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -44,6 +46,8 @@ struct WebServerState {
     root_task_handle: Arc<TaskHandle>,
     /// Sender for debug requests that need the MPC client to respond.
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
+    /// Receiver for contract state
+    contract_state_receiver: watch::Receiver<ProtocolContractState>,
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
@@ -94,6 +98,11 @@ async fn debug_signatures(state: State<WebServerState>) -> Result<String, Anyhow
     debug_request_from_node(state, SignatureDebugRequestKind::RecentSignatures).await
 }
 
+async fn contract_state(mut state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
+    Ok(protocol_state_to_string(
+        &state.contract_state_receiver.borrow_and_update(),
+    ))
+}
 /// Starts the web server. This is an async function that returns a future.
 /// The function itself will return error if the server cannot be started.
 ///
@@ -104,6 +113,7 @@ pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     config: WebUIConfig,
+    contract_state_receiver: watch::Receiver<ProtocolContractState>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 
@@ -112,10 +122,12 @@ pub async fn start_web_server(
         .route("/debug/tasks", axum::routing::get(debug_tasks))
         .route("/debug/blocks", axum::routing::get(debug_blocks))
         .route("/debug/signatures", axum::routing::get(debug_signatures))
+        .route("/debug/contract", axum::routing::get(contract_state))
         .route("/health", axum::routing::get(|| async { "OK" }))
         .with_state(WebServerState {
             root_task_handle,
             signature_debug_request_sender,
+            contract_state_receiver,
         });
 
     let tcp_listener = TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;

@@ -1,9 +1,10 @@
 use super::handler::listen_blocks;
-use super::participants::{monitor_chain_state, ContractState};
+use super::participants::{monitor_contract_state, ContractState};
 use super::stats::{indexer_logger, IndexerStats};
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
 use crate::config::{load_respond_config_file, IndexerConfig, RespondConfigFile};
+use mpc_contract::state::ProtocolContractState;
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
@@ -17,6 +18,7 @@ pub fn spawn_real_indexer(
     indexer_config: IndexerConfig,
     my_near_account_id: AccountId,
     account_secret_key: SecretKey,
+    protocol_state_sender: tokio::sync::watch::Sender<ProtocolContractState>,
 ) -> (std::thread::JoinHandle<()>, IndexerAPI) {
     let (chain_config_sender, chain_config_receiver) =
         tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
@@ -52,11 +54,11 @@ pub fn spawn_real_indexer(
             ));
             // TODO: migrate this into IndexerState
             let stats: Arc<Mutex<IndexerStats>> = Arc::new(Mutex::new(IndexerStats::new()));
-
-            actix::spawn(monitor_chain_state(
+            actix::spawn(monitor_contract_state(
                 indexer_state.clone(),
                 indexer_config.port_override,
                 chain_config_sender,
+                protocol_state_sender,
             ));
             actix::spawn(indexer_logger(Arc::clone(&stats), indexer_state.view_client.clone()));
             actix::spawn(handle_txn_requests(

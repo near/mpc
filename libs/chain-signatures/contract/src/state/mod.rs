@@ -17,6 +17,7 @@ use running::RunningContractState;
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
+#[cfg_attr(feature = "dev-utils", derive(Clone))]
 pub enum ProtocolContractState {
     NotInitialized,
     Initializing(InitializingContractState),
