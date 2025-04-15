@@ -23,6 +23,7 @@ use std::collections::BTreeSet;
 ///    threshold if desired.
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
+#[cfg_attr(feature = "dev-utils", derive(Clone))]
 pub struct RunningContractState {
     /// The domains for which we have a key ready for signature processing.
     pub domains: DomainRegistry,

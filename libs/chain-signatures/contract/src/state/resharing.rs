@@ -21,6 +21,7 @@ use near_sdk::near;
 ///  - We use the previous running state's DomainRegistry.
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
+#[cfg_attr(feature = "dev-utils", derive(Clone))]
 pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,

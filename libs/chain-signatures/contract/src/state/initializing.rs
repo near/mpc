@@ -26,6 +26,7 @@ use std::collections::BTreeSet;
 /// and we wish to perform a resharing before adding domains again.
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
+#[cfg_attr(feature = "dev-utils", derive(Clone))]
 pub struct InitializingContractState {
     /// All domains, including the already existing ones and the ones we're generating a new key for
     pub domains: DomainRegistry,

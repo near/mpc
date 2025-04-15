@@ -6,6 +6,8 @@ pub mod primitives;
 pub mod state;
 pub mod storage_keys;
 pub mod update;
+#[cfg(feature = "dev-utils")]
+pub mod utils;
 
 use crate::errors::Error;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
