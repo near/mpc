@@ -2,6 +2,7 @@ use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::BlockViewLite;
+use anyhow::Context;
 use futures::StreamExt;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
@@ -50,7 +51,7 @@ pub(crate) async fn listen_blocks(
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
     block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
-) {
+) -> anyhow::Result<()> {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
             handle_message(
@@ -62,7 +63,11 @@ pub(crate) async fn listen_blocks(
         })
         .buffer_unordered(usize::from(concurrency.get()));
 
-    while let Some(_handle_message) = handle_messages.next().await {}
+    while let Some(handle_message) = handle_messages.next().await {
+        handle_message?;
+    }
+
+    Ok(())
 }
 
 async fn handle_message(
@@ -107,18 +112,21 @@ async fn handle_message(
 
     crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height as i64);
 
-    if let Err(err) = block_update_sender.send(ChainBlockUpdate {
-        block: BlockViewLite {
-            hash: streamer_message.block.header.hash,
-            height: streamer_message.block.header.height,
-            prev_hash: streamer_message.block.header.prev_hash,
-            last_final_block: streamer_message.block.header.last_final_block,
-        },
-        signature_requests,
-        completed_signatures,
-    }) {
-        tracing::error!(target: "mpc", %err, "error sending block update to mpc node");
-    }
+    block_update_sender
+        .send(ChainBlockUpdate {
+            block: BlockViewLite {
+                hash: streamer_message.block.header.hash,
+                height: streamer_message.block.header.height,
+                prev_hash: streamer_message.block.header.prev_hash,
+                last_final_block: streamer_message.block.header.last_final_block,
+            },
+            signature_requests,
+            completed_signatures,
+        })
+        .inspect_err(|err| {
+            tracing::error!(target: "mpc", %err, "error sending block update to mpc node");
+        })
+        .context("Channel is closed. Could not send block update from indexer to the update.")?;
 
     let mut stats_lock = stats.lock().await;
     stats_lock.block_heights_processing.remove(&block_height);
