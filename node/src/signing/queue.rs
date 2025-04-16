@@ -12,6 +12,7 @@ use sha3::Digest;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, Weak};
+use std::time::Instant;
 
 /// The minimum time that must elapse before we'll consider each signature for another attempt.
 pub const CHECK_EACH_SIGNATURE_REQUEST_INTERVAL: Duration = Duration::seconds(1);
@@ -148,6 +149,9 @@ pub(super) struct QueuedSignatureRequest {
     /// The current attempt to generate the signature. This is weak to detect if the attempt has
     /// completed.
     pub active_attempt: Weak<SignatureGenerationAttempt>,
+
+    /// The [`Instant`] the signature was indexed.
+    pub indexing_instant: Instant,
 }
 
 /// Struct given to the signature generation code.
@@ -179,6 +183,7 @@ impl QueuedSignatureRequest {
         block_hash: CryptoHash,
         block_height: u64,
         all_participants: &[ParticipantId],
+        indexing_instant: Instant,
     ) -> Self {
         let leader_selection_order = Self::leader_selection_order(all_participants, request.id);
         tracing::debug!(target: "signing", "Leader selection order for request {:?} from block {}: {:?}", request.id, block_height, leader_selection_order);
@@ -191,6 +196,7 @@ impl QueuedSignatureRequest {
             computation_progress: Arc::new(Mutex::new(SignatureComputationProgress::default())),
             next_check_due: clock.now(),
             active_attempt: Weak::new(),
+            indexing_instant,
         }
     }
 
@@ -287,8 +293,11 @@ impl PendingSignatureRequests {
                     metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED.inc();
 
                     let response_latency_blocks = block.height - request.block_height;
+                    let response_latency_duration = Instant::now() - request.indexing_instant;
                     metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS
                         .observe(response_latency_blocks as f64);
+                    metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS
+                        .observe(response_latency_duration.as_secs_f64());
 
                     self.recently_completed_requests.add_completed_request(
                         CompletedSignatureRequest {
@@ -311,6 +320,7 @@ impl PendingSignatureRequests {
                     block.hash,
                     block.height,
                     &self.all_participants,
+                    Instant::now(),
                 ));
         }
     }

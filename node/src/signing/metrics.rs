@@ -61,4 +61,12 @@ lazy_static! {
             unwrap()
 
     };
+
+    pub static ref SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS: prometheus::Histogram =
+        prometheus::register_histogram!(
+            "mpc_signature_request_response_latency_seconds",
+            "The duration, in seconds, between when a signature request is seen and when the corresponding response is seen.",
+            // 2s - 3s - 4.5s .... - 115s
+            exponential_buckets(2.0, 1.5, 10).unwrap()
+            ).unwrap();
 }
