@@ -24,8 +24,7 @@ def test_single_domain():
     The test starts with 2 nodes and one domain, performs key generation, and verifies
     that the attempt ID is incremented correctly.
 
-    It performs multiple rounds of resharing while changing the participant set,
-    including killing and restarting a node.
+    It performs multiple rounds of resharing while changing the participant set.
 
     Signature requests are sent after each resharing to verify liveness.
     """
