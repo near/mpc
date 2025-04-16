@@ -11,15 +11,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, watch, Mutex};
 
-/// Spawn a real indexer, returning a handle to the indexer root thread,
-/// and an API to interact with the indexer.
+/// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
+///
+/// If an unrecoverable error occurs, the spawned indexer will terminate, and the provided [`oneshot::Sender`]
+/// will be used to propagate the error.
 pub fn spawn_real_indexer(
     home_dir: PathBuf,
     indexer_config: IndexerConfig,
     my_near_account_id: AccountId,
     account_secret_key: SecretKey,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
-    indexer_exit_result: oneshot::Sender<anyhow::Result<()>>,
+    indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
 ) -> IndexerAPI {
     let (chain_config_sender, chain_config_receiver) =
         tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
@@ -77,7 +79,7 @@ pub fn spawn_real_indexer(
             )
             .await;
 
-            if indexer_exit_result.send(indexer_result).is_err() {
+            if indexer_exit_sender.send(indexer_result).is_err() {
                 tracing::error!("Indexer thread could not send result back to main driver.")
             };
         });

@@ -141,14 +141,14 @@ impl StartCmd {
         let (web_contract_sender, web_contract_receiver) =
             tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
 
-        let (indexer_response_sender, indexer_response_receiver) = oneshot::channel();
+        let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
         let indexer_api = spawn_real_indexer(
             home_dir.clone(),
             config.indexer.clone(),
             config.my_near_account_id.clone(),
             self.account_secret_key.clone(),
             web_contract_sender,
-            indexer_response_sender,
+            indexer_exit_sender,
         );
 
         let root_future = Self::create_root_future(
@@ -169,14 +169,13 @@ impl StartCmd {
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
 
         tokio::select! {
-            res = root_task => {
-                res??;
+            root_task_result = root_task => {
+                root_task_result?
             }
-            res = indexer_response_receiver => {
-                res.context("Indexer thread dropped response channel.")??;
+            indexer_exit_response = indexer_exit_receiver => {
+                indexer_exit_response.context("Indexer thread dropped response channel.")?
             }
         }
-        Ok(())
     }
 
     async fn create_root_future(
