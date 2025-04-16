@@ -9,7 +9,7 @@ use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, watch, Mutex};
 
 /// Spawn a real indexer, returning a handle to the indexer root thread,
 /// and an API to interact with the indexer.
@@ -18,16 +18,16 @@ pub fn spawn_real_indexer(
     indexer_config: IndexerConfig,
     my_near_account_id: AccountId,
     account_secret_key: SecretKey,
-    protocol_state_sender: tokio::sync::watch::Sender<ProtocolContractState>,
-) -> (std::thread::JoinHandle<anyhow::Result<()>>, IndexerAPI) {
+    protocol_state_sender: watch::Sender<ProtocolContractState>,
+    indexer_exit_result: oneshot::Sender<anyhow::Result<()>>,
+) -> IndexerAPI {
     let (chain_config_sender, chain_config_receiver) =
         tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
 
-    let thread = std::thread::spawn(move || {
-        // TODO(#156): replace actix with tokio
-        actix::System::new().block_on(async {
+    // TODO(#156): replace actix with tokio
+    actix::System::new().block_on(async {
             let indexer =
                 near_indexer::Indexer::new(indexer_config.to_near_indexer_config(home_dir.clone()))
                     .expect("Failed to initialize the Indexer");
@@ -68,22 +68,23 @@ pub fn spawn_real_indexer(
                 respond_config,
                 indexer_state.clone(),
             ));
-            listen_blocks(
+            let indexer_result = listen_blocks(
                 stream,
                 indexer_config.concurrency,
                 Arc::clone(&stats),
                 indexer_config.mpc_contract_id,
                 block_update_sender,
             )
-            .await
-        })
-    });
-    (
-        thread,
-        IndexerAPI {
-            contract_state_receiver: chain_config_receiver,
-            block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
-            txn_sender: chain_txn_sender,
-        },
-    )
+            .await;
+
+            if indexer_exit_result.send(indexer_result).is_err() {
+                tracing::error!("Indexer thread could not send result back to main driver.")
+            };
+        });
+
+    IndexerAPI {
+        contract_state_receiver: chain_config_receiver,
+        block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
+        txn_sender: chain_txn_sender,
+    }
 }

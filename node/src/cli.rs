@@ -1,20 +1,22 @@
-use crate::config::{
-    load_config_file, BlockArgs, KeygenConfig, PresignatureConfig, SecretsConfig, SignatureConfig,
-    SyncMode, TripleConfig, WebUIConfig,
+use crate::{
+    config::{
+        load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
+        SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
+    },
+    coordinator::Coordinator,
+    db::SecretDB,
+    indexer::{real::spawn_real_indexer, IndexerAPI},
+    keyshare::{
+        compat::legacy_ecdsa_key_from_keyshares,
+        local::LocalPermanentKeyStorageBackend,
+        permanent::{LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend},
+        GcpPermanentKeyStorageConfig, KeyStorageConfig,
+    },
+    p2p::testing::{generate_test_p2p_configs, PortSeed},
+    tracking::{self, start_root_task},
+    web::start_web_server,
 };
-use crate::config::{ConfigFile, IndexerConfig};
-use crate::coordinator::Coordinator;
-use crate::db::SecretDB;
-use crate::indexer::{real::spawn_real_indexer, IndexerAPI};
-use crate::keyshare::compat::legacy_ecdsa_key_from_keyshares;
-use crate::keyshare::local::LocalPermanentKeyStorageBackend;
-use crate::keyshare::permanent::{
-    LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend,
-};
-use crate::keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig};
-use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
-use crate::tracking::{self, start_root_task};
-use crate::web::start_web_server;
+use anyhow::Context;
 use clap::Parser;
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
@@ -22,8 +24,11 @@ use near_crypto::SecretKey;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
+use tokio::sync::oneshot;
 
 #[derive(Parser, Debug)]
 pub enum Cli {
@@ -135,12 +140,15 @@ impl StartCmd {
 
         let (web_contract_sender, web_contract_receiver) =
             tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
-        let (indexer_handle, indexer_api) = spawn_real_indexer(
+
+        let (indexer_response_sender, indexer_response_receiver) = oneshot::channel();
+        let indexer_api = spawn_real_indexer(
             home_dir.clone(),
             config.indexer.clone(),
             config.my_near_account_id.clone(),
             self.account_secret_key.clone(),
             web_contract_sender,
+            indexer_response_sender,
         );
 
         let root_future = Self::create_root_future(
@@ -159,19 +167,13 @@ impl StartCmd {
             .build()?;
 
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
-        let indexer_handle = root_runtime.spawn_blocking(move || {
-            if let Err(e) = indexer_handle.join() {
-                anyhow::bail!("Indexer thread failed: {:?}", e);
-            }
-            anyhow::Ok(())
-        });
 
         tokio::select! {
             res = root_task => {
                 res??;
             }
-            res = indexer_handle => {
-                res??;
+            res = indexer_response_receiver => {
+                res.context("Indexer thread dropped response channel.")??;
             }
         }
         Ok(())
