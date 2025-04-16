@@ -29,7 +29,8 @@ pub fn spawn_real_indexer(
     let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
 
     // TODO(#156): replace actix with tokio
-    actix::System::new().block_on(async {
+    std::thread::spawn(move || {
+        actix::System::new().block_on(async {
             let indexer =
                 near_indexer::Indexer::new(indexer_config.to_near_indexer_config(home_dir.clone()))
                     .expect("Failed to initialize the Indexer");
@@ -83,6 +84,7 @@ pub fn spawn_real_indexer(
                 tracing::error!("Indexer thread could not send result back to main driver.")
             };
         });
+    });
 
     IndexerAPI {
         contract_state_receiver: chain_config_receiver,
