@@ -8,6 +8,7 @@ At every step we check that signatures can still be produced.
 
 import sys
 import pathlib
+import time
 import pytest
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -53,12 +54,13 @@ def test_single_domain():
 
     cluster.update_participant_status()
     cluster.send_and_await_signature_requests(1)
+    mpc_nodes[0].run()
+    time.sleep(5)
     cluster.do_resharing(new_participants=mpc_nodes[0:4],
                          new_threshold=3,
                          prospective_epoch_id=3,
                          wait_for_running=False)
 
-    mpc_nodes[0].run()
     assert cluster.wait_for_state('Running'), "failed to start running"
     cluster.update_participant_status()
     cluster.send_and_await_signature_requests(1)

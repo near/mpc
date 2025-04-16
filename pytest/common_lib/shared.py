@@ -1,5 +1,4 @@
 import base64
-import random
 import base58
 import os
 import sys
@@ -414,7 +413,7 @@ class MpcCluster:
         args = {
             'domains': domains_to_add,
         }
-        for node in random.sample(self.get_voters(), k=state.threshold()):
+        for node in self.get_voters():
             print(f"{node.print()} voting to add domain(s)")
             tx = node.sign_tx(self.mpc_contract_account(),
                               'vote_add_domains',
@@ -440,8 +439,7 @@ class MpcCluster:
         }
         state = self.contract_state()
         assert state.is_state('Running'), "Require running state"
-        old_threshold = state.threshold()
-        for node in random.sample(self.get_voters(), k=old_threshold):
+        for node in new_participants:
             tx = node.sign_tx(self.mpc_contract_account(),
                               'vote_new_parameters', args)
             node.send_txn_and_check_success(tx)
