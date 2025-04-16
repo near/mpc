@@ -17,7 +17,7 @@ pub fn spawn_real_indexer(
     indexer_config: IndexerConfig,
     my_near_account_id: AccountId,
     account_secret_key: SecretKey,
-) -> (std::thread::JoinHandle<()>, IndexerAPI) {
+) -> (std::thread::JoinHandle<anyhow::Result<()>>, IndexerAPI) {
     let (chain_config_sender, chain_config_receiver) =
         tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
@@ -73,8 +73,8 @@ pub fn spawn_real_indexer(
                 indexer_config.mpc_contract_id,
                 block_update_sender,
             )
-            .await;
-        });
+            .await
+        })
     });
     (
         thread,
