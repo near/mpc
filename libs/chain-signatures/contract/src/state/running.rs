@@ -2,11 +2,11 @@ use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::crypto_shared::types::PublicKeyExtended;
-use crate::errors::{DomainError, Error, InvalidParameters};
+use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::legacy_contract_state;
 use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
 use crate::primitives::key_state::{
-    AttemptId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
+    AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
 };
 use crate::primitives::thresholds::ThresholdParameters;
 use crate::primitives::votes::ThresholdParametersVotes;
@@ -120,14 +120,25 @@ impl RunningContractState {
         &mut self,
         proposal: &ThresholdParameters,
     ) -> Result<bool, Error> {
-        // ensure the signer is a proposed participant
-        let participant = AuthenticatedParticipantId::new(proposal.participants())?;
-
         // ensure the proposal is valid against the current parameters
         self.parameters.validate_incoming_proposal(proposal)?;
 
-        // finally, vote. Propagate any errors
-        let n_votes = self.parameters_votes.vote(proposal, &participant);
+        // ensure the signer is a proposed participant
+        let candidate = AuthenticatedAccountId::new(proposal.participants())?;
+
+        // If the signer is not a participant of the current epoch, they can only vote after
+        // `threshold` participant of the current epoch have casted their vote to admit them.
+        if AuthenticatedAccountId::new(self.parameters.participants()).is_err() {
+            let n_votes = self
+                .parameters_votes
+                .n_votes(proposal, self.parameters.participants());
+            if n_votes < self.parameters.threshold().value() {
+                return Err(VoteError::VoterPending.into());
+            }
+        }
+
+        // finally, vote.
+        let n_votes = self.parameters_votes.vote(proposal, candidate);
         Ok(proposal.participants().len() as u64 == n_votes)
     }
 
