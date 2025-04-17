@@ -46,9 +46,10 @@ impl ResharingContractState {
         self.resharing_key.epoch_id()
     }
 
-    /// Casts a vote for a re-proposal. Requires the signer to be a participant of the
-    /// prospective epoch.
-    /// Returns a new ResharingContractState if all proposed participants voted for it.
+    /// Casts a vote for a re-proposal. Requires the signer to be a participant of the prospective epoch.
+    /// Returns a new [`ResharingContractState`] if all participants of the re-proposal voted for the re-proposal.
+    /// Note that transitioning to a new state implicitly requires `threshold` number of votes from participants of the
+    /// previous running state.
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,

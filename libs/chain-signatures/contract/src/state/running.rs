@@ -132,7 +132,7 @@ impl RunningContractState {
     }
 
     /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
-    /// If this causes a threshold number of participants to vote for the same set of new domains,
+    /// If the number of votes for the same set of new domains reaches the number of participants,
     /// returns the InitializingContractState we should transition into to generate keys for these
     /// new domains.
     pub fn vote_add_domains(
