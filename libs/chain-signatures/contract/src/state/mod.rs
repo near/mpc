@@ -10,8 +10,9 @@ use crate::primitives::{
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     thresholds::{Threshold, ThresholdParameters},
 };
+use crate::v0_state;
 use initializing::InitializingContractState;
-use near_sdk::near;
+use near_sdk::{env, near};
 use resharing::ResharingContractState;
 use running::RunningContractState;
 
@@ -23,6 +24,19 @@ pub enum ProtocolContractState {
     Initializing(InitializingContractState),
     Running(RunningContractState),
     Resharing(ResharingContractState),
+}
+
+impl From<v0_state::ProtocolContractState> for ProtocolContractState {
+    fn from(value: v0_state::ProtocolContractState) -> Self {
+        match value {
+            v0_state::ProtocolContractState::NotInitialized => env::panic_str("not supported"),
+            v0_state::ProtocolContractState::Initializing(_) => env::panic_str("not supported"),
+            v0_state::ProtocolContractState::Running(running) => {
+                ProtocolContractState::Running(running.into())
+            }
+            v0_state::ProtocolContractState::Resharing(_) => env::panic_str("not supported"),
+        }
+    }
 }
 
 impl ProtocolContractState {

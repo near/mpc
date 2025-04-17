@@ -1,6 +1,7 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
+use super::v0_state;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::legacy_contract_state;
@@ -12,7 +13,6 @@ use crate::primitives::thresholds::ThresholdParameters;
 use crate::primitives::votes::ThresholdParametersVotes;
 use near_sdk::near;
 use std::collections::BTreeSet;
-
 /// In this state, the contract is ready to process signature requests.
 ///
 /// Proposals can be submitted to modify the state:
@@ -36,6 +36,18 @@ pub struct RunningContractState {
     pub parameters_votes: ThresholdParametersVotes,
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
+}
+
+impl From<v0_state::RunningContractState> for RunningContractState {
+    fn from(value: v0_state::RunningContractState) -> Self {
+        RunningContractState {
+            domains: value.domains,
+            keyset: value.keyset,
+            parameters: value.parameters,
+            parameters_votes: ThresholdParametersVotes::default(),
+            add_domains_votes: value.add_domains_votes,
+        }
+    }
 }
 
 impl From<&legacy_contract_state::RunningContractState> for RunningContractState {
