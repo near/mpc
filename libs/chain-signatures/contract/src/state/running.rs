@@ -324,12 +324,34 @@ pub mod running_tests {
 
         let original_epoch_id = state.keyset.epoch_id;
         let mut resharing = None;
-        for (i, (account_id, _, _)) in proposal.participants().participants().iter().enumerate() {
+        // existing participants vote
+        let mut n_votes = 0;
+        for (account_id, _, _) in participants.participants().iter() {
+            if !proposal.participants().is_participant(account_id) {
+                continue;
+            }
+            n_votes += 1;
             env.set_signer(account_id);
             let res = state
                 .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
                 .unwrap();
-            if i + 1 < proposal.participants().len() || num_domains == 0 {
+            if n_votes < proposal.participants().len() || num_domains == 0 {
+                assert!(res.is_none());
+            } else {
+                resharing = Some(res.unwrap());
+            }
+        }
+        // candidates vote
+        for (account_id, _, _) in proposal.participants().participants().iter() {
+            if participants.is_participant(account_id) {
+                continue;
+            }
+            n_votes += 1;
+            env.set_signer(account_id);
+            let res = state
+                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+                .unwrap();
+            if n_votes < proposal.participants().len() || num_domains == 0 {
                 assert!(res.is_none());
             } else {
                 resharing = Some(res.unwrap());
