@@ -22,7 +22,7 @@ from common_lib.constants import TGAS
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
-from common_lib.contracts import COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, V1_0_1_CONTRACT_PATH, V2_0_0_CONTRACT_PATH, UpdateArgsV1, UpdateArgsV2
+from common_lib.contracts import COMPILED_CONTRACT_PATH, MIGRATE_CURRENT_CONTRACT_PATH, V1_0_1_CONTRACT_PATH, V2_0_0_CONTRACT_PATH, UpdateArgsV1, UpdateArgsV2, load_mpc_contract
 
 
 def deploy_and_init_v2(domains=['Secp256k1', 'Ed25519']):
@@ -96,17 +96,6 @@ def get_participants_from_near_config():
         "participants": participants_map,
         "account_to_participant_id": account_to_participant_id,
     }
-
-
-def migrate_from_v1_to_v2(cluster):
-    update_args = UpdateArgsV1(COMPILED_CONTRACT_PATH)
-    id = cluster.propose_update(update_args.borsh_serialize())
-    cluster.vote_update(0, id)
-    cluster.vote_update(1, id)
-    time.sleep(10)
-    cluster.assert_is_deployed(update_args.code())
-    print("Succesfully migrated from V1 to V2")
-    cluster.contract_state().print()
 
 
 @pytest.mark.parametrize("test_trailing_sigs", [
@@ -198,7 +187,6 @@ def test_contract_update(test_trailing_sigs):
     id = cluster.propose_update(update_args.borsh_serialize())
     cluster.vote_update(cluster.nodes[0], id)
     cluster.vote_update(cluster.nodes[1], id)
-    #time.sleep(10)
     cluster.assert_is_deployed(update_args.code())
     print("Succesfully migrated from V1 to V2")
     cluster.contract_state().print()
@@ -219,21 +207,14 @@ def test_contract_update(test_trailing_sigs):
 
 
 def test_update_current():
-    contract = load_binary_file(COMPILED_CONTRACT_PATH)
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(4, 4, 1, contract)
-    cluster.define_candidate_set(mpc_nodes)
-    cluster.update_participant_status(assert_contract=False)
-    cluster.init_contract(threshold=3)
-    cluster.add_domains(signature_schemes=['Secp256k1', 'Ed25519'],
-                        ignore_vote_errors=True)
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 3, 1,
+                                                       load_mpc_contract())
+    cluster.init_cluster(mpc_nodes, 2)
     cluster.send_and_await_signature_requests(1)
-
     new_contract = UpdateArgsV2(MIGRATE_CURRENT_CONTRACT_PATH)
-
     cluster.propose_update(new_contract.borsh_serialize())
-    for node in cluster.get_voters()[0:3]:
+    for node in cluster.get_voters()[0:2]:
         cluster.vote_update(node, 0)
-    time.sleep(2)
     cluster.assert_is_deployed(new_contract.code())
 
 
