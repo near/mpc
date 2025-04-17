@@ -69,25 +69,22 @@ impl Debug for CompletedSignatureRequest {
             "  [completed] blk {:>10} -> {:<24} id: {} rx: {:<44} tries: {:<2}",
             self.indexed_block_height,
             self.completion_delay
-                .map(|(delay_blocks, delay_time)| format!(
-                    "{:>10} (+{}, {})",
-                    self.indexed_block_height + delay_blocks,
-                    delay_blocks,
-                    humantime::format_duration(
-                        round_duration_to_milliseconds(delay_time).unsigned_abs()
-                    ),
-                ))
+                .map(|(delay_blocks, delay_time)| {
+                    let duration_rounded_to_ms =
+                        near_time::Duration::milliseconds(delay_time.whole_milliseconds() as i64);
+                    format!(
+                        "{:>10} (+{}, {})",
+                        self.indexed_block_height + delay_blocks,
+                        delay_blocks,
+                        duration_rounded_to_ms,
+                    )
+                })
                 .unwrap_or("?".to_string()),
             &format!("{:?}", self.request.id)[0..6],
             format!("{:?}", self.request.receipt_id),
             self.progress.lock().unwrap().attempts,
         )
     }
-}
-
-fn round_duration_to_milliseconds(duration: near_time::Duration) -> near_time::Duration {
-    let milliseconds = duration.whole_milliseconds();
-    near_time::Duration::milliseconds(milliseconds as i64)
 }
 
 impl QueuedSignatureRequest {
