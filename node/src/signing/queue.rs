@@ -881,7 +881,7 @@ mod tests {
 
         let debug = format!("{:?}", pending_requests);
         assert!(
-            debug.contains("blk        100 ->        101 (+1, 2s 432ms)"),
+            debug.contains("blk        100 ->        101 (+1, 2s432ms)"),
             "{}",
             debug
         );
