@@ -5,6 +5,7 @@ pub mod running;
 
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
+use crate::primitives::code_hash::CodeHash;
 use crate::primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
@@ -29,12 +30,10 @@ pub enum ProtocolContractState {
 impl From<v0_state::ProtocolContractState> for ProtocolContractState {
     fn from(value: v0_state::ProtocolContractState) -> Self {
         match value {
-            v0_state::ProtocolContractState::NotInitialized => env::panic_str("not supported"),
-            v0_state::ProtocolContractState::Initializing(_) => env::panic_str("not supported"),
             v0_state::ProtocolContractState::Running(running) => {
                 ProtocolContractState::Running(running.into())
             }
-            v0_state::ProtocolContractState::Resharing(_) => env::panic_str("not supported"),
+            _ => env::panic_str("not supported"),
         }
     }
 }
@@ -72,6 +71,34 @@ impl ProtocolContractState {
             }
         }
     }
+    // pub fn proposed_code_hashes(&self) -> Result<BTreeSet<CodeHash>, Error> {
+    //     match self {
+    //         ProtocolContractState::Running(state) => Ok(state
+    //             .proposed_code_hashes
+    //             .proposal_by_account
+    //             .values()
+    //             .cloned()
+    //             .collect()),
+    //         _ => Err(InvalidState::ProtocolStateNotRunning.into()),
+    //     }
+    // }
+    pub fn proposed_code_hashes_count_votes(&self, code_hash: CodeHash) -> Result<u64, Error> {
+        match self {
+            ProtocolContractState::Running(state) => {
+                Ok(state.proposed_code_hashes.count_votes(&code_hash))
+            }
+            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
+        }
+    }
+    pub fn clear_code_hashes_votes(&mut self) -> Result<(), Error> {
+        match self {
+            ProtocolContractState::Running(state) => {
+                state.proposed_code_hashes.clear_votes();
+                Ok(())
+            }
+            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
+        }
+    }
     pub fn start_keygen_instance(
         &mut self,
         key_event_id: KeyEventId,
@@ -103,7 +130,7 @@ impl ProtocolContractState {
             .vote_reshared(key_event_id)
             .map(|x| x.map(ProtocolContractState::Running))
     }
-    /// Casts a vote for `public_key` in `key_event_id` during Initializtion.
+    /// Casts a vote for `public_key` in `key_event_id` during Initialization.
     /// Fails if the protocol is not in `Initializing` state.
     /// Returns the new protocol state if enough votes have been submitted.
     pub fn vote_pk(
@@ -126,6 +153,7 @@ impl ProtocolContractState {
         prospective_epoch_id: EpochId,
         proposed_parameters: &ThresholdParameters,
     ) -> Result<Option<ProtocolContractState>, Error> {
+        // TODO verify TEE quote here (when adding TEE participants)?
         match self {
             ProtocolContractState::Running(state) => {
                 state.vote_new_parameters(prospective_epoch_id, proposed_parameters)
@@ -147,6 +175,17 @@ impl ProtocolContractState {
             _ => Err(InvalidState::ProtocolStateNotRunning.into()),
         }
         .map(|x| x.map(ProtocolContractState::Initializing))
+    }
+
+    pub fn vote_code_hash(
+        &mut self,
+        code_hash: CodeHash,
+    ) -> Result<Option<ProtocolContractState>, Error> {
+        match self {
+            ProtocolContractState::Running(state) => state.vote_code_hash(code_hash),
+            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
+        }
+        .map(|x: Option<RunningContractState>| x.map(ProtocolContractState::Running))
     }
 
     pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
@@ -183,16 +222,16 @@ impl From<&super::legacy_contract_state::ProtocolContractState> for ProtocolCont
         // can this be simplified?
         match &protocol_state {
             super::legacy_contract_state::ProtocolContractState::NotInitialized => {
-                ProtocolContractState::NotInitialized
+                Self::NotInitialized
             }
             super::legacy_contract_state::ProtocolContractState::Initializing(state) => {
-                ProtocolContractState::Initializing(state.into())
+                Self::Initializing(state.into())
             }
             super::legacy_contract_state::ProtocolContractState::Running(state) => {
-                ProtocolContractState::Running(state.into())
+                Self::Running(state.into())
             }
             super::legacy_contract_state::ProtocolContractState::Resharing(state) => {
-                ProtocolContractState::Resharing(state.into())
+                Self::Resharing(state.into())
             }
         }
     }
@@ -208,10 +247,7 @@ impl ProtocolContractState {
         }
     }
     pub fn is_running(&self) -> bool {
-        if let ProtocolContractState::Running(_) = self {
-            return true;
-        }
-        false
+        matches!(self, ProtocolContractState::Running(_))
     }
     pub fn authenticate_update_vote(&self) -> Result<(), Error> {
         match &self {

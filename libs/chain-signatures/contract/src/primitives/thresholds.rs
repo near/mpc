@@ -49,6 +49,7 @@ impl ThresholdParameters {
             Err(err) => Err(err),
         }
     }
+
     /// Ensures that the threshold `k` is sensible and meets the absolute and minimum requirements.
     /// That is:
     /// - threshold must be at least `MIN_THRESHOLD_ABSOLUTE`
@@ -71,9 +72,11 @@ impl ThresholdParameters {
         }
         Ok(())
     }
+
     pub fn validate(&self) -> Result<(), Error> {
         Self::validate_threshold(self.participants.len() as u64, self.threshold())?;
-        self.participants.validate()
+        self.participants.validate()?;
+        Ok(())
     }
 
     /// Validates the incoming proposal against the current, checking that it is allowed for the
@@ -162,6 +165,7 @@ impl ThresholdParameters {
 
 #[cfg(test)]
 mod tests {
+    use crate::primitives::code_hash::CodeHashes;
     use crate::primitives::participants::tests::assert_participant_migration;
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
@@ -201,10 +205,11 @@ mod tests {
         let participants = gen_participants(n);
         for k in 1..min_threshold {
             let invalid_threshold = Threshold::new(k as u64);
-            assert!(ThresholdParameters::new(participants.clone(), invalid_threshold).is_err());
+            assert!(ThresholdParameters::new(participants.clone(), invalid_threshold,).is_err());
         }
         assert!(
-            ThresholdParameters::new(participants.clone(), Threshold::new((n + 1) as u64)).is_err()
+            ThresholdParameters::new(participants.clone(), Threshold::new((n + 1) as u64),)
+                .is_err()
         );
         for k in min_threshold..(n + 1) {
             let threshold = Threshold::new(k as u64);
@@ -215,7 +220,7 @@ mod tests {
             assert_eq!(tp.threshold(), threshold);
             assert_eq!(tp.participants.len(), participants.len());
             assert_eq!(participants, *tp.participants());
-            // porbably overkill to test below
+            // probably overkill to test below
             for (account_id, _, _) in participants.participants() {
                 assert!(tp.participants.is_participant(account_id));
                 let expected_id = participants.id(account_id).unwrap();

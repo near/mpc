@@ -5,14 +5,19 @@ use super::v0_state;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::legacy_contract_state;
-use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
-use crate::primitives::key_state::{
-    AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
+use crate::primitives::{
+    code_hash::{CodeHash, CodeHashesVotes},
+    domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry},
+    key_state::{
+        AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
+        Keyset,
+    },
+    thresholds::ThresholdParameters,
+    votes::ThresholdParametersVotes,
 };
-use crate::primitives::thresholds::ThresholdParameters;
-use crate::primitives::votes::ThresholdParametersVotes;
 use near_sdk::near;
 use std::collections::BTreeSet;
+
 /// In this state, the contract is ready to process signature requests.
 ///
 /// Proposals can be submitted to modify the state:
@@ -20,7 +25,7 @@ use std::collections::BTreeSet;
 ///    Initializing state to generate keys for new domains.
 ///  - vote_new_parameters, upon threshold agreement, transitions into the
 ///    Resharing state to reshare keys for new participants and also change the
-///    threshold if desired.
+///    threshold and the allowed TEE code hashes if desired.
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
 #[cfg_attr(feature = "dev-utils", derive(Clone))]
@@ -30,12 +35,14 @@ pub struct RunningContractState {
     /// The keys that are currently in use; for each domain provides an unique identifier for a
     /// distributed key, so that the nodes can identify which local keyshare to use.
     pub keyset: Keyset,
-    /// The current participants and threshold.
+    /// The current participants, threshold, and allowed TEE code hashes.
     pub parameters: ThresholdParameters,
-    /// Votes for proposals for a new set of participants and threshold.
+    /// Votes for proposals for a new set of participants, threshold, and allowed TEE code hashes.
     pub parameters_votes: ThresholdParametersVotes,
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
+    // Votes for proposals to add new TEE code hashes.
+    pub proposed_code_hashes: CodeHashesVotes,
 }
 
 impl From<v0_state::RunningContractState> for RunningContractState {
@@ -46,6 +53,7 @@ impl From<v0_state::RunningContractState> for RunningContractState {
             parameters: value.parameters,
             parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: value.add_domains_votes,
+            proposed_code_hashes: CodeHashesVotes::default(),
         }
     }
 }
@@ -72,6 +80,7 @@ impl From<&legacy_contract_state::RunningContractState> for RunningContractState
             ),
             parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: AddDomainsVotes::default(),
+            proposed_code_hashes: CodeHashesVotes::default(),
         }
     }
 }
@@ -84,6 +93,7 @@ impl RunningContractState {
             parameters,
             parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: AddDomainsVotes::default(),
+            proposed_code_hashes: CodeHashesVotes::default(),
         }
     }
 
@@ -183,6 +193,12 @@ impl RunningContractState {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<Option<Self>, Error> {
+        let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
+        self.proposed_code_hashes.vote(code_hash, &participant);
+        Ok(None)
     }
 }
 

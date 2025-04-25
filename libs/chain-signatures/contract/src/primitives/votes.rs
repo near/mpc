@@ -3,7 +3,7 @@ use super::{key_state::AuthenticatedAccountId, participants::Participants};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
-/// Tracks votes for ThresholdParameters (new participants and threshold).
+/// Tracks votes for ThresholdParameters (new participants, threshold and TEE Docker image hash).
 /// Each current participant can maintain one vote.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Default, PartialEq)]
@@ -52,11 +52,12 @@ impl ThresholdParametersVotes {
 #[cfg(test)]
 mod tests {
     use super::ThresholdParametersVotes;
-    use crate::primitives::key_state::AuthenticatedAccountId;
-    use crate::primitives::participants::Participants;
-    use crate::primitives::test_utils::{gen_participant, gen_threshold_params};
-    use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::testing_env;
+    use crate::primitives::{
+        key_state::AuthenticatedAccountId,
+        participants::Participants,
+        test_utils::{gen_participant, gen_threshold_params},
+    };
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
     #[test]
     fn test_voting_and_removal() {
