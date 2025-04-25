@@ -37,59 +37,32 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub static ref MPC_OWNED_NUM_TRIPLES_AVAILABLE: prometheus::IntGauge =
-        prometheus::register_int_gauge!(
-            "mpc_owned_num_triples_available",
-            "Number of triples generated that we own, and not yet used"
+    pub static ref MPC_OWNED_ASSETS_ONLINE: prometheus::IntGaugeVec =
+        prometheus::register_int_gauge_vec!(
+            "mpc_owned_assets_online",
+            "Number of owned assets whose participants are online, for each asset type / domain",
+            &["type"],
         )
         .unwrap();
 }
 
 lazy_static! {
-    pub static ref MPC_OWNED_NUM_TRIPLES_ONLINE: prometheus::IntGauge =
-        prometheus::register_int_gauge!(
-            "mpc_owned_num_triples_online",
-            "Number of triples generated that we own, and not yet used,
-                for which the participant set is confirmed alive"
+    pub static ref MPC_OWNED_ASSETS_DESIRABLE: prometheus::IntGaugeVec =
+        prometheus::register_int_gauge_vec!(
+            "mpc_owned_assets_desirable",
+            "Number of owned assets that are generated specifically for the current
+             set of online participants (debugging metric only)",
+            &["type"],
         )
         .unwrap();
 }
 
 lazy_static! {
-    pub static ref MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT: prometheus::IntGauge =
-        prometheus::register_int_gauge!(
-            "mpc_owned_num_triples_with_offline_participant",
-            "Number of triples generated that we own, and not yet used,
-                for which some participant is offline",
-        )
-        .unwrap();
-}
-
-lazy_static! {
-    pub static ref MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE: prometheus::IntGauge =
-        prometheus::register_int_gauge!(
-            "mpc_owned_num_presignatures_available",
-            "Number of presignatures generated that we own, and not yet used"
-        )
-        .unwrap();
-}
-
-lazy_static! {
-    pub static ref MPC_OWNED_NUM_PRESIGNATURES_ONLINE: prometheus::IntGauge =
-        prometheus::register_int_gauge!(
-            "mpc_owned_num_presignatures_online",
-            "Number of presignatures generated that we own, and not yet used,
-                for which the participant set is confirmed alive"
-        )
-        .unwrap();
-}
-
-lazy_static! {
-    pub static ref MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT: prometheus::IntGauge =
-        prometheus::register_int_gauge!(
-            "mpc_owned_num_presignatures_with_offline_participant",
-            "Number of presignatures generated that we own, and not yet used,
-                for which some participant is offline",
+    pub static ref MPC_OWNED_ASSETS_OFFLINE: prometheus::IntGaugeVec =
+        prometheus::register_int_gauge_vec!(
+            "mpc_owned_assets_offline",
+            "Number of owned assets whose participants are not all online; for each asset type / domain",
+            &["type"],
         )
         .unwrap();
 }

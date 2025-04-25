@@ -11,6 +11,8 @@ pub mod triple;
 
 pub use triple::TripleStorage;
 
+use crate::asset_queues::owned::OnlineParticipantsQuery;
+use crate::asset_queues::types::ParticipantsWithSerials;
 use crate::assets::UniqueId;
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
@@ -56,9 +58,15 @@ impl EcdsaSignatureProvider {
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, KeygenOutput>,
     ) -> anyhow::Result<Self> {
-        let active_participants_query = {
+        let online_participants_query: OnlineParticipantsQuery = {
             let network_client = client.clone();
-            Arc::new(move || network_client.all_alive_participant_ids())
+            Arc::new(move || {
+                let mut participants = ParticipantsWithSerials::new();
+                for (participant_id, node_data) in network_client.online_participants() {
+                    participants.insert(participant_id, node_data.db_serial_number);
+                }
+                participants
+            })
         };
 
         let triple_store = Arc::new(TripleStorage::new(

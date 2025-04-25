@@ -1,6 +1,8 @@
+use crate::asset_queues::owned::OnlineParticipantsQuery;
+use crate::asset_queues::AssetPrefix;
 use crate::assets::{DistributedAssetStorage, UniqueId};
 use crate::background::InFlightGenerationTracker;
-use crate::config::TripleConfig;
+use crate::config::{MpcConfig, TripleConfig};
 use crate::db::SecretDB;
 use crate::metrics;
 use crate::network::computation::MpcLeaderCentricComputation;
@@ -23,18 +25,16 @@ pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
 impl TripleStorage {
     pub fn new(
         clock: Clock,
+        mpc_config: &MpcConfig,
         db: Arc<SecretDB>,
-        my_participant_id: ParticipantId,
-        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
+        online_participants_query: OnlineParticipantsQuery,
     ) -> anyhow::Result<Self> {
         Ok(Self(DistributedAssetStorage::<PairedTriple>::new(
             clock,
+            mpc_config,
             db,
-            crate::db::DBCol::Triple,
-            None,
-            my_participant_id,
-            |participants, pair| pair.is_subset_of_active_participants(participants),
-            alive_participant_ids_query,
+            AssetPrefix::EcdsaTriple,
+            online_participants_query,
         )?))
     }
 }
@@ -68,11 +68,10 @@ impl EcdsaSignatureProvider {
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
         loop {
-            metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(triple_store.num_owned_ready() as i64);
-            metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT
-                .set(triple_store.num_owned_offline() as i64);
-            let my_triples_count = triple_store.num_owned();
-            metrics::MPC_OWNED_NUM_TRIPLES_AVAILABLE.set(my_triples_count as i64);
+            let my_triples_count = triple_store
+                .owned
+                .refresh_and_return_num_online_assets()
+                .await;
             let should_generate = my_triples_count + in_flight_generations.num_in_flight()
                 < config.desired_triples_to_buffer;
 
@@ -82,22 +81,17 @@ impl EcdsaSignatureProvider {
                 && in_flight_generations.num_in_flight()
                 < config.concurrency * 2 * SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE
             {
-                let participants =
-                    match client.select_random_active_participants_including_me(threshold) {
-                        Ok(participants) => participants,
-                        Err(e) => {
-                            tracing::warn!(
-                                "Can't choose active participants for a triple: {}. Sleeping.",
-                                e
-                            );
-                            // that should not happen often, so sleeping here is okay
-                            tokio::time::sleep(Duration::from_millis(100)).await;
-                            continue;
-                        }
-                    };
-
-                let id_start = triple_store
-                    .generate_and_reserve_id_range(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32);
+                let Ok((queue_key, participants, id_start)) = triple_store
+                    .owned
+                    .pick_queue_and_reserve_asset_ids(
+                        SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32 / 2,
+                    )
+                    .await
+                else {
+                    // Generation not possible at the moment. Try again later.
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    continue;
+                };
                 let task_id = EcdsaTaskId::ManyTriples {
                     start: id_start,
                     count: SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32,
@@ -123,7 +117,11 @@ impl EcdsaSignatureProvider {
                     .await?;
 
                     for (i, paired_triple) in triples.into_iter().enumerate() {
-                        triple_store.add_owned(id_start.add_to_counter(i as u32)?, paired_triple);
+                        triple_store.owned.add_asset(
+                            queue_key,
+                            id_start.add_to_counter(i as u32)?,
+                            paired_triple,
+                        );
                     }
 
                     anyhow::Ok(())
@@ -139,12 +137,7 @@ impl EcdsaSignatureProvider {
                 continue;
             }
 
-            // If the store is full, try to discard some triples which cannot be used right now
-            if my_triples_count == config.desired_triples_to_buffer {
-                triple_store.maybe_discard_owned(32).await;
-            }
-
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     }
 
@@ -255,7 +248,7 @@ impl<const N: usize> MpcLeaderCentricComputation<()>
         .compute(channel)
         .await?;
         for (i, paired_triple) in triples.into_iter().enumerate() {
-            self.out_triple_store.add_unowned(
+            self.out_triple_store.unowned.add_unowned(
                 self.out_triple_id_start.add_to_counter(i as u32)?,
                 paired_triple,
             );

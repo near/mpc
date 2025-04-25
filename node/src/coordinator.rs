@@ -11,6 +11,7 @@ use crate::keyshare::KeyStorageConfig;
 use crate::keyshare::{KeyshareData, KeyshareStorage};
 use crate::metrics;
 use crate::mpc_client::MpcClient;
+use crate::network::handshake::NodeDataForNetwork;
 use crate::network::{run_network_client, MeshNetworkTransportSender};
 use crate::p2p::new_tls_mesh_network;
 use crate::providers::eddsa::EddsaSignatureProvider;
@@ -80,6 +81,9 @@ enum MpcJobResult {
 
 impl Coordinator {
     pub async fn run(mut self) -> anyhow::Result<()> {
+        let my_node_data = NodeDataForNetwork {
+            db_serial_number: self.secret_db.serial_number(),
+        };
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
             let mut job: MpcJob = match state {
@@ -115,6 +119,7 @@ impl Coordinator {
                                 self.config_file.clone(),
                                 self.key_storage_config.create().await?.into(),
                                 state.participants.clone(),
+                                my_node_data.clone(),
                                 self.indexer.txn_sender.clone(),
                                 key_event_receiver,
                             ),
@@ -150,6 +155,7 @@ impl Coordinator {
                                 self.secrets.clone(),
                                 self.config_file.clone(),
                                 self.key_storage_config.create().await?,
+                                my_node_data.clone(),
                                 state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer
@@ -182,6 +188,7 @@ impl Coordinator {
                                 self.secrets.clone(),
                                 self.config_file.clone(),
                                 self.key_storage_config.create().await?.into(),
+                                my_node_data.clone(),
                                 state.previous_running_state.clone(),
                                 state.new_participants.clone(),
                                 self.indexer.txn_sender.clone(),
@@ -284,6 +291,7 @@ impl Coordinator {
         config_file: ConfigFile,
         keyshare_storage: Arc<KeyshareStorage>,
         participants: ParticipantsConfig,
+        my_node_data: NodeDataForNetwork,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
         key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     ) -> anyhow::Result<MpcJobResult> {
@@ -301,7 +309,7 @@ impl Coordinator {
         ));
 
         let (sender, receiver) =
-            new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
+            new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key, my_node_data).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
         if mpc_config.is_leader_for_key_event() {
@@ -336,6 +344,7 @@ impl Coordinator {
         secrets: SecretsConfig,
         config_file: ConfigFile,
         keyshare_storage: KeyshareStorage,
+        my_node_data: NodeDataForNetwork,
         contract_state: ContractRunningState,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
@@ -374,7 +383,7 @@ impl Coordinator {
         ));
 
         let (sender, receiver) =
-            new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
+            new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key, my_node_data).await?;
         sender
             .wait_for_ready(mpc_config.participants.threshold as usize)
             .await?;
@@ -446,6 +455,7 @@ impl Coordinator {
         secrets: SecretsConfig,
         config_file: ConfigFile,
         keyshare_storage: Arc<KeyshareStorage>,
+        my_node_data: NodeDataForNetwork,
         previous_running_state: ContractRunningState,
         new_participants: ParticipantsConfig,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
@@ -495,7 +505,7 @@ impl Coordinator {
         let _ = update.commit();
         tracing::info!("Deleted all presignatures");
         let (sender, receiver) =
-            new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
+            new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key, my_node_data).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
         let args = Arc::new(ResharingArgs {

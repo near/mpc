@@ -1,3 +1,4 @@
+use super::handshake::NodeDataForNetwork;
 use crate::primitives::ParticipantId;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -25,6 +26,7 @@ pub struct ConnectionVersion {
 pub struct ConnectionWithVersion<T: Send + Sync + 'static> {
     pub connection: Weak<T>,
     version: usize,
+    node_data: Option<NodeDataForNetwork>,
 }
 
 impl<T: Send + Sync + 'static> Clone for ConnectionWithVersion<T> {
@@ -32,6 +34,7 @@ impl<T: Send + Sync + 'static> Clone for ConnectionWithVersion<T> {
         Self {
             connection: self.connection.clone(),
             version: self.version,
+            node_data: self.node_data.clone(),
         }
     }
 }
@@ -47,6 +50,10 @@ impl<T: Send + Sync + 'static> ConnectionWithVersion<T> {
 
     pub fn is_connected(&self) -> bool {
         self.connection.upgrade().is_some()
+    }
+
+    pub fn node_data(&self) -> &NodeDataForNetwork {
+        &self.node_data.as_ref().unwrap()
     }
 }
 
@@ -67,11 +74,13 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
             tokio::sync::watch::channel(ConnectionWithVersion {
                 connection: Weak::new(),
                 version: 0,
+                node_data: None,
             });
         let (incoming_sender, incoming_receiver) =
             tokio::sync::watch::channel(ConnectionWithVersion {
                 connection: Weak::new(),
                 version: 0,
+                node_data: None,
             });
         Self {
             outgoing_sender,
@@ -86,12 +95,13 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     /// Sets a new outgoing connection and increments the version by 1.
     /// The caller needs to drop the connection object when the network
     /// connection is dropped.
-    pub fn set_outgoing_connection(&self, conn: &Arc<I>) {
+    pub fn set_outgoing_connection(&self, conn: &Arc<I>, other_node_data: NodeDataForNetwork) {
         let version = self.outgoing_version.fetch_add(1, Ordering::Relaxed) + 1;
         self.outgoing_sender
             .send(ConnectionWithVersion {
                 connection: Arc::downgrade(conn),
                 version,
+                node_data: Some(other_node_data),
             })
             .unwrap(); // can't fail: we keep the receiver
     }
@@ -105,12 +115,13 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     /// they make outgoing connections to us. However, for the purpose of
     /// tracking connectivity and connection resets, we logically assume that
     /// as soon as this is called, the old connection is considered dropped.
-    pub fn set_incoming_connection(&self, conn: &Arc<O>) {
+    pub fn set_incoming_connection(&self, conn: &Arc<O>, other_node_data: NodeDataForNetwork) {
         let version = self.incoming_version.fetch_add(1, Ordering::Relaxed) + 1;
         self.incoming_sender
             .send(ConnectionWithVersion {
                 connection: Arc::downgrade(conn),
                 version,
+                node_data: Some(other_node_data),
             })
             .unwrap(); // can't fail: we keep the receiver
     }
@@ -126,10 +137,15 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
         }
     }
 
-    pub fn is_bidirectionally_connected(&self) -> bool {
+    pub fn other_node_data_if_bidi_connected(&self) -> Option<NodeDataForNetwork> {
         let outgoing = self.outgoing_receiver.borrow();
         let incoming = self.incoming_receiver.borrow();
-        outgoing.is_connected() && incoming.is_connected()
+        if outgoing.is_connected() && incoming.is_connected() {
+            // The incoming connection also has a node data. But we only need one side.
+            Some(outgoing.node_data().clone())
+        } else {
+            None
+        }
     }
 
     /// Given the result of a previous call to `connection_version()`, determine
@@ -179,7 +195,9 @@ pub trait NodeConnectivityInterface: Send + Sync + 'static {
     fn connection_version(&self) -> ConnectionVersion;
     fn was_connection_interrupted(&self, version: ConnectionVersion) -> bool;
     async fn wait_for_connection(&self, version: ConnectionVersion) -> anyhow::Result<()>;
-    fn is_bidirectionally_connected(&self) -> bool;
+    /// If and only if the other node is connected in both directions, return the other node's
+    /// data sent over to us via the handshake.
+    fn other_node_data_if_bidi_connected(&self) -> Option<NodeDataForNetwork>;
 }
 
 #[async_trait::async_trait]
@@ -226,8 +244,8 @@ where
         Ok(())
     }
 
-    fn is_bidirectionally_connected(&self) -> bool {
-        NodeConnectivity::is_bidirectionally_connected(self)
+    fn other_node_data_if_bidi_connected(&self) -> Option<NodeDataForNetwork> {
+        NodeConnectivity::other_node_data_if_bidi_connected(self)
     }
 }
 
@@ -292,8 +310,10 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
 
 #[cfg(test)]
 mod tests {
+    use crate::asset_queues::types::SerialNumber;
     use crate::async_testing::{run_future_once, MaybeReady};
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion, NodeConnectivity};
+    use crate::network::handshake::NodeDataForNetwork;
     use crate::primitives::ParticipantId;
     use futures::FutureExt;
     use std::sync::Arc;
@@ -304,17 +324,21 @@ mod tests {
         let conn = ConnectionWithVersion {
             connection: Weak::<()>::new(),
             version: 0,
+            node_data: None,
         };
         assert_eq!(conn.version(), 1);
         assert!(!conn.is_connected());
 
         let arc = Arc::new(0);
+        let node_data = NodeDataForNetwork::test(1);
         let conn = ConnectionWithVersion {
             connection: Arc::downgrade(&arc),
             version: 2,
+            node_data: Some(node_data.clone()),
         };
         assert_eq!(conn.version(), 2);
         assert!(conn.is_connected());
+        assert_eq!(conn.node_data(), &node_data);
     }
 
     fn ver(outgoing: usize, incoming: usize) -> ConnectionVersion {
@@ -325,31 +349,39 @@ mod tests {
     fn test_connectivity() {
         let connectivity = NodeConnectivity::<usize, usize>::new();
         assert_eq!(connectivity.connection_version(), ver(1, 1));
-        assert!(!connectivity.is_bidirectionally_connected());
+        assert!(connectivity.other_node_data_if_bidi_connected().is_none());
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
 
         let conn = Arc::new(0);
-        connectivity.set_outgoing_connection(&conn);
+        connectivity.set_outgoing_connection(&conn, NodeDataForNetwork::test(1));
         assert_eq!(connectivity.connection_version(), ver(1, 1));
-        assert!(!connectivity.is_bidirectionally_connected());
+        assert!(connectivity.other_node_data_if_bidi_connected().is_none());
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
 
         let conn2 = Arc::new(0);
-        connectivity.set_incoming_connection(&conn2);
+        connectivity.set_incoming_connection(&conn2, NodeDataForNetwork::test(1));
         assert_eq!(connectivity.connection_version(), ver(1, 1));
-        assert!(connectivity.is_bidirectionally_connected());
+        assert_eq!(
+            connectivity.other_node_data_if_bidi_connected(),
+            Some(NodeDataForNetwork::test(1))
+        );
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
 
         drop(conn);
         assert_eq!(connectivity.connection_version(), ver(2, 1));
-        assert!(!connectivity.is_bidirectionally_connected());
+        assert!(connectivity.other_node_data_if_bidi_connected().is_none());
         assert!(connectivity.was_connection_interrupted(ver(1, 1)));
         assert!(!connectivity.was_connection_interrupted(ver(2, 1)));
 
         let conn3 = Arc::new(0);
-        connectivity.set_incoming_connection(&conn3);
+        connectivity.set_incoming_connection(&conn3, NodeDataForNetwork::test(2));
         assert_eq!(connectivity.connection_version(), ver(2, 2));
-        assert!(!connectivity.is_bidirectionally_connected());
+        assert_eq!(
+            connectivity.other_node_data_if_bidi_connected(),
+            // Just documenting this: if the outgoing and incoming node datas are different,
+            // the current implementation takes the outgoing one.
+            Some(NodeDataForNetwork::test(1))
+        );
         assert!(connectivity.was_connection_interrupted(ver(2, 1)));
         assert!(!connectivity.was_connection_interrupted(ver(2, 2)));
 
@@ -357,9 +389,12 @@ mod tests {
         assert_eq!(connectivity.connection_version(), ver(2, 2));
 
         let conn4 = Arc::new(0);
-        connectivity.set_outgoing_connection(&conn4);
+        connectivity.set_outgoing_connection(&conn4, NodeDataForNetwork::test(2));
         assert_eq!(connectivity.connection_version(), ver(2, 2));
-        assert!(connectivity.is_bidirectionally_connected());
+        assert_eq!(
+            connectivity.other_node_data_if_bidi_connected(),
+            Some(NodeDataForNetwork::test(2))
+        );
         assert!(connectivity.was_connection_interrupted(ver(1, 2)));
         assert!(!connectivity.was_connection_interrupted(ver(2, 2)));
     }
@@ -377,11 +412,11 @@ mod tests {
         connectivity
             .get(id0)
             .unwrap()
-            .set_outgoing_connection(&conn10);
+            .set_outgoing_connection(&conn10, NodeDataForNetwork::test(1));
         connectivity
             .get(id0)
             .unwrap()
-            .set_incoming_connection(&conn01);
+            .set_incoming_connection(&conn01, NodeDataForNetwork::test(1));
 
         assert_eq!(connectivity.wait_for_ready(2).now_or_never(), Some(()));
 
@@ -396,11 +431,11 @@ mod tests {
         connectivity
             .get(id2)
             .unwrap()
-            .set_outgoing_connection(&conn12);
+            .set_outgoing_connection(&conn12, NodeDataForNetwork::test(2));
         connectivity
             .get(id2)
             .unwrap()
-            .set_incoming_connection(&conn21);
+            .set_incoming_connection(&conn21, NodeDataForNetwork::test(2));
 
         assert_eq!(fut.now_or_never(), Some(()));
     }

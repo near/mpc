@@ -3,7 +3,7 @@ use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
 };
 use crate::network::constants::MAX_MESSAGE_LEN;
-use crate::network::handshake::p2p_handshake;
+use crate::network::handshake::{p2p_handshake, NodeDataForNetwork};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
     IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
@@ -31,6 +31,7 @@ use x509_parser::public_key::PublicKey;
 /// mesh network.
 pub struct TlsMeshSender {
     my_id: ParticipantId,
+    my_node_data: NodeDataForNetwork,
     participants: Vec<ParticipantId>,
     connections: HashMap<ParticipantId, Arc<PersistentConnection>>,
     connectivities: Arc<AllNodeConnectivities<TlsConnection, ()>>,
@@ -99,14 +100,15 @@ impl TlsConnection {
     /// the connection is considered not successful.
     const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
-    /// Makes a TLS/TCP connection to the given address, authenticating the
-    /// other side as the given participant.
-    async fn new(
+    /// Makes a TLS/TCP connection to the given address, authenticating the other side as the given
+    /// participant. Returns the connection and the other node's handshake data.
+    async fn connect(
         client_config: Arc<ClientConfig>,
+        my_node_data: NodeDataForNetwork,
         target_address: &str,
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
-    ) -> anyhow::Result<TlsConnection> {
+    ) -> anyhow::Result<(TlsConnection, NodeDataForNetwork)> {
         let conn = TcpStream::connect(target_address)
             .await
             .context("TCP connect")?;
@@ -125,7 +127,7 @@ impl TlsConnection {
             );
         }
 
-        p2p_handshake(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
+        let other_node_data = p2p_handshake(&mut tls_conn, &my_node_data, Self::HANDSHAKE_TIMEOUT)
             .await
             .context("p2p handshake")?;
 
@@ -178,12 +180,15 @@ impl TlsConnection {
                 }
             },
         );
-        Ok(TlsConnection {
-            sender,
-            _sender_task: sender_task,
-            _keepalive_task: keepalive_task,
-            closed,
-        })
+        Ok((
+            TlsConnection {
+                sender,
+                _sender_task: sender_task,
+                _keepalive_task: keepalive_task,
+                closed,
+            },
+            other_node_data,
+        ))
     }
 
     async fn wait_for_close(&self) {
@@ -230,6 +235,7 @@ impl PersistentConnection {
     pub fn new(
         client_config: Arc<ClientConfig>,
         my_id: ParticipantId,
+        my_node_data: NodeDataForNetwork,
         target_address: String,
         target_participant_id: ParticipantId,
         participant_identities: Arc<ParticipantIdentities>,
@@ -240,8 +246,9 @@ impl PersistentConnection {
             &format!("Persistent connection to {}", target_participant_id),
             async move {
                 loop {
-                    let new_conn = match TlsConnection::new(
+                    let (new_conn, other_node_data) = match TlsConnection::connect(
                         client_config.clone(),
+                        my_node_data.clone(),
                         &target_address,
                         target_participant_id,
                         &participant_identities,
@@ -270,7 +277,7 @@ impl PersistentConnection {
                         }
                     };
                     let new_conn = Arc::new(new_conn);
-                    connectivity.set_outgoing_connection(&new_conn);
+                    connectivity.set_outgoing_connection(&new_conn, other_node_data);
                     new_conn.wait_for_close().await;
                 }
             },
@@ -364,6 +371,7 @@ fn configure_tls(
 pub async fn new_tls_mesh_network(
     config: &MpcConfig,
     p2p_private_key: &near_crypto::ED25519SecretKey,
+    my_node_data: NodeDataForNetwork,
 ) -> anyhow::Result<(
     impl MeshNetworkTransportSender,
     impl MeshNetworkTransportReceiver,
@@ -408,6 +416,7 @@ pub async fn new_tls_mesh_network(
             Arc::new(PersistentConnection::new(
                 client_config.clone(),
                 config.my_participant_id,
+                my_node_data.clone(),
                 format!("{}:{}", participant.address, participant.port),
                 participant.id,
                 participant_identities.clone(),
@@ -428,6 +437,7 @@ pub async fn new_tls_mesh_network(
 
     let connectivities_clone = connectivities.clone();
     let my_id = config.my_participant_id;
+    let my_node_data_clone = my_node_data.clone();
     let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
         let mut tasks = AutoAbortTaskCollection::new();
         while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
@@ -435,18 +445,20 @@ pub async fn new_tls_mesh_network(
             let participant_identities = participant_identities.clone();
             let tls_acceptor = tls_acceptor.clone();
             let connectivities = connectivities_clone.clone();
+            let my_node_data = my_node_data_clone.clone();
             tasks.spawn_checked::<_, ()>("Handle connection", async move {
                 let mut stream = tls_acceptor.accept(tcp_stream).await?;
                 let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                 tracking::set_progress(&format!("Authenticated as {}", peer_id));
-                p2p_handshake(&mut stream, TlsConnection::HANDSHAKE_TIMEOUT)
-                    .await
-                    .context("p2p handshake")?;
+                let other_node_data =
+                    p2p_handshake(&mut stream, &my_node_data, TlsConnection::HANDSHAKE_TIMEOUT)
+                        .await
+                        .context("p2p handshake")?;
                 tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
                 let incoming_conn = Arc::new(());
                 connectivities
                     .get(peer_id)?
-                    .set_incoming_connection(&incoming_conn);
+                    .set_incoming_connection(&incoming_conn, other_node_data);
                 let mut received_bytes: u64 = 0;
                 loop {
                     let len = stream.read_u32().await?;
@@ -490,6 +502,7 @@ pub async fn new_tls_mesh_network(
 
     let sender = TlsMeshSender {
         my_id: config.my_participant_id,
+        my_node_data,
         participants: config
             .participants
             .participants
@@ -554,6 +567,10 @@ impl MeshNetworkTransportSender for TlsMeshSender {
 
     fn all_participant_ids(&self) -> Vec<ParticipantId> {
         self.participants.clone()
+    }
+
+    fn my_node_data(&self) -> NodeDataForNetwork {
+        self.my_node_data.clone()
     }
 
     fn connectivity(&self, participant_id: ParticipantId) -> Arc<dyn NodeConnectivityInterface> {
@@ -711,6 +728,7 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    use crate::network::handshake::NodeDataForNetwork;
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::raw_ed25519_secret_key_to_keypair;
     use crate::p2p::testing::{
@@ -747,14 +765,20 @@ mod tests {
         let participant1 = configs[1].0.my_participant_id;
 
         start_root_task_with_periodic_dump(async move {
-            let (sender0, mut receiver0) =
-                super::new_tls_mesh_network(&configs[0].0, &configs[0].1)
-                    .await
-                    .unwrap();
-            let (sender1, mut receiver1) =
-                super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
-                    .await
-                    .unwrap();
+            let (sender0, mut receiver0) = super::new_tls_mesh_network(
+                &configs[0].0,
+                &configs[0].1,
+                NodeDataForNetwork::test(1),
+            )
+            .await
+            .unwrap();
+            let (sender1, mut receiver1) = super::new_tls_mesh_network(
+                &configs[1].0,
+                &configs[1].1,
+                NodeDataForNetwork::test(2),
+            )
+            .await
+            .unwrap();
 
             sender0.wait_for_ready(2).await.unwrap();
             sender1.wait_for_ready(2).await.unwrap();
@@ -813,20 +837,22 @@ mod tests {
         .await;
     }
 
-    fn all_alive_participant_ids(sender: &impl MeshNetworkTransportSender) -> Vec<ParticipantId> {
+    fn online_participants(
+        sender: &impl MeshNetworkTransportSender,
+    ) -> Vec<(ParticipantId, NodeDataForNetwork)> {
         let mut result = Vec::new();
         for participant in sender.all_participant_ids() {
             if participant == sender.my_participant_id() {
                 continue;
             }
-            if sender
+            if let Some(other_node_data) = sender
                 .connectivity(participant)
-                .is_bidirectionally_connected()
+                .other_node_data_if_bidi_connected()
             {
-                result.push(participant);
+                result.push((participant, other_node_data));
             }
         }
-        result.push(sender.my_participant_id());
+        result.push((sender.my_participant_id(), sender.my_node_data()));
         result.sort();
         result
     }
@@ -849,18 +875,34 @@ mod tests {
         // except from 3 to 0.
         configs[3].0.participants.participants[0].address = "169.254.1.1".to_owned();
         start_root_task_with_periodic_dump(async move {
-            let (sender0, _receiver0) = super::new_tls_mesh_network(&configs[0].0, &configs[0].1)
-                .await
-                .unwrap();
-            let (sender1, receiver1) = super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
-                .await
-                .unwrap();
-            let (sender2, _receiver2) = super::new_tls_mesh_network(&configs[2].0, &configs[2].1)
-                .await
-                .unwrap();
-            let (sender3, _receiver3) = super::new_tls_mesh_network(&configs[3].0, &configs[3].1)
-                .await
-                .unwrap();
+            let (sender0, _receiver0) = super::new_tls_mesh_network(
+                &configs[0].0,
+                &configs[0].1,
+                NodeDataForNetwork::test(1),
+            )
+            .await
+            .unwrap();
+            let (sender1, receiver1) = super::new_tls_mesh_network(
+                &configs[1].0,
+                &configs[1].1,
+                NodeDataForNetwork::test(2),
+            )
+            .await
+            .unwrap();
+            let (sender2, _receiver2) = super::new_tls_mesh_network(
+                &configs[2].0,
+                &configs[2].1,
+                NodeDataForNetwork::test(3),
+            )
+            .await
+            .unwrap();
+            let (sender3, _receiver3) = super::new_tls_mesh_network(
+                &configs[3].0,
+                &configs[3].1,
+                NodeDataForNetwork::test(4),
+            )
+            .await
+            .unwrap();
 
             sender1.wait_for_ready(4).await.unwrap();
             sender2.wait_for_ready(4).await.unwrap();
@@ -877,65 +919,55 @@ mod tests {
             sender0.wait_for_ready(3).await.unwrap();
             sender3.wait_for_ready(3).await.unwrap();
 
-            let ids: Vec<_> = configs[0]
-                .0
-                .participants
-                .participants
-                .iter()
-                .map(|p| p.id)
-                .collect();
-            assert_eq!(
-                all_alive_participant_ids(&sender0),
-                sorted(&[ids[0], ids[1], ids[2]]),
-            );
-            assert_eq!(all_alive_participant_ids(&sender1), sorted(&ids));
-            assert_eq!(all_alive_participant_ids(&sender2), sorted(&ids));
-            assert_eq!(
-                all_alive_participant_ids(&sender3),
-                sorted(&[ids[1], ids[2], ids[3]]),
-            );
+            let mut ids = {
+                let participants = &configs[0].0.participants.participants;
+                vec![
+                    (participants[0].id, NodeDataForNetwork::test(1)),
+                    (participants[1].id, NodeDataForNetwork::test(2)),
+                    (participants[2].id, NodeDataForNetwork::test(3)),
+                    (participants[3].id, NodeDataForNetwork::test(4)),
+                ]
+            };
+            assert_eq!(online_participants(&sender0), subset(&ids, &[0, 1, 2]));
+            assert_eq!(online_participants(&sender1), subset(&ids, &[0, 1, 2, 3]));
+            assert_eq!(online_participants(&sender2), subset(&ids, &[0, 1, 2, 3]));
+            assert_eq!(online_participants(&sender3), subset(&ids, &[1, 2, 3]));
 
             // Disconnect node 1. Other nodes should notice the change.
             drop((sender1, receiver1));
             tokio::time::sleep(Duration::from_secs(2)).await;
-            assert_eq!(
-                all_alive_participant_ids(&sender0),
-                sorted(&[ids[0], ids[2]])
-            );
-            assert_eq!(
-                all_alive_participant_ids(&sender2),
-                sorted(&[ids[0], ids[2], ids[3]])
-            );
-            assert_eq!(
-                all_alive_participant_ids(&sender3),
-                sorted(&[ids[2], ids[3]])
-            );
+            assert_eq!(online_participants(&sender0), subset(&ids, &[0, 2]));
+            assert_eq!(online_participants(&sender2), subset(&ids, &[0, 2, 3]));
+            assert_eq!(online_participants(&sender3), subset(&ids, &[2, 3]));
 
             // Reconnect node 1. Other nodes should re-establish the connections.
-            let (sender1, _receiver1) = super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
-                .await
-                .unwrap();
+            let (sender1, _receiver1) = super::new_tls_mesh_network(
+                &configs[1].0,
+                &configs[1].1,
+                NodeDataForNetwork::test(5),
+            )
+            .await
+            .unwrap();
+
+            ids[1].1 = NodeDataForNetwork::test(5);
             sender0.wait_for_ready(3).await.unwrap();
             sender1.wait_for_ready(4).await.unwrap();
             sender2.wait_for_ready(4).await.unwrap();
             sender3.wait_for_ready(3).await.unwrap();
-            assert_eq!(
-                all_alive_participant_ids(&sender0),
-                sorted(&[ids[0], ids[1], ids[2]]),
-            );
-            assert_eq!(all_alive_participant_ids(&sender1), sorted(&ids));
-            assert_eq!(all_alive_participant_ids(&sender2), sorted(&ids));
-            assert_eq!(
-                all_alive_participant_ids(&sender3),
-                sorted(&[ids[1], ids[2], ids[3]]),
-            );
+            assert_eq!(online_participants(&sender0), subset(&ids, &[0, 1, 2]));
+            assert_eq!(online_participants(&sender1), subset(&ids, &[0, 1, 2, 3]));
+            assert_eq!(online_participants(&sender2), subset(&ids, &[0, 1, 2, 3]));
+            assert_eq!(online_participants(&sender3), subset(&ids, &[1, 2, 3]));
         })
         .await;
     }
 
-    fn sorted(ids: &[ParticipantId]) -> Vec<ParticipantId> {
-        let mut ids = ids.to_vec();
-        ids.sort();
-        ids
+    fn subset<T: Ord + Clone>(ids: &[T], indices: &[usize]) -> Vec<T> {
+        let mut result = Vec::new();
+        for i in indices {
+            result.push(ids[*i].clone());
+        }
+        result.sort();
+        result
     }
 }

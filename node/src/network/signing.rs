@@ -5,7 +5,10 @@ use std::collections::{HashMap, HashSet};
 
 impl NetworkAPIForSigning for MeshNetworkClient {
     fn alive_participants(&self) -> HashSet<ParticipantId> {
-        self.all_alive_participant_ids().into_iter().collect()
+        self.online_participants()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
     }
 
     fn indexer_heights(&self) -> HashMap<ParticipantId, u64> {

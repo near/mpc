@@ -28,6 +28,7 @@ mod tests;
 mod tracing;
 mod tracking;
 mod web;
+pub mod asset_queues;
 
 fn main() -> anyhow::Result<()> {
     init_logging();

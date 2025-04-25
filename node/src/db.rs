@@ -1,6 +1,8 @@
+use crate::asset_queues::types::SerialNumber;
 use aes_gcm::aead::generic_array::GenericArray;
 use aes_gcm::aead::Aead;
 use aes_gcm::{AeadCore, Aes128Gcm, AesGcm, KeyInit};
+use borsh::BorshDeserialize;
 use rocksdb::IteratorMode;
 use std::fmt::Display;
 use std::path::Path;
@@ -11,6 +13,7 @@ use std::sync::Arc;
 pub struct SecretDB {
     db: rocksdb::DB,
     cipher: Aes128Gcm,
+    serial_number: SerialNumber,
 }
 
 /// Each DBCol corresponds to a column family.
@@ -19,6 +22,10 @@ pub enum DBCol {
     Triple,
     Presignature,
     SignRequest,
+    SerialNumber,
+    AssetQueue,
+    OwnedAsset,
+    UnownedAsset,
 }
 
 impl DBCol {
@@ -27,11 +34,23 @@ impl DBCol {
             DBCol::Triple => "triple",
             DBCol::Presignature => "presignature",
             DBCol::SignRequest => "sign_request",
+            DBCol::SerialNumber => "serial_number",
+            DBCol::AssetQueue => "asset_queue",
+            DBCol::OwnedAsset => "owned_asset",
+            DBCol::UnownedAsset => "unowned_asset",
         }
     }
 
-    fn all() -> [DBCol; 3] {
-        [DBCol::Triple, DBCol::Presignature, DBCol::SignRequest]
+    fn all() -> [DBCol; 7] {
+        [
+            DBCol::Triple,
+            DBCol::Presignature,
+            DBCol::SignRequest,
+            DBCol::SerialNumber,
+            DBCol::AssetQueue,
+            DBCol::OwnedAsset,
+            DBCol::UnownedAsset,
+        ]
     }
 }
 
@@ -69,7 +88,37 @@ impl SecretDB {
         options.create_if_missing(true);
         options.create_missing_column_families(true);
         let db = rocksdb::DB::open_cf(&options, path, DBCol::all().iter().map(|col| col.as_str()))?;
-        Ok(Self { db, cipher }.into())
+        let mut db = Self {
+            db,
+            cipher,
+            serial_number: SerialNumber::default(),
+        };
+        db.load_or_init_serial_number()?;
+        Ok(db.into())
+    }
+
+    fn load_or_init_serial_number(&mut self) -> anyhow::Result<()> {
+        let serial_number = self
+            .get(DBCol::SerialNumber, b"")?
+            .map(|value| SerialNumber::try_from_slice(&value))
+            .transpose()?;
+        if let Some(serial_number) = serial_number {
+            self.serial_number = serial_number;
+        } else {
+            self.serial_number = SerialNumber::hash_bytes(&rand::random::<[u8; 32]>());
+            let mut update = self.update();
+            update.put(
+                DBCol::SerialNumber,
+                b"",
+                &borsh::to_vec(&self.serial_number).unwrap(),
+            );
+            update.commit()?;
+        }
+        Ok(())
+    }
+
+    pub fn serial_number(&self) -> SerialNumber {
+        self.serial_number
     }
 
     fn cf_handle(&self, cf: DBCol) -> rocksdb::ColumnFamilyRef {
@@ -110,7 +159,7 @@ impl SecretDB {
         })
     }
 
-    pub fn update(self: &Arc<Self>) -> SecretDBUpdate {
+    pub fn update(&self) -> SecretDBUpdate {
         SecretDBUpdate {
             db: self.clone(),
             batch: rocksdb::WriteBatch::default(),
@@ -142,12 +191,12 @@ impl SecretDB {
     }
 }
 
-pub struct SecretDBUpdate {
-    db: Arc<SecretDB>,
+pub struct SecretDBUpdate<'a> {
+    db: &'a SecretDB,
     batch: rocksdb::WriteBatch,
 }
 
-impl SecretDBUpdate {
+impl<'a> SecretDBUpdate<'a> {
     /// Puts a key-value pair into the database, overwriting if the key
     /// already exists. Encrypts the value before persisting it.
     pub fn put(&mut self, col: DBCol, key: &[u8], value: &[u8]) {

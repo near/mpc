@@ -1,6 +1,8 @@
+use crate::asset_queues::owned::OnlineParticipantsQuery;
+use crate::asset_queues::AssetPrefix;
 use crate::assets::{DistributedAssetStorage, UniqueId};
 use crate::background::InFlightGenerationTracker;
-use crate::config::PresignatureConfig;
+use crate::config::{MpcConfig, PresignatureConfig};
 use crate::db::SecretDB;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -27,23 +29,19 @@ pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticip
 impl PresignatureStorage {
     pub fn new(
         clock: Clock,
+        mpc_config: &MpcConfig,
         db: Arc<SecretDB>,
-        my_participant_id: ParticipantId,
-        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
+        online_participants_query: OnlineParticipantsQuery,
         domain_id: DomainId,
     ) -> anyhow::Result<Self> {
         Ok(Self(DistributedAssetStorage::<
             PresignOutputWithParticipants,
         >::new(
             clock,
+            mpc_config,
             db,
-            crate::db::DBCol::Presignature,
-            Some(domain_id),
-            my_participant_id,
-            |participants, presignature| {
-                presignature.is_subset_of_active_participants(participants)
-            },
-            alive_participant_ids_query,
+            AssetPrefix::EcdsaPresignature(domain_id),
+            online_participants_query,
         )?))
     }
 }
@@ -87,12 +85,10 @@ impl EcdsaSignatureProvider {
         let mut tasks = AutoAbortTaskCollection::new();
         loop {
             progress_tracker.update_progress();
-            metrics::MPC_OWNED_NUM_PRESIGNATURES_ONLINE
-                .set(presignature_store.num_owned_ready() as i64);
-            metrics::MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT
-                .set(presignature_store.num_owned_offline() as i64);
-            let my_presignatures_count: usize = presignature_store.num_owned();
-            metrics::MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE.set(my_presignatures_count as i64);
+            let my_presignatures_count = presignature_store
+                .owned
+                .refresh_and_return_num_online_assets()
+                .await;
             let should_generate = my_presignatures_count + in_flight_generations.num_in_flight()
                 < config.desired_presignatures_to_buffer;
             if should_generate
@@ -101,7 +97,10 @@ impl EcdsaSignatureProvider {
                 && in_flight_generations.num_in_flight()
                 < config.concurrency * 2
             {
-                let id = presignature_store.generate_and_reserve_id();
+                let (queue_key, participants, id) = presignature_store
+                    .owned
+                    .pick_queue_and_reserve_asset_ids(1)
+                    .await?;
                 progress_tracker.set_waiting_for_triples(true);
                 let (paired_triple_id, (triple0, triple1)) = triple_store.take_owned().await;
                 progress_tracker.set_waiting_for_triples(false);

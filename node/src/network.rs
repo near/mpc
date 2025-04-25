@@ -12,9 +12,9 @@ use crate::primitives::{
 };
 use crate::tracking::{self, AutoAbortTask};
 use conn::{ConnectionVersion, NodeConnectivityInterface};
+use handshake::NodeDataForNetwork;
 use indexer_heights::IndexerHeightTracker;
 use lru::LruCache;
-use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::option::Option;
@@ -32,6 +32,8 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     fn my_participant_id(&self) -> ParticipantId;
     /// Returns the participant IDs of all nodes in the network, including the current node.
     fn all_participant_ids(&self) -> Vec<ParticipantId>;
+    /// Returns the node data we are initialized with.
+    fn my_node_data(&self) -> NodeDataForNetwork;
     /// Returns a connectivity interface for the given other participant.
     fn connectivity(&self, participant_id: ParticipantId) -> Arc<dyn NodeConnectivityInterface>;
     /// Sends a message to the specified recipient.
@@ -138,51 +140,31 @@ impl MeshNetworkClient {
         self.transport_sender.all_participant_ids()
     }
 
-    /// Returns the participant IDs of all nodes in the network that are currently alive.
-    /// This is a subset of all_participant_ids, and includes our own participant ID.
-    pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
+    pub fn my_node_data(&self) -> NodeDataForNetwork {
+        self.transport_sender.my_node_data()
+    }
+
+    /// Returns the participant ID and their node data (sent to us via handshake) of all nodes
+    /// in the network that are currently online (bidirectionally connected to us).
+    /// The participants returned here are always a subset of `all_participant_ids`, and always
+    /// includes ourselves.
+    pub fn online_participants(&self) -> Vec<(ParticipantId, NodeDataForNetwork)> {
         let mut result = Vec::new();
         for participant in self.all_participant_ids() {
             if participant == self.my_participant_id() {
                 continue;
             }
-            if self
+            if let Some(other_node_data) = self
                 .transport_sender
                 .connectivity(participant)
-                .is_bidirectionally_connected()
+                .other_node_data_if_bidi_connected()
             {
-                result.push(participant);
+                result.push((participant, other_node_data));
             }
         }
-        result.push(self.my_participant_id());
+        result.push((self.my_participant_id(), self.my_node_data()));
         result.sort();
         result
-    }
-
-    pub fn select_random_active_participants_including_me(
-        &self,
-        total: usize,
-    ) -> anyhow::Result<Vec<ParticipantId>> {
-        let me = self.my_participant_id();
-        let participants = self.all_alive_participant_ids();
-
-        if participants.len() < total {
-            anyhow::bail!(
-                "Not enough active participants: need {}, got {}",
-                total,
-                participants.len()
-            );
-        }
-        if !participants.contains(&me) {
-            anyhow::bail!("There's no `me` in active participants");
-        }
-
-        let mut res = participants
-            .into_iter()
-            .filter(|p| p != &me)
-            .choose_multiple(&mut rand::thread_rng(), total - 1);
-        res.push(me);
-        Ok(res)
     }
 
     /// Returns once all participants in the network are simultaneously connected to us.
@@ -291,7 +273,8 @@ impl MeshNetworkClient {
                 let is_live_participant = self
                     .transport_sender
                     .connectivity(id)
-                    .is_bidirectionally_connected();
+                    .other_node_data_if_bidi_connected()
+                    .is_some();
                 metric.set(is_live_participant.into());
             }
         }
@@ -712,6 +695,7 @@ impl NetworkTaskChannel {
 #[cfg(test)]
 pub mod testing {
     use super::conn::{ConnectionVersion, NodeConnectivityInterface};
+    use super::handshake::NodeDataForNetwork;
     use super::MeshNetworkTransportSender;
     use crate::primitives::{MpcPeerMessage, ParticipantId, PeerMessage};
     use crate::tracking;
@@ -732,12 +716,14 @@ pub mod testing {
         receiver: tokio::sync::mpsc::UnboundedReceiver<PeerMessage>,
     }
 
-    pub struct TestConnectivityInterface;
+    pub struct TestConnectivityInterface {
+        node_data: NodeDataForNetwork,
+    }
 
     #[async_trait::async_trait]
     impl NodeConnectivityInterface for TestConnectivityInterface {
-        fn is_bidirectionally_connected(&self) -> bool {
-            true
+        fn other_node_data_if_bidi_connected(&self) -> Option<NodeDataForNetwork> {
+            Some(self.node_data.clone())
         }
 
         async fn wait_for_connection(
@@ -766,11 +752,17 @@ pub mod testing {
             self.transport.participant_ids.clone()
         }
 
+        fn my_node_data(&self) -> NodeDataForNetwork {
+            NodeDataForNetwork::test(self.my_participant_id.raw())
+        }
+
         fn connectivity(
             &self,
-            _participant_id: ParticipantId,
+            participant_id: ParticipantId,
         ) -> Arc<dyn NodeConnectivityInterface> {
-            Arc::new(TestConnectivityInterface)
+            Arc::new(TestConnectivityInterface {
+                node_data: NodeDataForNetwork::test(participant_id.raw()),
+            })
         }
 
         fn send(
