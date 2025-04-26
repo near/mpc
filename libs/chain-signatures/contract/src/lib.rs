@@ -210,16 +210,12 @@ impl MpcContract {
             .protocol_state
             .proposed_code_hashes_count_votes(code_hash.clone())?;
 
-        if u64::from(code_hash_votes + 1) >= self.threshold()?.value() {
+        if code_hash_votes + 1 >= self.threshold()?.value() {
             self.protocol_state.clear_code_hashes_votes()?;
             self.historical_code_hashes.push(code_hash.clone());
-            self.upgrade_deadline = Some(env::block_height() + TEE_UPGRADE_PERIOD);
             self.allowed_code_hashes.push(code_hash.clone());
-        } else {
-            self.protocol_state.vote_code_hash(code_hash.clone())?;
-        }
-
-        if let Some(new_state) = self.protocol_state.vote_code_hash(code_hash)? {
+            self.upgrade_deadline = Some(env::block_height() + TEE_UPGRADE_PERIOD);
+        } else if let Some(new_state) = self.protocol_state.vote_code_hash(code_hash)? {
             self.protocol_state = new_state;
         }
 
@@ -228,7 +224,10 @@ impl MpcContract {
 
     pub fn allowed_code_hashes(&mut self) -> Vec<CodeHash> {
         if env::block_height() > self.upgrade_deadline.unwrap_or_default() {
-            self.allowed_code_hashes = vec![self.allowed_code_hashes.last().unwrap().clone()];
+            self.allowed_code_hashes = self
+                .allowed_code_hashes
+                .last()
+                .map_or_else(Vec::new, |last| vec![last.clone()]);
         }
         self.allowed_code_hashes.clone()
     }
@@ -325,34 +324,33 @@ impl VersionedMpcContract {
             &request.path,
         );
 
-        match self {
-            Self::V0(_) => env::panic_str("expected V1"),
-            Self::V1(mpc_contract) => {
-                // Check if the request already exists.
-                if mpc_contract.pending_requests.contains_key(&request) {
-                    env::panic_str(&SignError::PayloadCollision.to_string());
-                }
+        let Self::V1(mpc_contract) = self else {
+            env::panic_str("expected V1")
+        };
 
-                env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
-
-                let promise_index = env::promise_yield_create(
-                    "return_signature_and_clean_state_on_success",
-                    &serde_json::to_vec(&(&request,)).unwrap(),
-                    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS,
-                    GasWeight(0),
-                    DATA_ID_REGISTER,
-                );
-
-                // Store the request in the contract's local state
-                let return_sig_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-                    .expect("read_register failed")
-                    .try_into()
-                    .expect("conversion to CryptoHash failed");
-                mpc_contract.add_request(&request, return_sig_id);
-
-                env::promise_return(promise_index);
-            }
+        // Check if the request already exists.
+        if mpc_contract.pending_requests.contains_key(&request) {
+            env::panic_str(&SignError::PayloadCollision.to_string());
         }
+
+        env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
+
+        let promise_index = env::promise_yield_create(
+            "return_signature_and_clean_state_on_success",
+            &serde_json::to_vec(&(&request,)).unwrap(),
+            RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS,
+            GasWeight(0),
+            DATA_ID_REGISTER,
+        );
+
+        // Store the request in the contract's local state
+        let return_sig_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
+            .expect("read_register failed")
+            .try_into()
+            .expect("conversion to CryptoHash failed");
+        mpc_contract.add_request(&request, return_sig_id);
+
+        env::promise_return(promise_index);
     }
 
     /// This is the root public key combined from all the public keys of the participants.
@@ -367,7 +365,7 @@ impl VersionedMpcContract {
         let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
         match self {
             Self::V1(mpc_contract) => mpc_contract.public_key_extended(domain),
-            _ => env::panic_str("expected V1"),
+            _ => env::panic_str("expected v1"),
         }
     }
 
@@ -389,7 +387,7 @@ impl VersionedMpcContract {
         let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
         let public_key = match self {
             Self::V1(mpc_contract) => mpc_contract.public_key_extended(domain),
-            _ => env::panic_str("expected V1"),
+            _ => env::panic_str("expected v1"),
         }?;
 
         let derived_public_key = match public_key {
@@ -560,7 +558,7 @@ impl VersionedMpcContract {
     pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         log!("start_keygen_instance: signer={}", env::signer_account_id(),);
         match self {
-            Self::V1(mpc_contract) => mpc_contract.start_keygen_instance(key_event_id),
+            Self::V1(contract_state) => contract_state.start_keygen_instance(key_event_id),
             _ => env::panic_str("expected V1"),
         }
     }
@@ -593,7 +591,7 @@ impl VersionedMpcContract {
             public_key,
         );
         match self {
-            Self::V1(mpc_contract) => mpc_contract.vote_pk(key_event_id, public_key),
+            Self::V1(contract_state) => contract_state.vote_pk(key_event_id, public_key),
             _ => env::panic_str("expected V1"),
         }
     }
@@ -607,7 +605,7 @@ impl VersionedMpcContract {
             env::signer_account_id()
         );
         match self {
-            Self::V1(mpc_contract) => mpc_contract.start_reshare_instance(key_event_id),
+            Self::V1(contract_state) => contract_state.start_reshare_instance(key_event_id),
             _ => env::panic_str("expected V1"),
         }
     }
@@ -633,7 +631,7 @@ impl VersionedMpcContract {
             key_event_id,
         );
         match self {
-            Self::V1(mpc_contract) => mpc_contract.vote_reshared(key_event_id),
+            Self::V1(contract_state) => contract_state.vote_reshared(key_event_id),
             _ => env::panic_str("expected V1"),
         }
     }
@@ -648,7 +646,7 @@ impl VersionedMpcContract {
     pub fn vote_cancel_keygen(&mut self, next_domain_id: u64) -> Result<(), Error> {
         log!("vote_cancel_keygen: signer={}", env::signer_account_id());
         match self {
-            Self::V1(mpc_contract) => mpc_contract.vote_cancel_keygen(next_domain_id),
+            Self::V1(contract_state) => contract_state.vote_cancel_keygen(next_domain_id),
             _ => env::panic_str("expected V1"),
         }
     }
@@ -662,7 +660,7 @@ impl VersionedMpcContract {
             env::signer_account_id()
         );
         match self {
-            Self::V1(mpc_contract) => mpc_contract.vote_abort_key_event_instance(key_event_id),
+            Self::V1(contract_state) => contract_state.vote_abort_key_event_instance(key_event_id),
             _ => env::panic_str("expected V1"),
         }
     }
@@ -746,7 +744,7 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             code_hash,
         );
-        let voter = self.voter_or_panic();
+        self.voter_or_panic();
         match self {
             Self::V1(contract) => contract.vote_code_hash(code_hash)?,
             _ => env::panic_str("expected V1"),
@@ -920,23 +918,21 @@ impl VersionedMpcContract {
         request: SignatureRequest, // this change here should actually be ok.
         #[callback_result] signature: Result<SignatureResponse, PromiseError>,
     ) -> PromiseOrValue<SignatureResponse> {
-        match self {
-            Self::V1(mpc_contract) => {
-                mpc_contract.pending_requests.remove(&request);
-                match signature {
-                    Ok(signature) => PromiseOrValue::Value(signature),
-                    Err(_) => {
-                        let promise = Promise::new(env::current_account_id()).function_call(
-                            "fail_on_timeout".to_string(),
-                            vec![],
-                            NearToken::from_near(0),
-                            Gas::from_tgas(1),
-                        );
-                        near_sdk::PromiseOrValue::Promise(promise.as_return())
-                    }
-                }
+        let Self::V1(mpc_contract) = self else {
+            env::panic_str("expected V1")
+        };
+        mpc_contract.pending_requests.remove(&request);
+        match signature {
+            Ok(signature) => PromiseOrValue::Value(signature),
+            Err(_) => {
+                let promise = Promise::new(env::current_account_id()).function_call(
+                    "fail_on_timeout".to_string(),
+                    vec![],
+                    NearToken::from_near(0),
+                    Gas::from_tgas(1),
+                );
+                near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
-            _ => env::panic_str("expected V1"),
         }
     }
 
@@ -948,19 +944,15 @@ impl VersionedMpcContract {
 
     #[private]
     pub fn update_config(&mut self, config: Config) {
-        match self {
-            Self::V0(_) => {
-                env::panic_str("expected V1");
-            }
-            Self::V1(mpc_contract) => {
-                mpc_contract.config = config;
-            }
-        }
+        let Self::V1(mpc_contract) = self else {
+            env::panic_str("expected v1")
+        };
+        mpc_contract.config = config;
     }
 
     fn proposed_updates(&mut self) -> &mut ProposedUpdates {
         match self {
-            Self::V1(mpc_contract) => &mut mpc_contract.proposed_updates,
+            Self::V1(contract) => &mut contract.proposed_updates,
             _ => env::panic_str("expected V1"),
         }
     }

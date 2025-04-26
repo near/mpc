@@ -3,7 +3,7 @@ use super::{key_state::AuthenticatedAccountId, participants::Participants};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
-/// Tracks votes for ThresholdParameters (new participants, threshold and TEE Docker image hash).
+/// Tracks votes for ThresholdParameters (new participants and threshold).
 /// Each current participant can maintain one vote.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Default, PartialEq)]

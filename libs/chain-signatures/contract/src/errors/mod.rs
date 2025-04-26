@@ -138,12 +138,6 @@ pub enum InvalidCandidateSet {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
-pub enum InvalidCodeHashSet {
-    #[error("Code hashes are not coherent.")]
-    IncoherentCodeHashes,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum ConversionError {
     #[error("Data conversion error.")]
     DataConversion,
@@ -194,9 +188,6 @@ pub enum ErrorKind {
     // Invalid Candidate errors
     #[error("{0}")]
     InvalidCandidateSet(#[from] InvalidCandidateSet),
-    // Invalid Code Hash errors
-    #[error("{0}")]
-    InvalidCodeHashSet(#[from] InvalidCodeHashSet),
     // Key event errors
     #[error("{0}")]
     KeyEventError(#[from] KeyEventError),

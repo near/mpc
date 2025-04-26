@@ -1,5 +1,4 @@
 pub mod code_hash;
-pub mod docker_image;
 pub mod domain;
 pub mod key_state;
 pub mod participants;

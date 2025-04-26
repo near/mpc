@@ -71,17 +71,6 @@ impl ProtocolContractState {
             }
         }
     }
-    // pub fn proposed_code_hashes(&self) -> Result<BTreeSet<CodeHash>, Error> {
-    //     match self {
-    //         ProtocolContractState::Running(state) => Ok(state
-    //             .proposed_code_hashes
-    //             .proposal_by_account
-    //             .values()
-    //             .cloned()
-    //             .collect()),
-    //         _ => Err(InvalidState::ProtocolStateNotRunning.into()),
-    //     }
-    // }
     pub fn proposed_code_hashes_count_votes(&self, code_hash: CodeHash) -> Result<u64, Error> {
         match self {
             ProtocolContractState::Running(state) => {
@@ -153,7 +142,6 @@ impl ProtocolContractState {
         prospective_epoch_id: EpochId,
         proposed_parameters: &ThresholdParameters,
     ) -> Result<Option<ProtocolContractState>, Error> {
-        // TODO verify TEE quote here (when adding TEE participants)?
         match self {
             ProtocolContractState::Running(state) => {
                 state.vote_new_parameters(prospective_epoch_id, proposed_parameters)
@@ -181,6 +169,7 @@ impl ProtocolContractState {
         &mut self,
         code_hash: CodeHash,
     ) -> Result<Option<ProtocolContractState>, Error> {
+        // TODO verify TEE quote here (when adding TEE participants)?
         match self {
             ProtocolContractState::Running(state) => state.vote_code_hash(code_hash),
             _ => Err(InvalidState::ProtocolStateNotRunning.into()),
