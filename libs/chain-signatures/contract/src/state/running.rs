@@ -195,10 +195,10 @@ impl RunningContractState {
         }
     }
 
-    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<Option<Self>, Error> {
+    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<(), Error> {
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         self.proposed_code_hashes.vote(code_hash, &participant);
-        Ok(None)
+        Ok(())
     }
 }
 

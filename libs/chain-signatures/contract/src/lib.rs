@@ -215,8 +215,8 @@ impl MpcContract {
             self.historical_code_hashes.push(code_hash.clone());
             self.allowed_code_hashes.push(code_hash.clone());
             self.upgrade_deadline = Some(env::block_height() + TEE_UPGRADE_PERIOD);
-        } else if let Some(new_state) = self.protocol_state.vote_code_hash(code_hash)? {
-            self.protocol_state = new_state;
+        } else {
+            self.protocol_state.vote_code_hash(code_hash)?;
         }
 
         Ok(())

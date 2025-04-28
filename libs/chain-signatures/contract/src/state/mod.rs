@@ -165,16 +165,13 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Initializing))
     }
 
-    pub fn vote_code_hash(
-        &mut self,
-        code_hash: CodeHash,
-    ) -> Result<Option<ProtocolContractState>, Error> {
-        // TODO verify TEE quote here (when adding TEE participants)?
-        match self {
-            ProtocolContractState::Running(state) => state.vote_code_hash(code_hash),
-            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
+    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<(), Error> {
+        // TODO verify TEE quote here
+        if let ProtocolContractState::Running(state) = self {
+            state.vote_code_hash(code_hash)
+        } else {
+            Err(InvalidState::ProtocolStateNotRunning.into())
         }
-        .map(|x: Option<RunningContractState>| x.map(ProtocolContractState::Running))
     }
 
     pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
