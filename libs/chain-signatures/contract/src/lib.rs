@@ -87,7 +87,7 @@ impl From<v0_state::MpcContractV0> for MpcContract {
             config: value.config,
             allowed_code_hashes: vec![],
             historical_code_hashes: vec![],
-            upgrade_deadline: Some(TEE_UPGRADE_PERIOD),
+            upgrade_deadline: None,
         }
     }
 }
@@ -132,7 +132,7 @@ impl MpcContract {
             config: Config::from(init_config),
             allowed_code_hashes: vec![],
             historical_code_hashes: vec![],
-            upgrade_deadline: Some(TEE_UPGRADE_PERIOD),
+            upgrade_deadline: None,
         }
     }
 
@@ -833,7 +833,7 @@ impl VersionedMpcContract {
             proposed_updates: ProposedUpdates::default(),
             allowed_code_hashes: vec![],
             historical_code_hashes: vec![],
-            upgrade_deadline: Some(TEE_UPGRADE_PERIOD),
+            upgrade_deadline: None,
         }))
     }
 
@@ -872,7 +872,7 @@ impl VersionedMpcContract {
                 proposed_updates: ProposedUpdates::default(),
                 allowed_code_hashes: vec![],
                 historical_code_hashes: vec![],
-                upgrade_deadline: Some(TEE_UPGRADE_PERIOD),
+                upgrade_deadline: None,
             }));
         }
         if let Some(contract) = env::state_read::<VersionedMpcContract>() {
