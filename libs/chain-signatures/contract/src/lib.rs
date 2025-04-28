@@ -232,8 +232,11 @@ impl MpcContract {
         self.allowed_code_hashes.clone()
     }
 
-    pub fn latest_code_hash(&self) -> Option<CodeHash> {
-        self.allowed_code_hashes.last().cloned()
+    pub fn latest_code_hash(&self) -> CodeHash {
+        self.allowed_code_hashes
+            .last()
+            .expect("there must be at least one allowed code hash")
+            .clone()
     }
 }
 
@@ -762,7 +765,7 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn latest_code_hash(&self) -> Result<Option<CodeHash>, Error> {
+    pub fn latest_code_hash(&self) -> Result<CodeHash, Error> {
         log!("latest_code_hash: signer={}", env::signer_account_id());
         match self {
             Self::V1(contract) => Ok(contract.latest_code_hash()),
