@@ -46,9 +46,10 @@ impl ResharingContractState {
         self.resharing_key.epoch_id()
     }
 
-    /// Casts a vote for a re-proposal. Requires the signer to be an original participant from the
-    /// previous running state. If this exceeds the threshold (from the previous running state),
-    /// returns a new ResharingContractState that we should transition into.
+    /// Casts a vote for a re-proposal. Requires the signer to be a participant of the prospective epoch.
+    /// Returns a new [`ResharingContractState`] if all participants of the re-proposal voted for the re-proposal.
+    /// Note that transitioning to a new state implicitly requires `threshold` number of votes from participants of the
+    /// previous running state.
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
@@ -171,11 +172,8 @@ mod tests {
         let mut running = gen_running_state(num_domains);
         let proposal = gen_valid_params_proposal(&running.parameters);
         let mut resharing_state = None;
-        let voting_participants = running.parameters.participants().participants()
-            [0..running.parameters.threshold().value() as usize]
-            .to_vec();
-        for (account, _, _) in voting_participants {
-            env.set_signer(&account);
+        for (account, _, _) in proposal.participants().participants() {
+            env.set_signer(account);
             assert!(resharing_state.is_none());
             resharing_state = running
                 .vote_new_parameters(running.keyset.epoch_id.next(), &proposal)
@@ -359,7 +357,6 @@ mod tests {
             .parameters
             .participants()
             .clone();
-        let old_threshold = state.previous_running_state.parameters.threshold().value() as usize;
         {
             let new_participants = state
                 .resharing_key
@@ -383,7 +380,7 @@ mod tests {
         // should be rejected, since all re-proposals must be valid against the original.
         let mut new_participants_1 = old_participants.clone();
         let new_threshold = Threshold::new(old_participants.len() as u64);
-        new_participants_1.add_random_participants_till_n(old_participants.len() * 3 / 2);
+        new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
         let new_participants_2 = new_participants_1
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
         let new_params_1 =
@@ -416,7 +413,7 @@ mod tests {
 
         // Repropose with new_params_1.
         let mut new_state = None;
-        for (account, _, _) in &old_participants.participants()[0..old_threshold] {
+        for (account, _, _) in new_params_1.participants().participants() {
             env.set_signer(account);
             assert!(new_state.is_none());
             new_state = state
