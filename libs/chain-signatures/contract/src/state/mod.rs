@@ -166,7 +166,7 @@ impl ProtocolContractState {
     }
 
     pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<(), Error> {
-        // TODO verify TEE quote here
+        // TODO: Verify TEE quote here. See GitHub issue #378: https://github.com/Near-One/mpc/issues/378
         if let ProtocolContractState::Running(state) = self {
             state.vote_code_hash(code_hash)
         } else {
