@@ -37,7 +37,6 @@ stateDiagram-v2
     NotInitialized --> Running : init
     Running --> Initializing : vote_add_domains
     Running --> Resharing : vote_new_parameters
-    Running --> Running : vote_code_hash
     Initializing --> Running : vote_pk
     Initializing --> Running : vote_cancel_keygen
     Resharing --> Running : vote_reshared
