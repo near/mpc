@@ -16,7 +16,6 @@ pub struct ParticipantInfo {
     pub url: String,
     /// The public key used for verifying messages.
     pub sign_pk: PublicKey,
-    // pub ra_quote: RAQuote,
 }
 
 /* Migration helper */
