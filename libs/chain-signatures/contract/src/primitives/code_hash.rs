@@ -33,7 +33,7 @@ impl CodeHashesVotes {
     }
 
     /// Counts the total number of participants who have voted for the given code hash.
-    pub fn count_votes(&self, proposal: &CodeHash) -> u64 {
+    fn count_votes(&self, proposal: &CodeHash) -> u64 {
         self.proposal_by_account
             .values()
             .filter(|&prop| prop == proposal)

@@ -71,14 +71,6 @@ impl ProtocolContractState {
             }
         }
     }
-    pub fn proposed_code_hashes_count_votes(&self, code_hash: CodeHash) -> Result<u64, Error> {
-        match self {
-            ProtocolContractState::Running(state) => {
-                Ok(state.proposed_code_hashes.count_votes(&code_hash))
-            }
-            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
-        }
-    }
     pub fn clear_code_hashes_votes(&mut self) -> Result<(), Error> {
         match self {
             ProtocolContractState::Running(state) => {
@@ -165,7 +157,7 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Initializing))
     }
 
-    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<u64, Error> {
         // TODO: Verify TEE quote here. See GitHub issue #378: https://github.com/Near-One/mpc/issues/378
         if let ProtocolContractState::Running(state) = self {
             state.vote_code_hash(code_hash)

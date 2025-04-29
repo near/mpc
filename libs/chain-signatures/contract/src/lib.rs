@@ -206,17 +206,13 @@ impl MpcContract {
     }
 
     pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<(), Error> {
-        let code_hash_votes = self
-            .protocol_state
-            .proposed_code_hashes_count_votes(code_hash.clone())?;
+        let votes = self.protocol_state.vote_code_hash(code_hash.clone())?;
 
-        if code_hash_votes + 1 >= self.threshold()?.value() {
+        if votes >= self.threshold()?.value() {
             self.protocol_state.clear_code_hashes_votes()?;
             self.historical_code_hashes.push(code_hash.clone());
             self.allowed_code_hashes.push(code_hash.clone());
             self.upgrade_deadline = Some(env::block_height() + TEE_UPGRADE_PERIOD);
-        } else {
-            self.protocol_state.vote_code_hash(code_hash)?;
         }
 
         Ok(())
