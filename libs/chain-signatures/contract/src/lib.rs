@@ -455,14 +455,14 @@ impl VersionedMpcContract {
         if !signature_is_valid {
             return Err(RespondError::InvalidSignature.into());
         }
+
+        let Self::V1(mpc_contract) = self else {
+            env::panic_str("expected V1")
+        };
         // First get the yield promise of the (potentially timed out) request.
-        if let Some(YieldIndex { data_id }) = self.get_pending_request(&request) {
+        if let Some(YieldIndex { data_id }) = mpc_contract.pending_requests.remove(&request) {
             // Finally, resolve the promise. This will have no effect if the request already timed.
             env::promise_yield_resume(&data_id, &serde_json::to_vec(&response).unwrap());
-            let Self::V1(mpc_contract) = self else {
-                env::panic_str("expected V1")
-            };
-            mpc_contract.pending_requests.remove(&request);
             Ok(())
         } else {
             Err(InvalidParameters::RequestNotFound.into())
