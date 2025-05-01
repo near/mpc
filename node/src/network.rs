@@ -16,7 +16,6 @@ use conn::{ConnectionVersion, NodeConnectivityInterface};
 use indexer_heights::IndexerHeightTracker;
 use lru::LruCache;
 use rand::prelude::IteratorRandom;
-use rand::{thread_rng, RngCore};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::option::Option;
@@ -72,6 +71,8 @@ pub struct MeshNetworkClient {
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
     channels: Arc<Mutex<NetworkTaskChannelManager>>,
     indexer_heights: Arc<IndexerHeightTracker>,
+    /// Helper data to ensure `ChannelId` uniqueness.
+    last_id: Arc<Mutex<UniqueId>>,
 }
 
 /// Manages currently active channels as well as buffering messages for channels that are waiting
@@ -93,6 +94,29 @@ impl NetworkTaskChannelManager {
 const LRU_CAPACITY: usize = 10000;
 
 impl MeshNetworkClient {
+    fn new(
+        transport_sender: Arc<dyn MeshNetworkTransportSender>,
+        channels: Arc<Mutex<NetworkTaskChannelManager>>,
+        indexer_heights: Arc<IndexerHeightTracker>,
+    ) -> Self {
+        let last_id = Arc::new(Mutex::new(UniqueId::generate(
+            transport_sender.my_participant_id(),
+        )));
+        Self {
+            transport_sender,
+            channels,
+            indexer_heights,
+            last_id,
+        }
+    }
+
+    fn generate_unique_channel_id(&self) -> ChannelId {
+        let mut last_id = self.last_id.lock().unwrap();
+        let new = last_id.pick_new_after();
+        *last_id = new;
+        ChannelId(new)
+    }
+
     /// Primary functionality for the MeshNetworkClient: returns a channel for the given
     /// new MPC task. It is expected that the caller is the leader of this MPC task.
     /// There may be two tasks with the same `MpcTaskId` (e.g. EdDSA retry computation),
@@ -109,11 +133,7 @@ impl MeshNetworkClient {
             self.my_participant_id(),
             task_id
         );
-        // Use `add_to_counter` + random to ensure uniqueness.
-        // The other way is to store last used id and do `pick_new_after`, but that requires state mutation.
-        let unique_id =
-            UniqueId::generate(self.my_participant_id()).add_to_counter(thread_rng().next_u32())?;
-        let channel_id = ChannelId(unique_id);
+        let channel_id = self.generate_unique_channel_id();
         let start_message = MpcStartMessage {
             task_id,
             participants: participants.clone(),
@@ -379,11 +399,11 @@ pub fn run_network_client(
     let indexer_heights = Arc::new(IndexerHeightTracker::new(
         &transport_sender.all_participant_ids(),
     ));
-    let client = Arc::new(MeshNetworkClient {
+    let client = Arc::new(MeshNetworkClient::new(
         transport_sender,
-        channels: Arc::new(Mutex::new(NetworkTaskChannelManager::new())),
-        indexer_heights: indexer_heights.clone(),
-    });
+        Arc::new(Mutex::new(NetworkTaskChannelManager::new())),
+        indexer_heights.clone(),
+    ));
     let (new_channel_sender, new_channel_receiver) = mpsc::unbounded_channel();
     let handle = tracking::spawn_checked(
         "Network receive message loop",
