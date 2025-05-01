@@ -5,16 +5,18 @@ pub mod handshake;
 pub mod indexer_heights;
 pub mod signing;
 
+use crate::assets::UniqueId;
 use crate::metrics;
 use crate::primitives::{
-    IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, MpcStartMessage, MpcTaskId,
-    ParticipantId, PeerMessage,
+    ChannelId, IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, MpcStartMessage,
+    MpcTaskId, ParticipantId, PeerMessage,
 };
 use crate::tracking::{self, AutoAbortTask};
 use conn::{ConnectionVersion, NodeConnectivityInterface};
 use indexer_heights::IndexerHeightTracker;
 use lru::LruCache;
 use rand::prelude::IteratorRandom;
+use rand::{thread_rng, RngCore};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::option::Option;
@@ -75,8 +77,8 @@ pub struct MeshNetworkClient {
 /// Manages currently active channels as well as buffering messages for channels that are waiting
 /// for the Start message.
 struct NetworkTaskChannelManager {
-    senders: HashMap<MpcTaskId, mpsc::UnboundedSender<MpcPeerMessage>>,
-    channels_waiting_for_start: LruCache<MpcTaskId, IncompleteNetworkTaskChannel>,
+    senders: HashMap<ChannelId, mpsc::UnboundedSender<MpcPeerMessage>>,
+    channels_waiting_for_start: LruCache<ChannelId, IncompleteNetworkTaskChannel>,
 }
 
 impl NetworkTaskChannelManager {
@@ -107,11 +109,17 @@ impl MeshNetworkClient {
             self.my_participant_id(),
             task_id
         );
+        // Use `add_to_counter` + random to ensure uniqueness.
+        // The other way is to store last used id and do `pick_new_after`, but that requires state mutation.
+        let unique_id =
+            UniqueId::generate(self.my_participant_id()).add_to_counter(thread_rng().next_u32())?;
+        let channel_id = ChannelId(unique_id);
         let start_message = MpcStartMessage {
+            task_id,
             participants: participants.clone(),
         };
         let SenderOrNewChannel::NewChannel(channel) =
-            self.sender_for(task_id, Some(&start_message), self.my_participant_id())
+            self.sender_for(channel_id, Some(&start_message), self.my_participant_id())
         else {
             anyhow::bail!("Channel already exists");
         };
@@ -122,7 +130,7 @@ impl MeshNetworkClient {
             channel.sender.send_raw(
                 *participant,
                 MpcMessage {
-                    task_id,
+                    channel_id,
                     kind: MpcMessageKind::Start(start_message.clone()),
                 },
             )?;
@@ -201,7 +209,7 @@ impl MeshNetworkClient {
     /// buffer the messages and deliver them to the channel, once a Start message is received.
     fn sender_for(
         &self,
-        task_id: MpcTaskId,
+        channel_id: ChannelId,
         start: Option<&MpcStartMessage>,
         originator: ParticipantId,
     ) -> SenderOrNewChannel {
@@ -213,7 +221,7 @@ impl MeshNetworkClient {
         //    - This is maintained by the drop_fn we give to NetworkTaskChannel, which is called
         //      when the NetworkTaskChannel is destroyed.
         let mut channels = self.channels.lock().unwrap();
-        let sender = match channels.senders.entry(task_id) {
+        let sender = match channels.senders.entry(channel_id) {
             Entry::Occupied(entry) => entry.get().clone(),
             Entry::Vacant(entry) => {
                 let (sender, receiver) = mpsc::unbounded_channel();
@@ -221,12 +229,12 @@ impl MeshNetworkClient {
                 let incomplete_channel = IncompleteNetworkTaskChannel { receiver };
                 if let Some((k, _)) = channels
                     .channels_waiting_for_start
-                    .push(task_id, incomplete_channel)
+                    .push(channel_id, incomplete_channel)
                 {
                     // If k != task_id, that means the LruCache evicted some other entry.
                     // That means that other channel never received Start and is old enough,
                     // so we also remove it from the senders map. See the above invariant.
-                    if k != task_id {
+                    if k != channel_id {
                         channels.senders.remove(&k);
                     }
                 }
@@ -240,17 +248,18 @@ impl MeshNetworkClient {
             //  - It's possible that we received Start message twice. That's erroneous, but we'll
             //    just deliver the second Start message to the channel, where the channel handling
             //    code will fail.
-            if let Some(incomplete_channel) = channels.channels_waiting_for_start.pop(&task_id) {
+            if let Some(incomplete_channel) = channels.channels_waiting_for_start.pop(&channel_id) {
                 drop(channels); // release lock
                 let drop_fn = {
                     let channels = self.channels.clone();
                     move || {
-                        channels.lock().unwrap().senders.remove(&task_id);
+                        channels.lock().unwrap().senders.remove(&channel_id);
                     }
                 };
                 let channel = NetworkTaskChannel {
                     sender: Arc::new(NetworkTaskChannelSender {
-                        task_id,
+                        channel_id,
+                        task_id: start.task_id,
                         leader: originator,
                         my_participant_id: self.my_participant_id(),
                         participants: start.participants.clone(),
@@ -335,12 +344,12 @@ async fn run_receive_messages_loop(
         let message = receiver.receive().await?;
         match message {
             PeerMessage::Mpc(message) => {
-                let task_id = message.message.task_id;
+                let channel_id = message.message.channel_id;
                 let start_msg = match &message.message.kind {
                     MpcMessageKind::Start(start_msg) => Some(start_msg),
                     _ => None,
                 };
-                match client.sender_for(task_id, start_msg, message.from) {
+                match client.sender_for(channel_id, start_msg, message.from) {
                     SenderOrNewChannel::Sender(sender) => {
                         sender.send(message)?;
                     }
@@ -405,6 +414,9 @@ pub struct NetworkTaskChannel {
 
 /// A subset of the NetworkTaskChannel that doesn't include the mutable parts.
 pub struct NetworkTaskChannelSender {
+    /// Unique channel ID across participants.
+    /// It is needed as `task_id` might not be globally unique.
+    channel_id: ChannelId,
     /// The task ID associated with the computation.
     task_id: MpcTaskId,
     /// The leader of the computation; there is exactly one leader for each computation.
@@ -465,7 +477,7 @@ impl NetworkTaskChannelSender {
         self.send_raw(
             recipient_id,
             MpcMessage {
-                task_id: self.task_id,
+                channel_id: self.channel_id,
                 kind: MpcMessageKind::Computation(data),
             },
         )
@@ -527,7 +539,7 @@ impl NetworkTaskChannelSender {
         self.send_raw(
             self.leader,
             MpcMessage {
-                task_id: self.task_id,
+                channel_id: self.channel_id,
                 kind: MpcMessageKind::Success,
             },
         )?;
@@ -555,7 +567,7 @@ impl NetworkTaskChannelSender {
                 let _ = self.send_raw(
                     *participant,
                     MpcMessage {
-                        task_id: self.task_id,
+                        channel_id: self.channel_id,
                         kind: MpcMessageKind::Abort(err_msg.clone()),
                     },
                 );
@@ -572,7 +584,7 @@ impl NetworkTaskChannelSender {
             let _ = self.send_raw(
                 self.leader,
                 MpcMessage {
-                    task_id: self.task_id,
+                    channel_id: self.channel_id,
                     kind: MpcMessageKind::Abort(err_msg),
                 },
             );

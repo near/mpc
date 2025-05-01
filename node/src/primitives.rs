@@ -1,3 +1,4 @@
+use crate::assets::UniqueId;
 use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::EcdsaTaskId;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -63,9 +64,14 @@ impl Debug for ParticipantId {
 /// A batched list of multiple cait-sith protocol messages.
 pub type BatchedMessages = Vec<Vec<u8>>;
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, BorshSerialize, BorshDeserialize,
+)]
+pub struct ChannelId(pub UniqueId);
+
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct MpcMessage {
-    pub task_id: MpcTaskId,
+    pub channel_id: ChannelId,
     pub kind: MpcMessageKind,
 }
 
@@ -79,6 +85,7 @@ pub enum MpcMessageKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct MpcStartMessage {
+    pub task_id: MpcTaskId,
     pub participants: Vec<ParticipantId>,
 }
 
