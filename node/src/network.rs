@@ -92,9 +92,9 @@ const LRU_CAPACITY: usize = 10000;
 
 impl MeshNetworkClient {
     /// Primary functionality for the MeshNetworkClient: returns a channel for the given
-    /// new MPC task. It is expected that the caller is the leader of this MPC task, and that the
-    /// way the MPC task IDs are assigned ensures that no two participants would initiate
-    /// tasks with the same MPC task ID.
+    /// new MPC task. It is expected that the caller is the leader of this MPC task.
+    /// There may be two tasks with the same `MpcTaskId` (e.g. EdDSA retry computation),
+    /// but they would have different channel ids.
     pub fn new_channel_for_task(
         &self,
         task_id: impl Into<MpcTaskId>,
@@ -666,10 +666,12 @@ impl NetworkTaskChannel {
                 if self.sender.is_leader() {
                     self.successful_participants.insert(message.from);
                 } else {
-                    anyhow::bail!("Unexpected Success message from leader");
+                    anyhow::bail!("Received unexpected Success message when we are not the leader");
                 }
             }
             MpcMessageKind::Start(mpc_start_message) => {
+                // `Self` was created upon receiving `MpcMessageKind::Start`, further we don't expect
+                // any `Start` messages.
                 anyhow::bail!("Unexpected Start message: {:?}", mpc_start_message);
             }
         }
