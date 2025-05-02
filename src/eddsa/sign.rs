@@ -2,7 +2,7 @@
 //!  into `cait-sith::Protocol` representation.
 use crate::eddsa::KeygenOutput;
 use crate::participants::{ParticipantCounter, ParticipantList};
-use crate::protocol::internal::{make_protocol, Context, SharedChannel};
+use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
 use crate::protocol::{InitializationError, Participant, Protocol, ProtocolError};
 
 use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare};
@@ -88,7 +88,7 @@ async fn do_sign_coordinator(
         BTreeMap::new();
 
     let r2_wait_point = chan.next_waitpoint();
-    chan.send_many(r2_wait_point, &signing_package).await;
+    chan.send_many(r2_wait_point, &signing_package);
 
     let vk_package = keygen_output.public_key;
     let key_package = construct_key_package(threshold, &me, &signing_share, &vk_package);
@@ -158,8 +158,7 @@ async fn do_sign_participant(
     // * Send coordinator our commitment.
 
     let commit_waitpoint = chan.next_waitpoint();
-    chan.send_private(commit_waitpoint, coordinator, &commitments)
-        .await;
+    chan.send_private(commit_waitpoint, coordinator, &commitments);
 
     // --- Round 2.
     // * Wait for a signing package.
@@ -188,8 +187,7 @@ async fn do_sign_participant(
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
-    chan.send_private(r2_wait_point, coordinator, &signature_share)
-        .await;
+    chan.send_private(r2_wait_point, coordinator, &signature_share);
 
     Ok(None)
 }
@@ -237,8 +235,8 @@ pub fn sign(
         )));
     };
 
-    let ctx = Context::new();
-    let chan = ctx.shared_channel();
+    let comms = Comms::new();
+    let chan = comms.shared_channel();
     let fut = fut_wrapper(
         chan,
         participants,
@@ -248,7 +246,7 @@ pub fn sign(
         keygen_output,
         message,
     );
-    Ok(make_protocol(ctx, fut))
+    Ok(make_protocol(comms, fut))
 }
 
 async fn fut_wrapper(

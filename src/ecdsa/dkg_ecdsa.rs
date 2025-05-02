@@ -3,7 +3,7 @@ use frost_secp256k1::*;
 
 use crate::ecdsa::KeygenOutput;
 use crate::generic_dkg::*;
-use crate::protocol::internal::{make_protocol, Context};
+use crate::protocol::internal::{make_protocol, Comms};
 use crate::protocol::{InitializationError, Participant, Protocol};
 use futures::FutureExt;
 
@@ -15,7 +15,7 @@ pub fn keygen(
     me: Participant,
     threshold: usize,
 ) -> Result<impl Protocol<Output = KeygenOutput>, InitializationError> {
-    let ctx = Context::new();
+    let ctx = Comms::new();
     let participants = assert_keygen_invariants(participants, me, threshold)?;
     let fut =
         do_keygen(ctx.shared_channel(), participants, me, threshold).map(|x| x.map(Into::into));
@@ -32,7 +32,7 @@ pub fn reshare(
     new_threshold: usize,
     me: Participant,
 ) -> Result<impl Protocol<Output = KeygenOutput>, InitializationError> {
-    let ctx = Context::new();
+    let ctx = Comms::new();
     let threshold = new_threshold;
     let (participants, old_participants) = reshare_assertions::<E>(
         new_participants,
@@ -68,7 +68,7 @@ pub fn refresh(
             "The participant {me:?} is running refresh without an old share",
         )));
     }
-    let ctx = Context::new();
+    let ctx = Comms::new();
     let threshold = new_threshold;
     let (participants, old_participants) = reshare_assertions::<E>(
         new_participants,

@@ -3,10 +3,7 @@ use crate::{
     constants::SECURITY_PARAMETER,
     crypto::Digest,
     participants::ParticipantList,
-    protocol::{
-        internal::{Context, PrivateChannel},
-        Participant, ProtocolError,
-    },
+    protocol::{internal::PrivateChannel, Participant, ProtocolError},
 };
 use std::sync::Arc;
 
@@ -17,17 +14,17 @@ use super::{
         random_ot_extension_receiver, random_ot_extension_sender, RandomOtExtensionParams,
     },
 };
+use crate::protocol::internal::Comms;
 use std::collections::VecDeque;
 
 pub async fn multiplication_sender<'a, C: CSCurve>(
-    ctx: Context<'a>,
     chan: PrivateChannel,
     sid: &[u8],
     a_i: &C::Scalar,
     b_i: &C::Scalar,
 ) -> Result<C::Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let (delta, k) = batch_random_ot_receiver::<C>(ctx.clone(), chan.child(0)).await?;
+    let (delta, k) = batch_random_ot_receiver::<C>(chan.child(0)).await?;
 
     let batch_size = C::BITS + SECURITY_PARAMETER;
     // Step 1
@@ -44,8 +41,8 @@ pub async fn multiplication_sender<'a, C: CSCurve>(
     let res1 = res0.split_off(batch_size);
 
     // Step 2
-    let task0 = ctx.spawn(mta_sender::<C>(chan.child(2), res0, *a_i));
-    let task1 = ctx.spawn(mta_sender::<C>(chan.child(3), res1, *b_i));
+    let task0 = mta_sender::<C>(chan.child(2), res0, *a_i);
+    let task1 = mta_sender::<C>(chan.child(3), res1, *b_i);
 
     // Step 3
     let (gamma0, gamma1) = futures::future::join(task0, task1).await;
@@ -54,14 +51,13 @@ pub async fn multiplication_sender<'a, C: CSCurve>(
 }
 
 pub async fn multiplication_receiver<'a, C: CSCurve>(
-    ctx: Context<'a>,
     chan: PrivateChannel,
     sid: &[u8],
     a_i: &C::Scalar,
     b_i: &C::Scalar,
 ) -> Result<C::Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let (k0, k1) = batch_random_ot_sender::<C>(ctx.clone(), chan.child(0)).await?;
+    let (k0, k1) = batch_random_ot_sender::<C>(chan.child(0)).await?;
 
     let batch_size = C::BITS + SECURITY_PARAMETER;
     // Step 1
@@ -78,8 +74,8 @@ pub async fn multiplication_receiver<'a, C: CSCurve>(
     let res1 = res0.split_off(batch_size);
 
     // Step 2
-    let task0 = ctx.spawn(mta_receiver::<C>(chan.child(2), res0, *b_i));
-    let task1 = ctx.spawn(mta_receiver::<C>(chan.child(3), res1, *a_i));
+    let task0 = mta_receiver::<C>(chan.child(2), res0, *b_i);
+    let task1 = mta_receiver::<C>(chan.child(3), res1, *a_i);
 
     // Step 3
     let (gamma0, gamma1) = futures::future::join(task0, task1).await;
@@ -88,7 +84,7 @@ pub async fn multiplication_receiver<'a, C: CSCurve>(
 }
 
 pub async fn multiplication<C: CSCurve>(
-    ctx: Context<'_>,
+    comms: Comms,
     sid: Digest,
     participants: ParticipantList,
     me: Participant,
@@ -98,27 +94,26 @@ pub async fn multiplication<C: CSCurve>(
     let mut tasks = Vec::with_capacity(participants.len() - 1);
     for p in participants.others(me) {
         let fut = {
-            let ctx = ctx.clone();
-            let chan = ctx.private_channel(me, p);
+            let chan = comms.private_channel(me, p);
             async move {
                 if p < me {
-                    multiplication_sender::<C>(ctx, chan, sid.as_ref(), &a_i, &b_i).await
+                    multiplication_sender::<C>(chan, sid.as_ref(), &a_i, &b_i).await
                 } else {
-                    multiplication_receiver::<C>(ctx, chan, sid.as_ref(), &a_i, &b_i).await
+                    multiplication_receiver::<C>(chan, sid.as_ref(), &a_i, &b_i).await
                 }
             }
         };
-        tasks.push(ctx.spawn(fut));
+        tasks.push(fut);
     }
     let mut out = a_i * b_i;
-    for task in tasks {
-        out += task.await?;
+    for result in futures::future::try_join_all(tasks).await? {
+        out += result;
     }
     Ok(out)
 }
 
 pub async fn multiplication_many<C: CSCurve, const N: usize>(
-    ctx: Context<'_>,
+    comms: Comms,
     sid: Vec<Digest>,
     participants: ParticipantList,
     me: Participant,
@@ -137,8 +132,7 @@ pub async fn multiplication_many<C: CSCurve, const N: usize>(
             let av_iv_arc = av_iv_arc.clone();
             let bv_iv_arc = bv_iv_arc.clone();
             let fut = {
-                let ctx = ctx.clone();
-                let chan = ctx.private_channel(me, p).child(i as u64);
+                let chan = comms.private_channel(me, p).child(i as u64);
                 let order_key_other = crate::crypto::hash(&(i, p));
 
                 async move {
@@ -148,7 +142,6 @@ pub async fn multiplication_many<C: CSCurve, const N: usize>(
                     // participants.
                     if order_key_other.as_ref() < order_key_me.as_ref() {
                         multiplication_sender::<C>(
-                            ctx,
                             chan,
                             sid_arc[i].as_ref(),
                             &av_iv_arc[i],
@@ -157,7 +150,6 @@ pub async fn multiplication_many<C: CSCurve, const N: usize>(
                         .await
                     } else {
                         multiplication_receiver::<C>(
-                            ctx,
                             chan,
                             sid_arc[i].as_ref(),
                             &av_iv_arc[i],
@@ -167,7 +159,7 @@ pub async fn multiplication_many<C: CSCurve, const N: usize>(
                     }
                 }
             };
-            tasks.push(ctx.spawn(fut));
+            tasks.push(fut);
         }
     }
     let mut outs = vec![];
@@ -178,10 +170,8 @@ pub async fn multiplication_many<C: CSCurve, const N: usize>(
         outs.push(out);
     }
 
-    let mut results = futures::future::join_all(tasks)
-        .await
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()?
+    let mut results = futures::future::try_join_all(tasks)
+        .await?
         .into_iter()
         .collect::<VecDeque<_>>();
 
@@ -203,14 +193,12 @@ mod test {
     use crate::{
         crypto::hash,
         participants::ParticipantList,
-        protocol::{
-            internal::{make_protocol, Context},
-            run_protocol, Participant, Protocol, ProtocolError,
-        },
+        protocol::{internal::make_protocol, run_protocol, Participant, Protocol, ProtocolError},
     };
 
     use super::multiplication;
     use crate::ecdsa::triples::multiplication::multiplication_many;
+    use crate::protocol::internal::Comms;
 
     #[test]
     fn test_multiplication() -> Result<(), ProtocolError> {
@@ -237,7 +225,7 @@ mod test {
         let sid = hash(b"sid");
 
         for (p, a_i, b_i) in prep {
-            let ctx = Context::new();
+            let ctx = Comms::new();
             let prot = make_protocol(
                 ctx.clone(),
                 multiplication::<Secp256k1>(
@@ -307,7 +295,7 @@ mod test {
         let sids: Vec<_> = (0..N).map(|i| hash(&format!("sid{}", i))).collect();
 
         for (p, a_iv, b_iv) in prep {
-            let ctx = Context::new();
+            let ctx = Comms::new();
             let prot = make_protocol(
                 ctx.clone(),
                 multiplication_many::<Secp256k1, N>(

@@ -2,7 +2,7 @@ use crate::compat::CSCurve;
 use crate::ecdsa::triples::{TriplePub, TripleShare};
 use crate::ecdsa::KeygenOutput;
 use crate::participants::ParticipantCounter;
-use crate::protocol::internal::{make_protocol, Context, SharedChannel};
+use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
 use crate::protocol::{InitializationError, Protocol};
 use crate::{
     participants::ParticipantList,
@@ -104,7 +104,7 @@ async fn do_presign<C: CSCurve>(
     let wait0 = chan.next_waitpoint();
     {
         let kd_i: ScalarPrimitive<C> = kd_i.into();
-        chan.send_many(wait0, &kd_i).await;
+        chan.send_many(wait0, &kd_i);
     }
 
     // Spec 1.9
@@ -116,7 +116,7 @@ async fn do_presign<C: CSCurve>(
     {
         let ka_i: ScalarPrimitive<C> = ka_i.into();
         let xb_i: ScalarPrimitive<C> = xb_i.into();
-        chan.send_many(wait1, &(ka_i, xb_i)).await;
+        chan.send_many(wait1, &(ka_i, xb_i));
     }
 
     // Spec 2.1 and 2.2
@@ -233,7 +233,7 @@ pub fn presign<C: CSCurve>(
         )
     })?;
 
-    let ctx = Context::new();
+    let ctx = Comms::new();
     let fut = do_presign(
         ctx.shared_channel(),
         participants,

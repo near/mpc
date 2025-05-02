@@ -3,7 +3,7 @@ use frost_ed25519::{Ed25519Sha512, VerifyingKey};
 
 use crate::eddsa::KeygenOutput;
 use crate::generic_dkg::*;
-use crate::protocol::internal::{make_protocol, Context};
+use crate::protocol::internal::{make_protocol, Comms};
 use crate::protocol::{InitializationError, Participant, Protocol};
 use futures::FutureExt;
 
@@ -15,11 +15,11 @@ pub fn keygen(
     me: Participant,
     threshold: usize,
 ) -> Result<impl Protocol<Output = KeygenOutput>, InitializationError> {
-    let ctx = Context::new();
+    let comms = Comms::new();
     let participants = assert_keygen_invariants(participants, me, threshold)?;
     let fut =
-        do_keygen(ctx.shared_channel(), participants, me, threshold).map(|x| x.map(Into::into));
-    Ok(make_protocol(ctx, fut))
+        do_keygen(comms.shared_channel(), participants, me, threshold).map(|x| x.map(Into::into));
+    Ok(make_protocol(comms, fut))
 }
 
 /// Performs the Ed25519 Reshare protocol
@@ -32,7 +32,7 @@ pub fn reshare(
     new_threshold: usize,
     me: Participant,
 ) -> Result<impl Protocol<Output = KeygenOutput>, InitializationError> {
-    let ctx = Context::new();
+    let comms = Comms::new();
     let threshold = new_threshold;
     let (participants, old_participants) = reshare_assertions::<E>(
         new_participants,
@@ -43,7 +43,7 @@ pub fn reshare(
         old_participants,
     )?;
     let fut = do_reshare(
-        ctx.shared_channel(),
+        comms.shared_channel(),
         participants,
         me,
         threshold,
@@ -52,7 +52,7 @@ pub fn reshare(
         old_participants,
     )
     .map(|x| x.map(Into::into));
-    Ok(make_protocol(ctx, fut))
+    Ok(make_protocol(comms, fut))
 }
 
 /// Performs the Ed25519 Refresh protocol
@@ -68,7 +68,7 @@ pub fn refresh(
             "The participant {me:?} is running refresh without an old share",
         )));
     }
-    let ctx = Context::new();
+    let comms = Comms::new();
     let threshold = new_threshold;
     let (participants, old_participants) = reshare_assertions::<E>(
         new_participants,
@@ -79,7 +79,7 @@ pub fn refresh(
         new_participants,
     )?;
     let fut = do_reshare(
-        ctx.shared_channel(),
+        comms.shared_channel(),
         participants,
         me,
         threshold,
@@ -88,7 +88,7 @@ pub fn refresh(
         old_participants,
     )
     .map(|x| x.map(Into::into));
-    Ok(make_protocol(ctx, fut))
+    Ok(make_protocol(comms, fut))
 }
 
 #[cfg(test)]

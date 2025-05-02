@@ -5,10 +5,11 @@ use serde::{Deserialize, Serialize};
 use std::slice::Iter;
 use subtle::{Choice, ConditionallySelectable};
 
+use crate::protocol::internal::Comms;
 use crate::{
     compat::CSCurve,
     protocol::{
-        internal::{make_protocol, Context, PrivateChannel},
+        internal::{make_protocol, PrivateChannel},
         run_two_party_protocol, Participant, ProtocolError,
     },
 };
@@ -78,7 +79,7 @@ pub async fn mta_sender<C: CSCurve>(
             .collect(),
     );
     let wait0 = chan.next_waitpoint();
-    chan.send(wait0, &c).await;
+    chan.send(wait0, &c);
 
     // Step 7
     let wait1 = chan.next_waitpoint();
@@ -138,7 +139,7 @@ pub async fn mta_receiver<C: CSCurve>(
     // Step 6
     let wait1 = chan.next_waitpoint();
     let chi1: ScalarPrimitive<C> = chi1.into();
-    chan.send(wait1, &(chi1, seed)).await;
+    chan.send(wait1, &(chi1, seed));
 
     Ok(beta)
 }
@@ -151,8 +152,8 @@ fn run_mta<C: CSCurve>(
 ) -> Result<(C::Scalar, C::Scalar), ProtocolError> {
     let s = Participant::from(0u32);
     let r = Participant::from(1u32);
-    let ctx_s = Context::new();
-    let ctx_r = Context::new();
+    let ctx_s = Comms::new();
+    let ctx_r = Comms::new();
 
     run_two_party_protocol(
         s,

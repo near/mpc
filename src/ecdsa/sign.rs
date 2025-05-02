@@ -1,12 +1,13 @@
 use elliptic_curve::{ops::Invert, scalar::IsHigh, Field, Group, ScalarPrimitive};
 use subtle::ConditionallySelectable;
 
+use crate::protocol::internal::Comms;
 use crate::{
     compat::{self, CSCurve},
     ecdsa::presign::PresignOutput,
     participants::{ParticipantCounter, ParticipantList},
     protocol::{
-        internal::{make_protocol, Context, SharedChannel},
+        internal::{make_protocol, SharedChannel},
         InitializationError, Participant, Protocol, ProtocolError,
     },
 };
@@ -67,7 +68,7 @@ async fn do_sign<C: CSCurve>(
     let wait0 = chan.next_waitpoint();
     {
         let s_i: ScalarPrimitive<C> = s_i.into();
-        chan.send_many(wait0, &s_i).await;
+        chan.send_many(wait0, &s_i);
     }
 
     // Spec 2.1 + 2.2
@@ -174,7 +175,7 @@ pub fn sign<C: CSCurve>(
         InitializationError::BadParameters("participant list cannot contain duplicates".to_string())
     })?;
 
-    let ctx = Context::new();
+    let ctx = Comms::new();
     let fut = do_sign(
         ctx.shared_channel(),
         participants,

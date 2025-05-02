@@ -11,13 +11,13 @@ use crate::{
     participants::{ParticipantCounter, ParticipantList, ParticipantMap},
     proofs::{dlog, dlogeq},
     protocol::{
-        internal::{make_protocol, Context},
-        InitializationError, Participant, Protocol, ProtocolError,
+        internal::make_protocol, InitializationError, Participant, Protocol, ProtocolError,
     },
     serde::encode,
 };
 
 use super::{multiplication::multiplication, TriplePub, TripleShare};
+use crate::protocol::internal::Comms;
 
 /// The output of running the triple generation protocol.
 pub type TripleGenerationOutput<C> = (TripleShare<C>, TriplePub<C>);
@@ -27,13 +27,13 @@ pub type TripleGenerationOutputMany<C> = Vec<(TripleShare<C>, TriplePub<C>)>;
 const LABEL: &[u8] = b"cait-sith v0.8.0 triple generation";
 
 async fn do_generation<C: CSCurve>(
-    ctx: Context<'_>,
+    comms: Comms,
     participants: ParticipantList,
     me: Participant,
     threshold: usize,
 ) -> Result<TripleGenerationOutput<C>, ProtocolError> {
     let mut rng = OsRng;
-    let mut chan = ctx.shared_channel();
+    let mut chan = comms.shared_channel();
     let mut transcript = Transcript::new(LABEL);
 
     // Spec 1.1
@@ -63,7 +63,7 @@ async fn do_generation<C: CSCurve>(
 
     // Spec 1.6
     let wait0 = chan.next_waitpoint();
-    chan.send_many(wait0, &my_commitment).await;
+    chan.send_many(wait0, &my_commitment);
 
     // Spec 2.1
     let mut all_commitments = ParticipantMap::new(&participants);
@@ -80,260 +80,294 @@ async fn do_generation<C: CSCurve>(
     transcript.message(b"confirmation", my_confirmation.as_ref());
 
     // Spec 2.4
-    let fut = {
-        let ctx = ctx.clone();
+    let multiplication_task = {
         let e0 = e.evaluate_zero();
         let f0 = f.evaluate_zero();
-        multiplication::<C>(ctx, my_confirmation, participants.clone(), me, e0, f0)
-    };
-    let multiplication_task = ctx.spawn(fut);
-
-    // Spec 2.5
-    let wait1 = chan.next_waitpoint();
-    chan.send_many(wait1, &my_confirmation).await;
-
-    // Spec 2.6
-    let statement0 = dlog::Statement::<C> {
-        public: &big_e_i.evaluate_zero(),
-    };
-    let witness0 = dlog::Witness::<C> {
-        x: &e.evaluate_zero(),
-    };
-    let my_phi_proof0 = dlog::prove(
-        &mut rng,
-        &mut transcript.forked(b"dlog0", &me.bytes()),
-        statement0,
-        witness0,
-    );
-    let statement1 = dlog::Statement::<C> {
-        public: &big_f_i.evaluate_zero(),
-    };
-    let witness1 = dlog::Witness::<C> {
-        x: &f.evaluate_zero(),
-    };
-    let my_phi_proof1 = dlog::prove(
-        &mut rng,
-        &mut transcript.forked(b"dlog1", &me.bytes()),
-        statement1,
-        witness1,
-    );
-
-    // Spec 2.7
-    let wait2 = chan.next_waitpoint();
-    {
-        chan.send_many(
-            wait2,
-            &(
-                &big_e_i,
-                &big_f_i,
-                &big_l_i,
-                my_randomizer,
-                my_phi_proof0,
-                my_phi_proof1,
-            ),
+        multiplication::<C>(
+            comms.clone(),
+            my_confirmation,
+            participants.clone(),
+            me,
+            e0,
+            f0,
         )
-        .await;
+    };
+
+    struct ParallelToMultiplicationTaskOutput<'a, C: CSCurve> {
+        seen: ParticipantCounter<'a>,
+        big_e: GroupPolynomial<C>,
+        big_f: GroupPolynomial<C>,
+        big_l: GroupPolynomial<C>,
+        big_c: C::ProjectivePoint,
+        a_i: C::Scalar,
+        b_i: C::Scalar,
     }
+    let parallel_to_multiplication_task = async {
+        // Spec 2.5
+        let wait1 = chan.next_waitpoint();
+        chan.send_many(wait1, &my_confirmation);
 
-    // Spec 2.8
-    let wait3 = chan.next_waitpoint();
-    for p in participants.others(me) {
-        let a_i_j: ScalarPrimitive<C> = e.evaluate(&p.scalar::<C>()).into();
-        let b_i_j: ScalarPrimitive<C> = f.evaluate(&p.scalar::<C>()).into();
-        chan.send_private(wait3, p, &(a_i_j, b_i_j)).await;
-    }
-    let mut a_i = e.evaluate(&me.scalar::<C>());
-    let mut b_i = f.evaluate(&me.scalar::<C>());
-
-    // Spec 3.1 + 3.2
-    let mut seen = ParticipantCounter::new(&participants);
-    seen.put(me);
-    while !seen.full() {
-        let (from, confirmation): (_, Digest) = chan.recv(wait1).await?;
-        if !seen.put(from) {
-            continue;
-        }
-        if confirmation != my_confirmation {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "confirmation from {from:?} did not match expectation"
-            )));
-        }
-    }
-
-    // Spec 3.3 + 3.4, and also part of 3.6, 5.3, for summing up the Es, Fs, and Ls.
-    let mut big_e = big_e_i.clone();
-    let mut big_f = big_f_i;
-    let mut big_l = big_l_i;
-    let mut big_e_j_zero = ParticipantMap::new(&participants);
-    seen.clear();
-    seen.put(me);
-    while !seen.full() {
-        let (
-            from,
-            (
-                their_big_e,
-                their_big_f,
-                their_big_l,
-                their_randomizer,
-                their_phi_proof0,
-                their_phi_proof1,
-            ),
-        ): (
-            _,
-            (
-                GroupPolynomial<C>,
-                GroupPolynomial<C>,
-                GroupPolynomial<C>,
-                _,
-                _,
-                _,
-            ),
-        ) = chan.recv(wait2).await?;
-        if !seen.put(from) {
-            continue;
-        }
-
-        if their_big_e.len() != threshold
-            || their_big_f.len() != threshold
-            || their_big_l.len() != threshold
-        {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "polynomial from {from:?} has the wrong length"
-            )));
-        }
-
-        if !bool::from(their_big_l.evaluate_zero().is_identity()) {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "L(0) from {from:?} is not 0"
-            )));
-        }
-
-        if !all_commitments[from].check(
-            &(&their_big_e, &their_big_f, &their_big_l),
-            &their_randomizer,
-        ) {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "commitment from {from:?} did not match revealed F"
-            )));
-        }
-
+        // Spec 2.6
         let statement0 = dlog::Statement::<C> {
-            public: &their_big_e.evaluate_zero(),
+            public: &big_e_i.evaluate_zero(),
         };
-        if !dlog::verify(
-            &mut transcript.forked(b"dlog0", &from.bytes()),
+        let witness0 = dlog::Witness::<C> {
+            x: &e.evaluate_zero(),
+        };
+        let my_phi_proof0 = dlog::prove(
+            &mut rng,
+            &mut transcript.forked(b"dlog0", &me.bytes()),
             statement0,
-            &their_phi_proof0,
-        ) {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "dlog proof from {from:?} failed to verify"
-            )));
-        }
-
+            witness0,
+        );
         let statement1 = dlog::Statement::<C> {
-            public: &their_big_f.evaluate_zero(),
+            public: &big_f_i.evaluate_zero(),
         };
-        if !dlog::verify(
-            &mut transcript.forked(b"dlog1", &from.bytes()),
+        let witness1 = dlog::Witness::<C> {
+            x: &f.evaluate_zero(),
+        };
+        let my_phi_proof1 = dlog::prove(
+            &mut rng,
+            &mut transcript.forked(b"dlog1", &me.bytes()),
             statement1,
-            &their_phi_proof1,
-        ) {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "dlog proof from {from:?} failed to verify"
-            )));
+            witness1,
+        );
+
+        // Spec 2.7
+        let wait2 = chan.next_waitpoint();
+        {
+            chan.send_many(
+                wait2,
+                &(
+                    &big_e_i,
+                    &big_f_i,
+                    &big_l_i,
+                    my_randomizer,
+                    my_phi_proof0,
+                    my_phi_proof1,
+                ),
+            );
         }
 
-        big_e_j_zero.put(from, their_big_e.evaluate_zero());
-        big_e += &their_big_e;
-        big_f += &their_big_f;
-        big_l += &their_big_l;
-    }
-
-    // Spec 3.5 + 3.6
-    seen.clear();
-    seen.put(me);
-    while !seen.full() {
-        let (from, (a_j_i, b_j_i)): (_, (ScalarPrimitive<C>, ScalarPrimitive<C>)) =
-            chan.recv(wait3).await?;
-        if !seen.put(from) {
-            continue;
+        // Spec 2.8
+        let wait3 = chan.next_waitpoint();
+        for p in participants.others(me) {
+            let a_i_j: ScalarPrimitive<C> = e.evaluate(&p.scalar::<C>()).into();
+            let b_i_j: ScalarPrimitive<C> = f.evaluate(&p.scalar::<C>()).into();
+            chan.send_private(wait3, p, &(a_i_j, b_i_j));
         }
-        a_i += &a_j_i.into();
-        b_i += &b_j_i.into();
-    }
+        let mut a_i = e.evaluate(&me.scalar::<C>());
+        let mut b_i = f.evaluate(&me.scalar::<C>());
 
-    // Spec 3.7
-    if big_e.evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * a_i
-        || big_f.evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * b_i
-    {
-        return Err(ProtocolError::AssertionFailed(
-            "received bad private share".to_string(),
-        ));
-    }
-
-    // Spec 3.8
-    let big_c_i = big_f.evaluate_zero() * e.evaluate_zero();
-
-    // Spec 3.9
-    let statement = dlogeq::Statement::<C> {
-        public0: &big_e_i.evaluate_zero(),
-        generator1: &big_f.evaluate_zero(),
-        public1: &big_c_i,
-    };
-    let witness = dlogeq::Witness {
-        x: &e.evaluate_zero(),
-    };
-    let my_phi_proof = dlogeq::prove(
-        &mut rng,
-        &mut transcript.forked(b"dlogeq0", &me.bytes()),
-        statement,
-        witness,
-    );
-
-    // Spec 3.10
-    let wait4 = chan.next_waitpoint();
-    chan.send_many(
-        wait4,
-        &(
-            SerializablePoint::<C>::from_projective(&big_c_i),
-            my_phi_proof,
-        ),
-    )
-    .await;
-
-    // Spec 4.1 + 4.2 + 4.3
-    seen.clear();
-    seen.put(me);
-    let mut big_c = big_c_i;
-    while !seen.full() {
-        let (from, (big_c_j, their_phi_proof)): (_, (SerializablePoint<C>, _)) =
-            chan.recv(wait4).await?;
-        if !seen.put(from) {
-            continue;
+        // Spec 3.1 + 3.2
+        let mut seen = ParticipantCounter::new(&participants);
+        seen.put(me);
+        while !seen.full() {
+            let (from, confirmation): (_, Digest) = chan.recv(wait1).await?;
+            if !seen.put(from) {
+                continue;
+            }
+            if confirmation != my_confirmation {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "confirmation from {from:?} did not match expectation"
+                )));
+            }
         }
-        let big_c_j = big_c_j.to_projective();
 
+        // Spec 3.3 + 3.4, and also part of 3.6, 5.3, for summing up the Es, Fs, and Ls.
+        let mut big_e = big_e_i.clone();
+        let mut big_f = big_f_i;
+        let mut big_l = big_l_i;
+        let mut big_e_j_zero = ParticipantMap::new(&participants);
+        seen.clear();
+        seen.put(me);
+        while !seen.full() {
+            let (
+                from,
+                (
+                    their_big_e,
+                    their_big_f,
+                    their_big_l,
+                    their_randomizer,
+                    their_phi_proof0,
+                    their_phi_proof1,
+                ),
+            ): (
+                _,
+                (
+                    GroupPolynomial<C>,
+                    GroupPolynomial<C>,
+                    GroupPolynomial<C>,
+                    _,
+                    _,
+                    _,
+                ),
+            ) = chan.recv(wait2).await?;
+            if !seen.put(from) {
+                continue;
+            }
+
+            if their_big_e.len() != threshold
+                || their_big_f.len() != threshold
+                || their_big_l.len() != threshold
+            {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "polynomial from {from:?} has the wrong length"
+                )));
+            }
+
+            if !bool::from(their_big_l.evaluate_zero().is_identity()) {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "L(0) from {from:?} is not 0"
+                )));
+            }
+
+            if !all_commitments[from].check(
+                &(&their_big_e, &their_big_f, &their_big_l),
+                &their_randomizer,
+            ) {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "commitment from {from:?} did not match revealed F"
+                )));
+            }
+
+            let statement0 = dlog::Statement::<C> {
+                public: &their_big_e.evaluate_zero(),
+            };
+            if !dlog::verify(
+                &mut transcript.forked(b"dlog0", &from.bytes()),
+                statement0,
+                &their_phi_proof0,
+            ) {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "dlog proof from {from:?} failed to verify"
+                )));
+            }
+
+            let statement1 = dlog::Statement::<C> {
+                public: &their_big_f.evaluate_zero(),
+            };
+            if !dlog::verify(
+                &mut transcript.forked(b"dlog1", &from.bytes()),
+                statement1,
+                &their_phi_proof1,
+            ) {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "dlog proof from {from:?} failed to verify"
+                )));
+            }
+
+            big_e_j_zero.put(from, their_big_e.evaluate_zero());
+            big_e += &their_big_e;
+            big_f += &their_big_f;
+            big_l += &their_big_l;
+        }
+
+        // Spec 3.5 + 3.6
+        seen.clear();
+        seen.put(me);
+        while !seen.full() {
+            let (from, (a_j_i, b_j_i)): (_, (ScalarPrimitive<C>, ScalarPrimitive<C>)) =
+                chan.recv(wait3).await?;
+            if !seen.put(from) {
+                continue;
+            }
+            a_i += &a_j_i.into();
+            b_i += &b_j_i.into();
+        }
+
+        // Spec 3.7
+        if big_e.evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * a_i
+            || big_f.evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * b_i
+        {
+            return Err(ProtocolError::AssertionFailed(
+                "received bad private share".to_string(),
+            ));
+        }
+
+        // Spec 3.8
+        let big_c_i = big_f.evaluate_zero() * e.evaluate_zero();
+
+        // Spec 3.9
         let statement = dlogeq::Statement::<C> {
-            public0: &big_e_j_zero[from],
+            public0: &big_e_i.evaluate_zero(),
             generator1: &big_f.evaluate_zero(),
-            public1: &big_c_j,
+            public1: &big_c_i,
         };
-
-        if !dlogeq::verify(
-            &mut transcript.forked(b"dlogeq0", &from.bytes()),
+        let witness = dlogeq::Witness {
+            x: &e.evaluate_zero(),
+        };
+        let my_phi_proof = dlogeq::prove(
+            &mut rng,
+            &mut transcript.forked(b"dlogeq0", &me.bytes()),
             statement,
-            &their_phi_proof,
-        ) {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "dlogeq proof from {from:?} failed to verify"
-            )));
-        }
+            witness,
+        );
 
-        big_c += big_c_j;
-    }
+        // Spec 3.10
+        let wait4 = chan.next_waitpoint();
+        chan.send_many(
+            wait4,
+            &(
+                SerializablePoint::<C>::from_projective(&big_c_i),
+                my_phi_proof,
+            ),
+        );
+
+        // Spec 4.1 + 4.2 + 4.3
+        seen.clear();
+        seen.put(me);
+        let mut big_c = big_c_i;
+        while !seen.full() {
+            let (from, (big_c_j, their_phi_proof)): (_, (SerializablePoint<C>, _)) =
+                chan.recv(wait4).await?;
+            if !seen.put(from) {
+                continue;
+            }
+            let big_c_j = big_c_j.to_projective();
+
+            let statement = dlogeq::Statement::<C> {
+                public0: &big_e_j_zero[from],
+                generator1: &big_f.evaluate_zero(),
+                public1: &big_c_j,
+            };
+
+            if !dlogeq::verify(
+                &mut transcript.forked(b"dlogeq0", &from.bytes()),
+                statement,
+                &their_phi_proof,
+            ) {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "dlogeq proof from {from:?} failed to verify"
+                )));
+            }
+
+            big_c += big_c_j;
+        }
+        Ok(ParallelToMultiplicationTaskOutput {
+            seen,
+            big_e,
+            big_f,
+            big_l,
+            big_c,
+            a_i,
+            b_i,
+        })
+    };
 
     // Spec 4.4
-    let l0 = ctx.run(multiplication_task).await?;
+    let (
+        l0,
+        ParallelToMultiplicationTaskOutput {
+            mut seen,
+            big_e,
+            big_f,
+            mut big_l,
+            big_c,
+            a_i,
+            b_i,
+        },
+    ) = futures::future::try_join(multiplication_task, parallel_to_multiplication_task).await?;
 
     // Spec 4.5
     let hat_big_c_i = C::ProjectivePoint::generator() * l0;
@@ -358,15 +392,14 @@ async fn do_generation<C: CSCurve>(
             SerializablePoint::<C>::from_projective(&hat_big_c_i),
             my_phi_proof,
         ),
-    )
-    .await;
+    );
 
     // Spec 4.9
     l.set_zero(l0);
     let wait6 = chan.next_waitpoint();
     for p in participants.others(me) {
         let c_i_j: ScalarPrimitive<C> = l.evaluate(&p.scalar::<C>()).into();
-        chan.send_private(wait6, p, &c_i_j).await;
+        chan.send_private(wait6, p, &c_i_j);
     }
     let mut c_i = l.evaluate(&me.scalar::<C>());
 
@@ -446,7 +479,7 @@ async fn do_generation<C: CSCurve>(
 }
 
 async fn do_generation_many<C: CSCurve, const N: usize>(
-    ctx: Context<'_>,
+    comms: Comms,
     participants: ParticipantList,
     me: Participant,
     threshold: usize,
@@ -454,7 +487,7 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
     assert!(N > 0);
 
     let mut rng = OsRng;
-    let mut chan = ctx.shared_channel();
+    let mut chan = comms.shared_channel();
     let mut transcript = Transcript::new(LABEL);
 
     // Spec 1.1
@@ -504,7 +537,7 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
 
     // Spec 1.6
     let wait0 = chan.next_waitpoint();
-    chan.send_many(wait0, &my_commitments).await;
+    chan.send_many(wait0, &my_commitments);
 
     // Spec 2.1
     let mut all_commitments_vec: Vec<ParticipantMap<Commitment>> = vec![];
@@ -536,12 +569,11 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
     transcript.message(b"confirmation", &encode(&my_confirmations));
 
     // Spec 2.4
-    let fut = {
-        let ctx = ctx.clone();
+    let multiplication_task = {
         let e0_v: Vec<_> = e_v.iter().map(|e| e.evaluate_zero()).collect();
         let f0_v: Vec<_> = f_v.iter().map(|f| f.evaluate_zero()).collect();
         multiplication_many::<C, N>(
-            ctx,
+            comms.clone(),
             my_confirmations.clone(),
             participants.clone(),
             me,
@@ -549,314 +581,344 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
             f0_v,
         )
     };
-    let multiplication_task = ctx.spawn(fut);
 
-    // Spec 2.5
-    let wait1 = chan.next_waitpoint();
-    chan.send_many(wait1, &my_confirmations).await;
-
-    let mut my_phi_proof0v = vec![];
-    let mut my_phi_proof1v = vec![];
-
-    for i in 0..N {
-        let big_e_i = &big_e_i_v[i];
-        let big_f_i = &big_f_i_v[i];
-        let e = &e_v[i];
-        let f = &f_v[i];
-        // Spec 2.6
-        let statement0 = dlog::Statement::<C> {
-            public: &big_e_i.evaluate_zero(),
-        };
-        let witness0 = dlog::Witness::<C> {
-            x: &e.evaluate_zero(),
-        };
-        let my_phi_proof0 = dlog::prove(
-            &mut rng,
-            &mut transcript.forked(b"dlog0", &me.bytes()),
-            statement0,
-            witness0,
-        );
-        let statement1 = dlog::Statement::<C> {
-            public: &big_f_i.evaluate_zero(),
-        };
-        let witness1 = dlog::Witness::<C> {
-            x: &f.evaluate_zero(),
-        };
-        let my_phi_proof1 = dlog::prove(
-            &mut rng,
-            &mut transcript.forked(b"dlog1", &me.bytes()),
-            statement1,
-            witness1,
-        );
-        my_phi_proof0v.push(my_phi_proof0);
-        my_phi_proof1v.push(my_phi_proof1);
+    struct ParallelToMultiplicationTaskOutput<'a, C: CSCurve> {
+        seen: ParticipantCounter<'a>,
+        big_e_v: Vec<GroupPolynomial<C>>,
+        big_f_v: Vec<GroupPolynomial<C>>,
+        big_l_v: Vec<GroupPolynomial<C>>,
+        big_c_v: Vec<C::ProjectivePoint>,
+        a_i_v: Vec<C::Scalar>,
+        b_i_v: Vec<C::Scalar>,
     }
+    let parallel_to_multiplication_task = async {
+        // Spec 2.5
+        let wait1 = chan.next_waitpoint();
+        chan.send_many(wait1, &my_confirmations);
 
-    // Spec 2.7
-    let wait2 = chan.next_waitpoint();
-    {
-        chan.send_many(
-            wait2,
-            &(
-                &big_e_i_v,
-                &big_f_i_v,
-                &big_l_i_v,
-                &my_randomizers,
-                &my_phi_proof0v,
-                &my_phi_proof1v,
-            ),
-        )
-        .await;
-    }
+        let mut my_phi_proof0v = vec![];
+        let mut my_phi_proof1v = vec![];
 
-    // Spec 2.8
-    let wait3 = chan.next_waitpoint();
-    for p in participants.others(me) {
-        let mut a_i_j_v = vec![];
-        let mut b_i_j_v = vec![];
+        for i in 0..N {
+            let big_e_i = &big_e_i_v[i];
+            let big_f_i = &big_f_i_v[i];
+            let e = &e_v[i];
+            let f = &f_v[i];
+            // Spec 2.6
+            let statement0 = dlog::Statement::<C> {
+                public: &big_e_i.evaluate_zero(),
+            };
+            let witness0 = dlog::Witness::<C> {
+                x: &e.evaluate_zero(),
+            };
+            let my_phi_proof0 = dlog::prove(
+                &mut rng,
+                &mut transcript.forked(b"dlog0", &me.bytes()),
+                statement0,
+                witness0,
+            );
+            let statement1 = dlog::Statement::<C> {
+                public: &big_f_i.evaluate_zero(),
+            };
+            let witness1 = dlog::Witness::<C> {
+                x: &f.evaluate_zero(),
+            };
+            let my_phi_proof1 = dlog::prove(
+                &mut rng,
+                &mut transcript.forked(b"dlog1", &me.bytes()),
+                statement1,
+                witness1,
+            );
+            my_phi_proof0v.push(my_phi_proof0);
+            my_phi_proof1v.push(my_phi_proof1);
+        }
+
+        // Spec 2.7
+        let wait2 = chan.next_waitpoint();
+        {
+            chan.send_many(
+                wait2,
+                &(
+                    &big_e_i_v,
+                    &big_f_i_v,
+                    &big_l_i_v,
+                    &my_randomizers,
+                    &my_phi_proof0v,
+                    &my_phi_proof1v,
+                ),
+            );
+        }
+
+        // Spec 2.8
+        let wait3 = chan.next_waitpoint();
+        for p in participants.others(me) {
+            let mut a_i_j_v = vec![];
+            let mut b_i_j_v = vec![];
+            for i in 0..N {
+                let e = &e_v[i];
+                let f = &f_v[i];
+                let a_i_j: ScalarPrimitive<C> = e.evaluate(&p.scalar::<C>()).into();
+                let b_i_j: ScalarPrimitive<C> = f.evaluate(&p.scalar::<C>()).into();
+                a_i_j_v.push(a_i_j);
+                b_i_j_v.push(b_i_j);
+            }
+            chan.send_private(wait3, p, &(a_i_j_v, b_i_j_v));
+        }
+        let mut a_i_v = vec![];
+        let mut b_i_v = vec![];
         for i in 0..N {
             let e = &e_v[i];
             let f = &f_v[i];
-            let a_i_j: ScalarPrimitive<C> = e.evaluate(&p.scalar::<C>()).into();
-            let b_i_j: ScalarPrimitive<C> = f.evaluate(&p.scalar::<C>()).into();
-            a_i_j_v.push(a_i_j);
-            b_i_j_v.push(b_i_j);
-        }
-        chan.send_private(wait3, p, &(a_i_j_v, b_i_j_v)).await;
-    }
-    let mut a_i_v = vec![];
-    let mut b_i_v = vec![];
-    for i in 0..N {
-        let e = &e_v[i];
-        let f = &f_v[i];
-        let a_i = e.evaluate(&me.scalar::<C>());
-        let b_i = f.evaluate(&me.scalar::<C>());
-        a_i_v.push(a_i);
-        b_i_v.push(b_i);
-    }
-
-    // Spec 3.1 + 3.2
-    let mut seen = ParticipantCounter::new(&participants);
-    seen.put(me);
-    while !seen.full() {
-        let (from, confirmation): (_, Vec<Digest>) = chan.recv(wait1).await?;
-        if !seen.put(from) {
-            continue;
-        }
-        if confirmation != my_confirmations {
-            return Err(ProtocolError::AssertionFailed(format!(
-                "confirmation from {from:?} did not match expectation"
-            )));
-        }
-    }
-
-    // Spec 3.3 + 3.4, and also part of 3.6, 5.3, for summing up the Es, Fs, and Ls.
-    let mut big_e_v = vec![];
-    let mut big_f_v = vec![];
-    let mut big_l_v = vec![];
-    let mut big_e_j_zero_v = vec![];
-    for i in 0..N {
-        big_e_v.push(big_e_i_v[i].clone());
-        big_f_v.push(big_f_i_v[i].clone());
-        big_l_v.push(big_l_i_v[i].clone());
-        big_e_j_zero_v.push(ParticipantMap::new(&participants));
-    }
-    seen.clear();
-    seen.put(me);
-    while !seen.full() {
-        let (
-            from,
-            (
-                their_big_e_v,
-                their_big_f_v,
-                their_big_l_v,
-                their_randomizers,
-                their_phi_proof0_v,
-                their_phi_proof1_v,
-            ),
-        ): (
-            _,
-            (
-                Vec<GroupPolynomial<C>>,
-                Vec<GroupPolynomial<C>>,
-                Vec<GroupPolynomial<C>>,
-                Vec<Randomizer>,
-                Vec<dlog::Proof<C>>,
-                Vec<dlog::Proof<C>>,
-            ),
-        ) = chan.recv(wait2).await?;
-        if !seen.put(from) {
-            continue;
+            let a_i = e.evaluate(&me.scalar::<C>());
+            let b_i = f.evaluate(&me.scalar::<C>());
+            a_i_v.push(a_i);
+            b_i_v.push(b_i);
         }
 
+        // Spec 3.1 + 3.2
+        let mut seen = ParticipantCounter::new(&participants);
+        seen.put(me);
+        while !seen.full() {
+            let (from, confirmation): (_, Vec<Digest>) = chan.recv(wait1).await?;
+            if !seen.put(from) {
+                continue;
+            }
+            if confirmation != my_confirmations {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "confirmation from {from:?} did not match expectation"
+                )));
+            }
+        }
+
+        // Spec 3.3 + 3.4, and also part of 3.6, 5.3, for summing up the Es, Fs, and Ls.
+        let mut big_e_v = vec![];
+        let mut big_f_v = vec![];
+        let mut big_l_v = vec![];
+        let mut big_e_j_zero_v = vec![];
         for i in 0..N {
-            let all_commitments = &all_commitments_vec[i];
-            let their_big_e = &their_big_e_v[i];
-            let their_big_f = &their_big_f_v[i];
-            let their_big_l = &their_big_l_v[i];
-            let their_randomizer = &their_randomizers[i];
-            let their_phi_proof0 = &their_phi_proof0_v[i];
-            let their_phi_proof1 = &their_phi_proof1_v[i];
-            if their_big_e.len() != threshold
-                || their_big_f.len() != threshold
-                || their_big_l.len() != threshold
-            {
-                return Err(ProtocolError::AssertionFailed(format!(
-                    "polynomial from {from:?} has the wrong length"
-                )));
-            }
-            if !bool::from(their_big_l.evaluate_zero().is_identity()) {
-                return Err(ProtocolError::AssertionFailed(format!(
-                    "L(0) from {from:?} is not 0"
-                )));
-            }
-            if !all_commitments[from].check(
-                &(&their_big_e, &their_big_f, &their_big_l),
-                their_randomizer,
-            ) {
-                return Err(ProtocolError::AssertionFailed(format!(
-                    "commitment from {from:?} did not match revealed F"
-                )));
-            }
-            let statement0 = dlog::Statement::<C> {
-                public: &their_big_e.evaluate_zero(),
-            };
-            if !dlog::verify(
-                &mut transcript.forked(b"dlog0", &from.bytes()),
-                statement0,
-                their_phi_proof0,
-            ) {
-                return Err(ProtocolError::AssertionFailed(format!(
-                    "dlog proof from {from:?} failed to verify"
-                )));
-            }
-
-            let statement1 = dlog::Statement::<C> {
-                public: &their_big_f.evaluate_zero(),
-            };
-            if !dlog::verify(
-                &mut transcript.forked(b"dlog1", &from.bytes()),
-                statement1,
-                their_phi_proof1,
-            ) {
-                return Err(ProtocolError::AssertionFailed(format!(
-                    "dlog proof from {from:?} failed to verify"
-                )));
-            }
-
-            big_e_j_zero_v[i].put(from, their_big_e.evaluate_zero());
-
-            big_e_v[i] += their_big_e;
-            big_f_v[i] += their_big_f;
-            big_l_v[i] += their_big_l;
+            big_e_v.push(big_e_i_v[i].clone());
+            big_f_v.push(big_f_i_v[i].clone());
+            big_l_v.push(big_l_i_v[i].clone());
+            big_e_j_zero_v.push(ParticipantMap::new(&participants));
         }
-    }
+        seen.clear();
+        seen.put(me);
+        while !seen.full() {
+            let (
+                from,
+                (
+                    their_big_e_v,
+                    their_big_f_v,
+                    their_big_l_v,
+                    their_randomizers,
+                    their_phi_proof0_v,
+                    their_phi_proof1_v,
+                ),
+            ): (
+                _,
+                (
+                    Vec<GroupPolynomial<C>>,
+                    Vec<GroupPolynomial<C>>,
+                    Vec<GroupPolynomial<C>>,
+                    Vec<Randomizer>,
+                    Vec<dlog::Proof<C>>,
+                    Vec<dlog::Proof<C>>,
+                ),
+            ) = chan.recv(wait2).await?;
+            if !seen.put(from) {
+                continue;
+            }
 
-    // Spec 3.5 + 3.6
-    seen.clear();
-    seen.put(me);
-    while !seen.full() {
-        let (from, (a_j_i_v, b_j_i_v)): (_, (Vec<ScalarPrimitive<C>>, Vec<ScalarPrimitive<C>>)) =
-            chan.recv(wait3).await?;
-        if !seen.put(from) {
-            continue;
+            for i in 0..N {
+                let all_commitments = &all_commitments_vec[i];
+                let their_big_e = &their_big_e_v[i];
+                let their_big_f = &their_big_f_v[i];
+                let their_big_l = &their_big_l_v[i];
+                let their_randomizer = &their_randomizers[i];
+                let their_phi_proof0 = &their_phi_proof0_v[i];
+                let their_phi_proof1 = &their_phi_proof1_v[i];
+                if their_big_e.len() != threshold
+                    || their_big_f.len() != threshold
+                    || their_big_l.len() != threshold
+                {
+                    return Err(ProtocolError::AssertionFailed(format!(
+                        "polynomial from {from:?} has the wrong length"
+                    )));
+                }
+                if !bool::from(their_big_l.evaluate_zero().is_identity()) {
+                    return Err(ProtocolError::AssertionFailed(format!(
+                        "L(0) from {from:?} is not 0"
+                    )));
+                }
+                if !all_commitments[from].check(
+                    &(&their_big_e, &their_big_f, &their_big_l),
+                    their_randomizer,
+                ) {
+                    return Err(ProtocolError::AssertionFailed(format!(
+                        "commitment from {from:?} did not match revealed F"
+                    )));
+                }
+                let statement0 = dlog::Statement::<C> {
+                    public: &their_big_e.evaluate_zero(),
+                };
+                if !dlog::verify(
+                    &mut transcript.forked(b"dlog0", &from.bytes()),
+                    statement0,
+                    their_phi_proof0,
+                ) {
+                    return Err(ProtocolError::AssertionFailed(format!(
+                        "dlog proof from {from:?} failed to verify"
+                    )));
+                }
+
+                let statement1 = dlog::Statement::<C> {
+                    public: &their_big_f.evaluate_zero(),
+                };
+                if !dlog::verify(
+                    &mut transcript.forked(b"dlog1", &from.bytes()),
+                    statement1,
+                    their_phi_proof1,
+                ) {
+                    return Err(ProtocolError::AssertionFailed(format!(
+                        "dlog proof from {from:?} failed to verify"
+                    )));
+                }
+
+                big_e_j_zero_v[i].put(from, their_big_e.evaluate_zero());
+
+                big_e_v[i] += their_big_e;
+                big_f_v[i] += their_big_f;
+                big_l_v[i] += their_big_l;
+            }
         }
+
+        // Spec 3.5 + 3.6
+        seen.clear();
+        seen.put(me);
+        while !seen.full() {
+            let (from, (a_j_i_v, b_j_i_v)): (
+                _,
+                (Vec<ScalarPrimitive<C>>, Vec<ScalarPrimitive<C>>),
+            ) = chan.recv(wait3).await?;
+            if !seen.put(from) {
+                continue;
+            }
+            for i in 0..N {
+                let a_j_i = &a_j_i_v[i];
+                let b_j_i = &b_j_i_v[i];
+                a_i_v[i] += &(*a_j_i).into();
+                b_i_v[i] += &(*b_j_i).into();
+            }
+        }
+
+        let mut big_c_i_points = vec![];
+        let mut big_c_i_v = vec![];
+        let mut my_phi_proofs = vec![];
         for i in 0..N {
-            let a_j_i = &a_j_i_v[i];
-            let b_j_i = &b_j_i_v[i];
-            a_i_v[i] += &(*a_j_i).into();
-            b_i_v[i] += &(*b_j_i).into();
-        }
-    }
-
-    let mut big_c_i_points = vec![];
-    let mut big_c_i_v = vec![];
-    let mut my_phi_proofs = vec![];
-    for i in 0..N {
-        let big_e = &big_e_v[i];
-        let big_f = &big_f_v[i];
-        let a_i = &a_i_v[i];
-        let b_i = &b_i_v[i];
-        let e = &e_v[i];
-        // Spec 3.7
-        let check1 = big_e.evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * a_i;
-        let check2 = big_f.evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * b_i;
-        if check1 || check2 {
-            return Err(ProtocolError::AssertionFailed(
-                "received bad private share".to_string(),
-            ));
-        }
-        // Spec 3.8
-        let big_c_i = big_f.evaluate_zero() * e.evaluate_zero();
-        let big_e_i = &big_e_i_v[i];
-        // Spec 3.9
-        let statement = dlogeq::Statement::<C> {
-            public0: &big_e_i.evaluate_zero(),
-            generator1: &big_f.evaluate_zero(),
-            public1: &big_c_i,
-        };
-        let witness = dlogeq::Witness {
-            x: &e.evaluate_zero(),
-        };
-        let my_phi_proof = dlogeq::prove(
-            &mut rng,
-            &mut transcript.forked(b"dlogeq0", &me.bytes()),
-            statement,
-            witness,
-        );
-        big_c_i_points.push(SerializablePoint::<C>::from_projective(&big_c_i));
-        big_c_i_v.push(big_c_i);
-        my_phi_proofs.push(my_phi_proof);
-    }
-
-    // Spec 3.10
-    let wait4 = chan.next_waitpoint();
-    chan.send_many(wait4, &(&big_c_i_points, &my_phi_proofs))
-        .await;
-
-    // Spec 4.1 + 4.2 + 4.3
-    seen.clear();
-    seen.put(me);
-    let mut big_c_v = vec![];
-    for i in 0..N {
-        big_c_v.push(big_c_i_v[i]);
-    }
-    while !seen.full() {
-        let (from, (big_c_j_v, their_phi_proofs)): (
-            _,
-            (Vec<SerializablePoint<C>>, Vec<dlogeq::Proof<C>>),
-        ) = chan.recv(wait4).await?;
-        if !seen.put(from) {
-            continue;
-        }
-        for i in 0..N {
-            let big_e_j_zero = &big_e_j_zero_v[i];
+            let big_e = &big_e_v[i];
             let big_f = &big_f_v[i];
-
-            let big_c_j = big_c_j_v[i].to_projective();
-            let their_phi_proof = &their_phi_proofs[i];
-
-            let statement = dlogeq::Statement::<C> {
-                public0: &big_e_j_zero[from],
-                generator1: &big_f.evaluate_zero(),
-                public1: &big_c_j,
-            };
-
-            if !dlogeq::verify(
-                &mut transcript.forked(b"dlogeq0", &from.bytes()),
-                statement,
-                their_phi_proof,
-            ) {
-                return Err(ProtocolError::AssertionFailed(format!(
-                    "dlogeq proof from {from:?} failed to verify"
-                )));
+            let a_i = &a_i_v[i];
+            let b_i = &b_i_v[i];
+            let e = &e_v[i];
+            // Spec 3.7
+            let check1 = big_e.evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * a_i;
+            let check2 = big_f.evaluate(&me.scalar::<C>()) != C::ProjectivePoint::generator() * b_i;
+            if check1 || check2 {
+                return Err(ProtocolError::AssertionFailed(
+                    "received bad private share".to_string(),
+                ));
             }
-            big_c_v[i] += big_c_j;
+            // Spec 3.8
+            let big_c_i = big_f.evaluate_zero() * e.evaluate_zero();
+            let big_e_i = &big_e_i_v[i];
+            // Spec 3.9
+            let statement = dlogeq::Statement::<C> {
+                public0: &big_e_i.evaluate_zero(),
+                generator1: &big_f.evaluate_zero(),
+                public1: &big_c_i,
+            };
+            let witness = dlogeq::Witness {
+                x: &e.evaluate_zero(),
+            };
+            let my_phi_proof = dlogeq::prove(
+                &mut rng,
+                &mut transcript.forked(b"dlogeq0", &me.bytes()),
+                statement,
+                witness,
+            );
+            big_c_i_points.push(SerializablePoint::<C>::from_projective(&big_c_i));
+            big_c_i_v.push(big_c_i);
+            my_phi_proofs.push(my_phi_proof);
         }
-    }
+
+        // Spec 3.10
+        let wait4 = chan.next_waitpoint();
+        chan.send_many(wait4, &(&big_c_i_points, &my_phi_proofs));
+
+        // Spec 4.1 + 4.2 + 4.3
+        seen.clear();
+        seen.put(me);
+        let mut big_c_v = vec![];
+        for i in 0..N {
+            big_c_v.push(big_c_i_v[i]);
+        }
+        while !seen.full() {
+            let (from, (big_c_j_v, their_phi_proofs)): (
+                _,
+                (Vec<SerializablePoint<C>>, Vec<dlogeq::Proof<C>>),
+            ) = chan.recv(wait4).await?;
+            if !seen.put(from) {
+                continue;
+            }
+            for i in 0..N {
+                let big_e_j_zero = &big_e_j_zero_v[i];
+                let big_f = &big_f_v[i];
+
+                let big_c_j = big_c_j_v[i].to_projective();
+                let their_phi_proof = &their_phi_proofs[i];
+
+                let statement = dlogeq::Statement::<C> {
+                    public0: &big_e_j_zero[from],
+                    generator1: &big_f.evaluate_zero(),
+                    public1: &big_c_j,
+                };
+
+                if !dlogeq::verify(
+                    &mut transcript.forked(b"dlogeq0", &from.bytes()),
+                    statement,
+                    their_phi_proof,
+                ) {
+                    return Err(ProtocolError::AssertionFailed(format!(
+                        "dlogeq proof from {from:?} failed to verify"
+                    )));
+                }
+                big_c_v[i] += big_c_j;
+            }
+        }
+        Ok(ParallelToMultiplicationTaskOutput {
+            seen,
+            big_e_v,
+            big_f_v,
+            big_l_v,
+            big_c_v,
+            a_i_v,
+            b_i_v,
+        })
+    };
 
     // Spec 4.4
-    let l0_v = ctx.run(multiplication_task).await?;
+    let (
+        l0_v,
+        ParallelToMultiplicationTaskOutput {
+            mut seen,
+            big_e_v,
+            big_f_v,
+            mut big_l_v,
+            big_c_v,
+            a_i_v,
+            b_i_v,
+        },
+    ) = futures::future::try_join(multiplication_task, parallel_to_multiplication_task).await?;
 
     let mut hat_big_c_i_points = vec![];
     let mut hat_big_c_i_v = vec![];
@@ -884,8 +946,7 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
 
     // Spec 4.8
     let wait5 = chan.next_waitpoint();
-    chan.send_many(wait5, &(&hat_big_c_i_points, &my_phi_proofs))
-        .await;
+    chan.send_many(wait5, &(&hat_big_c_i_points, &my_phi_proofs));
 
     // Spec 4.9
     for i in 0..N {
@@ -902,7 +963,7 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
             let c_i_j: ScalarPrimitive<C> = l.evaluate(&p.scalar::<C>()).into();
             c_i_j_v.push(c_i_j);
         }
-        chan.send_private(wait6, p, &c_i_j_v).await;
+        chan.send_private(wait6, p, &c_i_j_v);
     }
     for i in 0..N {
         let l = &mut l_v[i];
@@ -1044,7 +1105,7 @@ pub fn generate_triple<C: CSCurve>(
         InitializationError::BadParameters("participant list cannot contain duplicates".to_string())
     })?;
 
-    let ctx = Context::new();
+    let ctx = Comms::new();
     let fut = do_generation(ctx.clone(), participants, me, threshold);
     Ok(make_protocol(ctx, fut))
 }
@@ -1072,7 +1133,7 @@ pub fn generate_triple_many<C: CSCurve, const N: usize>(
         InitializationError::BadParameters("participant list cannot contain duplicates".to_string())
     })?;
 
-    let ctx = Context::new();
+    let ctx = Comms::new();
     let fut = do_generation_many::<C, N>(ctx.clone(), participants, me, threshold);
     Ok(make_protocol(ctx, fut))
 }

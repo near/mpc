@@ -92,7 +92,7 @@ where
     let vote = MessageType::Send(data);
     let sid = participants.index(me);
     // Send vote to all participants but for myself
-    chan.send_many(wait, &(&sid, &vote)).await;
+    chan.send_many(wait, &(&sid, &vote));
     // the vote is returned to be taken into consideration as received
     vote
 }
@@ -174,7 +174,7 @@ where
                 }
                 vote = MessageType::Echo(data);
                 // upon receiving a send message, echo it
-                chan.send_many(wait, &(&sid, &vote)).await;
+                chan.send_many(wait, &(&sid, &vote));
                 finish_send[sid] = true;
 
                 // simulate an echo vote sent by me
@@ -195,7 +195,7 @@ where
                 // for a result, deliver Ready
                 if data_echo[sid].get(&data).unwrap() > echo_t {
                     vote = MessageType::Ready(data);
-                    chan.send_many(wait, &(&sid, &vote)).await;
+                    chan.send_many(wait, &(&sid, &vote));
                     // state that the echo phase for session id (sid) is done
                     finish_echo[sid] = true;
 
@@ -248,7 +248,7 @@ where
                 // proceed to amplification of the ready message
                 if data_ready[sid].get(&data).unwrap() > ready_t && !finish_amplification[sid] {
                     vote = MessageType::Ready(data.clone());
-                    chan.send_many(wait, &(&sid, &vote)).await;
+                    chan.send_many(wait, &(&sid, &vote));
                     finish_amplification[sid] = true;
 
                     // simulate a ready vote sent by me
@@ -311,7 +311,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::protocol::internal::{make_protocol, Context};
+    use crate::protocol::internal::{make_protocol, Comms};
     use crate::protocol::{run_protocol, Protocol, ProtocolError};
     use std::error::Error;
 
@@ -347,11 +347,11 @@ mod test {
                 "Does not contain me"
             )));
         }
-        let ctx = Context::new();
-        let chan = ctx.shared_channel();
+        let comms = Comms::new();
+        let chan = comms.shared_channel();
         let fut = do_broadcast_consume(chan, participants, me, data);
 
-        Ok(make_protocol(ctx, fut))
+        Ok(make_protocol(comms, fut))
     }
 
     /// All participants are assumed to be honest here
@@ -388,11 +388,9 @@ mod test {
         let mut cnt = 0;
         for p in participants.others(me) {
             if cnt >= participants.len() / 2 {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_false))
-                    .await;
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_false));
             } else {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_true))
-                    .await;
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_true));
             }
             cnt += 1;
         }
@@ -419,11 +417,9 @@ mod test {
         let mut cnt = 0;
         for p in participants.others(me) {
             if cnt >= participants.len() / 2 {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_false))
-                    .await;
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_false));
             } else {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_true))
-                    .await;
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_true));
             }
             cnt += 1;
         }
@@ -448,12 +444,12 @@ mod test {
                 "Does not contain me"
             )));
         }
-        let ctx = Context::new();
-        let chan = ctx.shared_channel();
+        let comms = Comms::new();
+        let chan = comms.shared_channel();
 
         let fut = do_broadcast_dishonest_consume_version_1(chan, participants, me);
 
-        Ok(make_protocol(ctx, fut))
+        Ok(make_protocol(comms, fut))
     }
 
     #[allow(clippy::type_complexity)]
@@ -469,12 +465,12 @@ mod test {
                 "Does not contain me"
             )));
         }
-        let ctx = Context::new();
-        let chan = ctx.shared_channel();
+        let comms = Comms::new();
+        let chan = comms.shared_channel();
 
         let fut = do_broadcast_dishonest_consume_version_2(chan, participants, me);
 
-        Ok(make_protocol(ctx, fut))
+        Ok(make_protocol(comms, fut))
     }
 
     fn broadcast_dishonest_v1(

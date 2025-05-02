@@ -8,7 +8,7 @@ use crate::{
     compat::CSCurve,
     constants::SECURITY_PARAMETER,
     protocol::{
-        internal::{make_protocol, Context, PrivateChannel},
+        internal::{make_protocol, PrivateChannel},
         run_two_party_protocol, Participant, ProtocolError,
     },
 };
@@ -17,6 +17,7 @@ use super::{
     bits::{BitMatrix, BitVector, ChoiceVector, DoubleBitVector, SquareBitMatrix},
     correlated_ot_extension::{correlated_ot_receiver, correlated_ot_sender, CorrelatedOtParams},
 };
+use crate::protocol::internal::Comms;
 
 const MEOW_CTX: &[u8] = b"Random OT Extension Hash";
 
@@ -82,7 +83,7 @@ pub async fn random_ot_extension_sender<C: CSCurve>(
     let mut seed = [0u8; 32];
     OsRng.fill_bytes(&mut seed);
     let wait0 = chan.next_waitpoint();
-    chan.send(wait0, &seed).await;
+    chan.send(wait0, &seed);
 
     let mu = adjusted_size / SECURITY_PARAMETER;
 
@@ -153,8 +154,7 @@ pub async fn random_ot_extension_receiver<C: CSCurve>(
         k0,
         k1,
         &x,
-    )
-    .await;
+    );
 
     let wait0 = chan.next_waitpoint();
 
@@ -184,7 +184,7 @@ pub async fn random_ot_extension_receiver<C: CSCurve>(
 
     // Step 11
     let wait1 = chan.next_waitpoint();
-    chan.send(wait1, &(small_x, small_t)).await;
+    chan.send(wait1, &(small_x, small_t));
 
     // Step 15
     let out: Vec<_> = b
@@ -201,9 +201,9 @@ pub async fn random_ot_extension_receiver<C: CSCurve>(
 /// Run the random OT protocol between two parties.
 #[allow(dead_code)]
 fn run_random_ot<C: CSCurve>(
-    (delta, k): (BitVector, &SquareBitMatrix),
-    (k0, k1): (&SquareBitMatrix, &SquareBitMatrix),
-    sid: &[u8],
+    (delta, k): (BitVector, SquareBitMatrix),
+    (k0, k1): (SquareBitMatrix, SquareBitMatrix),
+    sid: Vec<u8>,
     batch_size: usize,
 ) -> Result<
     (
@@ -214,22 +214,29 @@ fn run_random_ot<C: CSCurve>(
 > {
     let s = Participant::from(0u32);
     let r = Participant::from(1u32);
-    let ctx_s = Context::new();
-    let ctx_r = Context::new();
+    let comms_s = Comms::new();
+    let comms_r = Comms::new();
 
-    let params = RandomOtExtensionParams { sid, batch_size };
+    let sid_s = sid.clone();
+    let sid_r = sid.clone();
 
     run_two_party_protocol(
         s,
         r,
-        &mut make_protocol(
-            ctx_s.clone(),
-            random_ot_extension_sender::<C>(ctx_s.private_channel(s, r), params, delta, k),
-        ),
-        &mut make_protocol(
-            ctx_r.clone(),
-            random_ot_extension_receiver::<C>(ctx_r.private_channel(r, s), params, k0, k1),
-        ),
+        &mut make_protocol(comms_s.clone(), async move {
+            let params = RandomOtExtensionParams {
+                sid: &sid_s,
+                batch_size,
+            };
+            random_ot_extension_sender::<C>(comms_s.private_channel(s, r), params, delta, &k).await
+        }),
+        &mut make_protocol(comms_r.clone(), async move {
+            let params = RandomOtExtensionParams {
+                sid: &sid_r,
+                batch_size,
+            };
+            random_ot_extension_receiver::<C>(comms_r.private_channel(r, s), params, &k0, &k1).await
+        }),
     )
 }
 
@@ -246,7 +253,7 @@ mod test {
         let ((k0, k1), (delta, k)) = run_batch_random_ot::<Secp256k1>()?;
         let batch_size = 16;
         let (sender_out, receiver_out) =
-            run_random_ot::<Secp256k1>((delta, &k), (&k0, &k1), b"test sid", batch_size)?;
+            run_random_ot::<Secp256k1>((delta, k), (k0, k1), b"test sid".to_vec(), batch_size)?;
         assert_eq!(sender_out.len(), batch_size);
         assert_eq!(receiver_out.len(), batch_size);
         for ((v0_i, v1_i), (b_i, vb_i)) in sender_out.iter().zip(receiver_out.iter()) {

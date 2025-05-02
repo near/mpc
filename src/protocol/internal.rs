@@ -41,21 +41,17 @@
 //! agree on what the identifier for the channels in each part of the protocol is.
 //! This is why we have to take great care that the identifiers a protocol will produce
 //! are deterministic, even in the presence of concurrent tasks.
-use ck_meow::Meow;
-use event_listener::Event;
-use serde::{de::DeserializeOwned, Serialize};
-use smol::{
-    block_on,
-    channel::{self, Receiver, Sender},
-    future,
-    lock::Mutex,
-    Executor, Task,
-};
-use std::{collections::HashMap, error, future::Future, sync::Arc};
-
-use crate::serde::{decode, encode_with_tag};
-
 use super::{Action, MessageData, Participant, Protocol, ProtocolError};
+use crate::serde::{decode, encode_with_tag};
+use ck_meow::Meow;
+use futures::future::BoxFuture;
+use futures::task::noop_waker;
+use futures::{FutureExt, StreamExt};
+use serde::{de::DeserializeOwned, Serialize};
+use smol::{future, lock::Mutex};
+use std::collections::VecDeque;
+use std::task::Context;
+use std::{collections::HashMap, error, future::Future, sync::Arc};
 
 /// The domain for our use of meow here.
 const MEOW_DOMAIN: &[u8] = b"cait-sith channel tags";
@@ -183,7 +179,27 @@ impl MessageHeader {
     }
 }
 
-type SubMessageQueue = Vec<(Participant, MessageData)>;
+struct SubMessageQueue {
+    sender: futures::channel::mpsc::UnboundedSender<(Participant, MessageData)>,
+    receiver: Arc<Mutex<futures::channel::mpsc::UnboundedReceiver<(Participant, MessageData)>>>,
+}
+
+impl SubMessageQueue {
+    pub fn send(&self, from: Participant, message: MessageData) {
+        // This cannot fail because the receiver is also alive.
+        self.sender.unbounded_send((from, message)).unwrap();
+    }
+}
+
+impl Default for SubMessageQueue {
+    fn default() -> Self {
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
+        Self {
+            sender,
+            receiver: Arc::new(Mutex::new(receiver)),
+        }
+    }
+}
 
 /// A message buffer is a concurrent data structure to buffer messages.
 ///
@@ -194,29 +210,23 @@ type SubMessageQueue = Vec<(Participant, MessageData)>;
 /// until a message for that slot has arrived.
 #[derive(Clone)]
 struct MessageBuffer {
-    messages: Arc<Mutex<HashMap<MessageHeader, SubMessageQueue>>>,
-    events: Arc<Mutex<HashMap<MessageHeader, Event>>>,
+    messages: Arc<std::sync::Mutex<HashMap<MessageHeader, SubMessageQueue>>>,
 }
 
 impl MessageBuffer {
     fn new() -> Self {
         Self {
-            messages: Arc::new(Mutex::new(HashMap::new())),
-            events: Arc::new(Mutex::new(HashMap::new())),
+            messages: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
     /// Push a message into this buffer.
     ///
     /// We also need the header for the message, and the participant who sent it.
-    async fn push(&self, header: MessageHeader, from: Participant, message: MessageData) {
-        let mut messages_lock = self.messages.as_ref().lock().await;
-        messages_lock
-            .entry(header)
-            .or_default()
-            .push((from, message));
-        let mut events_lock = self.events.as_ref().lock().await;
-        events_lock.entry(header).or_default().notify(1);
+    fn push(&self, header: MessageHeader, from: Participant, message: MessageData) {
+        let mut messages_lock = self.messages.lock().unwrap();
+        let messages = messages_lock.entry(header).or_default();
+        messages.send(from, message);
     }
 
     /// Pop a message for a particular header.
@@ -224,18 +234,16 @@ impl MessageBuffer {
     /// This will block until a message for that header is available. This will
     /// also correctly wake the underlying task when such a message arrives.
     async fn pop(&self, header: MessageHeader) -> (Participant, MessageData) {
-        loop {
-            let listener = {
-                let mut messages_lock = self.messages.as_ref().lock().await;
-                let messages = messages_lock.entry(header).or_default();
-                if let Some(out) = messages.pop() {
-                    return out;
-                }
-                let mut events_lock = self.events.as_ref().lock().await;
-                events_lock.entry(header).or_default().listen()
-            };
-            listener.await;
-        }
+        let receiver = {
+            let mut messages_lock = self.messages.lock().unwrap();
+            let messages = messages_lock.entry(header).or_default();
+            messages.receiver.clone()
+        };
+        let mut receiver_lock = receiver.lock().await;
+        receiver_lock
+            .next()
+            .await
+            .expect("Reference to sender held")
     }
 }
 
@@ -249,31 +257,25 @@ pub enum Message {
 }
 
 #[derive(Clone)]
-struct Comms {
-    buffer: MessageBuffer,
-    message_s: Sender<Message>,
-    message_r: Receiver<Message>,
+pub struct Comms {
+    incoming: MessageBuffer,
+    outgoing: Arc<std::sync::Mutex<VecDeque<Message>>>,
 }
 
 impl Comms {
     pub fn new() -> Self {
-        let (message_s, message_r) = channel::bounded(1);
-
         Self {
-            buffer: MessageBuffer::new(),
-            message_s,
-            message_r,
+            incoming: MessageBuffer::new(),
+            outgoing: Arc::new(std::sync::Mutex::new(VecDeque::new())),
         }
     }
 
-    async fn outgoing(&self) -> Message {
-        self.message_r
-            .recv()
-            .await
-            .expect("failed to check outgoing messages")
+    fn outgoing(&self) -> Option<Message> {
+        let mut outgoing_lock = self.outgoing.lock().unwrap();
+        outgoing_lock.pop_front()
     }
 
-    async fn push_message(&self, from: Participant, message: MessageData) {
+    fn push_message(&self, from: Participant, message: MessageData) {
         if message.len() < MessageHeader::LEN {
             return;
         }
@@ -283,38 +285,43 @@ impl Comms {
             _ => return,
         };
 
-        self.buffer.push(header, from, message).await
+        self.incoming.push(header, from, message)
     }
 
-    async fn send_raw(&self, data: Message) {
-        self.message_s
-            .send(data)
-            .await
-            .expect("failed to send message");
+    fn send_raw(&self, data: Message) {
+        self.outgoing.lock().unwrap().push_back(data);
     }
 
     /// (Indicate that you want to) send a message to everybody else.
-    async fn send_many<T: Serialize>(&self, header: MessageHeader, data: &T) {
+    fn send_many<T: Serialize>(&self, header: MessageHeader, data: &T) {
         let header_bytes = header.to_bytes();
         let message_data = encode_with_tag(&header_bytes, data);
-        self.send_raw(Message::Many(message_data)).await;
+        self.send_raw(Message::Many(message_data));
     }
 
     /// (Indicate that you want to) send a message privately to someone.
-    async fn send_private<T: Serialize>(&self, header: MessageHeader, to: Participant, data: &T) {
+    fn send_private<T: Serialize>(&self, header: MessageHeader, to: Participant, data: &T) {
         let header_bytes = header.to_bytes();
         let message_data = encode_with_tag(&header_bytes, data);
-        self.send_raw(Message::Private(to, message_data)).await;
+        self.send_raw(Message::Private(to, message_data));
     }
 
     async fn recv<T: DeserializeOwned>(
         &self,
         header: MessageHeader,
     ) -> Result<(Participant, T), ProtocolError> {
-        let (from, data) = self.buffer.pop(header).await;
+        let (from, data) = self.incoming.pop(header).await;
         let decoded: Result<T, Box<dyn error::Error + Send + Sync>> =
             decode(&data[MessageHeader::LEN..]).map_err(|e| e.into());
         Ok((from, decoded?))
+    }
+
+    pub fn private_channel(&self, from: Participant, to: Participant) -> PrivateChannel {
+        PrivateChannel::new(self.clone(), from, to)
+    }
+
+    pub fn shared_channel(&self) -> SharedChannel {
+        SharedChannel::new(self.clone())
     }
 }
 
@@ -337,21 +344,14 @@ impl SharedChannel {
         self.header.next_waitpoint()
     }
 
-    pub async fn send_many<T: Serialize>(&self, waitpoint: Waitpoint, data: &T) {
+    pub fn send_many<T: Serialize>(&self, waitpoint: Waitpoint, data: &T) {
         self.comms
-            .send_many(self.header.with_waitpoint(waitpoint), data)
-            .await
+            .send_many(self.header.with_waitpoint(waitpoint), data);
     }
 
-    pub async fn send_private<T: Serialize>(
-        &self,
-        waitpoint: Waitpoint,
-        to: Participant,
-        data: &T,
-    ) {
+    pub fn send_private<T: Serialize>(&self, waitpoint: Waitpoint, to: Participant, data: &T) {
         self.comms
-            .send_private(self.header.with_waitpoint(waitpoint), to, data)
-            .await
+            .send_private(self.header.with_waitpoint(waitpoint), to, data);
     }
 
     pub async fn recv<T: DeserializeOwned>(
@@ -392,10 +392,9 @@ impl PrivateChannel {
         self.header.next_waitpoint()
     }
 
-    pub async fn send<T: Serialize>(&self, waitpoint: Waitpoint, data: &T) {
+    pub fn send<T: Serialize>(&self, waitpoint: Waitpoint, data: &T) {
         self.comms
-            .send_private(self.header.with_waitpoint(waitpoint), self.to, data)
-            .await
+            .send_private(self.header.with_waitpoint(waitpoint), self.to, data);
     }
 
     pub async fn recv<T: DeserializeOwned>(
@@ -416,141 +415,73 @@ impl PrivateChannel {
     }
 }
 
-/// Represents the context that protocols have access to.
-///
-/// This allows us to spawn new tasks, and send and receive messages.
-///
-/// This context can safely be cloned.
-#[derive(Clone)]
-pub struct Context<'a> {
-    comms: Comms,
-    executor: Arc<Executor<'a>>,
-}
-
-impl<'a> Context<'a> {
-    pub fn new() -> Self {
-        Self {
-            comms: Comms::new(),
-            executor: Arc::new(Executor::new()),
-        }
-    }
-
-    /// Return *the* shared channel for this context.
-    ///
-    /// To get other channels, use the successor function.
-    pub fn shared_channel(&self) -> SharedChannel {
-        SharedChannel::new(self.comms.clone())
-    }
-
-    /// Return *the* private channel for this context.
-    ///
-    /// To get other channels, use the successor function.
-    pub fn private_channel(&self, from: Participant, to: Participant) -> PrivateChannel {
-        PrivateChannel::new(self.comms.clone(), from, to)
-    }
-
-    /// Spawn a new task on the executor.
-    pub fn spawn<T: Send + 'a>(&self, fut: impl Future<Output = T> + Send + 'a) -> Task<T> {
-        self.executor.spawn(fut)
-    }
-
-    /// Run a future to completion on this executor.
-    pub async fn run<T>(&self, fut: impl Future<Output = T>) -> T {
-        self.executor.run(fut).await
-    }
-}
-
 /// This struct will convert a future into a protocol.
-struct ProtocolExecutor<'a, T> {
-    ctx: Context<'a>,
-    ret_r: channel::Receiver<Result<T, ProtocolError>>,
-    done: bool,
+struct ProtocolExecutor<T> {
+    comms: Comms,
+    fut: Option<BoxFuture<'static, Result<T, ProtocolError>>>,
+    result: Option<Result<T, ProtocolError>>,
 }
 
-impl<'a, T: Send + 'a> ProtocolExecutor<'a, T> {
+impl<T: Send> ProtocolExecutor<T> {
     fn new(
-        ctx: Context<'a>,
-        fut: impl Future<Output = Result<T, ProtocolError>> + Send + 'a,
+        comms: Comms,
+        fut: impl Future<Output = Result<T, ProtocolError>> + Send + 'static,
     ) -> Self {
-        let (ret_s, ret_r) = smol::channel::bounded(1);
-        let fut = async move {
-            let res = fut.await;
-            ret_s
-                .send(res)
-                .await
-                .expect("failed to return result of protocol");
-        };
-
-        ctx.executor.spawn(fut).detach();
-
         Self {
-            ctx,
-            ret_r,
-            done: false,
+            comms,
+            fut: Some(fut.boxed()),
+            result: None,
         }
     }
 }
 
-impl<'a, T> Protocol for ProtocolExecutor<'a, T> {
+impl<T> Protocol for ProtocolExecutor<T> {
     type Output = T;
 
     fn poke(&mut self) -> Result<Action<Self::Output>, ProtocolError> {
-        if self.done {
-            return Ok(Action::Wait);
-        }
-        let fut_return = async {
-            let out = self
-                .ret_r
-                .recv()
-                .await
-                .expect("failed to retrieve return value");
-            Ok::<_, ProtocolError>(Action::Return(out?))
-        };
-        let fut_outgoing = async {
-            let action: Action<Self::Output> = match self.ctx.comms.outgoing().await {
-                Message::Many(m) => Action::SendMany(m),
-                Message::Private(to, m) => Action::SendPrivate(to, m),
-            };
-            Ok::<_, ProtocolError>(action)
-        };
-        // This is a future which will keep ticking the executor until
-        // all tasks are asleep, at which point it will indicate that nothing
-        // is left to do, by returning `Action::Wait`.
-        let fut_wait = async {
-            while self.ctx.executor.try_tick() {
-                // Now that we've ticked, we want to yield to allow the executor to poll
-                // the other action sources.
-                future::yield_now().await;
+        let mut polled_once_already = false;
+        loop {
+            // If there's outgoing messages, request to send them.
+            if let Some(outgoing) = self.comms.outgoing() {
+                return Ok(match outgoing {
+                    Message::Many(m) => Action::SendMany(m),
+                    Message::Private(to, m) => Action::SendPrivate(to, m),
+                });
             }
-            Ok(Action::Wait)
-        };
-        // The priority is first to send all outgoing messages before returning,
-        // otherwise we might deadlock other people, by preventing them from receiving the output.
-        let action = block_on(
-            self.ctx
-                .run(future::or(fut_outgoing, future::or(fut_return, fut_wait))),
-        );
-        match action {
-            Err(_) => self.done = true,
-            Ok(Action::Return(_)) => self.done = true,
-            _ => {}
-        };
-        action
+            // If we already have a return result, return it.
+            if let Some(result) = self.result.take() {
+                return Ok(Action::Return(result?));
+            }
+            // If this is the second iteration, we already polled the future and there's no
+            // progress that can be made.
+            if polled_once_already {
+                return Ok(Action::Wait);
+            }
+            // If we don't have a future, this is an extraneous poke() call, so return Wait.
+            let Some(fut) = self.fut.as_mut() else {
+                return Ok(Action::Wait);
+            };
+            // Now poll the future. It may generate some more messages to send or a return value,
+            // so go back and check all of those again.
+            polled_once_already = true;
+            let waker = noop_waker();
+            let mut cx = Context::from_waker(&waker);
+            if let std::task::Poll::Ready(result) = fut.poll_unpin(&mut cx) {
+                self.result = Some(result);
+                self.fut = None;
+            }
+        }
     }
 
     fn message(&mut self, from: Participant, data: MessageData) {
-        block_on(
-            self.ctx
-                .executor
-                .run(self.ctx.comms.push_message(from, data)),
-        );
+        self.comms.push_message(from, data);
     }
 }
 
 /// Run a protocol, converting a future into an instance of the Protocol trait.
-pub fn make_protocol<'a, T: Send + 'a>(
-    ctx: Context<'a>,
-    fut: impl Future<Output = Result<T, ProtocolError>> + Send + 'a,
-) -> impl Protocol<Output = T> + 'a {
-    ProtocolExecutor::new(ctx, fut)
+pub fn make_protocol<T: Send>(
+    comms: Comms,
+    fut: impl Future<Output = Result<T, ProtocolError>> + Send + 'static,
+) -> impl Protocol<Output = T> {
+    ProtocolExecutor::new(comms, fut)
 }
