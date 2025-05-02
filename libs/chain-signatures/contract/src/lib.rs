@@ -38,6 +38,7 @@ use primitives::{
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
+use primitives::{code_hash::CodeHashesVotes, key_state::AuthenticatedParticipantId};
 use state::{running::RunningContractState, ProtocolContractState};
 use storage_keys::StorageKey;
 use v0_state::MpcContractV0;
@@ -67,15 +68,83 @@ impl Default for VersionedMpcContract {
 }
 
 #[near(serializers=[borsh])]
+#[derive(Debug, Clone)]
+pub struct AllowedCodeHash {
+    code_hash: CodeHash,
+    added: BlockHeight,
+}
+
+#[near(serializers=[borsh])]
+#[derive(Debug, Default)]
+pub struct AllowedCodeHashes {
+    allowed_code_hashes: Vec<AllowedCodeHash>, // ordered by `start`
+}
+
+impl AllowedCodeHashes {
+    /// Removes all expired code hashes and returns the number of removed entries.
+    fn clean(&mut self, current_block_height: BlockHeight) -> usize {
+        // Find the first non-expired entry
+        let expired_count = self
+            .allowed_code_hashes
+            .iter()
+            .position(|entry| entry.added + TEE_UPGRADE_PERIOD >= current_block_height)
+            .unwrap_or(self.allowed_code_hashes.len());
+
+        // Remove all expired entries
+        self.allowed_code_hashes.drain(0..expired_count);
+
+        // Return the number of removed entries
+        expired_count
+    }
+    /// Inserts a new code hash into the list after cleaning expired entries.
+    /// Maintains the sorted order by `added` (ascending).
+    /// Returns `true` if the insertion was successful, `false` if the code hash already exists.
+    pub fn insert(&mut self, new_code_hash: AllowedCodeHash) -> bool {
+        self.clean(new_code_hash.added);
+
+        // Check if the code hash already exists
+        if self
+            .allowed_code_hashes
+            .iter()
+            .any(|entry| entry.code_hash == new_code_hash.code_hash)
+        {
+            return false;
+        }
+
+        // Find the correct position to maintain sorted order by `added`
+        let insert_index = self
+            .allowed_code_hashes
+            .iter()
+            .position(|entry| new_code_hash.added <= entry.added)
+            .unwrap_or(self.allowed_code_hashes.len());
+
+        // Insert at the correct position
+        self.allowed_code_hashes.insert(insert_index, new_code_hash);
+        true
+    }
+    pub fn get(&mut self, current_block_height: BlockHeight) -> Vec<AllowedCodeHash> {
+        self.clean(current_block_height);
+        self.allowed_code_hashes.clone()
+    }
+}
+
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+pub struct TeeState {
+    allowed_code_hashes: AllowedCodeHashes,
+    historical_code_hashes: Vec<CodeHash>,
+    upgrade_deadline: Option<BlockHeight>,
+    votes: CodeHashesVotes,
+}
+
+#[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_requests: LookupMap<SignatureRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
     config: Config,
-    allowed_code_hashes: Vec<CodeHash>,
-    historical_code_hashes: Vec<CodeHash>,
-    upgrade_deadline: Option<BlockHeight>,
+    tee_state: TeeState,
 }
 
 impl From<v0_state::MpcContractV0> for MpcContract {
@@ -85,9 +154,12 @@ impl From<v0_state::MpcContractV0> for MpcContract {
             pending_requests: value.pending_requests,
             proposed_updates: ProposedUpdates::default(),
             config: value.config,
-            allowed_code_hashes: vec![],
-            historical_code_hashes: vec![],
-            upgrade_deadline: None,
+            tee_state: TeeState {
+                allowed_code_hashes: AllowedCodeHashes::default(),
+                historical_code_hashes: vec![],
+                upgrade_deadline: None,
+                votes: CodeHashesVotes::default(),
+            },
         }
     }
 }
@@ -130,9 +202,12 @@ impl MpcContract {
             pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
             proposed_updates: ProposedUpdates::default(),
             config: Config::from(init_config),
-            allowed_code_hashes: vec![],
-            historical_code_hashes: vec![],
-            upgrade_deadline: None,
+            tee_state: TeeState {
+                allowed_code_hashes: AllowedCodeHashes::default(),
+                historical_code_hashes: vec![],
+                upgrade_deadline: None,
+                votes: CodeHashesVotes::default(),
+            },
         }
     }
 
@@ -206,30 +281,39 @@ impl MpcContract {
     }
 
     pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<(), Error> {
-        let votes = self.protocol_state.vote_code_hash(code_hash.clone())?;
+        // TODO: Verify TEE quote here. See GitHub issue #378: https://github.com/Near-One/mpc/issues/378
 
-        if votes >= self.threshold()?.value() {
-            self.protocol_state.clear_code_hashes_votes()?;
-            self.historical_code_hashes.push(code_hash.clone());
-            self.allowed_code_hashes.push(code_hash.clone());
-            self.upgrade_deadline = Some(env::block_height() + TEE_UPGRADE_PERIOD);
+        if let ProtocolContractState::Running(state) = &self.protocol_state {
+            let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
+            let votes = self.tee_state.votes.vote(code_hash.clone(), &participant);
+
+            if votes >= self.threshold()?.value() {
+                self.tee_state.votes.clear_votes();
+                self.tee_state
+                    .historical_code_hashes
+                    .push(code_hash.clone());
+                self.tee_state.allowed_code_hashes.insert(AllowedCodeHash {
+                    code_hash,
+                    added: env::block_height(),
+                });
+                self.tee_state.upgrade_deadline = Some(env::block_height() + TEE_UPGRADE_PERIOD);
+            }
         }
 
         Ok(())
     }
 
     pub fn allowed_code_hashes(&mut self) -> Vec<CodeHash> {
-        if env::block_height() > self.upgrade_deadline.unwrap_or_default() {
-            self.allowed_code_hashes = self
-                .allowed_code_hashes
-                .last()
-                .map_or_else(Vec::new, |last| vec![last.clone()]);
-        }
-        self.allowed_code_hashes.clone()
+        self.tee_state
+            .allowed_code_hashes
+            .get(env::block_height())
+            .into_iter()
+            .map(|entry| entry.code_hash)
+            .collect()
     }
 
-    pub fn latest_code_hash(&self) -> CodeHash {
-        self.allowed_code_hashes
+    pub fn latest_code_hash(&mut self) -> CodeHash {
+        self.allowed_code_hashes()
             .last()
             .expect("there must be at least one allowed code hash")
             .clone()
@@ -761,7 +845,7 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn latest_code_hash(&self) -> Result<CodeHash, Error> {
+    pub fn latest_code_hash(&mut self) -> Result<CodeHash, Error> {
         log!("latest_code_hash: signer={}", env::signer_account_id());
         match self {
             Self::V1(contract) => Ok(contract.latest_code_hash()),
@@ -830,9 +914,12 @@ impl VersionedMpcContract {
             )),
             pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
             proposed_updates: ProposedUpdates::default(),
-            allowed_code_hashes: vec![],
-            historical_code_hashes: vec![],
-            upgrade_deadline: None,
+            tee_state: TeeState {
+                allowed_code_hashes: AllowedCodeHashes::default(),
+                historical_code_hashes: vec![],
+                upgrade_deadline: None,
+                votes: CodeHashesVotes::default(),
+            },
         }))
     }
 
@@ -869,9 +956,12 @@ impl VersionedMpcContract {
                 // This inherits the previous proposed updates map.
                 // TODO(#318): This is problematic.
                 proposed_updates: ProposedUpdates::default(),
-                allowed_code_hashes: vec![],
-                historical_code_hashes: vec![],
-                upgrade_deadline: None,
+                tee_state: TeeState {
+                    allowed_code_hashes: AllowedCodeHashes::default(),
+                    historical_code_hashes: vec![],
+                    upgrade_deadline: None,
+                    votes: CodeHashesVotes::default(),
+                },
             }));
         }
         if let Some(contract) = env::state_read::<VersionedMpcContract>() {
