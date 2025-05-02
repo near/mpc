@@ -205,3 +205,20 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref NETWORK_INCOMPLETE_CHANNEL_MESSAGES_BUFFERED: prometheus::IntGauge =
+        prometheus::register_int_gauge!(
+            "mpc_network_incomplete_channel_messages_buffered",
+            "Number of incomplete channel messages buffered",
+        )
+        .unwrap();
+}
+
+lazy_static! {
+    pub static ref MPC_MESSAGE_ALIVE_BYTES: prometheus::IntGauge = prometheus::register_int_gauge!(
+        "mpc_message_alive_bytes",
+        "Number of alive bytes in the mpc message buffer",
+    )
+    .unwrap();
+}

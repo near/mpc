@@ -88,7 +88,7 @@ impl NetworkTaskChannelManager {
     }
 }
 
-const LRU_CAPACITY: usize = 10000;
+const LRU_CAPACITY: usize = 100;
 
 impl MeshNetworkClient {
     /// Primary functionality for the MeshNetworkClient: returns a channel for the given
@@ -121,10 +121,7 @@ impl MeshNetworkClient {
             }
             channel.sender.send_raw(
                 *participant,
-                MpcMessage {
-                    task_id,
-                    kind: MpcMessageKind::Start(start_message.clone()),
-                },
+                MpcMessage::new(task_id, MpcMessageKind::Start(start_message.clone())),
             )?;
         }
         Ok(channel)
@@ -331,12 +328,24 @@ async fn run_receive_messages_loop(
     new_channel_sender: mpsc::UnboundedSender<NetworkTaskChannel>,
     indexer_heights: Arc<IndexerHeightTracker>,
 ) -> anyhow::Result<()> {
+    let client_clone = client.clone();
+    let _task = tracking::spawn("export incomplete queue metrics", async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            let channels = client_clone.channels.lock().unwrap();
+            let mut total = 0;
+            for (_, receiver) in &channels.channels_waiting_for_start {
+                total += receiver.receiver.len();
+            }
+            metrics::NETWORK_INCOMPLETE_CHANNEL_MESSAGES_BUFFERED.set(total as i64);
+        }
+    });
     loop {
         let message = receiver.receive().await?;
         match message {
             PeerMessage::Mpc(message) => {
-                let task_id = message.message.task_id;
-                let start_msg = match &message.message.kind {
+                let task_id = message.message.task_id();
+                let start_msg = match message.message.kind() {
                     MpcMessageKind::Start(start_msg) => Some(start_msg),
                     _ => None,
                 };
@@ -464,10 +473,7 @@ impl NetworkTaskChannelSender {
     pub fn send(&self, recipient_id: ParticipantId, data: Vec<Vec<u8>>) -> anyhow::Result<()> {
         self.send_raw(
             recipient_id,
-            MpcMessage {
-                task_id: self.task_id,
-                kind: MpcMessageKind::Computation(data),
-            },
+            MpcMessage::new(self.task_id, MpcMessageKind::Computation(data)),
         )
     }
 
@@ -526,10 +532,7 @@ impl NetworkTaskChannelSender {
         }
         self.send_raw(
             self.leader,
-            MpcMessage {
-                task_id: self.task_id,
-                kind: MpcMessageKind::Success,
-            },
+            MpcMessage::new(self.task_id, MpcMessageKind::Success),
         )?;
         Ok(())
     }
@@ -554,10 +557,7 @@ impl NetworkTaskChannelSender {
                 // Don't fail just because we cannot send an abort message.
                 let _ = self.send_raw(
                     *participant,
-                    MpcMessage {
-                        task_id: self.task_id,
-                        kind: MpcMessageKind::Abort(err_msg.clone()),
-                    },
+                    MpcMessage::new(self.task_id, MpcMessageKind::Abort(err_msg.clone())),
                 );
             }
         } else {
@@ -571,10 +571,7 @@ impl NetworkTaskChannelSender {
             // Don't fail just because we cannot send an abort message.
             let _ = self.send_raw(
                 self.leader,
-                MpcMessage {
-                    task_id: self.task_id,
-                    kind: MpcMessageKind::Abort(err_msg),
-                },
+                MpcMessage::new(self.task_id, MpcMessageKind::Abort(err_msg)),
             );
         }
     }
@@ -633,7 +630,7 @@ impl NetworkTaskChannel {
     /// computation message.
     async fn receive_one(&mut self) -> anyhow::Result<Option<TaskChannelComputationData>> {
         let message = self.receive_raw().await?;
-        match message.message.kind {
+        match message.message.kind().clone() {
             MpcMessageKind::Computation(data) => {
                 return Ok(Some(TaskChannelComputationData {
                     from: message.from,

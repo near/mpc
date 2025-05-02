@@ -293,10 +293,10 @@ impl IntegrationTestSetup {
                 },
                 signature: SignatureConfig { timeout_sec: 60 },
                 triple: TripleConfig {
-                    concurrency: 1,
-                    desired_triples_to_buffer: 10,
-                    parallel_triple_generation_stagger_time_sec: 1,
-                    timeout_sec: 60,
+                    concurrency: 6,
+                    desired_triples_to_buffer: 1000,
+                    parallel_triple_generation_stagger_time_sec: 0,
+                    timeout_sec: 2,
                 },
                 web_ui: WebUIConfig {
                     host: "0.0.0.0".to_string(),

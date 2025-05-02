@@ -10,7 +10,7 @@ anyhow = "1.0.92"
 async-trait = "0.1.83"
 axum = "0.7.9"
 borsh = { version = "1.5.1", features = ["derive"] }
-cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "5e0ce40a16dc3e0889277f66bb2a6400d6ef36a5", features = [
+cait-sith = { git = "https://github.com/Near-One/cait-sith", branch = "robin/debug", features = [
     "k256",
 ] }
 clap = { version = "4.5.20", features = ["derive", "env"] }
@@ -65,6 +65,7 @@ mpc-contract = { path = "../libs/chain-signatures/contract/" , features = ["dev-
 # Pinned to resolve compilation errors with conflicting implementations of PartialOrd trait
 # See error E0283 with multiple impls satisfying `u128: std::cmp::PartialOrd<_>`
 deranged = "=0.4.0"
+stats_alloc = "0.1.10"
 
 [dev-dependencies]
 serial_test = "3.2.0"

@@ -269,8 +269,22 @@ impl Coordinator {
         } else {
             tokio::runtime::Runtime::new()?
         };
+        let handle = mpc_runtime.handle().clone();
+        let description = description.to_string();
         let mpc_runtime = AsyncDroppableRuntime::new(mpc_runtime);
-        let fut = mpc_runtime.spawn(task_handle.scope(description, task));
+        let fut = mpc_runtime.spawn(task_handle.scope(&description, task));
+        mpc_runtime.spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                let metrics = handle.metrics();
+                println!(
+                    "{} metrics: global queue depth: {}, alive tasks: {}",
+                    description,
+                    metrics.global_queue_depth(),
+                    metrics.num_alive_tasks(),
+                );
+            }
+        });
         Ok(async move {
             let _mpc_runtime = mpc_runtime;
             anyhow::Ok(fut.await??)

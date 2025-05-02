@@ -106,6 +106,7 @@ impl TlsConnection {
         target_address: &str,
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
+        my_participant_id: ParticipantId,
     ) -> anyhow::Result<TlsConnection> {
         let conn = TcpStream::connect(target_address)
             .await
@@ -143,6 +144,11 @@ impl TlsConnection {
                             let Some(data) = data else {
                                 break;
                             };
+                            if target_participant_id.raw() == 4 && my_participant_id.raw() == 2 {
+                                while receiver.len() < 100 {
+                                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                }
+                            }
                             let serialized = borsh::to_vec(&data)?;
                             let len: u32 = serialized.len().try_into().context("Message too long")?;
                             tls_conn.write_u32(len).await?;
@@ -245,6 +251,7 @@ impl PersistentConnection {
                         &target_address,
                         target_participant_id,
                         &participant_identities,
+                        my_id,
                     )
                     .await
                     {
@@ -770,12 +777,10 @@ mod tests {
                 }
                 let key_id =
                     KeyEventId::new(EpochId::new(epoch_id), DomainId(domain_id), attempt_id);
-                let msg0to1 = MpcMessage {
-                    task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing {
-                        key_event: key_id,
-                    }),
-                    kind: crate::primitives::MpcMessageKind::Success,
-                };
+                let msg0to1 = MpcMessage::new(
+                    MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { key_event: key_id }),
+                    crate::primitives::MpcMessageKind::Success,
+                );
                 sender0
                     .send(
                         participant1,
@@ -789,12 +794,10 @@ mod tests {
                 assert_eq!(msg.from, participant0);
                 assert_eq!(msg.message, msg0to1);
 
-                let msg1to0 = MpcMessage {
-                    task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing {
-                        key_event: key_id,
-                    }),
-                    kind: crate::primitives::MpcMessageKind::Abort("test".to_owned()),
-                };
+                let msg1to0 = MpcMessage::new(
+                    MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { key_event: key_id }),
+                    crate::primitives::MpcMessageKind::Abort("test".to_owned()),
+                );
                 sender1
                     .send(
                         participant0,
