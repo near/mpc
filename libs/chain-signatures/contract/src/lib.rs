@@ -278,22 +278,26 @@ impl MpcContract {
     }
 
     pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<(), Error> {
+        // Ensure the protocol is in the Running state
+        let ProtocolContractState::Running(state) = &self.protocol_state else {
+            return Err(InvalidState::ProtocolStateNotRunning.into());
+        };
+
+        // Authenticate the participant and cast a vote
         // TODO: Verify TEE quote here. See GitHub issue #378: https://github.com/Near-One/mpc/issues/378
+        let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
+        let votes = self.tee_state.votes.vote(code_hash.clone(), &participant);
 
-        if let ProtocolContractState::Running(state) = &self.protocol_state {
-            let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
-            let votes = self.tee_state.votes.vote(code_hash.clone(), &participant);
-
-            if votes >= self.threshold()?.value() {
-                self.tee_state.votes.clear_votes();
-                self.tee_state
-                    .historical_code_hashes
-                    .push(code_hash.clone());
-                self.tee_state.allowed_code_hashes.insert(AllowedCodeHash {
-                    code_hash,
-                    added: env::block_height(),
-                });
-            }
+        // If the vote threshold is met, update the state
+        if votes >= self.threshold()?.value() {
+            self.tee_state.votes.clear_votes();
+            self.tee_state
+                .historical_code_hashes
+                .push(code_hash.clone());
+            self.tee_state.allowed_code_hashes.insert(AllowedCodeHash {
+                code_hash,
+                added: env::block_height(),
+            });
         }
 
         Ok(())
