@@ -6,7 +6,7 @@ use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::legacy_contract_state;
 use crate::primitives::{
-    code_hash::{CodeHash, CodeHashesVotes},
+    code_hash::CodeHashesVotes,
     domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry},
     key_state::{
         AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
@@ -193,12 +193,6 @@ impl RunningContractState {
         } else {
             Ok(None)
         }
-    }
-
-    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<u64, Error> {
-        let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
-        let votes = self.proposed_code_hashes.vote(code_hash, &participant);
-        Ok(votes)
     }
 }
 

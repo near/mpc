@@ -133,7 +133,6 @@ impl AllowedCodeHashes {
 pub struct TeeState {
     allowed_code_hashes: AllowedCodeHashes,
     historical_code_hashes: Vec<CodeHash>,
-    upgrade_deadline: Option<BlockHeight>,
     votes: CodeHashesVotes,
 }
 
@@ -157,7 +156,6 @@ impl From<v0_state::MpcContractV0> for MpcContract {
             tee_state: TeeState {
                 allowed_code_hashes: AllowedCodeHashes::default(),
                 historical_code_hashes: vec![],
-                upgrade_deadline: None,
                 votes: CodeHashesVotes::default(),
             },
         }
@@ -205,7 +203,6 @@ impl MpcContract {
             tee_state: TeeState {
                 allowed_code_hashes: AllowedCodeHashes::default(),
                 historical_code_hashes: vec![],
-                upgrade_deadline: None,
                 votes: CodeHashesVotes::default(),
             },
         }
@@ -296,7 +293,6 @@ impl MpcContract {
                     code_hash,
                     added: env::block_height(),
                 });
-                self.tee_state.upgrade_deadline = Some(env::block_height() + TEE_UPGRADE_PERIOD);
             }
         }
 
@@ -921,7 +917,6 @@ impl VersionedMpcContract {
             tee_state: TeeState {
                 allowed_code_hashes: AllowedCodeHashes::default(),
                 historical_code_hashes: vec![],
-                upgrade_deadline: None,
                 votes: CodeHashesVotes::default(),
             },
         }))
@@ -963,7 +958,6 @@ impl VersionedMpcContract {
                 tee_state: TeeState {
                     allowed_code_hashes: AllowedCodeHashes::default(),
                     historical_code_hashes: vec![],
-                    upgrade_deadline: None,
                     votes: CodeHashesVotes::default(),
                 },
             }));

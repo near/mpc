@@ -5,7 +5,6 @@ pub mod running;
 
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
-use crate::primitives::code_hash::CodeHash;
 use crate::primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
@@ -69,15 +68,6 @@ impl ProtocolContractState {
             ProtocolContractState::NotInitialized => {
                 Err(InvalidState::UnexpectedProtocolState.into())
             }
-        }
-    }
-    pub fn clear_code_hashes_votes(&mut self) -> Result<(), Error> {
-        match self {
-            ProtocolContractState::Running(state) => {
-                state.proposed_code_hashes.clear_votes();
-                Ok(())
-            }
-            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
         }
     }
     pub fn start_keygen_instance(
@@ -155,15 +145,6 @@ impl ProtocolContractState {
             _ => Err(InvalidState::ProtocolStateNotRunning.into()),
         }
         .map(|x| x.map(ProtocolContractState::Initializing))
-    }
-
-    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<u64, Error> {
-        // TODO: Verify TEE quote here. See GitHub issue #378: https://github.com/Near-One/mpc/issues/378
-        if let ProtocolContractState::Running(state) = self {
-            state.vote_code_hash(code_hash)
-        } else {
-            Err(InvalidState::ProtocolStateNotRunning.into())
-        }
     }
 
     pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
