@@ -96,30 +96,38 @@ impl AllowedCodeHashes {
         // Return the number of removed entries
         expired_count
     }
-    /// Inserts a new code hash into the list after cleaning expired entries.
-    /// Maintains the sorted order by `added` (ascending).
-    /// Returns `true` if the insertion was successful, `false` if the code hash already exists.
-    pub fn insert(&mut self, new_code_hash: AllowedCodeHash) -> bool {
-        self.clean(new_code_hash.added);
+    /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
+    /// order by `added` (ascending). Returns `true` if the insertion was successful, `false` if the
+    /// code hash already exists.
+    pub fn insert(&mut self, code_hash: CodeHash) -> bool {
+        // Clean expired entries
+        let current_block_height = env::block_height();
+        self.clean(current_block_height);
 
         // Check if the code hash already exists
         if self
             .allowed_code_hashes
             .iter()
-            .any(|entry| entry.code_hash == new_code_hash.code_hash)
+            .any(|entry| entry.code_hash == code_hash)
         {
             return false;
         }
+
+        // Create the new entry
+        let new_entry = AllowedCodeHash {
+            code_hash,
+            added: current_block_height,
+        };
 
         // Find the correct position to maintain sorted order by `added`
         let insert_index = self
             .allowed_code_hashes
             .iter()
-            .position(|entry| new_code_hash.added <= entry.added)
+            .position(|entry| new_entry.added <= entry.added)
             .unwrap_or(self.allowed_code_hashes.len());
 
         // Insert at the correct position
-        self.allowed_code_hashes.insert(insert_index, new_code_hash);
+        self.allowed_code_hashes.insert(insert_index, new_entry);
         true
     }
     pub fn get(&mut self, current_block_height: BlockHeight) -> Vec<AllowedCodeHash> {
@@ -294,10 +302,7 @@ impl MpcContract {
             self.tee_state
                 .historical_code_hashes
                 .push(code_hash.clone());
-            self.tee_state.allowed_code_hashes.insert(AllowedCodeHash {
-                code_hash,
-                added: env::block_height(),
-            });
+            self.tee_state.allowed_code_hashes.insert(code_hash);
         }
 
         Ok(())
