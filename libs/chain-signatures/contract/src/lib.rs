@@ -1130,7 +1130,6 @@ mod tests {
         let mut payload_hash = [0u8; 32];
         OsRng.fill_bytes(&mut payload_hash);
         let payload = Payload::from_legacy_ecdsa(payload_hash);
-
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
         let request = if legacy_v1_api {
