@@ -6,7 +6,6 @@ use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::legacy_contract_state;
 use crate::primitives::{
-    code_hash::CodeHashesVotes,
     domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry},
     key_state::{
         AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
@@ -41,8 +40,6 @@ pub struct RunningContractState {
     pub parameters_votes: ThresholdParametersVotes,
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
-    // Votes for proposals to add new TEE code hashes.
-    pub proposed_code_hashes: CodeHashesVotes,
 }
 
 impl From<v0_state::RunningContractState> for RunningContractState {
@@ -53,7 +50,6 @@ impl From<v0_state::RunningContractState> for RunningContractState {
             parameters: value.parameters,
             parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: value.add_domains_votes,
-            proposed_code_hashes: CodeHashesVotes::default(),
         }
     }
 }
@@ -80,7 +76,6 @@ impl From<&legacy_contract_state::RunningContractState> for RunningContractState
             ),
             parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: AddDomainsVotes::default(),
-            proposed_code_hashes: CodeHashesVotes::default(),
         }
     }
 }
@@ -93,7 +88,6 @@ impl RunningContractState {
             parameters,
             parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: AddDomainsVotes::default(),
-            proposed_code_hashes: CodeHashesVotes::default(),
         }
     }
 
