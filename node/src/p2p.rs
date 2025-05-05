@@ -711,14 +711,13 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use crate::assets::UniqueId;
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::raw_ed25519_secret_key_to_keypair;
     use crate::p2p::testing::{
         generate_keypair, generate_test_p2p_configs, keypair_to_raw_ed25519_secret_key, PortSeed,
     };
     use crate::primitives::{
-        ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage,
+        ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
     };
     use crate::providers::EcdsaTaskId;
     use crate::tracing::init_logging;

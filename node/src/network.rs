@@ -5,11 +5,10 @@ pub mod handshake;
 pub mod indexer_heights;
 pub mod signing;
 
-use crate::assets::UniqueId;
 use crate::metrics;
 use crate::primitives::{
     ChannelId, IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, MpcStartMessage,
-    MpcTaskId, ParticipantId, PeerMessage,
+    MpcTaskId, ParticipantId, PeerMessage, UniqueId,
 };
 use crate::tracking::{self, AutoAbortTask};
 use conn::{ConnectionVersion, NodeConnectivityInterface};
@@ -913,9 +912,8 @@ pub mod testing {
 mod tests {
     use super::computation::MpcLeaderCentricComputation;
     use super::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::assets::UniqueId;
     use crate::network::testing::run_test_clients;
-    use crate::primitives::MpcTaskId;
+    use crate::primitives::{MpcTaskId, UniqueId};
     use crate::providers::EcdsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
@@ -1074,9 +1072,8 @@ mod tests {
 mod fault_handling_tests {
     use super::computation::MpcLeaderCentricComputation;
     use super::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::assets::UniqueId;
     use crate::network::testing::run_test_clients;
-    use crate::primitives::ParticipantId;
+    use crate::primitives::{ParticipantId, UniqueId};
     use crate::providers::EcdsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
