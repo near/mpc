@@ -96,7 +96,7 @@ impl MpcContract {
         self.protocol_state.threshold()
     }
 
-    // returns true if the request was already pending
+    /// returns true if the request was already pending
     fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) -> bool {
         self.pending_requests
             .insert(request.clone(), YieldIndex { data_id })
