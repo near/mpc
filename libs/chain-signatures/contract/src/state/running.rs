@@ -5,14 +5,18 @@ use super::v0_state;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::legacy_contract_state;
-use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
-use crate::primitives::key_state::{
-    AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
+use crate::primitives::{
+    domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry},
+    key_state::{
+        AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
+        Keyset,
+    },
+    thresholds::ThresholdParameters,
+    votes::ThresholdParametersVotes,
 };
-use crate::primitives::thresholds::ThresholdParameters;
-use crate::primitives::votes::ThresholdParametersVotes;
 use near_sdk::near;
 use std::collections::BTreeSet;
+
 /// In this state, the contract is ready to process signature requests.
 ///
 /// Proposals can be submitted to modify the state:
@@ -191,15 +195,14 @@ pub mod running_tests {
     use std::collections::BTreeSet;
 
     use super::RunningContractState;
-    use crate::primitives::domain::tests::gen_domain_registry;
-    use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
-    use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::{
-        bogus_ed25519_public_key_extended, gen_participant, gen_threshold_params,
+    use crate::primitives::{
+        domain::{tests::gen_domain_registry, AddDomainsVotes},
+        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        participants::{ParticipantId, Participants},
+        test_utils::{bogus_ed25519_public_key_extended, gen_participant, gen_threshold_params},
+        thresholds::{Threshold, ThresholdParameters},
+        votes::ThresholdParametersVotes,
     };
-    use crate::primitives::thresholds::{Threshold, ThresholdParameters};
-    use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
     use rand::Rng;
 
@@ -291,7 +294,7 @@ pub mod running_tests {
                 .vote_new_parameters(state.keyset.epoch_id.next().next(), &ksp)
                 .is_err());
         }
-        // Assert that disagreeing proposals do not reach concensus.
+        // Assert that disagreeing proposals do not reach consensus.
         // Generate an extra proposal for the next step.
         let mut proposals = Vec::new();
         for i in 0..participants.participants().len() + 1 {
