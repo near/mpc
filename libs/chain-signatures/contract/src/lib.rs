@@ -182,9 +182,11 @@ impl MpcContract {
         self.protocol_state.threshold()
     }
 
-    fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) {
+    /// returns true if the request was already pending
+    fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) -> bool {
         self.pending_requests
-            .insert(request.clone(), YieldIndex { data_id });
+            .insert(request.clone(), YieldIndex { data_id })
+            .is_some()
     }
 
     fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
@@ -416,11 +418,6 @@ impl VersionedMpcContract {
             env::panic_str("expected V1")
         };
 
-        // Check if the request already exists.
-        if mpc_contract.pending_requests.contains_key(&request) {
-            env::panic_str(&SignError::PayloadCollision.to_string());
-        }
-
         env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
 
         let promise_index = env::promise_yield_create(
@@ -436,7 +433,9 @@ impl VersionedMpcContract {
             .expect("read_register failed")
             .try_into()
             .expect("conversion to CryptoHash failed");
-        mpc_contract.add_request(&request, return_sig_id);
+        if mpc_contract.add_request(&request, return_sig_id) {
+            log!("request already present, overriding callback.")
+        }
 
         env::promise_return(promise_index);
     }
