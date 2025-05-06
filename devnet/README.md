@@ -62,8 +62,7 @@ target/debug/devnet mpc my-test deploy-contract \
   --init-participants 2 --threshold 2
 ```
 
-Note: For V2, the `--v2` argument is needed. (TODO(#357): After V2 is released,
-change this to "For legacy V1, the `--v1` argument is needed.")
+Note: For legacy V1, the `--v1` argument is needed.
 
 The `--init-participants` can be fewer than the total number of participants,
 if we wish to have fewer participants join the network at the beginning.
