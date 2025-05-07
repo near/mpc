@@ -194,9 +194,8 @@ pub struct MpcDeployContractCmd {
     /// The default is `constants::DEFAULT_MPC_CONTRACT_PATH`.
     #[clap(long)]
     pub path: Option<String>,
-    /// TODO(#357): Change this flag to --v1 when v2 is released.
     #[clap(long)]
-    pub v2: bool,
+    pub v1: bool,
     /// The number of participants to initialize with; the participants will be from 0 to
     /// init_participants-1.
     #[clap(long)]
