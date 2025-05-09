@@ -10,7 +10,7 @@ use near_primitives::{
 };
 use near_sdk::AccountId;
 
-// "v1.signer-prod.testnet for testnet
+/// fetches the contract code and hash from `target`.
 pub async fn get_contract_code(
     client: &Arc<NearRpcClients>,
     target: AccountId,

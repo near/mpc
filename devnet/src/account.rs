@@ -378,7 +378,6 @@ impl OperatingAccount {
     }
 
     /// Queries the code of the contract.
-    /// have this one here.
     pub async fn get_contract_code(&self) -> anyhow::Result<Vec<u8>> {
         let res =
             queries::get_contract_code(&self.client, self.account_data.account_id.clone()).await?;
