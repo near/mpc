@@ -245,7 +245,7 @@ impl MpcDeployContractCmd {
             .any_access_key()
             .await;
 
-        let args = if self.v2 {
+        let args = if !self.v1 {
             let mut participants = Participants::new();
             for (i, account_id) in mpc_setup
                 .participants
