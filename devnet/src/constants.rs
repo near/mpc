@@ -14,3 +14,5 @@ pub const DEFAULT_MPC_DOCKER_IMAGE: &str = "nearone/mpc-node-gcp:testnet-release
 /// The default parallel signing contract path to test with.
 pub const DEFAULT_PARALLEL_SIGN_CONTRACT_PATH: &str =
     "../pytest/tests/test_contracts/parallel/res/contract.wasm";
+/// Address of the mpc contract on testnet
+pub const TESTNET_CONTRACT_ACCOUNT_ID: &str = "v1.signer-prod.testnet";

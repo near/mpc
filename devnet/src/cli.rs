@@ -176,11 +176,9 @@ pub struct UpdateMpcNetworkCmd {
 #[derive(clap::Parser)]
 pub struct MpcDeployContractCmd {
     /// File path that contains the contract code.
-    /// The default is `constants::DEFAULT_MPC_CONTRACT_PATH`.
+    /// If not set, then the contract from TESTNET_CONTRACT_ACCOUNT_ID is fetched and deployed.
     #[clap(long)]
     pub path: Option<String>,
-    #[clap(long)]
-    pub v1: bool,
     /// The number of participants to initialize with; the participants will be from 0 to
     /// init_participants-1.
     #[clap(long)]

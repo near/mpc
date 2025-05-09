@@ -5,9 +5,10 @@ use crate::cli::{
     MpcVoteAddDomainsCmd, MpcVoteNewParametersCmd, MpcVoteUpdateCmd, NewMpcNetworkCmd,
     RemoveContractCmd, UpdateMpcNetworkCmd,
 };
-use crate::constants::{DEFAULT_MPC_CONTRACT_PATH, ONE_NEAR};
+use crate::constants::{DEFAULT_MPC_CONTRACT_PATH, ONE_NEAR, TESTNET_CONTRACT_ACCOUNT_ID};
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
+use crate::queries;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -178,15 +179,25 @@ impl UpdateMpcNetworkCmd {
 
 impl MpcDeployContractCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        let contract_path = self
-            .path
-            .clone()
-            .unwrap_or(DEFAULT_MPC_CONTRACT_PATH.to_string());
-        println!(
-            "Going to deploy contract for MPC network {} using {}",
-            name, contract_path
-        );
-        let contract_data = std::fs::read(&contract_path).unwrap();
+        let (contract_data, contract_path) = match &self.path {
+            Some(contract_path) => (std::fs::read(contract_path).unwrap(), contract_path.clone()),
+            None => {
+                println!(
+                    "fetching and deploying contract from testnet account {}",
+                    TESTNET_CONTRACT_ACCOUNT_ID
+                );
+                (
+                    queries::get_contract_code(
+                        &config.rpc,
+                        TESTNET_CONTRACT_ACCOUNT_ID.parse().unwrap(),
+                    )
+                    .await
+                    .unwrap()
+                    .code,
+                    TESTNET_CONTRACT_ACCOUNT_ID.to_string(),
+                )
+            }
+        };
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setup = setup
             .mpc_setups
@@ -251,7 +262,6 @@ impl MpcDeployContractCmd {
             participants
                 .insert(
                     account_id.clone(),
-                    //let account = accounts.account(account_id);
                     mpc_account_to_participant_info(setup.accounts.account(account_id), i),
                 )
                 .unwrap();
