@@ -12,6 +12,7 @@
 //! because we need a mutable reference to it to add access keys to our local state. On the other
 //! hand, sending an arbitrary transfer of NEAR tokens is in OperatingAccessKey, since no local
 //! state needs changing (other than updating the nonce, which is per access key).
+use crate::queries;
 use crate::rpc::NearRpcClients;
 use crate::types::{ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind};
 use futures::FutureExt;
@@ -25,7 +26,7 @@ use near_primitives::action::{Action, AddKeyAction};
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::Finality;
 use near_primitives::types::{BlockReference, FunctionArgs};
-use near_primitives::views::{CallResult, ContractCodeView, QueryRequest, TxExecutionStatus};
+use near_primitives::views::{CallResult, QueryRequest, TxExecutionStatus};
 use near_sdk::AccountId;
 use reqwest::StatusCode;
 use std::collections::HashMap;
@@ -379,17 +380,9 @@ impl OperatingAccount {
     /// Queries the code of the contract.
     /// have this one here.
     pub async fn get_contract_code(&self) -> anyhow::Result<Vec<u8>> {
-        let request = methods::query::RpcQueryRequest {
-            block_reference: BlockReference::Finality(Finality::Final),
-            request: QueryRequest::ViewCode {
-                account_id: self.account_data.account_id.clone(),
-            },
-        };
-        let result = self.client.submit(request).await.unwrap();
-        match result.kind {
-            QueryResponseKind::ViewCode(code) => Ok(code.code),
-            _ => panic!("Unexpected response"),
-        }
+        let res =
+            queries::get_contract_code(&self.client, self.account_data.account_id.clone()).await?;
+        Ok(res.code)
     }
 
     /// Returns the first access key, for transactions that don't need parallelism.
