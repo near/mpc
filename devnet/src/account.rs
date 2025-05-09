@@ -25,7 +25,7 @@ use near_primitives::action::{Action, AddKeyAction};
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::Finality;
 use near_primitives::types::{BlockReference, FunctionArgs};
-use near_primitives::views::{CallResult, QueryRequest, TxExecutionStatus};
+use near_primitives::views::{CallResult, ContractCodeView, QueryRequest, TxExecutionStatus};
 use near_sdk::AccountId;
 use reqwest::StatusCode;
 use std::collections::HashMap;
@@ -183,8 +183,7 @@ impl OperatingAccessKey {
             ),
             wait_until: TxExecutionStatus::Final,
         };
-        let rpc = self.client.lease().await;
-        rpc.call(request).await.unwrap();
+        self.client.submit(request).await.unwrap();
         NearAccount {
             account_id: new_account_id,
             access_keys: vec![secret_key],
@@ -216,8 +215,7 @@ impl OperatingAccessKey {
             ),
             wait_until: TxExecutionStatus::Final,
         };
-        let rpc = self.client.lease().await;
-        rpc.call(request).await.unwrap();
+        self.client.submit(request).await.unwrap();
     }
 
     /// Submits a transaction to the chain to mutably call a function on a contract.
@@ -260,8 +258,7 @@ impl OperatingAccessKey {
             ),
             wait_until,
         };
-        let rpc = self.client.lease().await;
-        Ok(rpc.call(request).await?)
+        Ok(self.client.submit(request).await?)
     }
 
     pub fn secret_key(&self) -> SecretKey {
@@ -356,8 +353,7 @@ impl OperatingAccount {
             ),
             wait_until: TxExecutionStatus::Final,
         };
-        let rpc = self.client.lease().await;
-        rpc.call(request).await.unwrap();
+        self.client.submit(request).await.unwrap();
         self.account_data.kind = NearAccountKind::Contract(ContractSetup {
             deployed_filename: from_path.to_string(),
         });
@@ -373,8 +369,7 @@ impl OperatingAccount {
                 args: FunctionArgs::from(args),
             },
         };
-        let rpc = self.client.lease().await;
-        let result = rpc.call(request).await?;
+        let result = self.client.submit(request).await?;
         match result.kind {
             QueryResponseKind::CallResult(result) => Ok(result),
             _ => anyhow::bail!("Unexpected response: {:?}", result),
@@ -382,6 +377,7 @@ impl OperatingAccount {
     }
 
     /// Queries the code of the contract.
+    /// have this one here.
     pub async fn get_contract_code(&self) -> anyhow::Result<Vec<u8>> {
         let request = methods::query::RpcQueryRequest {
             block_reference: BlockReference::Finality(Finality::Final),
@@ -389,8 +385,7 @@ impl OperatingAccount {
                 account_id: self.account_data.account_id.clone(),
             },
         };
-        let rpc = self.client.lease().await;
-        let result = rpc.call(request).await.unwrap();
+        let result = self.client.submit(request).await.unwrap();
         match result.kind {
             QueryResponseKind::ViewCode(code) => Ok(code.code),
             _ => panic!("Unexpected response"),
@@ -478,8 +473,7 @@ impl OperatingAccounts {
             ),
             wait_until: TxExecutionStatus::Final,
         };
-        let rpc = self.client.lease().await;
-        rpc.call(request).await.unwrap();
+        self.client.submit(request).await.unwrap();
     }
 
     /// Creates a new account from the Testnet faucet, using it as a funding account to create or
