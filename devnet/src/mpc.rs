@@ -5,7 +5,7 @@ use crate::cli::{
     MpcVoteAddDomainsCmd, MpcVoteNewParametersCmd, MpcVoteUpdateCmd, NewMpcNetworkCmd,
     RemoveContractCmd, UpdateMpcNetworkCmd,
 };
-use crate::constants::{DEFAULT_MPC_CONTRACT_PATH, ONE_NEAR, TESTNET_CONTRACT_ACCOUNT_ID};
+use crate::constants::{ONE_NEAR, TESTNET_CONTRACT_ACCOUNT_ID};
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
 use crate::queries;
