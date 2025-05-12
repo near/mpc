@@ -343,6 +343,8 @@ impl Coordinator {
         >,
         signature_debug_request_receiver: broadcast::Receiver<SignatureDebugRequest>,
     ) -> anyhow::Result<MpcJobResult> {
+        println!("Just some diff");
+
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
             contract_state.participants,
             &config_file.my_near_account_id,
