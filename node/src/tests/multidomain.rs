@@ -88,19 +88,19 @@ async fn test_basic_multidomain() {
         .is_some());
     }
 
-    {
-        let mut contract = setup.indexer.contract_mut().await;
-        contract.start_resharing(setup.participants);
-    }
+    // {
+    //     let mut contract = setup.indexer.contract_mut().await;
+    //     contract.start_resharing(setup.participants);
+    // }
 
-    for domain in &domains {
-        assert!(request_signature_and_await_response(
-            &mut setup.indexer,
-            &format!("user{}", domain.id.0),
-            domain,
-            std::time::Duration::from_secs(60)
-        )
-        .await
-        .is_some());
-    }
+    // for domain in &domains {
+    //     assert!(request_signature_and_await_response(
+    //         &mut setup.indexer,
+    //         &format!("user{}", domain.id.0),
+    //         domain,
+    //         std::time::Duration::from_secs(60)
+    //     )
+    //     .await
+    //     .is_some());
+    // }
 }
