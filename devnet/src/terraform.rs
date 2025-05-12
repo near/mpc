@@ -10,10 +10,12 @@ use crate::cli::{
 use crate::constants::DEFAULT_MPC_DOCKER_IMAGE;
 use crate::devnet::OperatingDevnetSetup;
 use crate::types::{MpcNetworkSetup, ParsedConfig};
+use anyhow::anyhow;
 use describe::TerraformInfraShowOutput;
 use near_crypto::{PublicKey, SecretKey};
 use near_sdk::AccountId;
 use serde::Serialize;
+use std::fmt;
 use std::path::PathBuf;
 
 /// Creates a {name}.tfvars.json file in the current directory with the Terraform variables
@@ -257,6 +259,41 @@ impl MpcTerraformDestroyInfraCmd {
     }
 }
 
+enum State {
+    WaitingForSync,
+    Initializing,
+    Running,
+    Resharing,
+}
+
+impl State {
+    pub fn new(tasks: &str) -> anyhow::Result<Self> {
+        if tasks.contains("WaitingForSync") {
+            Ok(State::WaitingForSync)
+        } else if tasks.contains("Initializing") {
+            Ok(State::Initializing)
+        } else if tasks.contains("Running") {
+            Ok(State::Running)
+        } else if tasks.contains("Resharing") {
+            Ok(State::Resharing)
+        } else {
+            Err(anyhow!("could not parse tasks string"))
+        }
+    }
+}
+
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = match self {
+            State::WaitingForSync => "WaitingForSync",
+            State::Initializing => "Initializing",
+            State::Running => "Running",
+            State::Resharing => "Resharing",
+        };
+        write!(f, "{}", label)
+    }
+}
+
 impl MpcDescribeCmd {
     pub async fn describe_terraform(&self, name: &str, config: &ParsedConfig) {
         // Invoke terraform
@@ -297,14 +334,10 @@ impl MpcDescribeCmd {
             }
         }
         for resource in &output.values.root_module.resources {
-            if let Some((index, instance)) = resource.as_mpc_nomad_client() {
-                println!(
-                    "Nomad client #{}: zone {}, instance type {}, debug: http://{}:8080/debug/tasks",
-                    index,
-                    instance.zone,
-                    instance.machine_type,
-                    instance.nat_ip().unwrap_or_default()
-                );
+            if let Some(mpc_nomad_client) = resource.as_mpc_nomad_client() {
+                mpc_nomad_client.desc().await;
+                // todo: aggregate states.
+                // track how long it takes for indexer to catch up with blockchain.
             }
         }
     }
