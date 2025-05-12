@@ -307,6 +307,9 @@ impl MpcClient {
             );
         }
 
+        tracing::info!(
+            "Network task channel receiver is closed. Exiting monitor_passive_channels_inner."
+        );
         Ok(())
     }
 
