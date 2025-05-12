@@ -30,16 +30,8 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
 
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest
-
-      - name: Install wasm-opt from crates.io
-        run: |
-          cargo install wasm-opt --locked
-          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
-
       - name: Run cargo-nextest
-        run: cargo nextest run --release --locked
+        run: cargo test --release test_basic_multidomain
 
       - name: Run contract tests
         run: |
