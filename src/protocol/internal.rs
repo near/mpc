@@ -43,34 +43,34 @@
 //! are deterministic, even in the presence of concurrent tasks.
 use super::{Action, MessageData, Participant, Protocol, ProtocolError};
 use crate::serde::{decode, encode_with_tag};
-use ck_meow::Meow;
 use futures::future::BoxFuture;
 use futures::task::noop_waker;
 use futures::{FutureExt, StreamExt};
 use serde::{de::DeserializeOwned, Serialize};
 use smol::{future, lock::Mutex};
+use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
 use std::task::Context;
 use std::{collections::HashMap, error, future::Future, sync::Arc};
 
-/// The domain for our use of meow here.
-const MEOW_DOMAIN: &[u8] = b"cait-sith channel tags";
+/// The domain for our use of sha here.
+const DOMAIN: &[u8] = b"Near threshold signatures  channel tags";
 
 /// Represents a unique tag for a channel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
 struct ChannelTag([u8; Self::SIZE]);
 
 impl ChannelTag {
-    /// 160 bit tags, enough for 80 bits of collision security, which should be ample.
-    const SIZE: usize = 20;
+    /// 256 bit tags, enough for 128 bits of collision security, which should be ample.
+    const SIZE: usize = 32;
     /// The channel tag for a shared channel.
     ///
     /// This will always yield the same tag, and is intended to be the root for shared channels.
     fn root_shared() -> Self {
-        let mut out = [0u8; Self::SIZE];
-        let mut meow = Meow::new(MEOW_DOMAIN);
-        meow.meta_ad(b"root shared", false);
-        meow.prf(&mut out, false);
+        let mut hasher = Sha256::new();
+        hasher.update(DOMAIN);
+        hasher.update(b"root shared");
+        let out = hasher.finalize().into();
         Self(out)
     }
 
@@ -83,14 +83,16 @@ impl ChannelTag {
     fn root_private(p0: Participant, p1: Participant) -> Self {
         // Sort participants, for uniqueness.
         let (p0, p1) = (p0.min(p1), p0.max(p1));
-        let mut meow = Meow::new(MEOW_DOMAIN);
-        meow.meta_ad(b"root private", false);
-        meow.meta_ad(b"p0", false);
-        meow.ad(&p0.bytes(), false);
-        meow.meta_ad(b"p1", false);
-        meow.ad(&p1.bytes(), false);
-        let mut out = [0u8; Self::SIZE];
-        meow.prf(&mut out, false);
+
+        let mut hasher = Sha256::new();
+        hasher.update(DOMAIN);
+        hasher.update(b"root private");
+        hasher.update(b"p0");
+        hasher.update(&p0.bytes());
+        hasher.update(b"p1");
+        hasher.update(&p1.bytes());
+
+        let out = hasher.finalize().into();
         Self(out)
     }
 
@@ -100,13 +102,13 @@ impl ChannelTag {
     ///
     /// Indexed children have a separate namespace from named children.
     fn child(&self, i: u64) -> Self {
-        let mut meow = Meow::new(MEOW_DOMAIN);
-        meow.meta_ad(b"parent", false);
-        meow.ad(&self.0, false);
-        meow.meta_ad(b"i", false);
-        meow.ad(&i.to_le_bytes(), false);
-        let mut out = [0u8; Self::SIZE];
-        meow.prf(&mut out, false);
+        let mut hasher = Sha256::new();
+        hasher.update(DOMAIN);
+        hasher.update(b"parent");
+        hasher.update(&self.0);
+        hasher.update(b"i");
+        hasher.update(&i.to_le_bytes());
+        let out = hasher.finalize().into();
         Self(out)
     }
 }

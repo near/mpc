@@ -1,12 +1,11 @@
-use elliptic_curve::{Field, Group};
-use magikitten::Transcript;
-use rand_core::CryptoRngCore;
-use serde::{Deserialize, Serialize};
-
 use crate::{
     compat::{CSCurve, SerializablePoint},
+    proofs::strobe_transcript::Transcript,
     serde::{deserialize_scalar, encode, serialize_projective_point, serialize_scalar},
 };
+use elliptic_curve::{Field, Group};
+use rand_core::CryptoRngCore;
+use serde::{Deserialize, Serialize};
 
 /// The label we use for hashing the statement.
 const STATEMENT_LABEL: &[u8] = b"dlog proof statement";
@@ -73,8 +72,8 @@ pub fn prove<'a, C: CSCurve>(
         COMMITMENT_LABEL,
         &encode(&SerializablePoint::<C>::from_projective(&big_k)),
     );
-
-    let e = C::Scalar::random(&mut transcript.challenge(CHALLENGE_LABEL));
+    let mut rng = transcript.challenge_then_build_rng(CHALLENGE_LABEL);
+    let e = C::Scalar::random(&mut rng);
 
     let s = k + e * witness.x;
     Proof { e, s }
@@ -98,8 +97,8 @@ pub fn verify<C: CSCurve>(
         COMMITMENT_LABEL,
         &encode(&SerializablePoint::<C>::from_projective(&big_k)),
     );
-
-    let e = C::Scalar::random(&mut transcript.challenge(CHALLENGE_LABEL));
+    let mut rng = transcript.challenge_then_build_rng(CHALLENGE_LABEL);
+    let e = C::Scalar::random(&mut rng);
 
     e == proof.e
 }
@@ -124,12 +123,12 @@ mod test {
 
         let proof = prove(
             &mut OsRng,
-            &mut transcript.forked(b"party", &[1]),
+            &mut transcript.fork(b"party", &[1]),
             statement,
             witness,
         );
 
-        let ok = verify(&mut transcript.forked(b"party", &[1]), statement, &proof);
+        let ok = verify(&mut transcript.fork(b"party", &[1]), statement, &proof);
 
         assert!(ok);
     }

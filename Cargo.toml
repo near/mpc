@@ -8,7 +8,7 @@ license = "MIT"
 
 [dependencies]
 auto_ops = "0.3.0"
-ck-meow = "0.1.0"
+byteorder = "1.5.0"
 digest = "0.10.7"
 ecdsa = { version = "0.16.8", features = ["digest", "hazmat"] }
 elliptic-curve = { version = "0.13.5", features = ["serde"] }
@@ -19,13 +19,16 @@ frost-secp256k1 = { version = "2.1.0", default-features = false, features = ["se
 futures = "0.3.31"
 itertools = "0.14.0"
 k256 = { version = "0.13.1", features = ["sha256", "ecdsa", "serde"], optional = true }
-magikitten = "0.2.0"
+keccak = "0.1.5"
 rand = "0.9.0"
 rand_core = { version = "0.6.4", features = ["getrandom"] }
 rmp-serde = "1.1.2"
 serde = { version = "1.0.175", features = ["derive"] }
+sha2 = "0.10.8"
+sha3 = "0.10.8"
 smol = "1.3.0"
 subtle = "2.5.0"
+zeroize = "1.8.1"
 
 [dev-dependencies]
 criterion = "0.4"

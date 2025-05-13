@@ -1,6 +1,7 @@
-use ck_meow::Meow;
 use elliptic_curve::{Field, Group};
 use rand_core::OsRng;
+use sha2::{Digest, Sha256};
+use smol::stream::{self, StreamExt};
 use std::sync::Arc;
 use subtle::ConditionallySelectable;
 
@@ -17,7 +18,7 @@ use crate::{
 use super::bits::{BitMatrix, BitVector, SquareBitMatrix, SEC_PARAM_8};
 use crate::protocol::internal::Comms;
 
-const BATCH_RANDOM_OT_HASH: &[u8] = b"cait-sith v0.8.0 batch ROT";
+const BATCH_RANDOM_OT_HASH: &[u8] = b"Near threshold signatures batch ROT";
 
 fn hash<C: CSCurve>(
     i: usize,
@@ -25,14 +26,17 @@ fn hash<C: CSCurve>(
     big_y: &SerializablePoint<C>,
     p: &C::ProjectivePoint,
 ) -> BitVector {
-    let mut meow = Meow::new(BATCH_RANDOM_OT_HASH);
-    meow.ad(&(i as u64).to_le_bytes(), false);
-    meow.ad(&encode(&big_x_i), false);
-    meow.ad(&encode(&big_y), false);
-    meow.ad(&encode(&SerializablePoint::<C>::from_projective(p)), false);
+    let mut hasher = Sha256::new();
+    hasher.update(BATCH_RANDOM_OT_HASH);
+    hasher.update(&(i as u64).to_le_bytes());
+    hasher.update(&encode(&big_x_i));
+    hasher.update(&encode(&big_y));
+    hasher.update(&encode(&SerializablePoint::<C>::from_projective(p)));
 
-    let mut bytes = [0u8; SEC_PARAM_8];
-    meow.prf(&mut bytes, false);
+    let bytes: [u8; 32] = hasher.finalize().into();
+    // the hash output is 256 bits
+    // it is possible to take the first 128 bits out
+    let bytes: [u8; SEC_PARAM_8] = bytes[0..SEC_PARAM_8].try_into().unwrap();
 
     BitVector::from_bytes(&bytes)
 }

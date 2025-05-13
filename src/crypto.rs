@@ -1,36 +1,15 @@
-use std::io::Write;
+use sha2::{Digest, Sha256};
 
-use ck_meow::Meow;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 
 use crate::serde::encode_writer;
 
-const COMMIT_LABEL: &[u8] = b"cait-sith v0.8.0 commitment";
+const COMMIT_LABEL: &[u8] = b"Near threshold signature commitment";
 const COMMIT_LEN: usize = 32;
 const RANDOMIZER_LEN: usize = 32;
-const HASH_LABEL: &[u8] = b"cait-sith v0.8.0 generic hash";
+const HASH_LABEL: &[u8] = b"Near threshold signature generic hash";
 const HASH_LEN: usize = 32;
-
-struct MeowWriter<'a>(&'a mut Meow);
-
-impl<'a> MeowWriter<'a> {
-    fn init(meow: &'a mut Meow) -> Self {
-        meow.ad(&[], false);
-        Self(meow)
-    }
-}
-
-impl Write for MeowWriter<'_> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.ad(buf, true);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
 
 /// Represents the randomizer used to make a commit hiding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,16 +40,12 @@ pub struct Commitment([u8; COMMIT_LEN]);
 
 impl Commitment {
     fn compute<T: Serialize>(val: &T, r: &Randomizer) -> Self {
-        let mut meow = Meow::new(COMMIT_LABEL);
-
-        meow.ad(r.as_ref(), false);
-        meow.meta_ad(b"start data", false);
-        encode_writer(&mut MeowWriter::init(&mut meow), val);
-
-        let mut out = [0u8; COMMIT_LEN];
-        meow.prf(&mut out, false);
-
-        Commitment(out)
+        let mut hasher = Sha256::new();
+        hasher.update(COMMIT_LABEL);
+        hasher.update(r.as_ref());
+        hasher.update(b"start data");
+        encode_writer(&mut hasher, val);
+        Commitment(hasher.finalize().into())
     }
 
     /// Check that a value and a randomizer match this commitment.
@@ -96,21 +71,18 @@ pub fn commit<T: Serialize, R: CryptoRngCore>(rng: &mut R, val: &T) -> (Commitme
 
 /// The output of a generic hash function.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Digest([u8; HASH_LEN]);
+pub struct HashOutput([u8; HASH_LEN]);
 
-impl AsRef<[u8]> for Digest {
+impl AsRef<[u8]> for HashOutput {
     fn as_ref(&self) -> &[u8] {
         &self.0
     }
 }
 
 /// Hash some value to produce a short digest.
-pub fn hash<T: Serialize>(val: &T) -> Digest {
-    let mut meow = Meow::new(HASH_LABEL);
-    encode_writer(&mut MeowWriter::init(&mut meow), val);
-
-    let mut out = [0u8; HASH_LEN];
-    meow.prf(&mut out, false);
-
-    Digest(out)
+pub fn hash<T: Serialize>(val: &T) -> HashOutput {
+    let mut hasher = Sha256::new();
+    hasher.update(HASH_LABEL);
+    encode_writer(&mut hasher, val);
+    HashOutput(hasher.finalize().into())
 }

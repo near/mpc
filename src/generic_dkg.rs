@@ -1,4 +1,4 @@
-use crate::crypto::{hash, Digest};
+use crate::crypto::{hash, HashOutput};
 use crate::echo_broadcast::do_broadcast;
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
 use crate::protocol::internal::SharedChannel;
@@ -62,7 +62,7 @@ fn assert_keyshare_inputs<C: Ciphersuite>(
 
 /// Hashes using a domain separator
 /// The domain separator has to be manually incremented after the use of this function
-fn domain_separate_hash<T: Serialize>(domain_separator: u32, data: &T) -> Digest {
+fn domain_separate_hash<T: Serialize>(domain_separator: u32, data: &T) -> HashOutput {
     let preimage = (domain_separator, data);
     hash(&preimage)
 }
@@ -105,7 +105,7 @@ fn generate_coefficient_commitment<C: Ciphersuite>(
 /// Generates the challenge for the proof of knowledge
 /// H(id, context_string, g^{secret} , R)
 fn challenge<C: Ciphersuite>(
-    session_id: &Digest,
+    session_id: &HashOutput,
     domain_separator: u32,
     id: Scalar<C>,
     vk_share: &CoefficientCommitment<C>,
@@ -148,7 +148,7 @@ fn challenge<C: Ciphersuite>(
 /// Compute mu = k + a_0 * H(id, context_string, g^{a_0} , R)
 /// Output (R, mu)
 fn proof_of_knowledge<C: Ciphersuite>(
-    session_id: &Digest,
+    session_id: &HashOutput,
     domain_separator: u32,
     me: Participant,
     coefficients: &[Scalar<C>],
@@ -173,7 +173,7 @@ fn proof_of_knowledge<C: Ciphersuite>(
 /// The proof of knowledge could be set to None in case the participant is new
 /// and thus its secret share is known (set to zero)
 fn compute_proof_of_knowledge<C: Ciphersuite>(
-    session_id: &Digest,
+    session_id: &HashOutput,
     domain_separator: u32,
     me: Participant,
     old_participants: Option<ParticipantList>,
@@ -200,7 +200,7 @@ fn compute_proof_of_knowledge<C: Ciphersuite>(
 /// Verifies the proof of knowledge of the secret coefficients used to generate the
 /// public secret sharing commitment.
 fn internal_verify_proof_of_knowledge<C: Ciphersuite>(
-    session_id: &Digest,
+    session_id: &HashOutput,
     domain_separator: u32,
     participant: Participant,
     commitment: &VerifiableSecretSharingCommitment<C>,
@@ -224,7 +224,7 @@ fn internal_verify_proof_of_knowledge<C: Ciphersuite>(
 /// if the proof of knowledge is none then make sure that the participant is
 /// performing reshare and does not exist in the set of old participants
 fn verify_proof_of_knowledge<C: Ciphersuite>(
-    session_id: &Digest,
+    session_id: &HashOutput,
     domain_separator: u32,
     threshold: usize,
     participant: Participant,
@@ -271,11 +271,11 @@ fn verify_proof_of_knowledge<C: Ciphersuite>(
 /// Takes a commitment and a commitment hash and checks that
 /// H(commitment) = commitment_hash
 fn verify_commitment_hash<C: Ciphersuite>(
-    session_id: &Digest,
+    session_id: &HashOutput,
     participant: Participant,
     domain_separator: u32,
     commitment: &VerifiableSecretSharingCommitment<C>,
-    all_hash_commitments: &ParticipantMap<'_, Digest>,
+    all_hash_commitments: &ParticipantMap<'_, HashOutput>,
 ) -> Result<(), ProtocolError> {
     let actual_commitment_hash = all_hash_commitments.index(participant);
     let commitment_hash =
@@ -366,7 +366,7 @@ async fn broadcast_success(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
     me: &Participant,
-    session_id: Digest,
+    session_id: HashOutput,
 ) -> Result<(), ProtocolError> {
     // broadcast node me succeded
     let vote_list = do_broadcast(chan, participants, me, (true, session_id)).await?;

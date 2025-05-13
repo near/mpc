@@ -4,7 +4,7 @@ use crate::eddsa::KeygenOutput;
 use crate::participants::ParticipantList;
 use crate::protocol::{run_protocol, Participant, Protocol};
 
-use crate::crypto::Digest;
+use crate::crypto::HashOutput;
 use frost_ed25519::VerifyingKey;
 use rand_core::{OsRng, RngCore};
 use std::error::Error;
@@ -146,7 +146,7 @@ pub(crate) fn test_run_signature_protocols(
     actual_signers: usize,
     coordinators: &[Participant],
     threshold: usize,
-    msg_hash: Digest,
+    msg_hash: HashOutput,
 ) -> Result<Vec<(Participant, SignatureOutput)>, Box<dyn Error>> {
     let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = SignatureOutput>>)> =
         Vec::with_capacity(participants.len());
