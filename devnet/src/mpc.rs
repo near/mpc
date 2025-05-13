@@ -13,12 +13,13 @@ use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_contract::config::InitConfig;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
-use mpc_contract::primitives::key_state::EpochId;
-use mpc_contract::primitives::participants::{ParticipantInfo, Participants};
-use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use mpc_contract::state::ProtocolContractState;
-use mpc_contract::utils::protocol_state_to_string;
+use mpc_contract::primitives::{
+    domain::{DomainConfig, DomainId, SignatureScheme},
+    key_state::EpochId,
+    participants::{ParticipantInfo, Participants},
+    thresholds::{Threshold, ThresholdParameters}
+};
+use mpc_contract::{state::ProtocolContractState, utils::protocol_state_to_string};
 use near_crypto::SecretKey;
 use near_sdk::{borsh, AccountId};
 use serde::Serialize;
