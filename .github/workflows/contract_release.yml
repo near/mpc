@@ -35,6 +35,16 @@ jobs:
 
       - name: Install wasm-opt
         run: sudo apt-get update && sudo apt-get install -y binaryen
+      
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest
+
+      - name: Run contract tests
+        run: |
+          cd libs/chain-signatures
+          cargo build -p mpc-contract --release --locked --target=wasm32-unknown-unknown
+          wasm-opt -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm
+          cargo nextest run -p mpc-contract --release --locked
 
       - name: Install tomlq
         run: cargo install --locked tomlq
