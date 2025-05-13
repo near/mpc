@@ -307,10 +307,11 @@ impl MpcClient {
             );
         }
 
-        tracing::info!(
-            "Network task channel receiver is closed. Exiting monitor_passive_channels_inner."
-        );
-        Ok(())
+        const EXIT_MESSAGE: &str =
+            "Network task channel receiver is closed. Exiting monitor_passive_channels_inner.";
+
+        tracing::info!(EXIT_MESSAGE);
+        anyhow::bail!(EXIT_MESSAGE)
     }
 
     async fn process_channel_task(
