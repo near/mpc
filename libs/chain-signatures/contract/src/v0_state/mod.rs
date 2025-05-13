@@ -12,10 +12,14 @@ use near_sdk::{near, store::LookupMap};
 use std::collections::HashSet;
 
 use crate::legacy_contract_state::ConfigV1;
+use crate::primitives::code_hash::CodeHashesVotes;
 use crate::state::ProtocolContractState;
 use crate::update::UpdateId;
-use crate::{config::Config, primitives::signature::{SignatureRequest, YieldIndex}, AllowedCodeHashes, MpcContract, TeeState};
-use crate::primitives::code_hash::CodeHashesVotes;
+use crate::{
+    config::Config,
+    primitives::signature::{SignatureRequest, YieldIndex},
+    AllowedCodeHashes, MpcContract, TeeState,
+};
 
 #[allow(clippy::large_enum_variant)]
 #[near(serializers=[borsh])]
@@ -53,7 +57,7 @@ pub struct MpcContractV0 {
 impl From<MpcContractV0> for MpcContract {
     fn from(value: MpcContractV0) -> Self {
         Self {
-            protocol_state: value.protocol_state.into(),
+            protocol_state: value.protocol_state,
             pending_requests: value.pending_requests,
             proposed_updates: crate::update::ProposedUpdates::default(),
             config: value.config,
