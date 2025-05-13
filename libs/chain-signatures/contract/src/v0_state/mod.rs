@@ -1,3 +1,11 @@
+//! ## Overview
+//! This module stores the previous contract state—the one you want to migrate from.
+//! The goal is to describe the data layout _exactly_ as it existed before.
+//!
+//! ## Guideline
+//! In theory, you could copy-paste every struct from the specific commit you're migrating from.
+//! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
+//! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 use near_account_id::AccountId;
 use near_sdk::store::IterableMap;
 use near_sdk::{near, store::LookupMap};
