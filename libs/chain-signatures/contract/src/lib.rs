@@ -72,32 +72,31 @@ impl Default for VersionedMpcContract {
 
 #[near(serializers=[borsh])]
 #[derive(Debug, Clone)]
-pub struct AllowedCodeHash {
-    code_hash: CodeHash,
-    tee_quote: Vec<u8>,
+pub struct AllowedTeeProposal {
+    proposal: TeeProposal,
     added: BlockHeight,
 }
 
 #[near(serializers=[borsh])]
 #[derive(Debug, Default)]
-pub struct AllowedCodeHashes {
+pub struct AllowedTeeProposals {
     /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
     /// lazily cleaned up during insertions and lookups.
-    allowed_code_hashes: Vec<AllowedCodeHash>,
+    allowed_tee_proposals: Vec<AllowedTeeProposal>,
 }
 
-impl AllowedCodeHashes {
+impl AllowedTeeProposals {
     /// Removes all expired code hashes and returns the number of removed entries.
     fn clean(&mut self, current_block_height: BlockHeight) -> usize {
         // Find the first non-expired entry
         let expired_count = self
-            .allowed_code_hashes
+            .allowed_tee_proposals
             .iter()
             .position(|entry| entry.added + TEE_UPGRADE_PERIOD >= current_block_height)
-            .unwrap_or(self.allowed_code_hashes.len());
+            .unwrap_or(self.allowed_tee_proposals.len());
 
         // Remove all expired entries
-        self.allowed_code_hashes.drain(0..expired_count);
+        self.allowed_tee_proposals.drain(0..expired_count);
 
         // Return the number of removed entries
         expired_count
@@ -106,51 +105,76 @@ impl AllowedCodeHashes {
     /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
     /// order by `added` (ascending). Returns `true` if the insertion was successful, `false` if the
     /// code hash already exists.
-    pub fn insert(&mut self, code_hash: CodeHash, tee_quote: &[u8]) -> bool {
+    pub fn insert(&mut self, code_hash: CodeHash, tee_quote: TeeQuote) -> bool {
         // Clean expired entries
         let current_block_height = env::block_height();
         self.clean(current_block_height);
 
         // Check if the code hash already exists
         if self
-            .allowed_code_hashes
+            .allowed_tee_proposals
             .iter()
-            .any(|entry| entry.code_hash == code_hash)
+            .any(|entry| entry.proposal.code_hash == code_hash)
         {
             return false;
         }
 
         // Create the new entry
-        let new_entry = AllowedCodeHash {
-            code_hash,
-            tee_quote: tee_quote.to_vec(),
+        let new_entry = AllowedTeeProposal {
+            proposal: TeeProposal {
+                code_hash: code_hash.clone(),
+                tee_quote,
+            },
             added: current_block_height,
         };
 
         // Find the correct position to maintain sorted order by `added`
         let insert_index = self
-            .allowed_code_hashes
+            .allowed_tee_proposals
             .iter()
             .position(|entry| new_entry.added <= entry.added)
-            .unwrap_or(self.allowed_code_hashes.len());
+            .unwrap_or(self.allowed_tee_proposals.len());
 
         // Insert at the correct position
-        self.allowed_code_hashes.insert(insert_index, new_entry);
+        self.allowed_tee_proposals.insert(insert_index, new_entry);
         true
     }
 
-    pub fn get(&mut self, current_block_height: BlockHeight) -> Vec<AllowedCodeHash> {
+    pub fn get(&mut self, current_block_height: BlockHeight) -> Vec<AllowedTeeProposal> {
         self.clean(current_block_height);
-        self.allowed_code_hashes.clone()
+        self.allowed_tee_proposals.clone()
     }
 }
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct TeeState {
-    allowed_code_hashes: AllowedCodeHashes,
+    allowed_tee_proposals: AllowedTeeProposals,
     historical_tee_proposals: Vec<TeeProposal>,
     votes: CodeHashesVotes,
+}
+
+impl TeeState {
+    pub fn is_code_hash_allowed(&self, _code_hash: CodeHash, expected_rtmr3: &[u8; 48]) -> bool {
+        self.historical_tee_proposals
+            .iter()
+            .chain(
+                self.allowed_tee_proposals
+                    .allowed_tee_proposals
+                    .iter()
+                    .map(|entry| &entry.proposal),
+            )
+            .any(|proposal| proposal.tee_quote.get_rtmr3().unwrap() == *expected_rtmr3)
+        // TODO TODO TODO should be:
+        // .any(|proposal| hash(proposal.tee_quote.get_rtmr3().unwrap() || code_hash) == *expected_rtmr3)
+    }
+
+    pub fn whitelist_tee_proposal(&mut self, tee_proposal: TeeProposal) {
+        self.votes.clear_votes();
+        self.historical_tee_proposals.push(tee_proposal.clone());
+        self.allowed_tee_proposals
+            .insert(tee_proposal.code_hash, tee_proposal.tee_quote);
+    }
 }
 
 #[near(serializers=[borsh])]
@@ -171,7 +195,7 @@ impl From<v0_state::MpcContractV0> for MpcContract {
             proposed_updates: ProposedUpdates::default(),
             config: value.config,
             tee_state: TeeState {
-                allowed_code_hashes: AllowedCodeHashes::default(),
+                allowed_tee_proposals: AllowedTeeProposals::default(),
                 historical_tee_proposals: vec![],
                 votes: CodeHashesVotes::default(),
             },
@@ -220,7 +244,7 @@ impl MpcContract {
             proposed_updates: ProposedUpdates::default(),
             config: Config::from(init_config),
             tee_state: TeeState {
-                allowed_code_hashes: AllowedCodeHashes::default(),
+                allowed_tee_proposals: AllowedTeeProposals::default(),
                 historical_tee_proposals: vec![],
                 votes: CodeHashesVotes::default(),
             },
@@ -317,7 +341,6 @@ impl MpcContract {
             verify::verify(tee_quote, &collateral, now).map_err(|err: anyhow::Error| {
                 InvalidParameters::InvalidTeeRemoteAttestation.message(err.to_string())
             })?;
-        // let expected_rtmr3 = encode(verification_result.report.as_td10().unwrap().rt_mr3.to_vec());
 
         let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
         let tee_proposal = TeeProposal {
@@ -329,16 +352,16 @@ impl MpcContract {
             .votes
             .vote(tee_proposal.clone(), &participant);
 
-        // If the vote threshold is met, update the state
+        let expected_rtmr3 = verification_result.report.as_td10().unwrap().rt_mr3;
+
+        // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
+        // update the state
         if votes >= self.threshold()?.value()
-        // TODO TODO TODO
-        /*&& self.tee_state.any_match_rtmr(expected_rtmr3)*/
+            && self
+                .tee_state
+                .is_code_hash_allowed(code_hash, &expected_rtmr3)
         {
-            self.tee_state.votes.clear_votes();
-            self.tee_state.historical_tee_proposals.push(tee_proposal);
-            self.tee_state
-                .allowed_code_hashes
-                .insert(code_hash, tee_quote);
+            self.tee_state.whitelist_tee_proposal(tee_proposal);
         }
 
         Ok(())
@@ -346,10 +369,10 @@ impl MpcContract {
 
     pub fn allowed_code_hashes(&mut self) -> Vec<CodeHash> {
         self.tee_state
-            .allowed_code_hashes
+            .allowed_tee_proposals
             .get(env::block_height())
             .into_iter()
-            .map(|entry| entry.code_hash)
+            .map(|entry| entry.proposal.code_hash)
             .collect()
     }
 
@@ -964,7 +987,7 @@ impl VersionedMpcContract {
             pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
             proposed_updates: ProposedUpdates::default(),
             tee_state: TeeState {
-                allowed_code_hashes: AllowedCodeHashes::default(),
+                allowed_tee_proposals: AllowedTeeProposals::default(),
                 historical_tee_proposals: vec![],
                 votes: CodeHashesVotes::default(),
             },
@@ -1005,7 +1028,7 @@ impl VersionedMpcContract {
                 // TODO(#318): This is problematic.
                 proposed_updates: ProposedUpdates::default(),
                 tee_state: TeeState {
-                    allowed_code_hashes: AllowedCodeHashes::default(),
+                    allowed_tee_proposals: AllowedTeeProposals::default(),
                     historical_tee_proposals: vec![],
                     votes: CodeHashesVotes::default(),
                 },

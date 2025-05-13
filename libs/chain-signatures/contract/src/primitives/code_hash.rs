@@ -1,3 +1,5 @@
+use anyhow::Result;
+use dcap_qvl::quote::Quote;
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
@@ -17,10 +19,19 @@ impl TeeQuote {
     pub fn new(data: Vec<u8>) -> Self {
         TeeQuote(data)
     }
+
+    pub fn get_quote(&self) -> Result<Quote> {
+        Quote::parse(&self.0)
+    }
+
+    pub fn get_rtmr3(&self) -> Result<[u8; 48]> {
+        let quote = self.get_quote()?;
+        Ok(quote.report.as_td10().unwrap().rt_mr3)
+    }
 }
 
-/// Proposal for a new TEE code hash to be added to the whitelist, along with the TEE quote
-/// containing the RTMR3.
+/// Proposal for a new TEE code hash to be added to the whitelist, along with the TEE quote that
+/// includes the RTMR3 measurement among others.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct TeeProposal {
