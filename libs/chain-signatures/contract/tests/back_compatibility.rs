@@ -85,10 +85,7 @@ async fn back_compatibility() -> anyhow::Result<()> {
     println!("🟨 Found breaking changes in the contract state.");
     println!("⚙️ Testing migration() call...");
 
-    assert!(
-        migrate(&contract).await.is_ok(),
-        "❌ Back compatibility check failed: migration() failed"
-    );
+    migrate(&contract).await.expect("❌ Back compatibility check failed: migration() failed");
 
     if healthcheck(&contract).await? {
         println!("✅ Back compatibility check succeeded: migration() works fine 👍");
