@@ -96,5 +96,5 @@ async fn back_compatibility() -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("Check logs for more details."));
     };
 
-    anyhow::bail!("❌Back compatibility check failed: state() call doesnt work after migration().")
+    anyhow::bail!("❌Back compatibility check failed: state() call doesnt work after migration(). Probably you should introduce new logic to the `migrate()` method.")
 }
