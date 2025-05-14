@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::types::load_config;
 
 #[derive(clap::Parser)]
@@ -6,6 +8,8 @@ pub enum Cli {
     Mpc(MpcNetworkCmd),
     /// Manage loadtest setups
     Loadtest(LoadtestCmd),
+    /// List all loadtests
+    List(LoadtestList),
 }
 
 impl Cli {
@@ -76,6 +80,7 @@ impl Cli {
                     }
                 }
             }
+            Cli::List(cmd) => cmd.run(config).await,
         }
     }
 }
@@ -262,10 +267,31 @@ pub struct MpcTerraformDeployNomadCmd {
     /// If true, shuts down and reset the MPC nodes, leaving only the nearcore data.
     #[clap(long)]
     pub shutdown_and_reset: bool,
-    /// Overrides the docker image to use for MPC nodes.
-    /// The default is `constants::DEFAULT_MPC_DOCKER_IMAGE`.
+    /// Applies shutdown and reset command only to selected note if set.
+    /// Ignored if `shutdown_and_reset` is false
     #[clap(long)]
-    pub docker_image: Option<String>,
+    pub reset_node_index: Option<i32>,
+    /// Overrides the Docker image used for specific MPC node indices.
+    ///
+    /// This should be passed as a JSON-encoded map from image tags to lists of node indices.
+    ///
+    /// Example:
+    ///     '{"image-1": [0, 2], "image-2": [1], "image-default": []}'
+    ///
+    /// - Each key is a Docker image tag (e.g. `"nearone/mpc-node:latest"`)
+    /// - Each value is a list of node indices that should use that image
+    /// - If one image is mapped to an empty list (`[]`), it acts as the default for all
+    ///   unspecified nodes
+    ///
+    /// Any node index not explicitly listed will use:
+    ///   - The image mapped to the empty list (`[]`), if present
+    ///   - Otherwise, the default defined in the infra repository (`constants::DEFAULT_MPC_DOCKER_IMAGE`)
+    #[clap(long, value_parser = parse_docker_images)]
+    pub docker_images: Option<BTreeMap<String, Vec<i32>>>,
+}
+
+fn parse_docker_images(s: &str) -> Result<BTreeMap<String, Vec<i32>>, String> {
+    serde_json::from_str(s).map_err(|e| format!("Invalid JSON: {}", e))
 }
 
 #[derive(clap::Parser)]
@@ -273,6 +299,9 @@ pub struct MpcTerraformDestroyInfraCmd {}
 
 #[derive(clap::Parser)]
 pub struct MpcDescribeCmd {}
+
+#[derive(clap::Parser)]
+pub struct LoadtestList {}
 
 #[derive(clap::Parser)]
 pub struct NewLoadtestCmd {

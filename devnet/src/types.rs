@@ -1,4 +1,5 @@
 use crate::rpc::NearRpcClients;
+use core::fmt;
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use serde::{Deserialize, Serialize};
@@ -69,6 +70,31 @@ pub struct LoadtestSetup {
     pub parallel_signatures_contract: Option<AccountId>,
 }
 
+impl fmt::Display for LoadtestSetup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "LoadtestSetup {{")?;
+        writeln!(f, "  load_senders: {:?}", self.load_senders)?;
+        writeln!(
+            f,
+            "  desired_balance_per_account: {}",
+            self.desired_balance_per_account
+        )?;
+        writeln!(
+            f,
+            "  desired_keys_per_account: {}",
+            self.desired_keys_per_account
+        )?;
+        writeln!(
+            f,
+            "  parallel_signatures_contract: {}",
+            self.parallel_signatures_contract
+                .as_ref()
+                .map(|x| x.as_str())
+                .unwrap_or("None")
+        )?;
+        write!(f, "}}")
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub rpcs: Vec<RpcConfig>,

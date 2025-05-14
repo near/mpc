@@ -709,6 +709,7 @@ struct VoteNewParametersArgs {
 }
 
 impl MpcDescribeCmd {
+    // todo: do not panic if not reachable.
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         let setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
         let mpc_setup = setup

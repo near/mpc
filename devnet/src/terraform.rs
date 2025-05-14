@@ -15,8 +15,11 @@ use describe::TerraformInfraShowOutput;
 use near_crypto::{PublicKey, SecretKey};
 use near_sdk::AccountId;
 use serde::Serialize;
+use serde_json::to_writer_pretty;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
+use tempfile::NamedTempFile;
 
 /// Creates a {name}.tfvars.json file in the current directory with the Terraform variables
 /// needed by the infra-ops scripts.
@@ -201,18 +204,35 @@ impl MpcTerraformDeployNomadCmd {
             .env("NOMAD_ADDR", &nomad_server_url)
             .print_and_run();
 
-        let docker_image = self
-            .docker_image
-            .clone()
-            .unwrap_or(DEFAULT_MPC_DOCKER_IMAGE.to_string());
+        // docker_image: [node_indices]
+        let docker_images = self.docker_images.clone().unwrap_or_else(|| {
+            let mut m = BTreeMap::new();
+            m.insert(DEFAULT_MPC_DOCKER_IMAGE.to_string(), vec![]);
+            m
+        });
+
+        // Assuming docker_images: BTreeMap<String, Vec<i32>>
+        let mut tfvars_file_docker = tempfile::Builder::new()
+            .suffix(".tfvars.json")
+            .tempfile()
+            .unwrap();
+        to_writer_pretty(
+            tfvars_file_docker.as_file_mut(),
+            &serde_json::json!({
+                "docker_images": docker_images,
+            }),
+        )
+        .unwrap();
+
+        let tfvars_path_docker = tfvars_file_docker.path().to_str().unwrap();
         std::process::Command::new("terraform")
             .arg("apply")
             .arg("-var-file")
             .arg(terraform_vars_file)
             .arg("-var")
             .arg(format!("shutdown_and_reset={}", self.shutdown_and_reset))
-            .arg("-var")
-            .arg(format!("docker_image={}", docker_image))
+            .arg("-var-file")
+            .arg(tfvars_path_docker)
             .current_dir(&infra_dir)
             .env("NOMAD_ADDR", &nomad_server_url)
             .print_and_run();
