@@ -42,6 +42,7 @@ use primitives::{
     tee::{
         code_hash::{CodeHash, CodeHashesVotes},
         proposal::TeeProposal,
+        quote::verify_codehash,
         quote::{get_collateral, TeeQuote},
     },
     thresholds::{Threshold, ThresholdParameters},
@@ -52,10 +53,13 @@ use v0_state::MpcContractV0;
 
 // Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
+
 // Register used to receive data id from `promise_await_data`.
 const DATA_ID_REGISTER: u64 = 0;
+
 // Prepaid gas for a `return_signature_and_clean_state_on_success` call
 const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(5);
+
 // Prepaid gas for a `update_config` call
 const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 
@@ -85,7 +89,21 @@ impl TeeState {
         &mut self,
         _code_hash: CodeHash,
         expected_rtmr3: &[u8; 48],
+        raw_tcb_info: String,
     ) -> bool {
+        // self.historical_tee_proposals
+        //     .iter()
+        //     .chain(
+        //         self.allowed_tee_proposals
+        //             .get(env::block_height())
+        //             .iter()
+        //             .map(|entry| &entry.proposal),
+        //     )
+        //     .any(|proposal| proposal.tee_quote.get_rtmr3().unwrap() == *expected_rtmr3)
+        // TODO TODO TODO should be:
+        // .any(|proposal| hash(proposal.tee_quote.get_rtmr3().unwrap() || code_hash) == *expected_rtmr3)
+        let expected_rtmr3 = hex::encode(expected_rtmr3);
+        let code_hash = verify_codehash(raw_tcb_info, expected_rtmr3);
         self.historical_tee_proposals
             .iter()
             .chain(
@@ -94,9 +112,7 @@ impl TeeState {
                     .iter()
                     .map(|entry| &entry.proposal),
             )
-            .any(|proposal| proposal.tee_quote.get_rtmr3().unwrap() == *expected_rtmr3)
-        // TODO TODO TODO should be:
-        // .any(|proposal| hash(proposal.tee_quote.get_rtmr3().unwrap() || code_hash) == *expected_rtmr3)
+            .any(|proposal| proposal.code_hash.as_hex() == code_hash)
     }
 
     pub fn whitelist_tee_proposal(&mut self, tee_proposal: TeeProposal) {
@@ -258,6 +274,7 @@ impl MpcContract {
         code_hash: CodeHash,
         tee_quote: &[u8],
         tee_collateral: String,
+        raw_tcb_info: String,
     ) -> Result<(), Error> {
         // Ensure the protocol is in the Running state
         let ProtocolContractState::Running(state) = &self.protocol_state else {
@@ -292,7 +309,7 @@ impl MpcContract {
         if votes >= self.threshold()?.value()
             && self
                 .tee_state
-                .is_code_hash_allowed(code_hash, &expected_rtmr3)
+                .is_code_hash_allowed(code_hash, &expected_rtmr3, raw_tcb_info)
         {
             self.tee_state.whitelist_tee_proposal(tee_proposal);
         }
@@ -824,17 +841,21 @@ impl VersionedMpcContract {
         code_hash: CodeHash,
         tee_quote: &[u8],
         tee_collateral: String,
+        raw_tcb_info: String,
     ) -> Result<(), Error> {
         log!(
-            "vote_code_hash: signer={}, code_hash={:?}, tee_quote={:?}, tee_collateral={:?}",
+            "vote_code_hash: signer={}, code_hash={:?}, tee_quote={:?}, tee_collateral={:?}, raw_tcb_info={:?}",
             env::signer_account_id(),
             code_hash,
             tee_quote,
             tee_collateral,
+            raw_tcb_info,
         );
         self.voter_or_panic();
         match self {
-            Self::V1(contract) => contract.vote_code_hash(code_hash, tee_quote, tee_collateral)?,
+            Self::V1(contract) => {
+                contract.vote_code_hash(code_hash, tee_quote, tee_collateral, raw_tcb_info)?
+            }
             _ => env::panic_str("expected V1"),
         }
         Ok(())

@@ -10,6 +10,13 @@ use super::proposal::TeeProposal;
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct CodeHash([u8; 32]);
 
+impl CodeHash {
+    /// Returns the byte array representation of the `CodeHash`.
+    pub fn as_hex(&self) -> String {
+        hex::encode(self.0)
+    }
+}
+
 /// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
 /// a code hash to add.
 #[near(serializers=[borsh, json])]
