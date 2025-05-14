@@ -13,6 +13,7 @@ pub mod v0_state;
 use std::time::SystemTime;
 
 use crate::errors::Error;
+use crate::primitives::tee::proposal::AllowedTeeProposals;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
 use config::{Config, InitConfig};
 use crypto_shared::{
@@ -31,15 +32,18 @@ use near_sdk::{
     env::{self, ed25519_verify},
     log, near, near_bindgen,
     store::LookupMap,
-    AccountId, BlockHeight, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise,
-    PromiseError, PromiseOrValue, PublicKey,
+    AccountId, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise, PromiseError,
+    PromiseOrValue, PublicKey,
 };
 use primitives::{
-    code_hash::{CodeHash, CodeHashesVotes, TeeProposal, TeeQuote},
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
-    tee::get_collateral,
+    tee::{
+        code_hash::{CodeHash, CodeHashesVotes},
+        proposal::TeeProposal,
+        quote::{get_collateral, TeeQuote},
+    },
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
@@ -54,8 +58,6 @@ const DATA_ID_REGISTER: u64 = 0;
 const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(5);
 // Prepaid gas for a `update_config` call
 const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
-// Maximum time after which TEE MPC nodes must be upgraded to the latest version
-const TEE_UPGRADE_PERIOD: BlockHeight = 604800; // ~7 days
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
@@ -71,82 +73,6 @@ impl Default for VersionedMpcContract {
 }
 
 #[near(serializers=[borsh])]
-#[derive(Debug, Clone)]
-pub struct AllowedTeeProposal {
-    proposal: TeeProposal,
-    added: BlockHeight,
-}
-
-#[near(serializers=[borsh])]
-#[derive(Debug, Default)]
-pub struct AllowedTeeProposals {
-    /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
-    /// lazily cleaned up during insertions and lookups.
-    allowed_tee_proposals: Vec<AllowedTeeProposal>,
-}
-
-impl AllowedTeeProposals {
-    /// Removes all expired code hashes and returns the number of removed entries.
-    fn clean(&mut self, current_block_height: BlockHeight) -> usize {
-        // Find the first non-expired entry
-        let expired_count = self
-            .allowed_tee_proposals
-            .iter()
-            .position(|entry| entry.added + TEE_UPGRADE_PERIOD >= current_block_height)
-            .unwrap_or(self.allowed_tee_proposals.len());
-
-        // Remove all expired entries
-        self.allowed_tee_proposals.drain(0..expired_count);
-
-        // Return the number of removed entries
-        expired_count
-    }
-
-    /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
-    /// order by `added` (ascending). Returns `true` if the insertion was successful, `false` if the
-    /// code hash already exists.
-    pub fn insert(&mut self, code_hash: CodeHash, tee_quote: TeeQuote) -> bool {
-        // Clean expired entries
-        let current_block_height = env::block_height();
-        self.clean(current_block_height);
-
-        // Check if the code hash already exists
-        if self
-            .allowed_tee_proposals
-            .iter()
-            .any(|entry| entry.proposal.code_hash == code_hash)
-        {
-            return false;
-        }
-
-        // Create the new entry
-        let new_entry = AllowedTeeProposal {
-            proposal: TeeProposal {
-                code_hash: code_hash.clone(),
-                tee_quote,
-            },
-            added: current_block_height,
-        };
-
-        // Find the correct position to maintain sorted order by `added`
-        let insert_index = self
-            .allowed_tee_proposals
-            .iter()
-            .position(|entry| new_entry.added <= entry.added)
-            .unwrap_or(self.allowed_tee_proposals.len());
-
-        // Insert at the correct position
-        self.allowed_tee_proposals.insert(insert_index, new_entry);
-        true
-    }
-
-    pub fn get(&mut self, current_block_height: BlockHeight) -> Vec<AllowedTeeProposal> {
-        self.clean(current_block_height);
-        self.allowed_tee_proposals.clone()
-    }
-}
-
-#[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct TeeState {
     allowed_tee_proposals: AllowedTeeProposals,
@@ -155,12 +81,16 @@ pub struct TeeState {
 }
 
 impl TeeState {
-    pub fn is_code_hash_allowed(&self, _code_hash: CodeHash, expected_rtmr3: &[u8; 48]) -> bool {
+    pub fn is_code_hash_allowed(
+        &mut self,
+        _code_hash: CodeHash,
+        expected_rtmr3: &[u8; 48],
+    ) -> bool {
         self.historical_tee_proposals
             .iter()
             .chain(
                 self.allowed_tee_proposals
-                    .allowed_tee_proposals
+                    .get(env::block_height())
                     .iter()
                     .map(|entry| &entry.proposal),
             )
@@ -172,8 +102,11 @@ impl TeeState {
     pub fn whitelist_tee_proposal(&mut self, tee_proposal: TeeProposal) {
         self.votes.clear_votes();
         self.historical_tee_proposals.push(tee_proposal.clone());
-        self.allowed_tee_proposals
-            .insert(tee_proposal.code_hash, tee_proposal.tee_quote);
+        self.allowed_tee_proposals.insert(
+            tee_proposal.code_hash,
+            tee_proposal.tee_quote,
+            env::block_height(),
+        );
     }
 }
 

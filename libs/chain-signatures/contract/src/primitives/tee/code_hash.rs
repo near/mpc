@@ -1,43 +1,14 @@
-use anyhow::Result;
-use dcap_qvl::quote::Quote;
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
-use super::key_state::AuthenticatedParticipantId;
+use crate::primitives::key_state::AuthenticatedParticipantId;
+
+use super::proposal::TeeProposal;
 
 /// Hash of a Docker image running in the TEE environment.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct CodeHash([u8; 32]);
-
-/// Remote Attestation TDX quote.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct TeeQuote(Vec<u8>);
-
-impl TeeQuote {
-    pub fn new(data: Vec<u8>) -> Self {
-        TeeQuote(data)
-    }
-
-    pub fn get_quote(&self) -> Result<Quote> {
-        Quote::parse(&self.0)
-    }
-
-    pub fn get_rtmr3(&self) -> Result<[u8; 48]> {
-        let quote = self.get_quote()?;
-        Ok(quote.report.as_td10().unwrap().rt_mr3)
-    }
-}
-
-/// Proposal for a new TEE code hash to be added to the whitelist, along with the TEE quote that
-/// includes the RTMR3 measurement among others.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct TeeProposal {
-    pub code_hash: CodeHash,
-    pub tee_quote: TeeQuote,
-}
 
 /// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
 /// a code hash to add.

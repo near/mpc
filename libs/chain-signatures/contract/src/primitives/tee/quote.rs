@@ -1,5 +1,27 @@
-use dcap_qvl::QuoteCollateralV3;
+use anyhow::Result;
+use dcap_qvl::{quote::Quote, QuoteCollateralV3};
+use near_sdk::near;
 use serde_json::Value;
+
+/// Remote Attestation TDX quote.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct TeeQuote(Vec<u8>);
+
+impl TeeQuote {
+    pub fn new(data: Vec<u8>) -> Self {
+        TeeQuote(data)
+    }
+
+    pub fn get_quote(&self) -> Result<Quote> {
+        Quote::parse(&self.0)
+    }
+
+    pub fn get_rtmr3(&self) -> Result<[u8; 48]> {
+        let quote = self.get_quote()?;
+        Ok(quote.report.as_td10().unwrap().rt_mr3)
+    }
+}
 
 /// Parses the raw JSON string into a QuoteCollateralV3 structure.
 pub fn get_collateral(raw: String) -> QuoteCollateralV3 {

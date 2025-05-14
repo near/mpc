@@ -1,11 +1,12 @@
 use crate::{
     errors::{Error, InvalidCandidateSet, InvalidParameters},
     legacy_contract_state,
-    primitives::tee::get_collateral,
 };
 use dcap_qvl::verify::{self, VerifiedReport};
 use near_sdk::{log, near, AccountId, PublicKey};
 use std::{collections::BTreeSet, fmt::Display, time::SystemTime};
+
+use super::tee::quote::get_collateral;
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
@@ -268,11 +269,10 @@ impl From<legacy_contract_state::Candidates> for Participants {
 
 #[cfg(test)]
 pub mod tests {
-
     use crate::legacy_contract_state;
-    use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::{
-        gen_accounts_and_info, gen_legacy_candidates, gen_legacy_participants,
+    use crate::primitives::{
+        participants::{ParticipantId, Participants},
+        test_utils::{gen_accounts_and_info, gen_legacy_candidates, gen_legacy_participants},
     };
     use rand::Rng;
 
