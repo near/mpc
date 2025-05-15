@@ -303,6 +303,8 @@ fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> 
         sign_pk: near_sdk::PublicKey::from_str(&mpc_setup.p2p_private_key.public_key().to_string())
             .unwrap(),
         url: format!("http://mpc-node-{}.service.mpc.consul:3000", index),
+        tee_quote: vec![],
+        quote_collateral: String::new(),
     }
 }
 
