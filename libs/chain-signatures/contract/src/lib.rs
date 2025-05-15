@@ -839,7 +839,7 @@ impl VersionedMpcContract {
     pub fn vote_code_hash(
         &mut self,
         code_hash: CodeHash,
-        tee_quote: &[u8],
+        tee_quote: Vec<u8>,
         tee_collateral: String,
         raw_tcb_info: String,
     ) -> Result<(), Error> {
@@ -853,9 +853,12 @@ impl VersionedMpcContract {
         );
         self.voter_or_panic();
         match self {
-            Self::V1(contract) => {
-                contract.vote_code_hash(code_hash, tee_quote, tee_collateral, raw_tcb_info)?
-            }
+            Self::V1(contract) => contract.vote_code_hash(
+                code_hash,
+                tee_quote.as_slice(),
+                tee_collateral,
+                raw_tcb_info,
+            )?,
             _ => env::panic_str("expected V1"),
         }
         Ok(())
