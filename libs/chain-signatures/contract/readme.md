@@ -1,35 +1,143 @@
 # MPC Contract
 
-This folder contains the code for the **MPC Contract**, which is deployed on the NEAR blockchain.
+This folder contains the code for the **MPC Contract**, which is deployed on the [NEAR blockchain](https://nearblocks.io/address/v1.signer).
 
-The contract aims to reflect the current state of the MPC-Network and allows users to submit signature requests via the `sign` [endpoint](#user-api).
+This code will be moved to its own repository in the near future (c.f. [issue #417](https://github.com/Near-One/mpc/issues/417)).
 
-**Benchmarks:**
+**Role of the contract in Chain Signatures:**
 
-| Contract | avg. receipts | avg. gas [Tgas]   |
-| -------- | ------------- | ----------------- |
-| V0       | 8             | 11.30479597562405 |
-| V1       | 4             | 6.131075775468398 |
-| V2       | tbd           | tbd               |
+This contract serves as an API-endpoint to the MPC network. Users can submit signature requests via this contract and MPC Participants can vote on changes to the MPC network, such as:
 
-**Migration Considerations:** Migration from `V1` to `V2` will not affect how **users** interact with the contract, but
-will require the **MPC nodes** to switch to the newer compatible version at the same time.
+- Changing the set of MPC participants
+- Adjusting the crypographic threshold
+- Generating new distributed keys
+- Updating the contract code
 
-### State and Lifecycle
 
-The contract state tracks pending signature requests, the current configuration of the contract as well as any updates to the contract that are proposed by Participants of the MPC-Network via the `update` [endpoint](#participants-api).
+**Contract State**
 
-```Rust
-pub struct MpcContract {
-    protocol_state: ProtocolContractState,
-    pending_requests: LookupMap<SignatureRequest, YieldIndex>,
-    request_by_block_height: Vector<(u64, SignatureRequest)>,
-    proposed_updates: ProposedUpdates,
-    config: Config,
+The contract tracks the following information:
+- Pending signature requests
+- Current participant set of the MPC network
+- Current set of keys managed by the MPC network (each key is associated to a unique `domain_id`)
+- (Currently unused) metadata related to trusted execution environments
+- Current protocol state of the MPC network (see [Protocol State and Lifecycle](#protocol-state-and-lifecycle).
+
+
+
+## Usage
+
+### Submitting a signature Request
+
+Users can submit a signature request to the MPC network via the `sign` endpoint of this contract. Note that a **deposit of 1 yoctonear is required** to prevent abuse by malicious frontends.
+
+The sign request takes the following arguments:
+* `path` (String): the derivation path (used for key-derivation).
+* `payload_v2`: either
+   * `{"Ecdsa": "<hex encoded 32 bytes>"}` or
+   * `{"Eddsa": "<hex encoded between 32 and 1232 bytes>"}`
+* `domain_id` (integer): identidief the key and signature scheme to use for signing.
+
+Submitting a signature request costs approximately 7 Tgas, but the contract requires that at least 10 Tgas are attached to the transaction.
+
+
+**Example**
+
+_ECDSA Signature Request_
+```Json
+{
+  "request": {
+    "payload_v2": {
+      "Ecdsa": "521da91dc9bddb625bd0679d9e735def558761a34653624f5954f44bce6443a9"
+    },
+    "path": "sepolia-1",
+    "domain_id": 0
+  }
 }
 ```
 
-The **Protocol State** of the contract should reflect the state of the MPC-Network:
+_EDDSA Signature Request_
+```Json
+{
+  "request": {
+    "payload_v2": {
+      "Eddsa": "521da91dc9bddb625bd0679d9e735def558761a34653624f5954f44bce6443a9"
+    },
+    "path": "sepolia-1",
+    "domain_id": 0
+  }
+}
+```
+
+Note that the signature scheme of the key associated to `domain_id` must match the signature scheme indicated in the payload. E.g. if key with `domain_id` 0 was a Ecdsa key, the latter example would not succeed.
+
+### Changing the participant set
+
+The set of MPC participants can be changed, subject to following restrictions:
+- There must at least be `thershold` (the current threshold) number of current participants in the prospective participant set.
+- The prospective threshold must be at least 60% of the number of participants (rounded upwards).
+- The set of participants must have at least two participants.
+
+In order for a change to be accepted by the contract, all prospective participants must vote for it using the `vote_new_participants` endpoint. Note that any new participants vote will only be accepted after at least `threshold` (the current threshold) old participants voted for the same participant set.
+
+
+**Example**
+```Json
+{
+  "prospective_epoch_id":1,
+  "proposal":{
+    "threshold":3,
+    "participants":{
+      "next_id":2,
+      "participants":[
+        [
+          "mpc-participant0.near",
+          0,
+          {
+            "sign_pk":"ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
+            "url":"http://mpc-service0.com"
+          }
+        ],
+        [
+          "mpc-participant1.near",
+          1,
+          {
+            "sign_pk":"ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
+            "url":"http://mpc-service1.com"
+          }
+        ]
+      ]
+    }
+  }
+}
+
+
+```
+### Adding a Key
+To generate a new threshold signature key, all participants must vote for it to be added via `vote_new_domain`. Only votes from existing participants will be accepted.
+
+```Json
+{
+  "domains":[
+    {
+      "id":2,
+      "scheme":"Secp256k1"
+    },
+    {
+      "id":3,
+      "scheme":"Ed25519"
+    }
+  ]
+}
+```
+
+
+### Protocol State and Lifecycle
+
+After deploying the contract, it will first be in an uninitialized state. The owner will need to initialize it via `init`, providing the set of participants and threshold parameters.
+
+The contract will then switch to running state, where further operations (like initializing keys, or changing the participant set), can be taken.
+
 ```mermaid
 stateDiagram-v2
     direction LR
@@ -43,12 +151,14 @@ stateDiagram-v2
     Resharing --> Resharing : vote_new_parameters
 ```
 
+
+
 ### Contract API
 #### User API
 
 | Function                                                                                     | Behavior                                                                                                 | Return Value               | Gas requirement | Effective Gas Cost |
 | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------- | --------------- | ------------------ |
-| `sign(request: SignRequestArgs)`                                                             | Submits a signature request to the contract. Requires a deposit of 1 yoctonear. Re-submitting the same request before the original request timed out or has been responded to may cause both requests to fail. | deferred to promise        | `10 Tgas`       | `~6 Tgas`          |
+| `sign(request: SignRequestArgs)`                                                             | Submits a signature request to the contract. Requires a deposit of 1 yoctonear. Re-submitting the same request before the original request timed out or has been responded to may cause both requests to fail. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
 | `public_key(domain: Option<DomainId>)`                                                       | Read-only function; returns the public key used for the given domain (defaulting to first).              | `Result<PublicKey, Error>` |                 |                    |
 | `derived_public_key(path: String, predecessor: Option<AccountId>, domain: Option<DomainId>)` | Generates a derived public key for a given path and account, for the given domain (defaulting to first). | `Result<PublicKey, Error>` |                 |                    |
 
