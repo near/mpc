@@ -961,7 +961,6 @@ impl VersionedMpcContract {
                 // previous state.
                 pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
                 // This inherits the previous proposed updates map.
-                // TODO(#318): This is problematic.
                 proposed_updates: ProposedUpdates::default(),
                 tee_state: TeeState {
                     allowed_code_hashes: AllowedCodeHashes::default(),
