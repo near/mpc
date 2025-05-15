@@ -6,7 +6,7 @@ This repository contains the code for the Near mpc node. It is a rewrite of [Nea
 - **Chain signatures**: This repository contains squashed subtrees of the `contract` and `crypto-shared` folder from [near/mpc/chain-signatures](https://github.com/near/mpc/tree/develop/chain-signatures), required for integration tests.
 - **Other Dependencies**: All other dependencies are handled by Cargo.
 
-### How it works
+### How it works2
 
 There are two main parts of the binary: NEAR indexer and mpc signing:
 - NEAR Indexer: this is a NEAR node that tracks the shard where the signing smart contract is on. For mainnet, it is `v1.signer`.
