@@ -1,9 +1,9 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts};
 use crate::cli::{
-    MpcDeployContractCmd, MpcDescribeCmd, MpcProposeUpdateContractCmd, MpcViewContractCmd,
-    MpcVoteAddDomainsCmd, MpcVoteNewParametersCmd, MpcVoteUpdateCmd, NewMpcNetworkCmd,
-    RemoveContractCmd, UpdateMpcNetworkCmd,
+    ListMpcCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcProposeUpdateContractCmd,
+    MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteNewParametersCmd, MpcVoteUpdateCmd,
+    NewMpcNetworkCmd, RemoveContractCmd, UpdateMpcNetworkCmd,
 };
 use crate::constants::{ONE_NEAR, TESTNET_CONTRACT_ACCOUNT_ID};
 use crate::devnet::OperatingDevnetSetup;
@@ -102,6 +102,16 @@ async fn update_mpc_network(
         .map(|account| account.ensure_have_n_access_keys(mpc_setup.num_responding_access_keys))
         .collect::<Vec<_>>();
     futures::future::join_all(futs).await;
+}
+
+impl ListMpcCmd {
+    pub async fn run(&self, config: ParsedConfig) {
+        let setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mpc_setups = &setup.mpc_setups;
+        for (name, setup) in mpc_setups {
+            println!("{}: {}", name, setup);
+        }
+    }
 }
 
 impl NewMpcNetworkCmd {

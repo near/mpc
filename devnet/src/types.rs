@@ -61,6 +61,43 @@ pub struct MpcNetworkSetup {
     pub nomad_server_url: Option<String>,
 }
 
+impl fmt::Display for MpcNetworkSetup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "MPC Network Setup:")?;
+        writeln!(f, "  Participants:")?;
+        for (i, participant) in self.participants.iter().enumerate() {
+            writeln!(f, "    {}: {}", i + 1, participant)?;
+        }
+
+        if let Some(contract) = &self.contract {
+            writeln!(f, "  Contract: {}", contract)?;
+        } else {
+            writeln!(f, "  Contract: None")?;
+        }
+
+        writeln!(
+            f,
+            "  Desired Balance per Account: {}",
+            self.desired_balance_per_account
+        )?;
+        writeln!(
+            f,
+            "  Number of Responding Access Keys: {}",
+            self.num_responding_access_keys
+        )?;
+        writeln!(
+            f,
+            "  Desired Balance per Responding Account: {}",
+            self.desired_balance_per_responding_account
+        )?;
+
+        match &self.nomad_server_url {
+            Some(url) => writeln!(f, "  Nomad Server URL: {}", url),
+            None => writeln!(f, "  Nomad Server URL: None"),
+        }
+    }
+}
+
 /// Local state for a single loadtest setup.
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct LoadtestSetup {

@@ -1,7 +1,7 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccessKey, OperatingAccounts};
 use crate::cli::{
-    DeployParallelSignContractCmd, DrainExpiredRequestsCmd, LoadtestList, NewLoadtestCmd,
+    DeployParallelSignContractCmd, DrainExpiredRequestsCmd, ListLoadtestCmd, NewLoadtestCmd,
     RunLoadtestCmd, UpdateLoadtestCmd,
 };
 use crate::constants::{DEFAULT_PARALLEL_SIGN_CONTRACT_PATH, ONE_NEAR};
@@ -92,7 +92,7 @@ impl NewLoadtestCmd {
     }
 }
 
-impl LoadtestList {
+impl ListLoadtestCmd {
     pub async fn run(&self, config: ParsedConfig) {
         let setup = OperatingDevnetSetup::load(config.rpc).await;
         let loadtest_setups = &setup.loadtest_setups;

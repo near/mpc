@@ -1,9 +1,11 @@
 rpcs:
-  - url: http://replace_me:3030
+  # replace with something more powerful if required
+  - url: https://rpc.testnet.near.org
     rate_limit: 5
-    max_concurrency: 30
+    max_concurrency: 1
 
-infra_ops_path: /replace_me/infra-ops
+# replace below
+infra_ops_path: ../../infra-ops 
 
 # Optional own funding account
 # funding_account:
