@@ -9,10 +9,7 @@ use crate::{
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
-        permanent::{
-            LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend,
-            PermanentKeyshareData,
-        },
+        permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
         GcpPermanentKeyStorageConfig, KeyStorageConfig,
     },
     p2p::testing::{generate_test_p2p_configs, PortSeed},
@@ -451,6 +448,7 @@ impl ExportKeyshareCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keyshare::permanent::LegacyRootKeyshareData;
     use k256::{AffinePoint, Scalar};
     use mpc_contract::primitives::key_state::EpochId;
     use tempfile::TempDir;
