@@ -7,7 +7,6 @@ concurrency:
 on:
   workflow_dispatch:
   pull_request:
-  push:
   merge_group:
     
 
