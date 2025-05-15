@@ -19,11 +19,11 @@ pub struct ParticipantInfo {
     /// The public key used for verifying messages.
     pub sign_pk: PublicKey,
     /// TEE Remote Attestation Quote that proves the participant's identity.
-    tee_quote: Vec<u8>,
+    pub tee_quote: Vec<u8>,
     /// Supplemental data for the TEE quote, including Intel certificates to verify it came from
     /// genuine Intel hardware, along with details about the Trusted Computing Base (TCB)
     /// versioning, status, and other relevant info.
-    quote_collateral: String,
+    pub quote_collateral: String,
 }
 
 impl ParticipantInfo {
@@ -31,7 +31,7 @@ impl ParticipantInfo {
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("Failed to get current time")
-            .as_secs() as u64;
+            .as_secs();
         let tee_collateral = get_collateral(self.quote_collateral.clone());
         let verification_result = verify::verify(&self.tee_quote, &tee_collateral, now);
         verification_result.map_err(|_| InvalidCandidateSet::InvalidParticipantsTeeQuote.into())

@@ -62,6 +62,8 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
         ParticipantInfo {
             url: format!("near{}", i),
             sign_pk: bogus_ed25519_near_public_key(),
+            tee_quote: vec![],
+            quote_collateral: String::new(),
         },
     )
 }

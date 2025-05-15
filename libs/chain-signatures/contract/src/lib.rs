@@ -285,7 +285,7 @@ impl MpcContract {
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("Failed to get current time")
-            .as_secs() as u64;
+            .as_secs();
         let collateral = get_collateral(tee_collateral);
         let verification_result =
             verify::verify(tee_quote, &collateral, now).map_err(|err: anyhow::Error| {
