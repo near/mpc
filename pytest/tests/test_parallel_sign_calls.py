@@ -22,7 +22,7 @@ def load_parallel_sign_contract() -> bytearray:
     """
     returns test contract for parallel sign
     """
-    path = constants.MPC_REPO_DIR / 'pytest/tests/test_contracts/parallel/res/contract-0.2.0.wasm'
+    path = constants.MPC_REPO_DIR / 'pytest/tests/test_contracts/parallel/res/contract.wasm'
     return load_binary_file(path)
 
 
