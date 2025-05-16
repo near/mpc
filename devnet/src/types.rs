@@ -2,6 +2,7 @@ use crate::rpc::NearRpcClients;
 use core::fmt;
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -59,6 +60,25 @@ pub struct MpcNetworkSetup {
     pub num_responding_access_keys: usize,
     pub desired_balance_per_responding_account: u128,
     pub nomad_server_url: Option<String>,
+    #[serde(default)]
+    pub ssd: bool,
+}
+
+impl MpcNetworkSetup {
+    pub async fn nomad_is_ready(&self) -> bool {
+        let ip = self.nomad_server_url.clone().unwrap();
+        let client = Client::new();
+        match tokio::join!(
+            client.get(format!("{}/v1/status/leader", ip)).send(),
+            client.get(format!("{}/v1/status/peers", ip)).send()
+        ) {
+            (Ok(leader), Ok(peers)) => {
+                leader.status() == reqwest::StatusCode::UNAUTHORIZED
+                    && peers.status() == reqwest::StatusCode::UNAUTHORIZED
+            }
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for MpcNetworkSetup {
@@ -91,6 +111,7 @@ impl fmt::Display for MpcNetworkSetup {
             self.desired_balance_per_responding_account
         )?;
 
+        writeln!(f, " Using SSD: {}", self.ssd)?;
         match &self.nomad_server_url {
             Some(url) => writeln!(f, "  Nomad Server URL: {}", url),
             None => writeln!(f, "  Nomad Server URL: None"),
@@ -150,6 +171,7 @@ pub struct RpcConfig {
     pub max_concurrency: usize,
 }
 
+#[derive(Clone)]
 pub struct ParsedConfig {
     pub rpc: Arc<NearRpcClients>,
     pub infra_ops_path: PathBuf,

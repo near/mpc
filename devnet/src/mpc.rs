@@ -116,11 +116,12 @@ impl ListMpcCmd {
 
 impl NewMpcNetworkCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        println!("Going to create MPC network {} with {} maximum participants, {} NEAR per account, and {} additional access keys per participant for responding",
+        println!("Going to create MPC network {} with {} maximum participants, {} NEAR per account, and {} additional access keys per participant for responding. Using SSD: {}",
             name,
             self.num_participants,
             self.near_per_account,
             self.num_responding_access_keys,
+            self.ssd
         );
 
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
@@ -137,6 +138,7 @@ impl NewMpcNetworkCmd {
                 num_responding_access_keys: self.num_responding_access_keys,
                 desired_balance_per_responding_account: self.near_per_responding_account * ONE_NEAR,
                 nomad_server_url: None,
+                ssd: self.ssd,
             });
         update_mpc_network(
             name,
@@ -692,6 +694,29 @@ impl MpcVoteNewParametersCmd {
                     println!("Participant {} vote_new_parameters failed: {:?}", i, err);
                 }
             }
+        }
+    }
+}
+
+pub async fn domains_ready(
+    accounts: &OperatingAccounts,
+    contract: &AccountId,
+    expected_domain_ids: &[u64],
+) -> bool {
+    let contract_state = read_contract_state_v2(accounts, contract).await;
+    match contract_state {
+        mpc_contract::state::ProtocolContractState::Running(state) => {
+            expected_domain_ids.iter().all(|expected_id| {
+                state
+                    .domains
+                    .domains()
+                    .iter()
+                    .any(|domain| domain.id.0 == *expected_id)
+            })
+        }
+        _ => {
+            print!("Network not in running state");
+            false
         }
     }
 }

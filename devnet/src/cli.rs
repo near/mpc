@@ -1,6 +1,14 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
-use crate::types::load_config;
+use reqwest::Client;
+use tokio::time;
+
+use crate::{
+    describe::TerraformInfraShowOutput,
+    devnet::OperatingDevnetSetup,
+    terraform::State,
+    types::{load_config, ParsedConfig},
+};
 
 #[derive(clap::Parser)]
 pub enum Cli {
@@ -10,6 +18,8 @@ pub enum Cli {
     Loadtest(LoadtestCmd),
     /// List loadtests or mpc networks
     List(ListCmd),
+    /// Runs a simple cluster
+    E2E(SimpleClusterTestCmd),
 }
 
 impl Cli {
@@ -88,6 +98,9 @@ impl Cli {
                     cmd.run(config).await;
                 }
             },
+            Cli::E2E(cmd) => {
+                cmd.run().await;
+            }
         }
     }
 }
@@ -172,9 +185,49 @@ pub enum LoadtestSubCmd {
     DrainExpiredRequests(DrainExpiredRequestsCmd),
 }
 
+//#[derive(clap::Parser)]
+//pub struct TestDockerUpdateCmd {
+//    /// Deploys a cluster of two nodes with threshold two.
+//    /// tests the update from docker_begin to docker_end, one by one.
+//    /// Tracks:
+//    /// - number of succesful signatures with docker_begin,
+//    /// - number of successful signature requests with docker_begin & docker_end
+//    /// - number of succesful signaturse with docker_end
+//    /// (as percentage)
+//    ///
+//}
+
+/// Deploys a cluster of two nodes with threshold two.
+/// tests the update from contract_begin to contract_end, one by one.
+/// Tracks:
+/// - number of succesful signatures with docker_begin,
+/// - number of successful signature requests with docker_begin & docker_end
+/// - number of succesful signaturse with docker_end
+/// (as percentage)
+#[derive(clap::Parser)]
+pub struct SimpleClusterTestCmd {
+    #[clap(long)]
+    pub name: String,
+    #[clap(long)]
+    pub num_participants: usize,
+    #[clap(long)]
+    pub threshold: u64,
+    #[clap(long)]
+    pub contract_path: Option<String>,
+    // default to latest release
+    #[clap(long)]
+    pub docker_image_start: Option<String>,
+    //    // default to current main
+    //    #[clap(long)]
+    //    pub docker_image_end: Option<String>,
+    //    #[clap(long, default_value = "false")]
+    //    pub atomic_update: bool,
+    //    add key derivation path test.
+}
+
 #[derive(clap::Parser)]
 pub struct NewMpcNetworkCmd {
-    /// Number of participants that will participant in the network at some point. This can be
+    /// Number of participants that will participate in the network at some point. This can be
     /// increased later, but it's recommended to pick the highest number you intend to use,
     /// because initializing new machines is slow.
     #[clap(long)]
@@ -191,6 +244,9 @@ pub struct NewMpcNetworkCmd {
     /// higher amounts here.
     #[clap(long, default_value = "1")]
     pub near_per_responding_account: u128,
+    /// Indicates if the machines should be using SSD
+    #[clap(long, default_value = "false")]
+    pub ssd: bool,
 }
 
 #[derive(clap::Parser)]
@@ -221,10 +277,6 @@ pub struct MpcDeployContractCmd {
     /// The number of NEAR to deposit into the contract account, for storage deposit.
     #[clap(long, default_value = "20")]
     pub deposit_near: u128,
-    /// Maximum number of requests to remove per signature request; reduce this to
-    /// optimize gas cost for signature requests.
-    #[clap(long)]
-    pub max_requests_to_remove: Option<u32>,
 }
 
 #[derive(clap::Parser)]
@@ -385,6 +437,9 @@ pub struct RunLoadtestCmd {
     /// Domain ID. If missing, use legacy signature format.
     #[clap(long)]
     pub domain_id: Option<u64>,
+    /// Duration for loadtest (in seconds).
+    #[clap(long)]
+    pub duration: Option<u64>,
 }
 
 #[derive(clap::Parser)]

@@ -1,17 +1,15 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 
-mod describe;
-
 use crate::account::OperatingAccounts;
 use crate::cli::{
     MpcDescribeCmd, MpcTerraformDeployInfraCmd, MpcTerraformDeployNomadCmd,
     MpcTerraformDestroyInfraCmd,
 };
 use crate::constants::DEFAULT_MPC_DOCKER_IMAGE;
+use crate::describe::TerraformInfraShowOutput;
 use crate::devnet::OperatingDevnetSetup;
 use crate::types::{MpcNetworkSetup, ParsedConfig};
 use anyhow::anyhow;
-use describe::TerraformInfraShowOutput;
 use near_crypto::{PublicKey, SecretKey};
 use near_sdk::AccountId;
 use serde::Serialize;
@@ -19,7 +17,6 @@ use serde_json::to_writer_pretty;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
-use tempfile::NamedTempFile;
 
 /// Creates a {name}.tfvars.json file in the current directory with the Terraform variables
 /// needed by the infra-ops scripts.
@@ -64,6 +61,7 @@ async fn export_terraform_vars(
         cluster_prefix: name.to_string(),
         mpc_nodes,
         mpc_contract_signer: contract,
+        ssd: mpc_setup.ssd,
     };
     let terraform_file = serde_json::to_string_pretty(&terraform_file).unwrap();
     let current_dir = std::env::current_dir().unwrap();
@@ -78,6 +76,7 @@ struct TerraformFile {
     cluster_prefix: String,
     mpc_nodes: Vec<TerraformMpcNode>,
     mpc_contract_signer: AccountId,
+    ssd: bool,
 }
 
 #[derive(Serialize)]
@@ -99,7 +98,7 @@ pub struct RespondConfigFile {
 }
 
 impl MpcTerraformDeployInfraCmd {
-    pub async fn run(&self, name: &str, config: ParsedConfig) {
+    pub async fn run(&self, name: &str, config: ParsedConfig) -> MpcNetworkSetup {
         println!(
             "Going to deploy testing cluster infra with Terraform recipes located at {}",
             name,
@@ -165,11 +164,12 @@ impl MpcTerraformDeployInfraCmd {
             .expect("Failed to run terraform output -raw nomad_server_ui");
         let nomad_server_url = String::from_utf8(nomad_server_url.stdout).unwrap();
         mpc_setup.nomad_server_url = Some(nomad_server_url);
+        mpc_setup.clone()
     }
 }
 
 impl MpcTerraformDeployNomadCmd {
-    pub async fn run(&self, name: &str, config: ParsedConfig) {
+    pub async fn run(&self, name: &str, config: ParsedConfig) -> TerraformInfraShowOutput {
         println!(
             "Going to deploy testing cluster Nomad jobs with Terraform recipes located at {}",
             name,
@@ -236,6 +236,15 @@ impl MpcTerraformDeployNomadCmd {
             .current_dir(&infra_dir)
             .env("NOMAD_ADDR", &nomad_server_url)
             .print_and_run();
+
+        let output = std::process::Command::new("terraform")
+            .arg("show")
+            .arg("-json")
+            .current_dir(&infra_dir)
+            .output()
+            .expect("Failed to run terraform show -json");
+
+        serde_json::from_slice(&output.stdout).expect("Failed to parse terraform show output")
     }
 }
 
@@ -279,7 +288,9 @@ impl MpcTerraformDestroyInfraCmd {
     }
 }
 
-enum State {
+#[derive(PartialEq, Debug)]
+pub enum State {
+    Unavailable,
     WaitingForSync,
     Initializing,
     Running,
@@ -305,6 +316,7 @@ impl State {
 impl fmt::Display for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let label = match self {
+            State::Unavailable => "Unavailable",
             State::WaitingForSync => "WaitingForSync",
             State::Initializing => "Initializing",
             State::Running => "Running",
@@ -313,7 +325,52 @@ impl fmt::Display for State {
         write!(f, "{}", label)
     }
 }
+pub async fn get_state(name: &str, config: &ParsedConfig) {
+    // Invoke terraform
+    let infra_ops_path = &config.infra_ops_path;
+    let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
 
+    std::process::Command::new("terraform")
+        .arg("init")
+        .current_dir(&infra_dir)
+        .output()
+        .unwrap();
+
+    std::process::Command::new("terraform")
+        .arg("workspace")
+        .arg("select")
+        .arg("-or-create")
+        .arg(name)
+        .current_dir(&infra_dir)
+        .output()
+        .unwrap();
+
+    let output = std::process::Command::new("terraform")
+        .arg("show")
+        .arg("-json")
+        .current_dir(&infra_dir)
+        .output()
+        .expect("Failed to run terraform show -json");
+
+    let output: TerraformInfraShowOutput =
+        serde_json::from_slice(&output.stdout).expect("Failed to parse terraform show output");
+
+    for resource in &output.values.root_module.resources {
+        if let Some(instance) = resource.as_mpc_nomad_server() {
+            println!(
+                "Nomad server: http://{}",
+                instance.nat_ip().unwrap_or_default()
+            );
+        }
+    }
+    for resource in &output.values.root_module.resources {
+        if let Some(mpc_nomad_client) = resource.as_mpc_nomad_client() {
+            mpc_nomad_client.desc().await;
+            // todo: aggregate states.
+            // track how long it takes for indexer to catch up with blockchain.
+        }
+    }
+}
 impl MpcDescribeCmd {
     pub async fn describe_terraform(&self, name: &str, config: &ParsedConfig) {
         // Invoke terraform

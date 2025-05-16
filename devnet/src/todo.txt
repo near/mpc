@@ -1,0 +1,57 @@
+E2E cluster tests:
+
+### simple cluster:
+Purpose:
+- This is the base test, used for benchmarking. It can serve as a modular piece that tests
+
+Test:
+    1. deploy cluster
+    2. track when cluster ready
+    3. initialize contract
+    4. wait for contract to resume running
+    5. send requests. Track successes / errors
+    6. tear down the cluster
+
+modifs:
+- introduce network hardship
+- really loadtest. Ensure a certain qps is  met for a certain duration.
+
+
+### Test contract update:
+Purpose:
+- Test if a specific node release is compatible with a specific contract release.
+- Test if the contract migration logic works
+- Test if key derivation paths are preserved
+
+Test:
+    - Repeat 1-5.
+    - add a bunch of state
+    - Update contract
+    - ensure update succeeded
+    - repeat 5
+    - tear down cluster
+    - ensure success metrics are met
+    - ensure derivation path is preserved
+
+
+### Test node update:
+Purpose:
+- Test if updating nodes to a different docker image works.
+
+Test:
+    - Repeat 1-5
+    - update nodes 1-1 while sending signature requests
+    - Repeat 5.
+    - tear down cluster
+    - ensure success metrics are met
+    - ensure derivation path is preserved
+
+modifs:
+- introduce network hardship
+
+
+Things to track:
+- throughput
+- time to sync
+- RAM & CPU??
+- successful vs unsucessful signature requests

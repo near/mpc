@@ -21,7 +21,10 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::OwnedMutexGuard;
+use tokio::time::timeout;
 
 /// Bring the loadtest setup to the desired parameterization.
 async fn update_loadtest_setup(
@@ -303,7 +306,7 @@ impl RunLoadtestCmd {
                         &args,
                         300,
                         1,
-                        near_primitives::views::TxExecutionStatus::Included,
+                        near_primitives::views::TxExecutionStatus::Final,
                         false,
                     )
                     .await
@@ -340,7 +343,7 @@ impl RunLoadtestCmd {
                         .unwrap(),
                         10,
                         1,
-                        near_primitives::views::TxExecutionStatus::Included,
+                        near_primitives::views::TxExecutionStatus::Final,
                         false,
                     )
                     .await
@@ -351,6 +354,7 @@ impl RunLoadtestCmd {
             Arc::new(move |key: &mut OperatingAccessKey| {
                 let mpc_contract = mpc_account.clone();
                 async move {
+                    // create a channel to handle response??
                     key.submit_tx_to_call_function(
                         &mpc_contract,
                         "sign",
@@ -364,7 +368,7 @@ impl RunLoadtestCmd {
                         .unwrap(),
                         30,
                         1,
-                        near_primitives::views::TxExecutionStatus::Included,
+                        near_primitives::views::TxExecutionStatus::Final,
                         false,
                     )
                     .await
@@ -372,8 +376,28 @@ impl RunLoadtestCmd {
                 .boxed()
             })
         };
+        let (res_sender, mut receiver): (
+            Sender<RpcTransactionResponse>,
+            Receiver<RpcTransactionResponse>,
+        ) = tokio::sync::mpsc::channel(100);
 
-        send_load(keys, tx_per_sec, sender).await;
+        tokio::spawn(async move {
+            loop {
+                if let Some(x) = receiver.recv().await {
+                    let outcome = x.final_execution_outcome.expect("error").into_outcome();
+                    println!("{:?}", outcome);
+                    outcome.assert_success();
+                }
+            }
+        });
+        send_load(
+            keys,
+            tx_per_sec,
+            sender,
+            Some(res_sender),
+            self.duration.map(|secs| Duration::from_secs(secs)),
+        )
+        .await;
     }
 }
 
@@ -455,7 +479,7 @@ impl DrainExpiredRequestsCmd {
             }
             .boxed()
         });
-        send_load(keys, self.qps as f64, sender).await;
+        send_load(keys, self.qps as f64, sender, None, None).await;
     }
 }
 
@@ -475,10 +499,12 @@ type LoadSenderAsyncFn<R> = Arc<
 /// using the sender function. The sender function will only be executed once at a time for each
 /// access key, so enough access keys would be needed to saturate the QPS.
 /// Also, the rpc client will internally apply rate limits, so that's another possible bottleneck.
-async fn send_load<R: 'static>(
+async fn send_load<R: 'static + std::fmt::Debug + Send>(
     keys: Vec<OwnedMutexGuard<OperatingAccessKey>>,
     qps: f64,
     sender: LoadSenderAsyncFn<R>,
+    res_sender: Option<tokio::sync::mpsc::Sender<R>>,
+    duration: Option<Duration>,
 ) {
     let mut handles = Vec::new();
     let (permits_sender, permits_receiver) = flume::bounded(qps.ceil() as usize);
@@ -488,18 +514,28 @@ async fn send_load<R: 'static>(
         let permits_receiver = permits_receiver.clone();
         let total_txns_sent = total_txns_sent.clone();
         let total_errors = total_errors.clone();
+        let res_sender_clone = res_sender.clone();
         let sender = sender.clone();
         handles.push(tokio::spawn(async move {
             loop {
                 permits_receiver.recv_async().await.unwrap();
-                if let Err(e) = sender(&mut key).await {
-                    total_errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    eprintln!("Error sending transaction: {:?}", e);
+                match sender(&mut key).await {
+                    Err(e) => {
+                        total_errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        eprintln!("Error sending transaction: {:?}", e);
+                    }
+                    Ok(s) => {
+                        if let Some(c) = &res_sender_clone {
+                            c.send(s).await.expect("error");
+                        }
+                    }
                 }
                 total_txns_sent.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }));
     }
+    // todo: store request / response in a database for that run, allowing to retrieve them and
+    // check for e.g. derivation path preservation etc.
     handles.push(tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs_f64(1.0 / qps));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -530,7 +566,12 @@ async fn send_load<R: 'static>(
             last_error_total = errors;
         }
     }));
-    futures::future::join_all(handles).await;
+
+    if let Some(duration) = duration {
+        timeout(duration, futures::future::join_all(handles)).await;
+    } else {
+        futures::future::join_all(handles).await;
+    }
 }
 
 #[derive(Serialize)]
