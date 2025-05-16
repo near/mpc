@@ -63,10 +63,14 @@ const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas
 // Prepaid gas for a `update_config` call
 const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 
+/// Store two version of the MPC contract for migration and backward compatibility purposes.
+/// Note: Probably, you don't need to change this struct.
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
 pub enum VersionedMpcContract {
+    /// Previous breaking changes version. We call `migration()` on it to transit into v1
     V0(MpcContractV0),
+    /// Current actual version
     V1(MpcContract),
 }
 
@@ -134,22 +138,6 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     config: Config,
     tee_state: TeeState,
-}
-
-impl From<v0_state::MpcContractV0> for MpcContract {
-    fn from(value: v0_state::MpcContractV0) -> Self {
-        Self {
-            protocol_state: value.protocol_state.into(),
-            pending_requests: value.pending_requests,
-            proposed_updates: ProposedUpdates::default(),
-            config: value.config,
-            tee_state: TeeState {
-                allowed_tee_proposals: AllowedTeeProposals::default(),
-                historical_tee_proposals: vec![],
-                votes: CodeHashesVotes::default(),
-            },
-        }
-    }
 }
 
 impl MpcContract {

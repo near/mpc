@@ -9,7 +9,7 @@ use crate::{
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
-        permanent::{LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend},
+        permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
         GcpPermanentKeyStorageConfig, KeyStorageConfig,
     },
     p2p::testing::{generate_test_p2p_configs, PortSeed},
@@ -360,10 +360,10 @@ impl ImportKeyshareCmd {
                     anyhow::anyhow!("Invalid encryption key: must be 32 hex characters (16 bytes)")
                 })?;
 
-            let keyshare: LegacyRootKeyshareData = serde_json::from_str(&self.keyshare_json)
+            let keyshare: PermanentKeyshareData = serde_json::from_str(&self.keyshare_json)
                 .map_err(|e| anyhow::anyhow!("Failed to parse keyshare JSON: {}", e))?;
 
-            println!("Parsed keyshare for epoch {}", keyshare.epoch);
+            println!("Parsed keyshare for epoch {}", keyshare.epoch_id);
 
             // Create the local storage and store the keyshare
             let home_dir = PathBuf::from(&self.home_dir);
@@ -448,20 +448,23 @@ impl ExportKeyshareCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keyshare::permanent::LegacyRootKeyshareData;
     use k256::{AffinePoint, Scalar};
+    use mpc_contract::primitives::key_state::EpochId;
     use tempfile::TempDir;
 
     // Mock keyshare data for testing
-    fn create_test_keyshare() -> LegacyRootKeyshareData {
+    fn create_test_keyshare() -> PermanentKeyshareData {
         // Create a dummy private key - this is only for testing
         let private_share = Scalar::ONE;
         // Do some computation to get non-identity public key
         let public_key = AffinePoint::GENERATOR * private_share;
-        LegacyRootKeyshareData {
+
+        PermanentKeyshareData::from_legacy(&LegacyRootKeyshareData {
             epoch: 1,
             private_share,
             public_key: public_key.to_affine(),
-        }
+        })
     }
 
     #[test]
@@ -506,10 +509,10 @@ mod tests {
 
         // Create two keyshares with different epochs
         let mut keyshare1 = create_test_keyshare();
-        keyshare1.epoch = 2; // Higher epoch
+        keyshare1.epoch_id = EpochId::new(2); // Higher epoch
 
         let mut keyshare2 = create_test_keyshare();
-        keyshare2.epoch = 1; // Lower epoch
+        keyshare2.epoch_id = EpochId::new(1); // Lower epoch
 
         let keyshare1_json = serde_json::to_string(&keyshare1).unwrap();
         let keyshare2_json = serde_json::to_string(&keyshare2).unwrap();
