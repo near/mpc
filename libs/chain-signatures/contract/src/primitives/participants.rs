@@ -326,12 +326,15 @@ pub mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Invalid quote collateral JSON")]
     fn test_migration_candidates() {
         let n: usize = rand::thread_rng().gen_range(2..600);
         let candidates = gen_legacy_candidates(n);
         let mp: Participants = candidates.clone().into();
         assert_candidate_migration(&candidates, &mp);
-        assert!(mp.validate().is_ok());
+        // Validation is expected to panic since legacy candidates do not have a notion of TEE quote
+        // collateral, so the new participants have it empty
+        let _ = mp.validate();
     }
 
     pub fn assert_participant_migration(
@@ -365,11 +368,14 @@ pub mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Invalid quote collateral JSON")]
     fn test_migration_participants() {
         let n: usize = rand::thread_rng().gen_range(2..600);
         let legacy_participants = gen_legacy_participants(n);
         let participants: Participants = legacy_participants.clone().into();
         assert_participant_migration(&legacy_participants, &participants);
-        assert!(participants.validate().is_ok());
+        // Validation is expected to panic since legacy candidates do not have a notion of TEE quote
+        // collateral, so the new participants have it empty
+        let _ = participants.validate();
     }
 }
