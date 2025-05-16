@@ -4,7 +4,7 @@ This folder contains the code for the **MPC Contract**, which is deployed on the
 
 This code will be moved to its own repository in the near future (c.f. [issue #417](https://github.com/Near-One/mpc/issues/417)).
 
-**Role of the contract in Chain Signatures:**
+### Role of the contract in Chain Signatures:
 
 This contract serves as an API-endpoint to the MPC network. Users can submit signature requests via this contract and MPC Participants can vote on changes to the MPC network, such as:
 
@@ -14,14 +14,14 @@ This contract serves as an API-endpoint to the MPC network. Users can submit sig
 - Updating the contract code
 
 
-**Contract State**
+### Contract State
 
 The contract tracks the following information:
 - Pending signature requests
 - Current participant set of the MPC network
 - Current set of keys managed by the MPC network (each key is associated to a unique `domain_id`)
 - (Currently unused) metadata related to trusted execution environments
-- Current protocol state of the MPC network (see [Protocol State and Lifecycle](#protocol-state-and-lifecycle).
+- Current protocol state of the MPC network (see [Protocol State and Lifecycle](#protocol-state).
 
 
 
@@ -36,10 +36,9 @@ The sign request takes the following arguments:
 * `payload_v2`: either
    * `{"Ecdsa": "<hex encoded 32 bytes>"}` or
    * `{"Eddsa": "<hex encoded between 32 and 1232 bytes>"}`
-* `domain_id` (integer): identidief the key and signature scheme to use for signing.
+* `domain_id` (integer): identifies the key to use for generating the signature. Note that the payload type must match the associated signature scheme. 
 
 Submitting a signature request costs approximately 7 Tgas, but the contract requires that at least 10 Tgas are attached to the transaction.
-
 
 **Example**
 
@@ -69,7 +68,7 @@ _EDDSA Signature Request_
 }
 ```
 
-Note that the signature scheme of the key associated to `domain_id` must match the signature scheme indicated in the payload. E.g. if key with `domain_id` 0 was a Ecdsa key, the latter example would not succeed.
+Note that an Ecdsa payload is internally transformed into a 256 bit number, which is subsequently transformed to a Scalar for the Secp256k1 eliptic curve. This means that the payload must be strictly less than the field size `p = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE FFFFFC2F` (see also [curve parameters](https://www.secg.org/sec2-v2.pdf) and [k256 implementation details](https://docs.rs/k256/latest/k256/struct.Scalar.html#method.from_repr)).
 
 ### Changing the participant set
 
@@ -132,12 +131,14 @@ To generate a new threshold signature key, all participants must vote for it to 
 ```
 
 
-### Protocol State and Lifecycle
+### Deployment 
 
 After deploying the contract, it will first be in an uninitialized state. The owner will need to initialize it via `init`, providing the set of participants and threshold parameters.
 
 The contract will then switch to running state, where further operations (like initializing keys, or changing the participant set), can be taken.
 
+### Protocol State
+The following protocol state transitions are allowed.
 ```mermaid
 stateDiagram-v2
     direction LR
@@ -151,9 +152,7 @@ stateDiagram-v2
     Resharing --> Resharing : vote_new_parameters
 ```
 
-
-
-### Contract API
+## Contract API
 #### User API
 
 | Function                                                                                     | Behavior                                                                                                 | Return Value               | Gas requirement | Effective Gas Cost |
