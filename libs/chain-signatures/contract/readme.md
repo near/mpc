@@ -69,7 +69,7 @@ _EDDSA Signature Request_
 ```
 
 #### Ecdsa palyoad restrictions
-Note that an Ecdsa payload is internally transformed into a 256 bit number, which is subsequently transformed to a Scalar for the Secp256k1 eliptic curve. This means that the payload must be strictly less than the field size `p = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE FFFFFC2F` (see also [curve parameters](https://www.secg.org/sec2-v2.pdf) and [k256 implementation details](https://docs.rs/k256/latest/k256/struct.Scalar.html#method.from_repr)).
+Note that an Ecdsa payload is is subsequently represented as a Scalar on curve Secp256k1. This means that the payload must be strictly less than the field size `p = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE FFFFFC2F` (see also [curve parameters](https://www.secg.org/sec2-v2.pdf#subsubsection.2.4.1) and [k256 implementation details](https://docs.rs/k256/latest/k256/struct.Scalar.html#method.from_repr)).
 
 ### Changing the participant set
 
