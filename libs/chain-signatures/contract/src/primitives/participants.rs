@@ -4,7 +4,11 @@ use crate::{
 };
 use dcap_qvl::verify::{self, VerifiedReport};
 use near_sdk::{log, near, AccountId, PublicKey};
-use std::{collections::BTreeSet, fmt::Display, time::SystemTime};
+use std::{
+    collections::BTreeSet,
+    fmt::{self, Display},
+    time::SystemTime,
+};
 
 use super::tee::quote::get_collateral;
 
@@ -13,7 +17,7 @@ pub mod hpke {
 }
 
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantInfo {
     pub url: String,
     /// The public key used for verifying messages.
@@ -24,6 +28,17 @@ pub struct ParticipantInfo {
     /// genuine Intel hardware, along with details about the Trusted Computing Base (TCB)
     /// versioning, status, and other relevant info.
     pub quote_collateral: String,
+}
+
+/// We do not use #[derive(Debug)] for ParticipantInfo because TEE quote and collateral fields are
+/// long and can cause HostError(TotalLogLengthExceeded { length: 120461, limit: 16384 }) errors.
+impl fmt::Debug for ParticipantInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ParticipantInfo")
+            .field("url", &self.url)
+            .field("sign_pk", &self.sign_pk)
+            .finish()
+    }
 }
 
 impl ParticipantInfo {
