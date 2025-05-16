@@ -1,7 +1,6 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use super::v0_state;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::legacy_contract_state;
@@ -40,18 +39,6 @@ pub struct RunningContractState {
     pub parameters_votes: ThresholdParametersVotes,
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
-}
-
-impl From<v0_state::RunningContractState> for RunningContractState {
-    fn from(value: v0_state::RunningContractState) -> Self {
-        RunningContractState {
-            domains: value.domains,
-            keyset: value.keyset,
-            parameters: value.parameters,
-            parameters_votes: ThresholdParametersVotes::default(),
-            add_domains_votes: value.add_domains_votes,
-        }
-    }
 }
 
 impl From<&legacy_contract_state::RunningContractState> for RunningContractState {
