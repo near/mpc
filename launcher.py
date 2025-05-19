@@ -93,8 +93,21 @@ def main():
         raise RuntimeError("getting quote failed with error code %d" % proc.returncode)
     logging.info("Quote: %s" % proc.stdout.decode('utf-8').strip())
 
+    # TODO If we need more flexibility in deploying the app, we could also vote on a docker
+    # compose hash inside the contract.
+    docker_cmd = ['docker', 'run']
+    for env_file in ['/tapp/.host-shared/.decrypted-env', '/tapp/.host-shared/.user-config']:
+        if os.path.isfile(env_file):
+            docker_cmd += ['--env-file', env_file]
+    docker_cmd += ['--detach', image_digest]
+    docker_cmd += ['-v', '/tapp:/tapp:ro']
+    docker_cmd += ['-v', '/var/run/dstack.sock:/var/run/dstack.sock']
+    docker_cmd += ['-v', 'shared-volume:/mnt/shared:ro']
+
+    logging.info("docker cmd " + docker_cmd)
+
     # Start the app.
-    proc = run(['docker', 'run', '--detach', image_digest])
+    proc = run(docker_cmd)
 
     if proc.returncode:
         raise RuntimeError("docker run non-zero exit code %d", proc.returncode)
