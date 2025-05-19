@@ -456,7 +456,8 @@ impl Coordinator {
             (running_receiver, resharing_receiver, multiplexer_handle)
         };
 
-        if let Some(key_event_receiver) = resharing_state_receiver {
+        // This handle must be alive, otherwise the AutoAbortTask will get cancelled on drop.
+        let _resharing_handle = resharing_state_receiver.map(|resharing_state_receiver| {
             let config_file = config_file.clone();
             let running_state = running_state.clone();
             let keyshare_storage = keyshare_storage.clone();
@@ -464,7 +465,7 @@ impl Coordinator {
             let network_client = network_client.clone();
             let mpc_config = mpc_config.clone();
 
-            let _resharing_handle = tracking::spawn("key_resharing", async move {
+            tracking::spawn("key_resharing", async move {
                 Self::run_key_resharing(
                     &config_file,
                     keyshare_storage.clone(),
@@ -473,15 +474,11 @@ impl Coordinator {
                     network_client,
                     resharing_receiver,
                     chain_txn_sender,
-                    key_event_receiver,
+                    resharing_state_receiver,
                 )
                 .await
-            });
-        } else {
-            drop(resharing_receiver)
-        }
-
-        tracing::info!("Entering running state: {}", mpc_config.my_participant_id);
+            })
+        });
 
         let keyshares = match keyshare_storage.load_keyset(&running_state.keyset).await {
             Ok(keyshares) => keyshares,
@@ -574,6 +571,8 @@ impl Coordinator {
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
         key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     ) -> anyhow::Result<MpcJobResult> {
+        tracing::info!("Starting key resharing.");
+
         let previous_keyset = current_running_state.keyset;
         let was_participant_last_epoch = current_running_state
             .participants

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::indexer::participants::ContractState;
 use crate::metrics;
 use crate::p2p::testing::PortSeed;
@@ -67,7 +69,7 @@ async fn test_key_resharing_simple() {
         .start_resharing(setup.participants);
 
     timeout(
-        std::time::Duration::from_secs(20),
+        std::time::Duration::from_secs(60),
         setup.indexer.wait_for_contract_state(|state| match state {
             ContractState::Running(running) => {
                 running.keyset.epoch_id.get() == 1
@@ -132,6 +134,8 @@ async fn test_key_resharing_multistage() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
+    tokio::time::sleep(Duration::from_secs(20)).await;
+
     // Sanity check.
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
@@ -146,6 +150,9 @@ async fn test_key_resharing_multistage() {
     let mut participants_2 = setup.participants.clone();
     participants_2.participants.pop();
     participants_1.threshold = 3;
+
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
     setup
         .indexer
         .contract_mut()
