@@ -10,7 +10,7 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
-use std::time::SystemTime;
+// use std::time::SystemTime;
 
 use crate::errors::Error;
 use crate::primitives::tee::proposal::AllowedTeeProposals;
@@ -270,10 +270,11 @@ impl MpcContract {
         };
 
         // Check participant identity, verify their TEE quote, and cast a vote
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("Failed to get current time")
-            .as_secs();
+        // let now = SystemTime::now()
+        //     .duration_since(SystemTime::UNIX_EPOCH)
+        //     .expect("Failed to get current time")
+        //     .as_secs();
+        let now = 0; // TODO TODO TODO test
         let collateral = get_collateral(tee_collateral);
         let verification_result =
             verify::verify(tee_quote, &collateral, now).map_err(|err: anyhow::Error| {
