@@ -109,12 +109,6 @@ async fn test_key_resharing_multistage() {
         PortSeed::KEY_RESHARING_MULTISTAGE_TEST,
     );
 
-    // Initialize the contract with two fewer participants.
-    let mut participants_1 = setup.participants.clone();
-    participants_1.participants.pop();
-    participants_1.participants.pop();
-    participants_1.threshold = 3;
-
     let domain = DomainConfig {
         id: DomainId(0),
         scheme: SignatureScheme::Secp256k1,
@@ -145,7 +139,6 @@ async fn test_key_resharing_multistage() {
     // Have the fifth node join.
     let mut participants_2 = setup.participants.clone();
     participants_2.participants.pop();
-    participants_1.threshold = 3;
     setup
         .indexer
         .contract_mut()
@@ -287,10 +280,6 @@ async fn test_key_resharing_signature_buffering() {
         TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_SIGNATURE_BUFFERING_TEST,
     );
-
-    // Initialize the contract with one fewer participant.
-    let mut initial_participants = setup.participants.clone();
-    initial_participants.participants.pop();
 
     let domain = DomainConfig {
         id: DomainId(0),
