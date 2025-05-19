@@ -187,7 +187,7 @@ async fn test_key_resharing_multistage() {
         .contract_mut()
         .await
         .start_resharing(setup.participants.clone());
-    timeout(
+    let state_change = timeout(
         std::time::Duration::from_secs(20),
         setup.indexer.wait_for_contract_state(|state| match state {
             ContractState::Running(running) => {
@@ -197,8 +197,14 @@ async fn test_key_resharing_multistage() {
             _ => false,
         }),
     )
-    .await
-    .expect("Timeout waiting for resharing to complete");
+    .await;
+
+    if let Err(_) = state_change {
+        panic!(
+            "Timeout waiting for resharing to complete. State: {:?}",
+            setup.indexer.contract_mut().await.state
+        )
+    };
 
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
