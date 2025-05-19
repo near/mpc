@@ -1,9 +1,9 @@
 use crate::common::{gen_accounts, CONTRACT_FILE_PATH, PARTICIPANT_LEN};
+use common::current_contract;
 use mpc_contract::config::InitConfig;
 use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
 use near_workspaces::network::Sandbox;
 use near_workspaces::{Contract, Worker};
-use once_cell::sync::Lazy;
 use std::fs;
 
 pub mod common;
@@ -11,7 +11,6 @@ pub mod common;
 const OLD_CONTRACT_PATH: &str = "../compiled-contracts/last-breaking-changes.wasm";
 
 async fn init_contract(worker: Worker<Sandbox>, contract: &Contract) -> anyhow::Result<()> {
-    Lazy::force(&common::INIT);
     let (_, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
 
     let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
@@ -47,10 +46,10 @@ async fn deploy_old(worker: &Worker<Sandbox>) -> anyhow::Result<Contract> {
 }
 
 async fn upgrade_to_new(old_contract: Contract) -> anyhow::Result<Contract> {
-    let new_wasm = std::fs::read(CONTRACT_FILE_PATH)?;
+    let new_wasm = current_contract();
     let new_contract = old_contract
         .as_account()
-        .deploy(&new_wasm)
+        .deploy(new_wasm)
         .await?
         .into_result()?;
     Ok(new_contract)
