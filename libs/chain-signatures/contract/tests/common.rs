@@ -33,10 +33,11 @@ use near_workspaces::{
     types::{AccountId, NearToken},
     Account, Contract, Worker,
 };
+use once_cell::sync::Lazy;
 use rand::rngs::OsRng;
 use sha2::Sha256;
 use signature::DigestSigner;
-use std::str::FromStr;
+use std::{process::Command, str::FromStr};
 
 pub const CONTRACT_FILE_PATH: &str = "../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
@@ -77,8 +78,31 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
     let candidates = candidates(Some(accounts.iter().map(|a| a.id().clone()).collect()));
     (accounts, candidates)
 }
+pub static INIT: Lazy<()> = Lazy::new(build_contract);
+fn build_contract() {
+    let status = Command::new("cargo")
+        .args(["build", "--release", "--target=wasm32-unknown-unknown"])
+        .current_dir("..")
+        .status()
+        .expect("Failed to run cargo build");
 
+    assert!(status.success(), "cargo build failed");
+
+    let status = Command::new("wasm-opt")
+        .args([
+            "-Oz",
+            "-o",
+            "target/wasm32-unknown-unknown/release/mpc_contract.wasm",
+            "target/wasm32-unknown-unknown/release/mpc_contract.wasm",
+        ])
+        .current_dir("..")
+        .status()
+        .expect("Failed to run wasm-opt");
+
+    assert!(status.success(), "wasm-opt failed");
+}
 pub async fn init() -> (Worker<Sandbox>, Contract) {
+    Lazy::force(&INIT);
     let worker = near_workspaces::sandbox().await.unwrap();
     let wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
     let contract = worker.dev_deploy(&wasm).await.unwrap();

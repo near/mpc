@@ -3,6 +3,7 @@ use mpc_contract::config::InitConfig;
 use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
 use near_workspaces::network::Sandbox;
 use near_workspaces::{Contract, Worker};
+use once_cell::sync::Lazy;
 use std::fs;
 
 pub mod common;
@@ -10,6 +11,7 @@ pub mod common;
 const OLD_CONTRACT_PATH: &str = "../compiled-contracts/last-breaking-changes.wasm";
 
 async fn init_contract(worker: Worker<Sandbox>, contract: &Contract) -> anyhow::Result<()> {
+    Lazy::force(&common::INIT);
     let (_, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
 
     let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
