@@ -2,6 +2,7 @@ use cait_sith::eddsa::KeygenOutput;
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey};
+use fs2::FileExt;
 use k256::{
     elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint, PrimeField},
     AffinePoint, FieldBytes, Scalar, Secp256k1, SecretKey,
@@ -33,10 +34,20 @@ use near_workspaces::{
     types::{AccountId, NearToken},
     Account, Contract, Worker,
 };
+use serde::{Deserialize, Serialize};
+//use once_cell::sync::Lazy;
 use rand::rngs::OsRng;
 use sha2::Sha256;
 use signature::DigestSigner;
-use std::str::FromStr;
+use std::{
+    fs::OpenOptions,
+    io::{Read, Write},
+    path::Path,
+    process::Command,
+    str::FromStr,
+    sync::OnceLock,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 pub const CONTRACT_FILE_PATH: &str = "../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
@@ -65,6 +76,7 @@ pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
     }
     participants
 }
+
 /// Create `amount` accounts and return them along with the candidate info.
 pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Account>, Participants) {
     let mut accounts = Vec::with_capacity(amount);
@@ -78,10 +90,100 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
     (accounts, candidates)
 }
 
+static CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
+
+#[derive(Debug, Serialize, Deserialize)]
+struct BuildLock {
+    timestamp: u64,
+}
+
+impl BuildLock {
+    fn new() -> Self {
+        Self {
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        }
+    }
+
+    /// checks if self is younger than 3 seconds
+    fn expired(&self) -> bool {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        now.saturating_sub(self.timestamp) > 4
+    }
+}
+
+pub fn current_contract() -> &'static Vec<u8> {
+    CONTRACT.get_or_init(|| {
+        let pkg_dir = Path::new(env!("CARGO_MANIFEST_DIR")); // this should point to
+                                                             // libs/chain-signatures/contract
+        let project_dir = pkg_dir.join("../"); // pointing to libs/chain-signatures
+
+        let wasm_path = project_dir.join("target/wasm32-unknown-unknown/release/mpc_contract.wasm");
+        // get lock-file:
+        let lock_path = project_dir.join(".contract.itest.build.lock");
+        let mut lockfile = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .expect("Failed to open lockfile");
+        lockfile
+            .lock_exclusive()
+            .expect("Failed to lock build file");
+
+        // check if we need to re-build
+        let do_build = match lockfile.metadata().unwrap().len() {
+            0 => true,
+            _ => {
+                let mut buf = String::new();
+                lockfile.read_to_string(&mut buf).unwrap();
+                match serde_json::from_str::<BuildLock>(&buf) {
+                    Ok(build_lock) => build_lock.expired(),
+                    _ => true,
+                }
+            }
+        };
+
+        if do_build {
+            let status = Command::new("cargo")
+                .args(["build", "--release", "--target=wasm32-unknown-unknown"])
+                .current_dir(&project_dir)
+                .status()
+                .expect("Failed to run cargo build");
+
+            assert!(status.success(), "cargo build failed");
+
+            let status = Command::new("wasm-opt")
+                .args([
+                    "-Oz",
+                    "-o",
+                    wasm_path.to_str().unwrap(),
+                    wasm_path.to_str().unwrap(),
+                ])
+                .current_dir(project_dir)
+                .status()
+                .expect("Failed to run wasm-opt");
+
+            assert!(status.success(), "wasm-opt failed");
+            lockfile.set_len(0).unwrap();
+            lockfile
+                .write_all(serde_json::to_string(&BuildLock::new()).unwrap().as_bytes())
+                .expect("Failed to write timestamp to lockfile");
+        }
+        std::fs::read(CONTRACT_FILE_PATH).unwrap()
+    })
+}
+
 pub async fn init() -> (Worker<Sandbox>, Contract) {
     let worker = near_workspaces::sandbox().await.unwrap();
-    let wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
-    let contract = worker.dev_deploy(&wasm).await.unwrap();
+    let wasm = &current_contract();
+    let contract = worker.dev_deploy(wasm).await.unwrap();
     (worker, contract)
 }
 

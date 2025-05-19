@@ -2155,6 +2155,7 @@ dependencies = [
  "ecdsa",
  "ed25519-dalek",
  "frost-ed25519",
+ "fs2",
  "getrandom 0.2.15",
  "hex",
  "k256",
