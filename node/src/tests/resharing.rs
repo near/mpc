@@ -199,7 +199,7 @@ async fn test_key_resharing_multistage() {
     )
     .await;
 
-    if let Err(_) = state_change {
+    if state_change.is_err() {
         panic!(
             "Timeout waiting for resharing to complete. State: {:?}",
             setup.indexer.contract_mut().await.state
