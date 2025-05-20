@@ -918,10 +918,6 @@ impl VersionedMpcContract {
         }))
     }
 
-    fn state_read<T: borsh::BorshDeserialize>() -> Option<T> {
-        env::storage_read(b"STATE").and_then(|data| T::try_from_slice(&data).ok())
-    }
-
     /// This will be called internally by the contract to migrate the state when a new contract
     /// is deployed. This function should be changed every time state is changed to do the proper
     /// migrate flow.
@@ -933,30 +929,6 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
-        if let Some(legacy_contract_state::VersionedMpcContract::V1(state)) =
-            Self::state_read::<legacy_contract_state::VersionedMpcContract>()
-        {
-            let config = Config::default();
-            let protocol_state: ProtocolContractState = (&state.protocol_state).into();
-            return Ok(VersionedMpcContract::V1(MpcContract {
-                config,
-                protocol_state,
-                // Start with a fresh pending requests map. Migrating the signature requests is
-                // tricky and possibly not going to work, and even if we did, these requests
-                // would just time out during the V2 upgrade process. (For future migrations we
-                // would still want to consider keeping the pending signature requests, though.)
-                // Note: the storage key is also different, as we want to avoid inheriting the
-                // previous state.
-                pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
-                // This inherits the previous proposed updates map.
-                proposed_updates: ProposedUpdates::default(),
-                tee_state: TeeState {
-                    allowed_code_hashes: AllowedCodeHashes::default(),
-                    historical_code_hashes: vec![],
-                    votes: CodeHashesVotes::default(),
-                },
-            }));
-        }
         if let Some(contract) = env::state_read::<VersionedMpcContract>() {
             return match contract {
                 VersionedMpcContract::V0(x) => Ok(VersionedMpcContract::V1(x.into())),

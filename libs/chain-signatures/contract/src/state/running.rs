@@ -1,15 +1,10 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
-use crate::legacy_contract_state;
 use crate::primitives::{
-    domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry},
-    key_state::{
-        AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
-        Keyset,
-    },
+    domain::{AddDomainsVotes, DomainConfig, DomainRegistry},
+    key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     thresholds::ThresholdParameters,
     votes::ThresholdParametersVotes,
 };
@@ -39,32 +34,6 @@ pub struct RunningContractState {
     pub parameters_votes: ThresholdParametersVotes,
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
-}
-
-impl From<&legacy_contract_state::RunningContractState> for RunningContractState {
-    fn from(state: &legacy_contract_state::RunningContractState) -> Self {
-        let key = match state.public_key.curve_type() {
-            near_sdk::CurveType::ED25519 => unreachable!("Legacy contract does not have any ED25519 keys in its state. An EdwardsPoint can not be constructed within the max gas limit."),
-            near_sdk::CurveType::SECP256K1 => PublicKeyExtended::Secp256k1 { near_public_key: state.public_key.clone() },
-        };
-        RunningContractState {
-            domains: DomainRegistry::new_single_ecdsa_key_from_legacy(),
-            keyset: Keyset::new(
-                EpochId::new(state.epoch),
-                vec![KeyForDomain {
-                    attempt: AttemptId::default(),
-                    domain_id: DomainId::legacy_ecdsa_id(),
-                    key,
-                }],
-            ),
-            parameters: ThresholdParameters::migrate_from_legacy(
-                state.threshold,
-                state.participants.clone(),
-            ),
-            parameters_votes: ThresholdParametersVotes::default(),
-            add_domains_votes: AddDomainsVotes::default(),
-        }
-    }
 }
 
 impl RunningContractState {

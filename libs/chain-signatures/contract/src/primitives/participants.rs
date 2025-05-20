@@ -1,8 +1,5 @@
-use crate::{
-    errors::{Error, InvalidCandidateSet, InvalidParameters},
-    legacy_contract_state,
-};
-use near_sdk::{log, near, AccountId, PublicKey};
+use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
+use near_sdk::{near, AccountId, PublicKey};
 use std::collections::BTreeSet;
 use std::fmt::Display;
 
@@ -16,16 +13,6 @@ pub struct ParticipantInfo {
     pub url: String,
     /// The public key used for verifying messages.
     pub sign_pk: PublicKey,
-}
-
-/* Migration helper */
-impl From<&legacy_contract_state::ParticipantInfo> for ParticipantInfo {
-    fn from(info: &legacy_contract_state::ParticipantInfo) -> ParticipantInfo {
-        ParticipantInfo {
-            url: info.url.clone(),
-            sign_pk: info.sign_pk.clone(),
-        }
-    }
 }
 
 #[near(serializers=[borsh, json])]
@@ -190,65 +177,11 @@ impl Participants {
     }
 }
 
-/* Migration helpers */
-/// hopefully not required
-fn migrate_inconsistent_participants(
-    participants: legacy_contract_state::Participants,
-) -> Participants {
-    log!("migrating inconsistent participant state!");
-    let mut migrated_participants = Participants::new();
-    for (account_id, info) in &participants.participants {
-        // if an error occurs here, there is no help.
-        let _ = migrated_participants.insert(account_id.clone(), info.into());
-    }
-    migrated_participants
-}
-
-impl From<legacy_contract_state::Participants> for Participants {
-    fn from(legacy_participants: legacy_contract_state::Participants) -> Participants {
-        let mut participants: Vec<(AccountId, ParticipantId, ParticipantInfo)> = Vec::new();
-        let mut ids: BTreeSet<ParticipantId> = BTreeSet::new();
-        let next_id = ParticipantId(legacy_participants.next_id);
-        for (account_id, info) in &legacy_participants.participants {
-            let id = legacy_participants
-                .account_to_participant_id
-                .get(account_id);
-            if id.is_none() {
-                return migrate_inconsistent_participants(legacy_participants);
-            }
-
-            let id = ParticipantId(*id.unwrap());
-            if next_id.get() <= id.get() {
-                return migrate_inconsistent_participants(legacy_participants);
-            }
-            if !ids.insert(id.clone()) {
-                return migrate_inconsistent_participants(legacy_participants);
-            }
-
-            participants.push((account_id.clone(), id.clone(), info.into()));
-        }
-        Participants {
-            next_id: ParticipantId(legacy_participants.next_id),
-            participants,
-        }
-    }
-}
-
-impl From<legacy_contract_state::Candidates> for Participants {
-    fn from(candidates: legacy_contract_state::Candidates) -> Participants {
-        let legacy_participants: legacy_contract_state::Participants = candidates.into();
-        legacy_participants.into()
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
 
-    use crate::legacy_contract_state;
     use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::{
-        gen_accounts_and_info, gen_legacy_candidates, gen_legacy_participants,
-    };
+    use crate::primitives::test_utils::gen_accounts_and_info;
     use rand::Rng;
 
     #[test]
@@ -275,76 +208,6 @@ pub mod tests {
         for i in 0..n {
             assert!(participants.account_id(&ParticipantId(i as u32)).is_ok());
         }
-        assert!(participants.validate().is_ok());
-    }
-
-    pub fn assert_candidate_migration(
-        legacy_candidates: &legacy_contract_state::Candidates,
-        migrated_participants: &Participants,
-    ) {
-        assert_eq!(
-            migrated_participants.len(),
-            legacy_candidates.candidates.len()
-        );
-        for (account_id, info) in &legacy_candidates.candidates {
-            assert!(migrated_participants.is_participant(account_id));
-            let mp_info = migrated_participants.info(account_id).unwrap();
-            assert_eq!(mp_info.url, info.url);
-            assert_eq!(mp_info.sign_pk, info.sign_pk);
-            assert_eq!(
-                *account_id,
-                migrated_participants
-                    .account_id(&migrated_participants.id(account_id).unwrap())
-                    .unwrap()
-            );
-        }
-    }
-
-    #[test]
-    fn test_migration_candidates() {
-        let n: usize = rand::thread_rng().gen_range(2..600);
-        let candidates = gen_legacy_candidates(n);
-        let mp: Participants = candidates.clone().into();
-        assert_candidate_migration(&candidates, &mp);
-        assert!(mp.validate().is_ok());
-    }
-
-    pub fn assert_participant_migration(
-        legacy_participants: &legacy_contract_state::Participants,
-        migrated_participants: &Participants,
-    ) {
-        assert_eq!(
-            legacy_participants.participants.len(),
-            migrated_participants.len(),
-        );
-        assert_eq!(
-            legacy_participants.next_id,
-            migrated_participants.next_id().get(),
-        );
-        for (account_id, _, info) in migrated_participants.participants() {
-            let legacy_participant = legacy_participants.get(account_id);
-            assert!(legacy_participant.is_some());
-            let legacy_participant = legacy_participant.unwrap();
-            assert_eq!(legacy_participant.account_id, *account_id);
-            assert_eq!(legacy_participant.url, info.url);
-            assert_eq!(legacy_participant.sign_pk, info.sign_pk);
-            let legacy_idx = *legacy_participants
-                .account_to_participant_id
-                .get(account_id)
-                .unwrap();
-            assert_eq!(
-                migrated_participants.id(account_id).unwrap().get(),
-                legacy_idx
-            )
-        }
-    }
-
-    #[test]
-    fn test_migration_participants() {
-        let n: usize = rand::thread_rng().gen_range(2..600);
-        let legacy_participants = gen_legacy_participants(n);
-        let participants: Participants = legacy_participants.clone().into();
-        assert_participant_migration(&legacy_participants, &participants);
         assert!(participants.validate().is_ok());
     }
 }
