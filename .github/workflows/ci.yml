@@ -75,8 +75,6 @@ jobs:
       - name: Run contract tests
         run: |
           cd libs/chain-signatures
-          cargo build -p mpc-contract --release --locked --target=wasm32-unknown-unknown
-          wasm-opt -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm
           cargo nextest run -p mpc-contract --release --locked
 
       - name: Download near core binary from S3

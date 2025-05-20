@@ -7,7 +7,6 @@ use near_sdk::{log, near, AccountId, PublicKey};
 use std::{
     collections::BTreeSet,
     fmt::{self, Display},
-    time::SystemTime,
 };
 
 use super::tee::quote::get_collateral;
