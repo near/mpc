@@ -328,12 +328,7 @@ fn test() {
     // let quote = std::fs::read("../samples/4.bin").expect("quote is not found");
     // println!("{:?}", collateral);
 
-    // use blocktime in production
-    // let now = SystemTime::now()
-    //     .duration_since(SystemTime::UNIX_EPOCH)
-    //     .expect("Failed to get current time")
-    //     .as_secs();
-    let now = 0;
+    let now = 1747699200; // 20 May 2025, 00:00:00 UTC
 
     // get compose hash from events
     let expected_compose_hash = event_log

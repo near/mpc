@@ -270,11 +270,7 @@ impl MpcContract {
         };
 
         // Check participant identity, verify their TEE quote, and cast a vote
-        // let now = SystemTime::now()
-        //     .duration_since(SystemTime::UNIX_EPOCH)
-        //     .expect("Failed to get current time")
-        //     .as_secs();
-        let now = 0; // TODO TODO TODO test
+        let now = env::block_timestamp_ms() / 1_000;
         let collateral = get_collateral(tee_collateral);
         let verification_result =
             verify::verify(tee_quote, &collateral, now).map_err(|err: anyhow::Error| {

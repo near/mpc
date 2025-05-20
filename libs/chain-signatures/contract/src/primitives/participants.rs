@@ -3,7 +3,7 @@ use crate::{
     legacy_contract_state,
 };
 use dcap_qvl::verify::{self, VerifiedReport};
-use near_sdk::{log, near, AccountId, PublicKey};
+use near_sdk::{env, log, near, AccountId, PublicKey};
 use std::{
     collections::BTreeSet,
     fmt::{self, Display},
@@ -42,11 +42,7 @@ impl fmt::Debug for ParticipantInfo {
 
 impl ParticipantInfo {
     pub fn verify_quote(&self) -> Result<VerifiedReport, Error> {
-        // let now = SystemTime::now()
-        //     .duration_since(SystemTime::UNIX_EPOCH)
-        //     .expect("Failed to get current time")
-        //     .as_secs();
-        let now = 0;
+        let now = env::block_timestamp_ms() / 1_000;
         let tee_collateral = get_collateral(self.quote_collateral.clone());
         let verification_result = verify::verify(&self.tee_quote, &tee_collateral, now);
         verification_result.map_err(|_| InvalidCandidateSet::InvalidParticipantsTeeQuote.into())
