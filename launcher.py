@@ -99,12 +99,19 @@ def main():
     for env_file in ['/tapp/.host-shared/.decrypted-env', '/tapp/.host-shared/.user-config']:
         if os.path.isfile(env_file):
             docker_cmd += ['--env-file', env_file]
-    docker_cmd += ['--detach', image_digest]
+
     docker_cmd += ['-v', '/tapp:/tapp:ro']
     docker_cmd += ['-v', '/var/run/dstack.sock:/var/run/dstack.sock']
     docker_cmd += ['-v', 'shared-volume:/mnt/shared:ro']
 
-    logging.info("docker cmd " + docker_cmd)
+    # TODO Remove after testing.
+    docker_cmd += ['--add-host', 'mpc-node-0.service.mpc.consul:66.220.6.113']
+    docker_cmd += ['--add-host', 'mpc-node-1.service.mpc.consul:57.129.144.117']
+
+    # Image digest must be last.
+    docker_cmd += ['--detach', image_digest]
+
+    logging.info("docker cmd %s", " ".join(docker_cmd))
 
     # Start the app.
     proc = run(docker_cmd)
