@@ -128,7 +128,6 @@ fn test() {
     use dcap_qvl::verify;
     use hex::decode;
     use serde_json::json;
-    use std::time::SystemTime;
 
     let tcb_info = json!(
         {
