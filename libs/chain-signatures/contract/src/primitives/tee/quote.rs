@@ -330,10 +330,11 @@ fn test() {
     // println!("{:?}", collateral);
 
     // use blocktime in production
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("Failed to get current time")
-        .as_secs();
+    // let now = SystemTime::now()
+    //     .duration_since(SystemTime::UNIX_EPOCH)
+    //     .expect("Failed to get current time")
+    //     .as_secs();
+    let now = 0;
 
     // get compose hash from events
     let expected_compose_hash = event_log

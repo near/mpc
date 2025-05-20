@@ -43,10 +43,11 @@ impl fmt::Debug for ParticipantInfo {
 
 impl ParticipantInfo {
     pub fn verify_quote(&self) -> Result<VerifiedReport, Error> {
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("Failed to get current time")
-            .as_secs();
+        // let now = SystemTime::now()
+        //     .duration_since(SystemTime::UNIX_EPOCH)
+        //     .expect("Failed to get current time")
+        //     .as_secs();
+        let now = 0;
         let tee_collateral = get_collateral(self.quote_collateral.clone());
         let verification_result = verify::verify(&self.tee_quote, &tee_collateral, now);
         verification_result.map_err(|_| InvalidCandidateSet::InvalidParticipantsTeeQuote.into())
