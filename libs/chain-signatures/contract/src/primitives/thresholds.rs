@@ -1,8 +1,5 @@
 use super::participants::{ParticipantId, ParticipantInfo, Participants};
-use crate::{
-    errors::{Error, InvalidCandidateSet, InvalidThreshold},
-    legacy_contract_state,
-};
+use crate::errors::{Error, InvalidCandidateSet, InvalidThreshold};
 use near_sdk::{near, AccountId};
 use std::collections::BTreeMap;
 
@@ -143,17 +140,6 @@ impl ThresholdParameters {
         &self.participants
     }
 
-    /// For migration from legacy; does not check the threshold.
-    pub fn migrate_from_legacy(
-        threshold: usize,
-        participants: legacy_contract_state::Participants,
-    ) -> Self {
-        ThresholdParameters {
-            threshold: Threshold::new(threshold as u64),
-            participants: participants.into(),
-        }
-    }
-
     /// For integration testing.
     pub fn new_unvalidated(participants: Participants, threshold: Threshold) -> Self {
         ThresholdParameters {
@@ -165,11 +151,8 @@ impl ThresholdParameters {
 
 #[cfg(test)]
 mod tests {
-    use crate::primitives::participants::tests::assert_participant_migration;
     use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::{
-        gen_legacy_participants, gen_participant, gen_participants, gen_threshold_params,
-    };
+    use crate::primitives::test_utils::{gen_participant, gen_participants, gen_threshold_params};
     use crate::primitives::thresholds::{Threshold, ThresholdParameters};
     use crate::state::running::running_tests::gen_valid_params_proposal;
     use rand::Rng;
@@ -229,22 +212,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn test_migration_participants() {
-        let n: usize = rand::thread_rng().gen_range(2..600);
-        let legacy_participants = gen_legacy_participants(n);
-        // migration has to work for now invalid thresholds as well.
-        let threshold = Threshold::new(rand::thread_rng().gen::<u64>());
-        let tp = ThresholdParameters::migrate_from_legacy(
-            threshold.0 as usize,
-            legacy_participants.clone(),
-        );
-        assert_eq!(threshold, tp.threshold());
-        let participants = tp.participants();
-        assert_eq!(participants.len(), n);
-        assert_participant_migration(&legacy_participants, participants);
     }
 
     #[test]

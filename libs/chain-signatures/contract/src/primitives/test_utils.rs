@@ -1,5 +1,4 @@
 use crate::crypto_shared::types::PublicKeyExtended;
-use crate::legacy_contract_state::{self, CandidateInfo};
 use crate::primitives::{
     participants::{ParticipantInfo, Participants},
     thresholds::{Threshold, ThresholdParameters},
@@ -13,7 +12,6 @@ use std::collections::{BTreeMap, HashSet};
 
 pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     let rng = rand::thread_rng();
-
     let edwards_point = EdwardsPoint::random(rng);
     let compressed_edwards_point = edwards_point.compress();
     let near_public_key_compressed = PublicKey::from_parts(
@@ -89,46 +87,6 @@ pub fn gen_participants(n: usize) -> Participants {
     participants
 }
 
-pub fn gen_legacy_participants(n: usize) -> legacy_contract_state::Participants {
-    // ensure random indices
-    let mut legacy_participants = legacy_contract_state::Participants::new();
-    legacy_participants.next_id = rand::thread_rng().gen_range(0..1000000);
-    let legacy_candidate = gen_legacy_candidates(n);
-    for (i, (account_id, info)) in legacy_candidate.candidates.iter().enumerate() {
-        if i % 2 == 1 {
-            legacy_participants.insert(account_id.clone(), info.clone().into());
-        }
-    }
-    for (i, (account_id, info)) in legacy_candidate.candidates.iter().enumerate() {
-        if i % 2 != 1 {
-            legacy_participants.insert(account_id.clone(), info.clone().into());
-        }
-    }
-    legacy_participants
-}
-
-pub fn gen_legacy_candidates(n: usize) -> legacy_contract_state::Candidates {
-    pub fn candidates(names: Vec<AccountId>) -> BTreeMap<AccountId, CandidateInfo> {
-        let mut candidates: BTreeMap<AccountId, CandidateInfo> = BTreeMap::new();
-        for (i, account_id) in names.iter().enumerate() {
-            candidates.insert(
-                account_id.clone(),
-                CandidateInfo {
-                    account_id: account_id.clone(),
-                    url: format!("127.0.0.1:{}", i),
-                    cipher_pk: [0; 32],
-                    sign_pk: bogus_ed25519_near_public_key(),
-                },
-            );
-        }
-        candidates
-    }
-    let accounts: Vec<AccountId> = (0..n).map(|_| gen_account_id()).collect();
-    legacy_contract_state::Candidates {
-        candidates: candidates(accounts),
-    }
-}
-
 pub fn gen_seed() -> [u8; 32] {
     let mut rng = rand::thread_rng();
     let mut seed = [0u8; 32];
@@ -141,56 +99,4 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let k_min = min_thrershold(n);
     let k = rand::thread_rng().gen_range(k_min..n + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
-}
-
-pub fn gen_legacy_initializing_state(
-    n: usize,
-    k: usize,
-) -> legacy_contract_state::InitializingContractState {
-    let candidates = gen_legacy_candidates(n);
-    let mut pk_votes = legacy_contract_state::PkVotes::new();
-    let n_pk_votes = rand::thread_rng().gen_range(0..k);
-    let n_pks = match n_pk_votes {
-        0 => 0,
-        1 => 1,
-        _ => rand::thread_rng().gen_range(1..n_pk_votes),
-    };
-    let pks: Vec<PublicKey> = (0..n_pks)
-        .map(|_| bogus_ed25519_near_public_key())
-        .collect();
-    for i in 0..n_pk_votes {
-        let pk_id = i % n_pks;
-        let pk = pks[pk_id].clone();
-        let (account_id, _) = candidates.candidates.iter().nth(i).unwrap();
-        pk_votes.entry(pk).insert(account_id.clone());
-    }
-    legacy_contract_state::InitializingContractState {
-        candidates,
-        threshold: (k),
-        pk_votes,
-    }
-}
-pub fn gen_legacy_running_state(n: usize, k: usize) -> legacy_contract_state::RunningContractState {
-    legacy_contract_state::RunningContractState {
-        epoch: rand::thread_rng().gen(),
-        participants: gen_legacy_participants(n),
-        threshold: k,
-        public_key: bogus_ed25519_near_public_key(),
-        candidates: gen_legacy_candidates(rand::thread_rng().gen_range(0..n + 5)),
-        join_votes: legacy_contract_state::Votes::default(),
-        leave_votes: legacy_contract_state::Votes::default(),
-    }
-}
-pub fn gen_legacy_resharing_state(
-    n: usize,
-    k: usize,
-) -> legacy_contract_state::ResharingContractState {
-    legacy_contract_state::ResharingContractState {
-        old_epoch: rand::thread_rng().gen(),
-        old_participants: gen_legacy_participants(n),
-        new_participants: gen_legacy_participants(n),
-        threshold: k,
-        public_key: bogus_ed25519_near_public_key(),
-        finished_votes: HashSet::new(),
-    }
 }
