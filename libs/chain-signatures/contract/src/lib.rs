@@ -10,8 +10,6 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
-// use std::time::SystemTime;
-
 use crate::errors::Error;
 use crate::primitives::tee::proposal::AllowedTeeProposals;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};

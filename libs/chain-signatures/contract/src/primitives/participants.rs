@@ -1,7 +1,7 @@
 use super::tee::quote::get_collateral;
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 use dcap_qvl::verify::{self, VerifiedReport};
-use near_sdk::{near, AccountId, PublicKey};
+use near_sdk::{env, near, AccountId, PublicKey};
 use std::{
     collections::BTreeSet,
     fmt::{self, Display},
