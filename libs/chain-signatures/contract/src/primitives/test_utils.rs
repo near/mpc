@@ -8,7 +8,7 @@ use k256::elliptic_curve::Group;
 use near_sdk::{AccountId, CurveType, PublicKey};
 use rand::{distributions::Uniform, Rng};
 use serde_json::json;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     let rng = rand::thread_rng();
