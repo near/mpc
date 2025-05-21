@@ -1,15 +1,13 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
-use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidParameters, InvalidState, VoteError};
-use crate::legacy_contract_state;
-use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
-use crate::primitives::key_state::{
-    AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
-    KeyForDomain, Keyset,
+use crate::primitives::key_state::{KeyEventId, KeyForDomain};
+use crate::primitives::{
+    domain::{AddDomainsVotes, DomainConfig, DomainRegistry},
+    key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
+    thresholds::ThresholdParameters,
+    votes::ThresholdParametersVotes,
 };
-use crate::primitives::thresholds::ThresholdParameters;
-use crate::primitives::votes::ThresholdParametersVotes;
 use near_sdk::near;
 use std::collections::BTreeSet;
 
@@ -45,34 +43,6 @@ pub struct RunningContractState {
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
     pub resharing_process: Option<ResharingState>,
-}
-
-impl From<&legacy_contract_state::ResharingContractState> for RunningContractState {
-    fn from(_state: &legacy_contract_state::ResharingContractState) -> Self {
-        // It's complicated to upgrade the contract while resharing. Just don't support it.
-        unimplemented!("Cannot migrate from Resharing state")
-    }
-}
-
-impl From<&legacy_contract_state::RunningContractState> for RunningContractState {
-    fn from(state: &legacy_contract_state::RunningContractState) -> Self {
-        let key = match state.public_key.curve_type() {
-            near_sdk::CurveType::ED25519 => unreachable!("Legacy contract does not have any ED25519 keys in its state. An EdwardsPoint can not be constructed within the max gas limit."),
-            near_sdk::CurveType::SECP256K1 => PublicKeyExtended::Secp256k1 { near_public_key: state.public_key.clone() },
-        };
-        RunningContractState::new(
-            DomainRegistry::new_single_ecdsa_key_from_legacy(),
-            Keyset::new(
-                EpochId::new(state.epoch),
-                vec![KeyForDomain {
-                    attempt: AttemptId::default(),
-                    domain_id: DomainId::legacy_ecdsa_id(),
-                    key,
-                }],
-            ),
-            ThresholdParameters::migrate_from_legacy(state.threshold, state.participants.clone()),
-        )
-    }
 }
 
 impl RunningContractState {

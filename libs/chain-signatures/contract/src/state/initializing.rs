@@ -2,7 +2,6 @@ use super::key_event::KeyEvent;
 use super::running::RunningContractState;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidParameters};
-use crate::legacy_contract_state;
 use crate::primitives::domain::DomainRegistry;
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
@@ -138,14 +137,6 @@ impl InitializingContractState {
             )));
         }
         Ok(None)
-    }
-}
-
-impl From<&legacy_contract_state::InitializingContractState> for InitializingContractState {
-    fn from(_state: &legacy_contract_state::InitializingContractState) -> Self {
-        // It's inconceivable we would upgrade from an Initializing state. So don't bother
-        // supporting it.
-        unimplemented!("Cannot upgrade from legacy Initializing state")
     }
 }
 

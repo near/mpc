@@ -1,13 +1,57 @@
-use crate::common::{gen_accounts, CONTRACT_FILE_PATH, PARTICIPANT_LEN};
+use crate::common::{gen_accounts, PARTICIPANT_LEN};
+use base64::engine::general_purpose;
+use base64::Engine;
+use common::current_contract;
 use mpc_contract::config::InitConfig;
 use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
 use near_workspaces::network::Sandbox;
 use near_workspaces::{Contract, Worker};
-use std::fs;
-
+use reqwest::Client;
 pub mod common;
+use serde::Deserialize;
 
-const OLD_CONTRACT_PATH: &str = "../compiled-contracts/last-breaking-changes.wasm";
+#[derive(Deserialize)]
+struct RpcResponse {
+    result: RpcResult,
+}
+
+#[derive(Deserialize)]
+struct RpcResult {
+    code_base64: String,
+}
+
+enum Network {
+    Testnet,
+    Mainnet,
+}
+
+async fn fetch_contract_code(network: Network) -> anyhow::Result<Vec<u8>> {
+    let (url, account_id) = match network {
+        Network::Mainnet => ("https://rpc.mainnet.near.org", "v1.signer"),
+        Network::Testnet => ("https://rpc.testnet.near.org", "v1.signer-prod.testnet"),
+    };
+
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": "dontcare",
+        "method": "query",
+        "params": {
+            "request_type": "view_code",
+            "finality": "final",
+            "account_id": account_id
+        }
+    });
+
+    let client = Client::new();
+    let response = client
+        .post(url)
+        .json(&body)
+        .send()
+        .await?
+        .json::<RpcResponse>()
+        .await?;
+    Ok(general_purpose::STANDARD.decode(&response.result.code_base64)?)
+}
 
 async fn init_contract(worker: Worker<Sandbox>, contract: &Contract) -> anyhow::Result<()> {
     let (_, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
@@ -38,17 +82,17 @@ async fn healthcheck(contract: &Contract) -> anyhow::Result<bool> {
     Ok(status)
 }
 
-async fn deploy_old(worker: &Worker<Sandbox>) -> anyhow::Result<Contract> {
-    let old_wasm = std::fs::read(OLD_CONTRACT_PATH)?;
+async fn deploy_old(worker: &Worker<Sandbox>, network: Network) -> anyhow::Result<Contract> {
+    let old_wasm = fetch_contract_code(network).await?;
     let old_contract = worker.dev_deploy(&old_wasm).await?;
     Ok(old_contract)
 }
 
 async fn upgrade_to_new(old_contract: Contract) -> anyhow::Result<Contract> {
-    let new_wasm = std::fs::read(CONTRACT_FILE_PATH)?;
+    let new_wasm = current_contract();
     let new_contract = old_contract
         .as_account()
-        .deploy(&new_wasm)
+        .deploy(new_wasm)
         .await?
         .into_result()?;
     Ok(new_contract)
@@ -65,11 +109,10 @@ async fn migrate(contract: &Contract) -> anyhow::Result<()> {
 ///
 /// These checks use the previous contract version (the one that introduced breaking changes)
 /// as a baseline. If step 2 fails, you will be prompted to update the baseline contract.
-#[tokio::test]
-async fn back_compatibility() -> anyhow::Result<()> {
+async fn back_compatibility(network: Network) -> anyhow::Result<()> {
     let worker = near_workspaces::sandbox().await?;
 
-    let contract = deploy_old(&worker).await?;
+    let contract = deploy_old(&worker, network).await?;
 
     init_contract(worker, &contract).await?;
 
@@ -91,12 +134,18 @@ async fn back_compatibility() -> anyhow::Result<()> {
 
     if healthcheck(&contract).await? {
         println!("✅ Back compatibility check succeeded: migration() works fine 👍");
-        println!("⚠️ But, you should update \"last-breaking-changes\" contract to the new version. Run this:");
-        let input = fs::canonicalize(CONTRACT_FILE_PATH)?.into_os_string();
-        let destination = fs::canonicalize(OLD_CONTRACT_PATH)?.into_os_string();
-        println!("\tcp {:?} {:?}", input, destination);
-        return Err(anyhow::anyhow!("Check logs for more details."));
+        return Ok(());
     };
 
     anyhow::bail!("❌Back compatibility check failed: state() call doesnt work after migration(). Probably you should introduce new logic to the `migrate()` method.")
+}
+
+#[tokio::test]
+async fn test_back_compatiblity_mainnet() {
+    back_compatibility(Network::Mainnet).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_back_compatiblity_testnet() {
+    back_compatibility(Network::Testnet).await.unwrap();
 }

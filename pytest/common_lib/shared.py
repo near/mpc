@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from ruamel.yaml import YAML
 from common_lib import constants
 from common_lib import signature
-from common_lib.contract_state import ContractState, Domains, ProtocolState, SignatureScheme
+from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
 from common_lib.signature import generate_sign_args
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))

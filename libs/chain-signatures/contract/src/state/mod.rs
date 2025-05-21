@@ -136,26 +136,6 @@ impl ProtocolContractState {
     }
 }
 
-impl From<&super::legacy_contract_state::ProtocolContractState> for ProtocolContractState {
-    fn from(protocol_state: &super::legacy_contract_state::ProtocolContractState) -> Self {
-        // can this be simplified?
-        match &protocol_state {
-            super::legacy_contract_state::ProtocolContractState::NotInitialized => {
-                Self::NotInitialized
-            }
-            super::legacy_contract_state::ProtocolContractState::Initializing(state) => {
-                Self::Initializing(state.into())
-            }
-            super::legacy_contract_state::ProtocolContractState::Running(state) => {
-                Self::Running(state.into())
-            }
-            super::legacy_contract_state::ProtocolContractState::Resharing(_) => {
-                unimplemented!("Migration of running state will not happen.")
-            }
-        }
-    }
-}
-
 impl ProtocolContractState {
     pub fn name(&self) -> &'static str {
         match self {
