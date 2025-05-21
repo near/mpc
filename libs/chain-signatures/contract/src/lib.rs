@@ -167,7 +167,8 @@ impl MpcContract {
             parameters,
             init_config,
         );
-        parameters.validate().unwrap();
+        let now = env::block_timestamp_ms() / 1_000;
+        parameters.validate(now).unwrap();
 
         Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -881,7 +882,8 @@ impl VersionedMpcContract {
             parameters,
             init_config,
         );
-        parameters.validate()?;
+        let now = env::block_timestamp_ms() / 1_000;
+        parameters.validate(now)?;
 
         Ok(Self::V1(MpcContract::init(parameters, init_config)))
     }
@@ -905,7 +907,8 @@ impl VersionedMpcContract {
             parameters,
             init_config,
         );
-        parameters.validate()?;
+        let now = env::block_timestamp_ms() / 1_000;
+        parameters.validate(now)?;
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
 
         // Check that the domains match exactly those in the keyset.

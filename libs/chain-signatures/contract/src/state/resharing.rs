@@ -378,18 +378,19 @@ mod tests {
         let new_params_1 =
             ThresholdParameters::new(new_participants_1, new_threshold.clone()).unwrap();
         let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
+        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
         assert!(state
             .previous_running_state
             .parameters
-            .validate_incoming_proposal(&new_params_1)
+            .validate_incoming_proposal(&new_params_1, now)
             .is_ok());
         assert!(new_params_1
-            .validate_incoming_proposal(&new_params_2)
+            .validate_incoming_proposal(&new_params_2, now)
             .is_ok());
         assert!(state
             .previous_running_state
             .parameters
-            .validate_incoming_proposal(&new_params_2)
+            .validate_incoming_proposal(&new_params_2, now)
             .is_err());
 
         // Reproposing with invalid epoch ID should fail.

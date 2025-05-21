@@ -240,7 +240,8 @@ pub mod tests {
     #[test]
     fn test_authenticated_participant_id() {
         let proposed_parameters = gen_threshold_params(MAX_N);
-        assert!(proposed_parameters.validate().is_ok());
+        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
+        assert!(proposed_parameters.validate(now).is_ok());
         for (account_id, _, _) in proposed_parameters.participants().participants() {
             let mut context = VMContextBuilder::new();
             context.signer_account_id(account_id.clone());
@@ -255,7 +256,8 @@ pub mod tests {
     #[test]
     fn test_authenticated_account_id() {
         let proposed_parameters = gen_threshold_params(MAX_N);
-        assert!(proposed_parameters.validate().is_ok());
+        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
+        assert!(proposed_parameters.validate(now).is_ok());
         for (account_id, _, _) in proposed_parameters.participants().participants() {
             let mut context = VMContextBuilder::new();
             context.signer_account_id(account_id.clone());

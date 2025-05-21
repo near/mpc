@@ -8,7 +8,7 @@ use crate::primitives::{
     thresholds::ThresholdParameters,
     votes::ThresholdParametersVotes,
 };
-use near_sdk::near;
+use near_sdk::{env, near};
 use std::collections::BTreeSet;
 
 /// In this state, the contract is ready to process signature requests.
@@ -92,8 +92,10 @@ impl RunningContractState {
         &mut self,
         proposal: &ThresholdParameters,
     ) -> Result<bool, Error> {
+        let now = env::block_timestamp_ms() / 1_000;
+
         // ensure the proposal is valid against the current parameters
-        self.parameters.validate_incoming_proposal(proposal)?;
+        self.parameters.validate_incoming_proposal(proposal, now)?;
 
         // ensure the signer is a proposed participant
         let candidate = AuthenticatedAccountId::new(proposal.participants())?;

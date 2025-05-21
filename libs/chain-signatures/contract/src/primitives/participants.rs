@@ -1,7 +1,7 @@
 use super::tee::quote::get_collateral;
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 use dcap_qvl::verify::{self, VerifiedReport};
-use near_sdk::{env, near, AccountId, PublicKey};
+use near_sdk::{near, AccountId, PublicKey};
 use std::{
     collections::BTreeSet,
     fmt::{self, Display},
@@ -37,10 +37,11 @@ impl fmt::Debug for ParticipantInfo {
 }
 
 impl ParticipantInfo {
-    pub fn verify_quote(&self) -> Result<VerifiedReport, Error> {
-        let now = env::block_timestamp_ms() / 1_000;
+    pub fn verify_quote(&self, timestamp: u64) -> Result<VerifiedReport, Error> {
         let tee_collateral = get_collateral(self.quote_collateral.clone());
-        let verification_result = verify::verify(&self.tee_quote, &tee_collateral, now);
+        let verification_result = verify::verify(&self.tee_quote, &tee_collateral, timestamp);
+        println!("TEE quote verification result: {:?}", verification_result);
+        println!("now: {:?}", timestamp);
         verification_result.map_err(|_| InvalidCandidateSet::InvalidParticipantsTeeQuote.into())
     }
 }
@@ -123,7 +124,7 @@ impl Participants {
     ///  - All account IDs are unique.
     ///  - The next_id is greater than all participant IDs.
     ///  - All participant TEE quotes are valid.
-    pub fn validate(&self) -> Result<(), Error> {
+    pub fn validate(&self, timestamp: u64) -> Result<(), Error> {
         let mut ids: BTreeSet<ParticipantId> = BTreeSet::new();
         let mut accounts: BTreeSet<AccountId> = BTreeSet::new();
         for (acc_id, pid, pinfo) in &self.participants {
@@ -132,7 +133,7 @@ impl Participants {
             if self.next_id.get() <= pid.get() {
                 return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
             }
-            if pinfo.verify_quote().is_err() {
+            if pinfo.verify_quote(timestamp).is_err() {
                 return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into());
             }
         }
@@ -223,6 +224,7 @@ pub mod tests {
         let n = rand::thread_rng().gen_range(1..800);
         let expected = gen_accounts_and_info(n);
         let mut participants = Participants::new();
+        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
         for (idx, (account_id, info)) in expected.iter().enumerate() {
             participants
                 .insert(account_id.clone(), info.clone())
@@ -242,6 +244,6 @@ pub mod tests {
         for i in 0..n {
             assert!(participants.account_id(&ParticipantId(i as u32)).is_ok());
         }
-        assert!(participants.validate().is_ok());
+        assert!(participants.validate(now).is_ok());
     }
 }
