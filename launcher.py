@@ -96,9 +96,15 @@ def main():
     # TODO If we need more flexibility in deploying the app, we could also vote on a docker
     # compose hash inside the contract.
     docker_cmd = ['docker', 'run']
-    for env_file in ['/tapp/.host-shared/.decrypted-env', '/tapp/.host-shared/.user-config']:
+
+    for env_file in ['/tapp/.host-shared/.user-config']:
         if os.path.isfile(env_file):
             docker_cmd += ['--env-file', env_file]
+
+    # Forward ports from container to CVM
+    # This port is the MPC node port. It must be forwarded and cannot be remapped.
+    docker_cmd += ['-p', '11780:11780']
+    docker_cmd += ['-p', '8090:8090']
 
     docker_cmd += ['-v', '/tapp:/tapp:ro']
     docker_cmd += ['-v', '/var/run/dstack.sock:/var/run/dstack.sock']
