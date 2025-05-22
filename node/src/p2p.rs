@@ -449,12 +449,18 @@ pub async fn new_tls_mesh_network(
                     .set_incoming_connection(&incoming_conn);
                 let mut received_bytes: u64 = 0;
                 loop {
-                    let len = stream.read_u32().await?;
+                    let len = tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        stream.read_u32()
+                    ).await??;
                     if len >= MAX_MESSAGE_LEN {
                         anyhow::bail!("Message too long");
                     }
                     let mut buf = vec![0; len as usize];
-                    stream.read_exact(&mut buf).await?;
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        stream.read_exact(&mut buf)
+                    ).await??;
                     received_bytes += 4 + len as u64;
 
                     let packet =
