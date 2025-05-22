@@ -10,9 +10,8 @@ use crate::primitives::{
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     thresholds::{Threshold, ThresholdParameters},
 };
-use crate::v0_state;
 use initializing::InitializingContractState;
-use near_sdk::{env, near};
+use near_sdk::near;
 use resharing::ResharingContractState;
 use running::RunningContractState;
 
@@ -24,17 +23,6 @@ pub enum ProtocolContractState {
     Initializing(InitializingContractState),
     Running(RunningContractState),
     Resharing(ResharingContractState),
-}
-
-impl From<v0_state::ProtocolContractState> for ProtocolContractState {
-    fn from(value: v0_state::ProtocolContractState) -> Self {
-        match value {
-            v0_state::ProtocolContractState::Running(running) => {
-                ProtocolContractState::Running(running.into())
-            }
-            _ => env::panic_str("not supported"),
-        }
-    }
 }
 
 impl ProtocolContractState {
@@ -173,26 +161,6 @@ impl ProtocolContractState {
         self.domain_registry()?
             .most_recent_domain_for_signature_scheme(signature_scheme)
             .ok_or_else(|| DomainError::NoSuchDomain.into())
-    }
-}
-
-impl From<&super::legacy_contract_state::ProtocolContractState> for ProtocolContractState {
-    fn from(protocol_state: &super::legacy_contract_state::ProtocolContractState) -> Self {
-        // can this be simplified?
-        match &protocol_state {
-            super::legacy_contract_state::ProtocolContractState::NotInitialized => {
-                Self::NotInitialized
-            }
-            super::legacy_contract_state::ProtocolContractState::Initializing(state) => {
-                Self::Initializing(state.into())
-            }
-            super::legacy_contract_state::ProtocolContractState::Running(state) => {
-                Self::Running(state.into())
-            }
-            super::legacy_contract_state::ProtocolContractState::Resharing(state) => {
-                Self::Resharing(state.into())
-            }
-        }
     }
 }
 

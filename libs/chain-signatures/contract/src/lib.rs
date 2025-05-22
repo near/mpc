@@ -54,10 +54,14 @@ const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const TEE_UPGRADE_PERIOD: BlockHeight = 604800; // ~7 days
 
+/// Store two version of the MPC contract for migration and backward compatibility purposes.
+/// Note: Probably, you don't need to change this struct.
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
 pub enum VersionedMpcContract {
+    /// Previous breaking changes version. We call `migration()` on it to transit into v1
     V0(MpcContractV0),
+    /// Current actual version
     V1(MpcContract),
 }
 
@@ -152,22 +156,6 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     config: Config,
     tee_state: TeeState,
-}
-
-impl From<v0_state::MpcContractV0> for MpcContract {
-    fn from(value: v0_state::MpcContractV0) -> Self {
-        Self {
-            protocol_state: value.protocol_state.into(),
-            pending_requests: value.pending_requests,
-            proposed_updates: ProposedUpdates::default(),
-            config: value.config,
-            tee_state: TeeState {
-                allowed_code_hashes: AllowedCodeHashes::default(),
-                historical_code_hashes: vec![],
-                votes: CodeHashesVotes::default(),
-            },
-        }
-    }
 }
 
 impl MpcContract {
@@ -807,11 +795,20 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             id,
         );
-        let voter = self.voter_or_panic();
-        let threshold = match &self {
-            Self::V1(mpc_contract) => mpc_contract.threshold()?,
-            _ => env::panic_str("expected V1"),
+
+        let Self::V1(mpc_contract) = self else {
+            env::panic_str("expected V1");
         };
+
+        if !matches!(
+            mpc_contract.protocol_state,
+            ProtocolContractState::Running(_)
+        ) {
+            env::panic_str("protocol must be in running state");
+        }
+
+        let threshold = mpc_contract.threshold()?;
+        let voter = self.voter_or_panic();
         let Some(votes) = self.proposed_updates().vote(&id, voter) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
@@ -930,10 +927,6 @@ impl VersionedMpcContract {
         }))
     }
 
-    fn state_read<T: borsh::BorshDeserialize>() -> Option<T> {
-        env::storage_read(b"STATE").and_then(|data| T::try_from_slice(&data).ok())
-    }
-
     /// This will be called internally by the contract to migrate the state when a new contract
     /// is deployed. This function should be changed every time state is changed to do the proper
     /// migrate flow.
@@ -945,31 +938,6 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
-        if let Some(legacy_contract_state::VersionedMpcContract::V1(state)) =
-            Self::state_read::<legacy_contract_state::VersionedMpcContract>()
-        {
-            let config = Config::default();
-            let protocol_state: ProtocolContractState = (&state.protocol_state).into();
-            return Ok(VersionedMpcContract::V1(MpcContract {
-                config,
-                protocol_state,
-                // Start with a fresh pending requests map. Migrating the signature requests is
-                // tricky and possibly not going to work, and even if we did, these requests
-                // would just time out during the V2 upgrade process. (For future migrations we
-                // would still want to consider keeping the pending signature requests, though.)
-                // Note: the storage key is also different, as we want to avoid inheriting the
-                // previous state.
-                pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
-                // This inherits the previous proposed updates map.
-                // TODO(#318): This is problematic.
-                proposed_updates: ProposedUpdates::default(),
-                tee_state: TeeState {
-                    allowed_code_hashes: AllowedCodeHashes::default(),
-                    historical_code_hashes: vec![],
-                    votes: CodeHashesVotes::default(),
-                },
-            }));
-        }
         if let Some(contract) = env::state_read::<VersionedMpcContract>() {
             return match contract {
                 VersionedMpcContract::V0(x) => Ok(VersionedMpcContract::V1(x.into())),
