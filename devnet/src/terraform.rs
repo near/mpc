@@ -170,7 +170,7 @@ impl MpcTerraformDeployInfraCmd {
 }
 
 impl MpcTerraformDeployNomadCmd {
-    pub async fn run(&self, name: &str, config: ParsedConfig) -> TerraformInfraShowOutput {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
             "Going to deploy testing cluster Nomad jobs with Terraform recipes located at {}",
             name,
@@ -238,15 +238,42 @@ impl MpcTerraformDeployNomadCmd {
             .env("NOMAD_ADDR", &nomad_server_url)
             .print_and_run();
 
-        let output = std::process::Command::new("terraform")
+        std::process::Command::new("terraform")
             .arg("show")
             .arg("-json")
             .current_dir(&infra_dir)
             .output()
             .expect("Failed to run terraform show -json");
-
-        serde_json::from_slice(&output.stdout).expect("Failed to parse terraform show output")
     }
+}
+
+pub async fn get_cluster(name: &str, config: ParsedConfig) -> TerraformInfraShowOutput {
+    let infra_ops_path = &config.infra_ops_path;
+    let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
+
+    std::process::Command::new("terraform")
+        .arg("init")
+        .current_dir(&infra_dir)
+        .output()
+        .unwrap();
+
+    std::process::Command::new("terraform")
+        .arg("workspace")
+        .arg("select")
+        .arg("-or-create")
+        .arg(name)
+        .current_dir(&infra_dir)
+        .output()
+        .unwrap();
+
+    let output = std::process::Command::new("terraform")
+        .arg("show")
+        .arg("-json")
+        .current_dir(&infra_dir)
+        .output()
+        .expect("Failed to run terraform show -json");
+
+    serde_json::from_slice(&output.stdout).expect("Failed to parse terraform show output")
 }
 
 impl MpcTerraformDestroyInfraCmd {

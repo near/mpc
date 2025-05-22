@@ -26,9 +26,10 @@ impl TerraformInfraShowOutput {
     pub async fn cluster_is_ready(&self) -> bool {
         let states = self.state().await;
         println!("states: {:?}", states);
-        states
-            .into_iter()
-            .all(|s| s != State::Unavailable && s != State::WaitingForSync)
+        !states.is_empty()
+            && states
+                .into_iter()
+                .all(|s| s != State::Unavailable && s != State::WaitingForSync)
     }
 }
 
