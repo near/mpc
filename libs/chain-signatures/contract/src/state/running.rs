@@ -528,14 +528,6 @@ pub mod running_tests {
         }
     }
 
-    impl ResharingState {
-        /// Returns the epoch ID that we would transition into if resharing were completed successfully.
-        /// This would increment if we end up voting for a re-proposal.
-        fn prospective_epoch_id(&self) -> EpochId {
-            self.resharing_key.epoch_id()
-        }
-    }
-
     fn test_resharing_contract_state_for(num_domains: usize) {
         println!("Testing with {} domains", num_domains);
         let mut running_state = gen_running_state(num_domains);
