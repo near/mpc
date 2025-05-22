@@ -429,7 +429,12 @@ impl Coordinator {
             let multiplexer_handle = tokio::spawn(async move {
                 loop {
                     select! {
-                        Some(network_channel) = channel_receiver.recv()  => {
+                        network_channel = channel_receiver.recv()  => {
+                            let Some(network_channel) = network_channel else {
+                                tracing::info!("Network channel dropped.");
+                                break;
+                            };
+
                             tracing::info!("received channel {:?}", network_channel.task_id());
                             let is_resharing_message = matches!(
                                 network_channel.task_id(),
@@ -438,9 +443,15 @@ impl Coordinator {
                             );
 
                             if is_resharing_message {
-                                let _ = resharing_sender.send(network_channel);
+                                let send_result = resharing_sender.send(network_channel);
+                                if send_result.is_err() {
+                                    tracing::error!("resharing receiver dropped.");
+                                }
                             } else {
-                                let _ = running_sender.send(network_channel);
+                                let send_result = running_sender.send(network_channel);
+                                if send_result.is_err() {
+                                    tracing::error!("running receiver dropped.");
+                                }
                             }
                         }
 
@@ -450,6 +461,8 @@ impl Coordinator {
                         }
 
                     }
+
+                    tracing::info!("Exiting multiplexer.");
                 }
             });
 
