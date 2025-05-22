@@ -222,6 +222,12 @@ impl RunningContractState {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
+
+        let key_resharing_ongoing = self.resharing_process.is_some();
+        if key_resharing_ongoing {
+            return Err(InvalidState::ProtocolIsResharingKeys.into());
+        }
+
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
         if self.parameters.participants().len() as u64 == n_votes {

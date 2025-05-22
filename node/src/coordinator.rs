@@ -33,6 +33,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 // use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -76,6 +77,7 @@ struct MpcJob {
 }
 
 /// When an MpcJob future returns successfully, it returns one of the following.
+#[derive(Debug)]
 enum MpcJobResult {
     /// This MpcJob has been completed successfully.
     Done,
@@ -479,7 +481,7 @@ impl Coordinator {
             let mpc_config = mpc_config.clone();
 
             tracking::spawn("key_resharing", async move {
-                Self::run_key_resharing(
+                let resharing_result = Self::run_key_resharing(
                     &config_file,
                     keyshare_storage.clone(),
                     running_state.clone(),
@@ -489,7 +491,9 @@ impl Coordinator {
                     chain_txn_sender,
                     resharing_state_receiver,
                 )
-                .await
+                .await;
+
+                info!("resharing result: {:?}", resharing_result);
             })
         });
 

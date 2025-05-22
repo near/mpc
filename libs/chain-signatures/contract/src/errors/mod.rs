@@ -97,6 +97,8 @@ pub enum InvalidParameters {
 pub enum InvalidState {
     #[error("The protocol is not Running.")]
     ProtocolStateNotRunning,
+    #[error("A resharing process is ongoing.")]
+    ProtocolIsResharingKeys,
     #[error("Protocol state is running, but no resharing process has started.")]
     ProtocolRunningStateIsNotResharing,
     #[error("Protocol state is not initializing.")]
