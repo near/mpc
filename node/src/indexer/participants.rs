@@ -165,7 +165,7 @@ impl ContractState {
                             port_override,
                         )?,
                         reshared_keys: Keyset {
-                            epoch_id: running_state.keyset.epoch_id,
+                            epoch_id: state.prospective_epoch_id(),
                             domains: state.reshared_keys.clone(),
                         },
                         key_event: convert_key_event_to_instance(

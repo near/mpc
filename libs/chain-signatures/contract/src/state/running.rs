@@ -19,6 +19,14 @@ pub struct ResharingState {
     pub resharing_key: KeyEvent,
 }
 
+impl ResharingState {
+    /// Returns the epoch ID that we would transition into if resharing were completed successfully.
+    /// This would increment if we end up voting for a re-proposal.
+    pub fn prospective_epoch_id(&self) -> EpochId {
+        self.resharing_key.epoch_id()
+    }
+}
+
 /// In this state, the contract is ready to process signature requests.
 ///
 /// Proposals can be submitted to modify the state:
