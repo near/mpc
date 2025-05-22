@@ -104,7 +104,6 @@ def main():
     # Forward ports from container to CVM
     # This port is the MPC node port. It must be forwarded and cannot be remapped.
     docker_cmd += ['-p', '11780:11780']
-    docker_cmd += ['-p', '8090:8090']
 
     docker_cmd += ['-v', '/tapp:/tapp:ro']
     docker_cmd += ['-v', '/var/run/dstack.sock:/var/run/dstack.sock']
