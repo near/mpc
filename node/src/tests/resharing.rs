@@ -318,7 +318,7 @@ async fn test_signature_requests_are_handled_while_resharing() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
-    let response_time = request_signature_and_await_response(
+    let _response_time = request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
         &domain,
