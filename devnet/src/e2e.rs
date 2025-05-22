@@ -45,8 +45,6 @@ impl SimpleClusterTestCmd {
         }
 
         println!("deploying docker images");
-        // wait for infra to be deployed
-        // query the endpoint?
         let mut docker_images = BTreeMap::new();
         if let Some(image) = &self.docker_image_start {
             docker_images.insert(image.to_string(), vec![]);
@@ -54,7 +52,6 @@ impl SimpleClusterTestCmd {
 
         let cluster = MpcTerraformDeployNomadCmd {
             shutdown_and_reset: false,
-            reset_node_index: None,
             docker_images: Some(docker_images),
         }
         .run(&self.name, config.clone())

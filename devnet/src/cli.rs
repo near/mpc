@@ -1,14 +1,6 @@
-use std::{collections::BTreeMap, time::Duration};
+use crate::types::load_config;
 
-use reqwest::Client;
-use tokio::time;
-
-use crate::{
-    describe::TerraformInfraShowOutput,
-    devnet::OperatingDevnetSetup,
-    terraform::State,
-    types::{load_config, ParsedConfig},
-};
+use std::collections::BTreeMap;
 
 #[derive(clap::Parser)]
 pub enum Cli {
@@ -83,9 +75,6 @@ impl Cli {
                         cmd.run(&name, config).await;
                     }
                     LoadtestSubCmd::Run(cmd) => {
-                        cmd.run(&name, config).await;
-                    }
-                    LoadtestSubCmd::DrainExpiredRequests(cmd) => {
                         cmd.run(&name, config).await;
                     }
                 }
@@ -181,48 +170,27 @@ pub enum LoadtestSubCmd {
     DeployParallelSignContract(DeployParallelSignContractCmd),
     /// Send load to an MPC network.
     Run(RunLoadtestCmd),
-    /// Drain expired requests in bulk from the MPC contract in order to free up account storage.
-    DrainExpiredRequests(DrainExpiredRequestsCmd),
 }
 
-//#[derive(clap::Parser)]
-//pub struct TestDockerUpdateCmd {
-//    /// Deploys a cluster of two nodes with threshold two.
-//    /// tests the update from docker_begin to docker_end, one by one.
-//    /// Tracks:
-//    /// - number of succesful signatures with docker_begin,
-//    /// - number of successful signature requests with docker_begin & docker_end
-//    /// - number of succesful signaturse with docker_end
-//    /// (as percentage)
-//    ///
-//}
-
-/// Deploys a cluster of two nodes with threshold two.
-/// tests the update from contract_begin to contract_end, one by one.
-/// Tracks:
-/// - number of succesful signatures with docker_begin,
-/// - number of successful signature requests with docker_begin & docker_end
-/// - number of succesful signaturse with docker_end
-/// (as percentage)
+/// Deploys a cluster, sets up the contract and executes a loadtest for a limited duration
 #[derive(clap::Parser)]
 pub struct SimpleClusterTestCmd {
+    /// The name for the test. This has to be unique across the organization, so use your name or
+    /// identifier.
     #[clap(long)]
     pub name: String,
+    /// The number of participants in the network
     #[clap(long)]
     pub num_participants: usize,
+    /// The cryptographic threshold
     #[clap(long)]
     pub threshold: u64,
+    /// Path to the contract binary to be deployed. If not set, defaults to the contract currently deployed on testnet.
     #[clap(long)]
     pub contract_path: Option<String>,
-    // default to latest release
+    // defaults to latest release
     #[clap(long)]
     pub docker_image_start: Option<String>,
-    //    // default to current main
-    //    #[clap(long)]
-    //    pub docker_image_end: Option<String>,
-    //    #[clap(long, default_value = "false")]
-    //    pub atomic_update: bool,
-    //    add key derivation path test.
 }
 
 #[derive(clap::Parser)]
@@ -346,10 +314,6 @@ pub struct MpcTerraformDeployNomadCmd {
     /// If true, shuts down and reset the MPC nodes, leaving only the nearcore data.
     #[clap(long)]
     pub shutdown_and_reset: bool,
-    /// Applies shutdown and reset command only to selected note if set.
-    /// Ignored if `shutdown_and_reset` is false
-    #[clap(long)]
-    pub reset_node_index: Option<i32>,
     /// Overrides the Docker image used for specific MPC node indices.
     ///
     /// This should be passed as a JSON-encoded map from image tags to lists of node indices.
@@ -437,7 +401,7 @@ pub struct RunLoadtestCmd {
     /// Domain ID. If missing, use legacy signature format.
     #[clap(long)]
     pub domain_id: Option<u64>,
-    /// Duration for loadtest (in seconds).
+    /// Duration for loadtest (in seconds). If not set, the test runs indefinetely.
     #[clap(long)]
     pub duration: Option<u64>,
 }

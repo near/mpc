@@ -4,7 +4,6 @@ use cli::Cli;
 mod account;
 mod cli;
 mod constants;
-mod describe;
 mod devnet;
 mod e2e;
 mod funding;

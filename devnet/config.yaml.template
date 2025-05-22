@@ -2,7 +2,7 @@ rpcs:
   # replace with something more powerful if required
   - url: https://rpc.testnet.near.org
     rate_limit: 5
-    max_concurrency: 1
+    max_concurrency: 5
 
 # replace below
 infra_ops_path: ../../infra-ops 

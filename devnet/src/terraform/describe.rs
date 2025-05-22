@@ -1,14 +1,13 @@
+use crate::terraform::State;
 use colored::Colorize;
 use futures::future::join_all;
 use near_sdk::log;
 use serde::Deserialize;
 
-use crate::terraform::State;
-
 /// Partial JSON schema for `terraform show -json` output.
 #[derive(Deserialize)]
 pub struct TerraformInfraShowOutput {
-    pub values: RootValues,
+    pub(super) values: RootValues,
 }
 
 impl TerraformInfraShowOutput {
@@ -32,29 +31,6 @@ impl TerraformInfraShowOutput {
             .all(|s| s != State::Unavailable && s != State::WaitingForSync)
     }
 }
-//
-//        let output: TerraformInfraShowOutput =
-//            serde_json::from_slice(&output.stdout).expect("Failed to parse terraform show output");
-//
-//        for resource in &output.values.root_module.resources {
-//            if let Some(instance) = resource.as_mpc_nomad_server() {
-//                println!(
-//                    "Nomad server: http://{}",
-//                    instance.nat_ip().unwrap_or_default()
-//                );
-//            }
-//        }
-//        for resource in &output.values.root_module.resources {
-//            if let Some((index, instance)) = resource.as_mpc_nomad_client() {
-//                println!(
-//                    "Nomad client #{}: zone {}, instance type {}, debug: http://{}:8080/debug/tasks",
-//                    index,
-//                    instance.zone,
-//                    instance.machine_type,
-//                    instance.nat_ip().unwrap_or_default()
-//                );
-//            }
-//        }
 
 #[derive(Deserialize)]
 pub(super) struct RootValues {
@@ -214,30 +190,4 @@ impl Resource {
             None
         }
     }
-
-    //pub async fn describe_nomad_client(&self) {
-    //    if let Some((index, instance)) = self.as_mpc_nomad_client() {
-    //        let debug_url = format!(
-    //            "http://{}:8080/debug/",
-    //            instance.nat_ip().unwrap_or_default()
-    //        );
-    //        let tasks = format!("{}tasks", debug_url);
-    //        let tasks = match reqwest::get(&tasks).await {
-    //            Ok(val) => val
-    //                .text()
-    //                .await
-    //                .unwrap_or("error unwrapping text".to_string())
-    //                .to_string(),
-    //            Err(e) => e.to_string(),
-    //        };
-    //        println!(
-    //            "Nomad client #{}: zone {}, instance type {}, debug: http://{}:8080/debug/tasks",
-    //            index,
-    //            instance.zone,
-    //            instance.machine_type,
-    //            instance.nat_ip().unwrap_or_default()
-    //        );
-    //        println!("tasks: {}", tasks);
-    //    }
-    //}
 }

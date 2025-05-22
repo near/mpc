@@ -1,8 +1,8 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccessKey, OperatingAccounts};
 use crate::cli::{
-    DeployParallelSignContractCmd, DrainExpiredRequestsCmd, ListLoadtestCmd, NewLoadtestCmd,
-    RunLoadtestCmd, UpdateLoadtestCmd,
+    DeployParallelSignContractCmd, ListLoadtestCmd, NewLoadtestCmd, RunLoadtestCmd,
+    UpdateLoadtestCmd,
 };
 use crate::constants::{DEFAULT_PARALLEL_SIGN_CONTRACT_PATH, ONE_NEAR};
 use crate::devnet::OperatingDevnetSetup;
@@ -314,6 +314,7 @@ impl RunLoadtestCmd {
                 .boxed()
             })
         } else if let Some(domain_config) = domain_config {
+            // todo: pass args (signature request) by channel for verification.
             Arc::new(move |key: &mut OperatingAccessKey| {
                 let mpc_contract = mpc_account.clone();
                 let domain_config = domain_config.clone();
@@ -354,7 +355,6 @@ impl RunLoadtestCmd {
             Arc::new(move |key: &mut OperatingAccessKey| {
                 let mpc_contract = mpc_account.clone();
                 async move {
-                    // create a channel to handle response??
                     key.submit_tx_to_call_function(
                         &mpc_contract,
                         "sign",
@@ -395,7 +395,7 @@ impl RunLoadtestCmd {
             tx_per_sec,
             sender,
             Some(res_sender),
-            self.duration.map(|secs| Duration::from_secs(secs)),
+            self.duration.map(Duration::from_secs),
         )
         .await;
     }
@@ -409,83 +409,6 @@ pub struct SignArgsV1 {
 #[derive(Serialize)]
 pub struct SignArgsV2 {
     pub request: SignRequestArgs,
-}
-
-impl DrainExpiredRequestsCmd {
-    pub async fn run(&self, name: &str, config: ParsedConfig) {
-        let setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
-        let loadtest_setup = setup
-            .loadtest_setups
-            .get(name)
-            .expect(&format!("Loadtest setup with name {} does not exist", name));
-        let mpc_setup = setup.mpc_setups.get(&self.mpc_network).expect(&format!(
-            "MPC network with name {} does not exist",
-            self.mpc_network
-        ));
-        let mpc_account = mpc_setup
-            .contract
-            .clone()
-            .expect("MPC network does not have a contract");
-        println!(
-            "Going to drain expired requests against MPC network {} (contract {}) at {} QPS",
-            self.mpc_network, mpc_account, self.qps
-        );
-
-        let mut keys = Vec::new();
-        for account_id in &loadtest_setup.load_senders {
-            let account = setup.accounts.account(account_id);
-            keys.extend(account.all_access_keys().await);
-        }
-
-        let sender: LoadSenderAsyncFn<()> = Arc::new(move |key: &mut OperatingAccessKey| {
-            let mpc_contract = mpc_account.clone();
-            async move {
-                match key
-                    .submit_tx_to_call_function(
-                        &mpc_contract,
-                        "remove_timed_out_requests",
-                        &serde_json::to_vec(&RemoveTimedOutRequestsArgs {
-                            max_num_to_remove: 20,
-                        })
-                        .unwrap(),
-                        300,
-                        0,
-                        near_primitives::views::TxExecutionStatus::ExecutedOptimistic,
-                        false,
-                    )
-                    .await
-                {
-                    Ok(result) => match result.final_execution_outcome {
-                        Some(err) => match err.into_outcome().status {
-                            near_primitives::views::FinalExecutionStatus::SuccessValue(value) => {
-                                let value = String::from_utf8_lossy(&value).parse::<u32>().unwrap();
-                                println!("Removed {} requests", value);
-                                if value == 0 {
-                                    println!("Done removing requests. Exiting.");
-                                    std::process::exit(0);
-                                }
-                            }
-                            status => {
-                                println!("Error executing transaction: {:?}", status);
-                            }
-                        },
-                        None => println!("Error executing transaction: no outcome"),
-                    },
-                    Err(err) => {
-                        println!("Error sending transaction: {:?}", err);
-                    }
-                }
-                Ok(())
-            }
-            .boxed()
-        });
-        send_load(keys, self.qps as f64, sender, None, None).await;
-    }
-}
-
-#[derive(Serialize)]
-struct RemoveTimedOutRequestsArgs {
-    max_num_to_remove: u32,
 }
 
 type LoadSenderAsyncFn<R> = Arc<
@@ -568,7 +491,9 @@ async fn send_load<R: 'static + std::fmt::Debug + Send>(
     }));
 
     if let Some(duration) = duration {
-        timeout(duration, futures::future::join_all(handles)).await;
+        timeout(duration, futures::future::join_all(handles))
+            .await
+            .unwrap();
     } else {
         futures::future::join_all(handles).await;
     }
