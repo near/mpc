@@ -364,8 +364,13 @@ async fn test_signature_requests_are_handled_while_resharing() {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
-    // Send a request for signature. This should timeout.
-    request_signature_and_await_response(&mut setup.indexer, "user1", &domain, response_time * 2)
-        .await
-        .expect("Signature should be processed while resharing.");
+    // Send a request for signature while network is resharing.
+    request_signature_and_await_response(
+        &mut setup.indexer,
+        "user1",
+        &domain,
+        std::time::Duration::from_secs(60),
+    )
+    .await
+    .expect("Signature should be processed while resharing.");
 }

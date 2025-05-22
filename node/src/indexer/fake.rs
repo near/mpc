@@ -156,11 +156,15 @@ impl FakeMpcContractState {
             ProtocolContractState::Initializing(state) => {
                 if let Err(e) = state.vote_abort(id) {
                     tracing::info!("vote_abort_key_event transaction failed: {}", e);
+                } else {
+                    tracing::info!("vote_abort_key_event succeeded on initializing");
                 }
             }
             ProtocolContractState::Running(state) => {
                 if let Err(e) = state.vote_abort(id) {
                     tracing::info!("vote_abort_key_event transaction failed: {}", e);
+                } else {
+                    tracing::info!("vote_abort_key_event succeeded on running");
                 }
             }
             _ => {
