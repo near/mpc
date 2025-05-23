@@ -102,8 +102,8 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
 }
 
 pub fn set_test_env_for_tee_quote_verification() {
-    let unix_time = 1_747_785_600u64; // 2025-05-21 00:00:00 UTC for TEE quote verification
-    let now_ns = Duration::from_secs(unix_time).as_nanos() as u64; // nanoseconds since epoch
+    let now_sec = 1_747_785_600u64; // 2025-05-21 00:00:00 UTC for TEE quote verification
+    let now_ns = Duration::from_secs(now_sec).as_nanos() as u64; // nanoseconds since epoch
     let mut ctx = VMContextBuilder::new();
     ctx.block_timestamp(now_ns);
     testing_env!(ctx.build());

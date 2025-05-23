@@ -4,7 +4,7 @@ use super::code_hash::CodeHash;
 use super::quote::TeeQuote;
 
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version
-const TEE_UPGRADE_PERIOD: BlockHeight = 604800; // ~7 days
+const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds
 
 /// Proposal for a new TEE code hash to be added to the whitelist, along with the TEE quote that
 /// includes the RTMR3 measurement among others.

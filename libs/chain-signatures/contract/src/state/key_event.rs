@@ -330,8 +330,8 @@ pub mod tests {
             ctx.block_height(self.block_height);
             ctx.random_seed(self.seed);
             ctx.signer_account_id(self.signer.clone());
-            let unix_time = 1_747_785_600u64; // 2025-05-21 00:00:00 UTC for TEE quote verification
-            let now_ns = Duration::from_secs(unix_time).as_nanos() as u64; // nanoseconds since epoch
+            let now_sec = 1_747_785_600u64; // 2025-05-21 00:00:00 UTC for TEE quote verification
+            let now_ns = Duration::from_secs(now_sec).as_nanos() as u64; // nanoseconds since epoch
             ctx.block_timestamp(now_ns);
             testing_env!(ctx.build());
         }

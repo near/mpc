@@ -1072,8 +1072,8 @@ mod tests {
     }
 
     fn basic_setup() -> (VMContext, VersionedMpcContract, SigningKey) {
-        let unix_time = 1_747_785_600u64; // 2025-05-21 00:00:00 UTC for TEE quote verification
-        let now_ns = Duration::from_secs(unix_time).as_nanos() as u64; // nanoseconds since epoch
+        let now_sec = 1_747_785_600u64; // 2025-05-21 00:00:00 UTC for TEE quote verification
+        let now_ns = Duration::from_secs(now_sec).as_nanos() as u64; // nanoseconds since epoch
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
             .block_timestamp(now_ns)
