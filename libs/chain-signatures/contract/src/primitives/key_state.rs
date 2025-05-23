@@ -190,12 +190,16 @@ pub mod tests {
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
             Keyset,
         },
-        test_utils::{bogus_ed25519_public_key_extended, gen_account_id, gen_threshold_params},
+        test_utils::{
+            bogus_ed25519_public_key_extended, gen_account_id, gen_threshold_params,
+            set_test_env_for_tee_quote_verification,
+        },
     };
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rand::Rng;
 
     const MAX_N: usize = 900;
+
     #[test]
     fn test_epoch_id() {
         let id = rand::thread_rng().gen();
@@ -239,9 +243,10 @@ pub mod tests {
 
     #[test]
     fn test_authenticated_participant_id() {
+        set_test_env_for_tee_quote_verification();
+
         let proposed_parameters = gen_threshold_params(MAX_N);
-        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
-        assert!(proposed_parameters.validate(now).is_ok());
+        assert!(proposed_parameters.validate().is_ok());
         for (account_id, _, _) in proposed_parameters.participants().participants() {
             let mut context = VMContextBuilder::new();
             context.signer_account_id(account_id.clone());
@@ -253,11 +258,13 @@ pub mod tests {
             assert!(AuthenticatedParticipantId::new(proposed_parameters.participants()).is_err());
         }
     }
+
     #[test]
     fn test_authenticated_account_id() {
+        set_test_env_for_tee_quote_verification();
+
         let proposed_parameters = gen_threshold_params(MAX_N);
-        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
-        assert!(proposed_parameters.validate(now).is_ok());
+        assert!(proposed_parameters.validate().is_ok());
         for (account_id, _, _) in proposed_parameters.participants().participants() {
             let mut context = VMContextBuilder::new();
             context.signer_account_id(account_id.clone());

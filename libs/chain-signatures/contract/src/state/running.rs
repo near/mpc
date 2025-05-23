@@ -8,7 +8,7 @@ use crate::primitives::{
     thresholds::ThresholdParameters,
     votes::ThresholdParametersVotes,
 };
-use near_sdk::{env, near};
+use near_sdk::near;
 use std::collections::BTreeSet;
 
 /// In this state, the contract is ready to process signature requests.
@@ -92,10 +92,8 @@ impl RunningContractState {
         &mut self,
         proposal: &ThresholdParameters,
     ) -> Result<bool, Error> {
-        let now = env::block_timestamp_ms() / 1_000;
-
         // ensure the proposal is valid against the current parameters
-        self.parameters.validate_incoming_proposal(proposal, now)?;
+        self.parameters.validate_incoming_proposal(proposal)?;
 
         // ensure the signer is a proposed participant
         let candidate = AuthenticatedAccountId::new(proposal.participants())?;
@@ -231,7 +229,8 @@ pub mod running_tests {
             state.parameters.participants().len(),
             state.parameters.threshold().value()
         );
-        let mut env = Environment::new(None, None, None);
+        let block_timestamp = 1757785600_u64 * 1_000_000_u64; // 2025-05-21 00:00:00 UTC to ensure TEE quote verification succeeds
+        let mut env = Environment::new(None, None, None, Some(block_timestamp));
         let participants = state.parameters.participants().clone();
         // Assert that random proposals get rejected.
         for (account_id, _, _) in participants.participants() {

@@ -167,8 +167,7 @@ impl MpcContract {
             parameters,
             init_config,
         );
-        let now = env::block_timestamp_ms() / 1_000;
-        parameters.validate(now).unwrap();
+        parameters.validate().unwrap();
 
         Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -882,8 +881,7 @@ impl VersionedMpcContract {
             parameters,
             init_config,
         );
-        let now = env::block_timestamp_ms() / 1_000;
-        parameters.validate(now)?;
+        parameters.validate()?;
 
         Ok(Self::V1(MpcContract::init(parameters, init_config)))
     }
@@ -907,8 +905,7 @@ impl VersionedMpcContract {
             parameters,
             init_config,
         );
-        let now = env::block_timestamp_ms() / 1_000;
-        parameters.validate(now)?;
+        parameters.validate()?;
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
 
         // Check that the domains match exactly those in the keyset.
@@ -1067,6 +1064,7 @@ mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::{rngs::OsRng, RngCore};
+    use std::time::Duration;
 
     pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
         let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();
@@ -1074,8 +1072,11 @@ mod tests {
     }
 
     fn basic_setup() -> (VMContext, VersionedMpcContract, SigningKey) {
+        let unix_time = 1_747_785_600u64; // 2025-05-21 00:00:00 UTC for TEE quote verification
+        let now_ns = Duration::from_secs(unix_time).as_nanos() as u64; // nanoseconds since epoch
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
+            .block_timestamp(now_ns)
             .build();
         testing_env!(context.clone());
         let secret_key = SigningKey::random(&mut OsRng);

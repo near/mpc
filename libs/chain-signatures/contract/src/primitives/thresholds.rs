@@ -70,22 +70,18 @@ impl ThresholdParameters {
         Ok(())
     }
 
-    pub fn validate(&self, timestamp: u64) -> Result<(), Error> {
+    pub fn validate(&self) -> Result<(), Error> {
         Self::validate_threshold(self.participants.len() as u64, self.threshold())?;
-        self.participants.validate(timestamp)
+        self.participants.validate()
     }
 
     /// Validates the incoming proposal against the current one, ensuring it's allowed based on the
     /// current participants and threshold settings. Also verifies the TEE quote of the participant
     /// who submitted the proposal.
-    pub fn validate_incoming_proposal(
-        &self,
-        proposal: &ThresholdParameters,
-        timestamp: u64,
-    ) -> Result<(), Error> {
+    pub fn validate_incoming_proposal(&self, proposal: &ThresholdParameters) -> Result<(), Error> {
         // ensure the proposed threshold parameters are valid:
         // if performance issue, inline and merge with loop below
-        proposal.validate(timestamp)?;
+        proposal.validate()?;
         let mut old_by_id: BTreeMap<ParticipantId, AccountId> = BTreeMap::new();
         let mut old_by_acc: BTreeMap<AccountId, (ParticipantId, ParticipantInfo)> = BTreeMap::new();
         for (acc, id, info) in self.participants().participants() {
@@ -155,9 +151,14 @@ impl ThresholdParameters {
 
 #[cfg(test)]
 mod tests {
-    use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::{gen_participant, gen_participants, gen_threshold_params};
-    use crate::primitives::thresholds::{Threshold, ThresholdParameters};
+    use crate::primitives::{
+        participants::{ParticipantId, Participants},
+        test_utils::{
+            gen_participant, gen_participants, gen_threshold_params,
+            set_test_env_for_tee_quote_verification,
+        },
+        thresholds::{Threshold, ThresholdParameters},
+    };
     use crate::state::running::running_tests::gen_valid_params_proposal;
     use rand::Rng;
 
@@ -185,6 +186,8 @@ mod tests {
 
     #[test]
     fn test_threshold_parameters_constructor() {
+        set_test_env_for_tee_quote_verification();
+
         let n: usize = rand::thread_rng().gen_range(2..600);
         let min_threshold = ((n as f64) * 0.6).ceil() as usize;
 
@@ -196,13 +199,12 @@ mod tests {
         assert!(
             ThresholdParameters::new(participants.clone(), Threshold::new((n + 1) as u64)).is_err()
         );
-        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
         for k in min_threshold..(n + 1) {
             let threshold = Threshold::new(k as u64);
             let tp = ThresholdParameters::new(participants.clone(), threshold.clone());
             assert!(tp.is_ok(), "{:?}", tp);
             let tp = tp.unwrap();
-            assert!(tp.validate(now).is_ok());
+            assert!(tp.validate().is_ok());
             assert_eq!(tp.threshold(), threshold);
             assert_eq!(tp.participants.len(), participants.len());
             assert_eq!(participants, *tp.participants());
@@ -221,16 +223,16 @@ mod tests {
 
     #[test]
     fn test_validate_incoming_proposal() {
-        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
+        set_test_env_for_tee_quote_verification();
 
         // Valid proposals should validate.
         let params = gen_threshold_params(10);
         let proposal = gen_valid_params_proposal(&params);
-        assert!(params.validate_incoming_proposal(&proposal, now).is_ok());
+        assert!(params.validate_incoming_proposal(&proposal).is_ok());
 
         // Random proposals should not validate.
         let proposal = gen_threshold_params(10);
-        assert!(params.validate_incoming_proposal(&proposal, now).is_err());
+        assert!(params.validate_incoming_proposal(&proposal).is_err());
 
         // Proposal with threshold number of shared participants should be allowed.
         let mut new_participants = params
@@ -240,7 +242,7 @@ mod tests {
         let proposal =
             ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
         assert!(
-            params.validate_incoming_proposal(&proposal, now).is_ok(),
+            params.validate_incoming_proposal(&proposal).is_ok(),
             "{:?} -> {:?}",
             params,
             proposal
@@ -256,7 +258,7 @@ mod tests {
             new_participants,
             Threshold(params.threshold.value() - 1),
         );
-        assert!(params.validate_incoming_proposal(&proposal, now).is_err());
+        assert!(params.validate_incoming_proposal(&proposal).is_err());
 
         // Proposal with the new threshold being invalid should not be allowed.
         let mut new_participants = params
@@ -265,11 +267,13 @@ mod tests {
         new_participants.add_random_participants_till_n(50);
         let proposal =
             ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
-        assert!(params.validate_incoming_proposal(&proposal, now).is_err());
+        assert!(params.validate_incoming_proposal(&proposal).is_err());
     }
 
     #[test]
     fn test_proposal_non_contiguous_new_ids_fail() {
+        set_test_env_for_tee_quote_verification();
+
         // Test that the lowest new id equals to the `next_id` of the previous set.
 
         let params = gen_threshold_params(10);
@@ -288,13 +292,14 @@ mod tests {
             threshold: params.threshold.clone(),
         };
 
-        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
-        let result = params.validate_incoming_proposal(&tampered_params, now);
+        let result = params.validate_incoming_proposal(&tampered_params);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_proposal_non_unique_ids() {
+        set_test_env_for_tee_quote_verification();
+
         let params = gen_threshold_params(10);
 
         // Add duplicate participants
@@ -308,20 +313,19 @@ mod tests {
                 .cloned()
                 .collect(),
         );
-        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
-        assert!(tampered_participants.validate(now).is_err());
+        assert!(tampered_participants.validate().is_err());
 
         let tampered_params = ThresholdParameters {
             participants: tampered_participants,
             threshold: params.threshold.clone(),
         };
-        assert!(params
-            .validate_incoming_proposal(&tampered_params, now)
-            .is_err());
+        assert!(params.validate_incoming_proposal(&tampered_params).is_err());
     }
 
     #[test]
     fn test_remove_only() {
+        set_test_env_for_tee_quote_verification();
+
         let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
 
         let new_participants = params
@@ -333,13 +337,14 @@ mod tests {
             threshold: params.threshold.clone(),
         };
 
-        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
-        let result = params.validate_incoming_proposal(&new_params, now);
+        let result = params.validate_incoming_proposal(&new_params);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_simultaneous_remove_and_insert() {
+        set_test_env_for_tee_quote_verification();
+
         let n = 5;
         let params = ThresholdParameters::new(gen_participants(n), Threshold::new(3)).unwrap();
 
@@ -352,18 +357,18 @@ mod tests {
             threshold: params.threshold.clone(),
         };
 
-        let now = 1747785600_u64; // 2025-05-21 00:00:00 UTC
-        let result = params.validate_incoming_proposal(&new_params, now);
+        let result = params.validate_incoming_proposal(&new_params);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_new_participant_id_too_high() {
+        set_test_env_for_tee_quote_verification();
+
         // Test the logic that `next_id` should only be equal to `max_id + 1`
 
         let n = 5;
         let params = ThresholdParameters::new(gen_participants(n), Threshold::new(3)).unwrap();
-        let timestamp = 1747785600_u64; // 2025-05-21 00:00:00 UTC
 
         for i in 0..=params.participants.next_id().0 + 2 {
             let new_participants =
@@ -372,7 +377,7 @@ mod tests {
                 participants: new_participants,
                 threshold: params.threshold.clone(),
             };
-            let result = params.validate_incoming_proposal(&new_params, timestamp);
+            let result = params.validate_incoming_proposal(&new_params);
             if i >= params.participants.next_id().0 {
                 assert!(result.is_ok());
             } else {
