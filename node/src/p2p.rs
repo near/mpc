@@ -2,7 +2,7 @@ use crate::config::MpcConfig;
 use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
 };
-use crate::network::constants::MAX_MESSAGE_LEN;
+use crate::network::constants::{MAX_MESSAGE_LEN, MESSAGE_READ_TIMEOUT_SECS};
 use crate::network::handshake::p2p_handshake;
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
@@ -449,15 +449,17 @@ pub async fn new_tls_mesh_network(
                     .set_incoming_connection(&incoming_conn);
                 let mut received_bytes: u64 = 0;
                 loop {
-                    let len =
-                        tokio::time::timeout(std::time::Duration::from_secs(30), stream.read_u32())
-                            .await??;
+                    let len = tokio::time::timeout(
+                        std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
+                        stream.read_u32(),
+                    )
+                    .await??;
                     if len >= MAX_MESSAGE_LEN {
                         anyhow::bail!("Message too long");
                     }
                     let mut buf = vec![0; len as usize];
                     tokio::time::timeout(
-                        std::time::Duration::from_secs(30),
+                        std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
                         stream.read_exact(&mut buf),
                     )
                     .await??;
