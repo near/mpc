@@ -491,9 +491,11 @@ async fn send_load<R: 'static + std::fmt::Debug + Send>(
     }));
 
     if let Some(duration) = duration {
-        timeout(duration, futures::future::join_all(handles))
-            .await
-            .unwrap();
+        // we will always get an error here
+        if let Err(e) = timeout(duration, futures::future::join_all(handles)).await {
+            // todo: gracously stop. Wait for all transactions to conclude.
+            println!("Stopping loadtest: {}", e);
+        }
     } else {
         futures::future::join_all(handles).await;
     }

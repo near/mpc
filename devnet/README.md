@@ -253,3 +253,8 @@ if we want to send a high amount of load.
 
 The `--domain-id` parameter specifies which key to use for the signature
 requests. This parameter *may* be omitted to test compatibility with the legacy API.
+
+
+### e2e tests
+
+Takes about 2 - 2.5 hours to sync.

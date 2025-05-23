@@ -15,25 +15,24 @@ use crate::{
 impl SimpleClusterTestCmd {
     pub async fn run(&self) {
         let config = load_config().await;
-        // <uncomment>
-        //NewMpcNetworkCmd {
-        //    num_participants: self.num_participants,
-        //    near_per_account: 1,
-        //    num_responding_access_keys: 5,
-        //    near_per_responding_account: 8,
-        //    ssd: true,
-        //}
-        //.run(&self.name, config.clone())
-        //.await;
+        NewMpcNetworkCmd {
+            num_participants: self.num_participants,
+            near_per_account: 1,
+            num_responding_access_keys: 5,
+            near_per_responding_account: 8,
+            ssd: true,
+        }
+        .run(&self.name, config.clone())
+        .await;
 
-        //MpcDeployContractCmd {
-        //    path: self.contract_path.clone(),
-        //    init_participants: self.num_participants,
-        //    threshold: self.threshold,
-        //    deposit_near: 20,
-        //}
-        //.run(&self.name, config.clone())
-        //.await;
+        MpcDeployContractCmd {
+            path: self.contract_path.clone(),
+            init_participants: self.num_participants,
+            threshold: self.threshold,
+            deposit_near: 20,
+        }
+        .run(&self.name, config.clone())
+        .await;
 
         let mpc_setup = MpcTerraformDeployInfraCmd {
             reset_keyshares: false,
@@ -41,51 +40,45 @@ impl SimpleClusterTestCmd {
         .run(&self.name, config.clone())
         .await;
 
-        //while !mpc_setup.nomad_is_ready().await {
-        //    println!("waiting for nomad");
-        //    tokio::time::sleep(Duration::from_secs(30)).await;
-        //}
+        while !mpc_setup.nomad_is_ready().await {
+            println!("waiting for nomad");
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
 
-        // </uncomment>
         println!("deploying docker images");
         let mut docker_images = BTreeMap::new();
         if let Some(image) = &self.docker_image_start {
             docker_images.insert(image.to_string(), vec![]);
         }
 
-        let cluster = MpcTerraformDeployNomadCmd {
+        MpcTerraformDeployNomadCmd {
             shutdown_and_reset: false,
             docker_images: Some(docker_images),
         }
         .run(&self.name, config.clone())
         .await;
-        // can we simplify below?
         let cluster = get_cluster(&self.name, config.clone()).await;
         while !cluster.cluster_is_ready().await {
             println!("\n Cluster not ready, waiting 2 minutes.");
             tokio::time::sleep(Duration::from_secs(120)).await;
         }
         println!("Cluster is ready");
-        // <uncomment>
-        //println!("Voting to add domains");
-        //MpcVoteAddDomainsCmd {
-        //    signature_schemes: vec!["Secp256k1".to_string(), "Ed25519".to_string()],
-        //    voters: vec![],
-        //}
-        //.run(&self.name, config.clone())
-        //.await;
-        //println!("Creating new loadtest");
-        // </uncomment>
+        println!("Voting to add domains");
+        MpcVoteAddDomainsCmd {
+            signature_schemes: vec!["Secp256k1".to_string(), "Ed25519".to_string()],
+            voters: vec![],
+        }
+        .run(&self.name, config.clone())
+        .await;
+        println!("Creating new loadtest");
         let loadtest_name = format!("{}-test", self.name);
-        // <uncomment>
-        //NewLoadtestCmd {
-        //    num_accounts: 1,
-        //    keys_per_account: 8,
-        //    near_per_account: 10,
-        //}
-        //.run(&loadtest_name, config.clone())
-        //.await;
-        // </uncomment>
+        NewLoadtestCmd {
+            num_accounts: 1,
+            keys_per_account: 8,
+            near_per_account: 10,
+        }
+        .run(&loadtest_name, config.clone())
+        .await;
         let contract = mpc_setup
             .contract
             .clone()
