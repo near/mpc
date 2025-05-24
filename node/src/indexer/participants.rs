@@ -200,6 +200,7 @@ pub async fn monitor_contract_state(
     protocol_state_sender: tokio::sync::watch::Sender<ProtocolContractState>,
 ) -> anyhow::Result<()> {
     const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+    let mut prev_state = ContractState::Invalid;
     loop {
         //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
         //// We currently assume the participant set is static and do not detect or support any updates.
@@ -226,10 +227,10 @@ pub async fn monitor_contract_state(
 
         match result {
             Ok(state) => {
-                let previous_state = contract_state_sender.borrow();
-                if state != *previous_state {
+                if state != prev_state {
                     tracing::info!("Contract state changed: {:?}", state);
                     contract_state_sender.send(state.clone()).unwrap();
+                    prev_state = state;
                 }
             }
             Err(e) => {
