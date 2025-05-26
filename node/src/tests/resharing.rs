@@ -134,8 +134,6 @@ async fn test_key_resharing_multistage() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
-    tokio::time::sleep(Duration::from_secs(20)).await;
-
     // Sanity check.
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
@@ -150,8 +148,6 @@ async fn test_key_resharing_multistage() {
     let mut participants_2 = setup.participants.clone();
     participants_2.participants.pop();
     participants_1.threshold = 3;
-
-    tokio::time::sleep(Duration::from_secs(10)).await;
 
     setup
         .indexer
