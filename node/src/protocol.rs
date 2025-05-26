@@ -6,6 +6,7 @@ use futures::TryFutureExt;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{atomic::AtomicUsize, Arc};
 use tokio::sync::mpsc;
+use tracing::error;
 
 /// Runs any cait-sith protocol, returning the result. Exports tracking progress
 /// describing how many messages are sent and received to each participant.
@@ -59,13 +60,18 @@ pub async fn run_protocol<T>(
                     async move {
                         while let Some(messages) = receiver.recv().await {
                             let num_messages = messages.len();
-                            sender.send(participant_id, messages)?;
+                            sender
+                                .send(participant_id, messages)
+                                .inspect_err(|e| error!("Failed to send: {:?}", e))?;
                             counters.sent(participant_id, num_messages);
                         }
                         anyhow::Ok(())
                     }
                 });
-            futures::future::try_join_all(futures).await?;
+            futures::future::try_join_all(futures)
+                .await
+                .inspect_err(|e| error!("Failed to join futures: {:?}", e))?;
+
             anyhow::Ok(())
         })
         .map_err(anyhow::Error::from)

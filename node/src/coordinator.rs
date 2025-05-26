@@ -33,7 +33,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{error, info};
 // use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -191,7 +191,7 @@ impl Coordinator {
                         stop_fn: Box::new(move |new_state: &ContractState| match new_state {
                             ContractState::Running(new_state) => {
                                 tracing::info!(
-                                    "NEW resharing process is: {:?}",
+                                    "Previous resharing process is: {:?}",
                                     running_state.resharing_process()
                                 );
                                 let epoch_changed =
@@ -471,8 +471,8 @@ impl Coordinator {
         };
 
         // This handle must be alive, otherwise the AutoAbortTask will get cancelled on drop.
-        // let _resharing_handle = resharing_state_receiver.map(|resharing_state_receiver| {
-        if let Some(resharing_state_receiver) = resharing_state_receiver {
+        let resharing_handle = resharing_state_receiver.map(|resharing_state_receiver| {
+            // if let Some(resharing_state_receiver) = resharing_state_receiver {
             let config_file = config_file.clone();
             let running_state = running_state.clone();
             let keyshare_storage = keyshare_storage.clone();
@@ -480,104 +480,126 @@ impl Coordinator {
             let network_client = network_client.clone();
             let mpc_config = mpc_config.clone();
 
-            // tracking::spawn("key_resharing", async move {
-            let resharing_result = Self::run_key_resharing(
-                &config_file,
-                keyshare_storage.clone(),
-                running_state.clone(),
-                &mpc_config,
-                network_client,
-                resharing_receiver,
-                chain_txn_sender,
-                resharing_state_receiver,
-            )
-            .await;
+            tracking::spawn("key_resharing", async move {
+                let resharing_result = Self::run_key_resharing(
+                    &config_file,
+                    keyshare_storage.clone(),
+                    running_state.clone(),
+                    &mpc_config,
+                    network_client,
+                    resharing_receiver,
+                    chain_txn_sender,
+                    resharing_state_receiver,
+                )
+                .await;
 
-            info!("resharing result: {:?}", resharing_result);
+                info!("resharing result: {:?}", resharing_result);
 
-            return resharing_result;
+                resharing_result
+            })
+        });
 
-            // })
-            // });
-        };
+        let running_handle = tracking::spawn("running mpc job", async move {
+            let keyshares = match keyshare_storage.load_keyset(&running_state.keyset).await {
+                Ok(keyshares) => keyshares,
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to load keyshares: {:?}; doing nothing until contract state change",
+                        e
+                    );
+                    return Ok(MpcJobResult::HaltUntilInterrupted);
+                }
+            };
 
-        let keyshares = match keyshare_storage.load_keyset(&running_state.keyset).await {
-            Ok(keyshares) => keyshares,
-            Err(e) => {
-                tracing::error!(
-                    "Failed to load keyshares: {:?}; doing nothing until contract state change",
-                    e
-                );
+            if keyshares.is_empty() {
+                tracing::info!("We have no keyshares. Waiting for Initialization.");
                 return Ok(MpcJobResult::HaltUntilInterrupted);
             }
-        };
 
-        if keyshares.is_empty() {
-            tracing::info!("We have no keyshares. Waiting for Initialization.");
-            return Ok(MpcJobResult::HaltUntilInterrupted);
-        }
+            tracking::set_progress(&format!(
+                "Running epoch {:?} as participant {}",
+                running_state.keyset.epoch_id, mpc_config.my_participant_id
+            ));
 
-        tracking::set_progress(&format!(
-            "Running epoch {:?} as participant {}",
-            running_state.keyset.epoch_id, mpc_config.my_participant_id
-        ));
+            let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
 
-        let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
+            let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
+            let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
+            let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
 
-        let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
-        let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
-        let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
-
-        for keyshare in keyshares {
-            let domain_id = keyshare.key_id.domain_id;
-            match keyshare.data {
-                KeyshareData::Secp256k1(data) => {
-                    ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                    domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
-                }
-                KeyshareData::Ed25519(data) => {
-                    eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                    domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
+            for keyshare in keyshares {
+                let domain_id = keyshare.key_id.domain_id;
+                match keyshare.data {
+                    KeyshareData::Secp256k1(data) => {
+                        ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                        domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
+                    }
+                    KeyshareData::Ed25519(data) => {
+                        eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                        domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
+                    }
                 }
             }
+
+            let ecdsa_signature_provider = Arc::new(EcdsaSignatureProvider::new(
+                config_file.clone().into(),
+                mpc_config.clone().into(),
+                network_client.clone(),
+                clock,
+                secret_db,
+                sign_request_store.clone(),
+                ecdsa_keyshares,
+            )?);
+
+            let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
+                config_file.clone().into(),
+                mpc_config.clone().into(),
+                network_client.clone(),
+                sign_request_store.clone(),
+                eddsa_keyshares,
+            ));
+
+            let mpc_client = Arc::new(MpcClient::new(
+                config_file.clone().into(),
+                network_client,
+                sign_request_store,
+                ecdsa_signature_provider,
+                eddsa_signature_provider,
+                domain_to_scheme,
+            ));
+
+            // TODO: Optimize to not run if it's not participant in previous running state.
+            //
+            // let is_participant_in_running = if running_state.resharing_process().is_some() {
+            //     running_state
+            //         .participants
+            //         .participants
+            //         .iter()
+            //         .any(|p| p.near_account_id == config_file.my_near_account_id)
+            // } else {
+            //     true
+            // };
+
+            mpc_client
+                .run(
+                    running_receiver,
+                    block_update_receiver,
+                    chain_txn_sender,
+                    signature_debug_request_receiver,
+                )
+                .await?;
+
+            Ok(MpcJobResult::Done)
+        });
+
+        if let Some(resharing_handle) = resharing_handle {
+            tracing::info!("Waiting on resharing to complete.");
+            resharing_handle
+                .await?
+                .inspect_err(|e| error!("Resharing failed with: {:?}", e))
+        } else {
+            running_handle.await?
         }
-
-        let ecdsa_signature_provider = Arc::new(EcdsaSignatureProvider::new(
-            config_file.clone().into(),
-            mpc_config.clone().into(),
-            network_client.clone(),
-            clock,
-            secret_db,
-            sign_request_store.clone(),
-            ecdsa_keyshares,
-        )?);
-
-        let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
-            config_file.clone().into(),
-            mpc_config.clone().into(),
-            network_client.clone(),
-            sign_request_store.clone(),
-            eddsa_keyshares,
-        ));
-
-        let mpc_client = Arc::new(MpcClient::new(
-            config_file.clone().into(),
-            network_client,
-            sign_request_store,
-            ecdsa_signature_provider,
-            eddsa_signature_provider,
-            domain_to_scheme,
-        ));
-        mpc_client
-            .run(
-                running_receiver,
-                block_update_receiver,
-                chain_txn_sender,
-                signature_debug_request_receiver,
-            )
-            .await?;
-
-        Ok(MpcJobResult::Done)
     }
 
     /// Entry point to handle the Resharing state of the contract.
@@ -614,6 +636,7 @@ impl Coordinator {
             };
             Some(keyshares)
         } else {
+            info!("Not participant last epoch");
             if keyshare_storage.load_keyset(&previous_keyset).await.is_ok() {
                 tracing::warn!("We should not have the previous keyshares when we were not a participant last epoch");
             }
