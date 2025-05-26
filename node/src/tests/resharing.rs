@@ -268,10 +268,11 @@ async fn test_key_resharing_multistage() {
     .is_some());
 }
 
-// Test that signatures buffered during resharing are not lost.
+/// Test that signatures during resharing
+/// are also processed.
 #[tokio::test]
 #[serial]
-async fn test_key_resharing_signature_buffering() {
+async fn test_signature_requests_in_resharing_are_processed() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 5;
     const THRESHOLD: usize = 3;
@@ -355,14 +356,9 @@ async fn test_key_resharing_signature_buffering() {
     }
 
     // Send a request for signature. This should timeout.
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user1",
-        &domain,
-        response_time * 2
-    )
-    .await
-    .is_none());
+    request_signature_and_await_response(&mut setup.indexer, "user1", &domain, response_time * 2)
+        .await
+        .expect("Signature requests during resharing are processed.");
 
     // Re-enable the node. Now we should get the signature response.
     drop(disabled);
