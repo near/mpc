@@ -380,10 +380,8 @@ async fn test_signature_requests_in_resharing_are_processed() {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
-    timeout(
-        std::time::Duration::from_secs(60),
-        setup.indexer.next_response(),
-    )
-    .await
-    .expect("Timeout waiting for signature response");
+    // Send a request for signature. This should timeout.
+    request_signature_and_await_response(&mut setup.indexer, "user1", &domain, response_time * 2)
+        .await
+        .expect("Signature request in running should be processed.");
 }
