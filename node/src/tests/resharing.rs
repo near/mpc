@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::indexer::participants::ContractState;
 use crate::metrics;
 use crate::p2p::testing::PortSeed;
@@ -69,7 +67,7 @@ async fn test_key_resharing_simple() {
         .start_resharing(setup.participants);
 
     timeout(
-        std::time::Duration::from_secs(60),
+        std::time::Duration::from_secs(20),
         setup.indexer.wait_for_contract_state(|state| match state {
             ContractState::Running(running) => {
                 running.keyset.epoch_id.get() == 1
@@ -148,7 +146,6 @@ async fn test_key_resharing_multistage() {
     let mut participants_2 = setup.participants.clone();
     participants_2.participants.pop();
     participants_1.threshold = 3;
-
     setup
         .indexer
         .contract_mut()
@@ -183,7 +180,7 @@ async fn test_key_resharing_multistage() {
         .contract_mut()
         .await
         .start_resharing(setup.participants.clone());
-    let state_change = timeout(
+    timeout(
         std::time::Duration::from_secs(20),
         setup.indexer.wait_for_contract_state(|state| match state {
             ContractState::Running(running) => {
@@ -193,14 +190,8 @@ async fn test_key_resharing_multistage() {
             _ => false,
         }),
     )
-    .await;
-
-    if state_change.is_err() {
-        panic!(
-            "Timeout waiting for resharing to complete. State: {:?}",
-            setup.indexer.contract_mut().await.state
-        )
-    };
+    .await
+    .expect("Timeout waiting for resharing to complete");
 
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
@@ -277,10 +268,10 @@ async fn test_key_resharing_multistage() {
     .is_some());
 }
 
-// Test that signatures received during resharing phase are processed.
+// Test that signatures buffered during resharing are not lost.
 #[tokio::test]
 #[serial]
-async fn test_signature_requests_are_handled_while_resharing() {
+async fn test_key_resharing_signature_buffering() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 5;
     const THRESHOLD: usize = 3;
@@ -296,6 +287,10 @@ async fn test_signature_requests_are_handled_while_resharing() {
         TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_SIGNATURE_BUFFERING_TEST,
     );
+
+    // Initialize the contract with one fewer participant.
+    let mut initial_participants = setup.participants.clone();
+    initial_participants.participants.pop();
 
     let domain = DomainConfig {
         id: DomainId(0),
@@ -314,7 +309,7 @@ async fn test_signature_requests_are_handled_while_resharing() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
-    let _response_time = request_signature_and_await_response(
+    let response_time = request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
         &domain,
@@ -324,7 +319,7 @@ async fn test_signature_requests_are_handled_while_resharing() {
     .expect("Timed out generating the first signature");
 
     // Disable the last node to make resharing stall.
-    let _disabled_node = setup
+    let disabled = setup
         .indexer
         .disable(
             setup
@@ -347,8 +342,7 @@ async fn test_signature_requests_are_handled_while_resharing() {
     for i in 0..20 {
         // We're running with [serial] so querying metrics should be OK.
         if let Ok(metric) =
-            // TODO: Do not rely on metrics for synchronization of tests.
-            metrics::MPC_CURRENT_JOB_STATE.get_metric_with_label_values(&["Running"])
+            metrics::MPC_CURRENT_JOB_STATE.get_metric_with_label_values(&["Resharing"])
         {
             if metric.get() == NUM_PARTICIPANTS as i64 - 1 {
                 break;
@@ -360,13 +354,22 @@ async fn test_signature_requests_are_handled_while_resharing() {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
-    // Send a request for signature while network is resharing.
-    request_signature_and_await_response(
+    // Send a request for signature. This should timeout.
+    assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user1",
         &domain,
-        std::time::Duration::from_secs(60),
+        response_time * 2
     )
     .await
-    .expect("Signature should be processed while resharing.");
+    .is_none());
+
+    // Re-enable the node. Now we should get the signature response.
+    drop(disabled);
+    timeout(
+        std::time::Duration::from_secs(60),
+        setup.indexer.next_response(),
+    )
+    .await
+    .expect("Timeout waiting for signature response");
 }
