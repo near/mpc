@@ -108,6 +108,7 @@ def main():
     docker_cmd += ['-v', '/tapp:/tapp:ro']
     docker_cmd += ['-v', '/var/run/dstack.sock:/var/run/dstack.sock']
     docker_cmd += ['-v', 'shared-volume:/mnt/shared:ro']
+    docker_cmd += ['-v', 'mpc-data:/data']
 
     # TODO Remove after testing.
     docker_cmd += ['--add-host', 'mpc-node-0.service.mpc.consul:66.220.6.113']
