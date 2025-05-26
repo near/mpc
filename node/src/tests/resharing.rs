@@ -360,6 +360,9 @@ async fn test_signature_requests_in_resharing_are_processed() {
         .await
         .expect("Signature requests during resharing are processed.");
 
+    // Re-enable the node. Now we should get the signature response.
+    drop(disabled);
+
     // Give nodes some time to transition back to running state.
     // This is needed since we are dropping messages with current implementation.
     for i in 0..20 {
@@ -377,8 +380,6 @@ async fn test_signature_requests_in_resharing_are_processed() {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
-    // Re-enable the node. Now we should get the signature response.
-    drop(disabled);
     timeout(
         std::time::Duration::from_secs(60),
         setup.indexer.next_response(),
