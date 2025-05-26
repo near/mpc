@@ -173,7 +173,7 @@ impl ProtocolContractState {
             ProtocolContractState::Resharing(_) => "Resharing",
         }
     }
-    pub fn is_running(&self) -> bool {
+    pub fn is_running_or_resharing(&self) -> bool {
         matches!(
             self,
             ProtocolContractState::Running(_) | ProtocolContractState::Resharing(_)
