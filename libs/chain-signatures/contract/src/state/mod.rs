@@ -174,7 +174,10 @@ impl ProtocolContractState {
         }
     }
     pub fn is_running(&self) -> bool {
-        matches!(self, ProtocolContractState::Running(_))
+        matches!(
+            self,
+            ProtocolContractState::Running(_) | ProtocolContractState::Resharing(_)
+        )
     }
     pub fn authenticate_update_vote(&self) -> Result<(), Error> {
         match &self {
