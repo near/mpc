@@ -165,8 +165,14 @@ impl Coordinator {
 
                     tracing::info!("Key event sender is: {:?}", key_event_receiver);
 
+                    let name = if key_event_sender.is_some() {
+                        "Resharing"
+                    } else {
+                        "Running"
+                    };
+
                     MpcJob {
-                        name: "Running",
+                        name,
                         fut: Self::create_runtime_and_run(
                             "Running",
                             self.config_file.cores,
