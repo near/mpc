@@ -360,6 +360,23 @@ async fn test_signature_requests_in_resharing_are_processed() {
         .await
         .expect("Signature requests during resharing are processed.");
 
+    // Give nodes some time to transition back to running state.
+    // This is needed since we are dropping messages with current implementation.
+    for i in 0..20 {
+        // We're running with [serial] so querying metrics should be OK.
+        if let Ok(metric) =
+            metrics::MPC_CURRENT_JOB_STATE.get_metric_with_label_values(&["Running"])
+        {
+            if metric.get() == NUM_PARTICIPANTS as i64 - 1 {
+                break;
+            }
+        }
+        if i == 19 {
+            panic!("Timeout waiting for resharing to start");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
     // Re-enable the node. Now we should get the signature response.
     drop(disabled);
     timeout(
