@@ -107,7 +107,7 @@ def main():
 
     docker_cmd += ['-v', '/tapp:/tapp:ro']
     docker_cmd += ['-v', '/var/run/dstack.sock:/var/run/dstack.sock']
-    docker_cmd += ['-v', 'shared-volume:/mnt/shared:ro']
+    docker_cmd += ['-v', 'shared-volume:/mnt/shared']
     docker_cmd += ['-v', 'mpc-data:/data']
 
     # TODO Remove after testing.
