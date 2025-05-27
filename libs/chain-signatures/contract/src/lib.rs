@@ -797,11 +797,20 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             id,
         );
-        let voter = self.voter_or_panic();
-        let threshold = match &self {
-            Self::V1(mpc_contract) => mpc_contract.threshold()?,
-            _ => env::panic_str("expected V1"),
+
+        let Self::V1(mpc_contract) = self else {
+            env::panic_str("expected V1");
         };
+
+        if !matches!(
+            mpc_contract.protocol_state,
+            ProtocolContractState::Running(_)
+        ) {
+            env::panic_str("protocol must be in running state");
+        }
+
+        let threshold = mpc_contract.threshold()?;
+        let voter = self.voter_or_panic();
         let Some(votes) = self.proposed_updates().vote(&id, voter) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
