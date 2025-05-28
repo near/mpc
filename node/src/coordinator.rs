@@ -473,7 +473,6 @@ impl Coordinator {
 
         // This handle must be alive, otherwise the AutoAbortTask will get cancelled on drop.
         let resharing_handle = resharing_state_receiver.map(|resharing_state_receiver| {
-            // if let Some(resharing_state_receiver) = resharing_state_receiver {
             let config_file = config_file.clone();
             let running_state = running_state.clone();
             let keyshare_storage = keyshare_storage.clone();
