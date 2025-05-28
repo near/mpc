@@ -25,8 +25,8 @@ use mpc_contract::{state::ProtocolContractState, utils::protocol_state_to_string
 use near_crypto::SecretKey;
 use near_sdk::{borsh, AccountId};
 use serde::Serialize;
-use std::str::FromStr;
 use serde_json::json;
+use std::str::FromStr;
 
 /// Bring the MPC network up to the desired parameterization.
 async fn update_mpc_network(
