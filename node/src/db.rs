@@ -11,7 +11,7 @@ use tracing::{error, info};
 const EPOCH_ID_KEY: &[u8] = b"EPOCH_ID";
 
 pub enum UpdateResult {
-    AlreadyPresent,
+    Unchanged,
     Updated,
 }
 
@@ -124,7 +124,7 @@ impl SecretDB {
 
         if new_epoch_id_is_seen {
             info!("EPOCH UNCHANGED: {:?}", new_epoch_id.get());
-            Ok(UpdateResult::AlreadyPresent)
+            Ok(UpdateResult::Unchanged)
         } else {
             info!(
                 "NEW EPOCH: {:?}, OLD EPOCH {:?}",

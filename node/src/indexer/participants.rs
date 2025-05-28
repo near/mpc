@@ -103,13 +103,7 @@ pub enum KeyEventIdComparisonResult {
 pub struct ContractRunningState {
     pub keyset: Keyset,
     pub participants: ParticipantsConfig,
-    resharing_process: Option<ContractResharingState>,
-}
-
-impl ContractRunningState {
-    pub fn resharing_process(&self) -> Option<&ContractResharingState> {
-        self.resharing_process.as_ref()
-    }
+    pub resharing_state: Option<ContractResharingState>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,11 +157,11 @@ impl ContractState {
                         running_state.parameters.clone(),
                         port_override,
                     )?,
-                    resharing_process: None,
+                    resharing_state: None,
                 })
             }
             ProtocolContractState::Resharing(state) => {
-                let resharing_process = Some(ContractResharingState {
+                let resharing_state = Some(ContractResharingState {
                     new_participants: convert_participant_infos(
                         state.resharing_key.proposed_parameters().clone(),
                         port_override,
@@ -191,7 +185,7 @@ impl ContractState {
                         running_state.parameters.clone(),
                         port_override,
                     )?,
-                    resharing_process,
+                    resharing_state,
                 })
             }
         })
