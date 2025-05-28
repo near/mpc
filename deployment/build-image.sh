@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DOCKERFILE=deployment/Dockerfile-gcp
-: "${IMAGE_NAME:=mpc-node}"
+: "${IMAGE_NAME:=mpc-node-gcp}"
 
 if [ ! -e "$DOCKERFILE" ]; then
    echo "Must be called from project root!"
