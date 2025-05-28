@@ -12,18 +12,21 @@ use crate::queries;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_contract::config::InitConfig;
-use mpc_contract::primitives::{
-    domain::{DomainConfig, DomainId, SignatureScheme},
-    key_state::EpochId,
-    participants::{ParticipantInfo, Participants},
-    thresholds::{Threshold, ThresholdParameters},
+use mpc_contract::{
+    config::InitConfig,
+    primitives::{
+        domain::{DomainConfig, DomainId, SignatureScheme},
+        key_state::EpochId,
+        participants::{ParticipantInfo, Participants},
+        thresholds::{Threshold, ThresholdParameters},
+    }
 };
 use mpc_contract::{state::ProtocolContractState, utils::protocol_state_to_string};
 use near_crypto::SecretKey;
 use near_sdk::{borsh, AccountId};
 use serde::Serialize;
 use std::str::FromStr;
+use serde_json::json;
 
 /// Bring the MPC network up to the desired parameterization.
 async fn update_mpc_network(
