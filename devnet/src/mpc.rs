@@ -19,7 +19,7 @@ use mpc_contract::{
         key_state::EpochId,
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
-    }
+    },
 };
 use mpc_contract::{state::ProtocolContractState, utils::protocol_state_to_string};
 use near_crypto::SecretKey;
