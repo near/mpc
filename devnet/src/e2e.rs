@@ -13,6 +13,8 @@ use crate::{
 };
 
 impl SimpleClusterTestCmd {
+    // todo: make this idempotent. Mainly the mpc & loadtests commands
+    // print outputs should be bold or differently colored to distinguish from the other output.
     pub async fn run(&self) {
         let config = load_config().await;
         NewMpcNetworkCmd {

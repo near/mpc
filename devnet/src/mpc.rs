@@ -126,6 +126,8 @@ impl NewMpcNetworkCmd {
 
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         if setup.mpc_setups.contains_key(name) {
+            // todo: instead of panicking, just re-use?
+            // or alternatively, remove it from the state when it is no longer needed.
             panic!("MPC network {} already exists", name);
         }
         let mpc_setup = setup

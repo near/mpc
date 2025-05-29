@@ -258,3 +258,4 @@ requests. This parameter *may* be omitted to test compatibility with the legacy 
 ### e2e tests
 
 Takes about 2 - 2.5 hours to sync.
+Requires two manual confirmations (for terraform changes)

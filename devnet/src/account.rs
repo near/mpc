@@ -12,6 +12,7 @@
 //! because we need a mutable reference to it to add access keys to our local state. On the other
 //! hand, sending an arbitrary transfer of NEAR tokens is in OperatingAccessKey, since no local
 //! state needs changing (other than updating the nonce, which is per access key).
+use crate::contracts::ActionCall;
 use crate::queries;
 use crate::rpc::NearRpcClients;
 use crate::types::{ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind};
@@ -260,6 +261,39 @@ impl OperatingAccessKey {
             wait_until,
         };
         Ok(self.client.submit(request).await?)
+    }
+    //pub async fn submit_tx_to_rpc(
+    //    client: Arc<NearRpcClients>,
+    //    signed_transaction: SignedTransaction,
+    //    wait_until: TxExecutionStatus,
+    //) -> anyhow::Result<RpcTransactionResponse> {
+    //    let request = methods::send_tx::RpcSendTransactionRequest {
+    //        signed_transaction,
+    //        wait_until,
+    //    };
+    //    Ok(client.submit(request).await?)
+    //}
+
+    //pub fn make_action(method: &str, args: &[u8], tgas: u64, deposit: u128) -> Action {
+    //    Action::FunctionCall(Box::new(near_primitives::action::FunctionCallAction {
+    //        method_name: method.to_string(),
+    //        args: args.to_vec(),
+    //        gas: tgas * 1_000_000_000_000,
+    //        deposit,
+    //    }))
+    //}
+
+    /// Returns the signed transaction
+    pub async fn sign_tx_from_actions(&mut self, action_call: ActionCall) -> SignedTransaction {
+        SignedTransaction::from_actions(
+            self.next_nonce().await,
+            self.account_id.clone(),
+            action_call.receiver_id,
+            &self.signer,
+            action_call.actions,
+            self.recent_block_hash,
+            0,
+        )
     }
 
     pub fn secret_key(&self) -> SecretKey {

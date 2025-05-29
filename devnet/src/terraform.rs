@@ -150,7 +150,7 @@ impl MpcTerraformDeployInfraCmd {
         std::process::Command::new("terraform")
             .arg("apply")
             .arg("-var-file")
-            .arg(terraform_vars_file)
+            .arg(&terraform_vars_file)
             .current_dir(&infra_dir)
             .print_and_run();
 
@@ -165,6 +165,7 @@ impl MpcTerraformDeployInfraCmd {
             .expect("Failed to run terraform output -raw nomad_server_ui");
         let nomad_server_url = String::from_utf8(nomad_server_url.stdout).unwrap();
         mpc_setup.nomad_server_url = Some(nomad_server_url);
+        tokio::fs::remove_file(terraform_vars_file).await.unwrap();
         mpc_setup.clone()
     }
 }
@@ -229,7 +230,7 @@ impl MpcTerraformDeployNomadCmd {
         std::process::Command::new("terraform")
             .arg("apply")
             .arg("-var-file")
-            .arg(terraform_vars_file)
+            .arg(&terraform_vars_file)
             .arg("-var")
             .arg(format!("shutdown_and_reset={}", self.shutdown_and_reset))
             .arg("-var-file")
@@ -244,6 +245,7 @@ impl MpcTerraformDeployNomadCmd {
             .current_dir(&infra_dir)
             .output()
             .expect("Failed to run terraform show -json");
+        tokio::fs::remove_file(terraform_vars_file).await.unwrap();
     }
 }
 
@@ -308,11 +310,13 @@ impl MpcTerraformDestroyInfraCmd {
         std::process::Command::new("terraform")
             .arg("destroy")
             .arg("-var-file")
-            .arg(terraform_vars_file)
+            .arg(&terraform_vars_file)
             .current_dir(&infra_dir)
             .print_and_run();
 
         mpc_setup.nomad_server_url = None;
+        tokio::fs::remove_file(terraform_vars_file).await.unwrap();
+        setup.mpc_setups.remove(name);
     }
 }
 
