@@ -3,6 +3,7 @@ use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -60,6 +61,44 @@ pub struct MpcNetworkSetup {
     pub nomad_server_url: Option<String>,
 }
 
+impl fmt::Display for MpcNetworkSetup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "MPC Network Setup:")?;
+        writeln!(f, "  Participants:")?;
+        for (i, participant) in self.participants.iter().enumerate() {
+            writeln!(f, "    {}: {}", i + 1, participant)?;
+        }
+
+        if let Some(contract) = &self.contract {
+            writeln!(f, "  Contract: {}", contract)?;
+        } else {
+            writeln!(f, "  Contract: None")?;
+        }
+
+        writeln!(
+            f,
+            "  Desired Balance per Account: {}",
+            self.desired_balance_per_account
+        )?;
+        writeln!(
+            f,
+            "  Number of Responding Access Keys: {}",
+            self.num_responding_access_keys
+        )?;
+        writeln!(
+            f,
+            "  Desired Balance per Responding Account: {}",
+            self.desired_balance_per_responding_account
+        )?;
+
+        //writeln!(f, " Using SSD: {}", self.ssd)?;
+        match &self.nomad_server_url {
+            Some(url) => writeln!(f, "  Nomad Server URL: {}", url),
+            None => writeln!(f, "  Nomad Server URL: None"),
+        }
+    }
+}
+
 /// Local state for a single loadtest setup.
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct LoadtestSetup {
@@ -67,6 +106,32 @@ pub struct LoadtestSetup {
     pub desired_balance_per_account: u128,
     pub desired_keys_per_account: usize,
     pub parallel_signatures_contract: Option<AccountId>,
+}
+
+impl fmt::Display for LoadtestSetup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "LoadtestSetup {{")?;
+        writeln!(f, "  load_senders: {:?}", self.load_senders)?;
+        writeln!(
+            f,
+            "  desired_balance_per_account: {}",
+            self.desired_balance_per_account
+        )?;
+        writeln!(
+            f,
+            "  desired_keys_per_account: {}",
+            self.desired_keys_per_account
+        )?;
+        writeln!(
+            f,
+            "  parallel_signatures_contract: {}",
+            self.parallel_signatures_contract
+                .as_ref()
+                .map(|x| x.as_str())
+                .unwrap_or("None")
+        )?;
+        write!(f, "}}")
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -95,7 +160,7 @@ pub struct ParsedConfig {
 
 pub async fn load_config() -> ParsedConfig {
     const CONFIG_FILE: &str = "config.yaml";
-    let config = std::fs::read_to_string(CONFIG_FILE).unwrap();
+    let config = std::fs::read_to_string(CONFIG_FILE).expect("Did not find 'config.yaml'");
     let config: Config = serde_yaml::from_str(&config).unwrap();
     let client = Arc::new(NearRpcClients::new(config.rpcs).await);
     ParsedConfig {
