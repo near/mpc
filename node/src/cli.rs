@@ -12,6 +12,7 @@ use crate::{
         permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
         GcpPermanentKeyStorageConfig, KeyStorageConfig,
     },
+    p2p,
     p2p::testing::{generate_test_p2p_configs, PortSeed},
     tracking::{self, start_root_task},
     web::start_web_server,
@@ -20,7 +21,7 @@ use anyhow::Context;
 use clap::Parser;
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
-use near_crypto::SecretKey;
+use near_crypto::{ED25519PublicKey, ED25519SecretKey, SecretKey};
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
@@ -98,9 +99,6 @@ pub struct StartCmd {
     pub gcp_keyshare_secret_id: Option<String>,
     #[arg(env("GCP_PROJECT_ID"))]
     pub gcp_project_id: Option<String>,
-    /// p2p private key for TLS. It must be in the format of "ed25519:...".
-    #[arg(env("MPC_P2P_PRIVATE_KEY"))]
-    pub p2p_private_key: SecretKey,
     /// Near account secret key. Must correspond to the my_near_account_id
     /// specified in the config.
     #[arg(env("MPC_ACCOUNT_SK"))]
@@ -350,9 +348,23 @@ impl Cli {
         desired_triples_to_buffer: usize,
         desired_presignatures_to_buffer: usize,
     ) -> anyhow::Result<()> {
-        let configs = generate_test_p2p_configs(participants, threshold, PortSeed::CLI_FOR_PYTEST)?;
+        let p2p_key_pairs = participants
+            .iter()
+            .enumerate()
+            .map(|(idx, _account_id)| {
+                let subdir = format!("{}/{}", output_dir, idx);
+                let p2p_key_cmd = P2PKeyCmd { home_dir: subdir };
+                p2p_key_cmd.generate_if_absent()
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let configs = generate_test_p2p_configs(
+            participants,
+            threshold,
+            PortSeed::CLI_FOR_PYTEST,
+            Some(p2p_key_pairs),
+        )?;
         let participants_config = configs[0].0.participants.clone();
-        for (i, (_, p2p_private_key)) in configs.into_iter().enumerate() {
+        for (i, (_config, _p2p_private_key)) in configs.into_iter().enumerate() {
             let subdir = format!("{}/{}", output_dir, i);
             std::fs::create_dir_all(&subdir)?;
             let file_config = self.create_file_config(
@@ -361,8 +373,6 @@ impl Cli {
                 desired_triples_to_buffer,
                 desired_presignatures_to_buffer,
             )?;
-            let secret_key = SecretKey::ED25519(p2p_private_key.clone());
-            std::fs::write(format!("{}/p2p_key", subdir), secret_key.to_string())?;
             std::fs::write(
                 format!("{}/config.yaml", subdir),
                 serde_yaml::to_string(&file_config)?,

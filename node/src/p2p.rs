@@ -643,10 +643,10 @@ pub mod keygen {
 }
 
 pub mod testing {
-    use super::{PKCS8_HEADER, PKCS8_MIDDLE};
     use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
+    use crate::p2p::keygen::generate_keypair;
     use crate::primitives::ParticipantId;
-    use near_crypto::ED25519SecretKey;
+    use near_crypto::{ED25519PublicKey, ED25519SecretKey};
     use near_sdk::AccountId;
 
     /// A unique seed for each integration test to avoid port conflicts during testing.
@@ -688,11 +688,23 @@ pub mod testing {
         // this is a hack to make sure that when tests run in parallel, they don't
         // collide on the same port.
         port_seed: PortSeed,
+        // Supply `Some` value here if you want to use pre-existing p2p key pairs
+        p2p_keypairs: Option<Vec<(ED25519SecretKey, ED25519PublicKey)>>,
     ) -> anyhow::Result<Vec<(MpcConfig, ED25519SecretKey)>> {
+        let p2p_keypairs = if let Some(p2p_keypairs) = p2p_keypairs {
+            p2p_keypairs
+        } else {
+            participant_accounts
+                .iter()
+                .map(|_account_id| generate_keypair())
+                .collect::<Result<Vec<_>, _>>()?
+        };
         let mut participants = Vec::new();
-        let mut keypairs = Vec::new();
-        for (i, participant_account) in participant_accounts.iter().enumerate() {
-            let (p2p_private_key, p2p_public_key) = generate_keypair()?;
+        for (i, (participant_account, (_p2p_secret_key, p2p_public_key))) in participant_accounts
+            .iter()
+            .zip(p2p_keypairs.iter())
+            .enumerate()
+        {
             participants.push(ParticipantInfo {
                 id: ParticipantId::from_raw(rand::random()),
                 address: "127.0.0.1".to_string(),
@@ -700,11 +712,10 @@ pub mod testing {
                 p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
                 near_account_id: participant_account.clone(),
             });
-            keypairs.push((p2p_private_key, p2p_public_key));
         }
 
         let mut configs = Vec::new();
-        for (i, keypair) in keypairs.into_iter().enumerate() {
+        for (i, keypair) in p2p_keypairs.into_iter().enumerate() {
             let participants = ParticipantsConfig {
                 threshold: threshold as u64,
                 participants: participants.clone(),
@@ -724,10 +735,9 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
+    use crate::p2p::keygen::{generate_keypair, keypair_to_raw_ed25519_secret_key};
     use crate::p2p::raw_ed25519_secret_key_to_keypair;
-    use crate::p2p::testing::{
-        generate_keypair, generate_test_p2p_configs, keypair_to_raw_ed25519_secret_key, PortSeed,
-    };
+    use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
     use crate::primitives::{
         ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
     };
@@ -755,6 +765,7 @@ mod tests {
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
             PortSeed::P2P_BASIC_TEST,
+            None,
         )
         .unwrap();
         let participant0 = configs[0].0.my_participant_id;
@@ -859,6 +870,7 @@ mod tests {
             ],
             4,
             PortSeed::P2P_WAIT_FOR_READY_TEST,
+            None,
         )
         .unwrap();
         // Make node 3 use the wrong address for the 0th node. All connections should work
