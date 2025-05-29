@@ -281,7 +281,10 @@ impl P2PKeyCmd {
                 std::fs::create_dir_all(&home_dir)?;
             }
             let (secret_key, _public_key) = p2p::keygen::generate_keypair()?;
-            std::fs::write(&file_path, secret_key.0)?;
+            std::fs::write(
+                &file_path,
+                SecretKey::ED25519(secret_key.clone()).to_string(),
+            )?;
             eprintln!("p2p key generated and saved to {}", file_path.display());
             secret_key
         };
