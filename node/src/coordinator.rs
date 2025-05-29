@@ -480,8 +480,8 @@ impl Coordinator {
             let network_client = network_client.clone();
             let mpc_config = mpc_config.clone();
 
-            tracking::spawn("key_resharing", async move {
-                let resharing_result = Self::run_key_resharing(
+            tracking::spawn_checked("key_resharing", async move {
+                Self::run_key_resharing(
                     &config_file,
                     keyshare_storage.clone(),
                     running_state.clone(),
@@ -491,11 +491,7 @@ impl Coordinator {
                     chain_txn_sender,
                     resharing_state_receiver,
                 )
-                .await;
-
-                info!("resharing result: {:?}", resharing_result);
-
-                resharing_result
+                .await
             })
         });
 
