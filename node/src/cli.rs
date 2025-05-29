@@ -30,9 +30,13 @@ use std::{
 };
 use tokio::sync::oneshot;
 
+const P2P_PRIVATE_KEY_FILE_NAME: &str = "p2p_key";
+
 #[derive(Parser, Debug)]
 pub enum Cli {
     Start(StartCmd),
+    /// Generates a new P2P key for this node, which is used to communicate with other nodes in the network.
+    GenerateP2PKey(P2PKeyCmd),
     /// Generates/downloads required files for Near node to run
     Init(InitConfigArgs),
     /// Imports a keyshare from JSON and stores it in the local encrypted storage
@@ -104,6 +108,12 @@ pub struct StartCmd {
 }
 
 #[derive(Parser, Debug)]
+pub struct P2PKeyCmd {
+    #[arg(long, env("MPC_HOME_DIR"))]
+    pub home_dir: String,
+}
+
+#[derive(Parser, Debug)]
 pub struct ImportKeyshareCmd {
     /// Path to home directory
     #[arg(long, env("MPC_HOME_DIR"))]
@@ -134,8 +144,18 @@ pub struct ExportKeyshareCmd {
 impl StartCmd {
     async fn run(self) -> anyhow::Result<()> {
         let home_dir = PathBuf::from(self.home_dir.clone());
-        let secrets =
-            SecretsConfig::from_cli(&self.secret_store_key_hex, self.p2p_private_key.clone())?;
+
+        let p2p_private_key = {
+            let cmd = P2PKeyCmd {
+                home_dir: self.home_dir.clone(),
+            };
+            match cmd.maybe_get_existing()? {
+                Some(p2p_private_key) => p2p_private_key,
+                None => anyhow::bail!("p2p key is not found. Please generate it first."),
+            }
+        };
+
+        let secrets = SecretsConfig::from_cli(&self.secret_store_key_hex, p2p_private_key)?;
         let config = load_config_file(&home_dir)?;
 
         let (web_contract_sender, web_contract_receiver) =
@@ -232,10 +252,56 @@ impl StartCmd {
     }
 }
 
+impl P2PKeyCmd {
+    fn maybe_get_existing(&self) -> anyhow::Result<Option<near_crypto::ED25519SecretKey>> {
+        let file_path = PathBuf::from(&self.home_dir).join(P2P_PRIVATE_KEY_FILE_NAME);
+        let secret_key = if file_path.exists() {
+            let bytes = std::fs::read(&file_path)?;
+            let bytes: [u8; 64] = bytes
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("expected 64 bytes for p2p data"))?;
+            let secret_key = near_crypto::ED25519SecretKey(bytes);
+            Some(secret_key)
+        } else {
+            None
+        };
+        Ok(secret_key)
+    }
+
+    /// Generate a key if absent or reuse existing. Prints only the public key to stdout;
+    /// logs informational messages to stderr for shell scripts to ignore.
+    pub fn generate_if_absent(&self) -> anyhow::Result<(ED25519SecretKey, ED25519PublicKey)> {
+        let home_dir = PathBuf::from(&self.home_dir);
+        let file_path = home_dir.join(P2P_PRIVATE_KEY_FILE_NAME);
+
+        let secret_key = if let Some(secret_key) = self.maybe_get_existing()? {
+            eprintln!("p2p key already exists. Using existing key.");
+            secret_key
+        } else {
+            if !home_dir.exists() {
+                std::fs::create_dir_all(&home_dir)?;
+            }
+            let (secret_key, _public_key) = p2p::keygen::generate_keypair()?;
+            std::fs::write(&file_path, secret_key.0)?;
+            eprintln!("p2p key generated and saved to {}", file_path.display());
+            secret_key
+        };
+
+        let public_key = SecretKey::ED25519(secret_key.clone()).public_key();
+        println!("{}", public_key);
+
+        Ok((secret_key, public_key.unwrap_as_ed25519().clone()))
+    }
+}
+
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self {
             Cli::Start(start) => start.run().await,
+            Cli::GenerateP2PKey(p2p_cmd) => {
+                let _ = p2p_cmd.generate_if_absent()?;
+                Ok(())
+            }
             Cli::Init(config) => near_indexer::init_configs(
                 &config.dir,
                 config.chain_id,
