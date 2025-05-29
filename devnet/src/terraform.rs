@@ -9,14 +9,12 @@ use crate::cli::{
 use crate::constants::DEFAULT_MPC_DOCKER_IMAGE;
 use crate::devnet::OperatingDevnetSetup;
 use crate::types::{MpcNetworkSetup, ParsedConfig};
-use anyhow::anyhow;
 use describe::TerraformInfraShowOutput;
 use near_crypto::{PublicKey, SecretKey};
 use near_sdk::AccountId;
 use serde::Serialize;
 use serde_json::to_writer_pretty;
 use std::collections::BTreeMap;
-use std::fmt;
 use std::path::PathBuf;
 
 /// Creates a {name}.tfvars.json file in the current directory with the Terraform variables
@@ -317,44 +315,6 @@ impl MpcTerraformDestroyInfraCmd {
         mpc_setup.nomad_server_url = None;
         tokio::fs::remove_file(terraform_vars_file).await.unwrap();
         setup.mpc_setups.remove(name);
-    }
-}
-
-#[derive(PartialEq, Debug)]
-pub enum State {
-    Unavailable,
-    WaitingForSync,
-    Initializing,
-    Running,
-    Resharing,
-}
-
-impl State {
-    pub fn new(tasks: &str) -> anyhow::Result<Self> {
-        if tasks.contains("WaitingForSync") {
-            Ok(State::WaitingForSync)
-        } else if tasks.contains("Initializing") {
-            Ok(State::Initializing)
-        } else if tasks.contains("Running") {
-            Ok(State::Running)
-        } else if tasks.contains("Resharing") {
-            Ok(State::Resharing)
-        } else {
-            Err(anyhow!("could not parse tasks string"))
-        }
-    }
-}
-
-impl fmt::Display for State {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let label = match self {
-            State::Unavailable => "Unavailable",
-            State::WaitingForSync => "WaitingForSync",
-            State::Initializing => "Initializing",
-            State::Running => "Running",
-            State::Resharing => "Resharing",
-        };
-        write!(f, "{}", label)
     }
 }
 

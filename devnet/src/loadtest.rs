@@ -9,7 +9,7 @@ use crate::contracts::{ActionCall, MpcContract, ParallelSignContract};
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
 use crate::mpc::read_contract_state_v2;
-use crate::tx::submit_tx_to_client;
+use crate::rpc::NearRpcClients;
 use crate::types::{LoadtestSetup, NearAccount, ParsedConfig};
 use futures::future::BoxFuture;
 use futures::FutureExt;
@@ -221,6 +221,17 @@ pub fn get_domain_config(
     }
 }
 
+pub async fn submit_tx_to_client(
+    client: Arc<NearRpcClients>,
+    signed_transaction: SignedTransaction,
+    wait_until: TxExecutionStatus,
+) -> anyhow::Result<RpcTransactionResponse> {
+    let request = methods::send_tx::RpcSendTransactionRequest {
+        signed_transaction,
+        wait_until,
+    };
+    Ok(client.submit(request).await?)
+}
 impl RunLoadtestCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         let setup = OperatingDevnetSetup::load(config.rpc.clone()).await;

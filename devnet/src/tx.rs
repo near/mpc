@@ -1,20 +1,5 @@
-use near_jsonrpc_client::methods::{self, tx::RpcTransactionResponse};
-use near_primitives::{transaction::SignedTransaction, views::TxExecutionStatus};
-use std::{fmt::Debug, sync::Arc};
-
-use crate::rpc::NearRpcClients;
-
-pub async fn submit_tx_to_client(
-    client: Arc<NearRpcClients>,
-    signed_transaction: SignedTransaction,
-    wait_until: TxExecutionStatus,
-) -> anyhow::Result<RpcTransactionResponse> {
-    let request = methods::send_tx::RpcSendTransactionRequest {
-        signed_transaction,
-        wait_until,
-    };
-    Ok(client.submit(request).await?)
-}
+use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
+use std::fmt::Debug;
 
 pub trait IntoReturnValueExt {
     /// Converts the RPC call result to a return value, or error if the result is anything else.
