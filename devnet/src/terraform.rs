@@ -204,14 +204,12 @@ impl MpcTerraformDeployNomadCmd {
             .env("NOMAD_ADDR", &nomad_server_url)
             .print_and_run();
 
-        // docker_image: [node_indices]
         let docker_images = self.docker_images.clone().unwrap_or_else(|| {
             let mut m = BTreeMap::new();
             m.insert(DEFAULT_MPC_DOCKER_IMAGE.to_string(), vec![]);
             m
         });
 
-        // Assuming docker_images: BTreeMap<String, Vec<i32>>
         let mut tfvars_file_docker = tempfile::Builder::new()
             .suffix(".tfvars.json")
             .tempfile()
@@ -245,35 +243,6 @@ impl MpcTerraformDeployNomadCmd {
             .expect("Failed to run terraform show -json");
         tokio::fs::remove_file(terraform_vars_file).await.unwrap();
     }
-}
-
-pub async fn get_cluster(name: &str, config: ParsedConfig) -> TerraformInfraShowOutput {
-    let infra_ops_path = &config.infra_ops_path;
-    let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
-
-    std::process::Command::new("terraform")
-        .arg("init")
-        .current_dir(&infra_dir)
-        .output()
-        .unwrap();
-
-    std::process::Command::new("terraform")
-        .arg("workspace")
-        .arg("select")
-        .arg("-or-create")
-        .arg(name)
-        .current_dir(&infra_dir)
-        .output()
-        .unwrap();
-
-    let output = std::process::Command::new("terraform")
-        .arg("show")
-        .arg("-json")
-        .current_dir(&infra_dir)
-        .output()
-        .expect("Failed to run terraform show -json");
-
-    serde_json::from_slice(&output.stdout).expect("Failed to parse terraform show output")
 }
 
 impl MpcTerraformDestroyInfraCmd {
@@ -381,4 +350,33 @@ impl CommandExt for std::process::Command {
             );
         }
     }
+}
+
+pub async fn get_cluster(name: &str, config: ParsedConfig) -> TerraformInfraShowOutput {
+    let infra_ops_path = &config.infra_ops_path;
+    let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
+
+    std::process::Command::new("terraform")
+        .arg("init")
+        .current_dir(&infra_dir)
+        .output()
+        .unwrap();
+
+    std::process::Command::new("terraform")
+        .arg("workspace")
+        .arg("select")
+        .arg("-or-create")
+        .arg(name)
+        .current_dir(&infra_dir)
+        .output()
+        .unwrap();
+
+    let output = std::process::Command::new("terraform")
+        .arg("show")
+        .arg("-json")
+        .current_dir(&infra_dir)
+        .output()
+        .expect("Failed to run terraform show -json");
+
+    serde_json::from_slice(&output.stdout).expect("Failed to parse terraform show output")
 }
