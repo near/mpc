@@ -91,6 +91,7 @@ pub struct StartCmd {
     pub home_dir: String,
     /// Hex-encoded 16 byte AES key for local storage encryption.
     /// This key should come from a secure secret storage.
+    /// TODO(#444): After TEE integration decide on what to do with AES encryption key
     #[arg(env("MPC_SECRET_STORE_KEY"))]
     pub secret_store_key_hex: String,
     /// If provided, the root keyshare is stored on GCP.
