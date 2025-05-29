@@ -213,11 +213,15 @@ impl Coordinator {
                                             let resharing_epoch_changed = new_resharing_epoch_id
                                                 != current_resharing_epoch_id;
 
+                                            if resharing_epoch_changed {
+                                                return true;
+                                            }
+
                                             let key_event_failed = key_event_sender
                                                 .send(new_resharing_state.clone().key_event.clone())
                                                 .is_err();
 
-                                            resharing_epoch_changed || key_event_failed
+                                            key_event_failed
                                         }
                                         (None, None) => false,
                                         _ => true,
