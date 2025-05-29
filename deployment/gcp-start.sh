@@ -80,13 +80,9 @@ else
   echo "Using provided MPC_SECRET_STORE_KEY from environment"
 fi
 
-# Check if MPC_P2P_PRIVATE_KEY is empty - if so, fetch from GCP Secret Manager
-if [ -z "${MPC_P2P_PRIVATE_KEY}" ]; then
-  echo "MPC_P2P_PRIVATE_KEY not provided in environment, will fetch from GCP Secret Manager..."
-  export MPC_P2P_PRIVATE_KEY=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_P2P_PRIVATE_KEY_SECRET_ID)
-else
-  echo "Using provided MPC_P2P_PRIVATE_KEY from environment"
-fi
+echo "Getting the p2p key..."
+# Idempotent operation
+/app/mpc-node generate-p2p-key
 
 # Check if MPC_ACCOUNT_SK is empty - if so, fetch from GCP Secret Manager
 if [ -z "${MPC_ACCOUNT_SK}" ]; then
