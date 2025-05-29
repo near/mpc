@@ -604,6 +604,44 @@ impl MeshNetworkTransportReceiver for TlsMeshReceiver {
     }
 }
 
+pub mod keygen {
+    use crate::p2p::{PKCS8_HEADER, PKCS8_MIDDLE};
+
+    /// Generates an ED25519 keypair, returning the pem-encoded private key and the
+    /// hex-encoded public key.
+    pub fn generate_keypair(
+    ) -> anyhow::Result<(near_crypto::ED25519SecretKey, near_crypto::ED25519PublicKey)> {
+        let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
+        Ok((
+            keypair_to_raw_ed25519_secret_key(&key_pair)?,
+            near_crypto::ED25519PublicKey(key_pair.public_key_raw().try_into()?),
+        ))
+    }
+
+    /// Converts a keypair to an ED25519 secret key, asserting that it is the
+    /// exact kind of keypair we expect.
+    pub fn keypair_to_raw_ed25519_secret_key(
+        keypair: &rcgen::KeyPair,
+    ) -> anyhow::Result<near_crypto::ED25519SecretKey> {
+        let pkcs8_encoded = keypair.serialize_der();
+        if pkcs8_encoded.len() != 16 + 32 + 3 + 32 {
+            anyhow::bail!("Invalid PKCS8 length");
+        }
+        if pkcs8_encoded[..16] != PKCS8_HEADER {
+            anyhow::bail!("Invalid PKCS8 header");
+        }
+        if pkcs8_encoded[16 + 32..16 + 32 + 3] != PKCS8_MIDDLE {
+            anyhow::bail!("Invalid PKCS8 middle");
+        }
+
+        let mut key = [0u8; 64];
+        key[..32].copy_from_slice(&pkcs8_encoded[16..16 + 32]);
+        key[32..].copy_from_slice(&pkcs8_encoded[16 + 32 + 3..]);
+
+        Ok(near_crypto::ED25519SecretKey(key))
+    }
+}
+
 pub mod testing {
     use super::{PKCS8_HEADER, PKCS8_MIDDLE};
     use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
@@ -642,40 +680,6 @@ pub mod testing {
         pub const KEY_RESHARING_MULTISTAGE_TEST: Self = Self(6);
         pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: Self = Self(7);
         pub const BASIC_MULTIDOMAIN_TEST: Self = Self(8);
-    }
-
-    /// Converts a keypair to an ED25519 secret key, asserting that it is the
-    /// exact kind of keypair we expect.
-    pub fn keypair_to_raw_ed25519_secret_key(
-        keypair: &rcgen::KeyPair,
-    ) -> anyhow::Result<near_crypto::ED25519SecretKey> {
-        let pkcs8_encoded = keypair.serialize_der();
-        if pkcs8_encoded.len() != 16 + 32 + 3 + 32 {
-            anyhow::bail!("Invalid PKCS8 length");
-        }
-        if pkcs8_encoded[..16] != PKCS8_HEADER {
-            anyhow::bail!("Invalid PKCS8 header");
-        }
-        if pkcs8_encoded[16 + 32..16 + 32 + 3] != PKCS8_MIDDLE {
-            anyhow::bail!("Invalid PKCS8 middle");
-        }
-
-        let mut key = [0u8; 64];
-        key[..32].copy_from_slice(&pkcs8_encoded[16..16 + 32]);
-        key[32..].copy_from_slice(&pkcs8_encoded[16 + 32 + 3..]);
-
-        Ok(near_crypto::ED25519SecretKey(key))
-    }
-
-    /// Generates an ED25519 keypair, returning the pem-encoded private key and the
-    /// hex-encoded public key.
-    pub fn generate_keypair(
-    ) -> anyhow::Result<(near_crypto::ED25519SecretKey, near_crypto::ED25519PublicKey)> {
-        let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
-        Ok((
-            keypair_to_raw_ed25519_secret_key(&key_pair)?,
-            near_crypto::ED25519PublicKey(key_pair.public_key_raw().try_into().unwrap()),
-        ))
     }
 
     pub fn generate_test_p2p_configs(
