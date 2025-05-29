@@ -501,7 +501,7 @@ impl Coordinator {
                 Ok(keyshares) => keyshares,
                 Err(e) => {
                     tracing::error!(
-                        "Failed to load keyshares: {:?}; doing nothing until contract state change",
+                        "Failed to load keyshares: {:?}; doing nothing until contract state changes.",
                         e
                     );
                     return Ok(MpcJobResult::HaltUntilInterrupted);
@@ -580,9 +580,8 @@ impl Coordinator {
         match resharing_handle {
             Some(resharing_handle) => {
                 tracing::info!("Waiting on resharing handle.");
-                resharing_handle
-                    .await?
-                    .inspect_err(|e| error!("Resharing failed with: {:?}", e))
+                resharing_handle.await?;
+                Ok(MpcJobResult::Done)
             }
             None => running_handle.await?,
         }
