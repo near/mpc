@@ -25,6 +25,7 @@ use near_crypto::{ED25519PublicKey, ED25519SecretKey, SecretKey};
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
+use std::str::FromStr;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -255,12 +256,9 @@ impl P2PKeyCmd {
     fn maybe_get_existing(&self) -> anyhow::Result<Option<near_crypto::ED25519SecretKey>> {
         let file_path = PathBuf::from(&self.home_dir).join(P2P_PRIVATE_KEY_FILE_NAME);
         let secret_key = if file_path.exists() {
-            let bytes = std::fs::read(&file_path)?;
-            let bytes: [u8; 64] = bytes
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("expected 64 bytes for p2p data"))?;
-            let secret_key = near_crypto::ED25519SecretKey(bytes);
-            Some(secret_key)
+            let str = std::fs::read_to_string(&file_path)?;
+            let secret_key = near_crypto::SecretKey::from_str(&str)?;
+            Some(secret_key.unwrap_as_ed25519().clone())
         } else {
             None
         };
