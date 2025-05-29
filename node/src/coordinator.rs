@@ -217,11 +217,9 @@ impl Coordinator {
                                                 return true;
                                             }
 
-                                            let key_event_failed = key_event_sender
+                                            key_event_sender
                                                 .send(new_resharing_state.clone().key_event.clone())
-                                                .is_err();
-
-                                            key_event_failed
+                                                .is_err()
                                         }
                                         (None, None) => false,
                                         _ => true,
