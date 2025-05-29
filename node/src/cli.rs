@@ -534,6 +534,29 @@ mod tests {
     }
 
     #[test]
+    fn test_p2p_cmd() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let home_dir = temp_dir.path().to_string_lossy().to_string();
+
+        let cmd = P2PKeyCmd { home_dir };
+
+        assert!(cmd.maybe_get_existing()?.is_none());
+
+        assert!(cmd.generate_if_absent().is_ok());
+
+        let public_key_expected = cmd.maybe_get_existing()?.unwrap();
+
+        // check that the key will not be overwritten
+        assert!(cmd.generate_if_absent().is_ok());
+
+        let public_key_actual = cmd.maybe_get_existing()?.unwrap();
+
+        assert_eq!(public_key_expected, public_key_actual);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_keyshare_import_export() {
         // Create a temporary directory for the test
         let temp_dir = TempDir::new().unwrap();
