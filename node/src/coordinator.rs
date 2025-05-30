@@ -192,7 +192,11 @@ impl Coordinator {
                             None,
                             Box::new(move |new_state| match new_state {
                                 ContractState::Running(new_state) => {
-                                    new_state.keyset.epoch_id != running_state.keyset.epoch_id
+                                    let new_running_epoch =
+                                        new_state.keyset.epoch_id != running_state.keyset.epoch_id;
+                                    let resharing_started = new_state.resharing_state.is_some();
+
+                                    new_running_epoch | resharing_started
                                 }
                                 _ => true,
                             }),
