@@ -7,7 +7,6 @@ use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use cait_sith::frost_secp256k1::keys::SigningShare;
 use cait_sith::frost_secp256k1::VerifyingKey;
 use cait_sith::protocol::Participant;
-use tracing::{error, info};
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
@@ -17,7 +16,6 @@ impl EcdsaSignatureProvider {
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
-        info!("running key resharing client internal.");
         let new_keyshare = KeyResharingComputation {
             threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
@@ -30,9 +28,7 @@ impl EcdsaSignatureProvider {
             // TODO(#195): Move timeout here instead of in Coordinator.
             std::time::Duration::from_secs(60),
         )
-        .await
-        .inspect_err(|e| error!("Failed to perform leader centric computation: {:?}", e))?;
-
+        .await?;
         tracing::info!("Key resharing completed");
 
         anyhow::ensure!(
