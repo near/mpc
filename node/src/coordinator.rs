@@ -510,101 +510,104 @@ impl Coordinator {
         });
 
         // TODO: https://github.com/Near-One/mpc/issues/441
-        let running_handle = tracking::spawn("running mpc job", async move {
-            let Some(running_mpc_config) = MpcConfig::from_participants_with_near_account_id(
-                running_participants.clone(),
-                &config_file.my_near_account_id,
-            ) else {
-                tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
-                return Ok(MpcJobResult::HaltUntilInterrupted);
-            };
+        let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
+            "running mpc job",
+            async move {
+                let Some(running_mpc_config) = MpcConfig::from_participants_with_near_account_id(
+                    running_participants.clone(),
+                    &config_file.my_near_account_id,
+                ) else {
+                    tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
+                    return Ok(MpcJobResult::HaltUntilInterrupted);
+                };
 
-            let keyshares = match keyshare_storage.load_keyset(&running_state.keyset).await {
-                Ok(keyshares) => keyshares,
-                Err(e) => {
-                    tracing::error!(
+                let keyshares = match keyshare_storage.load_keyset(&running_state.keyset).await {
+                    Ok(keyshares) => keyshares,
+                    Err(e) => {
+                        tracing::error!(
                         "Failed to load keyshares: {:?}; doing nothing until contract state changes.",
                         e
                     );
+                        return Ok(MpcJobResult::HaltUntilInterrupted);
+                    }
+                };
+
+                if keyshares.is_empty() {
+                    tracing::info!("We have no keyshares. Waiting for Initialization.");
                     return Ok(MpcJobResult::HaltUntilInterrupted);
                 }
-            };
 
-            if keyshares.is_empty() {
-                tracing::info!("We have no keyshares. Waiting for Initialization.");
-                return Ok(MpcJobResult::HaltUntilInterrupted);
-            }
+                tracking::set_progress(&format!(
+                    "Running epoch {:?} as participant {}",
+                    running_state.keyset.epoch_id, running_mpc_config.my_participant_id
+                ));
 
-            tracking::set_progress(&format!(
-                "Running epoch {:?} as participant {}",
-                running_state.keyset.epoch_id, running_mpc_config.my_participant_id
-            ));
+                let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
 
-            let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
+                let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
+                let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
+                let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
 
-            let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
-            let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
-            let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
-
-            for keyshare in keyshares {
-                let domain_id = keyshare.key_id.domain_id;
-                match keyshare.data {
-                    KeyshareData::Secp256k1(data) => {
-                        ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                        domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
-                    }
-                    KeyshareData::Ed25519(data) => {
-                        eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                        domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
+                for keyshare in keyshares {
+                    let domain_id = keyshare.key_id.domain_id;
+                    match keyshare.data {
+                        KeyshareData::Secp256k1(data) => {
+                            ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
+                        }
+                        KeyshareData::Ed25519(data) => {
+                            eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
+                        }
                     }
                 }
-            }
 
-            let ecdsa_signature_provider = Arc::new(EcdsaSignatureProvider::new(
-                config_file.clone().into(),
-                running_mpc_config.clone().into(),
-                network_client.clone(),
-                clock,
-                secret_db,
-                sign_request_store.clone(),
-                ecdsa_keyshares,
-            )?);
+                let ecdsa_signature_provider = Arc::new(EcdsaSignatureProvider::new(
+                    config_file.clone().into(),
+                    running_mpc_config.clone().into(),
+                    network_client.clone(),
+                    clock,
+                    secret_db,
+                    sign_request_store.clone(),
+                    ecdsa_keyshares,
+                )?);
 
-            let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
-                config_file.clone().into(),
-                running_mpc_config.clone().into(),
-                network_client.clone(),
-                sign_request_store.clone(),
-                eddsa_keyshares,
-            ));
+                let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
+                    config_file.clone().into(),
+                    running_mpc_config.clone().into(),
+                    network_client.clone(),
+                    sign_request_store.clone(),
+                    eddsa_keyshares,
+                ));
 
-            let mpc_client = Arc::new(MpcClient::new(
-                config_file.clone().into(),
-                network_client,
-                sign_request_store,
-                ecdsa_signature_provider,
-                eddsa_signature_provider,
-                domain_to_scheme,
-            ));
+                let mpc_client = Arc::new(MpcClient::new(
+                    config_file.clone().into(),
+                    network_client,
+                    sign_request_store,
+                    ecdsa_signature_provider,
+                    eddsa_signature_provider,
+                    domain_to_scheme,
+                ));
 
-            mpc_client
-                .run(
-                    running_network_receiver,
-                    block_update_receiver,
-                    chain_txn_sender,
-                    signature_debug_request_receiver,
-                )
-                .await?;
+                mpc_client
+                    .run(
+                        running_network_receiver,
+                        block_update_receiver,
+                        chain_txn_sender,
+                        signature_debug_request_receiver,
+                    )
+                    .await?;
 
-            Ok(MpcJobResult::Done)
-        });
+                Ok(MpcJobResult::Done)
+            },
+        );
 
         if let Some(resharing_handle) = resharing_handle {
             tracing::info!("Waiting on resharing handle.");
             resharing_handle.await?;
         }
 
-        running_handle.await?;
+        running_handle.await??;
 
         Ok(MpcJobResult::Done)
     }
