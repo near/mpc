@@ -458,7 +458,7 @@ pub async fn resharing_leader(
     args: Arc<ResharingArgs>,
 ) -> anyhow::Result<()> {
     loop {
-        info!("Waiting for connection all participants.");
+        info!("Waiting for a connection to all participants.");
         // Wait for all participants to be connected. Otherwise, computations are most likely going
         // to fail so don't waste the effort.
         client
@@ -507,7 +507,7 @@ pub async fn resharing_leader(
         }
 
         // Start the resharing computation.
-        info!("Start resharing computation. Creating channel");
+        info!("Starting resharing computation.");
         let Ok(channel) = client.new_channel_for_task(
             EcdsaTaskId::KeyResharing {
                 key_event: key_event_id,
