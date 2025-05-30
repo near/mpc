@@ -566,8 +566,6 @@ pub async fn resharing_follower(
             }
         };
 
-        tracing::info!("Key resharing follower for {:?}", key_event_id);
-
         tasks.spawn_checked(
             &format!("Key resharing follower for {:?}", key_event_id),
             resharing_computation(

@@ -172,7 +172,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
             anyhow::bail!("Connection was dropped");
         };
 
-        info!("Got connection handle.");
+        info!("Got a connection handle.");
         Ok(conn)
     }
 }

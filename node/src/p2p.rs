@@ -380,7 +380,7 @@ pub async fn new_tls_mesh_network(
         .map(|participant| participant.port)
         .ok_or_else(|| anyhow!("My ID not found in participants"))?;
 
-    info!("preparing participant data.");
+    info!("Preparing participant data.");
     // Prepare participant data.
     let mut participant_identities = ParticipantIdentities::default();
     let mut connections = HashMap::new();
