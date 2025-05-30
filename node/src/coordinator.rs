@@ -173,7 +173,7 @@ impl Coordinator {
 
                                         let epoch_changed =
                                             new_resharing_state.key_event.id.epoch_id
-                                                == current_resharing_epoch_id;
+                                                != current_resharing_epoch_id;
 
                                         if epoch_changed {
                                             return true;
