@@ -1,5 +1,5 @@
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig, SecretsConfig};
-use crate::db::{DBCol, SecretDB, UpdateResult};
+use crate::db::{DBCol, SecretDB, EPOCH_ID_KEY};
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{ContractKeyEventInstance, ContractRunningState, ContractState};
 use crate::indexer::types::ChainSendTransactionRequest;
@@ -22,11 +22,11 @@ use crate::runtime::AsyncDroppableRuntime;
 use crate::sign_request::SignRequestStorage;
 use crate::tracking::{self};
 use crate::web::SignatureDebugRequest;
-use anyhow::Context;
 use cait_sith::{ecdsa, eddsa};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
+use mpc_contract::primitives::key_state::EpochId;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -381,25 +381,7 @@ impl Coordinator {
         tracing::info!("Entering running state.");
         let keyshare_storage = Arc::new(keyshare_storage);
 
-        let update_result = secret_db
-            .update_running_epoch_id(running_state.keyset.epoch_id)
-            .context("DB failed to update epoch id.")?;
-
-        match update_result {
-            UpdateResult::Unchanged => {}
-            UpdateResult::Updated => {
-                // Delete all triples and presignatures from the previous epoch;
-                // They are no longer usable once we have completed resharing of keys. Presignatures are
-                // dependent on key so those are completely invalidated, and triples may have different threshold
-                // or assume different participants, so it would be too much trouble to keep them around.
-                tracing::info!("Deleting all triples and presignatures...");
-                let mut update = secret_db.update();
-                let _ = update.delete_all(DBCol::Presignature);
-                let _ = update.delete_all(DBCol::Triple);
-                let _ = update.commit();
-                tracing::info!("Deleted all presignatures");
-            }
-        }
+        set_current_running_epoch(&secret_db, running_state.keyset.epoch_id)?;
 
         let mut running_participants = running_state.participants.clone();
 
@@ -681,6 +663,49 @@ impl Coordinator {
         }
         Ok(MpcJobResult::Done)
     }
+}
+
+pub fn set_current_running_epoch(db: &Arc<SecretDB>, new_epoch_id: EpochId) -> anyhow::Result<()> {
+    let previous_epoch_id: Option<EpochId> =
+        db.get(DBCol::EpochId, EPOCH_ID_KEY)?
+            .and_then(|bytes: Vec<u8>| {
+                let bytes_array = bytes
+                    .try_into()
+                    .inspect_err(|bytes| error!("PREVIOUS EPOCH_ID ENTRY NOT u64: {:?}", bytes))
+                    .ok()?;
+                let epoch_id_number = u64::from_be_bytes(bytes_array);
+
+                Some(EpochId::new(epoch_id_number))
+            });
+
+    let new_epoch_id_is_seen =
+        previous_epoch_id.is_some_and(|previous_epoch_id| previous_epoch_id == new_epoch_id);
+
+    if new_epoch_id_is_seen {
+        return Ok(());
+    }
+
+    info!(
+        "Updating running epoch. NEW EPOCH: {:?}, OLD EPOCH {:?}.",
+        new_epoch_id.get(),
+        previous_epoch_id
+    );
+    let mut update_writer = db.update();
+    let big_endian_bytes_repr = &new_epoch_id.get().to_be_bytes();
+    update_writer.put(DBCol::EpochId, EPOCH_ID_KEY, big_endian_bytes_repr);
+
+    // Delete all triples and presignatures from the previous epoch;
+    // They are no longer usable once we have completed resharing of keys. Presignatures are
+    // dependent on key so those are completely invalidated, and triples may have different threshold
+    // or assume different participants, so it would be too much trouble to keep them around.
+    tracing::info!("Deleting all triples and presignatures...");
+    let _ = update_writer.delete_all(DBCol::Presignature);
+    let _ = update_writer.delete_all(DBCol::Triple);
+    tracing::info!("Deleted all presignatures");
+
+    update_writer.commit()?;
+
+    Ok(())
 }
 
 /// Simple RAII to export current job name to metrics and /debug/tasks.
