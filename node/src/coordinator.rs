@@ -599,14 +599,14 @@ impl Coordinator {
             Ok(MpcJobResult::Done)
         });
 
-        match resharing_handle {
-            Some(resharing_handle) => {
-                tracing::info!("Waiting on resharing handle.");
-                resharing_handle.await?;
-                Ok(MpcJobResult::Done)
-            }
-            None => running_handle.await?,
+        if let Some(resharing_handle) = resharing_handle {
+            tracing::info!("Waiting on resharing handle.");
+            resharing_handle.await?;
         }
+
+        running_handle.await?;
+
+        Ok(MpcJobResult::Done)
     }
 
     /// Entry point to handle the Resharing state of the contract.
