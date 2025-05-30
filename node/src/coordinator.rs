@@ -62,6 +62,8 @@ pub struct Coordinator {
     pub signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
 }
 
+type StopFn = Box<dyn Fn(&ContractState) -> bool + Send>;
+
 /// Represents a top-level task that we run for the current contract state.
 /// There is a different one of these for each contract state.
 struct MpcJob {
@@ -71,7 +73,7 @@ struct MpcJob {
     fut: BoxFuture<'static, anyhow::Result<MpcJobResult>>,
     /// a function that looks at a new contract state and returns true iff the
     /// current task should be killed.
-    stop_fn: Box<dyn Fn(&ContractState) -> bool + Send>,
+    stop_fn: StopFn,
 }
 
 /// When an MpcJob future returns successfully, it returns one of the following.
@@ -150,21 +152,56 @@ impl Coordinator {
                     // changes to no longer be running or if the epoch changes.
                     tracing::info!("Resharing process is: {:?}", &running_state.resharing_state);
 
-                    // In resharing state, we perform key resharing, again with a timeout.
-                    let (key_event_sender, key_event_receiver) = match running_state
+                    let (key_event_receiver, stop_fn): (_, StopFn) = match running_state
                         .resharing_state
-                        .as_ref()
-                        .map(|resharing_state| watch::channel(resharing_state.key_event.clone()))
+                        .clone()
                     {
-                        Some((key_event_sender, key_event_receiver)) => {
-                            (Some(key_event_sender), Some(key_event_receiver))
+                        Some(resharing_state) => {
+                            let (key_event_sender, key_event_receiver) =
+                                watch::channel(resharing_state.key_event.clone());
+
+                            let current_resharing_epoch_id = resharing_state.key_event.id.epoch_id;
+
+                            let stop_fn =
+                                Box::new(move |new_state: &ContractState| match new_state {
+                                    ContractState::Running(new_state) => {
+                                        let Some(new_resharing_state) = &new_state.resharing_state
+                                        else {
+                                            // resharing completed.
+                                            return true;
+                                        };
+
+                                        let epoch_changed =
+                                            new_resharing_state.key_event.id.epoch_id
+                                                == current_resharing_epoch_id;
+
+                                        if epoch_changed {
+                                            return true;
+                                        }
+
+                                        key_event_sender
+                                            .send(new_resharing_state.key_event.clone())
+                                            .is_err()
+                                    }
+                                    _ => true,
+                                });
+
+                            (Some(key_event_receiver), stop_fn)
                         }
-                        None => (None, None),
+                        None => (
+                            None,
+                            Box::new(move |new_state| match new_state {
+                                ContractState::Running(new_state) => {
+                                    new_state.keyset.epoch_id != running_state.keyset.epoch_id
+                                }
+                                _ => true,
+                            }),
+                        ),
                     };
 
                     tracing::info!("Key event sender is: {:?}", key_event_receiver);
 
-                    let job_name = if key_event_sender.is_some() {
+                    let job_name = if key_event_receiver.is_some() {
                         "Resharing"
                     } else {
                         "Running"
@@ -192,43 +229,7 @@ impl Coordinator {
                                 key_event_receiver,
                             ),
                         )?,
-
-                        stop_fn: Box::new(move |new_state: &ContractState| match new_state {
-                            ContractState::Running(new_state) => {
-                                tracing::info!(
-                                    "Previous resharing process is: {:?}",
-                                    running_state.resharing_state
-                                );
-                                let epoch_changed =
-                                    new_state.keyset.epoch_id != running_state.keyset.epoch_id;
-
-                                let resharing_state_changed =
-                                    match (&new_state.resharing_state, &key_event_sender) {
-                                        (Some(new_resharing_state), Some(key_event_sender)) => {
-                                            let new_resharing_epoch_id =
-                                                new_resharing_state.key_event.id.epoch_id;
-                                            let current_resharing_epoch_id =
-                                                key_event_sender.borrow().id.epoch_id;
-
-                                            let resharing_epoch_changed = new_resharing_epoch_id
-                                                != current_resharing_epoch_id;
-
-                                            if resharing_epoch_changed {
-                                                return true;
-                                            }
-
-                                            key_event_sender
-                                                .send(new_resharing_state.clone().key_event.clone())
-                                                .is_err()
-                                        }
-                                        (None, None) => false,
-                                        _ => true,
-                                    };
-
-                                epoch_changed || resharing_state_changed
-                            }
-                            _ => true,
-                        }),
+                        stop_fn,
                     }
                 }
             };
@@ -396,10 +397,17 @@ impl Coordinator {
             }
         }
 
+        let mut running_participants = running_state.participants.clone();
+
         let participants = match &running_state.resharing_state {
             Some(resharing_state) => resharing_state.new_participants.clone(),
-            None => running_state.participants.clone(),
+            None => running_participants.clone(),
         };
+
+        // Only consider the running participants that are also members of the new resharing state.
+        running_participants
+            .participants
+            .retain(|p| participants.participants.contains(p));
 
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
             participants,
@@ -499,6 +507,14 @@ impl Coordinator {
 
         // TODO: https://github.com/Near-One/mpc/issues/441
         let running_handle = tracking::spawn("running mpc job", async move {
+            let Some(running_mpc_config) = MpcConfig::from_participants_with_near_account_id(
+                running_participants.clone(),
+                &config_file.my_near_account_id,
+            ) else {
+                tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
+                return Ok(MpcJobResult::HaltUntilInterrupted);
+            };
+
             let keyshares = match keyshare_storage.load_keyset(&running_state.keyset).await {
                 Ok(keyshares) => keyshares,
                 Err(e) => {
@@ -517,7 +533,7 @@ impl Coordinator {
 
             tracking::set_progress(&format!(
                 "Running epoch {:?} as participant {}",
-                running_state.keyset.epoch_id, mpc_config.my_participant_id
+                running_state.keyset.epoch_id, running_mpc_config.my_participant_id
             ));
 
             let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
@@ -542,7 +558,7 @@ impl Coordinator {
 
             let ecdsa_signature_provider = Arc::new(EcdsaSignatureProvider::new(
                 config_file.clone().into(),
-                mpc_config.clone().into(),
+                running_mpc_config.clone().into(),
                 network_client.clone(),
                 clock,
                 secret_db,
@@ -552,7 +568,7 @@ impl Coordinator {
 
             let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
                 config_file.clone().into(),
-                mpc_config.clone().into(),
+                running_mpc_config.clone().into(),
                 network_client.clone(),
                 sign_request_store.clone(),
                 eddsa_keyshares,
