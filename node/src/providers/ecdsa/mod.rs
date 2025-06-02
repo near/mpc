@@ -218,7 +218,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
             "generate triples",
             Self::run_background_triple_generation(
                 self.client.clone(),
-                self.mpc_config.participants.threshold as usize,
+                self.mpc_config.clone(),
                 self.config.triple.clone().into(),
                 self.triple_store.clone(),
             ),

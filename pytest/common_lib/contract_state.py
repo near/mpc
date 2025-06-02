@@ -381,9 +381,12 @@ class InitializingProtocolState:
 class ContractState:
 
     def get_running_domains(self) -> List[Domain]:
-        if self.state != "Running":
-            assert False, "expected running state"
-        return self.protocol_state.domains.domains
+        if self.state == "Running":
+            return self.protocol_state.domains.domains
+        elif self.state == "Resharing":
+            return self.protocol_state.previous_running_state.domains.domains
+
+        assert False, "expected running state"
 
     def is_state(self, state: ProtocolState) -> bool:
         return self.state == state

@@ -2,6 +2,7 @@ use crate::primitives::ParticipantId;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
+use tracing::info;
 
 /// Represents a version of a bidirectional connection with another node.
 /// This allows us to detect if the connection was reset or dropped in either
@@ -170,6 +171,8 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
         let Some(conn) = current.connection.upgrade() else {
             anyhow::bail!("Connection was dropped");
         };
+
+        info!("Got a connection handle.");
         Ok(conn)
     }
 }
@@ -251,6 +254,8 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
     /// Waits for `threshold` number of connections (a freebie is included for the node itself)
     /// to be bidirectionally established at the same time.
     pub async fn wait_for_ready(&self, threshold: usize) {
+        info!("Waiting for {:?} participants to be ready.", threshold - 1);
+
         let mut receivers = self
             .connectivities
             .values()
@@ -258,6 +263,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
             .collect::<Vec<_>>();
         loop {
             let mut connected_count = 0;
+            info!("Connected count: {:?}", connected_count);
             for (outgoing_receiver, incoming_receiver) in &receivers {
                 let outgoing = outgoing_receiver.borrow();
                 let incoming = incoming_receiver.borrow();
