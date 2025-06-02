@@ -62,7 +62,7 @@ pub struct MpcNetworkSetup {
 }
 
 impl fmt::Display for MpcNetworkSetup {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "MPC Network Setup:")?;
         writeln!(f, "  Participants:")?;
         for (i, participant) in self.participants.iter().enumerate() {
@@ -91,7 +91,6 @@ impl fmt::Display for MpcNetworkSetup {
             self.desired_balance_per_responding_account
         )?;
 
-        //writeln!(f, " Using SSD: {}", self.ssd)?;
         match &self.nomad_server_url {
             Some(url) => writeln!(f, "  Nomad Server URL: {}", url),
             None => writeln!(f, "  Nomad Server URL: None"),
@@ -160,7 +159,8 @@ pub struct ParsedConfig {
 
 pub async fn load_config() -> ParsedConfig {
     const CONFIG_FILE: &str = "config.yaml";
-    let config = std::fs::read_to_string(CONFIG_FILE).expect("Did not find 'config.yaml'");
+    let config = std::fs::read_to_string(CONFIG_FILE)
+        .expect("A `config.yaml` should exist in the working directory.");
     let config: Config = serde_yaml::from_str(&config).unwrap();
     let client = Arc::new(NearRpcClients::new(config.rpcs).await);
     ParsedConfig {
