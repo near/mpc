@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Script to reproducibly build MPC binary and the docker image.
+
 DOCKERFILE=deployment/Dockerfile-gcp
 : "${IMAGE_NAME:=mpc-node-gcp}"
 
