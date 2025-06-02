@@ -548,7 +548,7 @@ impl VersionedMpcContract {
     ) -> Result<(), Error> {
         let signer = env::signer_account_id();
         log!("respond: signer={}, request={:?}", &signer, &request);
-        if !self.state().is_running() {
+        if !self.state().is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
 

@@ -189,6 +189,7 @@ impl MeshNetworkClient {
     pub fn select_random_active_participants_including_me(
         &self,
         total: usize,
+        peers_to_consider: &[ParticipantId],
     ) -> anyhow::Result<Vec<ParticipantId>> {
         let me = self.my_participant_id();
         let participants = self.all_alive_participant_ids();
@@ -206,7 +207,11 @@ impl MeshNetworkClient {
 
         let mut res = participants
             .into_iter()
-            .filter(|p| p != &me)
+            .filter(|p| {
+                let peer_is_not_me = p != &me;
+                let peer_is_considered = peers_to_consider.contains(p);
+                peer_is_not_me && peer_is_considered
+            })
             .choose_multiple(&mut rand::thread_rng(), total - 1);
         res.push(me);
         Ok(res)

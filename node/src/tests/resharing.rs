@@ -268,10 +268,11 @@ async fn test_key_resharing_multistage() {
     .is_some());
 }
 
-// Test that signatures buffered during resharing are not lost.
+/// Test that signatures during resharing
+/// are also processed.
 #[tokio::test]
 #[serial]
-async fn test_key_resharing_signature_buffering() {
+async fn test_signature_requests_in_resharing_are_processed() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 5;
     const THRESHOLD: usize = 3;
@@ -355,21 +356,32 @@ async fn test_key_resharing_signature_buffering() {
     }
 
     // Send a request for signature. This should timeout.
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user1",
-        &domain,
-        response_time * 2
-    )
-    .await
-    .is_none());
+    request_signature_and_await_response(&mut setup.indexer, "user1", &domain, response_time * 2)
+        .await
+        .expect("Signature requests during resharing are processed.");
 
     // Re-enable the node. Now we should get the signature response.
     drop(disabled);
-    timeout(
-        std::time::Duration::from_secs(60),
-        setup.indexer.next_response(),
-    )
-    .await
-    .expect("Timeout waiting for signature response");
+
+    // Give nodes some time to transition back to running state.
+    // This is needed since we are dropping messages with current implementation.
+    for i in 0..20 {
+        // We're running with [serial] so querying metrics should be OK.
+        if let Ok(metric) =
+            metrics::MPC_CURRENT_JOB_STATE.get_metric_with_label_values(&["Running"])
+        {
+            if metric.get() == NUM_PARTICIPANTS as i64 {
+                break;
+            }
+        }
+        if i == 19 {
+            panic!("Timeout waiting for running to start");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    // Send a request for signature. This should timeout.
+    request_signature_and_await_response(&mut setup.indexer, "user1", &domain, response_time * 2)
+        .await
+        .expect("Signature request in running should be processed.");
 }
