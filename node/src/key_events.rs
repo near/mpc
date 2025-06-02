@@ -466,7 +466,6 @@ pub async fn resharing_leader(
             .await
             .inspect_err(|e| error!("Could not connect to all participants: {:?}", e))?;
 
-        // Wait for the contract to have no active key event instance
         info!("Wait for the contract to have no active key event instance.");
         let key_event_id = key_event_receiver
             .wait_for(|contract_event| !contract_event.started)
