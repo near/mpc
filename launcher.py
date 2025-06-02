@@ -110,7 +110,7 @@ def main():
 
     # Forward ports from container to CVM
     # This port is the MPC node port. It must be forwarded and cannot be remapped.
-    # TODO Adjusted and/or make configurable according to `port_override` from the mpc node.
+    # TODO Adjust and/or make configurable according to `port_override` from the mpc node.
     docker_cmd += ['-p', '11780:11780']
 
     docker_cmd += ['-v', '/tapp:/tapp:ro']
