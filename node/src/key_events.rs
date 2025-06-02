@@ -559,7 +559,6 @@ pub async fn resharing_follower(
                 key_event
             }
             _ => {
-                // TODO: Make a new type, such that the channel only sends resharing tasks.
                 tracing::info!("Ignoring non-resharing task {:?}", channel.task_id());
                 continue;
             }

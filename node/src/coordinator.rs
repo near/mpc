@@ -203,7 +203,7 @@ impl Coordinator {
                         ),
                     };
 
-                    tracing::info!("Key event sender is: {:?}", key_event_receiver);
+                    tracing::info!("Key event receiver is: {:?}", key_event_receiver);
 
                     let job_name = if key_event_receiver.is_some() {
                         "Resharing"
@@ -381,7 +381,7 @@ impl Coordinator {
         tracing::info!("Entering running state.");
         let keyshare_storage = Arc::new(keyshare_storage);
 
-        set_current_running_epoch(&secret_db, running_state.keyset.epoch_id)?;
+        delete_stale_triples_and_presignatures(&secret_db, running_state.keyset.epoch_id)?;
 
         let mut running_participants = running_state.participants.clone();
 
@@ -628,7 +628,7 @@ impl Coordinator {
             };
             Some(keyshares)
         } else {
-            info!("Not participant last epoch");
+            info!("Not participant in last epoch.");
             if keyshare_storage.load_keyset(&previous_keyset).await.is_ok() {
                 tracing::warn!("We should not have the previous keyshares when we were not a participant last epoch");
             }
@@ -665,7 +665,10 @@ impl Coordinator {
     }
 }
 
-pub fn set_current_running_epoch(db: &Arc<SecretDB>, new_epoch_id: EpochId) -> anyhow::Result<()> {
+pub fn delete_stale_triples_and_presignatures(
+    db: &Arc<SecretDB>,
+    new_epoch_id: EpochId,
+) -> anyhow::Result<()> {
     let previous_epoch_id: Option<EpochId> =
         db.get(DBCol::EpochId, EPOCH_ID_KEY)?
             .and_then(|bytes: Vec<u8>| {
