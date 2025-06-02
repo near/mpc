@@ -72,29 +72,36 @@ def main():
         raise RuntimeError("Wrong image digest %s. Expected digest is %s" % (pulled_image_digest, image_digest))
 
     # Generate a quote before extending RTMR3 with the image digest
-    proc = run(['curl', '--unix-socket', '/var/run/dstack.sock', '-X', 'POST', 'http://dstack/GetQuote', '-H', 'Content-Type: application/json', '-d', '{"report_data": ""}'],
-               capture_output=True)
+    proc = run(['curl', '--unix-socket', '/var/run/dstack.sock', '-X', 'POST',
+                'http://dstack/GetQuote', '-H', 'Content-Type: application/json', '-d',
+                '{"report_data": ""}'], capture_output=True)
+
     if proc.returncode:
         raise RuntimeError("getting quote failed with error code %d" % proc.returncode)
     logging.info("Quote: %s" % proc.stdout.decode('utf-8').strip())
 
-    # Python's requests package cannot natively talk HTTP over a unix socket (which is the API exposed by dstack's guest agent).
-    # To avoid installing another Python depdendency, namely requests-unixsocket, we just use curl.
+    # Python's requests package cannot natively talk HTTP over a unix socket (which is the API
+    # exposed by dstack's guest agent). To avoid installing another Python depdendency, namely
+    # requests-unixsocket, we just use curl.
     extend_rtmr3_json = '{"event": "launcher-image-digest","payload": "%s"}' % image_digest.split(':')[1]
-    proc = run(['curl', '--unix-socket', '/var/run/dstack.sock', '-X', 'POST', 'http://dstack/EmitEvent', '-H', 'Content-Type: application/json', '-d', extend_rtmr3_json])
+    proc = run(['curl', '--unix-socket', '/var/run/dstack.sock', '-X', 'POST',
+                'http://dstack/EmitEvent', '-H', 'Content-Type: application/json', '-d',
+                extend_rtmr3_json])
 
     if proc.returncode:
         raise RuntimeError("extending rtmr3 failed with error code %d" % proc.returncode)
 
     # Get quote after extending RTMR3 with the image digest
-    proc = run(['curl', '--unix-socket', '/var/run/dstack.sock', '-X', 'POST', 'http://dstack/GetQuote', '-H', 'Content-Type: application/json', '-d', '{"report_data": ""}'],
-               capture_output=True)
+    proc = run(['curl', '--unix-socket', '/var/run/dstack.sock', '-X', 'POST',
+                'http://dstack/GetQuote', '-H', 'Content-Type: application/json', '-d',
+                '{"report_data": ""}'], capture_output=True)
+
     if proc.returncode:
         raise RuntimeError("getting quote failed with error code %d" % proc.returncode)
+
     logging.info("Quote: %s" % proc.stdout.decode('utf-8').strip())
 
-    # TODO If we need more flexibility in deploying the app, we could also vote on a docker
-    # compose hash inside the contract.
+    # Build the docker command we use to start the app, i.e., mpc node
     docker_cmd = ['docker', 'run']
 
     for env_file in ['/tapp/.host-shared/.user-config']:
@@ -103,6 +110,7 @@ def main():
 
     # Forward ports from container to CVM
     # This port is the MPC node port. It must be forwarded and cannot be remapped.
+    # TODO Adjusted and/or make configurable according to `port_override` from the mpc node.
     docker_cmd += ['-p', '11780:11780']
 
     docker_cmd += ['-v', '/tapp:/tapp:ro']
@@ -127,8 +135,8 @@ def main():
 
 def get_manifest_digest(registry_url: str, image_name: str, tags: list[str], image_digest: str):
     '''Given an `image_digest` returns a manifest digest.
-    
-       `docker pull` requires a manifest digest. This function translates an image digest into a manifest digest.
+
+       `docker pull` requires a manifest digest. This function translates an image digest into a manifest digest by talking to the Docker registry.
 
        API doc for image registry https://distribution.github.io/distribution/spec/api/
     '''
@@ -136,6 +144,7 @@ def get_manifest_digest(registry_url: str, image_name: str, tags: list[str], ima
         raise Exception(f"No tags found for image {image_name}")
 
     # We need an authorization token to fetch manifests.
+    # TODO this still has the registry hard-coded in the url. also, if we use a different registry, we need a different auth-endpoint.
     token_resp = requests.get(f'https://auth.docker.io/token?service=registry.docker.io&scope=repository:{image_name}:pull')
     token_resp.raise_for_status()
     token = token_resp.json().get('token', [])
