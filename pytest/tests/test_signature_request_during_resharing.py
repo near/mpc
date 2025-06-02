@@ -1,16 +1,6 @@
 #!/usr/bin/env python3
-"""
-Tests key resharing (adding and removing nodes).
-Starts 2 nodes, have node #3 join, then #4 join,
-then #1 leaves, and finally #2 leaves.
-At every step we check that signatures can still be produced.
-"""
-
 import pathlib
 import sys
-import time
-
-import pytest
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
