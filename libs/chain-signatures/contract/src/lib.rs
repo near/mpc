@@ -10,7 +10,7 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
-use crate::errors::Error;
+use crate::errors::{Error, InvalidCandidateSet};
 use crate::primitives::tee::proposal::AllowedTeeProposals;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
 use config::{Config, InitConfig};
@@ -29,13 +29,14 @@ use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     env::{self, ed25519_verify},
     log, near, near_bindgen,
-    store::LookupMap,
+    store::{IterableMap, LookupMap},
     AccountId, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise, PromiseError,
     PromiseOrValue, PublicKey,
 };
 use primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
+    participants::TeeParticipantInfo,
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     tee::{
         code_hash::{CodeHash, CodeHashesVotes},
@@ -84,9 +85,41 @@ pub struct TeeState {
     allowed_tee_proposals: AllowedTeeProposals,
     historical_tee_proposals: Vec<TeeProposal>,
     votes: CodeHashesVotes,
+    tee_participant_info: IterableMap<AccountId, TeeParticipantInfo>,
+}
+
+impl Default for TeeState {
+    fn default() -> Self {
+        Self {
+            allowed_tee_proposals: Default::default(),
+            historical_tee_proposals: Default::default(),
+            votes: Default::default(),
+            tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
+        }
+    }
 }
 
 impl TeeState {
+    /// Verifies all TEE participant quotes. Used for periodic verification of TEE participants.
+    pub fn verify_participants(&self) -> bool {
+        let now_sec = env::block_timestamp_ms() / 1_000;
+        self.tee_participant_info
+            .iter()
+            .all(|(account_id, tee_participant_info)| {
+                match tee_participant_info.verify_quote(now_sec) {
+                    Ok(_) => true,
+                    Err(err) => {
+                        log!(
+                            "Invalid TEE quote for participant {}: {:?}",
+                            account_id,
+                            err
+                        );
+                        false
+                    }
+                }
+            })
+    }
+
     pub fn is_code_hash_allowed(
         &mut self,
         _code_hash: CodeHash,
@@ -178,11 +211,7 @@ impl MpcContract {
             pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
             proposed_updates: ProposedUpdates::default(),
             config: Config::from(init_config),
-            tee_state: TeeState {
-                allowed_tee_proposals: AllowedTeeProposals::default(),
-                historical_tee_proposals: vec![],
-                votes: CodeHashesVotes::default(),
-            },
+            tee_state: Default::default(),
         }
     }
 
@@ -239,6 +268,10 @@ impl MpcContract {
         prospective_epoch_id: EpochId,
         proposal: &ThresholdParameters,
     ) -> Result<(), Error> {
+        let tee_verification = self.tee_state.verify_participants();
+        if !tee_verification {
+            return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into());
+        }
         if let Some(new_state) = self
             .protocol_state
             .vote_new_parameters(prospective_epoch_id, proposal)?
@@ -797,19 +830,17 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             id,
         );
-
-        let Self::V1(mpc_contract) = self else {
+        let threshold = if let Self::V1(mpc_contract) = self {
+            if !matches!(
+                mpc_contract.protocol_state,
+                ProtocolContractState::Running(_)
+            ) {
+                env::panic_str("protocol must be in running state");
+            }
+            mpc_contract.threshold()?
+        } else {
             env::panic_str("expected V1");
         };
-
-        if !matches!(
-            mpc_contract.protocol_state,
-            ProtocolContractState::Running(_)
-        ) {
-            env::panic_str("protocol must be in running state");
-        }
-
-        let threshold = mpc_contract.threshold()?;
         let voter = self.voter_or_panic();
         let Some(votes) = self.proposed_updates().vote(&id, voter) else {
             return Err(InvalidParameters::UpdateNotFound.into());
@@ -934,12 +965,8 @@ impl VersionedMpcContract {
                 domains, keyset, parameters,
             )),
             pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
-            proposed_updates: ProposedUpdates::default(),
-            tee_state: TeeState {
-                allowed_tee_proposals: AllowedTeeProposals::default(),
-                historical_tee_proposals: vec![],
-                votes: CodeHashesVotes::default(),
-            },
+            proposed_updates: Default::default(),
+            tee_state: Default::default(),
         }))
     }
 
@@ -1062,7 +1089,7 @@ mod tests {
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         signature::{Payload, Tweak},
-        test_utils::gen_participants,
+        test_utils::{gen_participants, mock_tee_participant_info},
     };
     use k256::{
         self,
@@ -1106,7 +1133,12 @@ mod tests {
             attempt: AttemptId::new(),
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
-        let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+        let parameters = ThresholdParameters::new(
+            gen_participants(4),
+            Threshold::new(3),
+            mock_tee_participant_info(),
+        )
+        .unwrap();
         let contract =
             VersionedMpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
         (context, contract, secret_key)

@@ -1,22 +1,24 @@
 use super::tee::quote::get_collateral;
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 use dcap_qvl::verify::{self, VerifiedReport};
-use near_sdk::{env, near, AccountId, PublicKey};
-use std::{
-    collections::BTreeSet,
-    fmt::{self, Display},
-};
+use near_sdk::{near, AccountId, PublicKey};
+use std::{collections::BTreeSet, fmt::Display};
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
 }
 
 #[near(serializers=[borsh, json])]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantInfo {
     pub url: String,
     /// The public key used for verifying messages.
     pub sign_pk: PublicKey,
+}
+
+#[near(serializers=[borsh, json])]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
+pub struct TeeParticipantInfo {
     /// TEE Remote Attestation Quote that proves the participant's identity.
     pub tee_quote: Vec<u8>,
     /// Supplemental data for the TEE quote, including Intel certificates to verify it came from
@@ -25,18 +27,7 @@ pub struct ParticipantInfo {
     pub quote_collateral: String,
 }
 
-/// We do not use #[derive(Debug)] for ParticipantInfo because TEE quote and collateral fields are
-/// long and can cause HostError(TotalLogLengthExceeded { length: 120461, limit: 16384 }) errors.
-impl fmt::Debug for ParticipantInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ParticipantInfo")
-            .field("url", &self.url)
-            .field("sign_pk", &self.sign_pk)
-            .finish()
-    }
-}
-
-impl ParticipantInfo {
+impl TeeParticipantInfo {
     pub fn verify_quote(&self, timestamp: u64) -> Result<VerifiedReport, Error> {
         let tee_collateral = get_collateral(self.quote_collateral.clone());
         let verification_result = verify::verify(&self.tee_quote, &tee_collateral, timestamp);
@@ -125,15 +116,11 @@ impl Participants {
     pub fn validate(&self) -> Result<(), Error> {
         let mut ids: BTreeSet<ParticipantId> = BTreeSet::new();
         let mut accounts: BTreeSet<AccountId> = BTreeSet::new();
-        for (acc_id, pid, pinfo) in &self.participants {
+        for (acc_id, pid, _) in &self.participants {
             accounts.insert(acc_id.clone());
             ids.insert(pid.clone());
             if self.next_id.get() <= pid.get() {
                 return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
-            }
-            let now_sec = env::block_timestamp_ms() / 1_000;
-            if pinfo.verify_quote(now_sec).is_err() {
-                return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into());
             }
         }
         if ids.len() != self.len() {

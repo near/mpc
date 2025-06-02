@@ -15,13 +15,11 @@ use crate::legacy_contract_state::ConfigV1;
 use crate::primitives::{
     domain::{AddDomainsVotes, DomainRegistry},
     key_state::{AuthenticatedParticipantId, KeyForDomain, Keyset},
-    tee::proposal::AllowedTeeProposals,
     thresholds::ThresholdParameters,
 };
 use crate::state::initializing::InitializingContractState;
 use crate::state::key_event::KeyEvent;
 use crate::update::UpdateId;
-use crate::CodeHashesVotes;
 use crate::{
     config::Config,
     primitives::signature::{SignatureRequest, YieldIndex},
@@ -133,11 +131,7 @@ impl From<MpcContractV0> for MpcContract {
             pending_requests: value.pending_requests,
             proposed_updates: crate::ProposedUpdates::default(),
             config: value.config,
-            tee_state: TeeState {
-                allowed_tee_proposals: AllowedTeeProposals::default(),
-                historical_tee_proposals: vec![],
-                votes: CodeHashesVotes::default(),
-            },
+            tee_state: TeeState::default(),
         }
     }
 }

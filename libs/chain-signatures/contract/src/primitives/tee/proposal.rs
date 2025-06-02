@@ -35,18 +35,20 @@ pub struct AllowedTeeProposals {
 
 impl AllowedTeeProposals {
     /// Removes all expired code hashes and returns the number of removed entries.
+    /// Ensures that at least one (the latest) proposal always remains in the whitelist.
     fn clean(&mut self, current_block_height: BlockHeight) -> usize {
-        // Find the first non-expired entry
+        // Find the first non-expired entry, but never remove the last one
         let expired_count = self
             .allowed_tee_proposals
             .iter()
             .position(|entry| entry.added + TEE_UPGRADE_PERIOD >= current_block_height)
             .unwrap_or(self.allowed_tee_proposals.len());
 
-        // Remove all expired entries
+        // Never remove all proposals; always keep at least one (the latest)
+        let expired_count = expired_count.min(self.allowed_tee_proposals.len().saturating_sub(1));
+
         self.allowed_tee_proposals.drain(0..expired_count);
 
-        // Return the number of removed entries
         expired_count
     }
 
@@ -95,5 +97,69 @@ impl AllowedTeeProposals {
     pub fn get(&mut self, current_block_height: BlockHeight) -> Vec<AllowedTeeProposal> {
         self.clean(current_block_height);
         self.allowed_tee_proposals.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dummy_code_hash(val: u8) -> CodeHash {
+        CodeHash([val; 32])
+    }
+
+    fn dummy_tee_quote(val: u8) -> TeeQuote {
+        TeeQuote(vec![val; 16])
+    }
+
+    #[test]
+    fn test_insert_and_get() {
+        let mut allowed = AllowedTeeProposals::default();
+        let block_height = 1000;
+
+        // Insert a new proposal
+        let inserted = allowed.insert(dummy_code_hash(1), dummy_tee_quote(1), block_height);
+        assert!(inserted);
+
+        // Insert the same code hash again (should fail)
+        let inserted_again =
+            allowed.insert(dummy_code_hash(1), dummy_tee_quote(2), block_height + 1);
+        assert!(!inserted_again);
+
+        // Insert a different code hash
+        let inserted2 = allowed.insert(dummy_code_hash(2), dummy_tee_quote(2), block_height + 2);
+        assert!(inserted2);
+
+        // Get proposals (should return both)
+        let proposals = allowed.get(block_height + 2);
+        assert_eq!(proposals.len(), 2);
+        assert_eq!(proposals[0].proposal.code_hash, dummy_code_hash(1));
+        assert_eq!(proposals[1].proposal.code_hash, dummy_code_hash(2));
+    }
+
+    #[test]
+    fn test_clean_expired() {
+        let mut allowed = AllowedTeeProposals::default();
+        let block_height = 1000;
+
+        // Insert two proposals at different heights
+        allowed.insert(dummy_code_hash(1), dummy_tee_quote(1), block_height);
+        allowed.insert(dummy_code_hash(2), dummy_tee_quote(2), block_height + 1);
+
+        // Move block height far enough to expire the first proposal
+        let expired_height = block_height + TEE_UPGRADE_PERIOD + 1;
+        let proposals = allowed.get(expired_height);
+
+        // Only the second proposal should remain if the first is expired
+        assert_eq!(proposals.len(), 1);
+        assert_eq!(proposals[0].proposal.code_hash, dummy_code_hash(2));
+
+        // Move block height far enough to expire both proposals; we never allow all proposals in
+        // the whitelist to expire, so there should still be one proposal in the whitelist
+        let expired_height = block_height + TEE_UPGRADE_PERIOD + 2;
+        let proposals = allowed.get(expired_height);
+
+        assert_eq!(proposals.len(), 1);
+        assert_eq!(proposals[0].proposal.code_hash, dummy_code_hash(2));
     }
 }

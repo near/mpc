@@ -8,7 +8,7 @@ use serde_json::Value;
 /// Remote Attestation TDX quote.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct TeeQuote(Vec<u8>);
+pub struct TeeQuote(pub(crate) Vec<u8>);
 
 impl TeeQuote {
     pub fn new(data: Vec<u8>) -> Self {

@@ -8,7 +8,7 @@ use super::proposal::TeeProposal;
 /// Hash of a Docker image running in the TEE environment.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct CodeHash([u8; 32]);
+pub struct CodeHash(pub(crate) [u8; 32]);
 
 impl CodeHash {
     /// Returns the byte array representation of the `CodeHash`.
