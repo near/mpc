@@ -40,7 +40,7 @@ def main():
     user_vars = parse_env_file(DSTACK_USER_CONFIG_FILE) if os.path.isfile(DSTACK_USER_CONFIG_FILE) else {}
 
     tags = user_vars.get('LAUNCHER_IMAGE_TAGS', 'latest').split(',')
-    image_name = user_vars.get('LAUNCHER_IMAGE_NAME', 'nearone/mpc-node')
+    image_name = user_vars.get('LAUNCHER_IMAGE_NAME', 'nearone/mpc-node-gcp')
     registry = user_vars.get('LAUNCHER_REGISTRY', 'registry.hub.docker.com')
 
     # DEFAULT_IMAGE_DIGEST originates from the app-compose.json and its value is contained in the app's measurement.
