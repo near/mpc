@@ -26,6 +26,8 @@ The respective commands to find either are
 docker image inspect mpc-node-gcp:latest | jq '.[0].Id'
 ```
 
+Note, the image digest used with `docker run` is the output of the `docker image inspect ...` command.
+
 ```
 docker run --rm dcbd3b8c8ae35d2ba63b25d6b617ce8b7faabb0af96ffa2e35b08a50258ebfa4 cat /app/mpc-node | sha256sum
 ```
