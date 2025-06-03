@@ -11,7 +11,7 @@ pub mod utils;
 pub mod v0_state;
 
 use crate::errors::{Error, InvalidCandidateSet};
-use crate::primitives::tee::proposal::AllowedTeeProposals;
+use crate::primitives::tee::{proposal::AllowedTeeProposals, quote::TeeQuoteStatus};
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
 use config::{Config, InitConfig};
 use crypto_shared::{
@@ -47,6 +47,7 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
+use std::collections::BTreeMap;
 use storage_keys::StorageKey;
 use v0_state::MpcContractV0;
 
@@ -100,24 +101,21 @@ impl Default for TeeState {
 }
 
 impl TeeState {
-    /// Verifies all TEE participant quotes. Used for periodic verification of TEE participants.
-    pub fn verify_participants(&self) -> bool {
+    pub fn tee_status(&self, participants: Vec<AccountId>) -> BTreeMap<AccountId, TeeQuoteStatus> {
         let now_sec = env::block_timestamp_ms() / 1_000;
-        self.tee_participant_info
-            .iter()
-            .all(|(account_id, tee_participant_info)| {
-                match tee_participant_info.verify_quote(now_sec) {
-                    Ok(_) => true,
-                    Err(err) => {
-                        log!(
-                            "Invalid TEE quote for participant {}: {:?}",
-                            account_id,
-                            err
-                        );
-                        false
-                    }
-                }
+        participants
+            .into_iter()
+            .map(|account_id| {
+                let status = self
+                    .tee_participant_info
+                    .get(&account_id)
+                    .map(|tee_participant_info| {
+                        TeeQuoteStatus::from(tee_participant_info.verify_quote(now_sec))
+                    })
+                    .unwrap_or(TeeQuoteStatus::None);
+                (account_id, status)
             })
+            .collect()
     }
 
     pub fn is_code_hash_allowed(
@@ -268,8 +266,17 @@ impl MpcContract {
         prospective_epoch_id: EpochId,
         proposal: &ThresholdParameters,
     ) -> Result<(), Error> {
-        let tee_verification = self.tee_state.verify_participants();
-        if !tee_verification {
+        let participant_ids = self
+            .tee_state
+            .tee_participant_info
+            .keys()
+            .cloned()
+            .collect();
+        let tee_verification = self.tee_state.tee_status(participant_ids);
+        if tee_verification
+            .values()
+            .any(|status| status != &TeeQuoteStatus::Valid)
+        {
             return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into());
         }
         if let Some(new_state) = self

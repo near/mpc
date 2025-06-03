@@ -345,7 +345,6 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let proposed_parameters = ThresholdParameters::new_unvalidated(participants, threshold);
     let result = contract
         .call("init")
-        .max_gas() // TODO
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
             "init_config": None::<InitConfig>,
@@ -365,7 +364,6 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     .unwrap();
     let result = contract
         .call("init")
-        .max_gas() // TODO
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
             "init_config": None::<InitConfig>,
@@ -381,7 +379,6 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     // Reinitializing after the first successful initialization should fail.
     let result = contract
         .call("init")
-        .max_gas() // TODO
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
             "init_config": None::<InitConfig>,

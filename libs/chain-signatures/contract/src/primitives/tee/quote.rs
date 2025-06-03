@@ -1,9 +1,25 @@
 use anyhow::Result;
-use dcap_qvl::{quote::Quote, QuoteCollateralV3};
+use dcap_qvl::{quote::Quote, verify::VerifiedReport, QuoteCollateralV3};
 use hex::{decode, encode};
 use k256::sha2::{Digest as _, Sha256, Sha384};
 use near_sdk::{near, require};
 use serde_json::Value;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TeeQuoteStatus {
+    None,
+    Valid,
+    Invalid,
+}
+
+impl From<Result<VerifiedReport, crate::Error>> for TeeQuoteStatus {
+    fn from(result: Result<VerifiedReport, crate::Error>) -> Self {
+        match result {
+            Ok(_) => TeeQuoteStatus::Valid,
+            Err(_) => TeeQuoteStatus::Invalid,
+        }
+    }
+}
 
 /// Remote Attestation TDX quote.
 #[near(serializers=[borsh, json])]
