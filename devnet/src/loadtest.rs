@@ -105,16 +105,6 @@ impl NewLoadtestCmd {
     }
 }
 
-impl ListLoadtestCmd {
-    pub async fn run(&self, config: ParsedConfig) {
-        let setup = OperatingDevnetSetup::load(config.rpc).await;
-        let loadtest_setups = &setup.loadtest_setups;
-        for (name, setup) in loadtest_setups {
-            println!("{}: {}", name, setup);
-        }
-    }
-}
-
 impl UpdateLoadtestCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!("Going to update loadtest setup {}", name);

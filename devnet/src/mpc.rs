@@ -114,16 +114,6 @@ async fn update_mpc_network(
     futures::future::join_all(futs).await;
 }
 
-impl ListMpcCmd {
-    pub async fn run(&self, config: ParsedConfig) {
-        let setup = OperatingDevnetSetup::load(config.rpc).await;
-        let mpc_setups = &setup.mpc_setups;
-        for (name, setup) in mpc_setups {
-            println!("{}: {}", name, setup);
-        }
-    }
-}
-
 impl NewMpcNetworkCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!("Going to create MPC network {} with {} maximum participants, {} NEAR per account, and {} additional access keys per participant for responding. Using SSD: {}",
