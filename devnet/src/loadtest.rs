@@ -1,8 +1,8 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccessKey, OperatingAccounts};
 use crate::cli::{
-    DeployParallelSignContractCmd, DrainExpiredRequestsCmd, NewLoadtestCmd, RunLoadtestCmd,
-    UpdateLoadtestCmd,
+    DeployParallelSignContractCmd, DrainExpiredRequestsCmd, ListLoadtestCmd, NewLoadtestCmd,
+    RunLoadtestCmd, UpdateLoadtestCmd,
 };
 use crate::constants::{DEFAULT_PARALLEL_SIGN_CONTRACT_PATH, ONE_NEAR};
 use crate::devnet::OperatingDevnetSetup;
@@ -22,6 +22,16 @@ use std::collections::BTreeMap;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use tokio::sync::OwnedMutexGuard;
+
+impl ListLoadtestCmd {
+    pub async fn run(&self, config: ParsedConfig) {
+        let setup = OperatingDevnetSetup::load(config.rpc).await;
+        let loadtest_setups = &setup.loadtest_setups;
+        for (name, setup) in loadtest_setups {
+            println!("{}: {}", name, setup);
+        }
+    }
+}
 
 /// Bring the loadtest setup to the desired parameterization.
 async fn update_loadtest_setup(

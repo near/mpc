@@ -1,9 +1,9 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts};
 use crate::cli::{
-    MpcDeployContractCmd, MpcDescribeCmd, MpcProposeUpdateContractCmd, MpcViewContractCmd,
-    MpcVoteAddDomainsCmd, MpcVoteNewParametersCmd, MpcVoteUpdateCmd, NewMpcNetworkCmd,
-    RemoveContractCmd, UpdateMpcNetworkCmd,
+    ListMpcCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcProposeUpdateContractCmd,
+    MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteNewParametersCmd, MpcVoteUpdateCmd,
+    NewMpcNetworkCmd, RemoveContractCmd, UpdateMpcNetworkCmd,
 };
 use crate::constants::{ONE_NEAR, TESTNET_CONTRACT_ACCOUNT_ID};
 use crate::devnet::OperatingDevnetSetup;
@@ -23,6 +23,16 @@ use near_crypto::SecretKey;
 use near_sdk::{borsh, AccountId};
 use serde::Serialize;
 use std::str::FromStr;
+
+impl ListMpcCmd {
+    pub async fn run(&self, config: ParsedConfig) {
+        let setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mpc_setups = &setup.mpc_setups;
+        for (name, setup) in mpc_setups {
+            println!("{}: {}", name, setup);
+        }
+    }
+}
 
 /// Bring the MPC network up to the desired parameterization.
 async fn update_mpc_network(
