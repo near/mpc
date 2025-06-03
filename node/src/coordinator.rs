@@ -491,7 +491,6 @@ impl Coordinator {
             })
         });
 
-        // TODO: https://github.com/Near-One/mpc/issues/441
         let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
             "running mpc job",
             async move {
