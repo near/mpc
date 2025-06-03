@@ -17,7 +17,7 @@ use mpc_contract::{
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::EpochId,
-        participants::{TeeParticipantInfo, ParticipantInfo, Participants},
+        participants::{ParticipantInfo, Participants, TeeParticipantInfo},
         thresholds::{Threshold, ThresholdParameters},
     },
 };
@@ -281,8 +281,12 @@ impl MpcDeployContractCmd {
                 )
                 .unwrap();
         }
-        let parameters =
-            ThresholdParameters::new(participants, Threshold::new(self.threshold), mock_tee_participant_info()).unwrap();
+        let parameters = ThresholdParameters::new(
+            participants,
+            Threshold::new(self.threshold),
+            mock_tee_participant_info(),
+        )
+        .unwrap();
         let args = serde_json::to_vec(&InitV2Args {
             parameters,
             init_config: None,
@@ -661,7 +665,8 @@ impl MpcVoteNewParametersCmd {
             parameters.threshold()
         };
         let proposal =
-            ThresholdParameters::new(participants, threshold, mock_tee_participant_info()).expect("New parameters invalid");
+            ThresholdParameters::new(participants, threshold, mock_tee_participant_info())
+                .expect("New parameters invalid");
 
         let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);
 
