@@ -23,6 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
+use tracing::{error, info};
 
 /// The key generation computation (same for both leader and follower) for a single key generation
 /// attempt:
@@ -457,22 +458,34 @@ pub async fn resharing_leader(
     args: Arc<ResharingArgs>,
 ) -> anyhow::Result<()> {
     loop {
+        info!("Waiting for a connection to all participants.");
         // Wait for all participants to be connected. Otherwise, computations are most likely going
         // to fail so don't waste the effort.
-        client.leader_wait_for_all_connected().await?;
+        client
+            .leader_wait_for_all_connected()
+            .await
+            .inspect_err(|e| error!("Could not connect to all participants: {:?}", e))?;
 
-        // Wait for the contract to have no active key event instance.
+        info!("Wait for the contract to have no active key event instance.");
         let key_event_id = key_event_receiver
             .wait_for(|contract_event| !contract_event.started)
             .await?
             .id;
         // Send txn to start the resharing instance. This may or may not end up in the chain; we'll
         // wait for it. If it doesn't happen after some time, we try again.
+        info!("Sending StartReshare to contract.");
+
         chain_txn_sender
             .send(ChainSendTransactionRequest::StartReshare(
                 ChainStartReshareArgs { key_event_id },
             ))
-            .await?;
+            .await
+            .inspect_err(|e| {
+                error!(
+                    "Failed to send start resharing transaction to contract: {:?}",
+                    e
+                )
+            })?;
 
         match timeout(
             MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE,
@@ -493,6 +506,7 @@ pub async fn resharing_leader(
         }
 
         // Start the resharing computation.
+        info!("Starting resharing computation.");
         let Ok(channel) = client.new_channel_for_task(
             EcdsaTaskId::KeyResharing {
                 key_event: key_event_id,

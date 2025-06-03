@@ -26,6 +26,16 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::OwnedMutexGuard;
 use tokio::time::timeout;
 
+impl ListLoadtestCmd {
+    pub async fn run(&self, config: ParsedConfig) {
+        let setup = OperatingDevnetSetup::load(config.rpc).await;
+        let loadtest_setups = &setup.loadtest_setups;
+        for (name, setup) in loadtest_setups {
+            println!("{}: {}", name, setup);
+        }
+    }
+}
+
 /// Bring the loadtest setup to the desired parameterization.
 async fn update_loadtest_setup(
     name: &str,

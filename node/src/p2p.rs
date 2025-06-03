@@ -24,6 +24,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 use x509_parser::prelude::{FromDer, X509Certificate};
 use x509_parser::public_key::PublicKey;
 
@@ -125,6 +126,7 @@ impl TlsConnection {
             );
         }
 
+        info!("Performing P2P handshake with: {:?}", target_address);
         p2p_handshake(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
             .await
             .context("p2p handshake")?;
@@ -378,6 +380,7 @@ pub async fn new_tls_mesh_network(
         .map(|participant| participant.port)
         .ok_or_else(|| anyhow!("My ID not found in participants"))?;
 
+    info!("Preparing participant data.");
     // Prepare participant data.
     let mut participant_identities = ParticipantIdentities::default();
     let mut connections = HashMap::new();
@@ -428,6 +431,7 @@ pub async fn new_tls_mesh_network(
 
     let connectivities_clone = connectivities.clone();
     let my_id = config.my_participant_id;
+    info!("Spawning incoming connections handler.");
     let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
         let mut tasks = AutoAbortTaskCollection::new();
         while let Ok((tcp_stream, _)) = tcp_listener.accept().await {

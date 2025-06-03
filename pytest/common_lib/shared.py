@@ -702,7 +702,8 @@ def start_cluster_with_mpc(num_validators,
                            num_mpc_nodes,
                            num_respond_aks,
                            contract,
-                           presignatures_to_buffer=None):
+                           presignatures_to_buffer=None,
+                           start_mpc_nodes=True):
     rpc_polling_config = {
         "rpc": {
             "polling_config": {
@@ -818,9 +819,13 @@ def start_cluster_with_mpc(num_validators,
     # Deploy the mpc contract
     cluster.deploy_contract(contract)
 
-    # Start the mpc nodes
+    # Name mpc nodes A, B, C, ...
     for i, mpc_node in enumerate(mpc_nodes):
         mpc_node.set_secret_store_key(str(chr(ord('A') + i) * 32))
-        mpc_node.run()
+
+    # Start the mpc nodes
+    if start_mpc_nodes:
+        for mpc_node in mpc_nodes:
+            mpc_node.run()
 
     return cluster, mpc_nodes

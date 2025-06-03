@@ -103,6 +103,7 @@ pub enum KeyEventIdComparisonResult {
 pub struct ContractRunningState {
     pub keyset: Keyset,
     pub participants: ParticipantsConfig,
+    pub resharing_state: Option<ContractResharingState>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,7 +114,6 @@ pub struct ContractInitializingState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractResharingState {
-    pub previous_running_state: ContractRunningState,
     pub new_participants: ParticipantsConfig,
     pub reshared_keys: Keyset,
     pub key_event: ContractKeyEventInstance,
@@ -127,7 +127,6 @@ pub enum ContractState {
     Invalid,
     Initializing(ContractInitializingState),
     Running(ContractRunningState),
-    Resharing(ContractResharingState),
 }
 
 impl ContractState {
@@ -151,19 +150,18 @@ impl ContractState {
                     ),
                 })
             }
-            ProtocolContractState::Running(state) => ContractState::Running(ContractRunningState {
-                keyset: state.keyset.clone(),
-                participants: convert_participant_infos(state.parameters.clone(), port_override)?,
-            }),
+            ProtocolContractState::Running(running_state) => {
+                ContractState::Running(ContractRunningState {
+                    keyset: running_state.keyset.clone(),
+                    participants: convert_participant_infos(
+                        running_state.parameters.clone(),
+                        port_override,
+                    )?,
+                    resharing_state: None,
+                })
+            }
             ProtocolContractState::Resharing(state) => {
-                ContractState::Resharing(ContractResharingState {
-                    previous_running_state: ContractRunningState {
-                        keyset: state.previous_running_state.keyset.clone(),
-                        participants: convert_participant_infos(
-                            state.previous_running_state.parameters.clone(),
-                            port_override,
-                        )?,
-                    },
+                let resharing_state = Some(ContractResharingState {
                     new_participants: convert_participant_infos(
                         state.resharing_key.proposed_parameters().clone(),
                         port_override,
@@ -177,6 +175,17 @@ impl ContractState {
                         height,
                         state.reshared_keys.clone(),
                     ),
+                });
+
+                let running_state = state.previous_running_state.clone();
+
+                ContractState::Running(ContractRunningState {
+                    keyset: running_state.keyset.clone(),
+                    participants: convert_participant_infos(
+                        running_state.parameters.clone(),
+                        port_override,
+                    )?,
+                    resharing_state,
                 })
             }
         })

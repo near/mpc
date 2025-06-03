@@ -101,14 +101,6 @@ pub struct ListCmd {
 }
 
 #[derive(clap::Parser)]
-pub struct MpcNetworkCmd {
-    /// A friendly name of the MPC network; use a unique name in the team.
-    pub name: String,
-    #[clap(subcommand)]
-    pub subcmd: MpcNetworkSubCmd,
-}
-
-#[derive(clap::Parser)]
 pub struct ListMpcCmd {}
 
 #[derive(clap::Parser)]
@@ -120,6 +112,14 @@ pub enum ListSubCmd {
     Mpc(ListMpcCmd),
     /// Lists all loadtest setups
     Loadtest(ListLoadtestCmd),
+}
+
+#[derive(clap::Parser)]
+pub struct MpcNetworkCmd {
+    /// A friendly name of the MPC network; use a unique name in the team.
+    pub name: String,
+    #[clap(subcommand)]
+    pub subcmd: MpcNetworkSubCmd,
 }
 
 #[derive(clap::Parser)]
