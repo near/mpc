@@ -6,6 +6,8 @@ pub enum Cli {
     Mpc(MpcNetworkCmd),
     /// Manage loadtest setups
     Loadtest(LoadtestCmd),
+    /// List loadtests or mpc networks
+    List(ListCmd),
 }
 
 impl Cli {
@@ -76,8 +78,35 @@ impl Cli {
                     }
                 }
             }
+            Cli::List(cmd) => match cmd.subcmd {
+                ListSubCmd::Mpc(cmd) => {
+                    cmd.run(config).await;
+                }
+                ListSubCmd::Loadtest(cmd) => {
+                    cmd.run(config).await;
+                }
+            },
         }
     }
+}
+
+#[derive(clap::Parser)]
+pub struct ListCmd {
+    #[clap(subcommand)]
+    pub subcmd: ListSubCmd,
+}
+#[derive(clap::Parser)]
+pub struct ListMpcCmd {}
+
+#[derive(clap::Parser)]
+pub struct ListLoadtestCmd {}
+
+#[derive(clap::Parser)]
+pub enum ListSubCmd {
+    /// Lists all mpc setups
+    Mpc(ListMpcCmd),
+    /// Lists all loadtest setups
+    Loadtest(ListLoadtestCmd),
 }
 
 #[derive(clap::Parser)]

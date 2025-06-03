@@ -12,15 +12,17 @@ def test_single_domain():
     Tests that signature requests are still processed while performing key resharing.
 
     Test scenario:
-        1. Start with 2 nodes and 1 domain.
+        1. Start with 2 nodes and 1 domain for Ecdsa as well as Eddsa.
         2. Add 2 more nodes and start a key resharing.
         3. While in resharing, kill one node such that the nodes are stuck in resharing.
         4. Send a signature request to assert that it is processed while the network is in resharing state.
     """
     # Have the nodes disabled
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2, 4, 1, load_mpc_contract(), start_mpc_nodes=True
-    )
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(2,
+                                                       4,
+                                                       1,
+                                                       load_mpc_contract(),
+                                                       start_mpc_nodes=True)
 
     cluster.init_cluster(participants=mpc_nodes[:2], threshold=2)
 
@@ -40,7 +42,7 @@ def test_single_domain():
         "Resharing"
     ), "State should still be in resharing. 4th node was killed."
 
-    cluster.send_and_await_signature_requests(1)
+    cluster.send_and_await_signature_requests(3)
 
     # sanity check
     assert cluster.wait_for_state(
