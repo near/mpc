@@ -1,7 +1,7 @@
-use near_sdk::{near, BlockHeight};
+use near_sdk::{log, near, BlockHeight};
+use std::collections::BTreeMap;
 
-use super::code_hash::CodeHash;
-use super::quote::TeeQuote;
+use crate::primitives::{key_state::AuthenticatedParticipantId, tee::quote::TeeQuote};
 
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds
@@ -13,6 +13,56 @@ const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block ti
 pub struct TeeProposal {
     pub code_hash: CodeHash,
     pub tee_quote: TeeQuote,
+}
+
+/// Hash of a Docker image running in the TEE environment.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct CodeHash(pub(crate) [u8; 32]);
+
+impl CodeHash {
+    /// Returns the byte array representation of the `CodeHash`.
+    pub fn as_hex(&self) -> String {
+        hex::encode(self.0)
+    }
+}
+
+/// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
+/// a code hash to add.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CodeHashesVotes {
+    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, TeeProposal>,
+}
+
+impl CodeHashesVotes {
+    /// Casts a vote for the proposal and returns the total number of participants who have voted
+    /// for the same code hash. If the participant already voted, their previous vote is replaced.
+    pub fn vote(&mut self, proposal: TeeProposal, participant: &AuthenticatedParticipantId) -> u64 {
+        if self
+            .proposal_by_account
+            .insert(participant.clone(), proposal.clone())
+            .is_some()
+        {
+            log!("removed old vote for signer");
+        }
+        let total = self.count_votes(&proposal);
+        log!("total votes for proposal: {}", total);
+        total
+    }
+
+    /// Counts the total number of participants who have voted for the given code hash.
+    fn count_votes(&self, proposal: &TeeProposal) -> u64 {
+        self.proposal_by_account
+            .values()
+            .filter(|&prop| prop.code_hash == proposal.code_hash)
+            .count() as u64
+    }
+
+    /// Clears all proposals.
+    pub fn clear_votes(&mut self) {
+        self.proposal_by_account.clear();
+    }
 }
 
 /// A proposal for a new TEE code hash to be added to the whitelist, along with the time it was

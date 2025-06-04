@@ -39,8 +39,7 @@ use primitives::{
     participants::TeeParticipantInfo,
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     tee::{
-        code_hash::{CodeHash, CodeHashesVotes},
-        proposal::TeeProposal,
+        proposal::{CodeHash, CodeHashesVotes, TeeProposal},
         quote::verify_codehash,
         quote::{get_collateral, TeeQuote},
     },
