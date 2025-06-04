@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::types::load_config;
 
 #[derive(clap::Parser)]
@@ -71,9 +73,6 @@ impl Cli {
                         cmd.run(&name, config).await;
                     }
                     LoadtestSubCmd::Run(cmd) => {
-                        cmd.run(&name, config).await;
-                    }
-                    LoadtestSubCmd::DrainExpiredRequests(cmd) => {
                         cmd.run(&name, config).await;
                     }
                 }
@@ -165,8 +164,6 @@ pub enum LoadtestSubCmd {
     DeployParallelSignContract(DeployParallelSignContractCmd),
     /// Send load to an MPC network.
     Run(RunLoadtestCmd),
-    /// Drain expired requests in bulk from the MPC contract in order to free up account storage.
-    DrainExpiredRequests(DrainExpiredRequestsCmd),
 }
 
 #[derive(clap::Parser)]
@@ -355,20 +352,28 @@ pub struct RunLoadtestCmd {
     #[clap(long)]
     pub qps: usize,
     /// The number of signatures to send per parallel-signature contract call.
+    /// Pass as --parallel-sign-calls-per-domain 1=10,2=15
     /// This will be divided into the QPS, so you don't need to change the QPS flag.
-    #[clap(long)]
-    pub signatures_per_contract_call: Option<usize>,
-    /// Domain ID. If missing, use legacy signature format.
+    #[clap(long, value_parser = parse_parallel_calls)]
+    pub parallel_sign_calls_per_domain: BTreeMap<u64, u64>,
+    /// Domain ID. If missing, use legacy signature format. Must be provided if
+    /// `signatures_per_contract_call` is set.
     #[clap(long)]
     pub domain_id: Option<u64>,
+    /// Duration for loadtest (in seconds). If not set, the test runs indefinetely.
+    #[clap(long)]
+    pub duration: Option<u64>,
 }
 
-#[derive(clap::Parser)]
-pub struct DrainExpiredRequestsCmd {
-    #[clap(long)]
-    pub mpc_network: String,
-    /// QPS to send the drain requests with. This does not need to be very high.
-    /// The draining will stop as soon as any request comes back with 0 drained.
-    #[clap(long, default_value = "1")]
-    pub qps: usize,
+fn parse_parallel_calls(s: &str) -> Result<BTreeMap<u64, u64>, String> {
+    let mut map = BTreeMap::new();
+    for pair in s.split(',') {
+        let (k, v) = pair
+            .split_once('=')
+            .ok_or_else(|| format!("invalid pair '{}'", pair))?;
+        let key = k.trim().parse().map_err(|_| format!("bad key '{}'", k))?;
+        let val = v.trim().parse().map_err(|_| format!("bad value '{}'", v))?;
+        map.insert(key, val);
+    }
+    Ok(map)
 }

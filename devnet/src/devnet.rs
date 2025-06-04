@@ -4,6 +4,7 @@ use crate::types::{DevnetSetupRepository, LoadtestSetup, MpcNetworkSetup};
 use near_jsonrpc_client::methods;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Live state of the setup for the entire devnet.
 /// Upon dropping, saves the state to devnet_setup.yaml
@@ -27,16 +28,19 @@ impl OperatingDevnetSetup {
         }
         let setup_data = std::fs::read_to_string(Self::SETUP_FILENAME).unwrap();
         let setup: DevnetSetupRepository = serde_yaml::from_str(&setup_data).unwrap();
-        let recent_block_hash = client
-            .submit(methods::block::RpcBlockRequest {
+        let recent_block_hash = tokio::time::timeout(
+            Duration::from_secs(5),
+            client.submit(methods::block::RpcBlockRequest {
                 block_reference: near_primitives::types::BlockReference::Finality(
                     near_primitives::types::Finality::Final,
                 ),
-            })
-            .await
-            .unwrap()
-            .header
-            .hash;
+            }),
+        )
+        .await
+        .expect("Timed out trying to reach rpc node.")
+        .unwrap()
+        .header
+        .hash;
 
         let accounts = OperatingAccounts::new(setup.accounts, recent_block_hash, client);
         Self {
