@@ -2788,6 +2788,7 @@ checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 [[package]]
 name = "dstack-sdk"
 version = "0.1.0"
+source = "git+https://github.com/near-bookrock/dstack.git?rev=6e9c204f79a784f85170dfa732700ee3c07d0479#6e9c204f79a784f85170dfa732700ee3c07d0479"
 dependencies = [
  "alloy",
  "anyhow",

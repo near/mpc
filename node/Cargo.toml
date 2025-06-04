@@ -15,6 +15,8 @@ cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "68d381884687
     "k256",
 ] }
 clap = { version = "4.5.20", features = ["derive", "env"] }
+# TODO: Point to Dstack's repo once https://github.com/Dstack-TEE/dstack/pull/193 is merged
+dstack-sdk = { git = "https://github.com/near-bookrock/dstack.git", rev = "6e9c204f79a784f85170dfa732700ee3c07d0479" }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"
@@ -71,10 +73,6 @@ mpc-contract = { path = "../libs/chain-signatures/contract/", features = [
 # Pinned to resolve compilation errors with conflicting implementations of PartialOrd trait
 # See error E0283 with multiple impls satisfying `u128: std::cmp::PartialOrd<_>`
 deranged = "=0.4.0"
-
-
-dstack-sdk = { path = "../../dstack/sdk/rust" }
-
 
 [dev-dependencies]
 serial_test = "3.2.0"
