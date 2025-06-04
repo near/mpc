@@ -3,10 +3,8 @@ use base64::{engine::general_purpose, Engine};
 use common::current_contract;
 use mpc_contract::{
     config::InitConfig,
-    primitives::{
-        tee::tee_participant::TeeParticipantInfo,
-        thresholds::{Threshold, ThresholdParameters},
-    },
+    primitives::thresholds::{Threshold, ThresholdParameters},
+    tee::tee_participant::TeeParticipantInfo,
 };
 use near_workspaces::{network::Sandbox, Contract, Worker};
 use reqwest::Client;

@@ -11,9 +11,9 @@ use mpc_contract::{
         domain::DomainId,
         participants::Participants,
         signature::SignRequestArgs,
-        tee::tee_participant::TeeParticipantInfo,
         thresholds::{Threshold, ThresholdParameters},
     },
+    tee::tee_participant::TeeParticipantInfo,
 };
 use near_workspaces::types::NearToken;
 

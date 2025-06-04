@@ -2,11 +2,9 @@ pub mod common;
 
 use common::{check_call_success, gen_accounts, init_env_secp256k1};
 use mpc_contract::{
-    primitives::{
-        tee::tee_participant::TeeParticipantInfo,
-        thresholds::{Threshold, ThresholdParameters},
-    },
+    primitives::thresholds::{Threshold, ThresholdParameters},
     state::ProtocolContractState,
+    tee::tee_participant::TeeParticipantInfo,
 };
 use near_sdk::PublicKey;
 use serde_json::json;

@@ -18,9 +18,9 @@ use mpc_contract::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         signature::{Bytes, SignatureRequest, Tweak},
-        tee::tee_participant::TeeParticipantInfo,
         thresholds::{Threshold, ThresholdParameters},
     },
+    tee::tee_participant::TeeParticipantInfo,
     update::UpdateId,
 };
 use mpc_contract::{
