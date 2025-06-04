@@ -40,7 +40,7 @@ struct UploadResponse {
 ///
 /// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
 /// from generating the attestation.
-pub async fn get_tdx_quote(
+pub async fn create_remote_attestation_info(
     node_public_key: near_crypto::ED25519PublicKey,
 ) -> anyhow::Result<TeeAttestation> {
     let client = DstackClient::new(ENDPOINT);
