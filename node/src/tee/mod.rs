@@ -1,4 +1,4 @@
-use std::time::Duration;
+#![allow(dead_code)]
 
 use anyhow::{bail, Context};
 use backon::{BackoffBuilder, ExponentialBuilder};
@@ -8,16 +8,21 @@ use http::status::StatusCode;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
+use std::time::Duration;
 use tracing::{error, info};
 
+/// Endpoint to contact dstack service.
+/// Set to [`None`] which defaults to `/var/run/dstack.sock`
 const ENDPOINT: Option<&str> = None;
+/// URL for usbmission of tdx quote. Returns collateral to be used for verification.
+const PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
+/// Expected HTTP [`StatusCode`] for a successful submission.
 const PHALA_SUCCESS_STATUS_CODE: StatusCode = StatusCode::OK;
-const PHALA_HTTP_ENDPOINT: &str = "https://proof.t16z.com/api/upload";
-
+/// The maximum duration to wait for retrying request to Phala's endpoint, [`PHALA_TDX_QUOTE_UPLOAD_URL`].
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
 #[derive(Serialize, Deserialize)]
-pub struct TeeResponse {
+pub struct TeeAttestation {
     tcb_info: TcbInfo,
     tdx_quote: String,
     collateral: String,
@@ -30,9 +35,9 @@ struct UploadResponse {
     _checksum: String,
 }
 
-pub async fn register_worker(
+pub async fn get_tdx_quote(
     node_public_key: near_crypto::ED25519PublicKey,
-) -> anyhow::Result<TeeResponse> {
+) -> anyhow::Result<TeeAttestation> {
     let client = DstackClient::new(ENDPOINT);
 
     let client_info_response = client.info().await?;
@@ -48,7 +53,7 @@ pub async fn register_worker(
         .quote
         .encode_hex();
 
-    let upload_response = {
+    let quote_upload_response = {
         let reqwest_client = reqwest::Client::new();
         let tdx_quote = tdx_quote.clone();
 
@@ -56,7 +61,7 @@ pub async fn register_worker(
             let form = Form::new().text("hex", tdx_quote.clone());
 
             let response = reqwest_client
-                .post(PHALA_HTTP_ENDPOINT)
+                .post(PHALA_TDX_QUOTE_UPLOAD_URL)
                 .multipart(form)
                 .send()
                 .await?;
@@ -93,9 +98,10 @@ pub async fn register_worker(
         }
     };
 
-    Ok(TeeResponse {
+    let collateral = quote_upload_response.quote_collateral;
+    Ok(TeeAttestation {
         tdx_quote,
         tcb_info,
-        collateral: upload_response.quote_collateral,
+        collateral,
     })
 }
