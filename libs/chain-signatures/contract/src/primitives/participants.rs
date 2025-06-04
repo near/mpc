@@ -184,18 +184,10 @@ pub mod tests {
         participants::{ParticipantId, Participants},
         test_utils::gen_accounts_and_info,
     };
-    use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rand::Rng;
-    use std::time::Duration;
 
     #[test]
     fn test_participants() {
-        let now_sec = 1_747_785_600u64; // 2025-05-21 00:00:00 UTC for TEE quote verification
-        let now_ns = Duration::from_secs(now_sec).as_nanos() as u64; // nanoseconds since epoch
-        let mut ctx = VMContextBuilder::new();
-        ctx.block_timestamp(now_ns);
-        testing_env!(ctx.build());
-
         let n = rand::thread_rng().gen_range(1..800);
         let expected = gen_accounts_and_info(n);
         let mut participants = Participants::new();
