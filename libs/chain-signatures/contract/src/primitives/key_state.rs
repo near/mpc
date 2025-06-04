@@ -243,8 +243,6 @@ pub mod tests {
 
     #[test]
     fn test_authenticated_participant_id() {
-        set_test_env_for_tee_quote_verification();
-
         let proposed_parameters = gen_threshold_params(MAX_N);
         assert!(proposed_parameters.validate().is_ok());
         for (account_id, _, _) in proposed_parameters.participants().participants() {
@@ -261,8 +259,6 @@ pub mod tests {
 
     #[test]
     fn test_authenticated_account_id() {
-        set_test_env_for_tee_quote_verification();
-
         let proposed_parameters = gen_threshold_params(MAX_N);
         assert!(proposed_parameters.validate().is_ok());
         for (account_id, _, _) in proposed_parameters.participants().participants() {
