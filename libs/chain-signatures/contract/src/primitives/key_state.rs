@@ -190,10 +190,7 @@ pub mod tests {
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
             Keyset,
         },
-        test_utils::{
-            bogus_ed25519_public_key_extended, gen_account_id, gen_threshold_params,
-            set_test_env_for_tee_quote_verification,
-        },
+        test_utils::{bogus_ed25519_public_key_extended, gen_account_id, gen_threshold_params},
     };
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rand::Rng;
