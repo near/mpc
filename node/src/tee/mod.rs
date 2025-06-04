@@ -35,6 +35,11 @@ struct UploadResponse {
     _checksum: String,
 }
 
+/// Generates a [`TeeAttestation`] for this node, which can be used to send to the contract to prove that
+/// the node is running in a `TEE` context.
+///
+/// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
+/// from generating the attestation.
 pub async fn get_tdx_quote(
     node_public_key: near_crypto::ED25519PublicKey,
 ) -> anyhow::Result<TeeAttestation> {
