@@ -36,8 +36,8 @@ use near_sdk::{
 use primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
-    participants::TeeParticipantInfo,
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
+    tee::tee_participant::TeeParticipantInfo,
     tee::{
         proposal::{CodeHash, CodeHashesVotes, TeeProposal},
         quote::verify_codehash,

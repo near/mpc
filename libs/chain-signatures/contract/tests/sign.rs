@@ -9,8 +9,9 @@ use mpc_contract::{
     errors,
     primitives::{
         domain::DomainId,
-        participants::{Participants, TeeParticipantInfo},
+        participants::Participants,
         signature::SignRequestArgs,
+        tee::tee_participant::TeeParticipantInfo,
         thresholds::{Threshold, ThresholdParameters},
     },
 };

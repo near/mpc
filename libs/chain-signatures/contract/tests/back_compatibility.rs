@@ -4,7 +4,7 @@ use common::current_contract;
 use mpc_contract::{
     config::InitConfig,
     primitives::{
-        participants::TeeParticipantInfo,
+        tee::tee_participant::TeeParticipantInfo,
         thresholds::{Threshold, ThresholdParameters},
     },
 };

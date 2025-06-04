@@ -3,7 +3,7 @@ pub mod common;
 use common::{check_call_success, gen_accounts, init_env_secp256k1};
 use mpc_contract::{
     primitives::{
-        participants::TeeParticipantInfo,
+        tee::tee_participant::TeeParticipantInfo,
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,

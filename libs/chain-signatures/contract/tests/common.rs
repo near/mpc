@@ -16,8 +16,9 @@ use mpc_contract::{
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-        participants::{ParticipantInfo, Participants, TeeParticipantInfo},
+        participants::{ParticipantInfo, Participants},
         signature::{Bytes, SignatureRequest, Tweak},
+        tee::tee_participant::TeeParticipantInfo,
         thresholds::{Threshold, ThresholdParameters},
     },
     update::UpdateId,

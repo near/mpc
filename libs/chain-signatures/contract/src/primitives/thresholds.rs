@@ -1,7 +1,7 @@
 use super::participants::{ParticipantId, ParticipantInfo, Participants};
 use crate::{
     errors::{Error, InvalidCandidateSet, InvalidThreshold},
-    primitives::participants::TeeParticipantInfo,
+    TeeParticipantInfo,
 };
 use near_sdk::{near, AccountId};
 use std::collections::BTreeMap;
