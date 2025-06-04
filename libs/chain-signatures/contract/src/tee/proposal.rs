@@ -1,7 +1,7 @@
 use near_sdk::{log, near, BlockHeight};
 use std::collections::BTreeMap;
 
-use crate::primitives::{key_state::AuthenticatedParticipantId, tee::quote::TeeQuote};
+use crate::{primitives::key_state::AuthenticatedParticipantId, tee::quote::TeeQuote};
 
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds

@@ -15,13 +15,13 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_contract::{
     config::InitConfig,
     primitives::{
-        tee::tee_participant::TeeParticipantInfo,
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::EpochId,
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
+    tee::tee_participant::TeeParticipantInfo,
     utils::protocol_state_to_string,
 };
 use near_crypto::SecretKey;

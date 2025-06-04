@@ -5,13 +5,14 @@ pub mod legacy_contract_state;
 pub mod primitives;
 pub mod state;
 pub mod storage_keys;
+pub mod tee;
 pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 pub mod v0_state;
 
 use crate::errors::{Error, InvalidCandidateSet};
-use crate::primitives::tee::{proposal::AllowedTeeProposals, quote::TeeQuoteStatus};
+use crate::tee::{proposal::AllowedTeeProposals, quote::TeeQuoteStatus};
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
 use config::{Config, InitConfig};
 use crypto_shared::{
@@ -37,17 +38,16 @@ use primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
-    tee::tee_participant::TeeParticipantInfo,
-    tee::{
-        proposal::{CodeHash, CodeHashesVotes, TeeProposal},
-        quote::verify_codehash,
-        quote::{get_collateral, TeeQuote},
-    },
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
 use std::collections::BTreeMap;
 use storage_keys::StorageKey;
+use tee::{
+    proposal::{CodeHash, CodeHashesVotes, TeeProposal},
+    quote::{get_collateral, verify_codehash, TeeQuote},
+    tee_participant::TeeParticipantInfo,
+};
 use v0_state::MpcContractV0;
 
 // Gas required for a sign request

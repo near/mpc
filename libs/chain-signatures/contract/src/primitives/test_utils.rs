@@ -1,12 +1,10 @@
 use crate::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        tee::tee_participant::TeeParticipantInfo,
-        {
-            participants::{ParticipantInfo, Participants},
-            thresholds::{Threshold, ThresholdParameters},
-        },
+        participants::{ParticipantInfo, Participants},
+        thresholds::{Threshold, ThresholdParameters},
     },
+    tee::tee_participant::TeeParticipantInfo,
 };
 use curve25519_dalek::EdwardsPoint;
 use k256::elliptic_curve::Group;
