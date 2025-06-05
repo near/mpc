@@ -7,7 +7,6 @@ use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use mpc_contract::config::Config;
-use mpc_contract::primitives::test_utils::mock_tee_participant_info;
 use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
     key_state::{EpochId, KeyEventId, Keyset},
@@ -231,12 +230,7 @@ fn participants_config_to_threshold_parameters(
             )
             .expect("Failed to insert participant");
     }
-    ThresholdParameters::new(
-        participants,
-        Threshold::new(participants_config.threshold),
-        mock_tee_participant_info(),
-    )
-    .unwrap()
+    ThresholdParameters::new(participants, Threshold::new(participants_config.threshold)).unwrap()
 }
 
 /// Runs the fake indexer's shared state and logic. There's one instance of this per test.

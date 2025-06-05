@@ -155,10 +155,7 @@ pub mod running_tests {
         domain::{tests::gen_domain_registry, AddDomainsVotes},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, Participants},
-        test_utils::{
-            bogus_ed25519_public_key_extended, gen_participant, gen_threshold_params,
-            mock_tee_participant_info,
-        },
+        test_utils::{bogus_ed25519_public_key_extended, gen_participant, gen_threshold_params},
         thresholds::{Threshold, ThresholdParameters},
         votes::ThresholdParametersVotes,
     };
@@ -222,12 +219,7 @@ pub mod running_tests {
         }
 
         let threshold = ((new_participants.len() as f64) * 0.6).ceil() as u64;
-        ThresholdParameters::new(
-            new_participants,
-            Threshold::new(threshold),
-            mock_tee_participant_info(),
-        )
-        .unwrap()
+        ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap()
     }
 
     fn test_running_for(num_domains: usize) {

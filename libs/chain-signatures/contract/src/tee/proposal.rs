@@ -1,7 +1,7 @@
 use near_sdk::{log, near, BlockHeight};
 use std::collections::BTreeMap;
 
-use crate::{primitives::key_state::AuthenticatedParticipantId, tee::quote::TeeQuote};
+use crate::primitives::key_state::AuthenticatedParticipantId;
 
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds
@@ -12,7 +12,6 @@ const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block ti
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct TeeProposal {
     pub code_hash: CodeHash,
-    pub tee_quote: TeeQuote,
 }
 
 /// Hash of a Docker image running in the TEE environment.
@@ -105,12 +104,7 @@ impl AllowedTeeProposals {
     /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
     /// order by `added` (ascending). Returns `true` if the insertion was successful, `false` if the
     /// code hash already exists.
-    pub fn insert(
-        &mut self,
-        code_hash: CodeHash,
-        tee_quote: TeeQuote,
-        current_block_height: u64,
-    ) -> bool {
+    pub fn insert(&mut self, code_hash: CodeHash, current_block_height: u64) -> bool {
         // Clean expired entries
         self.clean(current_block_height);
 
@@ -127,7 +121,6 @@ impl AllowedTeeProposals {
         let new_entry = AllowedTeeProposal {
             proposal: TeeProposal {
                 code_hash: code_hash.clone(),
-                tee_quote,
             },
             added: current_block_height,
         };
@@ -158,26 +151,21 @@ mod tests {
         CodeHash([val; 32])
     }
 
-    fn dummy_tee_quote(val: u8) -> TeeQuote {
-        TeeQuote(vec![val; 16])
-    }
-
     #[test]
     fn test_insert_and_get() {
         let mut allowed = AllowedTeeProposals::default();
         let block_height = 1000;
 
         // Insert a new proposal
-        let inserted = allowed.insert(dummy_code_hash(1), dummy_tee_quote(1), block_height);
+        let inserted = allowed.insert(dummy_code_hash(1), block_height);
         assert!(inserted);
 
         // Insert the same code hash again (should fail)
-        let inserted_again =
-            allowed.insert(dummy_code_hash(1), dummy_tee_quote(2), block_height + 1);
+        let inserted_again = allowed.insert(dummy_code_hash(1), block_height + 1);
         assert!(!inserted_again);
 
         // Insert a different code hash
-        let inserted2 = allowed.insert(dummy_code_hash(2), dummy_tee_quote(2), block_height + 2);
+        let inserted2 = allowed.insert(dummy_code_hash(2), block_height + 2);
         assert!(inserted2);
 
         // Get proposals (should return both)
@@ -193,8 +181,8 @@ mod tests {
         let block_height = 1000;
 
         // Insert two proposals at different heights
-        allowed.insert(dummy_code_hash(1), dummy_tee_quote(1), block_height);
-        allowed.insert(dummy_code_hash(2), dummy_tee_quote(2), block_height + 1);
+        allowed.insert(dummy_code_hash(1), block_height);
+        allowed.insert(dummy_code_hash(2), block_height + 1);
 
         // Move block height far enough to expire the first proposal
         let expired_height = block_height + TEE_UPGRADE_PERIOD + 1;

@@ -45,7 +45,7 @@ use std::collections::BTreeMap;
 use storage_keys::StorageKey;
 use tee::{
     proposal::{CodeHash, CodeHashesVotes, TeeProposal},
-    quote::{get_collateral, verify_codehash, TeeQuote},
+    quote::{get_collateral, verify_codehash},
     tee_participant::TeeParticipantInfo,
 };
 use v0_state::MpcContractV0;
@@ -150,11 +150,8 @@ impl TeeState {
     pub fn whitelist_tee_proposal(&mut self, tee_proposal: TeeProposal) {
         self.votes.clear_votes();
         self.historical_tee_proposals.push(tee_proposal.clone());
-        self.allowed_tee_proposals.insert(
-            tee_proposal.code_hash,
-            tee_proposal.tee_quote,
-            env::block_height(),
-        );
+        self.allowed_tee_proposals
+            .insert(tee_proposal.code_hash, env::block_height());
     }
 }
 
@@ -294,44 +291,29 @@ impl MpcContract {
         Ok(())
     }
 
-    pub fn vote_code_hash(
-        &mut self,
-        code_hash: CodeHash,
-        tee_quote: &[u8],
-        tee_collateral: String,
-        raw_tcb_info: String,
-    ) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<(), Error> {
         // Ensure the protocol is in the Running state
         let ProtocolContractState::Running(state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
 
-        // Check participant identity, verify their TEE quote, and cast a vote
-        let now = env::block_timestamp_ms() / 1_000;
-        let collateral = get_collateral(tee_collateral);
-        let verification_result =
-            verify::verify(tee_quote, &collateral, now).map_err(|err: anyhow::Error| {
-                InvalidParameters::InvalidTeeRemoteAttestation.message(err.to_string())
-            })?;
-
         let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
         let tee_proposal = TeeProposal {
             code_hash: code_hash.clone(),
-            tee_quote: TeeQuote::new(tee_quote.to_vec()),
         };
         let votes = self
             .tee_state
             .votes
             .vote(tee_proposal.clone(), &participant);
 
-        let expected_rtmr3 = verification_result.report.as_td10().unwrap().rt_mr3;
+        // let expected_rtmr3 = verification_result.report.as_td10().unwrap().rt_mr3;
 
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
         if votes >= self.threshold()?.value()
-            && self
-                .tee_state
-                .is_code_hash_allowed(code_hash, &expected_rtmr3, raw_tcb_info)
+        // && self
+        //     .tee_state
+        //     .is_code_hash_allowed(code_hash, &expected_rtmr3, raw_tcb_info)
         {
             self.tee_state.whitelist_tee_proposal(tee_proposal);
         }
@@ -627,6 +609,76 @@ impl VersionedMpcContract {
         }
     }
 
+    #[payable]
+    #[handle_result]
+    pub fn propose_join(
+        &mut self,
+        #[serializer(borsh)] proposed_tee_participant: TeeParticipantInfo,
+    ) -> Result<(), Error> {
+        let account_id = env::signer_account_id();
+        log!(
+            "propose_join: signer={}, proposed_tee_participant={:?}",
+            account_id,
+            proposed_tee_participant,
+        );
+
+        // Both participants and non-participants can propose. Non-participants must pay,
+        // participants don't.
+
+        if self.voter_account().is_err() {
+            let attached = env::attached_deposit();
+            let required = proposed_tee_participant.required_deposit();
+            if attached < required {
+                return Err(InvalidParameters::InsufficientDeposit.message(format!(
+                    "Attached {}, Required {}",
+                    attached.as_yoctonear(),
+                    required.as_yoctonear(),
+                )));
+            }
+            // Refund the difference if the proposer attached more than required.
+            if let Some(diff) = attached.checked_sub(required) {
+                if diff > NearToken::from_yoctonear(0) {
+                    Promise::new(account_id.clone()).transfer(diff);
+                }
+            }
+        }
+
+        // Verify the TEE quote before adding the proposed participant to the contract state
+
+        let quote_collateral = get_collateral(proposed_tee_participant.quote_collateral.clone());
+        let _verification_result = verify::verify(
+            &proposed_tee_participant.tee_quote,
+            &quote_collateral,
+            env::block_timestamp_ms() / 1_000,
+        )
+        .map_err(|err: anyhow::Error| {
+            InvalidParameters::InvalidTeeRemoteAttestation.message(err.to_string())
+        })?;
+
+        // TODO: How should we verify tee_quote.report_data here? Are RTMR checks needed?
+        //
+        // let report_data = verification_result
+        //     .report
+        //     .as_td10()
+        //     .ok_or_else(|| {
+        //         InvalidParameters::InvalidTeeRemoteAttestation.message("Report is not TD10")
+        //     })?
+        //     .report_data;
+
+        // All checks done, we can now add a new proposed participant to the contract state
+
+        let Self::V1(mpc_contract) = self else {
+            env::panic_str("expected V1")
+        };
+
+        mpc_contract
+            .tee_state
+            .tee_participant_info
+            .insert(account_id, proposed_tee_participant);
+
+        Ok(())
+    }
+
     /// Propose a new set of parameters (participants and threshold) for the MPC network.
     /// If a threshold number of votes are reached on the exact same proposal, this will transition
     /// the contract into the Resharing state.
@@ -865,29 +917,15 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn vote_code_hash(
-        &mut self,
-        code_hash: CodeHash,
-        tee_quote: Vec<u8>,
-        tee_collateral: String,
-        raw_tcb_info: String,
-    ) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<(), Error> {
         log!(
-            "vote_code_hash: signer={}, code_hash={:?}, tee_quote={:?}, tee_collateral={:?}, raw_tcb_info={:?}",
+            "vote_code_hash: signer={}, code_hash={:?}",
             env::signer_account_id(),
             code_hash,
-            tee_quote,
-            tee_collateral,
-            raw_tcb_info,
         );
         self.voter_or_panic();
         match self {
-            Self::V1(contract) => contract.vote_code_hash(
-                code_hash,
-                tee_quote.as_slice(),
-                tee_collateral,
-                raw_tcb_info,
-            )?,
+            Self::V1(contract) => contract.vote_code_hash(code_hash)?,
             _ => env::panic_str("expected V1"),
         }
         Ok(())
@@ -1069,20 +1107,23 @@ impl VersionedMpcContract {
         }
     }
 
-    /// Get our own account id as a voter.
-    /// If we are not a participant, panic.
-    fn voter_or_panic(&self) -> AccountId {
+    /// Get our own account id as a voter. Returns an error if we are not a participant.
+    fn voter_account(&self) -> Result<AccountId, Error> {
         let voter = env::signer_account_id();
         match self {
             Self::V1(mpc_contract) => {
-                match mpc_contract.protocol_state.authenticate_update_vote() {
-                    Ok(_) => voter,
-                    Err(err) => {
-                        env::panic_str(format!("not a voter, {:?}", err).as_str());
-                    }
-                }
+                mpc_contract.protocol_state.authenticate_update_vote()?;
+                Ok(voter)
             }
             _ => env::panic_str("expected V1"),
+        }
+    }
+
+    /// Get our own account id as a voter. If we are not a participant, panic.
+    fn voter_or_panic(&self) -> AccountId {
+        match self.voter_account() {
+            Ok(voter) => voter,
+            Err(err) => env::panic_str(&format!("not a voter, {:?}", err)),
         }
     }
 }
@@ -1095,7 +1136,7 @@ mod tests {
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         signature::{Payload, Tweak},
-        test_utils::{gen_participants, mock_tee_participant_info},
+        test_utils::gen_participants,
     };
     use k256::{
         self,
@@ -1139,12 +1180,7 @@ mod tests {
             attempt: AttemptId::new(),
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
-        let parameters = ThresholdParameters::new(
-            gen_participants(4),
-            Threshold::new(3),
-            mock_tee_participant_info(),
-        )
-        .unwrap();
+        let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
         let contract =
             VersionedMpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
         (context, contract, secret_key)

@@ -3,7 +3,7 @@ use crate::{
     get_collateral,
 };
 use dcap_qvl::verify::{self, VerifiedReport};
-use near_sdk::near;
+use near_sdk::{env, near, NearToken};
 use std::fmt::{self};
 
 #[near(serializers=[borsh, json])]
@@ -15,6 +15,8 @@ pub struct TeeParticipantInfo {
     /// genuine Intel hardware, along with details about the Trusted Computing Base (TCB)
     /// versioning, status, and other relevant info.
     pub quote_collateral: String,
+    /// Dstack event log.
+    pub raw_tcb_info: String,
 }
 
 /// Without this, the following tests fail with HostError(TotalLogLengthExceeded { length: 31510, limit: 16384 }):
@@ -38,11 +40,12 @@ impl fmt::Debug for TeeParticipantInfo {
             }
         }
         f.debug_struct("TeeParticipantInfo")
-            .field("tee_quote", &hex_preview(&self.tee_quote, 256))
+            .field("tee_quote", &hex_preview(&self.tee_quote, 128))
             .field(
                 "quote_collateral",
-                &str_preview(&self.quote_collateral, 256),
+                &str_preview(&self.quote_collateral, 128),
             )
+            .field("raw_tcb_info", &str_preview(&self.raw_tcb_info, 128))
             .finish()
     }
 }
@@ -52,5 +55,10 @@ impl TeeParticipantInfo {
         let tee_collateral = get_collateral(self.quote_collateral.clone());
         let verification_result = verify::verify(&self.tee_quote, &tee_collateral, timestamp);
         verification_result.map_err(|_| InvalidCandidateSet::InvalidParticipantsTeeQuote.into())
+    }
+
+    pub fn required_deposit(&self) -> NearToken {
+        let bytes_used = std::mem::size_of::<Self>() as u128; // TODO is it a correct estimate?
+        env::storage_byte_cost().saturating_mul(bytes_used)
     }
 }

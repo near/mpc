@@ -147,9 +147,7 @@ mod tests {
     use crate::primitives::{
         domain::{AddDomainsVotes, DomainId},
         key_state::{AttemptId, KeyEventId},
-        test_utils::{
-            gen_account_id, mock_tee_participant_info, set_test_env_for_tee_quote_verification,
-        },
+        test_utils::{gen_account_id, set_test_env_for_tee_quote_verification},
         thresholds::{Threshold, ThresholdParameters},
         votes::ThresholdParametersVotes,
     };
@@ -384,18 +382,9 @@ mod tests {
         new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
         let new_participants_2 = new_participants_1
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
-        let new_params_1 = ThresholdParameters::new(
-            new_participants_1,
-            new_threshold.clone(),
-            mock_tee_participant_info(),
-        )
-        .unwrap();
-        let new_params_2 = ThresholdParameters::new(
-            new_participants_2,
-            new_threshold,
-            mock_tee_participant_info(),
-        )
-        .unwrap();
+        let new_params_1 =
+            ThresholdParameters::new(new_participants_1, new_threshold.clone()).unwrap();
+        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
         assert!(state
             .previous_running_state
             .parameters
