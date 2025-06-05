@@ -12,17 +12,18 @@ use near_sdk::{env, near, store::LookupMap};
 use std::collections::{BTreeMap, HashSet};
 
 use crate::legacy_contract_state::ConfigV1;
-use crate::primitives::code_hash::CodeHashesVotes;
-use crate::primitives::domain::{AddDomainsVotes, DomainRegistry};
-use crate::primitives::key_state::{AuthenticatedParticipantId, KeyForDomain, Keyset};
-use crate::primitives::thresholds::ThresholdParameters;
+use crate::primitives::{
+    domain::{AddDomainsVotes, DomainRegistry},
+    key_state::{AuthenticatedParticipantId, KeyForDomain, Keyset},
+    thresholds::ThresholdParameters,
+};
 use crate::state::initializing::InitializingContractState;
 use crate::state::key_event::KeyEvent;
 use crate::update::UpdateId;
 use crate::{
     config::Config,
     primitives::signature::{SignatureRequest, YieldIndex},
-    AllowedCodeHashes, MpcContract, TeeState,
+    MpcContract, TeeState,
 };
 
 #[near(serializers=[borsh, json])]
@@ -130,11 +131,7 @@ impl From<MpcContractV0> for MpcContract {
             pending_requests: value.pending_requests,
             proposed_updates: crate::ProposedUpdates::default(),
             config: value.config,
-            tee_state: TeeState {
-                allowed_code_hashes: AllowedCodeHashes::default(),
-                historical_code_hashes: vec![],
-                votes: CodeHashesVotes::default(),
-            },
+            tee_state: TeeState::default(),
         }
     }
 }

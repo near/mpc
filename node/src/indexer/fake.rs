@@ -7,23 +7,22 @@ use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use mpc_contract::config::Config;
-use mpc_contract::primitives::domain::{DomainConfig, DomainRegistry};
-use mpc_contract::primitives::key_state::{EpochId, KeyEventId, Keyset};
-use mpc_contract::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
-use mpc_contract::primitives::signature::Payload;
-use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use mpc_contract::state::initializing::InitializingContractState;
-use mpc_contract::state::key_event::tests::Environment;
-use mpc_contract::state::key_event::KeyEvent;
-use mpc_contract::state::resharing::ResharingContractState;
-use mpc_contract::state::running::RunningContractState;
-use mpc_contract::state::ProtocolContractState;
+use mpc_contract::primitives::{
+    domain::{DomainConfig, DomainRegistry},
+    key_state::{EpochId, KeyEventId, Keyset},
+    participants::{ParticipantId, ParticipantInfo, Participants},
+    signature::Payload,
+    thresholds::{Threshold, ThresholdParameters},
+};
+use mpc_contract::state::{
+    initializing::InitializingContractState, key_event::tests::Environment, key_event::KeyEvent,
+    resharing::ResharingContractState, running::RunningContractState, ProtocolContractState,
+};
 use near_crypto::PublicKey;
 use near_sdk::AccountId;
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
 use tokio::sync::{broadcast, mpsc, watch};
 
 /// A simplification of the real MPC contract state for testing.
@@ -40,7 +39,8 @@ impl FakeMpcContractState {
         let config = Config {
             key_event_timeout_blocks: 10,
         };
-        let env = Environment::new(None, None, None);
+        let block_timestamp = 1757785600_u64 * 1_000_000_u64; // 2025-05-21 00:00:00 UTC to ensure TEE quote verification succeeds
+        let env = Environment::new(None, None, None, Some(block_timestamp));
         Self {
             state,
             config,
@@ -217,6 +217,7 @@ fn participants_config_to_threshold_parameters(
     let mut participants = Participants::new();
     let mut infos = participants_config.participants.clone();
     infos.sort_by_key(|info| info.id);
+
     for info in infos {
         participants
             .insert_with_id(

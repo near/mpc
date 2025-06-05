@@ -3,11 +3,12 @@ use crate::config::{ParticipantInfo, ParticipantsConfig};
 use crate::indexer::lib::{get_mpc_contract_state, wait_for_full_sync};
 use crate::primitives::ParticipantId;
 use anyhow::Context;
-use mpc_contract::primitives::domain::DomainConfig;
-use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
-use mpc_contract::primitives::thresholds::ThresholdParameters;
-use mpc_contract::state::key_event::KeyEvent;
-use mpc_contract::state::ProtocolContractState;
+use mpc_contract::primitives::{
+    domain::DomainConfig,
+    key_state::{KeyEventId, KeyForDomain, Keyset},
+    thresholds::ThresholdParameters,
+};
+use mpc_contract::state::{key_event::KeyEvent, ProtocolContractState};
 use std::collections::BTreeSet;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -281,8 +282,10 @@ pub fn convert_participant_infos(
 #[cfg(test)]
 mod tests {
     use crate::indexer::participants::convert_participant_infos;
-    use mpc_contract::primitives::participants::{ParticipantInfo, Participants};
-    use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
+    use mpc_contract::primitives::{
+        participants::{ParticipantInfo, Participants},
+        thresholds::{Threshold, ThresholdParameters},
+    };
     use near_indexer_primitives::types::AccountId;
     use std::collections::HashMap;
     use std::str::FromStr;
@@ -328,6 +331,7 @@ mod tests {
 
     fn create_chain_participant_infos_from_raw(raw: Vec<(String, String, String)>) -> Participants {
         let mut participants = Participants::new();
+
         for (account_id, url, pk) in raw {
             let account_id = AccountId::from_str(&account_id).unwrap();
             let url = url.to_string();

@@ -3,14 +3,14 @@ use common::{
     candidates, create_response, create_response_ed25519, init, init_env_ed25519,
     init_env_secp256k1, sign_and_validate,
 };
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::signature::SignRequestArgs;
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::SignatureResponse,
     errors,
     primitives::{
+        domain::DomainId,
         participants::Participants,
+        signature::SignRequestArgs,
         thresholds::{Threshold, ThresholdParameters},
     },
 };
@@ -354,6 +354,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         }))
         .transact()
         .await?;
+    eprintln!("result: {result:?}"); // TODO
     assert!(
         result.is_success(),
         "initializing with valid candidates should succeed"

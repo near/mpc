@@ -1,7 +1,6 @@
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 use near_sdk::{near, AccountId, PublicKey};
-use std::collections::BTreeSet;
-use std::fmt::Display;
+use std::{collections::BTreeSet, fmt::Display};
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
@@ -45,6 +44,7 @@ impl Default for Participants {
         Self::new()
     }
 }
+
 impl Participants {
     pub fn new() -> Self {
         Participants {
@@ -91,6 +91,7 @@ impl Participants {
     ///  - All participant IDs are unique.
     ///  - All account IDs are unique.
     ///  - The next_id is greater than all participant IDs.
+    ///  - All participant TEE quotes are valid.
     pub fn validate(&self) -> Result<(), Error> {
         let mut ids: BTreeSet<ParticipantId> = BTreeSet::new();
         let mut accounts: BTreeSet<AccountId> = BTreeSet::new();
@@ -179,9 +180,10 @@ impl Participants {
 
 #[cfg(test)]
 pub mod tests {
-
-    use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::gen_accounts_and_info;
+    use crate::primitives::{
+        participants::{ParticipantId, Participants},
+        test_utils::gen_accounts_and_info,
+    };
     use rand::Rng;
 
     #[test]

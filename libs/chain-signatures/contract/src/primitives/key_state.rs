@@ -196,6 +196,7 @@ pub mod tests {
     use rand::Rng;
 
     const MAX_N: usize = 900;
+
     #[test]
     fn test_epoch_id() {
         let id = rand::thread_rng().gen();
@@ -252,6 +253,7 @@ pub mod tests {
             assert!(AuthenticatedParticipantId::new(proposed_parameters.participants()).is_err());
         }
     }
+
     #[test]
     fn test_authenticated_account_id() {
         let proposed_parameters = gen_threshold_params(MAX_N);

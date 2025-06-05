@@ -1,8 +1,10 @@
 pub mod common;
 
 use common::{check_call_success, gen_accounts, init_env_secp256k1};
-use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use mpc_contract::state::ProtocolContractState;
+use mpc_contract::{
+    primitives::thresholds::{Threshold, ThresholdParameters},
+    state::ProtocolContractState,
+};
 use near_sdk::PublicKey;
 use serde_json::json;
 use std::str::FromStr;
