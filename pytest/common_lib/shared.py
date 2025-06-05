@@ -175,15 +175,9 @@ class MpcNode(NearNode):
         assert not self.is_running
         self.is_running = True
 
-        p2p_private_key = open(pathlib.Path(self.home_dir) / 'p2p_key').read()
-        near_secret_key = json.loads(
-            open(pathlib.Path(self.home_dir) /
-                 'validator_key.json').read())['secret_key']
         extra_env = {
             'RUST_LOG': 'INFO',  # mpc-node produces too much output on DEBUG
-            'MPC_SECRET_STORE_KEY': self.secret_store_key,
-            'MPC_P2P_PRIVATE_KEY': p2p_private_key,
-            'MPC_ACCOUNT_SK': near_secret_key,
+            'MPC_SECRET_STORE_KEY': self.secret_store_key
         }
         cmd = (MPC_BINARY_PATH, 'start', '--home-dir', self.home_dir)
         self.near_node.run_cmd(cmd=cmd, extra_env=extra_env)
