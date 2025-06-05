@@ -19,12 +19,10 @@ use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::views::{FinalExecutionStatus, TxExecutionStatus};
 use std::f64;
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::OwnedMutexGuard;
-use tokio::time::timeout;
 
 impl ListLoadtestCmd {
     pub async fn run(&self, config: ParsedConfig) {
@@ -325,21 +323,42 @@ impl RunLoadtestCmd {
                 .boxed()
             })
         };
-        let (tx_sender, mut receiver): (Sender<SignedTransaction>, Receiver<SignedTransaction>) =
+        // todo:
+        // - cancellation token to stop after x seconds
+        // - verification function & track stats
+        let (tx_sender, mut receiver): (Sender<TxRpcResponse>, Receiver<TxRpcResponse>) =
             tokio::sync::mpsc::channel(100);
         let rpc_clone = config.rpc.clone();
-        tokio::spawn(async move {
+        let res_handle = tokio::spawn(async move {
+            let mut n_rpc_requests = 0;
+            let mut n_rpc_errors = 0;
             let mut txs: Vec<SignedTransaction> = Vec::new();
             while let Some(x) = receiver.recv().await {
-                txs.push(x);
+                n_rpc_requests += 1;
+                match x.rpc_response {
+                    Err(e) => {
+                        n_rpc_errors += 1;
+                        eprintln!("Error sending rpc request: {:?}", e);
+                    }
+                    Ok(_) => {
+                        txs.push(x.signed_tx);
+                    }
+                }
             }
+            println!(
+                "{:.2}% RPC requests succeeded. Received {} errors out of / {} requests.",
+                ((n_rpc_requests - n_rpc_errors) as f64 / n_rpc_requests as f64),
+                n_rpc_errors,
+                n_rpc_requests
+            );
 
+            println!("Collecting Signature Responses");
             let n_txs = txs.len();
             let mut failed = 0;
-            for tx in txs {
+            for tx in &txs {
                 let request = methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest {
                     transaction_info:
-                        methods::EXPERIMENTAL_tx_status::TransactionInfo::Transaction(near_jsonrpc_primitives::types::transactions::SignedTransaction::SignedTransaction(tx)) ,
+                        methods::EXPERIMENTAL_tx_status::TransactionInfo::Transaction(near_jsonrpc_primitives::types::transactions::SignedTransaction::SignedTransaction(tx.clone())) ,
                     wait_until: TxExecutionStatus::Final,
                 };
                 let res = rpc_clone.submit(request).await.unwrap();
@@ -347,32 +366,35 @@ impl RunLoadtestCmd {
                     failed += 1;
                     continue;
                 };
-                let FinalExecutionStatus::SuccessValue(sig) = res.into_outcome().status else {
+                let res_status = res.into_outcome().status;
+                let FinalExecutionStatus::SuccessValue(_sig) = res_status else {
+                    println!("Signature {:?}\n failed with:\n{:?}", tx, res_status);
                     failed += 1;
                     continue;
                 };
                 // todo: verify signature
-                println!("{:?}", sig);
-                // adjust sleep time to not owerwhelm rpc node
-                //
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                // todo: use ticks
+                let waiting_time = 1000 / config.rpc.total_qps();
+                tokio::time::sleep(Duration::from_millis(waiting_time as u64)).await;
             }
             println!(
-                "{} / {} signatures failed. Success Rate: {}",
+                "{} / {} signatures failed. Success Rate: {:.2}",
                 failed,
                 n_txs,
                 (n_txs - failed) as f64 / n_txs as f64
             );
         });
-        // alternatively, timeout here?
-        send_load(
-            keys,
-            tx_per_sec,
-            sender,
-            Some(tx_sender),
-            self.duration.map(Duration::from_secs),
-        )
-        .await;
+        let cancel: tokio_util::sync::CancellationToken =
+            tokio_util::sync::CancellationToken::new();
+
+        let join_set = send_load(keys, tx_per_sec, sender, tx_sender, cancel.clone()).await;
+        if let Some(duration) = self.duration {
+            tokio::time::sleep(Duration::from_secs(duration)).await;
+            cancel.cancel();
+        }
+        join_set.join_all().await;
+
+        let _ = res_handle.await;
     }
 }
 
@@ -396,80 +418,37 @@ async fn send_load(
     keys: Vec<OwnedMutexGuard<OperatingAccessKey>>,
     qps: f64,
     sender: LoadSenderAsyncFn,
-    res_sender: Option<tokio::sync::mpsc::Sender<SignedTransaction>>,
-    duration: Option<Duration>,
-) {
-    let mut handles = Vec::new();
+    res_sender: tokio::sync::mpsc::Sender<TxRpcResponse>,
+    cancel: tokio_util::sync::CancellationToken,
+) -> tokio::task::JoinSet<()> {
+    let mut join_set = tokio::task::JoinSet::new();
     let (permits_sender, permits_receiver) = flume::bounded(qps.ceil() as usize);
-    let total_txns_sent = Arc::new(AtomicUsize::new(0));
-    let total_errors = Arc::new(AtomicUsize::new(0));
     for mut key in keys {
         let permits_receiver = permits_receiver.clone();
-        let total_txns_sent = total_txns_sent.clone();
-        let total_errors = total_errors.clone();
         let res_sender_clone = res_sender.clone();
         let sender = sender.clone();
-        handles.push(tokio::spawn(async move {
-            loop {
-                permits_receiver.recv_async().await.unwrap();
+        join_set.spawn(async move {
+            while permits_receiver.recv_async().await.is_ok() {
                 let resp = sender(&mut key).await;
-                match resp.rpc_response {
-                    Err(e) => {
-                        total_errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        eprintln!("Error sending transaction: {:?}", e);
-                    }
-                    Ok(_) => {
-                        if let Some(c) = &res_sender_clone {
-                            if let Err(e) = c.send(resp.signed_tx).await {
-                                println!("got error {}", e);
-                            }
-                        }
-                    }
-                }
-                total_txns_sent.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                res_sender_clone.send(resp).await.unwrap();
             }
-        }));
+        });
     }
-    // todo: store request / response in a database for that run, allowing to retrieve them and
-    // check for e.g. derivation path preservation etc.
-    handles.push(tokio::spawn(async move {
+    join_set.spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs_f64(1.0 / qps));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
-            interval.tick().await;
-            permits_sender.send_async(()).await.unwrap();
+            tokio::select! {
+                _ = cancel.cancelled() => break,
+                _ = interval.tick() => {
+                    if permits_sender.send_async(()).await.is_err() {
+                        // add an error message
+                        break;
+                    }
+                }
+            }
         }
-    }));
+    });
 
-    let total_txns_sent = total_txns_sent.clone();
-    let total_errors = total_errors.clone();
-    handles.push(tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut last_total = 0;
-        let mut last_error_total = 0;
-        loop {
-            interval.tick().await;
-            let txns_sent = total_txns_sent.load(std::sync::atomic::Ordering::Relaxed);
-            let errors = total_errors.load(std::sync::atomic::Ordering::Relaxed);
-            println!(
-                "Sent {} transactions, {} errors ({} successful QPS)",
-                txns_sent,
-                errors,
-                (txns_sent - last_total) - (errors - last_error_total)
-            );
-            last_total = txns_sent;
-            last_error_total = errors;
-        }
-    }));
-
-    if let Some(duration) = duration {
-        // we will always get an error here
-        if let Err(e) = timeout(duration, futures::future::join_all(handles)).await {
-            // todo: gracously stop. Wait for all transactions to conclude.
-            println!("Stopping loadtest: {}", e);
-        }
-    } else {
-        futures::future::join_all(handles).await;
-    }
+    join_set
 }
