@@ -23,6 +23,7 @@ mod providers;
 mod runtime;
 mod sign_request;
 pub mod signing;
+mod tee;
 #[cfg(test)]
 mod tests;
 mod tracing;
