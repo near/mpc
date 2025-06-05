@@ -280,11 +280,8 @@ impl MpcDeployContractCmd {
                 )
                 .unwrap();
         }
-        let parameters = ThresholdParameters::new(
-            participants,
-            Threshold::new(self.threshold),
-        )
-        .unwrap();
+        let parameters =
+            ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
         let args = serde_json::to_vec(&InitV2Args {
             parameters,
             init_config: None,
@@ -663,8 +660,7 @@ impl MpcVoteNewParametersCmd {
             parameters.threshold()
         };
         let proposal =
-            ThresholdParameters::new(participants, threshold)
-                .expect("New parameters invalid");
+            ThresholdParameters::new(participants, threshold).expect("New parameters invalid");
 
         let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);
 
