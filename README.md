@@ -1,5 +1,5 @@
 ## mpc
-This repository contains the code for the Near mpc node. It is a rewrite of [Near mpc](https://github.com/near/mpc). This repository will be moved to [Near mpc](https://github.com/near/mpc) soon.
+This repository contains the code for the Near mpc node. It is a rewrite of [Near mpc](https://github.com/near/mpc_old).
 
 ### Dependencies and submodules
 - **Nearcore Node**: This repository depends on the nearcore node, included as a submodule in the `/libs` directory.
