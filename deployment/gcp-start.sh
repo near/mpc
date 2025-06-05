@@ -80,18 +80,9 @@ else
   echo "Using provided MPC_SECRET_STORE_KEY from environment"
 fi
 
-echo "Getting the p2p key..."
+echo "Generating p2p and near account keys..."
 # Idempotent operation
-/app/mpc-node generate-p2p-key
-
-# Check if MPC_ACCOUNT_SK is empty - if so, fetch from GCP Secret Manager
-if [ -z "${MPC_ACCOUNT_SK}" ]; then
-  echo "MPC_ACCOUNT_SK not provided in environment, will fetch from GCP Secret Manager..."
-  export MPC_ACCOUNT_SK=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_ACCOUNT_SK_SECRET_ID)
-else
-  echo "Using provided MPC_ACCOUNT_SK from environment"
-fi
-
+/app/mpc-node generate-secrets
 
 echo "Starting mpc node..."
 /app/mpc-node start

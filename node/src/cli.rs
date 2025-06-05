@@ -21,24 +21,22 @@ use anyhow::Context;
 use clap::Parser;
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
-use near_crypto::{ED25519PublicKey, ED25519SecretKey, SecretKey};
+use near_crypto::SecretKey;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
-use std::str::FromStr;
+use serde::Serialize;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tokio::sync::oneshot;
 
-const P2P_PRIVATE_KEY_FILE_NAME: &str = "p2p_key";
-
 #[derive(Parser, Debug)]
 pub enum Cli {
     Start(StartCmd),
     /// Generates a new P2P key for this node, which is used to communicate with other nodes in the network.
-    GenerateP2PKey(P2PKeyCmd),
+    GenerateSecrets(GenerateSecretsCmd),
     /// Generates/downloads required files for Near node to run
     Init(InitConfigArgs),
     /// Imports a keyshare from JSON and stores it in the local encrypted storage
@@ -101,14 +99,10 @@ pub struct StartCmd {
     pub gcp_keyshare_secret_id: Option<String>,
     #[arg(env("GCP_PROJECT_ID"))]
     pub gcp_project_id: Option<String>,
-    /// Near account secret key. Must correspond to the my_near_account_id
-    /// specified in the config.
-    #[arg(env("MPC_ACCOUNT_SK"))]
-    pub account_secret_key: SecretKey,
 }
 
 #[derive(Parser, Debug)]
-pub struct P2PKeyCmd {
+pub struct GenerateSecretsCmd {
     #[arg(long, env("MPC_HOME_DIR"))]
     pub home_dir: String,
 }
@@ -145,17 +139,12 @@ impl StartCmd {
     async fn run(self) -> anyhow::Result<()> {
         let home_dir = PathBuf::from(self.home_dir.clone());
 
-        let p2p_private_key = {
-            let cmd = P2PKeyCmd {
-                home_dir: self.home_dir.clone(),
-            };
-            match cmd.maybe_get_existing()? {
-                Some(p2p_private_key) => p2p_private_key,
-                None => anyhow::bail!("p2p key is not found. Please generate it first."),
-            }
+        let Some(secrets) = GenerateSecretsCmd::maybe_get_existing(&self.home_dir)? else {
+            anyhow::bail!(
+                "p2p and near account secret key does not exist. Generate it via CLI first"
+            );
         };
 
-        let secrets = SecretsConfig::from_cli(&self.secret_store_key_hex, p2p_private_key)?;
         let config = load_config_file(&home_dir)?;
 
         let (web_contract_sender, web_contract_receiver) =
@@ -166,11 +155,15 @@ impl StartCmd {
             home_dir.clone(),
             config.indexer.clone(),
             config.my_near_account_id.clone(),
-            self.account_secret_key.clone(),
+            secrets.near_account_key.clone(),
             web_contract_sender,
             indexer_exit_sender,
         );
 
+        let secrets = SecretsConfig::from_cli(
+            &self.secret_store_key_hex,
+            secrets.p2p_secret.unwrap_as_ed25519().clone(),
+        )?;
         let root_future = Self::create_root_future(
             home_dir.clone(),
             config.clone(),
@@ -252,45 +245,69 @@ impl StartCmd {
     }
 }
 
-impl P2PKeyCmd {
-    fn maybe_get_existing(&self) -> anyhow::Result<Option<near_crypto::ED25519SecretKey>> {
-        let file_path = PathBuf::from(&self.home_dir).join(P2P_PRIVATE_KEY_FILE_NAME);
-        let secret_key = if file_path.exists() {
+#[derive(Debug, Serialize, serde::Deserialize)]
+struct Secrets {
+    p2p_secret: SecretKey,
+    near_account_key: SecretKey,
+}
+
+impl Secrets {
+    pub fn dump_public_keys(&self) {
+        println!("p2p public key: {}", self.p2p_secret.public_key());
+        println!(
+            "near account public key: {}",
+            self.near_account_key.public_key()
+        );
+    }
+}
+
+impl GenerateSecretsCmd {
+    const SECRETS_FILE_NAME: &'static str = "secrets.json";
+
+    fn maybe_get_existing(home_dir: &String) -> anyhow::Result<Option<Secrets>> {
+        let file_path = PathBuf::from(home_dir).join(Self::SECRETS_FILE_NAME);
+        let secrets = if file_path.exists() {
             let str = std::fs::read_to_string(&file_path)?;
-            let secret_key = near_crypto::SecretKey::from_str(&str)?;
-            Some(secret_key.unwrap_as_ed25519().clone())
+            let secrets_file: Secrets = serde_json::from_str(&str)?;
+            Some(secrets_file)
         } else {
             None
         };
-        Ok(secret_key)
+        Ok(secrets)
     }
 
-    /// Generate a key if absent or reuse existing. Prints only the public key to stdout;
-    /// logs informational messages to stderr for shell scripts to ignore.
-    pub fn generate_if_absent(&self) -> anyhow::Result<(ED25519SecretKey, ED25519PublicKey)> {
-        let home_dir = PathBuf::from(&self.home_dir);
-        let file_path = home_dir.join(P2P_PRIVATE_KEY_FILE_NAME);
-
-        let secret_key = if let Some(secret_key) = self.maybe_get_existing()? {
-            eprintln!("p2p key already exists. Using existing key.");
-            secret_key
-        } else {
-            if !home_dir.exists() {
-                std::fs::create_dir_all(&home_dir)?;
-            }
+    fn generate(&self) -> anyhow::Result<Secrets> {
+        let home_dir = &PathBuf::from(&self.home_dir);
+        if !home_dir.exists() {
+            std::fs::create_dir_all(home_dir)?;
+        }
+        let p2p_secret = {
             let (secret_key, _public_key) = p2p::keygen::generate_keypair()?;
-            std::fs::write(
-                &file_path,
-                SecretKey::ED25519(secret_key.clone()).to_string(),
-            )?;
-            eprintln!("p2p key generated and saved to {}", file_path.display());
-            secret_key
+            SecretKey::ED25519(secret_key)
+        };
+        let near_account_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
+        let secrets = Secrets {
+            p2p_secret,
+            near_account_key,
         };
 
-        let public_key = SecretKey::ED25519(secret_key.clone()).public_key();
-        println!("{}", public_key);
+        let path = home_dir.join(Self::SECRETS_FILE_NAME);
+        std::fs::write(&path, serde_json::to_vec(&secrets)?)?;
+        eprintln!("p2p and near account key generated in {}", path.display());
 
-        Ok((secret_key, public_key.unwrap_as_ed25519().clone()))
+        Ok(secrets)
+    }
+
+    fn generate_or_get_existing(&self) -> anyhow::Result<Secrets> {
+        let secrets = if let Some(secrets) = Self::maybe_get_existing(&self.home_dir)? {
+            eprintln!("p2p and near account secret key already exists. Using existing.");
+            secrets
+        } else {
+            eprintln!("p2p and near account secret key not found. Generating...");
+            self.generate()?
+        };
+        secrets.dump_public_keys();
+        Ok(secrets)
     }
 }
 
@@ -298,8 +315,8 @@ impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self {
             Cli::Start(start) => start.run().await,
-            Cli::GenerateP2PKey(p2p_cmd) => {
-                let _ = p2p_cmd.generate_if_absent()?;
+            Cli::GenerateSecrets(cmd) => {
+                cmd.generate_or_get_existing()?;
                 Ok(())
             }
             Cli::Init(config) => near_indexer::init_configs(
@@ -355,8 +372,13 @@ impl Cli {
             .enumerate()
             .map(|(idx, _account_id)| {
                 let subdir = format!("{}/{}", output_dir, idx);
-                let p2p_key_cmd = P2PKeyCmd { home_dir: subdir };
-                p2p_key_cmd.generate_if_absent()
+                let p2p_key_cmd = GenerateSecretsCmd { home_dir: subdir };
+                p2p_key_cmd.generate_or_get_existing().map(|secret| {
+                    (
+                        secret.p2p_secret.unwrap_as_ed25519().clone(),
+                        secret.p2p_secret.public_key().unwrap_as_ed25519().clone(),
+                    )
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
         let configs = generate_test_p2p_configs(
@@ -550,20 +572,24 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let home_dir = temp_dir.path().to_string_lossy().to_string();
 
-        let cmd = P2PKeyCmd { home_dir };
+        let cmd = GenerateSecretsCmd {
+            home_dir: home_dir.clone(),
+        };
 
-        assert!(cmd.maybe_get_existing()?.is_none());
+        assert!(GenerateSecretsCmd::maybe_get_existing(&home_dir)?.is_none());
 
-        assert!(cmd.generate_if_absent().is_ok());
-
-        let public_key_expected = cmd.maybe_get_existing()?.unwrap();
+        let expected_secrets = cmd.generate_or_get_existing()?;
 
         // check that the key will not be overwritten
-        assert!(cmd.generate_if_absent().is_ok());
+        assert!(cmd.generate_or_get_existing().is_ok());
 
-        let public_key_actual = cmd.maybe_get_existing()?.unwrap();
+        let actual_secrets = cmd.generate_or_get_existing()?;
 
-        assert_eq!(public_key_expected, public_key_actual);
+        assert_eq!(actual_secrets.p2p_secret, expected_secrets.p2p_secret);
+        assert_eq!(
+            actual_secrets.near_account_key,
+            expected_secrets.near_account_key
+        );
 
         Ok(())
     }
