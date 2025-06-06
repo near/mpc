@@ -257,7 +257,11 @@ impl RunLoadtestCmd {
             keys.extend(account.all_access_keys().await);
         }
 
-        let parallel_sign_calls = self.parallel_sign_calls_per_domain.values().sum::<u64>();
+        let parallel_sign_calls = self
+            .parallel_sign_calls_per_domain
+            .as_ref()
+            .map(|m| m.values().sum::<u64>())
+            .unwrap_or(0);
         let tx_per_sec = if parallel_sign_calls > 0 {
             self.qps as f64 / parallel_sign_calls as f64
         } else {
@@ -275,6 +279,8 @@ impl RunLoadtestCmd {
             let contract_state = read_contract_state_v2(&setup.accounts, &mpc_account).await;
             let calls_by_domain: Vec<(DomainConfig, u64)> = self
                 .parallel_sign_calls_per_domain
+                .as_ref()
+                .unwrap()
                 .iter()
                 .map(|(domain_id, n_calls)| {
                     (
@@ -302,13 +308,12 @@ impl RunLoadtestCmd {
                 mpc_contract: mpc_account,
             })
         };
-        let action_call = make_actions(contract_action);
         let sender: LoadSenderAsyncFn = {
             Arc::new(move |key: &mut OperatingAccessKey| {
-                let action_call_cloned = action_call.clone();
+                let action_call = make_actions(contract_action.clone());
                 let rpc_clone = rpc_clone.clone();
                 async move {
-                    let signed_tx = key.sign_tx_from_actions(action_call_cloned).await;
+                    let signed_tx = key.sign_tx_from_actions(action_call).await;
                     // send signed_tx through a channel to await response
                     TxRpcResponse {
                         rpc_response: submit_tx_to_client(
@@ -346,8 +351,8 @@ impl RunLoadtestCmd {
                 }
             }
             println!(
-                "{:.2}% RPC requests succeeded. Received {} errors out of / {} requests.",
-                ((n_rpc_requests - n_rpc_errors) as f64 / n_rpc_requests as f64),
+                "{}% RPC requests succeeded. Received {} errors out of / {} requests.",
+                ((n_rpc_requests - n_rpc_errors) * 100) / n_rpc_requests,
                 n_rpc_errors,
                 n_rpc_requests
             );
@@ -361,27 +366,34 @@ impl RunLoadtestCmd {
                         methods::EXPERIMENTAL_tx_status::TransactionInfo::Transaction(near_jsonrpc_primitives::types::transactions::SignedTransaction::SignedTransaction(tx.clone())) ,
                     wait_until: TxExecutionStatus::Final,
                 };
-                let res = rpc_clone.submit(request).await.unwrap();
-                let Some(res) = res.final_execution_outcome else {
-                    failed += 1;
-                    continue;
+
+                match rpc_clone.submit(request).await {
+                    Ok(res) => {
+                        let Some(res) = res.final_execution_outcome else {
+                            failed += 1;
+                            continue;
+                        };
+                        let res_status = res.into_outcome().status;
+                        let FinalExecutionStatus::SuccessValue(_sig) = res_status else {
+                            println!("Signature {:?}\n failed with:\n{:?}", tx, res_status);
+                            failed += 1;
+                            continue;
+                        };
+                        // todo: verify signature
+                        // todo: use ticks
+                        let waiting_time = 1000 / config.rpc.total_qps();
+                        tokio::time::sleep(Duration::from_millis(waiting_time as u64)).await;
+                    }
+                    Err(e) => {
+                        eprintln!("error: {:?}", e);
+                    }
                 };
-                let res_status = res.into_outcome().status;
-                let FinalExecutionStatus::SuccessValue(_sig) = res_status else {
-                    println!("Signature {:?}\n failed with:\n{:?}", tx, res_status);
-                    failed += 1;
-                    continue;
-                };
-                // todo: verify signature
-                // todo: use ticks
-                let waiting_time = 1000 / config.rpc.total_qps();
-                tokio::time::sleep(Duration::from_millis(waiting_time as u64)).await;
             }
             println!(
-                "{} / {} signatures failed. Success Rate: {:.2}",
+                "{} / {} signatures failed. Success Rate: {}",
                 failed,
                 n_txs,
-                (n_txs - failed) as f64 / n_txs as f64
+                ((n_txs - failed) * 100) / n_txs
             );
         });
         let cancel: tokio_util::sync::CancellationToken =

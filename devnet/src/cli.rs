@@ -355,7 +355,7 @@ pub struct RunLoadtestCmd {
     /// Pass as --parallel-sign-calls-per-domain 1=10,2=15
     /// This will be divided into the QPS, so you don't need to change the QPS flag.
     #[clap(long, value_parser = parse_parallel_calls)]
-    pub parallel_sign_calls_per_domain: BTreeMap<u64, u64>,
+    pub parallel_sign_calls_per_domain: Option<BTreeMap<u64, u64>>,
     /// Domain ID. If missing, use legacy signature format. Must be provided if
     /// `signatures_per_contract_call` is set.
     #[clap(long)]

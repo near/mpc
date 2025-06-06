@@ -33,6 +33,7 @@ pub struct LegacySignActionCallArgs {
     pub mpc_contract: AccountId,
 }
 
+#[derive(Clone)]
 pub enum ContractActionCall {
     ParallelSignCall(ParallelSignCallArgs),
     Sign(SignActionCallArgs),
