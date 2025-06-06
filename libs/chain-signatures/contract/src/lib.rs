@@ -48,7 +48,7 @@ const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
 // Register used to receive data id from `promise_await_data`.
 const DATA_ID_REGISTER: u64 = 0;
 // Prepaid gas for a `return_signature_and_clean_state_on_success` call
-const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(5);
+const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(6);
 // Prepaid gas for a `update_config` call
 const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version
@@ -992,7 +992,7 @@ impl VersionedMpcContract {
                     "fail_on_timeout".to_string(),
                     vec![],
                     NearToken::from_near(0),
-                    Gas::from_tgas(1),
+                    Gas::from_tgas(2),
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
