@@ -520,8 +520,18 @@ impl Coordinator {
                 ));
 
                 tracing::info!("wait for ready.");
+                let running_participant_ids = running_mpc_config
+                    .participants
+                    .participants
+                    .iter()
+                    .map(|p| p.id)
+                    .collect::<Vec<_>>();
+
                 sender
-                    .wait_for_ready(mpc_config.participants.threshold as usize)
+                    .wait_for_ready(
+                        mpc_config.participants.threshold as usize,
+                        &running_participant_ids,
+                    )
                     .await?;
 
                 let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
