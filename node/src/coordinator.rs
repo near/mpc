@@ -529,7 +529,7 @@ impl Coordinator {
 
                 sender
                     .wait_for_ready(
-                        mpc_config.participants.threshold as usize,
+                        running_mpc_config.participants.threshold as usize,
                         &running_participant_ids,
                     )
                     .await?;
