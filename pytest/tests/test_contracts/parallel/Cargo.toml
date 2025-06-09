@@ -2,8 +2,11 @@
 name = "parallel-contract"
 version = "0.2.0"
 edition = "2021"
+license = "MIT"
+
 [lib]
 crate-type = ["cdylib", "lib"]
+
 [dependencies]
 borsh = "1.5.0"
 near-sdk = { version = "5.2.1", features = ["legacy", "unit-testing"] }
