@@ -271,7 +271,7 @@ impl MpcContract {
         let tee_verification = self.tee_state.tee_status(participant_ids);
         if tee_verification
             .values()
-            .any(|status| status != &TeeQuoteStatus::Valid)
+            .any(|status| *status != TeeQuoteStatus::Valid && *status != TeeQuoteStatus::None)
         {
             return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into());
         }
