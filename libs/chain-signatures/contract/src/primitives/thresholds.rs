@@ -72,8 +72,7 @@ impl ThresholdParameters {
 
     pub fn validate(&self) -> Result<(), Error> {
         Self::validate_threshold(self.participants.len() as u64, self.threshold())?;
-        self.participants.validate()?;
-        Ok(())
+        self.participants.validate()
     }
 
     /// Validates the incoming proposal against the current one, ensuring it's allowed based on the
