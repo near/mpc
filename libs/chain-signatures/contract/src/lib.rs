@@ -44,7 +44,7 @@ use state::{running::RunningContractState, ProtocolContractState};
 use std::collections::BTreeMap;
 use storage_keys::StorageKey;
 use tee::{
-    proposal::{CodeHash, CodeHashesVotes, TeeProposal},
+    proposal::{CodeHashesVotes, DockerImageHash},
     quote::{get_collateral, verify_codehash},
     tee_participant::TeeParticipantInfo,
 };
@@ -83,7 +83,7 @@ impl Default for VersionedMpcContract {
 #[derive(Debug)]
 pub struct TeeState {
     allowed_tee_proposals: AllowedTeeProposals,
-    historical_tee_proposals: Vec<TeeProposal>,
+    historical_tee_proposals: Vec<DockerImageHash>,
     votes: CodeHashesVotes,
     tee_participant_info: IterableMap<AccountId, TeeParticipantInfo>,
 }
@@ -119,7 +119,7 @@ impl TeeState {
 
     pub fn is_code_hash_allowed(
         &mut self,
-        _code_hash: CodeHash,
+        _code_hash: DockerImageHash,
         expected_rtmr3: &[u8; 48],
         raw_tcb_info: String,
     ) -> bool {
@@ -142,16 +142,16 @@ impl TeeState {
                 self.allowed_tee_proposals
                     .get(env::block_height())
                     .iter()
-                    .map(|entry| &entry.proposal),
+                    .map(|entry| &entry.image_hash),
             )
-            .any(|proposal| proposal.code_hash.as_hex() == code_hash)
+            .any(|proposal| proposal.as_hex() == code_hash)
     }
 
-    pub fn whitelist_tee_proposal(&mut self, tee_proposal: TeeProposal) {
+    pub fn whitelist_tee_proposal(&mut self, tee_proposal: DockerImageHash) {
         self.votes.clear_votes();
         self.historical_tee_proposals.push(tee_proposal.clone());
         self.allowed_tee_proposals
-            .insert(tee_proposal.code_hash, env::block_height());
+            .insert(tee_proposal, env::block_height());
     }
 }
 
@@ -291,20 +291,14 @@ impl MpcContract {
         Ok(())
     }
 
-    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: DockerImageHash) -> Result<(), Error> {
         // Ensure the protocol is in the Running state
         let ProtocolContractState::Running(state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
 
         let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
-        let tee_proposal = TeeProposal {
-            code_hash: code_hash.clone(),
-        };
-        let votes = self
-            .tee_state
-            .votes
-            .vote(tee_proposal.clone(), &participant);
+        let votes = self.tee_state.votes.vote(code_hash.clone(), &participant);
 
         // let expected_rtmr3 = verification_result.report.as_td10().unwrap().rt_mr3;
 
@@ -315,22 +309,22 @@ impl MpcContract {
         //     .tee_state
         //     .is_code_hash_allowed(code_hash, &expected_rtmr3, raw_tcb_info)
         {
-            self.tee_state.whitelist_tee_proposal(tee_proposal);
+            self.tee_state.whitelist_tee_proposal(code_hash);
         }
 
         Ok(())
     }
 
-    pub fn allowed_code_hashes(&mut self) -> Vec<CodeHash> {
+    pub fn allowed_code_hashes(&mut self) -> Vec<DockerImageHash> {
         self.tee_state
             .allowed_tee_proposals
             .get(env::block_height())
             .into_iter()
-            .map(|entry| entry.proposal.code_hash)
+            .map(|entry| entry.image_hash)
             .collect()
     }
 
-    pub fn latest_code_hash(&mut self) -> CodeHash {
+    pub fn latest_code_hash(&mut self) -> DockerImageHash {
         self.allowed_code_hashes()
             .last()
             .expect("there must be at least one allowed code hash")
@@ -917,7 +911,7 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn vote_code_hash(&mut self, code_hash: CodeHash) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: DockerImageHash) -> Result<(), Error> {
         log!(
             "vote_code_hash: signer={}, code_hash={:?}",
             env::signer_account_id(),
@@ -932,7 +926,7 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn allowed_code_hashes(&mut self) -> Result<Vec<CodeHash>, Error> {
+    pub fn allowed_code_hashes(&mut self) -> Result<Vec<DockerImageHash>, Error> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
         match self {
             Self::V1(contract) => Ok(contract.allowed_code_hashes()),
@@ -941,7 +935,7 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn latest_code_hash(&mut self) -> Result<CodeHash, Error> {
+    pub fn latest_code_hash(&mut self) -> Result<DockerImageHash, Error> {
         log!("latest_code_hash: signer={}", env::signer_account_id());
         match self {
             Self::V1(contract) => Ok(contract.latest_code_hash()),

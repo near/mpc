@@ -354,7 +354,6 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         }))
         .transact()
         .await?;
-    eprintln!("result: {result:?}"); // TODO
     assert!(
         result.is_success(),
         "initializing with valid candidates should succeed"

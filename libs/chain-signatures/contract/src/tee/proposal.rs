@@ -6,20 +6,14 @@ use crate::primitives::key_state::AuthenticatedParticipantId;
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds
 
-/// Proposal for a new TEE code hash to be added to the whitelist, along with the TEE quote that
-/// includes the RTMR3 measurement among others.
+/// Hash of a Docker image running in the TEE environment. Also used as a proposal for a new TEE
+/// code hash to add to the whitelist, along with the TEE quote (which includes the RTMR3
+/// measurement and more).
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct TeeProposal {
-    pub code_hash: CodeHash,
-}
+pub struct DockerImageHash(pub(crate) [u8; 32]);
 
-/// Hash of a Docker image running in the TEE environment.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct CodeHash(pub(crate) [u8; 32]);
-
-impl CodeHash {
+impl DockerImageHash {
     /// Returns the byte array representation of the `CodeHash`.
     pub fn as_hex(&self) -> String {
         hex::encode(self.0)
@@ -31,13 +25,17 @@ impl CodeHash {
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CodeHashesVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, TeeProposal>,
+    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, DockerImageHash>,
 }
 
 impl CodeHashesVotes {
     /// Casts a vote for the proposal and returns the total number of participants who have voted
     /// for the same code hash. If the participant already voted, their previous vote is replaced.
-    pub fn vote(&mut self, proposal: TeeProposal, participant: &AuthenticatedParticipantId) -> u64 {
+    pub fn vote(
+        &mut self,
+        proposal: DockerImageHash,
+        participant: &AuthenticatedParticipantId,
+    ) -> u64 {
         if self
             .proposal_by_account
             .insert(participant.clone(), proposal.clone())
@@ -51,10 +49,10 @@ impl CodeHashesVotes {
     }
 
     /// Counts the total number of participants who have voted for the given code hash.
-    fn count_votes(&self, proposal: &TeeProposal) -> u64 {
+    fn count_votes(&self, proposal: &DockerImageHash) -> u64 {
         self.proposal_by_account
             .values()
-            .filter(|&prop| prop.code_hash == proposal.code_hash)
+            .filter(|&prop| prop == proposal)
             .count() as u64
     }
 
@@ -68,8 +66,8 @@ impl CodeHashesVotes {
 /// added.
 #[near(serializers=[borsh])]
 #[derive(Debug, Clone)]
-pub struct AllowedTeeProposal {
-    pub proposal: TeeProposal,
+pub struct AllowedDockerImageHash {
+    pub image_hash: DockerImageHash,
     pub added: BlockHeight,
 }
 /// Collection of whitelisted Docker code hashes that are the only ones MPC nodes are allowed to
@@ -79,7 +77,7 @@ pub struct AllowedTeeProposal {
 pub struct AllowedTeeProposals {
     /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
     /// lazily cleaned up during insertions and lookups.
-    allowed_tee_proposals: Vec<AllowedTeeProposal>,
+    allowed_tee_proposals: Vec<AllowedDockerImageHash>,
 }
 
 impl AllowedTeeProposals {
@@ -104,7 +102,7 @@ impl AllowedTeeProposals {
     /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
     /// order by `added` (ascending). Returns `true` if the insertion was successful, `false` if the
     /// code hash already exists.
-    pub fn insert(&mut self, code_hash: CodeHash, current_block_height: u64) -> bool {
+    pub fn insert(&mut self, code_hash: DockerImageHash, current_block_height: u64) -> bool {
         // Clean expired entries
         self.clean(current_block_height);
 
@@ -112,16 +110,14 @@ impl AllowedTeeProposals {
         if self
             .allowed_tee_proposals
             .iter()
-            .any(|entry| entry.proposal.code_hash == code_hash)
+            .any(|entry| entry.image_hash == code_hash)
         {
             return false;
         }
 
         // Create the new entry
-        let new_entry = AllowedTeeProposal {
-            proposal: TeeProposal {
-                code_hash: code_hash.clone(),
-            },
+        let new_entry = AllowedDockerImageHash {
+            image_hash: code_hash,
             added: current_block_height,
         };
 
@@ -137,7 +133,7 @@ impl AllowedTeeProposals {
         true
     }
 
-    pub fn get(&mut self, current_block_height: BlockHeight) -> Vec<AllowedTeeProposal> {
+    pub fn get(&mut self, current_block_height: BlockHeight) -> Vec<AllowedDockerImageHash> {
         self.clean(current_block_height);
         self.allowed_tee_proposals.clone()
     }
@@ -147,8 +143,8 @@ impl AllowedTeeProposals {
 mod tests {
     use super::*;
 
-    fn dummy_code_hash(val: u8) -> CodeHash {
-        CodeHash([val; 32])
+    fn dummy_code_hash(val: u8) -> DockerImageHash {
+        DockerImageHash([val; 32])
     }
 
     #[test]
@@ -171,8 +167,8 @@ mod tests {
         // Get proposals (should return both)
         let proposals = allowed.get(block_height + 2);
         assert_eq!(proposals.len(), 2);
-        assert_eq!(proposals[0].proposal.code_hash, dummy_code_hash(1));
-        assert_eq!(proposals[1].proposal.code_hash, dummy_code_hash(2));
+        assert_eq!(proposals[0].image_hash, dummy_code_hash(1));
+        assert_eq!(proposals[1].image_hash, dummy_code_hash(2));
     }
 
     #[test]
@@ -190,7 +186,7 @@ mod tests {
 
         // Only the second proposal should remain if the first is expired
         assert_eq!(proposals.len(), 1);
-        assert_eq!(proposals[0].proposal.code_hash, dummy_code_hash(2));
+        assert_eq!(proposals[0].image_hash, dummy_code_hash(2));
 
         // Move block height far enough to expire both proposals; we never allow all proposals in
         // the whitelist to expire, so there should still be one proposal in the whitelist
@@ -198,6 +194,6 @@ mod tests {
         let proposals = allowed.get(expired_height);
 
         assert_eq!(proposals.len(), 1);
-        assert_eq!(proposals[0].proposal.code_hash, dummy_code_hash(2));
+        assert_eq!(proposals[0].image_hash, dummy_code_hash(2));
     }
 }
