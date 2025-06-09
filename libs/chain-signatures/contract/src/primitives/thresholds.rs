@@ -192,8 +192,7 @@ mod tests {
             assert!(ThresholdParameters::new(participants.clone(), invalid_threshold).is_err());
         }
         assert!(
-            ThresholdParameters::new(participants.clone(), Threshold::new((n + 1) as u64),)
-                .is_err()
+            ThresholdParameters::new(participants.clone(), Threshold::new((n + 1) as u64)).is_err()
         );
         for k in min_threshold..(n + 1) {
             let threshold = Threshold::new(k as u64);
