@@ -7,9 +7,9 @@ use crate::{
 };
 use curve25519_dalek::EdwardsPoint;
 use k256::elliptic_curve::Group;
-use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, CurveType, PublicKey};
+use near_sdk::{AccountId, CurveType, PublicKey};
 use rand::{distributions::Uniform, Rng};
-use std::{collections::BTreeMap, time::Duration};
+use std::collections::BTreeMap;
 
 pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     let rng = rand::thread_rng();
@@ -95,12 +95,4 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let k_min = min_thrershold(n);
     let k = rand::thread_rng().gen_range(k_min..n + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
-}
-
-pub fn set_test_env_for_tee_quote_verification() {
-    let now_sec = 1_747_785_600u64; // 2025-05-21 00:00:00 UTC for TEE quote verification
-    let now_ns = Duration::from_secs(now_sec).as_nanos() as u64; // nanoseconds since epoch
-    let mut ctx = VMContextBuilder::new();
-    ctx.block_timestamp(now_ns);
-    testing_env!(ctx.build());
 }

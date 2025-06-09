@@ -229,8 +229,7 @@ pub mod running_tests {
             state.parameters.participants().len(),
             state.parameters.threshold().value()
         );
-        let block_timestamp = 1757785600_u64 * 1_000_000_u64; // 2025-05-21 00:00:00 UTC to ensure TEE quote verification succeeds
-        let mut env = Environment::new(None, None, None, Some(block_timestamp));
+        let mut env = Environment::new(None, None, None);
         let participants = state.parameters.participants().clone();
         // Assert that random proposals get rejected.
         for (account_id, _, _) in participants.participants() {

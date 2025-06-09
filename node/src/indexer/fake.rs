@@ -39,8 +39,7 @@ impl FakeMpcContractState {
         let config = Config {
             key_event_timeout_blocks: 10,
         };
-        let block_timestamp = 1757785600_u64 * 1_000_000_u64; // 2025-05-21 00:00:00 UTC to ensure TEE quote verification succeeds
-        let env = Environment::new(None, None, None, Some(block_timestamp));
+        let env = Environment::new(None, None, None);
         Self {
             state,
             config,

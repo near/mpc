@@ -154,10 +154,7 @@ impl ThresholdParameters {
 mod tests {
     use crate::primitives::{
         participants::{ParticipantId, Participants},
-        test_utils::{
-            gen_participant, gen_participants, gen_threshold_params,
-            set_test_env_for_tee_quote_verification,
-        },
+        test_utils::{gen_participant, gen_participants, gen_threshold_params},
         thresholds::{Threshold, ThresholdParameters},
     };
     use crate::state::running::running_tests::gen_valid_params_proposal;
@@ -187,15 +184,13 @@ mod tests {
 
     #[test]
     fn test_threshold_parameters_constructor() {
-        set_test_env_for_tee_quote_verification();
-
         let n: usize = rand::thread_rng().gen_range(2..600);
         let min_threshold = ((n as f64) * 0.6).ceil() as usize;
 
         let participants = gen_participants(n);
         for k in 1..min_threshold {
             let invalid_threshold = Threshold::new(k as u64);
-            assert!(ThresholdParameters::new(participants.clone(), invalid_threshold,).is_err());
+            assert!(ThresholdParameters::new(participants.clone(), invalid_threshold).is_err());
         }
         assert!(
             ThresholdParameters::new(participants.clone(), Threshold::new((n + 1) as u64),)
@@ -225,8 +220,6 @@ mod tests {
 
     #[test]
     fn test_validate_incoming_proposal() {
-        set_test_env_for_tee_quote_verification();
-
         // Valid proposals should validate.
         let params = gen_threshold_params(10);
         let proposal = gen_valid_params_proposal(&params);
@@ -274,8 +267,6 @@ mod tests {
 
     #[test]
     fn test_proposal_non_contiguous_new_ids_fail() {
-        set_test_env_for_tee_quote_verification();
-
         // Test that the lowest new id equals to the `next_id` of the previous set.
 
         let params = gen_threshold_params(10);
@@ -300,8 +291,6 @@ mod tests {
 
     #[test]
     fn test_proposal_non_unique_ids() {
-        set_test_env_for_tee_quote_verification();
-
         let params = gen_threshold_params(10);
 
         // Add duplicate participants
@@ -326,8 +315,6 @@ mod tests {
 
     #[test]
     fn test_remove_only() {
-        set_test_env_for_tee_quote_verification();
-
         let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
 
         let new_participants = params
@@ -343,8 +330,6 @@ mod tests {
 
     #[test]
     fn test_simultaneous_remove_and_insert() {
-        set_test_env_for_tee_quote_verification();
-
         let n = 5;
         let params = ThresholdParameters::new(gen_participants(n), Threshold::new(3)).unwrap();
 
@@ -361,8 +346,6 @@ mod tests {
 
     #[test]
     fn test_new_participant_id_too_high() {
-        set_test_env_for_tee_quote_verification();
-
         // Test the logic that `next_id` should only be equal to `max_id + 1`
 
         let n = 5;

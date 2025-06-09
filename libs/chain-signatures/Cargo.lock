@@ -825,7 +825,7 @@ dependencies = [
 [[package]]
 name = "dcap-qvl"
 version = "0.2.2"
-source = "git+https://github.com/mattlockyer/dcap-qvl#3caedd8fd0f365841abaf1430ff2922fcb09d9db"
+source = "git+https://github.com/mattlockyer/dcap-qvl?rev=3caedd8fd0f365841abaf1430ff2922fcb09d9db#3caedd8fd0f365841abaf1430ff2922fcb09d9db"
 dependencies = [
  "anyhow",
  "asn1_der",

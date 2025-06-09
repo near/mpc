@@ -1147,7 +1147,6 @@ mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::{rngs::OsRng, RngCore};
-    use std::time::Duration;
 
     pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
         let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();
@@ -1155,11 +1154,8 @@ mod tests {
     }
 
     fn basic_setup() -> (VMContext, VersionedMpcContract, SigningKey) {
-        let now_sec = 1_747_785_600u64; // 2025-05-21 00:00:00 UTC for TEE quote verification
-        let now_ns = Duration::from_secs(now_sec).as_nanos() as u64; // nanoseconds since epoch
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
-            .block_timestamp(now_ns)
             .build();
         testing_env!(context.clone());
         let secret_key = SigningKey::random(&mut OsRng);
