@@ -2,6 +2,7 @@
 name = "mpc-contract"
 version = "2.1.2-rc.1"
 edition = "2021"
+license = "MIT"
 
 [lib]
 crate-type = ["cdylib", "lib"]
