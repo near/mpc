@@ -157,9 +157,9 @@ mod tests {
         let inserted = allowed.insert(dummy_code_hash(1), block_height);
         assert!(inserted);
 
-        // Insert the same code hash again (should fail)
+        // Insert the same code hash again (should success)
         let inserted_again = allowed.insert(dummy_code_hash(1), block_height + 1);
-        assert!(!inserted_again);
+        assert!(inserted_again);
 
         // Insert a different code hash
         let inserted2 = allowed.insert(dummy_code_hash(2), block_height + 2);
