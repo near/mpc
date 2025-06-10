@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "devnet"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "borsh",
@@ -619,6 +619,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "tempfile",
  "tokio",
 ]
 

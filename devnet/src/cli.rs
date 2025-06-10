@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::types::load_config;
 
 #[derive(clap::Parser)]
@@ -293,8 +295,25 @@ pub struct MpcTerraformDeployNomadCmd {
     pub shutdown_and_reset: bool,
     /// Overrides the docker image to use for MPC nodes.
     /// The default is `constants::DEFAULT_MPC_DOCKER_IMAGE`.
-    #[clap(long)]
-    pub docker_image: Option<String>,
+    ///
+    /// This should be passed as a JSON-encoded map from image tags to lists of node indices.
+    /// - Each key is a Docker image tag (e.g. `"nearone/mpc-node:latest"`)
+    /// - Each value is a list of node indices that should use that image
+    /// - If one image is mapped to an empty list (`[]`), it acts as the default for all
+    ///   unspecified nodes
+    ///
+    /// Example:
+    ///     '{"image-1": [0, 2], "image-2": [1], "image-default": []}'
+    ///
+    /// Any node index not explicitly listed will use:
+    ///   - The image mapped to the empty list (`[]`), if present
+    ///   - the default `constants::DEFAULT_MPC_DOCKER_IMAGE` if none is given.
+    #[clap(long, value_parser = parse_docker_images)]
+    pub docker_images: Option<BTreeMap<String, Vec<i32>>>,
+}
+
+fn parse_docker_images(s: &str) -> Result<BTreeMap<String, Vec<i32>>, String> {
+    serde_json::from_str(s).map_err(|e| format!("Invalid JSON: {}", e))
 }
 
 #[derive(clap::Parser)]
