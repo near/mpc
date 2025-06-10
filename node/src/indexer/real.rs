@@ -7,8 +7,11 @@ use crate::config::{load_respond_config_file, IndexerConfig, RespondConfigFile};
 use mpc_contract::state::ProtocolContractState;
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
+use tokio::select;
+use tracing::{error, info};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot, watch, Mutex};
 
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
@@ -47,7 +50,37 @@ pub fn spawn_real_indexer(
                     panic!("respond.yaml is provided but failed to parse: {err:?}");
                 }
             };
-            let stream = indexer.streamer();
+            
+            let mut stream = indexer.streamer();
+            let (sender, receiver) = tokio::sync::mpsc::channel(10_000);
+            
+            actix::spawn(async move {
+                let mut messages_received_from_indexer = 0;
+                const REPORT_DURATION: Duration = Duration::from_secs(5);
+                
+
+                loop {
+                    select! {
+                        streamer_message = stream.recv() => {
+                            let Some(streamer_message) = streamer_message else {
+                                error!("NEAR INDEXER STREAMER IS CLOSED");
+                                continue;
+                            };
+                            let Ok(_) = sender.send(streamer_message).await else {
+                                error!("BLOCK MONITOR DROPPED RECEIVER.");
+                                break;
+                            };
+                            messages_received_from_indexer += 1;
+                        }
+                        _ = tokio::time::sleep(REPORT_DURATION) => {
+                            info!("BLOCKS PROCESSED LAST {:?} => {:?} blocks", REPORT_DURATION, messages_received_from_indexer);
+                            messages_received_from_indexer = 0;
+                        }
+                    }
+                }
+            });
+
+
             let (view_client, client, tx_processor) = indexer.client_actors();
             let indexer_state = Arc::new(IndexerState::new(
                 view_client,
@@ -72,7 +105,7 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
             let indexer_result = listen_blocks(
-                stream,
+                receiver,
                 indexer_config.concurrency,
                 Arc::clone(&stats),
                 indexer_config.mpc_contract_id,
