@@ -7,7 +7,7 @@ use hex::ToHex;
 use http::status::StatusCode;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Sha3_256, Sha3_384, Sha3_384Core};
+use sha3::{Digest, Sha3_384};
 use std::time::Duration;
 use tracing::{error, info};
 
@@ -20,6 +20,9 @@ const PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
 const PHALA_SUCCESS_STATUS_CODE: StatusCode = StatusCode::OK;
 /// The maximum duration to wait for retrying request to Phala's endpoint, [`PHALA_TDX_QUOTE_UPLOAD_URL`].
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
+/// Number of bytes for the report data.
+/// report_data: [u8; 64] = [version(1 byte) || sha384(TLS pub key || account public key ) || zero padding]
+const REPORT_DATA_SIZE: usize = 64;
 
 #[derive(Serialize, Deserialize)]
 pub struct TeeAttestation {
@@ -59,8 +62,7 @@ pub async fn create_remote_attestation_info(
 
         let public_keys_hash = hasher.finalize();
 
-        // report_data: [u8; 64] = [version(1 byte) || sha384(TLS pub key || account public key ) || zero padding]
-        let mut report_data = [0_u8; 64];
+        let mut report_data = [0_u8; REPORT_DATA_SIZE];
 
         report_data[0] = binary_version.0;
         report_data[1..33].copy_from_slice(&public_keys_hash);
