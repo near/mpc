@@ -58,6 +58,7 @@ pub fn spawn_real_indexer(
                 let mut messages_received_from_indexer = 0;
                 let mut messages_received_from_indexer_total = 0;
                 const REPORT_DURATION: Duration = Duration::from_secs(5);
+                let mut tick_interval = tokio::time::interval(REPORT_DURATION);
                 
 
                 loop {
@@ -74,7 +75,8 @@ pub fn spawn_real_indexer(
                             messages_received_from_indexer += 1;
                             messages_received_from_indexer_total += 1;
                         }
-                        _ = tokio::time::sleep(REPORT_DURATION) => {
+
+                        _ = tick_interval.tick() => {
                             info!("BLOCKS PROCESSED LAST {:?} => {:?} blocks", REPORT_DURATION, messages_received_from_indexer);
                             info!("MESSAGES IN TOTAL: {:?}", messages_received_from_indexer_total);
                             messages_received_from_indexer = 0;
