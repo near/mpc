@@ -310,7 +310,6 @@ pub mod tests {
             let block_height = block_height.unwrap_or(rand::thread_rng().gen());
             ctx.block_height(block_height);
             ctx.random_seed(seed);
-            ctx.block_timestamp(0);
             let signer = signer.unwrap_or(gen_account_id());
             ctx.signer_account_id(signer.clone());
             testing_env!(ctx.build());
