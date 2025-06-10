@@ -83,7 +83,7 @@ pub struct AllowedTeeProposals {
 impl AllowedTeeProposals {
     /// Removes all expired code hashes and returns the number of removed entries.
     /// Ensures that at least one (the latest) proposal always remains in the whitelist.
-    fn clean(&mut self, current_block_height: BlockHeight) -> usize {
+    fn clean_expired_hashes(&mut self, current_block_height: BlockHeight) -> usize {
         // Find the first non-expired entry, but never remove the last one
         let expired_count = self
             .allowed_tee_proposals
@@ -104,7 +104,7 @@ impl AllowedTeeProposals {
     /// code hash already exists.
     pub fn insert(&mut self, code_hash: DockerImageHash, current_block_height: u64) -> bool {
         // Clean expired entries
-        self.clean(current_block_height);
+        self.clean_expired_hashes(current_block_height);
 
         // Check if the code hash already exists
         if self
@@ -134,7 +134,7 @@ impl AllowedTeeProposals {
     }
 
     pub fn get(&mut self, current_block_height: BlockHeight) -> Vec<AllowedDockerImageHash> {
-        self.clean(current_block_height);
+        self.clean_expired_hashes(current_block_height);
         self.allowed_tee_proposals.clone()
     }
 }
