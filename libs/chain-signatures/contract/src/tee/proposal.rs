@@ -106,13 +106,13 @@ impl AllowedDockerImageHashes {
         // Clean expired entries
         self.clean_expired_hashes(current_block_height);
 
-        // Check if the code hash already exists
-        if self
+        // Remove the old entry if it exists
+        if let Some(pos) = self
             .allowed_tee_proposals
             .iter()
-            .any(|entry| entry.image_hash == code_hash)
+            .position(|entry| entry.image_hash == code_hash)
         {
-            return false;
+            self.allowed_tee_proposals.remove(pos);
         }
 
         // Create the new entry
@@ -130,6 +130,7 @@ impl AllowedDockerImageHashes {
 
         // Insert at the correct position
         self.allowed_tee_proposals.insert(insert_index, new_entry);
+
         true
     }
 
