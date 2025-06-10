@@ -11,7 +11,7 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
-use crate::errors::{Error, InvalidCandidateSet};
+use crate::errors::Error;
 use crate::tee::{proposal::AllowedDockerImageHashes, quote::TeeQuoteStatus};
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
 use crate::v0_state::MpcContractV1;
