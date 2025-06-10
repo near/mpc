@@ -7,7 +7,7 @@ use hex::ToHex;
 use http::status::StatusCode;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Sha3_256};
+use sha3::{Digest, Sha3_256, Sha3_384, Sha3_384Core};
 use std::time::Duration;
 use tracing::{error, info};
 
@@ -35,25 +35,41 @@ struct UploadResponse {
     _checksum: String,
 }
 
+pub struct BinaryVersion(u8);
+
 /// Generates a [`TeeAttestation`] for this node, which can be used to send to the contract to prove that
 /// the node is running in a `TEE` context.
 ///
 /// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
 /// from generating the attestation.
 pub async fn create_remote_attestation_info(
-    node_public_key: near_crypto::ED25519PublicKey,
+    binary_version: BinaryVersion,
+    tls_public_key: near_crypto::ED25519PublicKey,
+    account_public_key: near_crypto::ED25519PublicKey,
 ) -> anyhow::Result<TeeAttestation> {
     let client = DstackClient::new(ENDPOINT);
 
     let client_info_response = client.info().await?;
     let tcb_info = client_info_response.tcb_info;
 
-    let mut hasher = Sha3_256::new();
-    hasher.update(node_public_key.0);
-    let public_key_hash = hasher.finalize();
+    let report_data = {
+        let mut hasher = Sha3_384::new();
+        hasher.update(tls_public_key.0);
+        hasher.update(account_public_key.0);
+
+        let public_keys_hash = hasher.finalize();
+
+        // report_data: [u8; 64] = [version(1 byte) || sha384(TLS pub key || account public key ) || zero padding]
+        let mut report_data = [0_u8; 64];
+
+        report_data[0] = binary_version.0;
+        report_data[1..33].copy_from_slice(&public_keys_hash);
+
+        report_data
+    };
 
     let tdx_quote: String = client
-        .get_quote(public_key_hash.into_iter().collect())
+        .get_quote(report_data.into())
         .await?
         .quote
         .encode_hex();
