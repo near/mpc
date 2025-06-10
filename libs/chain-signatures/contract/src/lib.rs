@@ -12,7 +12,7 @@ pub mod utils;
 pub mod v0_state;
 
 use crate::errors::{Error, InvalidCandidateSet};
-use crate::tee::{proposal::AllowedTeeProposals, quote::TeeQuoteStatus};
+use crate::tee::{proposal::AllowedDockerImageHashes, quote::TeeQuoteStatus};
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
 use crate::v0_state::MpcContractV1;
 use config::{Config, InitConfig};
@@ -84,7 +84,7 @@ impl Default for VersionedMpcContract {
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct TeeState {
-    allowed_tee_proposals: AllowedTeeProposals,
+    allowed_tee_proposals: AllowedDockerImageHashes,
     historical_tee_proposals: Vec<DockerImageHash>,
     votes: CodeHashesVotes,
     tee_participant_info: IterableMap<AccountId, TeeParticipantInfo>,

@@ -74,13 +74,13 @@ pub struct AllowedDockerImageHash {
 /// run.
 #[near(serializers=[borsh])]
 #[derive(Debug, Default)]
-pub struct AllowedTeeProposals {
+pub struct AllowedDockerImageHashes {
     /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
     /// lazily cleaned up during insertions and lookups.
     allowed_tee_proposals: Vec<AllowedDockerImageHash>,
 }
 
-impl AllowedTeeProposals {
+impl AllowedDockerImageHashes {
     /// Removes all expired code hashes and returns the number of removed entries.
     /// Ensures that at least one (the latest) proposal always remains in the whitelist.
     fn clean_expired_hashes(&mut self, current_block_height: BlockHeight) -> usize {
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_insert_and_get() {
-        let mut allowed = AllowedTeeProposals::default();
+        let mut allowed = AllowedDockerImageHashes::default();
         let block_height = 1000;
 
         // Insert a new proposal
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn test_clean_expired() {
-        let mut allowed = AllowedTeeProposals::default();
+        let mut allowed = AllowedDockerImageHashes::default();
         let block_height = 1000;
 
         // Insert two proposals at different heights
