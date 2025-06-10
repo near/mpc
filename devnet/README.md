@@ -9,6 +9,31 @@ These instructions are for MPC team members only. These instructions
 are currently not applicable to the public, since they rely on a lot of
 our internal-specific setup.
 
+## Prerequisites
+To be able to use the CLI, make sure to first install [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli) and the [google cloud CLI](https://cloud.google.com/sdk/docs/install).
+
+Once installed you need to authenticate yourself with `gcloud` and get application credentials, which can be done using the following commands.
+
+```
+gcloud auth login
+```
+
+```
+gcloud auth application-default login
+```
+
+## Installation
+With the application credentials in place, the next step is to install the CLI.
+
+The CLI can be installed using `cargo install`. Open a terminal in
+the devnet directory and run the following.
+
+```
+cargo install --path .
+```
+
+Once completed, you should have the `mpc-devnet` command available in your shell.
+
 ## Configuring
 Before starting, copy `config.yaml.template` to `config.yaml` and
 edit it:
@@ -26,7 +51,7 @@ edit it:
     account_id: your-account.testnet
     access_keys:
       - ed25519:xxxxxx  # Your private key
-    kind: funding_account
+    kind: FundingAccount
   ```
   If not provided, the devnet will create funding accounts as needed from the testnet faucet.
 
@@ -47,7 +72,7 @@ First, create an MPC network. Pick a name; here I'll use "my-test", but
 **ensure that your name is globally unique within the team**, so include
 your username in there.
 ```
-target/debug/devnet mpc my-test new \
+mpc-devnet mpc my-test new \
   --num-participants 2 \
   --num-responding-access-keys 8 \
   --near-per-responding-account 1
@@ -58,7 +83,7 @@ independent nonce.
 
 Then, deploy the contract.
 ```
-target/debug/devnet mpc my-test deploy-contract \
+mpc-devnet mpc my-test deploy-contract \
   --init-participants 2 --threshold 2
 ```
 
@@ -69,13 +94,13 @@ The path of the contract binary can be overridden via `--path`.
 
 We can now deploy the infra with Terraform:
 ```
-target/debug/devnet mpc my-test deploy-infra
+mpc-devnet mpc my-test deploy-infra
 ```
 
 This will output the address of the Nomad UI. Go there and wait until 
 the Nomad server UI shows up, we can then deploy the MPC nodes:
 ```
-target/debug/devnet mpc my-test deploy-nomad
+mpc-devnet mpc my-test deploy-nomad
 ```
 
 Both the `deploy-infra` and `deploy-nomad` commands can be repeated as 
@@ -94,7 +119,7 @@ each signature scheme. You can specify duplicate schemes here as well if you wis
 to add multiple keys for each scheme.
 
 ```
-target/debug/devnet mpc my-test vote-add-domains --signature-schemes Secp256k1,Ed25519
+mpc-devnet mpc my-test vote-add-domains --signature-schemes Secp256k1,Ed25519
 ```
 
 This triggers the MPC nodes to start performing key generation, after which the
@@ -104,7 +129,7 @@ contract will transition into the Running state, ready for signatures.
 
 You can use the following command to print out the network state:
 ```
-target/debug/devnet mpc my-test describe
+mpc-devnet mpc my-test describe
 ```
 
 This will print out the state of the contract as well as some debugging links from
@@ -143,7 +168,7 @@ See the section below on loadtesting.
 Any parameter specified via `new` can be overridden here, and the command
 will expand the current setup to add any new resources, for example:
 ```
-target/debug/devnet mpc my-test update --num-participants 3
+mpc-devnet mpc my-test update --num-participants 3
 ```
 
 Note that it is recommended to create all the participants that we're
@@ -158,7 +183,7 @@ That means nodes [0, 1, 2, 3] are currently participating in the network. Suppos
 want node 4 and 5 to join, node 1 to leave, and also adjust the threshold to 4. We can do this:
 
 ```
-target/debug/devnet mpc my-test vote-new-parameters --add 4 --add 5 --remove 1 --set-threshold 4
+mpc-devnet mpc my-test vote-new-parameters --add 4 --add 5 --remove 1 --set-threshold 4
 ```
 
 This will kick off a resharing operation to reshare all keys.
@@ -167,11 +192,11 @@ This will kick off a resharing operation to reshare all keys.
 To upgrade the contract, first propose the upgrade (suppose we wish to use the newly compiled
 contract code for the upgrade):
 ```
-target/debug/devnet mpc my-test propose-update-contract --path ../libs/chain-signatures/target/wasm32-unknown-unknown/release/mpc_contract.wasm
+mpc-devnet mpc my-test propose-update-contract --path ../libs/chain-signatures/target/wasm32-unknown-unknown/release/mpc_contract.wasm
 ```
 this will print out a command to run for voting for the upgrade:
 ```
-target/debug/devnet mpc my-test vote-update --update-id=0
+mpc-devnet mpc my-test vote-update --update-id=0
 ```
 That will trigger a migration to use the new contract.
 
@@ -179,7 +204,7 @@ That will trigger a migration to use the new contract.
 If we wish to change the MPC node binary, deploy a new docker image and then redeploy
 with the docker image tag, e.g.
 ```
-target/debug/devnet mpc my-test deploy-nomad --docker-image nearone/mpc-node-gcp:my-test-1234567
+mpc-devnet mpc my-test deploy-nomad --docker-image nearone/mpc-node-gcp:my-test-1234567
 ```
 
 Available docker images can be seen [here](https://hub.docker.com/r/nearone/mpc-node-gcp/tags).
@@ -187,13 +212,13 @@ Available docker images can be seen [here](https://hub.docker.com/r/nearone/mpc-
 ### Cleaning up the Infra
 After you're done with testing the cluster, please bring down the machines to save resources:
 ```
-target/debug/devnet mpc my-test destroy-infra
+mpc-devnet mpc my-test destroy-infra
 ```
 
 Also, you need to clear the deployed contract from local state, because the infra contains
 locally stored keyshares, and once we clear that, the contract state is effectively useless.
 ```
-target/debug/devnet mpc my-test remove-contract
+mpc-devnet mpc my-test remove-contract
 ```
 
 You may resume testing next time by using `deploy-contract` and then `deploy-infra` again.
@@ -202,11 +227,11 @@ You may resume testing next time by using `deploy-contract` and then `deploy-inf
 At times, it may be useful to restart the contract from the initial state. We first need to
 remove and redeploy the contract like above, but also we need to reset the data for the nodes:
 ```
-target/debug/devnet mpc my-test deploy-nomad --shutdown-and-reset
+mpc-devnet mpc my-test deploy-nomad --shutdown-and-reset
 ```
 Check the Nomad pages for the reset jobs to complete, and then
 ```
-target/debug/devnet mpc my-test deploy-nomad
+mpc-devnet mpc my-test deploy-nomad
 ```
 This will clear all the local data on the nodes except the near blockchain data. That way,
 the effect is similar to remaking the cluster, but without having to wait for state sync again.
@@ -216,7 +241,7 @@ Create a loadtest set of accounts: (The name does **not** need to be
 the same as the MPC cluster name, and this name does **not** need to
 be globally unique.)
 ```
-target/debug/devnet loadtest my-test new \
+mpc-devnet loadtest my-test new \
   --num-accounts 1 \
   --keys-per-account 16 \
   --near-per-account 4
@@ -235,13 +260,13 @@ single-threaded).
 Additionally, a parallel signature contract may be deployed.
 This can comfortably issue 10 signatures in one transaction.
 ```
-target/debug/devnet loadtest my-test deploy-parallel-sign-contract
+mpc-devnet loadtest my-test deploy-parallel-sign-contract
 ```
 
 ### Sending Load
 We can point the loadtest setup against the MPC contract:
 ```
-target/debug/devnet loadtest my-test run \
+mpc-devnet loadtest my-test run \
   --mpc-network my-test \
   --qps 20 \
   --signatures-per-contract-call 10 \
