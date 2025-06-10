@@ -147,7 +147,7 @@ impl From<MpcContractV0> for MpcContract {
 impl From<MpcContractV1> for MpcContract {
     fn from(value: MpcContractV1) -> Self {
         Self {
-            protocol_state: value.protocol_state.into(),
+            protocol_state: value.protocol_state,
             pending_requests: value.pending_requests,
             proposed_updates: value.proposed_updates,
             config: value.config,
