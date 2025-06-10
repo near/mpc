@@ -56,6 +56,7 @@ pub fn spawn_real_indexer(
             
             actix::spawn(async move {
                 let mut messages_received_from_indexer = 0;
+                let mut messages_received_from_indexer_total = 0;
                 const REPORT_DURATION: Duration = Duration::from_secs(5);
                 
 
@@ -71,9 +72,11 @@ pub fn spawn_real_indexer(
                                 break;
                             };
                             messages_received_from_indexer += 1;
+                            messages_received_from_indexer_total += 1;
                         }
                         _ = tokio::time::sleep(REPORT_DURATION) => {
                             info!("BLOCKS PROCESSED LAST {:?} => {:?} blocks", REPORT_DURATION, messages_received_from_indexer);
+                            info!("MESSAGES IN TOTAL: {:?}", messages_received_from_indexer_total);
                             messages_received_from_indexer = 0;
                         }
                     }
