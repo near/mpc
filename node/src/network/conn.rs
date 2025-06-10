@@ -2,6 +2,7 @@ use crate::primitives::ParticipantId;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
+use tracing::info;
 
 /// Represents a version of a bidirectional connection with another node.
 /// This allows us to detect if the connection was reset or dropped in either
@@ -170,6 +171,8 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
         let Some(conn) = current.connection.upgrade() else {
             anyhow::bail!("Connection was dropped");
         };
+
+        info!("Got a connection handle.");
         Ok(conn)
     }
 }
@@ -249,15 +252,19 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
     }
 
     /// Waits for `threshold` number of connections (a freebie is included for the node itself)
-    /// to be bidirectionally established at the same time.
-    pub async fn wait_for_ready(&self, threshold: usize) {
+    /// to the given `peers` to be bidirectionally established at the same time.
+    pub async fn wait_for_ready(&self, threshold: usize, peers_to_consider: &[ParticipantId]) {
+        info!("Waiting for {:?} participants to be ready.", threshold - 1);
+
         let mut receivers = self
             .connectivities
-            .values()
-            .map(|c| (c.outgoing_receiver.clone(), c.incoming_receiver.clone()))
+            .iter()
+            .filter(|(peer, _)| peers_to_consider.contains(peer))
+            .map(|(_peer, c)| (c.outgoing_receiver.clone(), c.incoming_receiver.clone()))
             .collect::<Vec<_>>();
         loop {
             let mut connected_count = 0;
+            info!("Connected count: {:?}", connected_count);
             for (outgoing_receiver, incoming_receiver) in &receivers {
                 let outgoing = outgoing_receiver.borrow();
                 let incoming = incoming_receiver.borrow();
@@ -369,6 +376,9 @@ mod tests {
         let id0 = ParticipantId::from_raw(1);
         let id1 = ParticipantId::from_raw(2);
         let id2 = ParticipantId::from_raw(3);
+
+        let all_participants = [id0, id1, id2];
+
         let connectivity = AllNodeConnectivities::<usize, usize>::new(id1, &[id0, id1, id2]);
 
         let conn10 = Arc::new(0);
@@ -383,9 +393,14 @@ mod tests {
             .unwrap()
             .set_incoming_connection(&conn01);
 
-        assert_eq!(connectivity.wait_for_ready(2).now_or_never(), Some(()));
+        assert_eq!(
+            connectivity
+                .wait_for_ready(2, &all_participants)
+                .now_or_never(),
+            Some(())
+        );
 
-        let fut = connectivity.wait_for_ready(3);
+        let fut = connectivity.wait_for_ready(3, &all_participants);
         let MaybeReady::Future(fut) = run_future_once(fut) else {
             panic!("wait_for_ready(3) should not be ready yet");
         };

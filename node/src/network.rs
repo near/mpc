@@ -50,9 +50,14 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     ) -> anyhow::Result<()>;
     /// Sends a message to everyone on a best-effort basis about the current height of our indexer.
     fn send_indexer_height(&self, height: IndexerHeightMessage);
-    /// Waits until at least `threshold` nodes in the network have been connected to initially,
-    /// the threshold includes ourselves.
-    async fn wait_for_ready(&self, threshold: usize) -> anyhow::Result<()>;
+
+    /// Waits for `threshold` number of connections (a freebie is included for the node itself)
+    /// to the given `peers` to be bidirectionally established at the same time.
+    async fn wait_for_ready(
+        &self,
+        threshold: usize,
+        peers_to_consider: &[ParticipantId],
+    ) -> anyhow::Result<()>;
 }
 
 /// The receiving side of the networking layer. It is expected that the node will run
@@ -189,6 +194,7 @@ impl MeshNetworkClient {
     pub fn select_random_active_participants_including_me(
         &self,
         total: usize,
+        peers_to_consider: &[ParticipantId],
     ) -> anyhow::Result<Vec<ParticipantId>> {
         let me = self.my_participant_id();
         let participants = self.all_alive_participant_ids();
@@ -206,7 +212,11 @@ impl MeshNetworkClient {
 
         let mut res = participants
             .into_iter()
-            .filter(|p| p != &me)
+            .filter(|p| {
+                let peer_is_not_me = p != &me;
+                let peer_is_considered = peers_to_consider.contains(p);
+                peer_is_not_me && peer_is_considered
+            })
             .choose_multiple(&mut rand::thread_rng(), total - 1);
         res.push(me);
         Ok(res)
@@ -217,7 +227,10 @@ impl MeshNetworkClient {
     /// `transport_sender`.
     pub async fn leader_wait_for_all_connected(&self) -> anyhow::Result<()> {
         self.transport_sender
-            .wait_for_ready(self.all_participant_ids().len())
+            .wait_for_ready(
+                self.all_participant_ids().len(),
+                &self.all_participant_ids(),
+            )
             .await
     }
 
@@ -827,7 +840,11 @@ pub mod testing {
             // TODO(#226): Test this.
         }
 
-        async fn wait_for_ready(&self, _threshold: usize) -> anyhow::Result<()> {
+        async fn wait_for_ready(
+            &self,
+            _threshold: usize,
+            _peers_to_consider: &[ParticipantId],
+        ) -> anyhow::Result<()> {
             Ok(())
         }
     }

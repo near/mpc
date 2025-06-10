@@ -6,6 +6,8 @@ use std::fmt::Display;
 use std::path::Path;
 use std::sync::Arc;
 
+pub const EPOCH_ID_KEY: &[u8] = b"EPOCH_ID";
+
 /// Key-value store that encrypts all values with AES-GCM.
 /// The keys of the key-value store are NOT encrypted.
 pub struct SecretDB {
@@ -19,6 +21,7 @@ pub enum DBCol {
     Triple,
     Presignature,
     SignRequest,
+    EpochId,
 }
 
 impl DBCol {
@@ -27,11 +30,17 @@ impl DBCol {
             DBCol::Triple => "triple",
             DBCol::Presignature => "presignature",
             DBCol::SignRequest => "sign_request",
+            DBCol::EpochId => "epoch_id",
         }
     }
 
-    fn all() -> [DBCol; 3] {
-        [DBCol::Triple, DBCol::Presignature, DBCol::SignRequest]
+    fn all() -> [DBCol; 4] {
+        [
+            DBCol::Triple,
+            DBCol::Presignature,
+            DBCol::SignRequest,
+            DBCol::EpochId,
+        ]
     }
 }
 

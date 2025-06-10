@@ -23,10 +23,17 @@ impl EddsaSignatureProvider {
         let sign_request = self.sign_request_store.get(id).await?;
 
         let threshold = self.mpc_config.participants.threshold as usize;
+        let running_participants: Vec<_> = self
+            .mpc_config
+            .participants
+            .participants
+            .iter()
+            .map(|p| p.id)
+            .collect();
 
         let participants = self
             .client
-            .select_random_active_participants_including_me(threshold)
+            .select_random_active_participants_including_me(threshold, &running_participants)
             .context("Can't choose active participants for a eddsa signature")?;
 
         let channel = self

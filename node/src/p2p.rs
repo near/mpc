@@ -24,6 +24,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 use x509_parser::prelude::{FromDer, X509Certificate};
 use x509_parser::public_key::PublicKey;
 
@@ -125,6 +126,7 @@ impl TlsConnection {
             );
         }
 
+        info!("Performing P2P handshake with: {:?}", target_address);
         p2p_handshake(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
             .await
             .context("p2p handshake")?;
@@ -378,6 +380,7 @@ pub async fn new_tls_mesh_network(
         .map(|participant| participant.port)
         .ok_or_else(|| anyhow!("My ID not found in participants"))?;
 
+    info!("Preparing participant data.");
     // Prepare participant data.
     let mut participant_identities = ParticipantIdentities::default();
     let mut connections = HashMap::new();
@@ -428,6 +431,7 @@ pub async fn new_tls_mesh_network(
 
     let connectivities_clone = connectivities.clone();
     let my_id = config.my_participant_id;
+    info!("Spawning incoming connections handler.");
     let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
         let mut tasks = AutoAbortTaskCollection::new();
         while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
@@ -588,8 +592,14 @@ impl MeshNetworkTransportSender for TlsMeshSender {
         }
     }
 
-    async fn wait_for_ready(&self, threshold: usize) -> anyhow::Result<()> {
-        self.connectivities.wait_for_ready(threshold).await;
+    async fn wait_for_ready(
+        &self,
+        threshold: usize,
+        peers_to_consider: &[ParticipantId],
+    ) -> anyhow::Result<()> {
+        self.connectivities
+            .wait_for_ready(threshold, peers_to_consider)
+            .await;
         Ok(())
     }
 }
@@ -719,6 +729,7 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::MpcConfig;
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::raw_ed25519_secret_key_to_keypair;
     use crate::p2p::testing::{
@@ -756,6 +767,8 @@ mod tests {
         let participant0 = configs[0].0.my_participant_id;
         let participant1 = configs[1].0.my_participant_id;
 
+        let all_participants = [participant0, participant1];
+
         start_root_task_with_periodic_dump(async move {
             let (sender0, mut receiver0) =
                 super::new_tls_mesh_network(&configs[0].0, &configs[0].1)
@@ -766,8 +779,8 @@ mod tests {
                     .await
                     .unwrap();
 
-            sender0.wait_for_ready(2).await.unwrap();
-            sender1.wait_for_ready(2).await.unwrap();
+            sender0.wait_for_ready(2, &all_participants).await.unwrap();
+            sender1.wait_for_ready(2, &all_participants).await.unwrap();
 
             for _ in 0..100 {
                 // todo: adjust test?
@@ -857,6 +870,16 @@ mod tests {
             PortSeed::P2P_WAIT_FOR_READY_TEST,
         )
         .unwrap();
+
+        let all_participants = |mpc_config: &MpcConfig| {
+            mpc_config
+                .participants
+                .participants
+                .iter()
+                .map(|p| p.id)
+                .collect::<Vec<_>>()
+        };
+
         // Make node 3 use the wrong address for the 0th node. All connections should work
         // except from 3 to 0.
         configs[3].0.participants.participants[0].address = "169.254.1.1".to_owned();
@@ -874,20 +897,31 @@ mod tests {
                 .await
                 .unwrap();
 
-            sender1.wait_for_ready(4).await.unwrap();
-            sender2.wait_for_ready(4).await.unwrap();
+            let all_participants0 = &all_participants(&configs[0].0);
+            let all_participants1 = &all_participants(&configs[1].0);
+            let all_participants2 = &all_participants(&configs[2].0);
+            let all_participants3 = &all_participants(&configs[3].0);
+
+            sender1.wait_for_ready(4, all_participants1).await.unwrap();
+            sender2.wait_for_ready(4, all_participants2).await.unwrap();
             // Node 3 should not be able to connect to node 0, so if we wait for 4,
             // it should fail. This goes both ways (3 to 0 and 0 to 3).
-            assert!(timeout(Duration::from_secs(1), sender0.wait_for_ready(4))
-                .await
-                .is_err());
-            assert!(timeout(Duration::from_secs(1), sender3.wait_for_ready(4))
-                .await
-                .is_err());
+            assert!(timeout(
+                Duration::from_secs(1),
+                sender0.wait_for_ready(4, all_participants0)
+            )
+            .await
+            .is_err());
+            assert!(timeout(
+                Duration::from_secs(1),
+                sender3.wait_for_ready(4, all_participants3)
+            )
+            .await
+            .is_err());
 
             // But if we wait for 3, it should succeed.
-            sender0.wait_for_ready(3).await.unwrap();
-            sender3.wait_for_ready(3).await.unwrap();
+            sender0.wait_for_ready(3, all_participants0).await.unwrap();
+            sender3.wait_for_ready(3, all_participants3).await.unwrap();
 
             let ids: Vec<_> = configs[0]
                 .0
@@ -927,10 +961,10 @@ mod tests {
             let (sender1, _receiver1) = super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
                 .await
                 .unwrap();
-            sender0.wait_for_ready(3).await.unwrap();
-            sender1.wait_for_ready(4).await.unwrap();
-            sender2.wait_for_ready(4).await.unwrap();
-            sender3.wait_for_ready(3).await.unwrap();
+            sender0.wait_for_ready(3, all_participants0).await.unwrap();
+            sender1.wait_for_ready(4, all_participants1).await.unwrap();
+            sender2.wait_for_ready(4, all_participants2).await.unwrap();
+            sender3.wait_for_ready(3, all_participants3).await.unwrap();
             assert_eq!(
                 all_alive_participant_ids(&sender0),
                 sorted(&[ids[0], ids[1], ids[2]]),
