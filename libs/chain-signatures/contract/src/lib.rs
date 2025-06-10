@@ -275,7 +275,11 @@ impl MpcContract {
             .values()
             .any(|status| *status != TeeQuoteStatus::Valid && *status != TeeQuoteStatus::None)
         {
-            return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into());
+            // Note: TEE quote validity is not enforced here for now. We're just logging verification failures.
+            log!(
+                "vote_new_parameters: Invalid TEE quote status for some participants: {:?}",
+                tee_verification,
+            );
         }
         if let Some(new_state) = self
             .protocol_state
