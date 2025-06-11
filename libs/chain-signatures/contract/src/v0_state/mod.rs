@@ -19,11 +19,12 @@ use crate::primitives::{
 };
 use crate::state::initializing::InitializingContractState;
 use crate::state::key_event::KeyEvent;
+use crate::storage_keys::StorageKey;
 use crate::update::UpdateId;
 use crate::{
     config::Config,
     primitives::signature::{SignatureRequest, YieldIndex},
-    MpcContract, TeeState,
+    MpcContract,
 };
 
 #[near(serializers=[borsh, json])]
@@ -94,11 +95,31 @@ pub struct ProposedUpdates {
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
+pub struct TeeState {
+    allowed_tee_proposals: crate::tee::proposal::AllowedDockerImageHashes,
+    historical_tee_proposals: Vec<crate::tee::proposal::DockerImageHash>,
+    votes: crate::tee::proposal::CodeHashesVotes,
+}
+
+impl From<TeeState> for crate::TeeState {
+    fn from(value: TeeState) -> Self {
+        Self {
+            allowed_tee_proposals: value.allowed_tee_proposals,
+            historical_tee_proposals: value.historical_tee_proposals,
+            votes: value.votes,
+            tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
+        }
+    }
+}
+
+#[near(serializers=[borsh])]
+#[derive(Debug)]
 pub struct MpcContractV0 {
     pub protocol_state: ProtocolContractState,
     pub pending_requests: LookupMap<SignatureRequest, YieldIndex>,
     pub proposed_updates: ProposedUpdates,
     pub config: Config,
+    pub tee_state: TeeState,
 }
 
 impl From<RunningContractState> for crate::RunningContractState {
@@ -131,7 +152,15 @@ impl From<MpcContractV0> for MpcContract {
             pending_requests: value.pending_requests,
             proposed_updates: crate::ProposedUpdates::default(),
             config: value.config,
-            tee_state: TeeState::default(),
+            tee_state: {
+                let tee_state: crate::TeeState = value.tee_state.into();
+                crate::TeeState {
+                    allowed_tee_proposals: tee_state.allowed_tee_proposals,
+                    historical_tee_proposals: tee_state.historical_tee_proposals,
+                    votes: tee_state.votes,
+                    tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
+                }
+            },
         }
     }
 }
