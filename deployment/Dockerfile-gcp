@@ -7,6 +7,7 @@ COPY Cargo.lock Cargo.lock
 COPY Cargo.toml Cargo.toml
 COPY rust-toolchain.toml rust-toolchain.toml
 COPY libs/chain-signatures libs/chain-signatures
+COPY third-party-licenses third-party-licenses
 
 RUN cargo build --locked --release
 
