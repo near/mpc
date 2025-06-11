@@ -1,9 +1,8 @@
 ## mpc
-This repository contains the code for the Near mpc node. It is a rewrite of [Near mpc](https://github.com/near/mpc). This repository will be moved to [Near mpc](https://github.com/near/mpc) soon.
+This repository contains the code for the Near mpc node. It is a rewrite of [Near mpc](https://github.com/near/mpc_old).
 
 ### Dependencies and submodules
 - **Nearcore Node**: This repository depends on the nearcore node, included as a submodule in the `/libs` directory.
-- **Chain signatures**: This repository contains squashed subtrees of the `contract` and `crypto-shared` folder from [near/mpc/chain-signatures](https://github.com/near/mpc/tree/develop/chain-signatures), required for integration tests.
 - **Other Dependencies**: All other dependencies are handled by Cargo.
 
 ### How it works
@@ -30,3 +29,9 @@ This repository uses `rust-toolchain.toml` files, as some code sections may requ
 - Environment variables  
 
 For more information, refer to the [Rustup book on overrides](https://rust-lang.github.io/rustup/overrides.html).
+
+### Contributions
+
+The NEAR MPC Node is actively maintained by **[NEAR One](https://github.com/Near-One)** and **[HOT Labs](https://github.com/hot-dao)** <img src="https://storage.herewallet.app/ft/1:hot.png" alt="HOT Labs" height="20" style="position: relative; top: 10px;"/>, with valuable contributions from the broader open-source community. 
+
+We welcome contributions in the form of issues, feature requests, and pull requests. Please ensure any changes are well-documented and tested. For major changes, open an issue to discuss the proposed modifications first.

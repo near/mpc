@@ -2,7 +2,6 @@ use super::key_event::KeyEvent;
 use super::running::RunningContractState;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidParameters};
-use crate::legacy_contract_state;
 use crate::primitives::domain::DomainRegistry;
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
@@ -26,6 +25,7 @@ use std::collections::BTreeSet;
 /// and we wish to perform a resharing before adding domains again.
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
+#[cfg_attr(feature = "dev-utils", derive(Clone))]
 pub struct InitializingContractState {
     /// All domains, including the already existing ones and the ones we're generating a new key for
     pub domains: DomainRegistry,
@@ -140,14 +140,6 @@ impl InitializingContractState {
     }
 }
 
-impl From<&legacy_contract_state::InitializingContractState> for InitializingContractState {
-    fn from(_state: &legacy_contract_state::InitializingContractState) -> Self {
-        // It's inconceivable we would upgrade from an Initializing state. So don't bother
-        // supporting it.
-        unimplemented!("Cannot upgrade from legacy Initializing state")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::InitializingContractState;
@@ -175,10 +167,7 @@ mod tests {
         let domains_to_add = gen_domains_to_add(&running.domains, num_domains - num_generated);
 
         let mut initializing_state = None;
-        let voting_participants = running.parameters.participants().participants()
-            [0..running.parameters.threshold().value() as usize]
-            .to_vec();
-        for (account, _, _) in voting_participants {
+        for (account, _, _) in running.parameters.participants().participants().clone() {
             env.set_signer(&account);
             assert!(initializing_state.is_none());
             initializing_state = running.vote_add_domains(domains_to_add.clone()).unwrap();

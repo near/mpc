@@ -1,11 +1,11 @@
-use crate::assets::{DistributedAssetStorage, UniqueId};
+use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
-use crate::config::TripleConfig;
+use crate::config::{MpcConfig, TripleConfig};
 use crate::db::SecretDB;
 use crate::metrics;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{participants_from_triples, ParticipantId};
+use crate::primitives::{participants_from_triples, ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::providers::HasParticipants;
@@ -60,13 +60,22 @@ impl EcdsaSignatureProvider {
     /// separately handled.
     pub(super) async fn run_background_triple_generation(
         client: Arc<MeshNetworkClient>,
-        threshold: usize,
+        mpc_config: Arc<MpcConfig>,
         config: Arc<TripleConfig>,
         triple_store: Arc<TripleStorage>,
     ) -> anyhow::Result<()> {
         let in_flight_generations = InFlightGenerationTracker::new();
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
+
+        let threshold = mpc_config.participants.threshold as usize;
+        let running_participants: Vec<_> = mpc_config
+            .participants
+            .participants
+            .iter()
+            .map(|p| p.id)
+            .collect();
+
         loop {
             metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(triple_store.num_owned_ready() as i64);
             metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT
@@ -82,19 +91,21 @@ impl EcdsaSignatureProvider {
                 && in_flight_generations.num_in_flight()
                 < config.concurrency * 2 * SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE
             {
-                let participants =
-                    match client.select_random_active_participants_including_me(threshold) {
-                        Ok(participants) => participants,
-                        Err(e) => {
-                            tracing::warn!(
-                                "Can't choose active participants for a triple: {}. Sleeping.",
-                                e
-                            );
-                            // that should not happen often, so sleeping here is okay
-                            tokio::time::sleep(Duration::from_millis(100)).await;
-                            continue;
-                        }
-                    };
+                let participants = match client.select_random_active_participants_including_me(
+                    threshold,
+                    &running_participants,
+                ) {
+                    Ok(participants) => participants,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Can't choose active participants for a triple: {}. Sleeping.",
+                            e
+                        );
+                        // that should not happen often, so sleeping here is okay
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+                };
 
                 let id_start = triple_store
                     .generate_and_reserve_id_range(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32);
@@ -271,11 +282,10 @@ impl<const N: usize> MpcLeaderCentricComputation<()>
 #[cfg(test)]
 mod tests_many {
     use super::{ManyTripleGenerationComputation, PairedTriple};
-    use crate::assets::UniqueId;
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::primitives::MpcTaskId;
+    use crate::primitives::{MpcTaskId, UniqueId};
     use crate::providers::ecdsa::EcdsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracing::init_logging;

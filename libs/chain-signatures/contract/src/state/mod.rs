@@ -17,6 +17,7 @@ use running::RunningContractState;
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
+#[cfg_attr(feature = "dev-utils", derive(Clone))]
 pub enum ProtocolContractState {
     NotInitialized,
     Initializing(InitializingContractState),
@@ -88,7 +89,7 @@ impl ProtocolContractState {
             .vote_reshared(key_event_id)
             .map(|x| x.map(ProtocolContractState::Running))
     }
-    /// Casts a vote for `public_key` in `key_event_id` during Initializtion.
+    /// Casts a vote for `public_key` in `key_event_id` during Initialization.
     /// Fails if the protocol is not in `Initializing` state.
     /// Returns the new protocol state if enough votes have been submitted.
     pub fn vote_pk(
@@ -163,26 +164,6 @@ impl ProtocolContractState {
     }
 }
 
-impl From<&super::legacy_contract_state::ProtocolContractState> for ProtocolContractState {
-    fn from(protocol_state: &super::legacy_contract_state::ProtocolContractState) -> Self {
-        // can this be simplified?
-        match &protocol_state {
-            super::legacy_contract_state::ProtocolContractState::NotInitialized => {
-                ProtocolContractState::NotInitialized
-            }
-            super::legacy_contract_state::ProtocolContractState::Initializing(state) => {
-                ProtocolContractState::Initializing(state.into())
-            }
-            super::legacy_contract_state::ProtocolContractState::Running(state) => {
-                ProtocolContractState::Running(state.into())
-            }
-            super::legacy_contract_state::ProtocolContractState::Resharing(state) => {
-                ProtocolContractState::Resharing(state.into())
-            }
-        }
-    }
-}
-
 impl ProtocolContractState {
     pub fn name(&self) -> &'static str {
         match self {
@@ -192,11 +173,11 @@ impl ProtocolContractState {
             ProtocolContractState::Resharing(_) => "Resharing",
         }
     }
-    pub fn is_running(&self) -> bool {
-        if let ProtocolContractState::Running(_) = self {
-            return true;
-        }
-        false
+    pub fn is_running_or_resharing(&self) -> bool {
+        matches!(
+            self,
+            ProtocolContractState::Running(_) | ProtocolContractState::Resharing(_)
+        )
     }
     pub fn authenticate_update_vote(&self) -> Result<(), Error> {
         match &self {

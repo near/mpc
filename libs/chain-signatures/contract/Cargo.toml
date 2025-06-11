@@ -1,7 +1,8 @@
 [package]
 name = "mpc-contract"
-version = "2.0.0-alpha"
+version = "2.1.2-rc.1"
 edition = "2021"
+license = "MIT"
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -44,8 +45,9 @@ getrandom = { version = "0.2.12", features = ["custom"] }
 [dev-dependencies]
 rand = "0.8"
 tokio = { version = "1", features = ["full"] }
-
 sha2 = "0.10.8"
+reqwest = { version = "0.11", features = ["json"] }
+base64 = "0.21"
 
 # crypto dependencies
 ed25519-dalek = { version = "2.1.1", features = ["serde", "digest"] }
@@ -61,11 +63,9 @@ cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "5e0ce40a16dc
     "k256",
 ] }
 frost-ed25519 = "2.1.0"
+fs2 = "0.4"
 rstest = "0.25.0"
 
 [features]
 test-utils = ["rand"]
-
-
-[package.metadata.test]
-doc = true
+dev-utils = []

@@ -11,11 +11,10 @@ pub mod triple;
 
 pub use triple::TripleStorage;
 
-use crate::assets::UniqueId;
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
+use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::{PublicKeyConversion, SignatureProvider};
 use crate::sign_request::{SignRequestStorage, SignatureId};
 use crate::tracking;
@@ -219,7 +218,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
             "generate triples",
             Self::run_background_triple_generation(
                 self.client.clone(),
-                self.mpc_config.participants.threshold as usize,
+                self.mpc_config.clone(),
                 self.config.triple.clone().into(),
                 self.triple_store.clone(),
             ),

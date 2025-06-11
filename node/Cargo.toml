@@ -1,7 +1,8 @@
 [package]
 name = "mpc-node"
-version = "2.0.0-alpha" # DO NOT RELEASE
+version = "2.0.0-rc.1"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
 actix = { workspace = true }
@@ -12,6 +13,7 @@ axum = { workspace = true }
 borsh = { workspace = true }
 cait-sith = { workspace = true }
 clap = { workspace = true }
+dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", tag = "v0.5.2" }
 flume = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
@@ -53,19 +55,23 @@ near-config-utils = { workspace = true }
 near-crypto = { workspace = true }
 near-o11y = { workspace = true }
 near-time = { workspace = true }
-# todo: update once 1.1.0 is pulbished (though the api did not change)
+
 legacy-mpc-contract = { workspace = true }
+mpc-contract = { path = "../libs/chain-signatures/contract/", features = [
+    "dev-utils",
+] }
 # Pinned to resolve compilation errors with conflicting implementations of PartialOrd trait
 # See error E0283 with multiple impls satisfying `u128: std::cmp::PartialOrd<_>`
 deranged = "=0.4.0"
-mpc-contract = { path = "../libs/chain-signatures/contract/" }
 
 
 [dev-dependencies]
 serial_test = { workspace = true }
 
+
 reqwest = { workspace = true }
 itertools = { workspace = true }
+assert_matches = "1.5.0"
 mpc-contract = { path = "../libs/chain-signatures/contract/", features = [
     "test-utils",
 ] }

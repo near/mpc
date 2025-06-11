@@ -1,15 +1,13 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::crypto_shared::types::PublicKeyExtended;
-use crate::errors::{DomainError, Error, InvalidParameters};
-use crate::legacy_contract_state;
-use crate::primitives::domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry};
-use crate::primitives::key_state::{
-    AttemptId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
+use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
+use crate::primitives::{
+    domain::{AddDomainsVotes, DomainConfig, DomainRegistry},
+    key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
+    thresholds::ThresholdParameters,
+    votes::ThresholdParametersVotes,
 };
-use crate::primitives::thresholds::ThresholdParameters;
-use crate::primitives::votes::ThresholdParametersVotes;
 use near_sdk::near;
 use std::collections::BTreeSet;
 
@@ -23,6 +21,7 @@ use std::collections::BTreeSet;
 ///    threshold if desired.
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
+#[cfg_attr(feature = "dev-utils", derive(Clone))]
 pub struct RunningContractState {
     /// The domains for which we have a key ready for signature processing.
     pub domains: DomainRegistry,
@@ -35,32 +34,6 @@ pub struct RunningContractState {
     pub parameters_votes: ThresholdParametersVotes,
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
-}
-
-impl From<&legacy_contract_state::RunningContractState> for RunningContractState {
-    fn from(state: &legacy_contract_state::RunningContractState) -> Self {
-        let key = match state.public_key.curve_type() {
-            near_sdk::CurveType::ED25519 => unreachable!("Legacy contract does not have any ED25519 keys in its state. An EdwardsPoint can not be constructed within the max gas limit."),
-            near_sdk::CurveType::SECP256K1 => PublicKeyExtended::Secp256k1 { near_public_key: state.public_key.clone() },
-        };
-        RunningContractState {
-            domains: DomainRegistry::new_single_ecdsa_key_from_legacy(),
-            keyset: Keyset::new(
-                EpochId::new(state.epoch),
-                vec![KeyForDomain {
-                    attempt: AttemptId::default(),
-                    domain_id: DomainId::legacy_ecdsa_id(),
-                    key,
-                }],
-            ),
-            parameters: ThresholdParameters::migrate_from_legacy(
-                state.threshold,
-                state.participants.clone(),
-            ),
-            parameters_votes: ThresholdParametersVotes::default(),
-            add_domains_votes: AddDomainsVotes::default(),
-        }
-    }
 }
 
 impl RunningContractState {
@@ -113,25 +86,36 @@ impl RunningContractState {
     }
 
     /// Casts a vote for `proposal`, removing any previous votes by `env::signer_account_id()`.
-    /// Fails if the proposal is invalid or the signer is not a participant.
-    /// Returns true if the proposal reached `threshold` number of votes.
+    /// Fails if the proposal is invalid or the signer is not a proposed participant.
+    /// Returns true if all participants of the proposed parameters voted for it.
     pub(super) fn process_new_parameters_proposal(
         &mut self,
         proposal: &ThresholdParameters,
     ) -> Result<bool, Error> {
-        // ensure the signer is a participant
-        let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
-
         // ensure the proposal is valid against the current parameters
         self.parameters.validate_incoming_proposal(proposal)?;
 
-        // finally, vote. Propagate any errors
-        let n_votes = self.parameters_votes.vote(proposal, &participant);
-        Ok(self.parameters.threshold().value() <= n_votes)
+        // ensure the signer is a proposed participant
+        let candidate = AuthenticatedAccountId::new(proposal.participants())?;
+
+        // If the signer is not a participant of the current epoch, they can only vote after
+        // `threshold` participant of the current epoch have casted their vote to admit them.
+        if AuthenticatedAccountId::new(self.parameters.participants()).is_err() {
+            let n_votes = self
+                .parameters_votes
+                .n_votes(proposal, self.parameters.participants());
+            if n_votes < self.parameters.threshold().value() {
+                return Err(VoteError::VoterPending.into());
+            }
+        }
+
+        // finally, vote.
+        let n_votes = self.parameters_votes.vote(proposal, candidate);
+        Ok(proposal.participants().len() as u64 == n_votes)
     }
 
     /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
-    /// If this causes a threshold number of participants to vote for the same set of new domains,
+    /// If the number of votes for the same set of new domains reaches the number of participants,
     /// returns the InitializingContractState we should transition into to generate keys for these
     /// new domains.
     pub fn vote_add_domains(
@@ -143,7 +127,7 @@ impl RunningContractState {
         }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
-        if self.parameters.threshold().value() <= n_votes {
+        if self.parameters.participants().len() as u64 == n_votes {
             let new_domains = self.domains.add_domains(domains.clone())?;
             Ok(Some(InitializingContractState {
                 generated_keys: self.keyset.domains.clone(),
@@ -167,15 +151,14 @@ pub mod running_tests {
     use std::collections::BTreeSet;
 
     use super::RunningContractState;
-    use crate::primitives::domain::tests::gen_domain_registry;
-    use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
-    use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::{
-        bogus_ed25519_public_key_extended, gen_participant, gen_threshold_params,
+    use crate::primitives::{
+        domain::{tests::gen_domain_registry, AddDomainsVotes},
+        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        participants::{ParticipantId, Participants},
+        test_utils::{bogus_ed25519_public_key_extended, gen_participant, gen_threshold_params},
+        thresholds::{Threshold, ThresholdParameters},
+        votes::ThresholdParametersVotes,
     };
-    use crate::primitives::thresholds::{Threshold, ThresholdParameters};
-    use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
     use rand::Rng;
 
@@ -267,13 +250,20 @@ pub mod running_tests {
                 .vote_new_parameters(state.keyset.epoch_id.next().next(), &ksp)
                 .is_err());
         }
-        // Assert that disagreeing proposals do not reach concensus.
+        // Assert that disagreeing proposals do not reach consensus.
         // Generate an extra proposal for the next step.
         let mut proposals = Vec::new();
-        for _ in 0..participants.participants().len() + 1 {
+        for i in 0..participants.participants().len() + 1 {
             loop {
                 let proposal = gen_valid_params_proposal(&state.parameters);
                 if proposals.contains(&proposal) {
+                    continue;
+                }
+                if i < participants.participants().len()
+                    && !proposal
+                        .participants()
+                        .is_participant(&participants.participants()[i].0)
+                {
                     continue;
                 }
                 proposals.push(proposal.clone());
@@ -293,17 +283,34 @@ pub mod running_tests {
 
         let original_epoch_id = state.keyset.epoch_id;
         let mut resharing = None;
-        for (i, (account_id, _, _)) in participants
-            .participants()
-            .iter()
-            .enumerate()
-            .take(state.parameters.threshold().value() as usize)
-        {
+        // existing participants vote
+        let mut n_votes = 0;
+        for (account_id, _, _) in participants.participants().iter() {
+            if !proposal.participants().is_participant(account_id) {
+                continue;
+            }
+            n_votes += 1;
             env.set_signer(account_id);
             let res = state
                 .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
                 .unwrap();
-            if i + 1 < state.parameters.threshold().value() as usize || num_domains == 0 {
+            if n_votes < proposal.participants().len() || num_domains == 0 {
+                assert!(res.is_none());
+            } else {
+                resharing = Some(res.unwrap());
+            }
+        }
+        // candidates vote
+        for (account_id, _, _) in proposal.participants().participants().iter() {
+            if participants.is_participant(account_id) {
+                continue;
+            }
+            n_votes += 1;
+            env.set_signer(account_id);
+            let res = state
+                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+                .unwrap();
+            if n_votes < proposal.participants().len() || num_domains == 0 {
                 assert!(res.is_none());
             } else {
                 resharing = Some(res.unwrap());

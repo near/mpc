@@ -73,8 +73,8 @@ def test_lost_assets(num_requests, num_respond_access_keys):
                 offline = cluster.get_int_metric_value_for_node(
                     "mpc_owned_num_presignatures_with_offline_participant", i)
                 print(
-                    "node {} has owned presignatures available={} online={} with_offline_participant={}",
-                    (i, available, online, offline))
+                    f"node {i} has owned presignatures available={available} online={online} with_offline_participant={offline}"
+                )
                 if not (online == PRESIGNATURES_TO_BUFFER and offline == 0):
                     cleanup_done = False
             if cleanup_done:
@@ -95,7 +95,7 @@ def test_lost_assets(num_requests, num_respond_access_keys):
 
     presignatures_available = sum(
         cluster.get_int_metric_value('mpc_owned_num_presignatures_available'))
-    cluster.send_and_await_signature_requests(presignatures_available // 2)
+    cluster.send_and_await_signature_requests(presignatures_available // 4)
 
 
 if __name__ == '__main__':

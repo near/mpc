@@ -12,6 +12,7 @@ use sha3::Digest;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, Weak};
+use time::ext::InstantExt as _;
 
 /// The minimum time that must elapse before we'll consider each signature for another attempt.
 pub const CHECK_EACH_SIGNATURE_REQUEST_INTERVAL: Duration = Duration::seconds(1);
@@ -73,6 +74,7 @@ pub struct PendingSignatureRequests {
 struct BufferedBlockData {
     signature_requests: Vec<SignatureId>,
     completed_requests: Vec<SignatureId>,
+    timestamp_received: near_time::Instant,
 }
 
 fn ellipsified_shortened_hash_list(hashes: &[CryptoHash]) -> String {
@@ -148,6 +150,9 @@ pub(super) struct QueuedSignatureRequest {
     /// The current attempt to generate the signature. This is weak to detect if the attempt has
     /// completed.
     pub active_attempt: Weak<SignatureGenerationAttempt>,
+
+    /// The time that the signature was indexed.
+    pub time_indexed: near_time::Instant,
 }
 
 /// Struct given to the signature generation code.
@@ -179,6 +184,7 @@ impl QueuedSignatureRequest {
         block_hash: CryptoHash,
         block_height: u64,
         all_participants: &[ParticipantId],
+        time_indexed: near_time::Instant,
     ) -> Self {
         let leader_selection_order = Self::leader_selection_order(all_participants, request.id);
         tracing::debug!(target: "signing", "Leader selection order for request {:?} from block {}: {:?}", request.id, block_height, leader_selection_order);
@@ -191,6 +197,7 @@ impl QueuedSignatureRequest {
             computation_progress: Arc::new(Mutex::new(SignatureComputationProgress::default())),
             next_check_due: clock.now(),
             active_attempt: Weak::new(),
+            time_indexed,
         }
     }
 
@@ -265,6 +272,7 @@ impl PendingSignatureRequests {
             BufferedBlockData {
                 signature_requests: requests.iter().map(|r| r.id).collect(),
                 completed_requests,
+                timestamp_received: self.clock.now(),
             },
         ) {
             Ok(add_result) => add_result,
@@ -274,21 +282,36 @@ impl PendingSignatureRequests {
                 return;
             }
         };
+
         metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED.inc();
-        for (_, buffered_block_data) in add_result.new_final_blocks {
+        for (final_block_height, buffered_block_data) in add_result.new_final_blocks {
             metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED.inc();
             metrics::MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED
                 .inc_by(buffered_block_data.completed_requests.len() as u64);
+
             for request_id in &buffered_block_data.completed_requests {
                 tracing::debug!(target: "signing", "Removing completed request {:?}", request_id);
                 if let Some(request) = self.requests.remove(request_id) {
                     metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED.inc();
+
+                    let response_latency_blocks = final_block_height - request.block_height;
+                    let response_latency_duration = buffered_block_data
+                        .timestamp_received
+                        .signed_duration_since(request.time_indexed);
+                    metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS
+                        .observe(response_latency_blocks as f64);
+                    metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS
+                        .observe(response_latency_duration.as_seconds_f64());
+
                     self.recently_completed_requests.add_completed_request(
                         CompletedSignatureRequest {
                             indexed_block_height: request.block_height,
                             request: request.request,
                             progress: request.computation_progress,
-                            completed_block_height: Some(block.height),
+                            completion_delay: Some((
+                                response_latency_blocks,
+                                response_latency_duration,
+                            )),
                         },
                     );
                 }
@@ -304,6 +327,7 @@ impl PendingSignatureRequests {
                     block.hash,
                     block.height,
                     &self.all_participants,
+                    self.clock.now(),
                 ));
         }
     }
@@ -417,7 +441,7 @@ impl PendingSignatureRequests {
                         indexed_block_height: request.block_height,
                         request: request.request,
                         progress: request.computation_progress,
-                        completed_block_height: None,
+                        completion_delay: None,
                     });
             }
         }
@@ -817,5 +841,49 @@ mod tests {
         let to_attempt3 = pending_requests.get_signatures_to_attempt();
         assert_eq!(to_attempt3.len(), 1);
         assert_eq!(to_attempt3[0].request.id, req2.id);
+    }
+
+    #[test]
+    fn test_request_latency_debug() {
+        init_logging();
+        let clock = FakeClock::default();
+        let participants = TestGenerators::new_contiguous_participant_ids(4, 3).participant_ids();
+        let my_participant_id = participants[1];
+        let network_api = Arc::new(TestNetworkAPI::new(&participants));
+
+        let mut pending_requests = PendingSignatureRequests::new(
+            clock.clock(),
+            participants.clone(),
+            my_participant_id,
+            network_api.clone(),
+        );
+
+        for participant in &participants {
+            network_api.set_height(*participant, 100);
+        }
+
+        let t = TestBlockMaker::new();
+
+        clock.advance(near_time::Duration::seconds(1));
+        let req1 = test_sign_request(&participants, &[0]);
+        let b1 = t.block(100);
+        pending_requests.notify_new_block(vec![req1.clone()], vec![], &b1.to_block_view());
+        clock.advance(near_time::Duration::microseconds(2432123));
+        let b2 = b1.child(101);
+        pending_requests.notify_new_block(vec![], vec![req1.id], &b2.to_block_view());
+        clock.advance(near_time::Duration::seconds(1));
+        let b3 = b2.child(102);
+        pending_requests.notify_new_block(vec![], vec![], &b3.to_block_view());
+        clock.advance(near_time::Duration::seconds(1));
+        let b4 = b3.child(103);
+        pending_requests.notify_new_block(vec![], vec![], &b4.to_block_view());
+        clock.advance(near_time::Duration::seconds(1));
+
+        let debug = format!("{:?}", pending_requests);
+        assert!(
+            debug.contains("blk        100 ->        101 (+1, 2s432ms)"),
+            "{}",
+            debug
+        );
     }
 }
