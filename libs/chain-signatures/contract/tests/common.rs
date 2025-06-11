@@ -52,6 +52,7 @@ use std::{
 pub const CONTRACT_FILE_PATH: &str =
     "../../../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
+// pub const PROJECT_ROOT_DIRECTORY: &str =
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
     let mut participants: Participants = Participants::new();
@@ -122,9 +123,13 @@ pub fn current_contract() -> &'static Vec<u8> {
     CONTRACT.get_or_init(|| {
         let pkg_dir = Path::new(env!("CARGO_MANIFEST_DIR")); // this should point to
                                                              // libs/chain-signatures/contract
-        let project_dir = pkg_dir.join("../"); // pointing to libs/chain-signatures
+        let project_dir = pkg_dir.join("../../../"); // pointing to libs/chain-signatures
 
-        let wasm_path = project_dir.join("target/wasm32-unknown-unknown/release/mpc_contract.wasm");
+        let wasm_path =
+            project_dir.join("target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm");
+
+        println!("wasm path: {:?}", wasm_path);
+
         // get lock-file:
         let lock_path = project_dir.join(".contract.itest.build.lock");
         let mut lockfile = OpenOptions::new()
