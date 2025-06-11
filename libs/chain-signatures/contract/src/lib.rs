@@ -271,16 +271,12 @@ impl MpcContract {
             .cloned()
             .collect();
         let tee_verification = self.tee_state.tee_status(participant_ids);
-        if tee_verification
-            .values()
-            .any(|status| *status != TeeQuoteStatus::Valid && *status != TeeQuoteStatus::None)
-        {
-            // Note: TEE quote validity is not enforced here for now. We're just logging verification failures.
-            log!(
-                "vote_new_parameters: Invalid TEE quote status for some participants: {:?}",
-                tee_verification,
-            );
-        }
+        log!(
+            "vote_new_parameters: prospective_epoch_id={}, proposal={:?}, tee_verification={:?}",
+            prospective_epoch_id,
+            proposal,
+            tee_verification,
+        );
         if let Some(new_state) = self
             .protocol_state
             .vote_new_parameters(prospective_epoch_id, proposal)?
