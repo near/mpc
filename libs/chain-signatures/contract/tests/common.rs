@@ -183,16 +183,6 @@ pub fn current_contract() -> &'static Vec<u8> {
                 .expect("Failed to write timestamp to lockfile");
         }
 
-        let current_dir = std::env::current_dir().unwrap();
-        println!("Current working directory: {:?}", current_dir);
-
-        match std::fs::canonicalize(CONTRACT_FILE_PATH) {
-            Ok(full_path) => println!("Full path to CONTRACT_FILE_PATH: {:?}", full_path),
-            Err(e) => println!(
-                "Failed to resolve CONTRACT_FILE_PATH '{}': {}",
-                CONTRACT_FILE_PATH, e
-            ),
-        }
         std::fs::read(CONTRACT_FILE_PATH).unwrap()
     })
 }
