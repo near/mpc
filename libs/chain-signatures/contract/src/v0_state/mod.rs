@@ -18,11 +18,12 @@ use crate::primitives::{
     thresholds::ThresholdParameters,
 };
 use crate::state::{initializing::InitializingContractState, key_event::KeyEvent};
+use crate::storage_keys::StorageKey;
 use crate::update::UpdateId;
 use crate::{
     config::Config,
     primitives::signature::{SignatureRequest, YieldIndex},
-    MpcContract, TeeState,
+    MpcContract,
 };
 
 #[near(serializers=[borsh, json])]
@@ -102,11 +103,31 @@ pub struct MpcContractV0 {
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
+pub struct TeeState {
+    allowed_tee_proposals: crate::tee::proposal::AllowedDockerImageHashes,
+    historical_tee_proposals: Vec<crate::tee::proposal::DockerImageHash>,
+    votes: crate::tee::proposal::CodeHashesVotes,
+}
+
+impl From<TeeState> for crate::TeeState {
+    fn from(value: TeeState) -> Self {
+        Self {
+            allowed_tee_proposals: value.allowed_tee_proposals,
+            historical_tee_proposals: value.historical_tee_proposals,
+            votes: value.votes,
+            tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
+        }
+    }
+}
+
+#[near(serializers=[borsh])]
+#[derive(Debug)]
 pub struct MpcContractV1 {
     protocol_state: crate::state::ProtocolContractState,
     pending_requests: LookupMap<SignatureRequest, YieldIndex>,
     proposed_updates: crate::update::ProposedUpdates,
     config: Config,
+    tee_state: TeeState,
 }
 
 impl From<RunningContractState> for crate::RunningContractState {
@@ -139,7 +160,7 @@ impl From<MpcContractV0> for MpcContract {
             pending_requests: value.pending_requests,
             proposed_updates: crate::ProposedUpdates::default(),
             config: value.config,
-            tee_state: TeeState::default(),
+            tee_state: crate::TeeState::default(),
         }
     }
 }
@@ -151,7 +172,7 @@ impl From<MpcContractV1> for MpcContract {
             pending_requests: value.pending_requests,
             proposed_updates: value.proposed_updates,
             config: value.config,
-            tee_state: TeeState::default(),
+            tee_state: crate::TeeState::default(),
         }
     }
 }

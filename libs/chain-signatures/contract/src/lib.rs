@@ -67,9 +67,9 @@ const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
 pub enum VersionedMpcContract {
-    /// Previous breaking changes version. We call `migration()` on it to transit into v1
+    /// This is no longer deployed
     V0(MpcContractV0),
-    /// Pre-TEE version
+    /// Currently on mainnet and testnet
     V1(MpcContractV1),
     /// Current actual version
     V2(MpcContract),
