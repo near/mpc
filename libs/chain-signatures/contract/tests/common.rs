@@ -153,7 +153,12 @@ pub fn current_contract() -> &'static Vec<u8> {
 
         if do_build {
             let status = Command::new("cargo")
-                .args(["build", "--release", "--target=wasm32-unknown-unknown"])
+                .args([
+                    "build",
+                    "--package=mpc-contract",
+                    "--profile=release-contract",
+                    "--target=wasm32-unknown-unknown",
+                ])
                 .current_dir(&project_dir)
                 .status()
                 .expect("Failed to run cargo build");
@@ -176,6 +181,17 @@ pub fn current_contract() -> &'static Vec<u8> {
             lockfile
                 .write_all(serde_json::to_string(&BuildLock::new()).unwrap().as_bytes())
                 .expect("Failed to write timestamp to lockfile");
+        }
+
+        let current_dir = std::env::current_dir().unwrap();
+        println!("Current working directory: {:?}", current_dir);
+
+        match std::fs::canonicalize(CONTRACT_FILE_PATH) {
+            Ok(full_path) => println!("Full path to CONTRACT_FILE_PATH: {:?}", full_path),
+            Err(e) => println!(
+                "Failed to resolve CONTRACT_FILE_PATH '{}': {}",
+                CONTRACT_FILE_PATH, e
+            ),
         }
         std::fs::read(CONTRACT_FILE_PATH).unwrap()
     })
