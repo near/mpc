@@ -530,7 +530,7 @@ impl MpcVoteAddDomainsCmd {
 
         // Query the contract state and use the next_domain_id to construct the domain IDs we should
         // use for the proposal.
-        let contract_state = read_contract_state_v2(&config.rpc, &contract).await;
+        let contract_state = read_contract_state(&config.rpc, &contract).await;
         let domains = match contract_state {
             ProtocolContractState::Running(running_contract_state) => {
                 running_contract_state.domains
@@ -611,7 +611,7 @@ impl MpcVoteNewParametersCmd {
         // Query the contract state so we can incrementally construct the new parameters. This is
         // because the existing participants must have the same participant IDs, and the new
         // participants must have contiguous participant IDs.
-        let contract_state = read_contract_state_v2(&config.rpc, &contract).await;
+        let contract_state = read_contract_state(&config.rpc, &contract).await;
         let prospective_epoch_id = match &contract_state {
             ProtocolContractState::Running(state) => state.keyset.epoch_id.next(),
             ProtocolContractState::Resharing(state) => state.prospective_epoch_id().next(),
@@ -703,7 +703,7 @@ impl MpcVoteNewParametersCmd {
 }
 
 /// Read the contract state from the contract and deserialize it into the V2 state format.
-pub async fn read_contract_state_v2(
+pub async fn read_contract_state(
     rpc: &Arc<NearRpcClients>,
     contract: &AccountId,
 ) -> ProtocolContractState {
@@ -745,7 +745,7 @@ impl MpcDescribeCmd {
             .expect(&format!("MPC network {} does not exist", name));
         if let Some(contract) = &mpc_setup.contract {
             println!("MPC contract deployed at: {}", contract);
-            let contract_state = read_contract_state_v2(&config.rpc, contract).await;
+            let contract_state = read_contract_state(&config.rpc, contract).await;
             print!("{}", protocol_state_to_string(&contract_state));
         } else {
             println!("MPC contract is not deployed");

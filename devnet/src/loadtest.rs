@@ -8,7 +8,7 @@ use crate::constants::{DEFAULT_PARALLEL_SIGN_CONTRACT_PATH, ONE_NEAR};
 use crate::contracts::{make_actions, ContractActionCall, ParallelSignCallArgs};
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
-use crate::mpc::read_contract_state_v2;
+use crate::mpc::read_contract_state;
 use crate::types::{LoadtestSetup, NearAccount, ParsedConfig};
 use anyhow::anyhow;
 use futures::future::BoxFuture;
@@ -278,7 +278,7 @@ impl RunLoadtestCmd {
             let contract = loadtest_setup.parallel_signatures_contract.clone().expect(
                 "Signatures per contract call specified, but no parallel signatures contract is deployed",
             );
-            let contract_state = read_contract_state_v2(&config.rpc, &mpc_account).await;
+            let contract_state = read_contract_state(&config.rpc, &mpc_account).await;
             let calls_by_domain: Vec<(DomainConfig, u64)> = self
                 .parallel_sign_calls_per_domain
                 .as_ref()
@@ -299,7 +299,7 @@ impl RunLoadtestCmd {
             };
             crate::contracts::ContractActionCall::ParallelSignCall(args)
         } else if let Some(domain_id) = self.domain_id {
-            let contract_state = read_contract_state_v2(&config.rpc, &mpc_account).await;
+            let contract_state = read_contract_state(&config.rpc, &mpc_account).await;
             ContractActionCall::Sign(crate::contracts::SignActionCallArgs {
                 mpc_contract: mpc_account,
                 domain_config: get_domain_config(&contract_state, domain_id)
@@ -335,6 +335,11 @@ impl RunLoadtestCmd {
         let (tx_sender, mut receiver): (Sender<TxRpcResponse>, Receiver<TxRpcResponse>) =
             tokio::sync::mpsc::channel(100);
         let rpc_clone = config.rpc.clone();
+        let parallel = if parallel_sign_calls > 0 {
+            "parallel "
+        } else {
+            ""
+        };
         let res_handle = tokio::spawn(async move {
             let mut n_rpc_requests = 0;
             let mut n_rpc_errors = 0;
@@ -352,14 +357,14 @@ impl RunLoadtestCmd {
                     }
                 }
                 print!(
-                    "\rSubmitted {} signature requests. Received {} RPC errors",
-                    n_rpc_requests, n_rpc_errors
+                    "\rSubmitted {} {}signature requests. Received {} RPC errors",
+                    n_rpc_requests, parallel, n_rpc_errors
                 );
                 let _ = stdout().flush();
             }
             println!(
-                "\rSubmitted {} signature requests. Received {} RPC errors",
-                n_rpc_requests, n_rpc_errors
+                "\rSubmitted {} {}signature requests. Received {} RPC errors",
+                n_rpc_requests, parallel, n_rpc_errors
             );
             if !rpc_errs.is_empty() {
                 println!("Rpc errors:");
@@ -374,8 +379,9 @@ impl RunLoadtestCmd {
             let mut failures = vec![];
             for tx in &txs {
                 print!(
-                    "\rFound {} signature responses and {} failures. Encountered {} rpc errors.",
+                    "\rFound {} {}signature responses and {} failures. Encountered {} rpc errors.",
                     succeeded,
+                    parallel,
                     failures.len(),
                     rpc_errs.len(),
                 );
@@ -406,9 +412,10 @@ impl RunLoadtestCmd {
                     }
                 }
             }
-            print!(
-                "\rFound {} signature responses and {} failures. Encountered {} rpc errors.",
+            println!(
+                "\rFound {} {}signature responses and {} failures. Encountered {} rpc errors.",
                 succeeded,
+                parallel,
                 failures.len(),
                 rpc_errs.len(),
             );
