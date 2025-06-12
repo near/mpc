@@ -108,12 +108,12 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
 }
 
 #[derive(Serialize)]
-pub struct SignArgsV1 {
+struct SignArgsV1 {
     pub request: legacy_mpc_contract::primitives::SignRequest,
 }
 
 #[derive(Serialize)]
-pub struct SignArgsV2 {
+struct SignArgsV2 {
     pub request: SignRequestArgs,
 }
 
@@ -125,7 +125,7 @@ struct ParallelSignArgsV2 {
     seed: u64,
 }
 
-pub fn make_payload(scheme: SignatureScheme) -> Payload {
+fn make_payload(scheme: SignatureScheme) -> Payload {
     match scheme {
         SignatureScheme::Secp256k1 => {
             Payload::Ecdsa(Bytes::new(rand::random::<[u8; 32]>().to_vec()).unwrap())
@@ -139,7 +139,7 @@ pub fn make_payload(scheme: SignatureScheme) -> Payload {
     }
 }
 
-pub fn make_action(method: &str, args: &[u8], tgas: u64, deposit: u128) -> Action {
+fn make_action(method: &str, args: &[u8], tgas: u64, deposit: u128) -> Action {
     Action::FunctionCall(Box::new(near_primitives::action::FunctionCallAction {
         method_name: method.to_string(),
         args: args.to_vec(),
