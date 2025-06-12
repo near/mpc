@@ -640,7 +640,10 @@ impl VersionedMpcContract {
 
         // Verify the TEE quote before adding the proposed participant to the contract state
 
-        let quote_collateral = get_collateral(proposed_tee_participant.quote_collateral.clone());
+        let quote_collateral = get_collateral(proposed_tee_participant.quote_collateral.clone())
+            .map_err(|err: anyhow::Error| {
+                InvalidParameters::InvalidTeeRemoteAttestation.message(err.to_string())
+            })?;
         let _verification_result = verify::verify(
             &proposed_tee_participant.tee_quote,
             &quote_collateral,
