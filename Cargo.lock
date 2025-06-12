@@ -4933,6 +4933,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "mpc-devnet"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "clap",
+ "flume",
+ "futures",
+ "hex",
+ "mpc-contract 1.0.1",
+ "mpc-contract 2.2.0-rc.1",
+ "near-crypto 0.28.0",
+ "near-jsonrpc-client",
+ "near-jsonrpc-primitives 0.28.0",
+ "near-primitives 0.28.0",
+ "near-sdk",
+ "rand 0.9.0",
+ "reqwest 0.12.15",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+]
+
+[[package]]
 name = "mpc-node"
 version = "2.2.0-rc.1"
 dependencies = [
@@ -5109,7 +5134,7 @@ dependencies = [
  "more-asserts",
  "near-async",
  "near-cache",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-chain-primitives",
  "near-client-primitives",
  "near-crypto 2.6.0-rc.1",
@@ -5142,6 +5167,30 @@ dependencies = [
 
 [[package]]
 name = "near-chain-configs"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c1f312b5e1cdb6d6eb8a753de5798fe70fc2aa048b37d9a08a8d63f5623707d"
+dependencies = [
+ "anyhow",
+ "bytesize",
+ "chrono",
+ "derive_more 0.99.19",
+ "near-config-utils 0.28.0",
+ "near-crypto 0.28.0",
+ "near-parameters 0.28.0",
+ "near-primitives 0.28.0",
+ "near-time 0.28.0",
+ "num-rational",
+ "serde",
+ "serde_json",
+ "sha2",
+ "smart-default 0.6.0",
+ "time",
+ "tracing",
+]
+
+[[package]]
+name = "near-chain-configs"
 version = "2.6.0-rc.1"
 source = "git+https://github.com/near/nearcore?tag=2.6.0-rc.1#26e86307153334be3fd48bc7772563c1d8f6d478"
 dependencies = [
@@ -5159,7 +5208,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "smart-default",
+ "smart-default 0.7.1",
  "time",
  "tracing",
 ]
@@ -5191,7 +5240,7 @@ dependencies = [
  "lru 0.12.5",
  "near-async",
  "near-chain",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-chunks-primitives",
  "near-crypto 2.6.0-rc.1",
  "near-epoch-manager",
@@ -5238,7 +5287,7 @@ dependencies = [
  "near-async",
  "near-cache",
  "near-chain",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-chain-primitives",
  "near-chunks",
  "near-client-primitives",
@@ -5285,7 +5334,7 @@ source = "git+https://github.com/near/nearcore?tag=2.6.0-rc.1#26e86307153334be3f
 dependencies = [
  "actix",
  "chrono",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-chain-primitives",
  "near-chunks-primitives",
  "near-crypto 2.6.0-rc.1",
@@ -5378,7 +5427,7 @@ version = "2.6.0-rc.1"
 source = "git+https://github.com/near/nearcore?tag=2.6.0-rc.1#26e86307153334be3fd48bc7772563c1d8f6d478"
 dependencies = [
  "anyhow",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-crypto 2.6.0-rc.1",
  "near-o11y",
  "near-primitives 2.6.0-rc.1",
@@ -5399,7 +5448,7 @@ dependencies = [
  "borsh",
  "itertools 0.12.1",
  "near-cache",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-chain-primitives",
  "near-crypto 2.6.0-rc.1",
  "near-o11y",
@@ -5413,7 +5462,7 @@ dependencies = [
  "rand_hc",
  "serde",
  "serde_json",
- "smart-default",
+ "smart-default 0.7.1",
  "tracing",
 ]
 
@@ -5463,7 +5512,7 @@ dependencies = [
  "actix",
  "anyhow",
  "futures",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-client",
  "near-config-utils 2.6.0-rc.1",
  "near-crypto 2.6.0-rc.1",
@@ -5507,11 +5556,11 @@ dependencies = [
  "futures",
  "hex",
  "near-async",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-client",
  "near-client-primitives",
  "near-jsonrpc-client-internal",
- "near-jsonrpc-primitives",
+ "near-jsonrpc-primitives 2.6.0-rc.1",
  "near-network",
  "near-o11y",
  "near-primitives 2.6.0-rc.1",
@@ -5524,6 +5573,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-jsonrpc-client"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e66a0c4c47f2fbbfa11ea8317fce2288d70d4aa8231e77fd213721ffcc1c334f"
+dependencies = [
+ "borsh",
+ "lazy_static",
+ "log",
+ "near-chain-configs 0.28.0",
+ "near-crypto 0.28.0",
+ "near-jsonrpc-primitives 0.28.0",
+ "near-primitives 0.28.0",
+ "reqwest 0.12.15",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+]
+
+[[package]]
 name = "near-jsonrpc-client-internal"
 version = "2.6.0-rc.1"
 source = "git+https://github.com/near/nearcore?tag=2.6.0-rc.1#26e86307153334be3fd48bc7772563c1d8f6d478"
@@ -5531,10 +5599,27 @@ dependencies = [
  "actix-http",
  "awc",
  "futures",
- "near-jsonrpc-primitives",
+ "near-jsonrpc-primitives 2.6.0-rc.1",
  "near-primitives 2.6.0-rc.1",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "near-jsonrpc-primitives"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90f445f809d1f227f0f61f38c14271635c0bc9a28a8f74a803a4fb25292d5ea7"
+dependencies = [
+ "arbitrary",
+ "near-chain-configs 0.28.0",
+ "near-crypto 0.28.0",
+ "near-primitives 0.28.0",
+ "near-schema-checker-lib 0.28.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "time",
 ]
 
 [[package]]
@@ -5543,7 +5628,7 @@ version = "2.6.0-rc.1"
 source = "git+https://github.com/near/nearcore?tag=2.6.0-rc.1#26e86307153334be3fd48bc7772563c1d8f6d478"
 dependencies = [
  "arbitrary",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-client-primitives",
  "near-crypto 2.6.0-rc.1",
  "near-primitives 2.6.0-rc.1",
@@ -5560,7 +5645,7 @@ version = "2.6.0-rc.1"
 source = "git+https://github.com/near/nearcore?tag=2.6.0-rc.1#26e86307153334be3fd48bc7772563c1d8f6d478"
 dependencies = [
  "near-account-id",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-primitives 2.6.0-rc.1",
  "serde_json",
 ]
@@ -5587,7 +5672,7 @@ dependencies = [
  "itertools 0.12.1",
  "lru 0.12.5",
  "near-async",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-crypto 2.6.0-rc.1",
  "near-fmt 2.6.0-rc.1",
  "near-o11y",
@@ -5606,7 +5691,7 @@ dependencies = [
  "reed-solomon-erasure",
  "serde",
  "sha2",
- "smart-default",
+ "smart-default 0.7.1",
  "strum 0.24.1",
  "stun",
  "thiserror 2.0.12",
@@ -5748,7 +5833,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha3",
- "smart-default",
+ "smart-default 0.7.1",
  "strum 0.24.1",
  "thiserror 2.0.12",
  "tracing",
@@ -5790,7 +5875,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha3",
- "smart-default",
+ "smart-default 0.7.1",
  "strum 0.24.1",
  "thiserror 2.0.12",
  "tracing",
@@ -5853,7 +5938,7 @@ dependencies = [
  "hex",
  "insta",
  "near-account-id",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-client",
  "near-client-primitives",
  "near-crypto 2.6.0-rc.1",
@@ -5982,7 +6067,7 @@ dependencies = [
  "itertools 0.12.1",
  "itoa",
  "lru 0.12.5",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-chain-primitives",
  "near-crypto 2.6.0-rc.1",
  "near-fmt 2.6.0-rc.1",
@@ -6280,7 +6365,7 @@ dependencies = [
  "itertools 0.12.1",
  "near-async",
  "near-chain",
- "near-chain-configs",
+ "near-chain-configs 2.6.0-rc.1",
  "near-chunks",
  "near-client",
  "near-client-primitives",
@@ -6289,7 +6374,7 @@ dependencies = [
  "near-dyn-configs",
  "near-epoch-manager",
  "near-jsonrpc",
- "near-jsonrpc-primitives",
+ "near-jsonrpc-primitives 2.6.0-rc.1",
  "near-mainnet-res",
  "near-network",
  "near-o11y",
@@ -6312,7 +6397,7 @@ dependencies = [
  "serde",
  "serde_ignored",
  "serde_json",
- "smart-default",
+ "smart-default 0.7.1",
  "strum 0.24.1",
  "tempfile",
  "thiserror 2.0.12",
@@ -8947,6 +9032,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "smart-default"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "133659a15339456eeeb07572eb02a91c91e9815e9cbc89566944d2c8d3efdbf6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
