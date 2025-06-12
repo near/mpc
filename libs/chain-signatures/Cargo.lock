@@ -2308,7 +2308,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-contract"
-version = "2.1.2-rc.1"
+version = "2.2.0-rc.1"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
