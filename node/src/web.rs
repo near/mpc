@@ -1,16 +1,21 @@
-use crate::config::WebUIConfig;
-use crate::indexer::participants::ContractState;
-use crate::tracking::TaskHandle;
-use axum::body::Body;
-use axum::extract::State;
-use axum::http::{Response, StatusCode};
-use axum::response::{Html, IntoResponse};
-use axum::serve;
+use std::sync::Arc;
+
+use axum::{
+    body::Body,
+    extract::State,
+    http::{Response, StatusCode},
+    response::{Html, IntoResponse},
+    routing::get,
+    serve,
+};
 use futures::future::BoxFuture;
 use prometheus::{default_registry, Encoder, TextEncoder};
-use std::sync::Arc;
-use tokio::net::TcpListener;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::{
+    net::TcpListener,
+    sync::{broadcast, mpsc, watch},
+};
+
+use crate::{config::WebUIConfig, indexer::participants::ContractState, tracking::TaskHandle};
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -98,7 +103,8 @@ async fn debug_signatures(state: State<WebServerState>) -> Result<String, Anyhow
 }
 
 async fn contract_state(state: State<WebServerState>) -> String {
-    format!("{:#?}", state.contract_state_receiver.borrow())
+    let contract_state: &ContractState = &state.contract_state_receiver.borrow();
+    format!("{:#?}", contract_state)
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
@@ -120,13 +126,13 @@ pub async fn start_web_server(
     use futures::FutureExt;
 
     let router = axum::Router::new()
-        .route("/metrics", axum::routing::get(metrics))
-        .route("/debug/tasks", axum::routing::get(debug_tasks))
-        .route("/debug/blocks", axum::routing::get(debug_blocks))
-        .route("/debug/signatures", axum::routing::get(debug_signatures))
-        .route("/debug/contract", axum::routing::get(contract_state))
-        .route("/licenses", axum::routing::get(third_party_licenses))
-        .route("/health", axum::routing::get(|| async { "OK" }))
+        .route("/metrics", get(metrics))
+        .route("/debug/tasks", get(debug_tasks))
+        .route("/debug/blocks", get(debug_blocks))
+        .route("/debug/signatures", get(debug_signatures))
+        .route("/debug/contract", get(contract_state))
+        .route("/licenses", get(third_party_licenses))
+        .route("/health", get(|| async { "OK" }))
         .with_state(WebServerState {
             root_task_handle,
             signature_debug_request_sender,
