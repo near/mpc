@@ -426,7 +426,7 @@ impl RunLoadtestCmd {
                     eprintln!("{}", e);
                 }
             }
-            println!("Success Rate: {}", (succeeded * 100) / txs.len());
+            println!("Success Rate: {}%", (succeeded * 100) / txs.len());
         });
         let cancel: tokio_util::sync::CancellationToken =
             tokio_util::sync::CancellationToken::new();

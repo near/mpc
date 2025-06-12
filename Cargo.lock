@@ -4891,7 +4891,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-devnet"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "borsh",
@@ -4912,6 +4912,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -9654,9 +9655,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.14"
+version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b9590b93e6fcc1739458317cccd391ad3955e2bde8913edf6f95f9e65a8f034"
+checksum = "66a539a9ad6d5d281510d5bd368c973d636c02dbf8a67300bfb6b950696ad7df"
 dependencies = [
  "bytes",
  "futures-core",
