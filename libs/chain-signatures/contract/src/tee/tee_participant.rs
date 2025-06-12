@@ -51,10 +51,11 @@ impl fmt::Debug for TeeParticipantInfo {
 }
 
 impl TeeParticipantInfo {
-    pub fn verify_quote(&self, timestamp: u64) -> Result<VerifiedReport, Error> {
+    /// Verifies the TEE quote against the provided collateral.
+    pub fn verify_quote(&self, timestamp_s: u64) -> Result<VerifiedReport, Error> {
         let tee_collateral = get_collateral(self.quote_collateral.clone())
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
-        let verification_result = verify::verify(&self.tee_quote, &tee_collateral, timestamp);
+        let verification_result = verify::verify(&self.tee_quote, &tee_collateral, timestamp_s);
         verification_result.map_err(|_| InvalidCandidateSet::InvalidParticipantsTeeQuote.into())
     }
 
