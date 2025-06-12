@@ -31,8 +31,8 @@ k256 = { version = "0.13.4", features = [
     "arithmetic",
     "expose-field",
 ] }
-// Latest commit when added.
-// TODO(#451): Verify changes with upstream and integrate in our workspace.
+# TODO(#451): Verify changes with upstream and integrate in our workspace.
+# The commit under 'rev' is the latest commit at the time it was added.
 dcap-qvl = { git = "https://github.com/mattlockyer/dcap-qvl", rev = "3caedd8fd0f365841abaf1430ff2922fcb09d9db" }
 
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
