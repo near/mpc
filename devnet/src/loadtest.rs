@@ -340,6 +340,9 @@ impl RunLoadtestCmd {
         } else {
             ""
         };
+        // if we have an unlimited duration, no need to store any data, as we need to cancel the
+        // program.
+        let store_data = self.duration.is_some();
         let res_handle = tokio::spawn(async move {
             let mut n_rpc_requests = 0;
             let mut n_rpc_errors = 0;
@@ -350,10 +353,14 @@ impl RunLoadtestCmd {
                 match x.rpc_response {
                     Err(e) => {
                         n_rpc_errors += 1;
-                        rpc_errs.push(e.to_string());
+                        if store_data {
+                            rpc_errs.push(e.to_string());
+                        }
                     }
                     Ok(_) => {
-                        txs.push(x.signed_tx);
+                        if store_data {
+                            txs.push(x.signed_tx);
+                        }
                     }
                 }
                 print!(
@@ -366,6 +373,7 @@ impl RunLoadtestCmd {
                 "\rSubmitted {} {}signature requests. Received {} RPC errors",
                 n_rpc_requests, parallel, n_rpc_errors
             );
+            // note: we will never enter here if loadtest runs indefinetly.
             if !rpc_errs.is_empty() {
                 println!("Rpc errors:");
                 for e in &rpc_errs {
@@ -486,7 +494,7 @@ async fn send_load(
                 _ = cancel.cancelled() => break,
                 _ = interval.tick() => {
                     if permits_sender.send_async(()).await.is_err() {
-                        // add an error message
+                        eprintln!("sender closed unexpectedly");
                         break;
                     }
                 }
