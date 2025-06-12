@@ -19,6 +19,7 @@ use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::views::{FinalExecutionStatus, TxExecutionStatus};
 use std::f64;
+use std::io::{stdout, Write};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -226,18 +227,31 @@ impl RunLoadtestCmd {
             .loadtest_setups
             .get(name)
             .expect(&format!("Loadtest setup with name {} does not exist", name));
-        let mpc_setup = setup.mpc_setups.get(&self.mpc_network).expect(&format!(
-            "MPC network with name {} does not exist",
-            self.mpc_network
-        ));
-        let mpc_account = mpc_setup
-            .contract
-            .clone()
-            .expect("MPC network does not have a contract");
-        println!(
-            "Going to run loadtest setup {} against MPC network {} (contract {}) at {} QPS",
-            name, self.mpc_network, mpc_account, self.qps
-        );
+        let mpc_account = match (&self.mpc_contract, &self.mpc_network) {
+            (Some(contract), None) => {
+                println!(
+                    "Going to run loadtest setup {} against MPC contract {} at {} QPS",
+                    name, contract, self.qps
+                );
+                contract.clone()
+            }
+            (None, Some(network)) => {
+                let mpc_setup = setup
+                    .mpc_setups
+                    .get(network)
+                    .expect(&format!("MPC network with name {} does not exist", network));
+                let mpc_account = mpc_setup
+                    .contract
+                    .clone()
+                    .expect("MPC network does not have a contract");
+                println!(
+                    "Going to run loadtest setup {} against MPC network {} (contract {}) at {} QPS",
+                    name, network, mpc_account, self.qps
+                );
+                mpc_account.clone()
+            }
+            _ => panic!("Require either the mpc contract account id or the mpc network name"),
+        };
 
         let mut keys = Vec::new();
         for account_id in &loadtest_setup.load_senders {
@@ -264,7 +278,7 @@ impl RunLoadtestCmd {
             let contract = loadtest_setup.parallel_signatures_contract.clone().expect(
                 "Signatures per contract call specified, but no parallel signatures contract is deployed",
             );
-            let contract_state = read_contract_state_v2(&setup.accounts, &mpc_account).await;
+            let contract_state = read_contract_state_v2(&config.rpc, &mpc_account).await;
             let calls_by_domain: Vec<(DomainConfig, u64)> = self
                 .parallel_sign_calls_per_domain
                 .as_ref()
@@ -285,7 +299,7 @@ impl RunLoadtestCmd {
             };
             crate::contracts::ContractActionCall::ParallelSignCall(args)
         } else if let Some(domain_id) = self.domain_id {
-            let contract_state = read_contract_state_v2(&setup.accounts, &mpc_account).await;
+            let contract_state = read_contract_state_v2(&config.rpc, &mpc_account).await;
             ContractActionCall::Sign(crate::contracts::SignActionCallArgs {
                 mpc_contract: mpc_account,
                 domain_config: get_domain_config(&contract_state, domain_id)
@@ -325,61 +339,87 @@ impl RunLoadtestCmd {
             let mut n_rpc_requests = 0;
             let mut n_rpc_errors = 0;
             let mut txs: Vec<SignedTransaction> = Vec::new();
+            let mut rpc_errs: Vec<String> = Vec::new();
             while let Some(x) = receiver.recv().await {
                 n_rpc_requests += 1;
                 match x.rpc_response {
                     Err(e) => {
                         n_rpc_errors += 1;
-                        eprintln!("Error sending rpc request: {:?}", e);
+                        rpc_errs.push(e.to_string());
                     }
                     Ok(_) => {
                         txs.push(x.signed_tx);
                     }
                 }
+                print!(
+                    "\rSubmitted {} signature requests. Received {} RPC errors",
+                    n_rpc_requests, n_rpc_errors
+                );
+                let _ = stdout().flush();
             }
             println!(
-                "{}% RPC requests succeeded. Received {} errors out of / {} requests.",
-                ((n_rpc_requests - n_rpc_errors) * 100) / n_rpc_requests,
-                n_rpc_errors,
-                n_rpc_requests
+                "\rSubmitted {} signature requests. Received {} RPC errors",
+                n_rpc_requests, n_rpc_errors
             );
+            if !rpc_errs.is_empty() {
+                println!("Rpc errors:");
+                for e in &rpc_errs {
+                    eprintln!("{}", e);
+                }
+            }
+            rpc_errs.clear();
 
             println!("Collecting Signature Responses");
-            let n_txs = txs.len();
-            let mut failed = 0;
+            let mut succeeded = 0;
+            let mut failures = vec![];
             for tx in &txs {
-                let request = methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest {
+                print!(
+                    "\rFound {} signature responses and {} failures. Encountered {} rpc errors.",
+                    succeeded,
+                    failures.len(),
+                    rpc_errs.len(),
+                );
+                for _ in 0..10 {
+                    let waiting_time = 1000 / (config.rpc.total_qps() as u64);
+                    tokio::time::sleep(Duration::from_millis(waiting_time)).await;
+                    let request = methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest {
                     transaction_info:
-                        methods::EXPERIMENTAL_tx_status::TransactionInfo::Transaction(near_jsonrpc_primitives::types::transactions::SignedTransaction::SignedTransaction(tx.clone())) ,
+                        methods::EXPERIMENTAL_tx_status::TransactionInfo::Transaction(near_jsonrpc_primitives::types::transactions::SignedTransaction::SignedTransaction(tx.clone())),
                     wait_until: TxExecutionStatus::Final,
-                };
-
-                match rpc_clone.submit(request).await {
-                    Ok(res) => {
-                        let Some(res) = res.final_execution_outcome else {
-                            failed += 1;
-                            continue;
-                        };
-                        let res_status = res.into_outcome().status;
-                        let FinalExecutionStatus::SuccessValue(_sig) = res_status else {
-                            println!("Signature {:?}\n failed with:\n{:?}", tx, res_status);
-                            failed += 1;
-                            continue;
-                        };
-                        let waiting_time = 1000 / config.rpc.total_qps();
-                        tokio::time::sleep(Duration::from_millis(waiting_time as u64)).await;
+                    };
+                    match rpc_clone.submit(request).await {
+                        Ok(res) => {
+                            let res = res
+                                .final_execution_outcome
+                                .expect("Expected a final execution outcome or an RPC error.");
+                            let res_status = res.into_outcome().status;
+                            if let FinalExecutionStatus::SuccessValue(_sig) = res_status {
+                                succeeded += 1;
+                            } else {
+                                failures.push(res_status);
+                            };
+                            break;
+                        }
+                        Err(e) => {
+                            rpc_errs.push(e.to_string());
+                        }
                     }
-                    Err(e) => {
-                        eprintln!("error: {:?}", e);
-                    }
-                };
+                }
             }
-            println!(
-                "{} / {} signatures failed. Success Rate: {}",
-                failed,
-                n_txs,
-                ((n_txs - failed) * 100) / n_txs
+            print!(
+                "\rFound {} signature responses and {} failures. Encountered {} rpc errors.",
+                succeeded,
+                failures.len(),
+                rpc_errs.len(),
             );
+
+            if !rpc_errs.is_empty() {
+                println!("Rpc errors:");
+                for e in &rpc_errs {
+                    eprintln!("{}", e);
+                }
+            }
+            println!("Success Rate: {}", (succeeded * 100) / txs.len());
         });
         let cancel: tokio_util::sync::CancellationToken =
             tokio_util::sync::CancellationToken::new();
@@ -433,7 +473,7 @@ async fn send_load(
     }
     join_set.spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs_f64(1.0 / qps));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => break,

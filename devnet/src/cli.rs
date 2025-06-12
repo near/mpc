@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use near_sdk::AccountId;
+
 use crate::types::load_config;
 
 #[derive(clap::Parser)]
@@ -345,8 +347,12 @@ pub struct DeployParallelSignContractCmd {
 #[derive(clap::Parser)]
 pub struct RunLoadtestCmd {
     /// The name of the MPC network to run the loadtest against.
+    /// Set either this OR the mpc_contract variable.
     #[clap(long)]
-    pub mpc_network: String,
+    pub mpc_network: Option<String>,
+    /// The address of the MPC contract to query.
+    #[clap(long)]
+    pub mpc_contract: Option<AccountId>,
     /// The QPS to send. The loadtest framework will try to send this many
     /// signature requests per second.
     #[clap(long)]
