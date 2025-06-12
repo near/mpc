@@ -264,19 +264,6 @@ impl MpcContract {
         prospective_epoch_id: EpochId,
         proposal: &ThresholdParameters,
     ) -> Result<(), Error> {
-        let participant_ids = self
-            .tee_state
-            .tee_participant_info
-            .keys()
-            .cloned()
-            .collect();
-        let tee_verification = self.tee_state.tee_status(participant_ids);
-        log!(
-            "vote_new_parameters: prospective_epoch_id={}, proposal={:?}, tee_verification={:?}",
-            prospective_epoch_id,
-            proposal,
-            tee_verification,
-        );
         if let Some(new_state) = self
             .protocol_state
             .vote_new_parameters(prospective_epoch_id, proposal)?
