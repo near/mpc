@@ -101,6 +101,7 @@ impl Default for TeeState {
 }
 
 impl TeeState {
+    /// maps every element in `participants` to its `TeeQuoteStatus`. If an element of `participants` does not have any TEE information associated to it, then it is mapped to `TeeQuoteStatus::None`.
     pub fn tee_status(&self, participants: Vec<AccountId>) -> BTreeMap<AccountId, TeeQuoteStatus> {
         let now_sec = env::block_timestamp_ms() / 1_000;
         participants
