@@ -62,6 +62,10 @@ all the account keys and network setups it has created. This is
 persistent state, which is what allows the CLI to be easy to use across
 invocations.
 
+> **NOTE**
+> The CLI currently has to be used from the `devnet` directory.
+> This is because it uses relative paths to find configuration files.
+
 You may create multiple MPC networks, multiple Loadtest Setups, and
 update each of them with bigger parameters. The CLI will automatically
 fund any necessary accounts using as many Testnet faucets as needed.
