@@ -49,7 +49,6 @@ use tee::{
     quote::{get_collateral, verify_codehash},
     tee_participant::TeeParticipantInfo,
 };
-use v0_state::MpcContractV0;
 
 // Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
@@ -68,7 +67,7 @@ const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
 pub enum VersionedMpcContract {
     /// This is no longer deployed
-    V0(MpcContractV0),
+    V0,
     /// Currently on mainnet and testnet
     V1(MpcContractV1),
     /// Current actual version
@@ -1023,9 +1022,9 @@ impl VersionedMpcContract {
         log!("migrating contract");
         if let Some(contract) = env::state_read::<VersionedMpcContract>() {
             return match contract {
-                VersionedMpcContract::V0(x) => Ok(VersionedMpcContract::V2(x.into())),
                 VersionedMpcContract::V1(x) => Ok(VersionedMpcContract::V2(x.into())),
                 VersionedMpcContract::V2(_) => Ok(contract),
+                _ => env::panic_str("expected V1 or V2"),
             };
         }
         Err(InvalidState::ContractStateIsMissing.into())

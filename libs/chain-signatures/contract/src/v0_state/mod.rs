@@ -94,15 +94,6 @@ pub struct ProposedUpdates {
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-pub struct MpcContractV0 {
-    pub protocol_state: ProtocolContractState,
-    pub pending_requests: LookupMap<SignatureRequest, YieldIndex>,
-    pub proposed_updates: ProposedUpdates,
-    pub config: Config,
-}
-
-#[near(serializers=[borsh])]
-#[derive(Debug)]
 pub struct TeeState {
     allowed_tee_proposals: crate::tee::proposal::AllowedDockerImageHashes,
     historical_tee_proposals: Vec<crate::tee::proposal::DockerImageHash>,
@@ -149,18 +140,6 @@ impl From<ProtocolContractState> for crate::ProtocolContractState {
                 crate::ProtocolContractState::Running(running.into())
             }
             _ => env::panic_str("not supported"),
-        }
-    }
-}
-
-impl From<MpcContractV0> for MpcContract {
-    fn from(value: MpcContractV0) -> Self {
-        Self {
-            protocol_state: value.protocol_state.into(),
-            pending_requests: value.pending_requests,
-            proposed_updates: crate::ProposedUpdates::default(),
-            config: value.config,
-            tee_state: crate::TeeState::default(),
         }
     }
 }
