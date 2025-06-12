@@ -37,7 +37,7 @@ impl OperatingDevnetSetup {
             }),
         )
         .await
-        .expect("Timed out trying to reach rpc node.")
+        .expect("Timed out while waiting for block finality; expected RPC node to be reachable and responsive within 5 seconds.")
         .unwrap()
         .header
         .hash;

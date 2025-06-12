@@ -9,8 +9,8 @@ use crate::contracts::{make_actions, ContractActionCall, ParallelSignCallArgs};
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
 use crate::mpc::read_contract_state_v2;
-use crate::rpc::NearRpcClients;
 use crate::types::{LoadtestSetup, NearAccount, ParsedConfig};
+use anyhow::anyhow;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::DomainConfig;
@@ -82,7 +82,7 @@ impl NewLoadtestCmd {
 
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         if setup.loadtest_setups.contains_key(name) {
-            println!("Loadtest setup with name {} already exists, updating", name);
+            println!("Loadtest setup with name {} already exists. Fetching the existing loadtest and updating.", name);
         }
         let loadtest_setup = setup
             .loadtest_setups
@@ -219,18 +219,6 @@ pub fn get_domain_config(
     }
 }
 
-pub async fn submit_tx_to_client(
-    client: Arc<NearRpcClients>,
-    signed_transaction: SignedTransaction,
-    wait_until: TxExecutionStatus,
-) -> anyhow::Result<RpcTransactionResponse> {
-    let request = methods::send_tx::RpcSendTransactionRequest {
-        signed_transaction,
-        wait_until,
-    };
-    Ok(client.submit(request).await?)
-}
-
 impl RunLoadtestCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         let setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
@@ -314,23 +302,22 @@ impl RunLoadtestCmd {
                 let rpc_clone = rpc_clone.clone();
                 async move {
                     let signed_tx = key.sign_tx_from_actions(action_call).await;
-                    // send signed_tx through a channel to await response
+
+                    let rpc_response = rpc_clone
+                        .submit(methods::send_tx::RpcSendTransactionRequest {
+                            signed_transaction: signed_tx.clone(),
+                            wait_until: near_primitives::views::TxExecutionStatus::Included,
+                        })
+                        .await
+                        .map_err(|e| anyhow!("error sending tx request: {}", e));
                     TxRpcResponse {
-                        rpc_response: submit_tx_to_client(
-                            rpc_clone,
-                            signed_tx.clone(),
-                            near_primitives::views::TxExecutionStatus::Included,
-                        )
-                        .await,
+                        rpc_response,
                         signed_tx,
                     }
                 }
                 .boxed()
             })
         };
-        // todo:
-        // - cancellation token to stop after x seconds
-        // - verification function & track stats
         let (tx_sender, mut receiver): (Sender<TxRpcResponse>, Receiver<TxRpcResponse>) =
             tokio::sync::mpsc::channel(100);
         let rpc_clone = config.rpc.clone();
@@ -379,8 +366,6 @@ impl RunLoadtestCmd {
                             failed += 1;
                             continue;
                         };
-                        // todo: verify signature
-                        // todo: use ticks
                         let waiting_time = 1000 / config.rpc.total_qps();
                         tokio::time::sleep(Duration::from_millis(waiting_time as u64)).await;
                     }
