@@ -28,15 +28,11 @@ pub struct TeeQuote(pub(crate) Vec<u8>);
 
 impl TeeQuote {
     pub fn new(data: Vec<u8>) -> Self {
-        TeeQuote(data)
-    }
-
-    pub fn get_quote(&self) -> Result<Quote> {
-        Quote::parse(&self.0)
+        Self(data)
     }
 
     pub fn get_rtmr3(&self) -> Result<[u8; 48]> {
-        let quote = self.get_quote()?;
+        let quote = Quote::parse(&self.0)?;
         Ok(quote.report.as_td10().unwrap().rt_mr3)
     }
 }

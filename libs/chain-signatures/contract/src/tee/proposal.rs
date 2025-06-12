@@ -103,7 +103,6 @@ impl AllowedDockerImageHashes {
     /// order by `added` (ascending). Returns `true` if the insertion was successful, `false` if the
     /// code hash already exists.
     pub fn insert(&mut self, code_hash: DockerImageHash, current_block_height: u64) -> bool {
-        // Clean expired entries
         self.clean_expired_hashes(current_block_height);
 
         // Remove the old entry if it exists
@@ -115,7 +114,6 @@ impl AllowedDockerImageHashes {
             self.allowed_tee_proposals.remove(pos);
         }
 
-        // Create the new entry
         let new_entry = AllowedDockerImageHash {
             image_hash: code_hash,
             added: current_block_height,
@@ -128,7 +126,6 @@ impl AllowedDockerImageHashes {
             .position(|entry| new_entry.added <= entry.added)
             .unwrap_or(self.allowed_tee_proposals.len());
 
-        // Insert at the correct position
         self.allowed_tee_proposals.insert(insert_index, new_entry);
 
         true
