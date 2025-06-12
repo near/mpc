@@ -95,7 +95,6 @@ pub fn verify_codehash(raw_tcb_info: String, rtmr3: String) -> String {
     codehash.to_owned()
 }
 
-
 fn replay_rtmr(event_log: Vec<Value>, imr: u8) -> String {
     let mut digest = [0u8; 48];
 
