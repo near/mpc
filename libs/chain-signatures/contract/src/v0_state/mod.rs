@@ -103,8 +103,8 @@ pub struct TeeState {
 impl From<TeeState> for crate::TeeState {
     fn from(value: TeeState) -> Self {
         Self {
-            allowed_tee_proposals: value.allowed_tee_proposals,
-            historical_tee_proposals: value.historical_tee_proposals,
+            allowed_docker_image_hashes: value.allowed_tee_proposals,
+            historical_docker_image_hashes: value.historical_tee_proposals,
             votes: value.votes,
             tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
         }

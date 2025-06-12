@@ -83,8 +83,8 @@ impl Default for VersionedMpcContract {
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct TeeState {
-    allowed_tee_proposals: AllowedDockerImageHashes,
-    historical_tee_proposals: Vec<DockerImageHash>,
+    allowed_docker_image_hashes: AllowedDockerImageHashes,
+    historical_docker_image_hashes: Vec<DockerImageHash>,
     votes: CodeHashesVotes,
     tee_participant_info: IterableMap<AccountId, TeeParticipantInfo>,
 }
@@ -92,8 +92,8 @@ pub struct TeeState {
 impl Default for TeeState {
     fn default() -> Self {
         Self {
-            allowed_tee_proposals: Default::default(),
-            historical_tee_proposals: Default::default(),
+            allowed_docker_image_hashes: Default::default(),
+            historical_docker_image_hashes: Default::default(),
             votes: Default::default(),
             tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
         }
@@ -138,10 +138,10 @@ impl TeeState {
         // .any(|proposal| hash(proposal.tee_quote.get_rtmr3().unwrap() || code_hash) == *expected_rtmr3)
         let expected_rtmr3 = hex::encode(expected_rtmr3);
         let code_hash = verify_codehash(raw_tcb_info, expected_rtmr3);
-        self.historical_tee_proposals
+        self.historical_docker_image_hashes
             .iter()
             .chain(
-                self.allowed_tee_proposals
+                self.allowed_docker_image_hashes
                     .get(env::block_height())
                     .iter()
                     .map(|entry| &entry.image_hash),
@@ -151,8 +151,9 @@ impl TeeState {
 
     pub fn whitelist_tee_proposal(&mut self, tee_proposal: DockerImageHash) {
         self.votes.clear_votes();
-        self.historical_tee_proposals.push(tee_proposal.clone());
-        self.allowed_tee_proposals
+        self.historical_docker_image_hashes
+            .push(tee_proposal.clone());
+        self.allowed_docker_image_hashes
             .insert(tee_proposal, env::block_height());
     }
 }
@@ -306,7 +307,7 @@ impl MpcContract {
 
     pub fn allowed_code_hashes(&mut self) -> Vec<DockerImageHash> {
         self.tee_state
-            .allowed_tee_proposals
+            .allowed_docker_image_hashes
             .get(env::block_height())
             .into_iter()
             .map(|entry| entry.image_hash)
