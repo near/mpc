@@ -125,17 +125,6 @@ impl TeeState {
         expected_rtmr3: &[u8; 48],
         raw_tcb_info: String,
     ) -> bool {
-        // self.historical_tee_proposals
-        //     .iter()
-        //     .chain(
-        //         self.allowed_tee_proposals
-        //             .get(env::block_height())
-        //             .iter()
-        //             .map(|entry| &entry.proposal),
-        //     )
-        //     .any(|proposal| proposal.tee_quote.get_rtmr3().unwrap() == *expected_rtmr3)
-        // TODO TODO TODO should be:
-        // .any(|proposal| hash(proposal.tee_quote.get_rtmr3().unwrap() || code_hash) == *expected_rtmr3)
         let expected_rtmr3 = hex::encode(expected_rtmr3);
         let code_hash = verify_codehash(raw_tcb_info, expected_rtmr3);
         self.historical_docker_image_hashes
@@ -294,11 +283,7 @@ impl MpcContract {
 
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
-        if votes >= self.threshold()?.value()
-        // && self
-        //     .tee_state
-        //     .is_code_hash_allowed(code_hash, &expected_rtmr3, raw_tcb_info)
-        {
+        if votes >= self.threshold()?.value() {
             self.tee_state.whitelist_tee_proposal(code_hash);
         }
 
