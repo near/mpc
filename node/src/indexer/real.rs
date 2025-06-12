@@ -4,12 +4,11 @@ use super::stats::{indexer_logger, IndexerStats};
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
 use crate::config::{load_respond_config_file, IndexerConfig, RespondConfigFile};
-use mpc_contract::state::ProtocolContractState;
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot, watch, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
 ///
@@ -20,7 +19,6 @@ pub fn spawn_real_indexer(
     indexer_config: IndexerConfig,
     my_near_account_id: AccountId,
     account_secret_key: SecretKey,
-    protocol_state_sender: watch::Sender<ProtocolContractState>,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
 ) -> IndexerAPI {
     let (chain_config_sender, chain_config_receiver) =
@@ -61,7 +59,6 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
                 indexer_config.port_override,
                 chain_config_sender,
-                protocol_state_sender,
             ));
             actix::spawn(indexer_logger(Arc::clone(&stats), indexer_state.view_client.clone()));
             actix::spawn(handle_txn_requests(

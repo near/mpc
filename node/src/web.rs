@@ -1,4 +1,5 @@
 use crate::config::WebUIConfig;
+use crate::indexer::participants::ContractState;
 use crate::tracking::TaskHandle;
 use axum::body::Body;
 use axum::extract::State;
@@ -6,8 +7,6 @@ use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::serve;
 use futures::future::BoxFuture;
-use mpc_contract::state::ProtocolContractState;
-use mpc_contract::utils::protocol_state_to_string;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -47,7 +46,7 @@ struct WebServerState {
     /// Sender for debug requests that need the MPC client to respond.
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     /// Receiver for contract state
-    contract_state_receiver: watch::Receiver<ProtocolContractState>,
+    contract_state_receiver: watch::Receiver<ContractState>,
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
@@ -98,10 +97,8 @@ async fn debug_signatures(state: State<WebServerState>) -> Result<String, Anyhow
     debug_request_from_node(state, SignatureDebugRequestKind::RecentSignatures).await
 }
 
-async fn contract_state(mut state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
-    Ok(protocol_state_to_string(
-        &state.contract_state_receiver.borrow_and_update(),
-    ))
+async fn contract_state(state: State<WebServerState>) -> String {
+    format!("{:#?}", state.contract_state_receiver.borrow())
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
@@ -118,7 +115,7 @@ pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     config: WebUIConfig,
-    contract_state_receiver: watch::Receiver<ProtocolContractState>,
+    contract_state_receiver: watch::Receiver<ContractState>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 

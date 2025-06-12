@@ -198,30 +198,36 @@ pub async fn monitor_contract_state(
     indexer_state: Arc<IndexerState>,
     port_override: Option<u16>,
     contract_state_sender: tokio::sync::watch::Sender<ContractState>,
-    protocol_state_sender: tokio::sync::watch::Sender<ProtocolContractState>,
 ) -> anyhow::Result<()> {
     const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
     let mut prev_state = ContractState::Invalid;
-    loop {
-        //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
-        //// We currently assume the participant set is static and do not detect or support any updates.
-        tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-        wait_for_full_sync(&indexer_state.client).await;
 
+    //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
+    //// We currently assume the participant set is static and do not detect or support any updates.
+    tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
+    wait_for_full_sync(&indexer_state.client).await;
+
+    let next_state = async move || {
         tracing::debug!(target: "indexer", "querying contract state");
-        let (height, state) = match get_mpc_contract_state(
-            indexer_state.mpc_contract_id.clone(),
-            &indexer_state.view_client,
-        )
-        .await
-        {
-            Ok(res) => res,
-            Err(e) => {
-                tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
-                continue;
+
+        loop {
+            match get_mpc_contract_state(
+                indexer_state.mpc_contract_id.clone(),
+                &indexer_state.view_client,
+            )
+            .await
+            {
+                Ok(res) => return res,
+                Err(e) => {
+                    tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
+                    continue;
+                }
             }
-        };
-        let _ = protocol_state_sender.send(state.clone());
+        }
+    };
+
+    loop {
+        let (height, state) = next_state().await;
 
         tracing::debug!(target: "indexer", "got mpc contract state {:?}", state);
         let result = ContractState::from_contract_state(&state, height, port_override);
