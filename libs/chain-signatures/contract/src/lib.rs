@@ -627,16 +627,6 @@ impl VersionedMpcContract {
             InvalidParameters::InvalidTeeRemoteAttestation.message(err.to_string())
         })?;
 
-        // TODO: How should we verify tee_quote.report_data here? Are RTMR checks needed?
-        //
-        // let report_data = verification_result
-        //     .report
-        //     .as_td10()
-        //     .ok_or_else(|| {
-        //         InvalidParameters::InvalidTeeRemoteAttestation.message("Report is not TD10")
-        //     })?
-        //     .report_data;
-
         // All checks done, we can now add a new proposed participant to the contract state
 
         let Self::V2(mpc_contract) = self else {
