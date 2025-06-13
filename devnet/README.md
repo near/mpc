@@ -268,17 +268,38 @@ mpc-devnet loadtest my-test deploy-parallel-sign-contract
 ```
 
 ### Sending Load
-We can point the loadtest setup against the MPC contract:
+We can point the loadtest setup against the MPC setup:
+
 ```
 mpc-devnet loadtest my-test run \
   --mpc-network my-test \
-  --qps 20 \
-  --signatures-per-contract-call 10 \
+  --qps 5 \
   --domain-id 0
+  --duration 10
 ```
-The `--signatures-per-contract-call` parameter is optional; if not
+or directly against an already deployed mpc contract (e.g. the testnet contract):
+```
+mpc-devnet loadtest my-test run \
+  --mpc-contract v1.signer-prod.testnet \
+  --qps 3 \
+  --parallel-sign-calls-per-domain 0=2,1=3 \
+  --duration 20
+```
+The `--duration` specifies the duration of the test in seconds. If not specified, the loadtest will run indefinitely, but will not provide any success metric.
+
+The `--parallel-sign-calls-per-domain` parameter is optional; if not
 specified, we will send one sign call per transaction. This parameter is useful
 if we want to send a high amount of load.
 
-The `--domain-id` parameter specifies which key to use for the signature
-requests. This parameter *may* be omitted to test compatibility with the legacy API.
+The `--domain-id` parameter specifies which domain to use for the signature
+requests. This parameter *may* be omitted to test compatibility with the legacy API and *will* be ignored if `--parallel-sign-calls-per-domain` is set.
+
+
+The output should be something like the following:
+```
+Going to run loadtest setup my-test against MPC contract v1.signer-prod.testnet at 3 QPS
+Submitted 4 parallel signature requests. Received 0 RPC errors
+Collecting Signature Responses
+Found 4 parallel signature responses and 0 failures. Encountered 0 rpc errors.
+Success Rate: 100
+```
