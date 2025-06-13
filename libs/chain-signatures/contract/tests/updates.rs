@@ -204,57 +204,57 @@ async fn test_invalid_contract_deploy() {
 }
 
 // TODO(#496) Investigate flakiness of this test
-// #[tokio::test]
-// async fn test_propose_update_contract_many() {
-//     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
-//     dbg!(contract.id());
-//
-//     const PROPOSAL_COUNT: usize = 5;
-//     let mut proposals = Vec::with_capacity(PROPOSAL_COUNT);
-//     // Try to propose multiple updates to check if they are being proposed correctly
-//     // and that we can have many at once living in the contract state.
-//     for i in 0..PROPOSAL_COUNT {
-//         let execution = accounts[i % accounts.len()]
-//             .call(contract.id(), "propose_update")
-//             .args_borsh((current_contract(),))
-//             .max_gas()
-//             .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-//             .transact()
-//             .await
-//             .unwrap();
-//
-//         assert!(
-//             execution.is_success(),
-//             "failed to propose update [i={i}]; {execution:#?}"
-//         );
-//         let proposal_id = execution.json().expect("unable to convert into UpdateId");
-//         proposals.push(proposal_id);
-//     }
-//
-//     // Vote for the last proposal
-//     vote_update_till_completion(&contract, &accounts, proposals.last().unwrap()).await;
-//
-//     // Ensure all proposals are removed after update
-//     for proposal in proposals {
-//         let voter = accounts.first().unwrap();
-//         let execution = voter
-//             .call(contract.id(), "vote_update")
-//             .args_json(serde_json::json!({
-//                 "id": proposal,
-//             }))
-//             .max_gas()
-//             .transact()
-//             .await
-//             .unwrap();
-//         dbg!(&execution);
-//
-//         assert!(execution.is_failure());
-//     }
-//
-//     // Let's check that we can call into the state and see all the proposals.
-//     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
-//     dbg!(state);
-// }
+#[tokio::test]
+async fn test_propose_update_contract_many() {
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    dbg!(contract.id());
+
+    const PROPOSAL_COUNT: usize = 3;
+    let mut proposals = Vec::with_capacity(PROPOSAL_COUNT);
+    // Try to propose multiple updates to check if they are being proposed correctly
+    // and that we can have many at once living in the contract state.
+    for i in 0..PROPOSAL_COUNT {
+        let execution = accounts[i % accounts.len()]
+            .call(contract.id(), "propose_update")
+            .args_borsh((current_contract(),))
+            .max_gas()
+            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+            .transact()
+            .await
+            .unwrap();
+
+        assert!(
+            execution.is_success(),
+            "failed to propose update [i={i}]; {execution:#?}"
+        );
+        let proposal_id = execution.json().expect("unable to convert into UpdateId");
+        proposals.push(proposal_id);
+    }
+
+    // Vote for the last proposal
+    vote_update_till_completion(&contract, &accounts, proposals.last().unwrap()).await;
+
+    // Ensure all proposals are removed after update
+    for proposal in proposals {
+        let voter = accounts.first().unwrap();
+        let execution = voter
+            .call(contract.id(), "vote_update")
+            .args_json(serde_json::json!({
+                "id": proposal,
+            }))
+            .max_gas()
+            .transact()
+            .await
+            .unwrap();
+        dbg!(&execution);
+
+        assert!(execution.is_failure());
+    }
+
+    // Let's check that we can call into the state and see all the proposals.
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    dbg!(state);
+}
 
 #[tokio::test]
 async fn test_propose_incorrect_updates() {
