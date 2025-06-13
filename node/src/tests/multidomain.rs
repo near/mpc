@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::p2p::testing::PortSeed;
 use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
@@ -92,6 +94,9 @@ async fn test_basic_multidomain() {
         let mut contract = setup.indexer.contract_mut().await;
         contract.start_resharing(setup.participants);
     }
+
+    // give nodes time to enter resharing so we don't lose the request.
+    tokio::time::sleep(Duration::from_millis(500));
 
     for domain in &domains {
         assert!(request_signature_and_await_response(
