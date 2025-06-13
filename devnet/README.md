@@ -273,8 +273,7 @@ We can point the loadtest setup against the MPC setup:
 ```
 mpc-devnet loadtest my-test run \
   --mpc-network my-test \
-  --qps 20 \
-  --parallel-sign-calls-per-domain 0=2,1=3 \
+  --qps 5 \
   --domain-id 0
   --duration 10
 ```
@@ -282,9 +281,8 @@ or directly against an already deployed mpc contract (e.g. the testnet contract)
 ```
 mpc-devnet loadtest my-test run \
   --mpc-contract v1.signer-prod.testnet \
-  --qps 20 \
+  --qps 3 \
   --parallel-sign-calls-per-domain 0=2,1=3 \
-  --domain-id 0
   --duration 20
 ```
 The `--duration` specifies the duration of the test in seconds. If not specified, the loadtest will run indefinitely, but will not provide any success metric.
@@ -299,7 +297,7 @@ requests. This parameter *may* be omitted to test compatibility with the legacy 
 
 The output should be something like the following:
 ```
-Going to run loadtest setup kevin-e2e-4-test against MPC contract v1.signer-prod.testnet at 3 QPS
+Going to run loadtest setup my-test against MPC contract v1.signer-prod.testnet at 3 QPS
 Submitted 4 parallel signature requests. Received 0 RPC errors
 Collecting Signature Responses
 Found 4 parallel signature responses and 0 failures. Encountered 0 rpc errors.
