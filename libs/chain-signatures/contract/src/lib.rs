@@ -101,7 +101,9 @@ impl Default for TeeState {
 }
 
 impl TeeState {
-    /// maps every element in `participants` to its `TeeQuoteStatus`. If an element of `participants` does not have any TEE information associated to it, then it is mapped to `TeeQuoteStatus::None`.
+    /// maps every element in `participants` to its `TeeQuoteStatus`. If an element of
+    /// `participants` does not have any TEE information associated to it, then it is mapped to
+    /// `TeeQuoteStatus::None`.
     pub fn tee_status(&self, participants: Vec<AccountId>) -> BTreeMap<AccountId, TeeQuoteStatus> {
         let now_sec = env::block_timestamp_ms() / 1_000;
         participants
@@ -278,8 +280,6 @@ impl MpcContract {
 
         let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
         let votes = self.tee_state.votes.vote(code_hash.clone(), &participant);
-
-        // let expected_rtmr3 = verification_result.report.as_td10().unwrap().rt_mr3;
 
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
