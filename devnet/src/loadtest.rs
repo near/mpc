@@ -13,7 +13,7 @@ use crate::types::{LoadtestSetup, NearAccount, ParsedConfig};
 use anyhow::anyhow;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use mpc_contract::primitives::domain::DomainConfig;
+use mpc_contract::primitives::domain::{DomainConfig, DomainId};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_primitives::transaction::SignedTransaction;
@@ -196,30 +196,6 @@ impl DeployParallelSignContractCmd {
     }
 }
 
-pub fn get_domain_config(
-    contract_state: &mpc_contract::state::ProtocolContractState,
-    domain_id: u64,
-) -> Option<DomainConfig> {
-    match contract_state {
-        mpc_contract::state::ProtocolContractState::Running(state) => state
-            .domains
-            .domains()
-            .iter()
-            .find(|domain| domain.id.0 == domain_id)
-            .cloned(),
-        mpc_contract::state::ProtocolContractState::Resharing(state) => state
-            .previous_running_state
-            .domains
-            .domains()
-            .iter()
-            .find(|domain| domain.id.0 == domain_id)
-            .cloned(),
-        _ => {
-            panic!("MPC network is not running or resharing");
-        }
-    }
-}
-
 impl RunLoadtestCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         let setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
@@ -286,7 +262,8 @@ impl RunLoadtestCmd {
                 .iter()
                 .map(|(domain_id, n_calls)| {
                     (
-                        get_domain_config(&contract_state, *domain_id)
+                        contract_state
+                            .get_domain_config(DomainId(*domain_id))
                             .expect("require valid domain id"),
                         *n_calls,
                     )
@@ -302,7 +279,8 @@ impl RunLoadtestCmd {
             let contract_state = read_contract_state(&config.rpc, &mpc_account).await;
             ContractActionCall::Sign(crate::contracts::SignActionCallArgs {
                 mpc_contract: mpc_account,
-                domain_config: get_domain_config(&contract_state, domain_id)
+                domain_config: contract_state
+                    .get_domain_config(DomainId(domain_id))
                     .expect("require valid domain id"),
             })
         } else {
@@ -432,6 +410,12 @@ impl RunLoadtestCmd {
                 println!("Rpc errors:");
                 for e in &rpc_errs {
                     eprintln!("{}", e);
+                }
+            }
+            if !failures.is_empty() {
+                println!("Signature failures:");
+                for e in &failures {
+                    eprintln!("{:?}", e);
                 }
             }
             println!("Success Rate: {}%", (succeeded * 100) / txs.len());
