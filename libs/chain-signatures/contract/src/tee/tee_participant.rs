@@ -4,10 +4,9 @@ use crate::{
 };
 use dcap_qvl::verify::{self, VerifiedReport};
 use near_sdk::near;
-use std::fmt;
 
 #[near(serializers=[borsh, json])]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
 pub struct TeeParticipantInfo {
     /// TEE Remote Attestation Quote that proves the participant's identity.
     pub tee_quote: Vec<u8>,
@@ -17,37 +16,6 @@ pub struct TeeParticipantInfo {
     pub quote_collateral: String,
     /// Dstack event log.
     pub raw_tcb_info: String,
-}
-
-/// Without this, the following tests fail with HostError(TotalLogLengthExceeded { length: 31510, limit: 16384 }):
-/// - tests::test_signature_simple
-/// - tests::test_signature_simple_legacy
-/// - tests::test_signature_timeout
-impl fmt::Debug for TeeParticipantInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn hex_preview(bytes: &[u8], max: usize) -> String {
-            if bytes.len() <= max {
-                format!("{:02x?}", bytes)
-            } else {
-                format!("{:02x?}… ({} bytes)", &bytes[..max], bytes.len())
-            }
-        }
-        fn str_preview(s: &str, max: usize) -> String {
-            if s.len() <= max {
-                format!("{:?}", s)
-            } else {
-                format!("{:?}… ({} chars)", &s[..max], s.len())
-            }
-        }
-        f.debug_struct("TeeParticipantInfo")
-            .field("tee_quote", &hex_preview(&self.tee_quote, 128))
-            .field(
-                "quote_collateral",
-                &str_preview(&self.quote_collateral, 128),
-            )
-            .field("raw_tcb_info", &str_preview(&self.raw_tcb_info, 128))
-            .finish()
-    }
 }
 
 impl TeeParticipantInfo {
