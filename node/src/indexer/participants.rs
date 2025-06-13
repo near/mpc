@@ -8,6 +8,7 @@ use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use mpc_contract::primitives::thresholds::ThresholdParameters;
 use mpc_contract::state::key_event::KeyEvent;
 use mpc_contract::state::ProtocolContractState;
+use near_indexer_primitives::types::BlockHeight;
 use std::collections::BTreeSet;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -23,7 +24,7 @@ pub struct ContractKeyEventInstance {
     pub completed_domains: Vec<KeyForDomain>,
 }
 
-pub fn convert_key_event_to_instance(
+fn convert_key_event_to_instance(
     key_event: &KeyEvent,
     current_height: u64,
     completed_domains: Vec<KeyForDomain>,
@@ -124,7 +125,6 @@ pub struct ContractResharingState {
 /// that the MPC node cares about.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContractState {
-    WaitingForSync,
     Invalid,
     Initializing(ContractInitializingState),
     Running(ContractRunningState),
@@ -197,8 +197,7 @@ impl ContractState {
 /// sends the new state via the provided sender. This is a long-running task.
 pub async fn monitor_contract_state(
     indexer_state: Arc<IndexerState>,
-    port_override: Option<u16>,
-) -> watch::Receiver<ProtocolContractState> {
+) -> watch::Receiver<(BlockHeight, ProtocolContractState)> {
     //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
     //// We currently assume the participant set is static and do not detect or support any updates.
     tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
@@ -221,20 +220,21 @@ pub async fn monitor_contract_state(
         };
     };
 
-    let (_height, initial_state) = wait_for_state().await;
-    let (contract_state_sender, contract_state_receiver) = watch::channel(initial_state);
+    let initial_heigh_and_state = wait_for_state().await;
+    let (contract_state_sender, contract_state_receiver) = watch::channel(initial_heigh_and_state);
 
     actix::spawn(async move {
         loop {
             tracing::debug!(target: "indexer", "querying contract state");
-            let (height, new_state) = wait_for_state().await;
+            let (new_height, new_state) = wait_for_state().await;
 
             tracing::debug!(target: "indexer", "got mpc contract state {:?}", new_state);
 
-            contract_state_sender.send_if_modified(|watcher_state| {
-                if *watcher_state != new_state {
+            contract_state_sender.send_if_modified(|(height, state)| {
+                if *state != new_state {
                     tracing::info!("Contract state changed: {:?}", new_state);
-                    *watcher_state = new_state;
+                    *state = new_state;
+                    *height = new_height;
                     true
                 } else {
                     false

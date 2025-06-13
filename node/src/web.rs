@@ -9,13 +9,15 @@ use axum::{
     serve,
 };
 use futures::future::BoxFuture;
+use mpc_contract::{state::ProtocolContractState, utils::protocol_state_to_string};
+use near_indexer_primitives::types::BlockHeight;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use tokio::{
     net::TcpListener,
     sync::{broadcast, mpsc, watch},
 };
 
-use crate::{config::WebUIConfig, indexer::participants::ContractState, tracking::TaskHandle};
+use crate::{config::WebUIConfig, tracking::TaskHandle};
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -51,7 +53,7 @@ struct WebServerState {
     /// Sender for debug requests that need the MPC client to respond.
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     /// Receiver for contract state
-    contract_state_receiver: watch::Receiver<ContractState>,
+    contract_state_receiver: watch::Receiver<(BlockHeight, ProtocolContractState)>,
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
@@ -103,8 +105,8 @@ async fn debug_signatures(state: State<WebServerState>) -> Result<String, Anyhow
 }
 
 async fn contract_state(state: State<WebServerState>) -> String {
-    let contract_state: &ContractState = &state.contract_state_receiver.borrow();
-    format!("{:#?}", contract_state)
+    let contract_state: &ProtocolContractState = &state.contract_state_receiver.borrow().1;
+    protocol_state_to_string(&contract_state)
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
@@ -121,7 +123,7 @@ pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     config: WebUIConfig,
-    contract_state_receiver: watch::Receiver<ContractState>,
+    contract_state_receiver: watch::Receiver<(BlockHeight, ProtocolContractState)>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 

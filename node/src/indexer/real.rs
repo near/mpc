@@ -1,15 +1,14 @@
 use super::handler::listen_blocks;
-use super::participants::{monitor_contract_state, ContractState};
+use super::participants::monitor_contract_state;
 use super::stats::{indexer_logger, IndexerStats};
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
 use crate::config::{load_respond_config_file, IndexerConfig, RespondConfigFile};
-use mpc_contract::state::ProtocolContractState;
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot, watch, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
 ///
@@ -22,8 +21,7 @@ pub fn spawn_real_indexer(
     account_secret_key: SecretKey,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
 ) -> IndexerAPI {
-    let (protocol_watcher_sender, protocol_watcher_receiver) =
-        oneshot::channel::<watch::Receiver<ProtocolContractState>>();
+    let (protocol_watcher_sender, protocol_watcher_receiver) = oneshot::channel();
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
 
@@ -57,7 +55,6 @@ pub fn spawn_real_indexer(
             let stats: Arc<Mutex<IndexerStats>> = Arc::new(Mutex::new(IndexerStats::new()));
             let contract_state_receiver = monitor_contract_state(
                 indexer_state.clone(),
-                indexer_config.port_override,
             ).await;
 
             protocol_watcher_sender.send(contract_state_receiver);
