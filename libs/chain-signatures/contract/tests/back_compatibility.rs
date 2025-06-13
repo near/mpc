@@ -1,11 +1,11 @@
 use crate::common::{gen_accounts, PARTICIPANT_LEN};
-use base64::engine::general_purpose;
-use base64::Engine;
+use base64::{engine::general_purpose, Engine};
 use common::current_contract;
-use mpc_contract::config::InitConfig;
-use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use near_workspaces::network::Sandbox;
-use near_workspaces::{Contract, Worker};
+use mpc_contract::{
+    config::InitConfig,
+    primitives::thresholds::{Threshold, ThresholdParameters},
+};
+use near_workspaces::{network::Sandbox, Contract, Worker};
 use reqwest::Client;
 pub mod common;
 use serde::Deserialize;

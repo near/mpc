@@ -75,8 +75,9 @@ impl ThresholdParameters {
         self.participants.validate()
     }
 
-    /// Validates the incoming proposal against the current, checking that it is allowed for the
-    /// current set of participants and threshold setting to propose the new parameters.
+    /// Validates the incoming proposal against the current one, ensuring it's allowed based on the
+    /// current participants and threshold settings. Also verifies the TEE quote of the participant
+    /// who submitted the proposal.
     pub fn validate_incoming_proposal(&self, proposal: &ThresholdParameters) -> Result<(), Error> {
         // ensure the proposed threshold parameters are valid:
         // if performance issue, inline and merge with loop below
@@ -150,9 +151,11 @@ impl ThresholdParameters {
 
 #[cfg(test)]
 mod tests {
-    use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::{gen_participant, gen_participants, gen_threshold_params};
-    use crate::primitives::thresholds::{Threshold, ThresholdParameters};
+    use crate::primitives::{
+        participants::{ParticipantId, Participants},
+        test_utils::{gen_participant, gen_participants, gen_threshold_params},
+        thresholds::{Threshold, ThresholdParameters},
+    };
     use crate::state::running::running_tests::gen_valid_params_proposal;
     use rand::Rng;
 
@@ -316,10 +319,8 @@ mod tests {
             .participants
             .subset(0..params.threshold.value() as usize);
 
-        let new_params = ThresholdParameters {
-            participants: new_participants,
-            threshold: params.threshold.clone(),
-        };
+        let new_params =
+            ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
 
         let result = params.validate_incoming_proposal(&new_params);
         assert!(result.is_ok());
@@ -334,10 +335,8 @@ mod tests {
         new_participants.add_random_participants_till_n(n + 2);
         let new_participants = new_participants.subset(2..n + 2);
 
-        let new_params = ThresholdParameters {
-            participants: new_participants,
-            threshold: params.threshold.clone(),
-        };
+        let new_params =
+            ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
 
         let result = params.validate_incoming_proposal(&new_params);
         assert!(result.is_ok());
@@ -353,10 +352,8 @@ mod tests {
         for i in 0..=params.participants.next_id().0 + 2 {
             let new_participants =
                 Participants::init(ParticipantId(i), params.participants.participants().clone());
-            let new_params = ThresholdParameters {
-                participants: new_participants,
-                threshold: params.threshold.clone(),
-            };
+            let new_params =
+                ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
             let result = params.validate_incoming_proposal(&new_params);
             if i >= params.participants.next_id().0 {
                 assert!(result.is_ok());

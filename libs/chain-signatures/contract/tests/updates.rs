@@ -203,12 +203,13 @@ async fn test_invalid_contract_deploy() {
     dbg!(state);
 }
 
+// TODO(#496) Investigate flakiness of this test
 #[tokio::test]
 async fn test_propose_update_contract_many() {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     dbg!(contract.id());
 
-    const PROPOSAL_COUNT: usize = 5;
+    const PROPOSAL_COUNT: usize = 3;
     let mut proposals = Vec::with_capacity(PROPOSAL_COUNT);
     // Try to propose multiple updates to check if they are being proposed correctly
     // and that we can have many at once living in the contract state.

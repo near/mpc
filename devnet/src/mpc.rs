@@ -13,13 +13,17 @@ use crate::rpc::NearRpcClients;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_contract::config::InitConfig;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
-use mpc_contract::primitives::key_state::EpochId;
-use mpc_contract::primitives::participants::{ParticipantInfo, Participants};
-use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use mpc_contract::state::ProtocolContractState;
-use mpc_contract::utils::protocol_state_to_string;
+use mpc_contract::{
+    config::InitConfig,
+    primitives::{
+        domain::{DomainConfig, DomainId, SignatureScheme},
+        key_state::EpochId,
+        participants::{ParticipantInfo, Participants},
+        thresholds::{Threshold, ThresholdParameters},
+    },
+    state::ProtocolContractState,
+    utils::protocol_state_to_string,
+};
 use near_crypto::SecretKey;
 use near_jsonrpc_client::methods;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
@@ -314,6 +318,7 @@ struct InitV2Args {
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
     let mpc_setup = account.get_mpc_participant().unwrap();
+
     ParticipantInfo {
         sign_pk: near_sdk::PublicKey::from_str(&mpc_setup.p2p_private_key.public_key().to_string())
             .unwrap(),

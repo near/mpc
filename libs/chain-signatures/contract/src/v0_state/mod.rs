@@ -12,17 +12,18 @@ use near_sdk::{env, near, store::LookupMap};
 use std::collections::{BTreeMap, HashSet};
 
 use crate::legacy_contract_state::ConfigV1;
-use crate::primitives::code_hash::CodeHashesVotes;
-use crate::primitives::domain::{AddDomainsVotes, DomainRegistry};
-use crate::primitives::key_state::{AuthenticatedParticipantId, KeyForDomain, Keyset};
-use crate::primitives::thresholds::ThresholdParameters;
-use crate::state::initializing::InitializingContractState;
-use crate::state::key_event::KeyEvent;
+use crate::primitives::{
+    domain::{AddDomainsVotes, DomainRegistry},
+    key_state::{AuthenticatedParticipantId, KeyForDomain, Keyset},
+    thresholds::ThresholdParameters,
+};
+use crate::state::{initializing::InitializingContractState, key_event::KeyEvent};
+use crate::storage_keys::StorageKey;
 use crate::update::UpdateId;
 use crate::{
     config::Config,
     primitives::signature::{SignatureRequest, YieldIndex},
-    AllowedCodeHashes, MpcContract, TeeState,
+    MpcContract,
 };
 
 #[near(serializers=[borsh, json])]
@@ -93,11 +94,31 @@ pub struct ProposedUpdates {
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-pub struct MpcContractV0 {
-    pub protocol_state: ProtocolContractState,
-    pub pending_requests: LookupMap<SignatureRequest, YieldIndex>,
-    pub proposed_updates: ProposedUpdates,
-    pub config: Config,
+pub struct TeeState {
+    allowed_tee_proposals: crate::tee::proposal::AllowedDockerImageHashes,
+    historical_tee_proposals: Vec<crate::tee::proposal::DockerImageHash>,
+    votes: crate::tee::proposal::CodeHashesVotes,
+}
+
+impl From<TeeState> for crate::TeeState {
+    fn from(value: TeeState) -> Self {
+        Self {
+            allowed_docker_image_hashes: value.allowed_tee_proposals,
+            historical_docker_image_hashes: value.historical_tee_proposals,
+            votes: value.votes,
+            tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
+        }
+    }
+}
+
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+pub struct MpcContractV1 {
+    protocol_state: crate::state::ProtocolContractState,
+    pending_requests: LookupMap<SignatureRequest, YieldIndex>,
+    proposed_updates: crate::update::ProposedUpdates,
+    config: Config,
+    tee_state: TeeState,
 }
 
 impl From<RunningContractState> for crate::RunningContractState {
@@ -123,18 +144,14 @@ impl From<ProtocolContractState> for crate::ProtocolContractState {
     }
 }
 
-impl From<MpcContractV0> for MpcContract {
-    fn from(value: MpcContractV0) -> Self {
+impl From<MpcContractV1> for MpcContract {
+    fn from(value: MpcContractV1) -> Self {
         Self {
-            protocol_state: value.protocol_state.into(),
+            protocol_state: value.protocol_state,
             pending_requests: value.pending_requests,
-            proposed_updates: crate::ProposedUpdates::default(),
+            proposed_updates: value.proposed_updates,
             config: value.config,
-            tee_state: TeeState {
-                allowed_code_hashes: AllowedCodeHashes::default(),
-                historical_code_hashes: vec![],
-                votes: CodeHashesVotes::default(),
-            },
+            tee_state: crate::TeeState::default(),
         }
     }
 }

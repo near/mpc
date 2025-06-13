@@ -1,7 +1,9 @@
-use crate::crypto_shared::types::PublicKeyExtended;
-use crate::primitives::{
-    participants::{ParticipantInfo, Participants},
-    thresholds::{Threshold, ThresholdParameters},
+use crate::{
+    crypto_shared::types::PublicKeyExtended,
+    primitives::{
+        participants::{ParticipantInfo, Participants},
+        thresholds::{Threshold, ThresholdParameters},
+    },
 };
 use curve25519_dalek::EdwardsPoint;
 use k256::elliptic_curve::Group;
@@ -11,7 +13,6 @@ use std::collections::BTreeMap;
 
 pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     let rng = rand::thread_rng();
-
     let edwards_point = EdwardsPoint::random(rng);
     let compressed_edwards_point = edwards_point.compress();
     let near_public_key_compressed = PublicKey::from_parts(

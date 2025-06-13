@@ -34,9 +34,8 @@ use near_workspaces::{
     types::{AccountId, NearToken},
     Account, Contract, Worker,
 };
-use serde::{Deserialize, Serialize};
-//use once_cell::sync::Lazy;
 use rand::rngs::OsRng;
+use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use signature::DigestSigner;
 use std::{
