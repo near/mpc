@@ -591,26 +591,9 @@ impl VersionedMpcContract {
             proposed_tee_participant,
         );
 
-        // Both participants and non-participants can propose. Non-participants must pay,
-        // participants don't.
+        // Save the initial storage usage to know how much to charge the proposer for the storage used
 
-        if self.voter_account().is_err() {
-            let attached = env::attached_deposit();
-            let required = proposed_tee_participant.required_deposit();
-            if attached < required {
-                return Err(InvalidParameters::InsufficientDeposit.message(format!(
-                    "Attached {}, Required {}",
-                    attached.as_yoctonear(),
-                    required.as_yoctonear(),
-                )));
-            }
-            // Refund the difference if the proposer attached more than required.
-            if let Some(diff) = attached.checked_sub(required) {
-                if diff > NearToken::from_yoctonear(0) {
-                    Promise::new(account_id.clone()).transfer(diff);
-                }
-            }
-        }
+        let initial_storage = env::storage_usage();
 
         // Verify the TEE quote before adding the proposed participant to the contract state
 
@@ -627,7 +610,7 @@ impl VersionedMpcContract {
             InvalidParameters::InvalidTeeRemoteAttestation.message(err.to_string())
         })?;
 
-        // All checks done, we can now add a new proposed participant to the contract state
+        // Add a new proposed participant to the contract state
 
         let Self::V2(mpc_contract) = self else {
             env::panic_str("expected V2")
@@ -636,7 +619,32 @@ impl VersionedMpcContract {
         mpc_contract
             .tee_state
             .tee_participant_info
-            .insert(account_id, proposed_tee_participant);
+            .insert(account_id.clone(), proposed_tee_participant.clone());
+
+        // Both participants and non-participants can propose. Non-participants must pay for the
+        // storage they use; participants do not.
+
+        if self.voter_account().is_err() {
+            let storage_used = env::storage_usage() - initial_storage;
+            let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
+            let attached = env::attached_deposit();
+
+            if attached < cost {
+                return Err(InvalidParameters::InsufficientDeposit.message(format!(
+                    "Attached {}, Required {}",
+                    attached.as_yoctonear(),
+                    cost.as_yoctonear(),
+                )));
+            }
+
+            // Refund the difference if the proposer attached more than required
+
+            if let Some(diff) = attached.checked_sub(cost) {
+                if diff > NearToken::from_yoctonear(0) {
+                    Promise::new(account_id).transfer(diff);
+                }
+            }
+        }
 
         Ok(())
     }

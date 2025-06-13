@@ -3,8 +3,8 @@ use crate::{
     get_collateral,
 };
 use dcap_qvl::verify::{self, VerifiedReport};
-use near_sdk::{env, near, NearToken};
-use std::fmt::{self};
+use near_sdk::near;
+use std::fmt;
 
 #[near(serializers=[borsh, json])]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
@@ -57,10 +57,5 @@ impl TeeParticipantInfo {
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
         let verification_result = verify::verify(&self.tee_quote, &tee_collateral, timestamp_s);
         verification_result.map_err(|_| InvalidCandidateSet::InvalidParticipantsTeeQuote.into())
-    }
-
-    pub fn required_deposit(&self) -> NearToken {
-        let bytes_used = std::mem::size_of::<Self>() as u128; // TODO is it a correct estimate?
-        env::storage_byte_cost().saturating_mul(bytes_used)
     }
 }
