@@ -6,7 +6,7 @@ import time
 from ruamel.yaml import YAML
 
 from common_lib.constants import MPC_BINARY_PATH, TIMEOUT
-from common_lib.shared.near_node import NearNode
+from common_lib.shared.near_account import NearAccount
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -17,7 +17,7 @@ from utils import MetricsTracker
 import requests
 
 
-class MpcNode(NearNode):
+class MpcNode(NearAccount):
     class NodeStatus:
         # not a participant, neither a candidate
         IDLE = 1
@@ -30,7 +30,6 @@ class MpcNode(NearNode):
 
     def __init__(self, near_node: LocalNode, url, sign_pk):
         super().__init__(near_node)
-        self.account_id = near_node.signer_key.account_id
         self.url = url
         self.sign_pk = sign_pk
         self.status = MpcNode.NodeStatus.IDLE
@@ -49,7 +48,7 @@ class MpcNode(NearNode):
 
         old_contract_id = config['indexer']['mpc_contract_id']
         print(
-            f"changing contract_id from {old_contract_id} to {new_contract_id} for node {self.account_id}"
+            f"changing contract_id from {old_contract_id} to {new_contract_id} for node {self.account_id()}"
         )
         config['indexer']['mpc_contract_id'] = new_contract_id
 
@@ -58,17 +57,17 @@ class MpcNode(NearNode):
 
     def print(self):
         if not self.is_running:
-            return f"⛔\033[90m{self.account_id}\033[0m"
-        if self.status == MpcNode.NodeStatus.IDLE:
-            return f"⚫\033[90m{self.account_id}\033[0m"
-        if self.status == MpcNode.NodeStatus.PARTICIPANT:
-            return f"🟢\033[92m{self.account_id}\033[0m"
-        if self.status == MpcNode.NodeStatus.OLD_PARTICIPANT:
-            return f"🟢\033[92m{self.account_id}\033[0m"
-        if self.status == MpcNode.NodeStatus.NEW_PARTICIPANT:
-            return f"🟡\033[93m{self.account_id}\033[0m"
-        else:
-            return f"❓\033[0m{self.account_id}\033[0m"
+            return f"⛔\033[90m{self.account_id()}\033[0m"
+
+        status_map = {
+            MpcNode.NodeStatus.IDLE: ("⚫", "90"),
+            MpcNode.NodeStatus.PARTICIPANT: ("🟢", "92"),
+            MpcNode.NodeStatus.OLD_PARTICIPANT: ("🟢", "92"),
+            MpcNode.NodeStatus.NEW_PARTICIPANT: ("🟡", "93"),
+        }
+
+        symbol, color = status_map.get(self.status, ("❓", "90"))
+        return f"{symbol}\033[{color}m{self.account_id()}\033[0m"
 
     def set_secret_store_key(self, secret_store_key):
         self.secret_store_key = secret_store_key

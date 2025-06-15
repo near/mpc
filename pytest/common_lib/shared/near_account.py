@@ -2,6 +2,8 @@ import json
 import pathlib
 import sys
 
+from key import Key
+
 from common_lib.constants import TGAS
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -18,14 +20,20 @@ def assert_txn_success(res):
         res['result']['status'])
 
 
-class NearNode:
+class NearAccount:
+    """
+    An interface to an account on a NEAR Blockchain.
+    It stores an instance of a NEAR Local Node internally to get the
+     latest block hash and send transactions.
+    """
+
     def __init__(self, near_node: LocalNode):
         self.near_node = near_node
 
-    def signer_key(self):
+    def signer_key(self) -> Key:
         return self.near_node.signer_key
 
-    def account_id(self):
+    def account_id(self) -> str:
         return self.signer_key().account_id
 
     def last_block_hash(self):
@@ -43,8 +51,12 @@ class NearNode:
         return res
 
     def get_nonce(self):
-        return self.near_node.get_nonce_for_pk(
-            self.near_node.signer_key.account_id, self.near_node.signer_key.pk)
+        nonce = self.near_node.get_nonce_for_pk(
+            self.account_id(),
+            self.signer_key().pk
+        )
+        assert nonce is not None
+        return nonce
 
     def sign_tx(self,
                 target_contract,
@@ -55,8 +67,7 @@ class NearNode:
                 deposit=0):
         last_block_hash = self.last_block_hash()
         nonce = self.get_nonce() + nonce_offset
-        encoded_args = args if type(args) == bytes else json.dumps(
-            args).encode('utf-8')
+        encoded_args = args if type(args) == bytes else json.dumps(args).encode('utf-8')
         tx = sign_function_call_tx(self.signer_key(), target_contract,
                                    function_name, encoded_args, gas, deposit,
                                    nonce, last_block_hash)

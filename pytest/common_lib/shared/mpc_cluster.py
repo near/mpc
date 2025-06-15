@@ -13,7 +13,7 @@ from common_lib import signature
 from common_lib.constants import TGAS, TIMEOUT
 from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
 from common_lib.shared.mpc_node import MpcNode
-from common_lib.shared.near_node import NearNode
+from common_lib.shared.near_account import NearAccount
 from common_lib.signature import generate_sign_args
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -68,7 +68,7 @@ class MpcCluster:
         for node in self.mpc_nodes:
             node.kill(False)
 
-    def __init__(self, near_nodes: List[NearNode]):
+    def __init__(self, near_nodes: List[NearAccount]):
         self.mpc_nodes: List[MpcNode] = []
         self.next_participant_id = 0
         self.contract_node = near_nodes[0]
@@ -154,13 +154,13 @@ class MpcCluster:
                 node.participant_id = self.next_participant_id
                 node.status = MpcNode.NodeStatus.NEW_PARTICIPANT
                 print(
-                    f"MpcCluster: Adding node {node.account_id} as participant {node.participant_id}"
+                    f"MpcCluster: Adding node {node.account_id()} as participant {node.participant_id}"
                 )
                 self.next_participant_id += 1
 
         for node in self.mpc_nodes:
             if node not in mpc_nodes:
-                print(f"MpcCluster: Kicking out node {node.account_id}")
+                print(f"MpcCluster: Kicking out node {node.account_id()}")
                 node.participant_id = None
                 node.status = MpcNode.NodeStatus.OLD_PARTICIPANT
         self.mpc_nodes = mpc_nodes
@@ -188,7 +188,7 @@ class MpcCluster:
                        participants) == len(self.mpc_nodes)
             for p in self.mpc_nodes:
                 assert contract_state.protocol_state.parameters.participants.is_participant(
-                    p.account_id)
+                    p.account_id())
 
         self.print_cluster_status()
 
@@ -199,7 +199,7 @@ class MpcCluster:
                 'next_id':
                     self.next_participant_id,
                 'participants': [[
-                    node.account_id, node.participant_id, {
+                    node.account_id(), node.participant_id, {
                         'sign_pk': node.sign_pk,
                         'url': node.url,
                     }

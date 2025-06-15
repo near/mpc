@@ -10,7 +10,7 @@ import yaml
 from common_lib.constants import NEAR_BASE, MPC_BINARY_PATH
 from common_lib.shared.mpc_cluster import MpcCluster
 from common_lib.shared.mpc_node import MpcNode
-from common_lib.shared.near_node import NearNode
+from common_lib.shared.near_account import NearAccount
 from common_lib.shared.yaml_safeloader import SafeLoaderIgnoreUnknown
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -130,7 +130,7 @@ def start_cluster_with_mpc(num_validators,
                 candidates[i - num_validators]["sign_pk"])
         for i in mpc_node_indices
     ]
-    cluster = MpcCluster(near_nodes=[NearNode(node) for node in nodes])
+    cluster = MpcCluster(near_nodes=[NearAccount(node) for node in nodes])
 
     last_block_hash = cluster.contract_node.last_block_hash()
     # Set up the node's home directories
@@ -142,11 +142,11 @@ def start_cluster_with_mpc(num_validators,
         config_json['tracked_shards'] = [0]
         with open(fname, 'w') as fd:
             json.dump(config_json, fd, indent=2)
-        print(f"Wrote {fname} as config for node {mpc_node.account_id}")
+        print(f"Wrote {fname} as config for node {mpc_node.account_id()}")
 
         # Create respond.yaml with credentials for sending responses
         if num_respond_aks > 0:
-            account_id = f"respond.{mpc_node.account_id}"
+            account_id = f"respond.{mpc_node.account_id()}"
             access_keys = [
                 Key.from_seed_testonly(account_id, seed=f"{s}")
                 for s in range(0, num_respond_aks)
