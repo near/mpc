@@ -203,8 +203,10 @@ class MpcCluster:
                 'next_id':
                     self.next_participant_id,
                 'participants': [[
-                    node.account_id(), node.participant_id, {
-                        'sign_pk': node.sign_pk,
+                    node.account_id(),
+                    node.participant_id,
+                    {
+                        'sign_pk': node.p2p_public_key,
                         'url': node.url,
                     }
                 ] for node in self.mpc_nodes]

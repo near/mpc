@@ -102,7 +102,7 @@ def start_cluster_with_mpc(num_validators,
         near_account = p['near_account_id']
         assert near_account == f"test{i + num_validators}", \
             f"This test only works with account IDs 'testX' where X is the node index; expected 'test{i + num_validators}', got {near_account}"
-        my_pk = p['p2p_public_key']
+        p2p_public_key = p['p2p_public_key']
         my_addr = p['address']
         my_port = p['port']
 
@@ -113,10 +113,8 @@ def start_cluster_with_mpc(num_validators,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
             ],
-            "sign_pk":
-                my_pk,
-            "url":
-                f"http://{my_addr}:{my_port}",
+            "p2p_public_key": p2p_public_key,
+            "url": f"http://{my_addr}:{my_port}",
         })
     for i in mpc_node_indices:
         # Move the generated mpc configs
@@ -126,8 +124,11 @@ def start_cluster_with_mpc(num_validators,
                                                fname), nodes[i].node_dir))
 
     mpc_nodes = [
-        MpcNode(nodes[i], candidates[i - num_validators]["url"],
-                candidates[i - num_validators]["sign_pk"])
+        MpcNode(
+            nodes[i],
+            candidates[i - num_validators]["url"],
+            candidates[i - num_validators]["p2p_public_key"]
+        )
         for i in mpc_node_indices
     ]
     cluster = MpcCluster(near_nodes=[NearAccount(node) for node in nodes])

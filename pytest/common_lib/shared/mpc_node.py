@@ -35,10 +35,10 @@ class MpcNode(NearAccount):
         # a participant in the next epoch, but not the current epoch
         NEW_PARTICIPANT = 4
 
-    def __init__(self, near_node: LocalNode, url, sign_pk):
+    def __init__(self, near_node: LocalNode, url, p2p_public_key):
         super().__init__(near_node)
         self.url = url
-        self.sign_pk = sign_pk
+        self.p2p_public_key = p2p_public_key
         self.status = MpcNode.NodeStatus.IDLE
         self.participant_id = None
         self.home_dir = self.near_node.node_dir
