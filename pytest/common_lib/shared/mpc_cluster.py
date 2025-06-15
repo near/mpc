@@ -70,9 +70,13 @@ class MpcCluster:
 
     def __init__(self, near_nodes: List[NearAccount]):
         self.mpc_nodes: List[MpcNode] = []
+        # Note: Refer to signing schemas and key resharing
         self.next_participant_id = 0
+        # Main account where Chain Signatures contract is deployed
         self.contract_node = near_nodes[0]
+        # In some tests we may need another CS contract.
         self.secondary_contract_node = near_nodes[1]
+        # An account from which we make requests to the Chain Signatures contract
         self.sign_request_node = near_nodes[1]
 
     def print_cluster_status(self):
