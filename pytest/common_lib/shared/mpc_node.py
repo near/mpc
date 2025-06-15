@@ -18,6 +18,13 @@ import requests
 
 
 class MpcNode(NearAccount):
+    """
+    MPC Node interface to keep track of the current status in the Chain-Signatures contract.
+    Also, initial parameters for the binary is being controlled there.
+
+    Mpc Node has its respective account on NEAR Blockchain.
+    """
+
     class NodeStatus:
         # not a participant, neither a candidate
         IDLE = 1
@@ -112,8 +119,7 @@ class MpcNode(NearAccount):
     def wait_for_connection_count(self, awaited_count):
         started = time.time()
         while True:
-            assert time.time(
-            ) - started < TIMEOUT, "Waiting for connection count"
+            assert time.time() - started < TIMEOUT, "Waiting for connection count"
             try:
                 conns = self.metrics.get_metric_all_values(
                     "mpc_network_live_connections")
