@@ -1,5 +1,5 @@
 [workspace]
-members = ["node", "devnet"]
+members = ["node", "devnet", "libs/chain-signatures/contract", "libs/chain-signatures/keys"]
 resolver = "2"
 exclude = ["libs", "pytest"]
 
