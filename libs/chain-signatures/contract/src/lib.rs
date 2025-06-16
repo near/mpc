@@ -136,7 +136,7 @@ impl TeeState {
         }
     }
 
-    /// Maps `account_id` to its `TeeQuoteStatus`. If `accoun_id` has no TEE information associated to it, then it is mapped to
+    /// Maps `account_id` to its `TeeQuoteStatus`. If `account_id` has no TEE information associated to it, then it is mapped to
     /// `TeeQuoteStatus::None`.
     pub fn tee_status(&self, account_id: &AccountId) -> TeeQuoteStatus {
         let now_sec = env::block_timestamp_ms() / 1_000;
@@ -184,7 +184,6 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     config: Config,
     tee_state: TeeState,
-    // todo: move `accept_signature_requests` into `tee_state` once PR #410 is merged
     accept_signature_requests: bool,
 }
 
@@ -608,9 +607,6 @@ impl VersionedMpcContract {
             return Err(RespondError::InvalidSignature.into());
         }
 
-        //let Self::V2(mpc_contract) = self else {
-        //    env::panic_str("expected V2")
-        //};
         // First get the yield promise of the (potentially timed out) request.
         if let Some(YieldIndex { data_id }) = mpc_contract.pending_requests.remove(&request) {
             // Finally, resolve the promise. This will have no effect if the request already timed.
@@ -994,12 +990,9 @@ impl VersionedMpcContract {
                             contract.accept_signature_requests = false;
                             return Ok(false);
                         }
-                        // todo: should we set `accept_signature_requests` to false for the duration of the
-                        // resharing (kind of defeats the purpose of implementing rehsharing in
-                        // parallel to running)
 
                         // here, we set it to true, because at this point, we have at least `threshold`
-                        // number of participants running a valid docker image.
+                        // number of participants with an accepted Tee status.
                         contract.accept_signature_requests = true;
 
                         // do we want to adjust the threshold?

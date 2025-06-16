@@ -101,8 +101,6 @@ impl MpcClient {
                         .send(ChainSendTransactionRequest::VerifyTee())
                         .await
                     {
-                        // does this mean we panic and exit here??
-                        // We should not
                         tracing::error!("Error sending VerifyTee request: {:?}", e);
                     }
                     sleep(Duration::from_secs(60 * 60 * 24 * 2)).await; // every 2 days
