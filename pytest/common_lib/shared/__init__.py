@@ -93,6 +93,7 @@ def start_neard_cluster_with_cleanup(
     for observer in observers:
         observer.kill(gentle=True)
         observer.reset_data()
+        adjust_indexing_shard(observer)
 
     return validators, observers
 
@@ -148,9 +149,9 @@ def create_and_dump_responder_config(
         yaml.dump(respond_cfg, file, default_flow_style=False)
 
 
-def adjust_node_indexer(mpc_node: MpcNode):
+def adjust_indexing_shard(near_node: LocalNode):
     """Set the node to track shard 0 explicitly in config.json."""
-    path = os.path.join(mpc_node.near_node.node_dir, 'config.json')
+    path = os.path.join(near_node.node_dir, 'config.json')
 
     with open(path, 'r+') as f:
         config = json.load(f)
@@ -159,7 +160,7 @@ def adjust_node_indexer(mpc_node: MpcNode):
         json.dump(config, f, indent=2)
         f.truncate()
 
-    print(f"Updated config for node {mpc_node.account_id()}: {path}")
+    print(f"Updated near node config: {path}")
 
 
 class Candidate:
@@ -239,8 +240,6 @@ def start_cluster_with_mpc(
 
     # Set up the node's home directories
     for mpc_node in mpc_nodes:
-        adjust_node_indexer(mpc_node)
-
         create_and_dump_responder_config(
             num_respond_aks,
             mpc_node,
