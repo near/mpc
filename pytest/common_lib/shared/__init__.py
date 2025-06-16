@@ -121,12 +121,13 @@ def generate_mpc_configs(
 def create_and_dump_responder_config(
         num_respond_aks: int,
         mpc_node: MpcNode,
-        cluster: MpcCluster,
+        # We can not get `last_block_hash` from non-validator node at this moment, because it hasn't been started yet.
+        # So we send transactions via validator node.
+        validator_account: NearAccount,
 ):
     if num_respond_aks == 0:
         return
-    # FIXME: For whatever reason we can not get `last_block_hash` from non-validator node at this moment
-    last_block_hash = cluster.contract_node.last_block_hash()
+    last_block_hash = validator_account.last_block_hash()
     account_id = f"respond.{mpc_node.account_id()}"
     access_keys = [
         Key.from_seed_testonly(account_id, seed=f"{s}")
@@ -139,7 +140,7 @@ def create_and_dump_responder_config(
         1,
         last_block_hash
     )
-    cluster.contract_node.send_txn_and_check_success(tx)
+    validator_account.send_txn_and_check_success(tx)
     respond_cfg = {
         'account_id': account_id,
         'access_keys': list(map(serialize_key, access_keys)),
@@ -243,7 +244,7 @@ def start_cluster_with_mpc(
         create_and_dump_responder_config(
             num_respond_aks,
             mpc_node,
-            cluster
+            cluster.contract_node,
         )
 
     # Deploy the mpc contract
