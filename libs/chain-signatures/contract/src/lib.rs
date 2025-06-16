@@ -1012,6 +1012,13 @@ impl VersionedMpcContract {
         }
     }
 
+    pub fn allowed_docker_image_hashes(&self) -> &AllowedDockerImageHashes {
+        match self {
+            Self::V2(mpc_contract) => &mpc_contract.tee_state.allowed_docker_image_hashes,
+            _ => env::panic_str("expected V2"),
+        }
+    }
+
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
         match self {
             Self::V2(mpc_contract) => mpc_contract.get_pending_request(request),
