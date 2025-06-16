@@ -574,6 +574,7 @@ impl FakeIndexerManager {
         let (api_signature_request_sender, api_signature_request_receiver) =
             mpsc::unbounded_channel();
         let (api_txn_sender, api_txn_receiver) = mpsc::channel(1000);
+        #[cfg(feature = "tee")]
         let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
             watch::channel(vec![]);
 
@@ -583,6 +584,7 @@ impl FakeIndexerManager {
                 api_signature_request_receiver,
             )),
             txn_sender: api_txn_sender,
+            #[cfg(feature = "tee")]
             _allowed_docker_images_receiver: allowed_docker_images_receiver,
         };
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));
