@@ -3,7 +3,7 @@ import os
 import pathlib
 import subprocess
 import sys
-from typing import List, Iterable, Optional
+from typing import List, Iterable, Optional, Tuple
 
 import base58
 import yaml
@@ -24,6 +24,7 @@ from transaction import create_create_account_action, create_payment_action, \
 from key import Key
 
 dot_near = pathlib.Path.home() / '.near'
+
 
 # Output is deserializable into the rust type near_crypto::SecretKey
 def serialize_key(key: Key):
@@ -59,8 +60,7 @@ def sign_create_account_with_multiple_access_keys_tx(
 def start_neard_cluster_with_cleanup(
         num_validators: int,
         num_mpc_nodes: int,
-        mpc_node_indices: Iterable[int]
-) -> List[LocalNode] :
+) -> Tuple[List[LocalNode], List[LocalNode]]:
     rpc_polling_config = {
         "rpc": {
             "polling_config": {
@@ -87,11 +87,14 @@ def start_neard_cluster_with_cleanup(
         client_config_changes=client_config_changes
     )
 
-    for i in mpc_node_indices:
-        nodes[i].kill(gentle=True)
-        nodes[i].reset_data()
+    validators = nodes[:num_validators]
+    observers = nodes[num_validators:]
 
-    return nodes
+    for observer in observers:
+        observer.kill(gentle=True)
+        observer.reset_data()
+
+    return validators, observers
 
 
 def generate_mpc_configs(
@@ -146,39 +149,32 @@ def create_and_dump_responder_config(
 
 
 def adjust_node_indexer(mpc_node: MpcNode):
-    # Indexer config must explicitly specify tracked shard
-    fname = os.path.join(mpc_node.near_node.node_dir, 'config.json')
-    with open(fname) as fd:
-        config_json = json.load(fd)
-    config_json['tracked_shards'] = [0]
-    with open(fname, 'w') as fd:
-        json.dump(config_json, fd, indent=2)
-    print(f"Wrote {fname} as config for node {mpc_node.account_id()}")
+    """Set the node to track shard 0 explicitly in config.json."""
+    path = os.path.join(mpc_node.near_node.node_dir, 'config.json')
+
+    with open(path, 'r+') as f:
+        config = json.load(f)
+        config['tracked_shards'] = [0]
+        f.seek(0)
+        json.dump(config, f, indent=2)
+        f.truncate()
+
+    print(f"Updated config for node {mpc_node.account_id()}: {path}")
 
 
-def start_cluster_with_mpc(
-        num_validators,
-        num_mpc_nodes,
-        num_respond_aks,
-        contract,
-        presignatures_to_buffer=None,
-        start_mpc_nodes=True
-):
-    mpc_node_indices = range(num_validators, num_validators + num_mpc_nodes)
+class Candidate:
+    def __init__(self, account_id, p2p_public_key, url):
+        self.account_id = account_id
+        self.p2p_public_key = p2p_public_key
+        self.url = url
 
-    near_nodes = start_neard_cluster_with_cleanup(
-        num_validators,
-        num_mpc_nodes,
-        mpc_node_indices
-    )
 
-    generate_mpc_configs(
-        num_mpc_nodes,
-        num_validators,
-        presignatures_to_buffer
-    )
-
-    # Get the participant set from the mpc configs.
+def get_candidates(
+        num_validators: int
+) -> List[Candidate]:
+    """
+    Get the participant set from the mpc configs.
+    """
     candidates = []
     with open(pathlib.Path(dot_near / 'participants.json')) as file:
         participants_config = yaml.load(file, Loader=SafeLoaderIgnoreUnknown)
@@ -190,27 +186,56 @@ def start_cluster_with_mpc(
         my_addr = p['address']
         my_port = p['port']
 
-        candidates.append({
-            "account_id": near_account,
-            "p2p_public_key": p2p_public_key,
-            "url": f"http://{my_addr}:{my_port}",
-        })
+        candidates.append(Candidate(
+            account_id=near_account,
+            p2p_public_key=p2p_public_key,
+            url=f"http://{my_addr}:{my_port}",
+        ))
+    return candidates
 
-    for i in mpc_node_indices:
-        # Move the generated mpc configs
-        mpc_config_dir = dot_near / str(i - num_validators)
+
+def move_mpc_configs(
+        observers: List[LocalNode]
+):
+    """
+    Rust code generates a folder per each participant, we want to move everything in one place
+    Name of each folder is just a node index, e.g. 0, 1, 2, ...
+    """
+    for idx, observer in enumerate(observers):
+        mpc_config_dir = dot_near / str(idx)
         for fname in os.listdir(mpc_config_dir):
-            subprocess.run(('mv', os.path.join(mpc_config_dir, fname), near_nodes[i].node_dir))
+            subprocess.run(('mv', os.path.join(mpc_config_dir, fname), observer.node_dir))
+
+
+def start_cluster_with_mpc(
+        num_validators,
+        num_mpc_nodes,
+        num_respond_aks,
+        contract,
+        presignatures_to_buffer=None,
+        start_mpc_nodes=True
+):
+    validators, observers = start_neard_cluster_with_cleanup(
+        num_validators,
+        num_mpc_nodes,
+    )
+
+    generate_mpc_configs(
+        num_mpc_nodes,
+        num_validators,
+        presignatures_to_buffer
+    )
+
+    candidates = get_candidates(num_validators)
+
+    move_mpc_configs(observers)
 
     mpc_nodes = [
-        MpcNode(
-            near_nodes[i],
-            candidates[i - num_validators]["url"],
-            candidates[i - num_validators]["p2p_public_key"]
-        )
-        for i in mpc_node_indices
+        MpcNode(near_node, candidate.url, candidate.p2p_public_key)
+        for near_node, candidate in zip(observers, candidates)
     ]
-    cluster = MpcCluster(near_nodes=[NearAccount(node) for node in near_nodes])
+
+    cluster = MpcCluster(main=NearAccount(validators[0]), secondary=NearAccount(validators[1]))
 
     # Set up the node's home directories
     for mpc_node in mpc_nodes:
