@@ -215,12 +215,9 @@ impl MpcContract {
         Ok(())
     }
 
-    pub fn allowed_code_hashes(&mut self) -> Vec<DockerImageHash> {
-        self.tee_state.get_all_allowed_hashes()
-    }
-
     pub fn latest_code_hash(&mut self) -> DockerImageHash {
-        self.allowed_code_hashes()
+        self.tee_state
+            .get_all_allowed_hashes()
             .last()
             .expect("there must be at least one allowed code hash")
             .clone()
@@ -501,7 +498,7 @@ impl VersionedMpcContract {
     #[payable]
     #[handle_result]
     pub fn propose_join(
-        &mut self, // add TLS key for report data
+        &mut self,
         #[serializer(borsh)] proposed_tee_participant: TeeParticipantInfo,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
@@ -528,7 +525,7 @@ impl VersionedMpcContract {
             env::panic_str("expected V2")
         };
 
-        // Verify RTMR 0, 1, 2, and MRTD (static measurement; hardcoded value)
+        // Verify RTMR 0, 1, 2, and MRTD against hardcoded expected values
 
         if !TeeParticipantInfo::verify_static_rtmrs(report) {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
@@ -828,7 +825,7 @@ impl VersionedMpcContract {
     pub fn allowed_code_hashes(&mut self) -> Result<Vec<DockerImageHash>, Error> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
         match self {
-            Self::V2(contract) => Ok(contract.allowed_code_hashes()),
+            Self::V2(contract) => Ok(contract.tee_state.get_all_allowed_hashes()),
             _ => env::panic_str("expected V2"),
         }
     }
