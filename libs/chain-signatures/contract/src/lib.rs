@@ -12,7 +12,8 @@ pub mod utils;
 pub mod v0_state;
 
 use crate::errors::Error;
-use crate::tee::{proposal::AllowedDockerImageHashes, quote::TeeQuoteStatus};
+use crate::storage_keys::StorageKey;
+use crate::tee::tee_state::TeeState;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
 use crate::v0_state::MpcContractV1;
 use config::{Config, InitConfig};
@@ -22,7 +23,6 @@ use crypto_shared::{
     near_public_key_to_affine_point,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
-use dcap_qvl::verify;
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, SignError,
 };
@@ -31,7 +31,7 @@ use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     env::{self, ed25519_verify},
     log, near, near_bindgen,
-    store::{IterableMap, LookupMap},
+    store::LookupMap,
     AccountId, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise, PromiseError,
     PromiseOrValue, PublicKey,
 };
@@ -42,13 +42,7 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
-use std::collections::BTreeMap;
-use storage_keys::StorageKey;
-use tee::{
-    proposal::{CodeHashesVotes, DockerImageHash},
-    quote::{get_collateral, verify_codehash},
-    tee_participant::TeeParticipantInfo,
-};
+use tee::{proposal::DockerImageHash, quote::get_collateral, tee_participant::TeeParticipantInfo};
 
 // Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
@@ -77,75 +71,6 @@ pub enum VersionedMpcContract {
 impl Default for VersionedMpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
-    }
-}
-
-#[near(serializers=[borsh])]
-#[derive(Debug)]
-pub struct TeeState {
-    allowed_docker_image_hashes: AllowedDockerImageHashes,
-    historical_docker_image_hashes: Vec<DockerImageHash>,
-    votes: CodeHashesVotes,
-    tee_participant_info: IterableMap<AccountId, TeeParticipantInfo>,
-}
-
-impl Default for TeeState {
-    fn default() -> Self {
-        Self {
-            allowed_docker_image_hashes: Default::default(),
-            historical_docker_image_hashes: Default::default(),
-            votes: Default::default(),
-            tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
-        }
-    }
-}
-
-impl TeeState {
-    /// maps every element in `participants` to its `TeeQuoteStatus`. If an element of
-    /// `participants` does not have any TEE information associated to it, then it is mapped to
-    /// `TeeQuoteStatus::None`.
-    pub fn tee_status(&self, participants: Vec<AccountId>) -> BTreeMap<AccountId, TeeQuoteStatus> {
-        let now_sec = env::block_timestamp_ms() / 1_000;
-        participants
-            .into_iter()
-            .map(|account_id| {
-                let status = self
-                    .tee_participant_info
-                    .get(&account_id)
-                    .map(|tee_participant_info| {
-                        TeeQuoteStatus::from(tee_participant_info.verify_quote(now_sec))
-                    })
-                    .unwrap_or(TeeQuoteStatus::None);
-                (account_id, status)
-            })
-            .collect()
-    }
-
-    pub fn is_code_hash_allowed(
-        &mut self,
-        _code_hash: DockerImageHash,
-        expected_rtmr3: &[u8; 48],
-        raw_tcb_info: String,
-    ) -> bool {
-        let expected_rtmr3 = hex::encode(expected_rtmr3);
-        let code_hash = verify_codehash(raw_tcb_info, expected_rtmr3);
-        self.historical_docker_image_hashes
-            .iter()
-            .chain(
-                self.allowed_docker_image_hashes
-                    .get(env::block_height())
-                    .iter()
-                    .map(|entry| &entry.image_hash),
-            )
-            .any(|proposal| proposal.as_hex() == code_hash)
-    }
-
-    pub fn whitelist_tee_proposal(&mut self, tee_proposal: DockerImageHash) {
-        self.votes.clear_votes();
-        self.historical_docker_image_hashes
-            .push(tee_proposal.clone());
-        self.allowed_docker_image_hashes
-            .insert(tee_proposal, env::block_height());
     }
 }
 
@@ -279,7 +204,7 @@ impl MpcContract {
         };
 
         let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
-        let votes = self.tee_state.votes.vote(code_hash.clone(), &participant);
+        let votes = self.tee_state.vote(code_hash.clone(), &participant);
 
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
@@ -291,12 +216,7 @@ impl MpcContract {
     }
 
     pub fn allowed_code_hashes(&mut self) -> Vec<DockerImageHash> {
-        self.tee_state
-            .allowed_docker_image_hashes
-            .get(env::block_height())
-            .into_iter()
-            .map(|entry| entry.image_hash)
-            .collect()
+        self.tee_state.get_all_allowed_hashes()
     }
 
     pub fn latest_code_hash(&mut self) -> DockerImageHash {
@@ -581,7 +501,7 @@ impl VersionedMpcContract {
     #[payable]
     #[handle_result]
     pub fn propose_join(
-        &mut self,
+        &mut self, // add TLS key for report data
         #[serializer(borsh)] proposed_tee_participant: TeeParticipantInfo,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
@@ -597,29 +517,32 @@ impl VersionedMpcContract {
 
         // Verify the TEE quote before adding the proposed participant to the contract state
 
-        let quote_collateral = get_collateral(proposed_tee_participant.quote_collateral.clone())
-            .map_err(|err: anyhow::Error| {
+        let timestamp_s = env::block_timestamp_ms() / 1_000;
+        let report = proposed_tee_participant
+            .verify_quote(timestamp_s)
+            .map_err(|err| {
                 InvalidParameters::InvalidTeeRemoteAttestation.message(err.to_string())
             })?;
-        let _verification_result = verify::verify(
-            &proposed_tee_participant.tee_quote,
-            &quote_collateral,
-            env::block_timestamp_ms() / 1_000,
-        )
-        .map_err(|err: anyhow::Error| {
-            InvalidParameters::InvalidTeeRemoteAttestation.message(err.to_string())
-        })?;
-
-        // Add a new proposed participant to the contract state
 
         let Self::V2(mpc_contract) = self else {
             env::panic_str("expected V2")
         };
 
+        // Verify RTMR 0, 1, 2, and MRTD (static measurement; hardcoded value)
+
+        if !TeeParticipantInfo::verify_static_rtmrs(report) {
+            return Err(InvalidParameters::InvalidTeeRemoteAttestation
+                .message("RTMRs do not match expected values".to_string()));
+        }
+
+        // TODO(#506) verify RTMR3
+        // TODO(#507) verify report_data
+
+        // Add a new proposed participant to the contract state
+
         mpc_contract
             .tee_state
-            .tee_participant_info
-            .insert(account_id.clone(), proposed_tee_participant.clone());
+            .add_participant(account_id.clone(), proposed_tee_participant.clone());
 
         // Both participants and non-participants can propose. Non-participants must pay for the
         // storage they use; participants do not.
