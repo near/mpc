@@ -8,10 +8,17 @@ use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::views::QueryRequest;
 use near_indexer_primitives::views::QueryResponseKind::CallResult;
 use near_o11y::WithSpanContextExt;
+use serde::Deserialize;
 use std::time::Duration;
 use tokio::time;
 
+#[cfg(feature = "tee")]
+use mpc_contract::tee::proposal::AllowedDockerImageHashes;
+
 const INTERVAL: Duration = Duration::from_millis(500);
+#[cfg(feature = "tee")]
+const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = "allowed_docker_image_hashes";
+const CONTRACT_STATE_ENDPOINT: &str = "state";
 
 pub(crate) async fn wait_for_full_sync(client: &Addr<ClientActor>) {
     loop {
@@ -36,13 +43,17 @@ pub(crate) async fn wait_for_full_sync(client: &Addr<ClientActor>) {
     }
 }
 
-pub(crate) async fn get_mpc_contract_state(
+pub(crate) async fn get_mpc_state<State>(
     mpc_contract_id: AccountId,
     client: &actix::Addr<near_client::ViewClientActor>,
-) -> anyhow::Result<(u64, ProtocolContractState)> {
+    endpoint: &str,
+) -> anyhow::Result<(u64, State)>
+where
+    State: for<'de> Deserialize<'de>,
+{
     let request = QueryRequest::CallFunction {
         account_id: mpc_contract_id,
-        method_name: "state".to_string(),
+        method_name: endpoint.to_string(),
         args: vec![].into(),
     };
     let query = near_client::Query {
@@ -59,4 +70,19 @@ pub(crate) async fn get_mpc_contract_state(
             bail!("got unexpected response querying mpc contract state")
         }
     }
+}
+
+pub(crate) async fn get_mpc_contract_state(
+    mpc_contract_id: AccountId,
+    client: &actix::Addr<near_client::ViewClientActor>,
+) -> anyhow::Result<(u64, ProtocolContractState)> {
+    get_mpc_state(mpc_contract_id, client, CONTRACT_STATE_ENDPOINT).await
+}
+
+#[cfg(feature = "tee")]
+pub(crate) async fn get_mpc_tee_state(
+    mpc_contract_id: AccountId,
+    client: &actix::Addr<near_client::ViewClientActor>,
+) -> anyhow::Result<(u64, AllowedDockerImageHashes)> {
+    get_mpc_state(mpc_contract_id, client, ALLOWED_IMAGE_HASHES_ENDPOINT).await
 }

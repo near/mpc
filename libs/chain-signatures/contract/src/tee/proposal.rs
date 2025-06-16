@@ -64,15 +64,15 @@ impl CodeHashesVotes {
 
 /// A proposal for a new TEE code hash to be added to the whitelist, along with the time it was
 /// added.
-#[near(serializers=[borsh])]
-#[derive(Debug, Clone)]
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AllowedDockerImageHash {
     pub image_hash: DockerImageHash,
     pub added: BlockHeight,
 }
 /// Collection of whitelisted Docker code hashes that are the only ones MPC nodes are allowed to
 /// run.
-#[near(serializers=[borsh])]
+#[near(serializers=[borsh, json])]
 #[derive(Debug, Default)]
 pub struct AllowedDockerImageHashes {
     /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
