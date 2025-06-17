@@ -25,7 +25,8 @@ use tokio::time::{sleep, timeout};
 /// responded to multiple times. It doesn't affect correctness, but can make tests less flaky and
 /// production runs experience fewer redundant signatures.
 const INITIAL_STARTUP_SIGNATURE_PROCESSING_DELAY: Duration = Duration::from_secs(2);
-const TWO_DAYS_S: Duration = Duration::from_secs(60 * 60 * 24 * 2);
+const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
+    Duration::from_secs(60 * 60 * 24 * 2);
 
 #[derive(Clone)]
 pub struct MpcClient {
@@ -108,7 +109,8 @@ impl MpcClient {
                         );
                         return;
                     }
-                    sleep(TWO_DAYS_S).await;
+                    metrics::VERIFY_TEE_REQUESTS_SENT.inc();
+                    sleep(TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION).await;
                 }
             })
         };
