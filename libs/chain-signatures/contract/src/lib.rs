@@ -969,7 +969,7 @@ impl VersionedMpcContract {
             env::panic_str("expected V1")
         };
         let ProtocolContractState::Running(running_state) = &mut contract.protocol_state else {
-            env::panic_str("require running state");
+            return Err(InvalidState::ProtocolStateNotRunning.into());
         };
         let current_params = running_state.parameters.clone();
         match contract
