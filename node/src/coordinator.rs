@@ -430,7 +430,6 @@ impl Coordinator {
                                 break;
                             };
 
-                            tracing::info!("received channel {:?}", network_channel.task_id());
                             let is_resharing_message = matches!(
                                 network_channel.task_id(),
                                 MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { .. })

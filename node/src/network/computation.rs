@@ -29,7 +29,6 @@ pub trait MpcLeaderCentricComputation<T>: Sized + 'static {
         mut channel: NetworkTaskChannel,
         timeout: std::time::Duration,
     ) -> impl Future<Output = anyhow::Result<T>> + 'static {
-        info!("Performing leader centric computation.");
         let leader_waits_for_success = self.leader_waits_for_success();
         let sender = channel.sender();
         let sender_clone = sender.clone();
