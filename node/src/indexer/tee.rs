@@ -10,7 +10,7 @@ use crate::indexer::{
 
 /// This future waits for the indexer to fully sync, and returns
 /// a [`watch::Receiver`] that will be continuously updated with the latest
-/// state [`BlockHeight`] and [`AllowedDockerImageHashes`] when a change is detected
+/// allowed [`AllowedDockerImageHash`]es when a change is detected
 /// on the MPC smart contract.
 pub async fn monitor_allowed_docker_images(
     indexer_state: Arc<IndexerState>,
