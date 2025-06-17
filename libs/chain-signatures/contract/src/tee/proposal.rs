@@ -135,6 +135,16 @@ impl AllowedDockerImageHashes {
         self.clean_expired_hashes(current_block_height);
         self.allowed_tee_proposals.clone()
     }
+
+    pub fn is_code_hash_allowed(
+        &mut self,
+        code_hash: String,
+        current_block_height: BlockHeight,
+    ) -> bool {
+        self.get(current_block_height)
+            .iter()
+            .any(|proposal| proposal.image_hash.as_hex() == code_hash)
+    }
 }
 
 #[cfg(test)]

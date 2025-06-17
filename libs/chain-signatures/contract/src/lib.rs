@@ -532,7 +532,13 @@ impl VersionedMpcContract {
                 .message("RTMRs do not match expected values".to_string()));
         }
 
-        // TODO(#506) verify RTMR3
+        // Verify RTMR3
+
+        if !proposed_tee_participant.verify_docker_images_via_rtmr3(&mut mpc_contract.tee_state)? {
+            return Err(InvalidParameters::InvalidTeeRemoteAttestation
+                .message("RTMR3 does not match expected value".to_string()));
+        }
+
         // TODO(#507) verify report_data
 
         // Add a new proposed participant to the contract state

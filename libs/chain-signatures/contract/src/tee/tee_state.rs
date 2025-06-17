@@ -3,7 +3,7 @@ use crate::{
     storage_keys::StorageKey,
     tee::{
         proposal::{AllowedDockerImageHashes, CodeHashesVotes, DockerImageHash},
-        quote::{verify_codehash, TeeQuoteStatus},
+        quote::TeeQuoteStatus,
         tee_participant::TeeParticipantInfo,
     },
 };
@@ -56,7 +56,7 @@ impl TeeState {
             .collect()
     }
 
-    /// maps every element in `participants` to its `TeeQuoteStatus`. If an element of
+    /// Maps every element in `participants` to its `TeeQuoteStatus`. If an element of
     /// `participants` does not have any TEE information associated to it, then it is mapped to
     /// `TeeQuoteStatus::None`.
     pub fn tee_status(&self, participants: Vec<AccountId>) -> BTreeMap<AccountId, TeeQuoteStatus> {
@@ -74,25 +74,6 @@ impl TeeState {
                 (account_id, status)
             })
             .collect()
-    }
-
-    pub fn is_code_hash_allowed(
-        &mut self,
-        _code_hash: DockerImageHash,
-        expected_rtmr3: &[u8; 48],
-        raw_tcb_info: String,
-    ) -> bool {
-        let expected_rtmr3 = hex::encode(expected_rtmr3);
-        let code_hash = verify_codehash(raw_tcb_info, expected_rtmr3);
-        self.historical_docker_image_hashes
-            .iter()
-            .chain(
-                self.allowed_docker_image_hashes
-                    .get(env::block_height())
-                    .iter()
-                    .map(|entry| &entry.image_hash),
-            )
-            .any(|proposal| proposal.as_hex() == code_hash)
     }
 
     pub fn whitelist_tee_proposal(&mut self, tee_proposal: DockerImageHash) {

@@ -91,7 +91,7 @@ pub fn verify_codehash(raw_tcb_info: String, rtmr3: String) -> String {
     codehash.to_owned()
 }
 
-fn replay_rtmr(event_log: Vec<Value>, imr: u8) -> String {
+pub fn replay_rtmr(event_log: Vec<Value>, imr: u8) -> String {
     let mut digest = [0u8; 48];
 
     // filter by imr
@@ -115,7 +115,7 @@ fn replay_rtmr(event_log: Vec<Value>, imr: u8) -> String {
     encode(digest)
 }
 
-fn replay_app_compose(app_compose: &str) -> String {
+pub fn replay_app_compose(app_compose: &str) -> String {
     // sha256 of app_compose from TcbInfo
     let mut sha256 = Sha256::new();
     sha256.update(app_compose);
