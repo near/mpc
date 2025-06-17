@@ -3,7 +3,7 @@ mod impls;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TeeError {
-    #[error("Due to previously failed tee validation, the network is not accepting new signature requests at this point in time. Try again later.")]
+    #[error("Due to previously failed TEE validation, the network is not accepting new signature requests at this point in time. Try again later.")]
     TeeValidationFailed,
 }
 

@@ -56,6 +56,7 @@ const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
 // Register used to receive data id from `promise_await_data`.
 const DATA_ID_REGISTER: u64 = 0;
 
+// Prepaid gas for a `return_signature_and_clean_state_on_success` call
 const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(6);
 // Prepaid gas for a `update_config` call
 const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
@@ -113,19 +114,17 @@ impl TeeState {
     /// Participants with `TeeQuoteStatus::Valid` or `TeeQuoteStatus::None` are considered valid.
     /// The returned `Participants` preserves participant data and `next_id()`.
     fn validate_tee(&self, participants: &Participants) -> TeeValidationResult {
-        let mut new_participants = Vec::new();
-        for p in participants.participants() {
-            match self.tee_status(&p.0) {
-                TeeQuoteStatus::Valid => {
-                    new_participants.push(p.clone());
-                }
-                TeeQuoteStatus::None => {
-                    // todo [#502](https://github.com/near/mpc/issues/502), but for now, we accept.
-                    new_participants.push(p.clone());
-                }
-                TeeQuoteStatus::Invalid => {}
-            }
-        }
+        let new_participants: Vec<_> = participants
+            .participants()
+            .iter()
+            .filter(|(account_id, _, _)| {
+                matches!(
+                    self.tee_status(account_id),
+                    TeeQuoteStatus::Valid | TeeQuoteStatus::None
+                )
+            })
+            .cloned()
+            .collect();
         if new_participants.len() != participants.len() {
             TeeValidationResult::Partial(Participants::init(
                 participants.next_id(),
@@ -428,7 +427,7 @@ impl VersionedMpcContract {
         };
 
         if !mpc_contract.accept_signature_requests {
-            env::panic_str("Due to previously failed tee validation, the network is not accepting new signature requests at this point in time. Try again later.")
+            env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
         env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
@@ -966,57 +965,54 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn verify_tee(&mut self) -> Result<bool, Error> {
         log!("verify_tee: signer={}", env::signer_account_id());
-        match self {
-            Self::V2(contract) => {
-                let ProtocolContractState::Running(running_state) = &mut contract.protocol_state
-                else {
-                    env::panic_str("require running state");
-                };
-                let current_params = running_state.parameters.clone();
-                match contract
-                    .tee_state
-                    .validate_tee(current_params.participants())
-                {
-                    TeeValidationResult::Full => {
-                        contract.accept_signature_requests = true;
-                        log!("All participants have an accepted Tee status");
-                        Ok(true)
-                    }
-                    TeeValidationResult::Partial(new_participants) => {
-                        let threshold = current_params.threshold().value() as usize;
-                        let remaining = new_participants.len();
-                        if threshold > remaining {
-                            log!("Less than `threshold` participants are left with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.");
-                            contract.accept_signature_requests = false;
-                            return Ok(false);
-                        }
-
-                        // here, we set it to true, because at this point, we have at least `threshold`
-                        // number of participants with an accepted Tee status.
-                        contract.accept_signature_requests = true;
-
-                        // do we want to adjust the threshold?
-                        //let n_participants_new = new_participants.len();
-                        //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
-                        //let new_threshold = new_threshold.max(2); // but also minimum 2
-                        let new_threshold = threshold;
-
-                        let tp = ThresholdParameters::new(
-                            new_participants,
-                            Threshold::new(new_threshold as u64),
-                        )
-                        .expect("error");
-                        current_params.validate_incoming_proposal(&tp)?;
-                        let res = running_state.transition_to_resharing_no_checks(&tp);
-                        if let Some(resharing) = res {
-                            contract.protocol_state = ProtocolContractState::Resharing(resharing);
-                        }
-
-                        Ok(false)
-                    }
-                }
+        let Self::V2(contract) = self else {
+            env::panic_str("expected V1")
+        };
+        let ProtocolContractState::Running(running_state) = &mut contract.protocol_state else {
+            env::panic_str("require running state");
+        };
+        let current_params = running_state.parameters.clone();
+        match contract
+            .tee_state
+            .validate_tee(current_params.participants())
+        {
+            TeeValidationResult::Full => {
+                contract.accept_signature_requests = true;
+                log!("All participants have an accepted Tee status");
+                Ok(true)
             }
-            _ => env::panic_str("expected V1"),
+            TeeValidationResult::Partial(new_participants) => {
+                let threshold = current_params.threshold().value() as usize;
+                let remaining = new_participants.len();
+                if threshold > remaining {
+                    log!("Less than `threshold` participants are left with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.");
+                    contract.accept_signature_requests = false;
+                    return Ok(false);
+                }
+
+                // here, we set it to true, because at this point, we have at least `threshold`
+                // number of participants with an accepted Tee status.
+                contract.accept_signature_requests = true;
+
+                // do we want to adjust the threshold?
+                //let n_participants_new = new_participants.len();
+                //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
+                //let new_threshold = new_threshold.max(2); // but also minimum 2
+                let new_threshold = threshold;
+
+                let threshold_parameters = ThresholdParameters::new(
+                    new_participants,
+                    Threshold::new(new_threshold as u64),
+                )
+                .expect("Require valid threshold parameters"); // this should never happen.
+                current_params.validate_incoming_proposal(&threshold_parameters)?;
+                let res = running_state.transition_to_resharing_no_checks(&threshold_parameters);
+                if let Some(resharing) = res {
+                    contract.protocol_state = ProtocolContractState::Resharing(resharing);
+                }
+
+                Ok(false)
+            }
         }
     }
 }

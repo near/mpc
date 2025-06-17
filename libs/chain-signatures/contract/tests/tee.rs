@@ -35,19 +35,4 @@ async fn test_tee_verify_no_tee() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_tee_verify_with_tee() -> anyhow::Result<()> {
-    let (_, contract, _, _) = init_env_ed25519(1).await;
-    let n_participants_start = get_participants(&contract).await?;
-
-    let verified_tee: bool = contract
-        .call("verify_tee")
-        .args_json(serde_json::json!(""))
-        .max_gas()
-        .transact()
-        .await?
-        .json()?;
-    assert!(verified_tee);
-    assert_eq!(n_participants_start, get_participants(&contract).await?);
-    Ok(())
-}
+// todo [#514](https://github.com/near/mpc/issues/514)

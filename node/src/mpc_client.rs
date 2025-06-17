@@ -25,6 +25,7 @@ use tokio::time::{sleep, timeout};
 /// responded to multiple times. It doesn't affect correctness, but can make tests less flaky and
 /// production runs experience fewer redundant signatures.
 const INITIAL_STARTUP_SIGNATURE_PROCESSING_DELAY: Duration = Duration::from_secs(2);
+const TWO_DAYS_S: Duration = Duration::from_secs(60 * 60 * 24 * 2);
 
 #[derive(Clone)]
 pub struct MpcClient {
@@ -93,7 +94,7 @@ impl MpcClient {
             )
         };
 
-        let tee_verification = {
+        let tee_verification_handle = {
             let chain_txn_sender = chain_txn_sender.clone();
             tracking::spawn("tee_verification", async move {
                 loop {
@@ -101,9 +102,13 @@ impl MpcClient {
                         .send(ChainSendTransactionRequest::VerifyTee())
                         .await
                     {
-                        tracing::error!("Error sending VerifyTee request: {:?}", e);
+                        tracing::error!(
+                            "Receiver dropped, error sending VerifyTee request: {:?}",
+                            e
+                        );
+                        return;
                     }
-                    sleep(Duration::from_secs(60 * 60 * 24 * 2)).await; // every 2 days
+                    sleep(TWO_DAYS_S).await;
                 }
             })
         };
@@ -127,7 +132,7 @@ impl MpcClient {
         monitor_chain.await?;
         let _ = ecdsa_background_tasks.await?;
         let _ = eddsa_background_tasks.await?;
-        tee_verification.await?;
+        tee_verification_handle.await?;
 
         Ok(())
     }
