@@ -24,7 +24,7 @@ use crypto_shared::{
 };
 use dcap_qvl::verify;
 use errors::{
-    DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, SignError,
+    DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, SignError, TeeError,
 };
 use k256::elliptic_curve::{sec1::ToEncodedPoint, PrimeField};
 use near_sdk::{
@@ -35,6 +35,7 @@ use near_sdk::{
     AccountId, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise, PromiseError,
     PromiseOrValue, PublicKey,
 };
+use primitives::participants::Participants;
 use primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
@@ -42,7 +43,6 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
-use std::collections::BTreeMap;
 use storage_keys::StorageKey;
 use tee::{
     proposal::{CodeHashesVotes, DockerImageHash},
@@ -100,25 +100,51 @@ impl Default for TeeState {
     }
 }
 
+enum TeeValidationResult {
+    Full,
+    Partial(Participants),
+}
+
 impl TeeState {
-    /// maps every element in `participants` to its `TeeQuoteStatus`. If an element of
-    /// `participants` does not have any TEE information associated to it, then it is mapped to
-    /// `TeeQuoteStatus::None`.
-    pub fn tee_status(&self, participants: Vec<AccountId>) -> BTreeMap<AccountId, TeeQuoteStatus> {
-        let now_sec = env::block_timestamp_ms() / 1_000;
-        participants
-            .into_iter()
-            .map(|account_id| {
-                let status = self
-                    .tee_participant_info
-                    .get(&account_id)
-                    .map(|tee_participant_info| {
-                        TeeQuoteStatus::from(tee_participant_info.verify_quote(now_sec))
-                    })
-                    .unwrap_or(TeeQuoteStatus::None);
-                (account_id, status)
+    /// Performs TEE validation on the given participants.
+    ///
+    /// Returns `TeeValidationResult::Full` if all participants are valid,
+    /// or `TeeValidationResult::Partial` with the subset of valid participants otherwise.
+    ///
+    /// Participants with `TeeQuoteStatus::Valid` or `TeeQuoteStatus::None` are considered valid.
+    /// The returned `Participants` preserves participant data and `next_id()`.
+    fn validate_tee(&self, participants: &Participants) -> TeeValidationResult {
+        let new_participants: Vec<_> = participants
+            .participants()
+            .iter()
+            .filter(|(account_id, _, _)| {
+                matches!(
+                    self.tee_status(account_id),
+                    TeeQuoteStatus::Valid | TeeQuoteStatus::None
+                )
             })
-            .collect()
+            .cloned()
+            .collect();
+        if new_participants.len() != participants.len() {
+            TeeValidationResult::Partial(Participants::init(
+                participants.next_id(),
+                new_participants,
+            ))
+        } else {
+            TeeValidationResult::Full
+        }
+    }
+
+    /// Maps `account_id` to its `TeeQuoteStatus`. If `account_id` has no TEE information associated to it, then it is mapped to
+    /// `TeeQuoteStatus::None`.
+    pub fn tee_status(&self, account_id: &AccountId) -> TeeQuoteStatus {
+        let now_sec = env::block_timestamp_ms() / 1_000;
+        self.tee_participant_info
+            .get(account_id)
+            .map(|tee_participant_info| {
+                TeeQuoteStatus::from(tee_participant_info.verify_quote(now_sec))
+            })
+            .unwrap_or(TeeQuoteStatus::None)
     }
 
     pub fn is_code_hash_allowed(
@@ -157,6 +183,7 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     config: Config,
     tee_state: TeeState,
+    accept_signature_requests: bool,
 }
 
 impl MpcContract {
@@ -200,6 +227,7 @@ impl MpcContract {
             proposed_updates: ProposedUpdates::default(),
             config: Config::from(init_config),
             tee_state: Default::default(),
+            accept_signature_requests: true,
         }
     }
 
@@ -398,6 +426,10 @@ impl VersionedMpcContract {
             env::panic_str("expected V2")
         };
 
+        if !mpc_contract.accept_signature_requests {
+            env::panic_str(&TeeError::TeeValidationFailed.to_string())
+        }
+
         env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
 
         let promise_index = env::promise_yield_create(
@@ -505,11 +537,20 @@ impl VersionedMpcContract {
     ) -> Result<(), Error> {
         let signer = env::signer_account_id();
         log!("respond: signer={}, request={:?}", &signer, &request);
-        if !self.state().is_running_or_resharing() {
+
+        let Self::V2(mpc_contract) = self else {
+            env::panic_str("expected V2")
+        };
+        if !mpc_contract.protocol_state.is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
 
-        let public_key = self.public_key_extended(Some(request.domain_id))?;
+        if !mpc_contract.accept_signature_requests {
+            return Err(TeeError::TeeValidationFailed.into());
+        }
+
+        let domain = request.domain_id;
+        let public_key = mpc_contract.public_key_extended(domain)?;
 
         let signature_is_valid = match (&response, public_key) {
             (
@@ -565,9 +606,6 @@ impl VersionedMpcContract {
             return Err(RespondError::InvalidSignature.into());
         }
 
-        let Self::V2(mpc_contract) = self else {
-            env::panic_str("expected V2")
-        };
         // First get the yield promise of the (potentially timed out) request.
         if let Some(YieldIndex { data_id }) = mpc_contract.pending_requests.remove(&request) {
             // Finally, resolve the promise. This will have no effect if the request already timed.
@@ -918,6 +956,65 @@ impl VersionedMpcContract {
             _ => env::panic_str("expected V2"),
         }
     }
+
+    /// Verifies if all current participants have an accepted TEE state.
+    /// Automatically enters a resharing, in case one or more participants do not have an accepted
+    /// TEE state.
+    /// Returns `false` and stops the contract from accepting new signature requests or responses,
+    /// in case less than `threshold` participants run in an accepted Tee State.
+    #[handle_result]
+    pub fn verify_tee(&mut self) -> Result<bool, Error> {
+        log!("verify_tee: signer={}", env::signer_account_id());
+        let Self::V2(contract) = self else {
+            env::panic_str("expected V1")
+        };
+        let ProtocolContractState::Running(running_state) = &mut contract.protocol_state else {
+            return Err(InvalidState::ProtocolStateNotRunning.into());
+        };
+        let current_params = running_state.parameters.clone();
+        match contract
+            .tee_state
+            .validate_tee(current_params.participants())
+        {
+            TeeValidationResult::Full => {
+                contract.accept_signature_requests = true;
+                log!("All participants have an accepted Tee status");
+                Ok(true)
+            }
+            TeeValidationResult::Partial(new_participants) => {
+                let threshold = current_params.threshold().value() as usize;
+                let remaining = new_participants.len();
+                if threshold > remaining {
+                    log!("Less than `threshold` participants are left with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.");
+                    contract.accept_signature_requests = false;
+                    return Ok(false);
+                }
+
+                // here, we set it to true, because at this point, we have at least `threshold`
+                // number of participants with an accepted Tee status.
+                contract.accept_signature_requests = true;
+
+                // do we want to adjust the threshold?
+                //let n_participants_new = new_participants.len();
+                //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
+                //let new_threshold = new_threshold.max(2); // but also minimum 2
+                let new_threshold = threshold;
+
+                let threshold_parameters = ThresholdParameters::new(
+                    new_participants,
+                    Threshold::new(new_threshold as u64),
+                )
+                .expect("Require valid threshold parameters"); // this should never happen.
+                current_params.validate_incoming_proposal(&threshold_parameters)?;
+                let res = running_state.transition_to_resharing_no_checks(&threshold_parameters);
+                if let Some(resharing) = res {
+                    contract.protocol_state = ProtocolContractState::Resharing(resharing);
+                }
+
+                Ok(false)
+            }
+        }
+    }
 }
 
 // Contract developer helper API
@@ -981,6 +1078,7 @@ impl VersionedMpcContract {
             pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
             proposed_updates: Default::default(),
             tee_state: Default::default(),
+            accept_signature_requests: true,
         }))
     }
 
