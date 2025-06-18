@@ -5,7 +5,7 @@ use mpc_contract::tee::proposal::AllowedDockerImageHash;
 use tokio::sync::watch;
 
 use crate::indexer::{
-    lib::{get_mpc_tee_state, wait_for_full_sync},
+    lib::{get_mpc_allowed_image_hashes, wait_for_full_sync},
     IndexerState,
 };
 
@@ -34,7 +34,7 @@ pub async fn monitor_allowed_docker_images(
                 .build();
 
             loop {
-                match get_mpc_tee_state(
+                match get_mpc_allowed_image_hashes(
                     indexer_state.mpc_contract_id.clone(),
                     &indexer_state.view_client,
                 )
