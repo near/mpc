@@ -65,7 +65,7 @@ impl CodeHashesVotes {
 /// A proposal for a new TEE code hash to be added to the whitelist, along with the time it was
 /// added.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AllowedDockerImageHash {
     pub image_hash: DockerImageHash,
     pub added: BlockHeight,

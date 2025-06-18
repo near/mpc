@@ -1,6 +1,13 @@
+use handler::ChainBlockUpdate;
+#[cfg(feature = "tee")]
+use mpc_contract::tee::proposal::AllowedDockerImageHash;
+use near_indexer_primitives::types::AccountId;
+use participants::ContractState;
+use std::sync::Arc;
+use tokio::sync::{mpsc, watch};
+use types::ChainSendTransactionRequest;
+
 pub mod configs;
-#[cfg(test)]
-pub mod fake;
 pub mod handler;
 pub mod lib;
 pub mod participants;
@@ -10,12 +17,11 @@ pub mod tx_sender;
 pub mod tx_signer;
 pub mod types;
 
-use handler::ChainBlockUpdate;
-use near_indexer_primitives::types::AccountId;
-use participants::ContractState;
-use std::sync::Arc;
-use tokio::sync::{mpsc, watch};
-use types::ChainSendTransactionRequest;
+#[cfg(feature = "tee")]
+pub mod tee;
+
+#[cfg(test)]
+pub mod fake;
 
 pub(crate) struct IndexerState {
     /// For querying blockchain state.
@@ -63,4 +69,7 @@ pub struct IndexerAPI {
     /// Sender to request transactions be signed (by a TransactionSigner that
     /// the indexer is initialized with) and sent to the chain.
     pub txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    #[cfg(feature = "tee")]
+    /// Watcher that keeps track of allowed [`AllowedDockerImageHash`]es on the contract.
+    pub _allowed_docker_images_receiver: watch::Receiver<Vec<AllowedDockerImageHash>>,
 }

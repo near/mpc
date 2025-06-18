@@ -11,6 +11,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, watch, Mutex};
 
+#[cfg(feature = "tee")]
+use crate::indexer::tee::monitor_allowed_docker_images;
+
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
 ///
 /// If an unrecoverable error occurs, the spawned indexer will terminate, and the provided [`oneshot::Sender`]
@@ -27,6 +30,8 @@ pub fn spawn_real_indexer(
         tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
+    #[cfg(feature = "tee")]
+    let (tee_sender, tee_receiver) = oneshot::channel();
 
     // TODO(#156): replace actix with tokio
     std::thread::spawn(move || {
@@ -71,6 +76,12 @@ pub fn spawn_real_indexer(
                 respond_config,
                 indexer_state.clone(),
             ));
+
+            #[cfg(feature = "tee")] {
+                let allowed_docker_images_receiver = monitor_allowed_docker_images(indexer_state.clone()).await;
+                tee_sender.send(allowed_docker_images_receiver).expect("Receiver for watcher must be alive");
+            }
+
             let indexer_result = listen_blocks(
                 stream,
                 indexer_config.concurrency,
@@ -86,9 +97,16 @@ pub fn spawn_real_indexer(
         });
     });
 
+    #[cfg(feature = "tee")]
+    let allowed_docker_images_receiver = tee_receiver
+        .blocking_recv()
+        .expect("monitor_allowed_docker_images must be called.");
+
     IndexerAPI {
         contract_state_receiver: chain_config_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender: chain_txn_sender,
+        #[cfg(feature = "tee")]
+        _allowed_docker_images_receiver: allowed_docker_images_receiver,
     }
 }

@@ -59,7 +59,7 @@ jobs:
           cd libs/chain-signatures
           cargo fmt -- --check
           cd ../..
-          
+
       - name: Install cargo-nextest
         run: cargo install cargo-nextest
 
@@ -69,8 +69,8 @@ jobs:
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
 
       - name: Run cargo-nextest
-        run: cargo nextest run --release --locked
-      
+        run: cargo nextest run --release --locked --all-features
+
       - name: Run contract tests
         run: |
           cd libs/chain-signatures
@@ -89,7 +89,7 @@ jobs:
           commit_hash=$(git rev-parse HEAD || echo "no-commit")
 
           url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
-          
+
           mkdir -p target/release
           status_code=$(curl -v -o target/release/neard -w "%{http_code}" "${url}")
           if [ "$status_code" -ne 200 ]; then
@@ -106,11 +106,11 @@ jobs:
 
       - name: Build mpc node
         run: cargo build -p mpc-node --release
-      
+
       - name: Setup python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Setup virtualenv
         run: |
