@@ -61,86 +61,69 @@ impl TeeParticipantInfo {
         let tcb_info: Value = serde_json::from_str(&self.raw_tcb_info)
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
 
-        // Replay RTMR3 from dstack's event log (a.k.a. TCB info)
-
-        let expected_rtmr3 = {
-            let report = match quote.report.as_td10() {
-                Some(r) => r,
-                None => return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into()),
-            };
-            hex::encode(report.rt_mr3)
-        };
         let event_log = match tcb_info["event_log"].as_array() {
             Some(log) => log,
             None => return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into()),
         };
-        let replayed_rtmr3 = replay_rtmr(event_log.to_owned(), 3);
-        if expected_rtmr3 != replayed_rtmr3 {
+
+        if !Self::check_rtmr3_vs_actual(&quote, event_log) {
             return Ok(false);
         }
-
-        // Check if the expected app_compose hash from tcb_info matches the hash of the replayed app_compose
-
-        let expected_compose_hash = match event_log
-            .iter()
-            .find(|e| e["event"].as_str() == Some("compose-hash"))
-        {
-            Some(e) => match e["digest"].as_str() {
-                Some(d) => d,
-                None => return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into()),
-            },
-            None => return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into()),
-        };
-        let app_compose = match tcb_info["app_compose"].as_str() {
-            Some(a) => a,
-            None => return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into()),
-        };
-        let replayed_compose_hash = replay_app_compose(app_compose);
-        if expected_compose_hash != replayed_compose_hash {
+        if !Self::check_app_compose(event_log, &tcb_info) {
             return Ok(false);
         }
-
-        // Check if the local-sgx hash is the expected one
-
-        let local_sgx_hash = match event_log
-            .iter()
-            .find(|e| e["event"].as_str() == Some("local-sgx"))
-        {
-            Some(e) => match e["digest"].as_str() {
-                Some(d) => d,
-                None => return Ok(false),
-            },
-            None => return Ok(false),
-        };
-
-        if local_sgx_hash != EXPECTED_LOCAL_SGX_HASH {
+        if !Self::check_local_sgx(event_log) {
             return Ok(false);
         }
-
-        // Check if the node is running the expected MPC node version
-
-        let mpc_node_image_digest = match event_log
-            .iter()
-            .find(|e| e["event"].as_str() == Some("image-digest"))
-        {
-            Some(e) => match e["digest"].as_str() {
-                Some(d) => d,
-                None => return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into()),
-            },
-            None => return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into()),
-        };
-
-        if !tee_state
-            .allowed_docker_image_hashes
-            .is_code_hash_allowed(mpc_node_image_digest.to_owned(), env::block_height())
-        {
+        if !Self::check_mpc_hash(event_log, tee_state) {
             return Ok(false);
         }
 
         Ok(true)
     }
 
-    pub fn verify_report_data(&self) -> Result<(), Error> {
-        Ok(())
+    fn check_rtmr3_vs_actual(quote: &Quote, event_log: &[Value]) -> bool {
+        let expected_rtmr3 = match quote.report.as_td10() {
+            Some(r) => hex::encode(r.rt_mr3),
+            None => return false,
+        };
+        let replayed_rtmr3 = replay_rtmr(event_log.to_owned(), 3);
+        expected_rtmr3 == replayed_rtmr3
+    }
+
+    fn check_app_compose(event_log: &[Value], tcb_info: &Value) -> bool {
+        let expected_compose_hash = event_log
+            .iter()
+            .find(|e| e["event"].as_str() == Some("compose-hash"))
+            .and_then(|e| e["digest"].as_str());
+        let app_compose = tcb_info["app_compose"].as_str();
+        match (expected_compose_hash, app_compose) {
+            (Some(expected), Some(app)) => replay_app_compose(app) == expected,
+            _ => false,
+        }
+    }
+
+    fn check_local_sgx(event_log: &[Value]) -> bool {
+        let local_sgx_hash = event_log
+            .iter()
+            .find(|e| e["event"].as_str() == Some("local-sgx"))
+            .and_then(|e| e["digest"].as_str());
+        match local_sgx_hash {
+            Some(hash) => hash == EXPECTED_LOCAL_SGX_HASH,
+            None => false,
+        }
+    }
+
+    fn check_mpc_hash(event_log: &[Value], tee_state: &mut TeeState) -> bool {
+        let mpc_node_image_digest = event_log
+            .iter()
+            .find(|e| e["event"].as_str() == Some("image-digest"))
+            .and_then(|e| e["digest"].as_str());
+        match mpc_node_image_digest {
+            Some(digest) => tee_state
+                .allowed_docker_image_hashes
+                .is_code_hash_allowed(digest.to_owned(), env::block_height()),
+            None => false,
+        }
     }
 }
