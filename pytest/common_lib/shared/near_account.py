@@ -27,11 +27,12 @@ class NearAccount:
      latest block hash and send transactions.
     """
 
-    def __init__(self, near_node: LocalNode):
+    def __init__(self, near_node: LocalNode, signer_key: Key):
         self.near_node = near_node
+        self._signer_key = signer_key
 
     def signer_key(self) -> Key:
-        return self.near_node.signer_key
+        return self._signer_key
 
     def account_id(self) -> str:
         return self.signer_key().account_id
