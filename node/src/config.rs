@@ -1,3 +1,4 @@
+use crate::p2p;
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use near_crypto::{PublicKey, SecretKey};
@@ -130,6 +131,13 @@ pub struct ConfigFile {
     /// to identify our own participant ID from within the static config.
     /// In both cases this account is *not* used to send signature responses.
     pub my_near_account_id: AccountId,
+
+    /// Near account ID of the account that will be used to submit signature responses.
+    /// For reference, go to the `spawn_real_indexer` logic.
+    pub near_responder_account_id: AccountId,
+    /// Number of keys that will be used to sign the signature responses.
+    pub number_of_responder_keys: usize,
+
     pub web_ui: WebUIConfig,
     pub indexer: IndexerConfig,
     pub triple: TripleConfig,
@@ -169,17 +177,23 @@ pub struct ParticipantInfo {
     pub near_account_id: AccountId,
 }
 
-/// Secrets that come from environment variables rather than the config file.
-#[derive(Clone, Debug)]
+pub fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
+    let config_path = home_dir.join("config.yaml");
+    ConfigFile::from_file(&config_path).context("Load config.yaml")
+}
+
+#[derive(Clone)]
 pub struct SecretsConfig {
-    pub p2p_private_key: near_crypto::ED25519SecretKey,
+    // Ed25519 keys. `near_crypto` API too rigid to store this exact enum type.
+    // e.g. you can not call `public_key` on the `ED25519SecretKey` type.
+    pub persistent_secrets: PersistentSecrets,
     pub local_storage_aes_key: [u8; 16],
 }
 
 impl SecretsConfig {
-    pub fn from_cli(
+    pub fn from_parts(
         local_storage_aes_key_hex: &str,
-        p2p_private_key: near_crypto::SecretKey,
+        persistent_secrets: PersistentSecrets,
     ) -> anyhow::Result<Self> {
         let local_storage_aes_key = hex::decode(local_storage_aes_key_hex)
             .context("Encryption key must be 32 hex characters")?;
@@ -187,26 +201,101 @@ impl SecretsConfig {
             .as_slice()
             .try_into()
             .context("Encryption key must be 16 bytes (32 bytes hex)")?;
-
-        let near_crypto::SecretKey::ED25519(p2p_private_key) = p2p_private_key else {
-            anyhow::bail!("P2P private key must be ed25519");
-        };
         Ok(Self {
-            p2p_private_key,
+            persistent_secrets,
             local_storage_aes_key,
         })
     }
 }
 
-pub fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
-    let config_path = home_dir.join("config.yaml");
-    ConfigFile::from_file(&config_path).context("Load config.yaml")
+/// Secrets that are stored on disk. They are generated on the first run.
+/// The idea is when using a TEE, it's safer to generate them inside enclave, rather than provide it
+/// from outside.
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
+pub struct PersistentSecrets {
+    pub p2p_private_key: SecretKey,
+    pub near_signer_key: SecretKey,
+    pub near_responder_keys: Vec<SecretKey>,
+}
+
+impl PersistentSecrets {
+    const SECRETS_FILE_NAME: &'static str = "secrets.json";
+
+    fn maybe_get_existing(home_dir: &Path) -> anyhow::Result<Option<PersistentSecrets>> {
+        let file_path = home_dir.join(Self::SECRETS_FILE_NAME);
+        let secrets = if file_path.exists() {
+            let str = std::fs::read_to_string(&file_path)?;
+            let secrets_file: PersistentSecrets = serde_json::from_str(&str)?;
+            Some(secrets_file)
+        } else {
+            None
+        };
+        Ok(secrets)
+    }
+
+    fn generate(
+        home_dir: &Path,
+        number_of_responder_keys: usize,
+    ) -> anyhow::Result<PersistentSecrets> {
+        if !home_dir.exists() {
+            std::fs::create_dir_all(home_dir)?;
+        }
+        let p2p_secret = {
+            let (secret_key, _public_key) = p2p::keygen::generate_keypair()?;
+            SecretKey::ED25519(secret_key)
+        };
+        let near_signer_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
+
+        let near_responder_keys = (0..number_of_responder_keys)
+            .map(|_| SecretKey::from_random(near_crypto::KeyType::ED25519))
+            .collect::<Vec<_>>();
+
+        let secrets = PersistentSecrets {
+            p2p_private_key: p2p_secret,
+            near_signer_key,
+            near_responder_keys,
+        };
+
+        let path = home_dir.join(Self::SECRETS_FILE_NAME);
+        std::fs::write(&path, serde_json::to_vec(&secrets)?)?;
+        eprintln!("p2p and near account key generated in {}", path.display());
+
+        Ok(secrets)
+    }
+
+    pub fn generate_or_get_existing(
+        home_dir: &Path,
+        number_of_responder_keys: usize, // Number of responder keys to generate
+    ) -> anyhow::Result<PersistentSecrets> {
+        anyhow::ensure!(
+            number_of_responder_keys > 0,
+            "At least one access key must be provided"
+        );
+        let secrets = if let Some(secrets) = Self::maybe_get_existing(home_dir)? {
+            eprintln!("p2p and near account secret key already exists. Using existing.");
+            secrets
+        } else {
+            eprintln!("p2p and near account secret key not found. Generating...");
+            Self::generate(home_dir, number_of_responder_keys)?
+        };
+
+        if secrets.near_responder_keys.len() != number_of_responder_keys {
+            tracing::warn!("Number of responder keys in secrets.json does not match number of responder keys specified.")
+        }
+        anyhow::ensure!(matches!(secrets.p2p_private_key, SecretKey::ED25519(_)));
+        anyhow::ensure!(matches!(secrets.near_signer_key, SecretKey::ED25519(_)));
+        for key in &secrets.near_responder_keys {
+            anyhow::ensure!(matches!(key, SecretKey::ED25519(_)));
+        }
+
+        Ok(secrets)
+    }
 }
 
 /// Credentials of the near account used to submit signature responses.
 /// It is recommended to use a separate dedicated account for this purpose.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RespondConfigFile {
+pub struct RespondConfig {
     /// It can be an arbitrary id because respond calls are not authenticated.
     /// The account should have sufficient NEAR to pay for the function calls.
     pub account_id: AccountId,
@@ -215,27 +304,38 @@ pub struct RespondConfigFile {
     pub access_keys: Vec<SecretKey>,
 }
 
-impl RespondConfigFile {
-    pub fn from_file(path: &Path) -> anyhow::Result<Option<Self>> {
-        let file = match std::fs::read_to_string(path) {
-            Ok(contents) => contents,
-            Err(err) => {
-                if err.kind() == std::io::ErrorKind::NotFound {
-                    return Ok(None);
-                } else {
-                    return Err(err.into());
-                }
-            }
-        };
-        let config: Self = serde_yaml::from_str(&file)?;
-        if config.access_keys.is_empty() {
-            anyhow::bail!("At least one access key must be provided");
+impl RespondConfig {
+    pub fn from_parts(config: &ConfigFile, secrets: &PersistentSecrets) -> Self {
+        Self {
+            account_id: config.near_responder_account_id.clone(),
+            access_keys: secrets.near_responder_keys.clone(),
         }
-        Ok(Some(config))
     }
 }
 
-pub fn load_respond_config_file(home_dir: &Path) -> anyhow::Result<Option<RespondConfigFile>> {
-    let config_path = home_dir.join("respond.yaml");
-    RespondConfigFile::from_file(&config_path).context("Load respond.yaml")
+#[test]
+fn test_secret_gen() -> anyhow::Result<()> {
+    use tempfile::TempDir;
+    let temp_dir = TempDir::new()?;
+    let home_dir = temp_dir.path();
+
+    assert!(PersistentSecrets::maybe_get_existing(home_dir)?.is_none());
+
+    let expected_secrets = PersistentSecrets::generate_or_get_existing(home_dir, 1)?;
+
+    // check that the key will not be overwritten
+    assert!(PersistentSecrets::generate_or_get_existing(home_dir, 4242).is_ok());
+
+    let actual_secrets = PersistentSecrets::generate_or_get_existing(home_dir, 424)?;
+
+    assert_eq!(
+        actual_secrets.p2p_private_key,
+        expected_secrets.p2p_private_key
+    );
+    assert_eq!(
+        actual_secrets.near_signer_key,
+        expected_secrets.near_signer_key
+    );
+
+    Ok(())
 }

@@ -1,14 +1,15 @@
-use crate::config::WebUIConfig;
+use crate::config::{SecretsConfig, WebUIConfig};
 use crate::tracking::TaskHandle;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
-use axum::serve;
+use axum::{serve, Json};
 use futures::future::BoxFuture;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
 use prometheus::{default_registry, Encoder, TextEncoder};
+use serde::Serialize;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -48,6 +49,7 @@ struct WebServerState {
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     /// Receiver for contract state
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
+    public_data: PublicData,
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
@@ -108,6 +110,32 @@ async fn third_party_licenses() -> Html<&'static str> {
     Html(include_str!("../../third-party-licenses/licenses.html"))
 }
 
+#[derive(Clone, Serialize)]
+pub struct PublicData {
+    near_signer_public_key: near_crypto::PublicKey,
+    near_responder_public_keys: Vec<near_crypto::PublicKey>,
+}
+
+impl From<&SecretsConfig> for PublicData {
+    fn from(value: &SecretsConfig) -> Self {
+        let near_signer_public_key = value.persistent_secrets.near_signer_key.public_key();
+        let near_responder_public_keys = value
+            .persistent_secrets
+            .near_responder_keys
+            .iter()
+            .map(|x| x.public_key())
+            .collect();
+        Self {
+            near_signer_public_key,
+            near_responder_public_keys,
+        }
+    }
+}
+
+async fn get_public_data(state: State<WebServerState>) -> Json<PublicData> {
+    state.public_data.clone().into()
+}
+
 /// Starts the web server. This is an async function that returns a future.
 /// The function itself will return error if the server cannot be started.
 ///
@@ -118,6 +146,7 @@ pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     config: WebUIConfig,
+    public_data: PublicData,
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
@@ -130,10 +159,12 @@ pub async fn start_web_server(
         .route("/debug/contract", axum::routing::get(contract_state))
         .route("/licenses", axum::routing::get(third_party_licenses))
         .route("/health", axum::routing::get(|| async { "OK" }))
+        .route("/get_public_data", axum::routing::get(get_public_data))
         .with_state(WebServerState {
             root_task_handle,
             signature_debug_request_sender,
             contract_state_receiver,
+            public_data,
         });
 
     let tcp_listener = TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;
