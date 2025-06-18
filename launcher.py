@@ -28,7 +28,7 @@ def parse_env_file(path):
     return env
 
 def main():
-
+	#add new commnet
     # We want to globally enable DOCKER_CONTENT_TRUST=1 to ensure integrity of Docker images.
     if os.environ.get('DOCKER_CONTENT_TRUST', '0') != '1':
         raise RuntimeError("Environment variable DOCKER_CONTENT_TRUST must be set to 1.")
