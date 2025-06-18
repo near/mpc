@@ -2,6 +2,12 @@ use std::borrow::Cow;
 mod impls;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TeeError {
+    #[error("Due to previously failed TEE validation, the network is not accepting new signature requests at this point in time. Try again later.")]
+    TeeValidationFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SignError {
     #[error("Signature request has timed out.")]
     Timeout,
@@ -198,6 +204,9 @@ pub enum ErrorKind {
     // Domain errors
     #[error("{0}")]
     DomainError(#[from] DomainError),
+    // Tee errors
+    #[error("{0}")]
+    TeeError(#[from] TeeError),
 }
 
 #[derive(Debug, thiserror::Error)]
