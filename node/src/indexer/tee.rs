@@ -61,7 +61,7 @@ pub async fn monitor_allowed_docker_images(
     let initial_state = fetch_allowed_image_hashes().await;
     let (sender, receiver) = watch::channel(initial_state);
 
-    actix::spawn(async move {
+    tokio::spawn(async move {
         loop {
             tokio::time::sleep(ALLOWED_IMAGE_HASHES_REFRESH_INTERVAL).await;
             let new_tee_state = fetch_allowed_image_hashes().await;
