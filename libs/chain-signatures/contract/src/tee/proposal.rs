@@ -1,3 +1,4 @@
+use k256::sha2::{Digest, Sha256};
 use near_sdk::{log, near, BlockHeight};
 use std::collections::BTreeMap;
 
@@ -6,19 +7,26 @@ use crate::primitives::key_state::AuthenticatedParticipantId;
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds
 
-/// Hash of a Docker image running in the TEE environment. Also used as a proposal for a new TEE
-/// code hash to add to the whitelist, along with the TEE quote (which includes the RTMR3
-/// measurement and more).
+/// Common functionality for 32-byte hashes used in the TEE environment.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct DockerImageHash(pub(crate) [u8; 32]);
+pub struct Hash32(pub(crate) [u8; 32]);
 
-impl DockerImageHash {
-    /// Returns the byte array representation of the `CodeHash`.
+impl Hash32 {
+    /// Returns the hex string representation of the hash.
     pub fn as_hex(&self) -> String {
         hex::encode(self.0)
     }
 }
+
+/// Hash of a Docker image running in the TEE environment. Also used as a proposal for a new TEE
+/// code hash to add to the whitelist, along with the TEE quote (which includes the RTMR3
+/// measurement and more).
+pub type DockerImageHash = Hash32;
+
+/// Hash of the Docker Compose file used to run the MPC node in the TEE environment. It is computed
+/// from a Docker Compose template populated with the MPC node's Docker image hash.
+pub type DockerComposeHash = Hash32;
 
 /// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
 /// a code hash to add.
@@ -68,6 +76,7 @@ impl CodeHashesVotes {
 #[derive(Debug, Clone)]
 pub struct AllowedDockerImageHash {
     pub image_hash: DockerImageHash,
+    pub docker_compose_hash: DockerComposeHash,
     pub added: BlockHeight,
 }
 /// Collection of whitelisted Docker code hashes that are the only ones MPC nodes are allowed to
@@ -114,8 +123,11 @@ impl AllowedDockerImageHashes {
             self.allowed_tee_proposals.remove(pos);
         }
 
+        let docker_compose_hash = Self::get_docker_compose_hash(code_hash.clone());
+
         let new_entry = AllowedDockerImageHash {
             image_hash: code_hash,
+            docker_compose_hash,
             added: current_block_height,
         };
 
@@ -145,6 +157,34 @@ impl AllowedDockerImageHashes {
             .iter()
             .any(|proposal| proposal.image_hash.as_hex() == code_hash)
     }
+
+    fn get_docker_compose_hash(mpc_docker_image_hash: DockerImageHash) -> DockerImageHash {
+        let filled_yaml = format!(
+            r#"version: "3.8"
+
+services:
+web:
+image: barakeinavnear/launcher:latest
+container_name: launcher
+environment:
+  - DOCKER_CONTENT_TRUST=1
+  - DEFAULT_IMAGE_DIGEST=sha256:{}
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
+  - /var/run/dstack.sock:/var/run/dstack.sock
+  - /tapp:/tapp:ro
+  - /var/lib/docker/volumes/shared-volume/_data:/mnt/shared:ro
+"#,
+            mpc_docker_image_hash.as_hex()
+        );
+
+        let mut hasher = Sha256::new();
+        hasher.update(filled_yaml.as_bytes());
+        let hash = hasher.finalize();
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&hash);
+        Hash32(arr)
+    }
 }
 
 #[cfg(test)]
@@ -152,7 +192,7 @@ mod tests {
     use super::*;
 
     fn dummy_code_hash(val: u8) -> DockerImageHash {
-        DockerImageHash([val; 32])
+        Hash32([val; 32])
     }
 
     #[test]
