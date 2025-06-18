@@ -152,6 +152,7 @@ impl From<MpcContractV1> for MpcContract {
             proposed_updates: value.proposed_updates,
             config: value.config,
             tee_state: crate::TeeState::default(),
+            accept_signature_requests: true,
         }
     }
 }

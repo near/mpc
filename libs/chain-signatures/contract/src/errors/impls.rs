@@ -6,7 +6,7 @@ use crate::crypto_shared::kdf::TweakNotOnCurve;
 use super::{
     ConversionError, DomainError, Error, ErrorKind, ErrorRepr, InvalidCandidateSet,
     InvalidParameters, InvalidState, InvalidThreshold, KeyEventError, PublicKeyError, RespondError,
-    SignError, VoteError,
+    SignError, TeeError, VoteError,
 };
 
 impl Error {
@@ -132,6 +132,12 @@ impl ConversionError {
 impl From<KeyEventError> for Error {
     fn from(code: KeyEventError) -> Self {
         Self::simple(ErrorKind::KeyEventError(code))
+    }
+}
+
+impl From<TeeError> for Error {
+    fn from(code: TeeError) -> Self {
+        Self::simple(ErrorKind::TeeError(code))
     }
 }
 

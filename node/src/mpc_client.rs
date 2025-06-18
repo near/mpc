@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 
 /// A one-time delay before processing signature requests on startup. This is to prevent the case
 /// where we have not yet connected to all participants, and the signature processing code thinks
@@ -25,6 +25,8 @@ use tokio::time::timeout;
 /// responded to multiple times. It doesn't affect correctness, but can make tests less flaky and
 /// production runs experience fewer redundant signatures.
 const INITIAL_STARTUP_SIGNATURE_PROCESSING_DELAY: Duration = Duration::from_secs(2);
+const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
+    Duration::from_secs(60 * 60 * 24 * 2);
 
 #[derive(Clone)]
 pub struct MpcClient {
@@ -82,6 +84,7 @@ impl MpcClient {
         };
 
         let monitor_chain = {
+            let chain_txn_sender = chain_txn_sender.clone();
             tracking::spawn(
                 "monitor chain",
                 self.clone().monitor_block_updates(
@@ -90,6 +93,26 @@ impl MpcClient {
                     signature_debug_receiver,
                 ),
             )
+        };
+
+        let tee_verification_handle = {
+            let chain_txn_sender = chain_txn_sender.clone();
+            tracking::spawn("tee_verification", async move {
+                loop {
+                    if let Err(e) = chain_txn_sender
+                        .send(ChainSendTransactionRequest::VerifyTee())
+                        .await
+                    {
+                        tracing::error!(
+                            "Receiver dropped, error sending VerifyTee request: {:?}",
+                            e
+                        );
+                        return;
+                    }
+                    metrics::VERIFY_TEE_REQUESTS_SENT.inc();
+                    sleep(TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION).await;
+                }
+            })
         };
 
         let ecdsa_background_tasks = tracking::spawn(
@@ -111,6 +134,7 @@ impl MpcClient {
         monitor_chain.await?;
         let _ = ecdsa_background_tasks.await?;
         let _ = eddsa_background_tasks.await?;
+        tee_verification_handle.await?;
 
         Ok(())
     }
