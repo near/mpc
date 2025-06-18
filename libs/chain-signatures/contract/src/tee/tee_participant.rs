@@ -119,14 +119,20 @@ impl TeeParticipantInfo {
 
         // Check if the node is running the expected MPC node version
 
-        let (_, right) = app_compose.split_once("\\n        image:").unwrap();
-        let (left, _) = right.split_once("\\n").unwrap();
-        let (_, codehash) = left.split_once("@sha256:").unwrap();
-        let node_codehash = codehash.to_owned();
+        let mpc_node_image_digest = match event_log
+            .iter()
+            .find(|e| e["event"].as_str() == Some("image-digest"))
+        {
+            Some(e) => match e["digest"].as_str() {
+                Some(d) => d,
+                None => return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into()),
+            },
+            None => return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into()),
+        };
 
         if !tee_state
             .allowed_docker_image_hashes
-            .is_code_hash_allowed(node_codehash, env::block_height())
+            .is_code_hash_allowed(mpc_node_image_digest.to_owned(), env::block_height())
         {
             return Ok(false);
         }
