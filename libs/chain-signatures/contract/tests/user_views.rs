@@ -3,6 +3,7 @@ use common::init_env_secp256k1;
 use near_sdk::{CurveType, PublicKey};
 use serde_json::json;
 use std::str::FromStr;
+
 #[tokio::test]
 async fn test_key_version() -> anyhow::Result<()> {
     let (_, contract, _, _) = init_env_secp256k1(1).await;
