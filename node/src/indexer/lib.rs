@@ -80,7 +80,7 @@ pub(crate) async fn get_mpc_contract_state(
 }
 
 #[cfg(feature = "tee")]
-pub(crate) async fn get_mpc_tee_state(
+pub(crate) async fn get_mpc_allowed_image_hashes(
     mpc_contract_id: AccountId,
     client: &actix::Addr<near_client::ViewClientActor>,
 ) -> anyhow::Result<(u64, AllowedDockerImageHashes)> {
