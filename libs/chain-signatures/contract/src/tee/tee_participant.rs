@@ -117,7 +117,7 @@ impl TeeParticipantInfo {
     fn check_mpc_hash(event_log: &[Value], tee_state: &mut TeeState) -> bool {
         let mpc_node_image_digest = event_log
             .iter()
-            .find(|e| e["event"].as_str() == Some("image-digest"))
+            .find(|e| e["event"].as_str() == Some("mpc-image-digest"))
             .and_then(|e| e["digest"].as_str());
         match mpc_node_image_digest {
             Some(digest) => tee_state
