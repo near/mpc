@@ -189,12 +189,11 @@ impl StartCmd {
         // hence we need to disable the `unused_variables` lint when TEE is disabled.
         #[cfg_attr(not(feature = "tee"), allow(unused_variables))]
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
+        let cancellation_token = CancellationToken::new();
 
         #[cfg(feature = "tee")]
-        let (image_hash_watcher_handle, cancellation_token) = {
-            let cancellation_token = CancellationToken::new();
-            let current_image = self.tee_config.image_hash;
-            let current_image_hash_bytes: [u8; 32] = hex::decode(current_image)
+        let image_hash_watcher_handle = {
+            let current_image_hash_bytes: [u8; 32] = hex::decode(self.tee_config.image_hash)
                 .expect("The currently running image is a hex string.")
                 .try_into()
                 .expect("The currently running image hash hex representation is 32 bytes.");
@@ -203,15 +202,13 @@ impl StartCmd {
             let image_hash_storage =
                 AllowedImageHashesFile::new(self.tee_config.latest_allowed_hash_file).await?;
 
-            let handle = tokio::spawn(monitor_allowed_image_hashes(
+            tokio::spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
                 DockerImageHash::from(current_image_hash_bytes),
                 allowed_hashes_in_contract,
                 image_hash_storage,
                 shutdown_signal_sender,
-            ));
-
-            (handle, cancellation_token)
+            ))
         };
 
         let root_future = Self::create_root_future(
@@ -238,10 +235,12 @@ impl StartCmd {
             }
         };
 
+        // Perform graceful shutdown
+        cancellation_token.cancel();
+
         #[cfg(feature = "tee")]
         {
             info!("Waiting for image hash watcher to gracefully exit.");
-            cancellation_token.cancel();
             let exit_result = image_hash_watcher_handle.await;
             info!(?exit_result, "Image hash watcher exited.");
         }
