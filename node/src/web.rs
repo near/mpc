@@ -49,7 +49,7 @@ struct WebServerState {
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     /// Receiver for contract state
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
-    public_data: PublicData,
+    static_web_data: StaticWebData,
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
@@ -111,12 +111,12 @@ async fn third_party_licenses() -> Html<&'static str> {
 }
 
 #[derive(Clone, Serialize)]
-pub struct PublicData {
+pub struct StaticWebData {
     near_signer_public_key: near_crypto::PublicKey,
     near_responder_public_keys: Vec<near_crypto::PublicKey>,
 }
 
-impl From<&SecretsConfig> for PublicData {
+impl From<&SecretsConfig> for StaticWebData {
     fn from(value: &SecretsConfig) -> Self {
         let near_signer_public_key = value.persistent_secrets.near_signer_key.public_key();
         let near_responder_public_keys = value
@@ -132,8 +132,8 @@ impl From<&SecretsConfig> for PublicData {
     }
 }
 
-async fn get_public_data(state: State<WebServerState>) -> Json<PublicData> {
-    state.public_data.clone().into()
+async fn get_public_data(state: State<WebServerState>) -> Json<StaticWebData> {
+    state.static_web_data.clone().into()
 }
 
 /// Starts the web server. This is an async function that returns a future.
@@ -146,7 +146,7 @@ pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     config: WebUIConfig,
-    public_data: PublicData,
+    static_web_data: StaticWebData,
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
@@ -164,7 +164,7 @@ pub async fn start_web_server(
             root_task_handle,
             signature_debug_request_sender,
             contract_state_receiver,
-            public_data,
+            static_web_data,
         });
 
     let tcp_listener = TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;
