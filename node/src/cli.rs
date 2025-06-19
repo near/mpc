@@ -53,7 +53,9 @@ pub enum Cli {
         #[arg(long)]
         output_dir: String,
         #[arg(long, value_delimiter = ',')]
+        /// Near signer account for each participant
         participants: Vec<AccountId>,
+        /// Near responder account for each participant. Refer to `indexer/real.rs` for more details.
         #[arg(long, value_delimiter = ',')]
         responders: Vec<AccountId>,
         #[arg(long)]
@@ -341,6 +343,7 @@ impl Cli {
                 desired_presignatures_to_buffer,
                 desired_responder_keys_per_participant,
             } => {
+                anyhow::ensure!(participants.len() == responders.len(), "Number of participants must match number of responders");
                 self.run_generate_test_configs(
                     output_dir,
                     participants,
