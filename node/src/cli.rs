@@ -197,9 +197,9 @@ impl StartCmd {
             let cancellation_token = CancellationToken::new();
             let current_image = self.tee_config.image_hash;
             let current_image_hash_bytes = hex::decode(current_image)
-                .expect("Provided is valid hex representation")
+                .expect("The currently running image is a hex string.")
                 .try_into()
-                .expect("Provided hex must be 32 bytes.");
+                .expect("The currently running image hash hex representation is 32 bytes.");
 
             let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
             let image_hash_storage =
