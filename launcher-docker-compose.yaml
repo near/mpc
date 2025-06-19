@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   web:
-    image: thomasknauthnear/launcher:latest
+    image: barakeinavhnear/launcher:latest # todo (security) use spesific image hash  
     container_name: launcher
     environment:
       - DOCKER_CONTENT_TRUST=1

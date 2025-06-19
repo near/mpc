@@ -28,7 +28,8 @@ def parse_env_file(path):
     return env
 
 def main():
-	#add new commnet
+
+    logging.info(f'start')
     # We want to globally enable DOCKER_CONTENT_TRUST=1 to ensure integrity of Docker images.
     if os.environ.get('DOCKER_CONTENT_TRUST', '0') != '1':
         raise RuntimeError("Environment variable DOCKER_CONTENT_TRUST must be set to 1.")
@@ -43,11 +44,18 @@ def main():
     image_name = user_vars.get('LAUNCHER_IMAGE_NAME', 'nearone/mpc-node-gcp')
     registry = user_vars.get('LAUNCHER_REGISTRY', 'registry.hub.docker.com')
 
+    logging.info(f'Using image name {image_name} and registry {registry}.')
     # DEFAULT_IMAGE_DIGEST originates from the app-compose.json and its value is contained in the app's measurement.
     image_digest = os.environ["DEFAULT_IMAGE_DIGEST"]
+	logging.info(f"image digest file {IMAGE_DIGEST_FILE}.")
 
+	logging.info(f"image digest file {IMAGE_DIGEST_FILE}.")
     if os.path.isfile(IMAGE_DIGEST_FILE):
         image_digest = open(IMAGE_DIGEST_FILE).readline().strip()
+        logging.info(f"found new hash on filesytem  ")
+		
+		
+
 
     logging.info(f'Using image digest {image_digest}.')
     logging.info(f"Using tags {tags} to find matching image.")
