@@ -68,9 +68,13 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
 
-            #[cfg(feature = "tee")] {
-                let allowed_docker_images_receiver = monitor_allowed_docker_images(indexer_state.clone()).await;
-                tee_sender.send(allowed_docker_images_receiver).expect("Receiver for watcher must be alive");
+            #[cfg(feature = "tee")]
+            {
+                let allowed_docker_images_receiver =
+                    monitor_allowed_docker_images(indexer_state.clone()).await;
+                tee_sender
+                    .send(allowed_docker_images_receiver)
+                    .expect("Receiver for watcher must be alive");
             }
 
             let indexer_result = listen_blocks(
