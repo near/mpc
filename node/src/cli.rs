@@ -29,12 +29,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "tee")]
 use {
     crate::tee::{monitor_allowed_image_hashes, AllowedImageHashesFile},
     mpc_contract::tee::proposal::DockerImageHash,
-    tokio_util::sync::CancellationToken,
     tracing::info,
 };
 
