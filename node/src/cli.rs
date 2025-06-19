@@ -124,8 +124,12 @@ pub struct TeeConfig {
         help_heading = "hex representation of the hash of the image running."
     )]
     pub image_hash: String,
-    #[arg(long, env("ALLOWED_HASHES_PATH"))]
-    pub allowed_hashes_path: PathBuf,
+    #[arg(
+        long,
+        env("LATEST_ALLOWED_HASH"),
+        help_heading = "Path to the file which the mpc node will write the latest allowed hash to."
+    )]
+    pub latest_allowed_hash: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -199,7 +203,7 @@ impl StartCmd {
 
             let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
             let image_hash_storage =
-                AllowedImageHashesStorageImpl::new(self.tee_config.allowed_hashes_path).await?;
+                AllowedImageHashesStorageImpl::new(self.tee_config.latest_allowed_hash).await?;
 
             let handle = tokio::spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
