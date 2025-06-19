@@ -140,7 +140,7 @@ where
                         continue;
                     };
 
-                    if let Err(err) = allowed_image_hashes_manager.set(&latest_allowed_image_hash).await.map_err(ExitError::StorageProviderError) {
+                    if let Err(err) = allowed_image_hashes_manager.set(latest_allowed_image_hash).await.map_err(ExitError::StorageProviderError) {
                         break err;
                     };
 
@@ -179,7 +179,7 @@ mod tests {
 
     const IMAGE_HASH_1: AllowedDockerImageHash = AllowedDockerImageHash {
         image_hash: DockerImageHash([1; 32]),
-        added: 1 as u64,
+        added: 1,
     };
     const IMAGE_HASH_2: AllowedDockerImageHash = AllowedDockerImageHash {
         image_hash: DockerImageHash([2; 32]),
