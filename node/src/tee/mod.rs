@@ -20,9 +20,28 @@ const PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
 const PHALA_SUCCESS_STATUS_CODE: StatusCode = StatusCode::OK;
 /// The maximum duration to wait for retrying request to Phala's endpoint, [`PHALA_TDX_QUOTE_UPLOAD_URL`].
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
+
 /// Number of bytes for the report data.
-/// report_data: [u8; 64] = [version(1 byte) || sha384(TLS pub key || account public key ) || zero padding]
+/// report_data: [u8; 64] = [version(2 bytes (big endian)) || sha384(TLS pub key || account public key ) || zero padding]
 const REPORT_DATA_SIZE: usize = 64;
+
+const BINARY_VERSION_OFFSET: usize = 0;
+const BINARY_VERSION_SIZE: usize = 2;
+
+const PUBLIC_KEYS_OFFSET: usize = 3;
+const PUBLIC_KEYS_SIZE: usize = 48;
+
+// Compile-time assertions
+const _: () = {
+    assert!(
+        BINARY_VERSION_SIZE + PUBLIC_KEYS_SIZE <= REPORT_DATA_SIZE,
+        "Version and public key must be not exceed report data size."
+    );
+    assert!(
+        BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE + 1 == PUBLIC_KEYS_OFFSET,
+        "Public key offset must be after binary version."
+    );
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct TeeAttestation {
@@ -38,7 +57,7 @@ struct UploadResponse {
     _checksum: String,
 }
 
-pub struct BinaryVersion(u8);
+pub struct BinaryVersion(u16);
 
 /// Generates a [`TeeAttestation`] for this node, which can be used to send to the contract to prove that
 /// the node is running in a `TEE` context.
@@ -55,17 +74,20 @@ pub async fn create_remote_attestation_info(
     let client_info_response = client.info().await?;
     let tcb_info = client_info_response.tcb_info;
 
-    let report_data = {
+    let report_data: [u8; REPORT_DATA_SIZE] = {
+        let mut report_data = [0u8; REPORT_DATA_SIZE];
+
+        // Copy binary version
+        let byte_representation = binary_version.0.to_be_bytes();
+        report_data[BINARY_VERSION_OFFSET..][..BINARY_VERSION_SIZE]
+            .copy_from_slice(&byte_representation);
+
+        // Copy hash
         let mut hasher = Sha3_384::new();
         hasher.update(tls_public_key.0);
         hasher.update(account_public_key.0);
-
-        let public_keys_hash = hasher.finalize();
-
-        let mut report_data = [0_u8; REPORT_DATA_SIZE];
-
-        report_data[0] = binary_version.0;
-        report_data[1..33].copy_from_slice(&public_keys_hash);
+        let public_keys_hash: [u8; PUBLIC_KEYS_SIZE] = hasher.finalize().into();
+        report_data[PUBLIC_KEYS_OFFSET..][..PUBLIC_KEYS_SIZE].copy_from_slice(&public_keys_hash);
 
         report_data
     };
