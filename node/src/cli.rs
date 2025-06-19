@@ -185,12 +185,10 @@ impl StartCmd {
             .worker_threads(1)
             .build()?;
 
-        // The `tee_shutdown_signal_receiver` is only needed in the select! arm at the end of this function.
-        // We can't feature gate select arms at compile time, see https://github.com/tokio-rs/tokio/issues/3974.
-        //
-        // Thus disable the `unused_variables` lint when TEE is disabled.
+        // Currently, we only trigger graceful shutdowns from TEE logic,
+        // hence we need to disable the `unused_variables` lint when TEE is disabled.
         #[cfg_attr(not(feature = "tee"), allow(unused_variables))]
-        let (tee_shutdown_signal_sender, mut tee_shutdown_signal_receiver) = mpsc::channel(1);
+        let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
 
         #[cfg(feature = "tee")]
         let (image_hash_watcher_handle, cancellation_token) = {
@@ -210,7 +208,7 @@ impl StartCmd {
                 DockerImageHash(current_image_hash_bytes),
                 allowed_hashes_in_contract,
                 image_hash_storage,
-                tee_shutdown_signal_sender,
+                shutdown_signal_sender,
             ));
 
             (handle, cancellation_token)
@@ -235,7 +233,7 @@ impl StartCmd {
             indexer_exit_response = indexer_exit_receiver => {
                 indexer_exit_response.context("Indexer thread dropped response channel.")?
             }
-            Some(()) = tee_shutdown_signal_receiver.recv(), if cfg!(feature = "tee") => {
+            Some(()) = shutdown_signal_receiver.recv() => {
                 Err(anyhow!("TEE allowed image hashes watcher is sending shutdown signal."))
             }
         };
