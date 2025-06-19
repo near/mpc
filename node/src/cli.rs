@@ -243,7 +243,7 @@ impl StartCmd {
             info!("Waiting for image hash watcher to gracefully exit.");
             cancellation_token.cancel();
             let exit_result = image_hash_watcher_handle.await;
-            info!("Image hash watcher exited with: {:?}.", exit_result);
+            info!(?exit_result, "Image hash watcher exited.");
         }
 
         exit_reason
