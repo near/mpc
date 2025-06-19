@@ -257,6 +257,9 @@ impl PersistentSecrets {
         };
 
         let path = home_dir.join(Self::SECRETS_FILE_NAME);
+        if path.exists() {
+            anyhow::bail!("secrets.json already exists. Refusing to overwrite.");
+        }
         std::fs::write(&path, serde_json::to_vec(&secrets)?)?;
         tracing::debug!("p2p and near account key generated in {}", path.display());
 
