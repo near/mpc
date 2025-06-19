@@ -30,7 +30,6 @@ pub struct AllowedImageHashesStorageImpl {
 }
 
 impl AllowedImageHashesStorageImpl {
-    #[allow(unreachable_code)]
     pub async fn new(file_path: PathBuf) -> Result<Self, io::Error> {
         // Make sure the provided path exists.
         let _file_handle = OpenOptions::new()
@@ -56,6 +55,7 @@ impl AllowedImageHashesStorage for AllowedImageHashesStorageImpl {
 
         let image_hash = latest_allowed_image_hash.image_hash.as_hex();
         file_handle.write_all(image_hash.as_bytes()).await?;
+        file_handle.flush().await?;
 
         Ok(())
     }
