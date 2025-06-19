@@ -10,9 +10,10 @@ use dcap_qvl::{
     quote::Quote,
     verify::{self, VerifiedReport},
 };
-use near_sdk::{env::sha256, near};
+use near_sdk::{env::sha256, near, PublicKey};
 use serde_json::Value;
 use serde_yaml::Value as YamlValue;
+use sha3::digest::{consts::U48, generic_array::GenericArray};
 
 const RTMR0: [u8; 48] = [0u8; 48];
 const RTMR1: [u8; 48] = [0u8; 48];
@@ -20,6 +21,7 @@ const RTMR2: [u8; 48] = [0u8; 48];
 const MRTD: [u8; 48] = [0u8; 48];
 const EXPECTED_LOCAL_SGX_HASH: &str =
     "1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b";
+const EXPECTED_REPORT_DATA_VERSION: u8 = 1;
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
@@ -43,23 +45,15 @@ impl TeeParticipantInfo {
         verification_result.map_err(|_| InvalidCandidateSet::InvalidParticipantsTeeQuote.into())
     }
 
-    pub fn verify_static_rtmrs(verified_report: VerifiedReport) -> bool {
-        if let Some(td10) = verified_report.report.as_td10() {
-            td10.rt_mr0 == RTMR0
-                && td10.rt_mr1 == RTMR1
-                && td10.rt_mr2 == RTMR2
-                && td10.mr_td == MRTD
-        } else {
-            false
-        }
-    }
-
-    /// Checks if the node is running the expected Docker images (launcher and MPC node) by
-    /// replaying RTMR3 and comparing the relevant event values to the expected values.
-    pub fn verify_docker_images_via_rtmr3(
+    /// Checks whether the node is running the expected Docker images (launcher and MPC node) by
+    /// verifying report_data, replaying RTMR3, and comparing the relevant event values to the
+    /// expected values.
+    pub fn verify_docker_image(
         &self,
         allowed_docker_image_hashes: &[MpcDockerImageHash],
         historical_docker_image_hashes: &[MpcDockerImageHash],
+        report: VerifiedReport,
+        public_key: PublicKey,
     ) -> Result<bool, Error> {
         let quote = Quote::parse(&self.tee_quote)
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
@@ -71,6 +65,12 @@ impl TeeParticipantInfo {
             None => return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into()),
         };
 
+        if Self::verify_static_rtmrs(report) {
+            return Ok(false);
+        }
+        if self.verify_report_data(&quote, public_key) {
+            return Ok(false);
+        }
         if !Self::check_rtmr3_vs_actual(&quote, event_log) {
             return Ok(false);
         }
@@ -92,6 +92,29 @@ impl TeeParticipantInfo {
         }
 
         Ok(true)
+    }
+
+    fn verify_static_rtmrs(verified_report: VerifiedReport) -> bool {
+        if let Some(td10) = verified_report.report.as_td10() {
+            td10.rt_mr0 == RTMR0
+                && td10.rt_mr1 == RTMR1
+                && td10.rt_mr2 == RTMR2
+                && td10.mr_td == MRTD
+        } else {
+            false
+        }
+    }
+
+    fn verify_report_data(&self, quote: &Quote, expected_public_key: PublicKey) -> bool {
+        let report_data = match quote.report.as_td10() {
+            Some(r) => r.report_data,
+            None => return false,
+        };
+        let binary_version = report_data[0];
+        let mut public_keys_hash = GenericArray::<u8, U48>::default();
+        public_keys_hash.copy_from_slice(&report_data[4..52]); // 48 bytes for SHA3-384
+        expected_public_key.into_bytes() == public_keys_hash.as_slice()
+            && binary_version == EXPECTED_REPORT_DATA_VERSION
     }
 
     fn check_rtmr3_vs_actual(quote: &Quote, event_log: &[Value]) -> bool {
