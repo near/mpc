@@ -233,7 +233,7 @@ impl PersistentSecrets {
         Ok(secrets)
     }
 
-    fn generate(
+    fn gen_secrets_and_write_to_disk(
         home_dir: &Path,
         number_of_responder_keys: usize,
     ) -> anyhow::Result<PersistentSecrets> {
@@ -276,7 +276,7 @@ impl PersistentSecrets {
             secrets
         } else {
             tracing::debug!("p2p and near account secret key not found. Generating...");
-            Self::generate(home_dir, number_of_responder_keys)?
+            Self::gen_secrets_and_write_to_disk(home_dir, number_of_responder_keys)?
         };
 
         if secrets.near_responder_keys.len() != number_of_responder_keys {
