@@ -35,7 +35,7 @@ const PUBLIC_KEYS_SIZE: usize = 48;
 const _: () = {
     assert!(
         BINARY_VERSION_SIZE + PUBLIC_KEYS_SIZE <= REPORT_DATA_SIZE,
-        "Version and public key must be not exceed report data size."
+        "Version and public key must not exceed report data size."
     );
     assert!(
         BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE + 1 == PUBLIC_KEYS_OFFSET,
