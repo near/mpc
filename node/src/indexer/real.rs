@@ -107,6 +107,6 @@ pub fn spawn_real_indexer(
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender: chain_txn_sender,
         #[cfg(feature = "tee")]
-        _allowed_docker_images_receiver: allowed_docker_images_receiver,
+        allowed_docker_images_receiver,
     }
 }

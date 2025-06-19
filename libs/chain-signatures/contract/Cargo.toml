@@ -14,6 +14,7 @@ curve25519-dalek = { version = "4.1.3", features = [
     "serde",
 ], default-features = false }
 borsh = "1.5.0"
+derive_more = { version = "2.0.1", features = ["from"] }
 near-sdk = { version = "5.11.0", features = [
     "legacy",
     "unit-testing",
