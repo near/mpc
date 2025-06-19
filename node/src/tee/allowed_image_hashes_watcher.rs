@@ -134,13 +134,13 @@ where
                     info!("Set of allowed image hashes on contract has changed. Storing hashes to disk.");
                     let allowed_image_hashes = self.allowed_hashes_in_contract.borrow_and_update().clone();
 
-                    let allowed_image_hashes_manager = &mut self.image_hash_storage;
+                    let image_hash_storage = &mut self.image_hash_storage;
                     let Some(latest_allowed_image_hash) = allowed_image_hashes.iter().max_by_key(|image| image.added) else {
                         warn!("Indexer provided an empty set of allowed TEE image hashes.");
                         continue;
                     };
 
-                    if let Err(err) = allowed_image_hashes_manager.set(latest_allowed_image_hash).await.map_err(ExitError::StorageProviderError) {
+                    if let Err(err) = image_hash_storage.set(latest_allowed_image_hash).await.map_err(ExitError::StorageProviderError) {
                         break err;
                     };
 
