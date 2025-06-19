@@ -343,7 +343,10 @@ impl Cli {
                 desired_presignatures_to_buffer,
                 desired_responder_keys_per_participant,
             } => {
-                anyhow::ensure!(participants.len() == responders.len(), "Number of participants must match number of responders");
+                anyhow::ensure!(
+                    participants.len() == responders.len(),
+                    "Number of participants must match number of responders"
+                );
                 self.run_generate_test_configs(
                     output_dir,
                     participants,
