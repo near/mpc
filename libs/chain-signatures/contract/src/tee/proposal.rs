@@ -158,6 +158,16 @@ impl AllowedDockerImageHashes {
             .any(|proposal| proposal.image_hash.as_hex() == code_hash)
     }
 
+    pub fn is_docker_compose_hash_allowed(
+        &mut self,
+        docker_compose_hash: String,
+        current_block_height: BlockHeight,
+    ) -> bool {
+        self.get(current_block_height)
+            .iter()
+            .any(|proposal| proposal.docker_compose_hash.as_hex() == docker_compose_hash)
+    }
+
     fn get_docker_compose_hash(mpc_docker_image_hash: DockerImageHash) -> DockerImageHash {
         let filled_yaml = format!(
             r#"version: "3.8"

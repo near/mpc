@@ -10,8 +10,10 @@ use dcap_qvl::{
     quote::Quote,
     verify::{self, VerifiedReport},
 };
+use k256::sha2::{Digest, Sha256};
 use near_sdk::{env, near};
 use serde_json::Value;
+use serde_yaml::Value as YamlValue;
 
 const RTMR0: [u8; 48] = [0u8; 48];
 const RTMR1: [u8; 48] = [0u8; 48];
@@ -72,6 +74,9 @@ impl TeeParticipantInfo {
         if !Self::check_app_compose(event_log, &tcb_info) {
             return Ok(false);
         }
+        if !Self::check_docker_compose_hash(&tcb_info, tee_state) {
+            return Ok(false);
+        }
         if !Self::check_local_sgx(event_log) {
             return Ok(false);
         }
@@ -101,6 +106,28 @@ impl TeeParticipantInfo {
             (Some(expected), Some(app)) => replay_app_compose(app) == expected,
             _ => false,
         }
+    }
+
+    fn check_docker_compose_hash(tcb_info: &Value, tee_state: &mut TeeState) -> bool {
+        let compose_yaml = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
+            Some(yaml) => yaml,
+            None => return false,
+        };
+
+        if serde_yaml::from_str::<YamlValue>(compose_yaml).is_err() {
+            return false;
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(compose_yaml.as_bytes());
+        let hash = hasher.finalize();
+
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&hash);
+
+        tee_state
+            .allowed_docker_image_hashes
+            .is_docker_compose_hash_allowed(hex::encode(arr), env::block_height())
     }
 
     fn check_local_sgx(event_log: &[Value]) -> bool {
