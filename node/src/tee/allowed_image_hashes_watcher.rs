@@ -111,6 +111,21 @@ struct AllowedImageHashesWatcher<A> {
     shutdown_signal_sender: mpsc::Sender<()>,
 }
 
+/// Send shutdown signal when watcher exits if
+/// it was not due to cancellation token being cancelled.
+impl<Storage> Drop for AllowedImageHashesWatcher<Storage> {
+    fn drop(&mut self) {
+        let exiting_without_cancelled_token = !self.cancellation_token.is_cancelled();
+
+        if exiting_without_cancelled_token {
+            let sent_shutdown_signal = self.shutdown_signal_sender.try_send(());
+            if let Err(TrySendError::Closed(_)) = sent_shutdown_signal {
+                error!("Shutdown signal receiver closed.");
+            }
+        }
+    }
+}
+
 impl<Storage> AllowedImageHashesWatcher<Storage>
 where
     Storage: AllowedImageHashesStorage + Send + Sync + 'static,
@@ -120,49 +135,53 @@ where
         // Mark it changed to make sure we process the initial value in the select arm below.
         self.allowed_hashes_in_contract.mark_changed();
 
-        let exit_reason = loop {
+        loop {
             select! {
                 _ = self.cancellation_token.cancelled() => {
-                    return Ok(());
+                    break Ok(());
                 }
 
                 watcher_result = self.allowed_hashes_in_contract.changed() => {
                     if watcher_result.is_err() {
-                        break ExitError::IndexerClosed;
+                        break Err(ExitError::IndexerClosed);
                     }
 
-                    info!("Set of allowed image hashes on contract has changed. Storing hashes to disk.");
-                    let allowed_image_hashes = self.allowed_hashes_in_contract.borrow_and_update().clone();
-
-                    let image_hash_storage = &mut self.image_hash_storage;
-                    let Some(latest_allowed_image_hash) = allowed_image_hashes.iter().max_by_key(|image| image.added) else {
-                        warn!("Indexer provided an empty set of allowed TEE image hashes.");
-                        continue;
-                    };
-
-                    if let Err(err) = image_hash_storage.set(latest_allowed_image_hash).await.map_err(ExitError::StorageProviderError) {
-                        break err;
-                    };
-
-                    let local_image_is_allowed = allowed_image_hashes
-                        .iter()
-                        .map(|image| &image.image_hash)
-                        .contains(&self.current_image);
-
-                    if !local_image_is_allowed {
-                        warn!("Current node image not in set of allowed image hashes. Sending shut down signal.");
-                        break ExitError::RunningImageIsDisallowed;
-                    }
+                    self.handle_allowed_image_hashes_update().await?;
                 }
             }
+        }
+    }
+
+    async fn handle_allowed_image_hashes_update(&mut self) -> Result<(), ExitError> {
+        info!("Set of allowed image hashes on contract has changed. Storing hashes to disk.");
+        let allowed_image_hashes = self.allowed_hashes_in_contract.borrow_and_update().clone();
+
+        let image_hash_storage = &mut self.image_hash_storage;
+        let Some(latest_allowed_image_hash) =
+            allowed_image_hashes.iter().max_by_key(|image| image.added)
+        else {
+            warn!("Indexer provided an empty set of allowed TEE image hashes.");
+            return Ok(());
         };
 
-        let sent_shutdown_signal = self.shutdown_signal_sender.try_send(());
-        if let Err(TrySendError::Closed(_)) = sent_shutdown_signal {
-            error!("Shutdown signal receiver closed.");
-        }
+        image_hash_storage
+            .set(latest_allowed_image_hash)
+            .await
+            .map_err(ExitError::StorageProviderError)?;
 
-        Err(exit_reason)
+        let local_image_is_allowed = allowed_image_hashes
+            .iter()
+            .map(|image| &image.image_hash)
+            .contains(&self.current_image);
+
+        if local_image_is_allowed {
+            Ok(())
+        } else {
+            warn!(
+                "Current node image not in set of allowed image hashes. Sending shut down signal."
+            );
+            Err(ExitError::RunningImageIsDisallowed)
+        }
     }
 }
 
