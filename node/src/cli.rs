@@ -32,7 +32,7 @@ use tokio::sync::{mpsc, oneshot};
 
 #[cfg(feature = "tee")]
 use {
-    crate::tee::{monitor_allowed_image_hashes, AllowedImageHashesStorageImpl},
+    crate::tee::{monitor_allowed_image_hashes, AllowedImageHashesFile},
     mpc_contract::tee::proposal::DockerImageHash,
     tokio_util::sync::CancellationToken,
     tracing::info,
@@ -203,7 +203,7 @@ impl StartCmd {
 
             let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
             let image_hash_storage =
-                AllowedImageHashesStorageImpl::new(self.tee_config.latest_allowed_hash).await?;
+                AllowedImageHashesFile::new(self.tee_config.latest_allowed_hash).await?;
 
             let handle = tokio::spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),

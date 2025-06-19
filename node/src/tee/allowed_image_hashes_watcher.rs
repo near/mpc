@@ -25,11 +25,11 @@ pub trait AllowedImageHashesStorage {
     ) -> impl Future<Output = Result<(), io::Error>> + Send;
 }
 
-pub struct AllowedImageHashesStorageImpl {
+pub struct AllowedImageHashesFile {
     file_path: PathBuf,
 }
 
-impl AllowedImageHashesStorageImpl {
+impl AllowedImageHashesFile {
     pub async fn new(file_path: PathBuf) -> Result<Self, io::Error> {
         // Make sure the provided path exists.
         let _file_handle = OpenOptions::new()
@@ -42,7 +42,7 @@ impl AllowedImageHashesStorageImpl {
     }
 }
 
-impl AllowedImageHashesStorage for AllowedImageHashesStorageImpl {
+impl AllowedImageHashesStorage for AllowedImageHashesFile {
     async fn set(
         &mut self,
         latest_allowed_image_hash: &AllowedDockerImageHash,
