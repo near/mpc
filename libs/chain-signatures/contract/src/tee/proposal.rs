@@ -11,7 +11,7 @@ const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block ti
 /// measurement and more).
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct DockerImageHash(pub(crate) [u8; 32]);
+pub struct DockerImageHash(pub [u8; 32]);
 
 impl DockerImageHash {
     /// Returns the byte array representation of the `CodeHash`.
@@ -73,7 +73,7 @@ pub struct AllowedDockerImageHash {
 /// Collection of whitelisted Docker code hashes that are the only ones MPC nodes are allowed to
 /// run.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AllowedDockerImageHashes {
     /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
     /// lazily cleaned up during insertions and lookups.
