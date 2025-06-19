@@ -586,7 +586,7 @@ impl FakeIndexerManager {
             )),
             txn_sender: api_txn_sender,
             #[cfg(feature = "tee")]
-            _allowed_docker_images_receiver: allowed_docker_images_receiver,
+            allowed_docker_images_receiver,
         };
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));
         let disabler = NodeDisabler {

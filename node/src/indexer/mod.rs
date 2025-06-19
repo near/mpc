@@ -71,5 +71,5 @@ pub struct IndexerAPI {
     pub txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
     #[cfg(feature = "tee")]
     /// Watcher that keeps track of allowed [`AllowedDockerImageHash`]es on the contract.
-    pub _allowed_docker_images_receiver: watch::Receiver<Vec<AllowedDockerImageHash>>,
+    pub allowed_docker_images_receiver: watch::Receiver<Vec<AllowedDockerImageHash>>,
 }

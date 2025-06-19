@@ -16,7 +16,7 @@ use crate::{
     tracking::{self, start_root_task},
     web::start_web_server,
 };
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use clap::Parser;
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
@@ -28,7 +28,15 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
+
+#[cfg(feature = "tee")]
+use {
+    crate::tee::{monitor_allowed_image_hashes, AllowedImageHashesStorageImpl},
+    mpc_contract::tee::proposal::DockerImageHash,
+    tokio_util::sync::CancellationToken,
+    tracing::info,
+};
 
 #[derive(Parser, Debug)]
 pub enum Cli {
@@ -101,6 +109,23 @@ pub struct StartCmd {
     /// specified in the config.
     #[arg(env("MPC_ACCOUNT_SK"))]
     pub account_secret_key: SecretKey,
+    /// TEE related configuration settings.
+    #[command(flatten)]
+    #[cfg(feature = "tee")]
+    pub tee_config: TeeConfig,
+}
+
+#[derive(Parser, Debug)]
+#[cfg(feature = "tee")]
+pub struct TeeConfig {
+    #[arg(
+        long,
+        env("IMAGE_HASH"),
+        help_heading = "hex representation of the hash of the image running."
+    )]
+    pub image_hash: String,
+    #[arg(long, env("ALLOWED_HASHES_PATH"))]
+    pub allowed_hashes_path: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -151,6 +176,42 @@ impl StartCmd {
             indexer_exit_sender,
         );
 
+        let root_runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(1)
+            .build()?;
+
+        // The `tee_shutdown_signal_receiver` is only needed in the select! arm at the end of this function.
+        // We can't feature gate select arms at compile time, see https://github.com/tokio-rs/tokio/issues/3974.
+        //
+        // Thus disable the `unused_variables` lint when TEE is disabled.
+        #[cfg_attr(not(feature = "tee"), allow(unused_variables))]
+        let (tee_shutdown_signal_sender, mut tee_shutdown_signal_receiver) = mpsc::channel(1);
+
+        #[cfg(feature = "tee")]
+        let (image_hash_watcher_handle, cancellation_token) = {
+            let cancellation_token = CancellationToken::new();
+            let current_image = self.tee_config.image_hash;
+            let current_image_hash_bytes = hex::decode(current_image)
+                .expect("Provided is valid hex representation")
+                .try_into()
+                .expect("Provided hex must be 32 bytes.");
+
+            let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
+            let image_hash_storage =
+                AllowedImageHashesStorageImpl::new(self.tee_config.allowed_hashes_path).await?;
+
+            let handle = tokio::spawn(monitor_allowed_image_hashes(
+                cancellation_token.child_token(),
+                DockerImageHash(current_image_hash_bytes),
+                allowed_hashes_in_contract,
+                image_hash_storage,
+                tee_shutdown_signal_sender,
+            ));
+
+            (handle, cancellation_token)
+        };
+
         let root_future = Self::create_root_future(
             home_dir.clone(),
             config.clone(),
@@ -161,21 +222,29 @@ impl StartCmd {
             web_contract_receiver,
         );
 
-        let root_runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(1)
-            .build()?;
-
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
 
-        tokio::select! {
+        let exit_reason = tokio::select! {
             root_task_result = root_task => {
                 root_task_result?
             }
             indexer_exit_response = indexer_exit_receiver => {
                 indexer_exit_response.context("Indexer thread dropped response channel.")?
             }
+            Some(()) = tee_shutdown_signal_receiver.recv(), if cfg!(feature = "tee") => {
+                Err(anyhow!("TEE allowed image hashes watcher is sending shutdown signal."))
+            }
+        };
+
+        #[cfg(feature = "tee")]
+        {
+            info!("Waiting for image hash watcher to gracefully exit.");
+            cancellation_token.cancel();
+            let exit_result = image_hash_watcher_handle.await;
+            info!("Image hash watcher exited with: {:?}.", exit_result);
         }
+
+        exit_reason
     }
 
     async fn create_root_future(
