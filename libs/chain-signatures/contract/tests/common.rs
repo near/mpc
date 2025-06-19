@@ -160,6 +160,7 @@ pub fn current_contract() -> &'static Vec<u8> {
 
             let status = Command::new("wasm-opt")
                 .args([
+                    "--enable-bulk-memory",
                     "-Oz",
                     "-o",
                     wasm_path.to_str().unwrap(),
