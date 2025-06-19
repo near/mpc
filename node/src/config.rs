@@ -258,7 +258,7 @@ impl PersistentSecrets {
 
         let path = home_dir.join(Self::SECRETS_FILE_NAME);
         std::fs::write(&path, serde_json::to_vec(&secrets)?)?;
-        eprintln!("p2p and near account key generated in {}", path.display());
+        tracing::debug!("p2p and near account key generated in {}", path.display());
 
         Ok(secrets)
     }
@@ -272,10 +272,10 @@ impl PersistentSecrets {
             "At least one access key must be provided"
         );
         let secrets = if let Some(secrets) = Self::maybe_get_existing(home_dir)? {
-            eprintln!("p2p and near account secret key already exists. Using existing.");
+            tracing::debug!("p2p and near account secret key already exists. Using existing.");
             secrets
         } else {
-            eprintln!("p2p and near account secret key not found. Generating...");
+            tracing::debug!("p2p and near account secret key not found. Generating...");
             Self::generate(home_dir, number_of_responder_keys)?
         };
 
