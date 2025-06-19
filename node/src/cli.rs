@@ -126,10 +126,10 @@ pub struct TeeConfig {
     pub image_hash: String,
     #[arg(
         long,
-        env("LATEST_ALLOWED_HASH"),
+        env("LATEST_ALLOWED_HASH_FILE"),
         help_heading = "Path to the file which the mpc node will write the latest allowed hash to."
     )]
-    pub latest_allowed_hash: PathBuf,
+    pub latest_allowed_hash_file: PathBuf,
 }
 
 #[derive(Parser, Debug)]
