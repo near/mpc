@@ -25,6 +25,7 @@ from transaction import create_create_account_action, create_payment_action, \
 from key import Key
 
 dot_near = pathlib.Path.home() / '.near'
+SECRETS_JSON = 'secrets.json'
 
 
 # Output is deserializable into the rust type near_crypto::SecretKey
@@ -152,7 +153,7 @@ def generate_mpc_configs(
         my_addr = participant['address']
         my_port = participant['port']
 
-        secrets_file_path = os.path.join(dot_near, str(idx), 'secrets.json')
+        secrets_file_path = os.path.join(dot_near, str(idx), SECRETS_JSON)
         with open(secrets_file_path) as file:
             participant_secrets = json.load(file)
         signer_key = deserialize_key(near_account, participant_secrets['near_signer_key'])
