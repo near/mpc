@@ -196,24 +196,32 @@ mod tests {
     use tokio_util::time::FutureExt;
     const TEST_TIMEOUT_DURATION: Duration = Duration::from_secs(5);
 
-    const IMAGE_HASH_1: AllowedDockerImageHash = AllowedDockerImageHash {
-        image_hash: DockerImageHash([1; 32]),
-        added: 1,
-    };
-    const IMAGE_HASH_2: AllowedDockerImageHash = AllowedDockerImageHash {
-        image_hash: DockerImageHash([2; 32]),
-        added: 2,
-    };
-    const IMAGE_HASH_3: AllowedDockerImageHash = AllowedDockerImageHash {
-        image_hash: DockerImageHash([3; 32]),
-        added: 3,
-    };
+    fn image_hash_1() -> AllowedDockerImageHash {
+        AllowedDockerImageHash {
+            image_hash: DockerImageHash::from([1; 32]), // Direct construction
+            added: 1,
+        }
+    }
+
+    fn image_hash_2() -> AllowedDockerImageHash {
+        AllowedDockerImageHash {
+            image_hash: DockerImageHash::from([2; 32]), // Direct construction
+            added: 2,
+        }
+    }
+
+    fn image_hash_3() -> AllowedDockerImageHash {
+        AllowedDockerImageHash {
+            image_hash: DockerImageHash::from([3; 32]), // Direct construction
+            added: 3,
+        }
+    }
 
     /// Assert that the image with highest block height is always written to storage.
     #[rstest]
-    #[case(vec![IMAGE_HASH_1, IMAGE_HASH_3, IMAGE_HASH_2])]
-    #[case(vec![IMAGE_HASH_3, IMAGE_HASH_1, IMAGE_HASH_2])]
-    #[case(vec![IMAGE_HASH_1, IMAGE_HASH_2, IMAGE_HASH_3])]
+    #[case(vec![image_hash_1(), image_hash_3(), image_hash_2()])]
+    #[case(vec![image_hash_3(), image_hash_1(), image_hash_2()])]
+    #[case(vec![image_hash_1(), image_hash_2(), image_hash_3()])]
     #[tokio::test]
     async fn test_latest_allowed_image_hash_is_written(
         #[case] allowed_images: Vec<AllowedDockerImageHash>,
@@ -233,7 +241,7 @@ mod tests {
                 .expect_set()
                 .once()
                 // Verify that the latest allowed image is written
-                .with(predicate::eq(IMAGE_HASH_3))
+                .with(predicate::eq(image_hash_3()))
                 .returning(move |_| {
                     write_is_called.notify_one();
                     Box::pin(async { Ok(()) })
@@ -260,9 +268,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case::image_is_allowed(IMAGE_HASH_1.image_hash, vec![IMAGE_HASH_1])]
+    #[case::image_is_allowed(image_hash_1().image_hash, vec![image_hash_1()])]
     // `StorageProviderError` is returned instead of `RunningImageDisallowed`.
-    #[case::image_is_disallowed(IMAGE_HASH_2.image_hash, vec![IMAGE_HASH_1])]
+    #[case::image_is_disallowed(image_hash_2().image_hash, vec![image_hash_1()])]
     #[tokio::test]
     async fn test_shutdown_signal_is_sent_on_write_error(
         #[case] current_image: DockerImageHash,
@@ -300,8 +308,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_current_image_not_allowed() {
-        let current_image = IMAGE_HASH_1.image_hash;
-        let allowed_image = IMAGE_HASH_2;
+        let current_image = image_hash_1().image_hash;
+        let allowed_image = image_hash_2();
 
         let cancellation_token = CancellationToken::new();
         let (_sender, receiver) = watch::channel(vec![allowed_image.clone()]);
@@ -355,7 +363,7 @@ mod tests {
     #[tokio::test]
     async fn test_allowed_hashes_watcher_is_closed() {
         let cancellation_token = CancellationToken::new();
-        let (sender, receiver) = watch::channel(vec![IMAGE_HASH_1]);
+        let (sender, receiver) = watch::channel(vec![image_hash_1()]);
         drop(sender);
 
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
@@ -366,13 +374,13 @@ mod tests {
                 .expect_set()
                 .once()
                 // Verify that the latest allowed image is written
-                .with(predicate::eq(IMAGE_HASH_1))
+                .with(predicate::eq(image_hash_1()))
                 .returning(move |_| Box::pin(async { Ok(()) }));
         }
 
         let join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token,
-            IMAGE_HASH_1.image_hash,
+            image_hash_1().image_hash,
             receiver,
             storage_mock,
             sender_shutdown,

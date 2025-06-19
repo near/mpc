@@ -4961,6 +4961,7 @@ dependencies = [
  "borsh",
  "curve25519-dalek",
  "dcap-qvl",
+ "derive_more 2.0.1",
  "getrandom 0.2.16",
  "hex",
  "k256",

@@ -194,7 +194,7 @@ impl StartCmd {
         let (image_hash_watcher_handle, cancellation_token) = {
             let cancellation_token = CancellationToken::new();
             let current_image = self.tee_config.image_hash;
-            let current_image_hash_bytes = hex::decode(current_image)
+            let current_image_hash_bytes: [u8; 32] = hex::decode(current_image)
                 .expect("The currently running image is a hex string.")
                 .try_into()
                 .expect("The currently running image hash hex representation is 32 bytes.");
@@ -205,7 +205,7 @@ impl StartCmd {
 
             let handle = tokio::spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
-                DockerImageHash(current_image_hash_bytes),
+                DockerImageHash::from(current_image_hash_bytes),
                 allowed_hashes_in_contract,
                 image_hash_storage,
                 shutdown_signal_sender,

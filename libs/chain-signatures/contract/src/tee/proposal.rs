@@ -1,3 +1,4 @@
+use derive_more::From;
 use near_sdk::{log, near, BlockHeight};
 use std::collections::BTreeMap;
 
@@ -10,8 +11,8 @@ const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block ti
 /// code hash to add to the whitelist, along with the TEE quote (which includes the RTMR3
 /// measurement and more).
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct DockerImageHash(pub [u8; 32]);
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, From)]
+pub struct DockerImageHash(pub(crate) [u8; 32]);
 
 impl DockerImageHash {
     /// Returns the byte array representation of the `CodeHash`.
