@@ -1,5 +1,4 @@
-use k256::sha2::{Digest, Sha256};
-use near_sdk::{log, near, BlockHeight};
+use near_sdk::{env::sha256, log, near, BlockHeight};
 use std::collections::BTreeMap;
 
 use crate::primitives::key_state::AuthenticatedParticipantId;
@@ -7,26 +6,57 @@ use crate::primitives::key_state::AuthenticatedParticipantId;
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds
 
-/// Common functionality for 32-byte hashes used in the TEE environment.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct Hash32(pub(crate) [u8; 32]);
+use std::marker::PhantomData;
 
-impl Hash32 {
-    /// Returns the hex string representation of the hash.
+use borsh::{BorshDeserialize, BorshSerialize};
+/// Common functionality for 32-byte SHA256 hashes used in the TEE environment.
+use serde::{Deserialize, Serialize};
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+pub struct Hash32<T> {
+    pub bytes: [u8; 32],
+    _marker: PhantomData<T>,
+}
+
+impl<T> Hash32<T> {
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self {
+            bytes,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
     pub fn as_hex(&self) -> String {
-        hex::encode(self.0)
+        hex::encode(self.bytes)
     }
 }
+
+// Marker types
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct Image;
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct Compose;
 
 /// Hash of a Docker image running in the TEE environment. Also used as a proposal for a new TEE
 /// code hash to add to the whitelist, along with the TEE quote (which includes the RTMR3
 /// measurement and more).
-pub type DockerImageHash = Hash32;
+pub type DockerImageHash = Hash32<Image>;
 
 /// Hash of the Docker Compose file used to run the MPC node in the TEE environment. It is computed
 /// from a Docker Compose template populated with the MPC node's Docker image hash.
-pub type DockerComposeHash = Hash32;
+pub type DockerComposeHash = Hash32<Compose>;
 
 /// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
 /// a code hash to add.
@@ -148,27 +178,7 @@ impl AllowedDockerImageHashes {
         self.allowed_tee_proposals.clone()
     }
 
-    pub fn is_code_hash_allowed(
-        &mut self,
-        code_hash: String,
-        current_block_height: BlockHeight,
-    ) -> bool {
-        self.get(current_block_height)
-            .iter()
-            .any(|proposal| proposal.image_hash.as_hex() == code_hash)
-    }
-
-    pub fn is_docker_compose_hash_allowed(
-        &mut self,
-        docker_compose_hash: String,
-        current_block_height: BlockHeight,
-    ) -> bool {
-        self.get(current_block_height)
-            .iter()
-            .any(|proposal| proposal.docker_compose_hash.as_hex() == docker_compose_hash)
-    }
-
-    fn get_docker_compose_hash(mpc_docker_image_hash: DockerImageHash) -> DockerImageHash {
+    fn get_docker_compose_hash(mpc_docker_image_hash: DockerImageHash) -> DockerComposeHash {
         let filled_yaml = format!(
             r#"version: "3.8"
 
@@ -188,12 +198,16 @@ volumes:
             mpc_docker_image_hash.as_hex()
         );
 
-        let mut hasher = Sha256::new();
-        hasher.update(filled_yaml.as_bytes());
-        let hash = hasher.finalize();
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&hash);
-        Hash32(arr)
+        let hash = sha256(filled_yaml.as_bytes());
+        assert!(
+            hash.len() == 32,
+            "Docker compose hash must be 32 bytes long"
+        );
+
+        let mut hash_arr = [0u8; 32];
+        hash_arr.copy_from_slice(&hash);
+
+        DockerComposeHash::new(hash_arr)
     }
 }
 
@@ -202,7 +216,7 @@ mod tests {
     use super::*;
 
     fn dummy_code_hash(val: u8) -> DockerImageHash {
-        Hash32([val; 32])
+        DockerImageHash::new([val; 32])
     }
 
     #[test]

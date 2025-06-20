@@ -93,7 +93,7 @@ impl TeeState {
         self.votes.vote(code_hash.clone(), participant)
     }
 
-    pub fn get_all_allowed_hashes(&mut self) -> Vec<DockerImageHash> {
+    pub fn get_allowed_hashes(&mut self) -> Vec<DockerImageHash> {
         self.allowed_docker_image_hashes
             .get(env::block_height())
             .into_iter()

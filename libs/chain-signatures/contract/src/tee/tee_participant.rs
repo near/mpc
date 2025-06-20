@@ -2,16 +2,15 @@ use crate::{
     errors::{Error, InvalidCandidateSet},
     get_collateral,
     tee::{
+        proposal::DockerImageHash,
         quote::{replay_app_compose, replay_rtmr},
-        tee_state::TeeState,
     },
 };
 use dcap_qvl::{
     quote::Quote,
     verify::{self, VerifiedReport},
 };
-use k256::sha2::{Digest, Sha256};
-use near_sdk::{env, near};
+use near_sdk::{env::sha256, near};
 use serde_json::Value;
 use serde_yaml::Value as YamlValue;
 
@@ -57,7 +56,10 @@ impl TeeParticipantInfo {
 
     /// Checks if the node is running the expected Docker images (launcher and MPC node) by
     /// replaying RTMR3 and comparing the relevant event values to the expected values.
-    pub fn verify_docker_images_via_rtmr3(&self, tee_state: &mut TeeState) -> Result<bool, Error> {
+    pub fn verify_docker_images_via_rtmr3(
+        &self,
+        allowed_docker_image_hashes: &[DockerImageHash],
+    ) -> Result<bool, Error> {
         let quote = Quote::parse(&self.tee_quote)
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
         let tcb_info: Value = serde_json::from_str(&self.raw_tcb_info)
@@ -74,13 +76,13 @@ impl TeeParticipantInfo {
         if !Self::check_app_compose(event_log, &tcb_info) {
             return Ok(false);
         }
-        if !Self::check_docker_compose_hash(&tcb_info, tee_state) {
+        if !Self::check_docker_compose_hash(&tcb_info, &allowed_docker_image_hashes) {
             return Ok(false);
         }
         if !Self::check_local_sgx(event_log) {
             return Ok(false);
         }
-        if !Self::check_mpc_hash(event_log, tee_state) {
+        if !Self::check_mpc_hash(event_log, &allowed_docker_image_hashes) {
             return Ok(false);
         }
 
@@ -108,7 +110,10 @@ impl TeeParticipantInfo {
         }
     }
 
-    fn check_docker_compose_hash(tcb_info: &Value, tee_state: &mut TeeState) -> bool {
+    fn check_docker_compose_hash(
+        tcb_info: &Value,
+        allowed_docker_image_hashes: &[DockerImageHash],
+    ) -> bool {
         let compose_yaml = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
             Some(yaml) => yaml,
             None => return false,
@@ -118,16 +123,13 @@ impl TeeParticipantInfo {
             return false;
         }
 
-        let mut hasher = Sha256::new();
-        hasher.update(compose_yaml.as_bytes());
-        let hash = hasher.finalize();
+        let compose_yaml_hash = sha256(compose_yaml.as_bytes());
+        let mut compose_yaml_hash_arr = [0u8; 32];
+        compose_yaml_hash_arr.copy_from_slice(&compose_yaml_hash);
 
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&hash);
-
-        tee_state
-            .allowed_docker_image_hashes
-            .is_docker_compose_hash_allowed(hex::encode(arr), env::block_height())
+        allowed_docker_image_hashes
+            .iter()
+            .any(|hash| hash.as_hex() == hex::encode(compose_yaml_hash_arr))
     }
 
     fn check_local_sgx(event_log: &[Value]) -> bool {
@@ -141,15 +143,19 @@ impl TeeParticipantInfo {
         }
     }
 
-    fn check_mpc_hash(event_log: &[Value], tee_state: &mut TeeState) -> bool {
+    fn check_mpc_hash(
+        event_log: &[Value],
+        allowed_docker_image_hashes: &[DockerImageHash],
+    ) -> bool {
         let mpc_node_image_digest = event_log
             .iter()
             .find(|e| e["event"].as_str() == Some("mpc-image-digest"))
             .and_then(|e| e["digest"].as_str());
+
         match mpc_node_image_digest {
-            Some(digest) => tee_state
-                .allowed_docker_image_hashes
-                .is_code_hash_allowed(digest.to_owned(), env::block_height()),
+            Some(digest) => allowed_docker_image_hashes
+                .iter()
+                .any(|hash| hash.as_hex() == digest.to_owned()),
             None => false,
         }
     }

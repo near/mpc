@@ -223,7 +223,7 @@ impl MpcContract {
 
     pub fn latest_code_hash(&mut self) -> DockerImageHash {
         self.tee_state
-            .get_all_allowed_hashes()
+            .get_allowed_hashes()
             .last()
             .expect("there must be at least one allowed code hash")
             .clone()
@@ -525,11 +525,9 @@ impl VersionedMpcContract {
         );
 
         // Save the initial storage usage to know how much to charge the proposer for the storage used
-
         let initial_storage = env::storage_usage();
 
         // Verify the TEE quote before adding the proposed participant to the contract state
-
         let timestamp_s = env::block_timestamp_ms() / 1_000;
         let report = proposed_tee_participant
             .verify_quote(timestamp_s)
@@ -542,15 +540,16 @@ impl VersionedMpcContract {
         };
 
         // Verify RTMR 0, 1, 2, and MRTD against hardcoded expected values
-
         if !TeeParticipantInfo::verify_static_rtmrs(report) {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
                 .message("RTMRs do not match expected values".to_string()));
         }
 
         // Verify RTMR3
-
-        if !proposed_tee_participant.verify_docker_images_via_rtmr3(&mut mpc_contract.tee_state)? {
+        let allowed_docker_image_hashes = mpc_contract.tee_state.get_allowed_hashes();
+        if !proposed_tee_participant
+            .verify_docker_images_via_rtmr3(allowed_docker_image_hashes.as_slice())?
+        {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
                 .message("RTMR3 does not match expected value".to_string()));
         }
@@ -558,14 +557,12 @@ impl VersionedMpcContract {
         // TODO(#507) verify report_data
 
         // Add a new proposed participant to the contract state
-
         mpc_contract
             .tee_state
             .add_participant(account_id.clone(), proposed_tee_participant.clone());
 
         // Both participants and non-participants can propose. Non-participants must pay for the
         // storage they use; participants do not.
-
         if self.voter_account().is_err() {
             let storage_used = env::storage_usage() - initial_storage;
             let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
@@ -580,7 +577,6 @@ impl VersionedMpcContract {
             }
 
             // Refund the difference if the proposer attached more than required
-
             if let Some(diff) = attached.checked_sub(cost) {
                 if diff > NearToken::from_yoctonear(0) {
                     Promise::new(account_id).transfer(diff);
@@ -847,7 +843,7 @@ impl VersionedMpcContract {
     pub fn allowed_code_hashes(&mut self) -> Result<Vec<DockerImageHash>, Error> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
         match self {
-            Self::V2(contract) => Ok(contract.tee_state.get_all_allowed_hashes()),
+            Self::V2(contract) => Ok(contract.tee_state.get_allowed_hashes()),
             _ => env::panic_str("expected V2"),
         }
     }
