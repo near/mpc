@@ -1,4 +1,3 @@
-use derive_more::From;
 use near_sdk::{env::sha256, log, near, BlockHeight};
 use std::collections::BTreeMap;
 
@@ -25,7 +24,6 @@ use serde::{Deserialize, Serialize};
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
-    From,
 )]
 pub struct Hash32<T> {
     pub bytes: [u8; 32],
@@ -33,15 +31,17 @@ pub struct Hash32<T> {
 }
 
 impl<T> Hash32<T> {
-    pub fn new(bytes: [u8; 32]) -> Self {
+    pub fn as_hex(&self) -> String {
+        hex::encode(self.bytes)
+    }
+}
+
+impl<T> From<[u8; 32]> for Hash32<T> {
+    fn from(bytes: [u8; 32]) -> Self {
         Self {
             bytes,
             _marker: std::marker::PhantomData,
         }
-    }
-
-    pub fn as_hex(&self) -> String {
-        hex::encode(self.bytes)
     }
 }
 
@@ -212,7 +212,7 @@ volumes:
         let mut hash_arr = [0u8; 32];
         hash_arr.copy_from_slice(&hash);
 
-        LauncherDockerComposeHash::new(hash_arr)
+        LauncherDockerComposeHash::from(hash_arr)
     }
 }
 
@@ -221,7 +221,7 @@ mod tests {
     use super::*;
 
     fn dummy_code_hash(val: u8) -> MpcDockerImageHash {
-        MpcDockerImageHash::new([val; 32])
+        MpcDockerImageHash::from([val; 32])
     }
 
     #[test]
