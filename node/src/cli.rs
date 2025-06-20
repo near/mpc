@@ -34,7 +34,7 @@ use tokio_util::sync::CancellationToken;
 #[cfg(feature = "tee")]
 use {
     crate::tee::{monitor_allowed_image_hashes, AllowedImageHashesFile},
-    mpc_contract::tee::proposal::DockerImageHash,
+    mpc_contract::tee::proposal::MpcDockerImageHash,
     tracing::info,
 };
 
@@ -209,7 +209,7 @@ impl StartCmd {
 
             tokio::spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
-                DockerImageHash::from(current_image_hash_bytes),
+                MpcDockerImageHash::from(current_image_hash_bytes),
                 allowed_hashes_in_contract,
                 image_hash_storage,
                 shutdown_signal_sender,

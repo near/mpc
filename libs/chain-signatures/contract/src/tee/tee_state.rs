@@ -2,7 +2,7 @@ use crate::{
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
     tee::{
-        proposal::{AllowedDockerImageHashes, CodeHashesVotes, DockerImageHash},
+        proposal::{AllowedDockerImageHashes, CodeHashesVotes, MpcDockerImageHash},
         quote::TeeQuoteStatus,
         tee_participant::TeeParticipantInfo,
     },
@@ -18,7 +18,7 @@ pub enum TeeValidationResult {
 #[derive(Debug)]
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
-    pub(crate) historical_docker_image_hashes: Vec<DockerImageHash>,
+    pub(crate) historical_docker_image_hashes: Vec<MpcDockerImageHash>,
     pub(crate) votes: CodeHashesVotes,
     pub(crate) tee_participant_info: IterableMap<AccountId, TeeParticipantInfo>,
 }
@@ -87,13 +87,13 @@ impl TeeState {
 
     pub fn vote(
         &mut self,
-        code_hash: DockerImageHash,
+        code_hash: MpcDockerImageHash,
         participant: &AuthenticatedParticipantId,
     ) -> u64 {
         self.votes.vote(code_hash.clone(), participant)
     }
 
-    pub fn get_all_allowed_hashes(&mut self) -> Vec<DockerImageHash> {
+    pub fn get_allowed_hashes(&mut self) -> Vec<MpcDockerImageHash> {
         self.allowed_docker_image_hashes
             .get(env::block_height())
             .into_iter()
@@ -101,7 +101,11 @@ impl TeeState {
             .collect()
     }
 
-    pub fn whitelist_tee_proposal(&mut self, tee_proposal: DockerImageHash) {
+    pub fn get_historical_hashes(&mut self) -> Vec<MpcDockerImageHash> {
+        self.historical_docker_image_hashes.clone()
+    }
+
+    pub fn whitelist_tee_proposal(&mut self, tee_proposal: MpcDockerImageHash) {
         self.votes.clear_votes();
         self.historical_docker_image_hashes
             .push(tee_proposal.clone());

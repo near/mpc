@@ -44,7 +44,7 @@ use primitives::{
 };
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
-    proposal::DockerImageHash, quote::get_collateral, tee_participant::TeeParticipantInfo,
+    proposal::MpcDockerImageHash, quote::get_collateral, tee_participant::TeeParticipantInfo,
     tee_state::TeeValidationResult,
 };
 
@@ -203,7 +203,7 @@ impl MpcContract {
         Ok(())
     }
 
-    pub fn vote_code_hash(&mut self, code_hash: DockerImageHash) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
         // Ensure the protocol is in the Running state
         let ProtocolContractState::Running(state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
@@ -221,9 +221,9 @@ impl MpcContract {
         Ok(())
     }
 
-    pub fn latest_code_hash(&mut self) -> DockerImageHash {
+    pub fn latest_code_hash(&mut self) -> MpcDockerImageHash {
         self.tee_state
-            .get_all_allowed_hashes()
+            .get_allowed_hashes()
             .last()
             .expect("there must be at least one allowed code hash")
             .clone()
@@ -525,11 +525,9 @@ impl VersionedMpcContract {
         );
 
         // Save the initial storage usage to know how much to charge the proposer for the storage used
-
         let initial_storage = env::storage_usage();
 
         // Verify the TEE quote before adding the proposed participant to the contract state
-
         let timestamp_s = env::block_timestamp_ms() / 1_000;
         let report = proposed_tee_participant
             .verify_quote(timestamp_s)
@@ -542,24 +540,31 @@ impl VersionedMpcContract {
         };
 
         // Verify RTMR 0, 1, 2, and MRTD against hardcoded expected values
-
         if !TeeParticipantInfo::verify_static_rtmrs(report) {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
                 .message("RTMRs do not match expected values".to_string()));
         }
 
-        // TODO(#506) verify RTMR3
+        // Verify RTMR3
+        let allowed_docker_image_hashes = mpc_contract.tee_state.get_allowed_hashes();
+        let historical_docker_image_hashes = mpc_contract.tee_state.get_historical_hashes();
+        if !proposed_tee_participant.verify_docker_images_via_rtmr3(
+            allowed_docker_image_hashes.as_slice(),
+            historical_docker_image_hashes.as_slice(),
+        )? {
+            return Err(InvalidParameters::InvalidTeeRemoteAttestation
+                .message("RTMR3 does not match expected value".to_string()));
+        }
+
         // TODO(#507) verify report_data
 
         // Add a new proposed participant to the contract state
-
         mpc_contract
             .tee_state
             .add_participant(account_id.clone(), proposed_tee_participant.clone());
 
         // Both participants and non-participants can propose. Non-participants must pay for the
         // storage they use; participants do not.
-
         if self.voter_account().is_err() {
             let storage_used = env::storage_usage() - initial_storage;
             let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
@@ -574,7 +579,6 @@ impl VersionedMpcContract {
             }
 
             // Refund the difference if the proposer attached more than required
-
             if let Some(diff) = attached.checked_sub(cost) {
                 if diff > NearToken::from_yoctonear(0) {
                     Promise::new(account_id).transfer(diff);
@@ -823,7 +827,7 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn vote_code_hash(&mut self, code_hash: DockerImageHash) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
         log!(
             "vote_code_hash: signer={}, code_hash={:?}",
             env::signer_account_id(),
@@ -838,16 +842,16 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn allowed_code_hashes(&mut self) -> Result<Vec<DockerImageHash>, Error> {
+    pub fn allowed_code_hashes(&mut self) -> Result<Vec<MpcDockerImageHash>, Error> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
         match self {
-            Self::V2(contract) => Ok(contract.tee_state.get_all_allowed_hashes()),
+            Self::V2(contract) => Ok(contract.tee_state.get_allowed_hashes()),
             _ => env::panic_str("expected V2"),
         }
     }
 
     #[handle_result]
-    pub fn latest_code_hash(&mut self) -> Result<DockerImageHash, Error> {
+    pub fn latest_code_hash(&mut self) -> Result<MpcDockerImageHash, Error> {
         log!("latest_code_hash: signer={}", env::signer_account_id());
         match self {
             Self::V2(contract) => Ok(contract.latest_code_hash()),

@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use mpc_contract::tee::proposal::{AllowedDockerImageHash, DockerImageHash};
+use mpc_contract::tee::proposal::{AllowedDockerImageHash, MpcDockerImageHash};
 use std::{future::Future, io, panic, path::PathBuf};
 use thiserror::Error;
 use tokio::{
@@ -84,7 +84,7 @@ pub enum ExitError {
 /// gracefully please cancel the parent of the cancellation token that is passed as an argument, `cancellation_token`.
 pub async fn monitor_allowed_image_hashes<Storage>(
     cancellation_token: CancellationToken,
-    current_image: DockerImageHash,
+    current_image: MpcDockerImageHash,
     allowed_hashes_in_contract: watch::Receiver<Vec<AllowedDockerImageHash>>,
     image_hash_storage: Storage,
     shutdown_signal_sender: mpsc::Sender<()>,
@@ -106,7 +106,7 @@ where
 struct AllowedImageHashesWatcher<A> {
     cancellation_token: CancellationToken,
     allowed_hashes_in_contract: watch::Receiver<Vec<AllowedDockerImageHash>>,
-    current_image: DockerImageHash,
+    current_image: MpcDockerImageHash,
     image_hash_storage: A,
     shutdown_signal_sender: mpsc::Sender<()>,
 }
@@ -190,29 +190,34 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use mockall::predicate;
+    use mpc_contract::tee::proposal::LauncherDockerComposeHash;
     use rstest::rstest;
     use std::{io::ErrorKind, sync::Arc, time::Duration};
     use tokio::sync::{mpsc::error::TryRecvError, Notify};
     use tokio_util::time::FutureExt;
+
     const TEST_TIMEOUT_DURATION: Duration = Duration::from_secs(5);
 
     fn image_hash_1() -> AllowedDockerImageHash {
         AllowedDockerImageHash {
-            image_hash: DockerImageHash::from([1; 32]), // Direct construction
+            image_hash: MpcDockerImageHash::from([1; 32]),
+            docker_compose_hash: LauncherDockerComposeHash::from([1; 32]),
             added: 1,
         }
     }
 
     fn image_hash_2() -> AllowedDockerImageHash {
         AllowedDockerImageHash {
-            image_hash: DockerImageHash::from([2; 32]), // Direct construction
+            image_hash: MpcDockerImageHash::from([2; 32]),
+            docker_compose_hash: LauncherDockerComposeHash::from([2; 32]),
             added: 2,
         }
     }
 
     fn image_hash_3() -> AllowedDockerImageHash {
         AllowedDockerImageHash {
-            image_hash: DockerImageHash::from([3; 32]), // Direct construction
+            image_hash: MpcDockerImageHash::from([3; 32]),
+            docker_compose_hash: LauncherDockerComposeHash::from([3; 32]),
             added: 3,
         }
     }
@@ -273,7 +278,7 @@ mod tests {
     #[case::image_is_disallowed(image_hash_2().image_hash, vec![image_hash_1()])]
     #[tokio::test]
     async fn test_shutdown_signal_is_sent_on_write_error(
-        #[case] current_image: DockerImageHash,
+        #[case] current_image: MpcDockerImageHash,
         #[case] allowed_images: Vec<AllowedDockerImageHash>,
     ) {
         let mut mock = MockAllowedImageHashesStorage::new();

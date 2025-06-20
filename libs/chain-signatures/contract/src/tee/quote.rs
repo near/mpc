@@ -1,8 +1,8 @@
 use anyhow::{Error, Result};
 use dcap_qvl::{quote::Quote, verify::VerifiedReport, QuoteCollateralV3};
 use hex::{decode, encode, FromHexError};
-use k256::sha2::{Digest as _, Sha256, Sha384};
-use near_sdk::{near, require};
+use k256::sha2::{Digest as _, Sha384};
+use near_sdk::{env::sha256, near, require};
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,7 +91,7 @@ pub fn verify_codehash(raw_tcb_info: String, rtmr3: String) -> String {
     codehash.to_owned()
 }
 
-fn replay_rtmr(event_log: Vec<Value>, imr: u8) -> String {
+pub fn replay_rtmr(event_log: Vec<Value>, imr: u8) -> String {
     let mut digest = [0u8; 48];
 
     // filter by imr
@@ -115,11 +115,11 @@ fn replay_rtmr(event_log: Vec<Value>, imr: u8) -> String {
     encode(digest)
 }
 
-fn replay_app_compose(app_compose: &str) -> String {
+pub fn replay_app_compose(app_compose: &str) -> String {
     // sha256 of app_compose from TcbInfo
-    let mut sha256 = Sha256::new();
-    sha256.update(app_compose);
-    let sha256bytes: [u8; 32] = sha256.finalize().into();
+    let sha256_vec = sha256(app_compose.as_bytes());
+    let mut sha256_bytes = [0u8; 32];
+    sha256_bytes.copy_from_slice(&sha256_vec);
 
     // sha384 of custom encoding: [phala_prefix]:[event_name]:[sha256_payload]
     let mut hasher = Sha384::new();
@@ -127,7 +127,7 @@ fn replay_app_compose(app_compose: &str) -> String {
     hasher.update(b":");
     hasher.update("compose-hash".as_bytes());
     hasher.update(b":");
-    hasher.update(sha256bytes);
+    hasher.update(sha256_bytes);
     let digest: [u8; 48] = hasher.finalize().into();
 
     encode(digest)

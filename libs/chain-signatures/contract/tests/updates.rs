@@ -31,7 +31,7 @@ pub fn invalid_contract() -> ProposeUpdateArgs {
 /// This is the current deposit required for a contract deploy. This is subject to change but make
 /// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
 /// not be getting that big.
-const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(8700);
+const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(9700);
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
