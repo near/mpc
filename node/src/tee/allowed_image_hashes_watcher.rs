@@ -188,9 +188,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mpc_contract::tee::proposal::MpcDockerComposeHash;
     use assert_matches::assert_matches;
     use mockall::predicate;
+    use mpc_contract::tee::proposal::LauncherDockerComposeHash;
     use rstest::rstest;
     use std::{io::ErrorKind, sync::Arc, time::Duration};
     use tokio::sync::{mpsc::error::TryRecvError, Notify};
@@ -201,7 +201,7 @@ mod tests {
     fn image_hash_1() -> AllowedDockerImageHash {
         AllowedDockerImageHash {
             image_hash: MpcDockerImageHash::from([1; 32]),
-            docker_compose_hash: MpcDockerComposeHash::from([1; 32]),
+            docker_compose_hash: LauncherDockerComposeHash::from([1; 32]),
             added: 1,
         }
     }
@@ -209,7 +209,7 @@ mod tests {
     fn image_hash_2() -> AllowedDockerImageHash {
         AllowedDockerImageHash {
             image_hash: MpcDockerImageHash::from([2; 32]),
-            docker_compose_hash: MpcDockerComposeHash::from([2; 32]),
+            docker_compose_hash: LauncherDockerComposeHash::from([2; 32]),
             added: 2,
         }
     }
@@ -217,7 +217,7 @@ mod tests {
     fn image_hash_3() -> AllowedDockerImageHash {
         AllowedDockerImageHash {
             image_hash: MpcDockerImageHash::from([3; 32]),
-            docker_compose_hash: MpcDockerComposeHash::from([3; 32]),
+            docker_compose_hash: LauncherDockerComposeHash::from([3; 32]),
             added: 3,
         }
     }
