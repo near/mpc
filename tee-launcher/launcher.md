@@ -2,6 +2,38 @@
 
 The launcher is a single Python script: [launcher.py](launcher.py)
 
+This is a secure launcher script for initializing and attesting a Docker-based MPC node.  
+It is designed to run inside a TEE-enabled environment (e.g., Intel TDX) to add and ensures the integrity and trustworthiness of the image before launching it.
+
+
+## 🔐 Features
+
+- Pull an MPC docker image.
+- Compares the MPC image digest against expected values
+- Extends RTMR3 with the verified image digest
+- prints remote attestation and quote generation infomation to log
+- Starts the MPC node container with secure mount and network settings
+
+## 🧩 Environment Variables
+
+- `DOCKER_CONTENT_TRUST=1`: Must be enabled
+- `DEFAULT_IMAGE_DIGEST`: The expected hash of the Docker image (e.g., `sha256:...`)
+
+## 📁 File Locations
+
+- `/tapp/user_config`: Optional `.env` file for overriding defaults
+- `/mnt/shared/image-digest`: Optional override of image digest (written by external components)
+- `/var/run/dstack.sock`: Unix socket used to communicate with `dstack`
+
+## 🔧 Configuration (via user_config)
+
+The launcher supports the following environment variables via `/tapp/user_config`:
+
+LAUNCHER_IMAGE_NAME=nearone/mpc-node-gcp
+LAUNCHER_IMAGE_TAGS=latest
+LAUNCHER_REGISTRY=registry.hub.docker.com
+
+
 ## Reproducible builds
 
 - [Makefile](Makefile): use this to build the mpc binary in a reproducible manner
