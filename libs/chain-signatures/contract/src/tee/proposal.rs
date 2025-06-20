@@ -1,3 +1,4 @@
+use derive_more::From;
 use near_sdk::{env::sha256, log, near, BlockHeight};
 use std::collections::BTreeMap;
 
@@ -24,6 +25,7 @@ use serde::{Deserialize, Serialize};
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    From,
 )]
 pub struct Hash32<T> {
     pub bytes: [u8; 32],
@@ -49,21 +51,22 @@ pub struct Image;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct Compose;
 
-/// Hash of a Docker image running in the TEE environment. Also used as a proposal for a new TEE
-/// code hash to add to the whitelist, along with the TEE quote (which includes the RTMR3
+/// Hash of an MPC Docker image running in the TEE environment. Used as a proposal for a new TEE
+/// code hash to add to the whitelist, together with the TEE quote (which includes the RTMR3
 /// measurement and more).
-pub type DockerImageHash = Hash32<Image>;
+pub type MpcDockerImageHash = Hash32<Image>;
 
-/// Hash of the Docker Compose file used to run the MPC node in the TEE environment. It is computed
-/// from a Docker Compose template populated with the MPC node's Docker image hash.
-pub type DockerComposeHash = Hash32<Compose>;
+/// Hash of the launcher's Docker Compose file used to run the MPC node in the TEE environment. It
+/// is computed from the launcher's Docker Compose template populated with the MPC node's Docker
+/// image hash.
+pub type LauncherDockerComposeHash = Hash32<Compose>;
 
 /// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
 /// a code hash to add.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CodeHashesVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, DockerImageHash>,
+    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, MpcDockerImageHash>,
 }
 
 impl CodeHashesVotes {
@@ -71,7 +74,7 @@ impl CodeHashesVotes {
     /// for the same code hash. If the participant already voted, their previous vote is replaced.
     pub fn vote(
         &mut self,
-        proposal: DockerImageHash,
+        proposal: MpcDockerImageHash,
         participant: &AuthenticatedParticipantId,
     ) -> u64 {
         if self
@@ -87,7 +90,7 @@ impl CodeHashesVotes {
     }
 
     /// Counts the total number of participants who have voted for the given code hash.
-    fn count_votes(&self, proposal: &DockerImageHash) -> u64 {
+    fn count_votes(&self, proposal: &MpcDockerImageHash) -> u64 {
         self.proposal_by_account
             .values()
             .filter(|&prop| prop == proposal)
@@ -105,8 +108,8 @@ impl CodeHashesVotes {
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AllowedDockerImageHash {
-    pub image_hash: DockerImageHash,
-    pub docker_compose_hash: DockerComposeHash,
+    pub image_hash: MpcDockerImageHash,
+    pub docker_compose_hash: LauncherDockerComposeHash,
     pub added: BlockHeight,
 }
 /// Collection of whitelisted Docker code hashes that are the only ones MPC nodes are allowed to
@@ -141,7 +144,7 @@ impl AllowedDockerImageHashes {
     /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
     /// order by `added` (ascending). Returns `true` if the insertion was successful, `false` if the
     /// code hash already exists.
-    pub fn insert(&mut self, code_hash: DockerImageHash, current_block_height: u64) -> bool {
+    pub fn insert(&mut self, code_hash: MpcDockerImageHash, current_block_height: u64) -> bool {
         self.clean_expired_hashes(current_block_height);
 
         // Remove the old entry if it exists
@@ -178,7 +181,9 @@ impl AllowedDockerImageHashes {
         self.allowed_tee_proposals.clone()
     }
 
-    fn get_docker_compose_hash(mpc_docker_image_hash: DockerImageHash) -> DockerComposeHash {
+    fn get_docker_compose_hash(
+        mpc_docker_image_hash: MpcDockerImageHash,
+    ) -> LauncherDockerComposeHash {
         let filled_yaml = format!(
             r#"version: "3.8"
 
@@ -207,7 +212,7 @@ volumes:
         let mut hash_arr = [0u8; 32];
         hash_arr.copy_from_slice(&hash);
 
-        DockerComposeHash::new(hash_arr)
+        LauncherDockerComposeHash::new(hash_arr)
     }
 }
 
@@ -215,8 +220,8 @@ volumes:
 mod tests {
     use super::*;
 
-    fn dummy_code_hash(val: u8) -> DockerImageHash {
-        DockerImageHash::new([val; 32])
+    fn dummy_code_hash(val: u8) -> MpcDockerImageHash {
+        MpcDockerImageHash::new([val; 32])
     }
 
     #[test]

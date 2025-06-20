@@ -2,7 +2,7 @@ use crate::{
     errors::{Error, InvalidCandidateSet},
     get_collateral,
     tee::{
-        proposal::DockerImageHash,
+        proposal::MpcDockerImageHash,
         quote::{replay_app_compose, replay_rtmr},
     },
 };
@@ -58,7 +58,7 @@ impl TeeParticipantInfo {
     /// replaying RTMR3 and comparing the relevant event values to the expected values.
     pub fn verify_docker_images_via_rtmr3(
         &self,
-        allowed_docker_image_hashes: &[DockerImageHash],
+        allowed_docker_image_hashes: &[MpcDockerImageHash],
     ) -> Result<bool, Error> {
         let quote = Quote::parse(&self.tee_quote)
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
@@ -76,13 +76,13 @@ impl TeeParticipantInfo {
         if !Self::check_app_compose(event_log, &tcb_info) {
             return Ok(false);
         }
-        if !Self::check_docker_compose_hash(&tcb_info, &allowed_docker_image_hashes) {
+        if !Self::check_docker_compose_hash(&tcb_info, allowed_docker_image_hashes) {
             return Ok(false);
         }
         if !Self::check_local_sgx(event_log) {
             return Ok(false);
         }
-        if !Self::check_mpc_hash(event_log, &allowed_docker_image_hashes) {
+        if !Self::check_mpc_hash(event_log, allowed_docker_image_hashes) {
             return Ok(false);
         }
 
@@ -112,7 +112,7 @@ impl TeeParticipantInfo {
 
     fn check_docker_compose_hash(
         tcb_info: &Value,
-        allowed_docker_image_hashes: &[DockerImageHash],
+        allowed_docker_image_hashes: &[MpcDockerImageHash],
     ) -> bool {
         let compose_yaml = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
             Some(yaml) => yaml,
@@ -145,7 +145,7 @@ impl TeeParticipantInfo {
 
     fn check_mpc_hash(
         event_log: &[Value],
-        allowed_docker_image_hashes: &[DockerImageHash],
+        allowed_docker_image_hashes: &[MpcDockerImageHash],
     ) -> bool {
         let mpc_node_image_digest = event_log
             .iter()
@@ -155,7 +155,7 @@ impl TeeParticipantInfo {
         match mpc_node_image_digest {
             Some(digest) => allowed_docker_image_hashes
                 .iter()
-                .any(|hash| hash.as_hex() == digest.to_owned()),
+                .any(|hash| hash.as_hex() == *digest),
             None => false,
         }
     }

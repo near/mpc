@@ -44,7 +44,7 @@ use primitives::{
 };
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
-    proposal::DockerImageHash, quote::get_collateral, tee_participant::TeeParticipantInfo,
+    proposal::MpcDockerImageHash, quote::get_collateral, tee_participant::TeeParticipantInfo,
     tee_state::TeeValidationResult,
 };
 
@@ -203,7 +203,7 @@ impl MpcContract {
         Ok(())
     }
 
-    pub fn vote_code_hash(&mut self, code_hash: DockerImageHash) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
         // Ensure the protocol is in the Running state
         let ProtocolContractState::Running(state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
@@ -221,7 +221,7 @@ impl MpcContract {
         Ok(())
     }
 
-    pub fn latest_code_hash(&mut self) -> DockerImageHash {
+    pub fn latest_code_hash(&mut self) -> MpcDockerImageHash {
         self.tee_state
             .get_allowed_hashes()
             .last()
@@ -825,7 +825,7 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn vote_code_hash(&mut self, code_hash: DockerImageHash) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
         log!(
             "vote_code_hash: signer={}, code_hash={:?}",
             env::signer_account_id(),
@@ -840,7 +840,7 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn allowed_code_hashes(&mut self) -> Result<Vec<DockerImageHash>, Error> {
+    pub fn allowed_code_hashes(&mut self) -> Result<Vec<MpcDockerImageHash>, Error> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
         match self {
             Self::V2(contract) => Ok(contract.tee_state.get_allowed_hashes()),
@@ -849,7 +849,7 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn latest_code_hash(&mut self) -> Result<DockerImageHash, Error> {
+    pub fn latest_code_hash(&mut self) -> Result<MpcDockerImageHash, Error> {
         log!("latest_code_hash: signer={}", env::signer_account_id());
         match self {
             Self::V2(contract) => Ok(contract.latest_code_hash()),
