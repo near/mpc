@@ -2,6 +2,7 @@
 
 use anyhow::{bail, Context};
 use backon::{BackoffBuilder, ExponentialBuilder};
+use binary_version::CURRENT_BINARY_VERSION;
 use dstack_sdk::dstack_client::{DstackClient, TcbInfo};
 use hex::ToHex;
 use http::status::StatusCode;
@@ -42,6 +43,10 @@ const _: () = {
     const TOTAL_SIZE: usize =
         MAJOR_VERSION_SIZE + MINOR_VERSION_SIZE + PATCH_VERSION_SIZE + PUBLIC_KEYS_SIZE;
 
+    assert!(MAJOR_VERSION_OFFSET + MAJOR_VERSION_SIZE == MINOR_VERSION_OFFSET);
+    assert!(MINOR_VERSION_OFFSET + MINOR_VERSION_SIZE == PATCH_VERSION_OFFSET);
+    assert!(PATCH_VERSION_OFFSET + PATCH_VERSION_SIZE == PUBLIC_KEYS_OFFSET);
+
     assert!(
         TOTAL_SIZE <= REPORT_DATA_SIZE,
         "Version and public key must not exceed report data size."
@@ -57,7 +62,7 @@ pub struct TeeAttestation {
 
 // Nested module to make BinaryVersion inconstructable.
 mod binary_version {
-    /// [Semantic version](https://semver.org)
+    /// Semantic version of the binary.
     pub(super) struct BinaryVersion {
         major: u8,
         minor: u8,
@@ -68,17 +73,15 @@ mod binary_version {
         pub(super) fn major(&self) -> u8 {
             self.major
         }
-
         pub(super) fn minor(&self) -> u8 {
             self.minor
         }
-
         pub(super) fn patch(&self) -> u8 {
             self.patch
         }
     }
 
-    const CURRENT_BINARY_VERSION: BinaryVersion = {
+    pub(super) const CURRENT_BINARY_VERSION: BinaryVersion = {
         const VERSION_BASE: u32 = 10;
 
         const MAJOR_VERSION: u8 = {
@@ -110,6 +113,7 @@ mod binary_version {
         assert!(MINOR_VERSION == 2);
         assert!(PATCH_VERSION == 0);
 
+        // The semantic version of the node binary that is defined in cargo.toml
         BinaryVersion {
             major: MAJOR_VERSION,
             minor: MINOR_VERSION,
@@ -118,10 +122,8 @@ mod binary_version {
     };
 }
 
-// const BINARY_VERSION: BinaryVersion = BinaryVersion (from_str_radix(env!("CARGO_PKG_VERSION_MAJOR"), 10);
-
 #[derive(Deserialize)]
-struct UploadResponse {
+pub struct UploadResponse {
     quote_collateral: String,
     #[serde(rename = "checksum")]
     _checksum: String,
@@ -133,7 +135,6 @@ struct UploadResponse {
 /// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
 /// from generating the attestation.
 async fn create_remote_attestation_info(
-    binary_version: binary_version::BinaryVersion,
     tls_public_key: near_crypto::ED25519PublicKey,
     account_public_key: near_crypto::ED25519PublicKey,
 ) -> anyhow::Result<TeeAttestation> {
@@ -146,15 +147,15 @@ async fn create_remote_attestation_info(
         let mut report_data = [0u8; REPORT_DATA_SIZE];
 
         // Copy binary version
-        let major_version = binary_version.major();
+        let major_version = CURRENT_BINARY_VERSION.major();
         report_data[MAJOR_VERSION_OFFSET..][..MAJOR_VERSION_SIZE]
             .copy_from_slice(&major_version.to_be_bytes());
 
-        let minor_version = binary_version.minor();
+        let minor_version = CURRENT_BINARY_VERSION.minor();
         report_data[MINOR_VERSION_OFFSET..][..MINOR_VERSION_SIZE]
             .copy_from_slice(&minor_version.to_be_bytes());
 
-        let patch_version = binary_version.patch();
+        let patch_version = CURRENT_BINARY_VERSION.patch();
         report_data[PATCH_VERSION_OFFSET..][..PATCH_VERSION_SIZE]
             .copy_from_slice(&patch_version.to_be_bytes());
 
@@ -188,7 +189,6 @@ async fn create_remote_attestation_info(
                 .await?;
 
             let status = response.status();
-
             if status != PHALA_SUCCESS_STATUS_CODE {
                 bail!("Got unexpected HTTP status code: response from phala http_endpoint: {:?}, expected: {:?}", status, PHALA_SUCCESS_STATUS_CODE);
             }
@@ -225,4 +225,14 @@ async fn create_remote_attestation_info(
         tcb_info,
         collateral,
     })
+}
+
+async fn submit_remote_attestation(
+    tls_public_key: near_crypto::ED25519PublicKey,
+    account_public_key: near_crypto::ED25519PublicKey,
+) {
+    // TODO: don't panic here
+    let report_data = create_remote_attestation_info(tls_public_key, account_public_key)
+        .await
+        .expect("Report data generation is infallible");
 }

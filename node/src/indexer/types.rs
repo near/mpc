@@ -1,4 +1,4 @@
-use crate::sign_request::SignatureRequest;
+use crate::{sign_request::SignatureRequest, tee::remote_attestation::TeeAttestation};
 use anyhow::Context;
 use cait_sith::ecdsa::sign::FullSignature;
 use cait_sith::frost_ed25519;
@@ -127,7 +127,8 @@ pub enum ChainSendTransactionRequest {
     VoteReshared(ChainVoteResharedArgs),
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEvent(ChainVoteAbortKeyEventArgs),
-    VerifyTee(),
+    VerifyTee()
+    SubmiteRmoteAttestation(TeeAttestation),
 }
 
 impl ChainSendTransactionRequest {
@@ -140,6 +141,7 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::StartKeygen(_) => "start_keygen_instance",
             ChainSendTransactionRequest::VoteAbortKeyEvent(_) => "vote_abort_key_event",
             ChainSendTransactionRequest::VerifyTee() => "verify_tee",
+            ChainSendTransactionRequest::SubmiteRmoteAttestation() => "submit_remote_attestation",
         }
     }
 
