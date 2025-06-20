@@ -516,6 +516,7 @@ impl VersionedMpcContract {
     pub fn propose_join(
         &mut self,
         #[serializer(borsh)] proposed_tee_participant: TeeParticipantInfo,
+        #[serializer(borsh)] sign_pk: PublicKey,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
         log!(
@@ -539,24 +540,19 @@ impl VersionedMpcContract {
             env::panic_str("expected V2")
         };
 
-        // Verify RTMR 0, 1, 2, and MRTD against hardcoded expected values
-        if !TeeParticipantInfo::verify_static_rtmrs(report) {
-            return Err(InvalidParameters::InvalidTeeRemoteAttestation
-                .message("RTMRs do not match expected values".to_string()));
-        }
-
-        // Verify RTMR3
         let allowed_docker_image_hashes = mpc_contract.tee_state.get_allowed_hashes();
         let historical_docker_image_hashes = mpc_contract.tee_state.get_historical_hashes();
-        if !proposed_tee_participant.verify_docker_images_via_rtmr3(
+
+        // Verify we are running the correct MPC Docker image
+        if !proposed_tee_participant.verify_docker_image(
             allowed_docker_image_hashes.as_slice(),
             historical_docker_image_hashes.as_slice(),
+            report,
+            sign_pk,
         )? {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
                 .message("RTMR3 does not match expected value".to_string()));
         }
-
-        // TODO(#507) verify report_data
 
         // Add a new proposed participant to the contract state
         mpc_contract
