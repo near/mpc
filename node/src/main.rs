@@ -23,12 +23,14 @@ mod providers;
 mod runtime;
 mod sign_request;
 pub mod signing;
-mod tee;
-#[cfg(test)]
-mod tests;
 mod tracing;
 mod tracking;
 mod web;
+
+#[cfg(feature = "tee")]
+mod tee;
+#[cfg(test)]
+mod tests;
 
 fn main() -> anyhow::Result<()> {
     init_logging();

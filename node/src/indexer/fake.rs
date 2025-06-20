@@ -575,12 +575,18 @@ impl FakeIndexerManager {
         let (api_signature_request_sender, api_signature_request_receiver) =
             mpsc::unbounded_channel();
         let (api_txn_sender, api_txn_receiver) = mpsc::channel(1000);
+        #[cfg(feature = "tee")]
+        let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
+            watch::channel(vec![]);
+
         let indexer = IndexerAPI {
             contract_state_receiver: api_state_receiver,
             block_update_receiver: Arc::new(tokio::sync::Mutex::new(
                 api_signature_request_receiver,
             )),
             txn_sender: api_txn_sender,
+            #[cfg(feature = "tee")]
+            allowed_docker_images_receiver,
         };
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));
         let disabler = NodeDisabler {
