@@ -59,6 +59,7 @@ impl TeeParticipantInfo {
     pub fn verify_docker_images_via_rtmr3(
         &self,
         allowed_docker_image_hashes: &[MpcDockerImageHash],
+        historical_docker_image_hashes: &[MpcDockerImageHash],
     ) -> Result<bool, Error> {
         let quote = Quote::parse(&self.tee_quote)
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
@@ -76,7 +77,11 @@ impl TeeParticipantInfo {
         if !Self::check_app_compose(event_log, &tcb_info) {
             return Ok(false);
         }
-        if !Self::check_docker_compose_hash(&tcb_info, allowed_docker_image_hashes) {
+        if !Self::check_docker_compose_hash(
+            &tcb_info,
+            allowed_docker_image_hashes,
+            historical_docker_image_hashes,
+        ) {
             return Ok(false);
         }
         if !Self::check_local_sgx(event_log) {
@@ -113,6 +118,7 @@ impl TeeParticipantInfo {
     fn check_docker_compose_hash(
         tcb_info: &Value,
         allowed_docker_image_hashes: &[MpcDockerImageHash],
+        historical_docker_image_hashes: &[MpcDockerImageHash],
     ) -> bool {
         let compose_yaml = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
             Some(yaml) => yaml,
@@ -129,6 +135,7 @@ impl TeeParticipantInfo {
 
         allowed_docker_image_hashes
             .iter()
+            .chain(historical_docker_image_hashes)
             .any(|hash| hash.as_hex() == hex::encode(compose_yaml_hash_arr))
     }
 

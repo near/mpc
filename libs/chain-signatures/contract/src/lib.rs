@@ -547,9 +547,11 @@ impl VersionedMpcContract {
 
         // Verify RTMR3
         let allowed_docker_image_hashes = mpc_contract.tee_state.get_allowed_hashes();
-        if !proposed_tee_participant
-            .verify_docker_images_via_rtmr3(allowed_docker_image_hashes.as_slice())?
-        {
+        let historical_docker_image_hashes = mpc_contract.tee_state.get_historical_hashes();
+        if !proposed_tee_participant.verify_docker_images_via_rtmr3(
+            allowed_docker_image_hashes.as_slice(),
+            historical_docker_image_hashes.as_slice(),
+        )? {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
                 .message("RTMR3 does not match expected value".to_string()));
         }
