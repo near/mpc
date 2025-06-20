@@ -91,7 +91,7 @@ def main():
     # Python's requests package cannot natively talk HTTP over a unix socket (which is the API
     # exposed by dstack's guest agent). To avoid installing another Python depdendency, namely
     # requests-unixsocket, we just use curl.
-    extend_rtmr3_json = '{"event": "launcher-image-digest","payload": "%s"}' % image_digest.split(':')[1]
+    extend_rtmr3_json = '{"event": "mpc-image-digest","payload": "%s"}' % image_digest.split(':')[1]
     proc = run(['curl', '--unix-socket', '/var/run/dstack.sock', '-X', 'POST',
                 'http://dstack/EmitEvent', '-H', 'Content-Type: application/json', '-d',
                 extend_rtmr3_json])
