@@ -376,7 +376,7 @@ impl Cli {
             .iter()
             .enumerate()
             .map(|(idx, _account_id)| {
-                let subdir = PathBuf::from(format!("{}/{}", output_dir, idx));
+                let subdir = PathBuf::from(output_dir).join(idx.to_string());
                 PersistentSecrets::generate_or_get_existing(
                     &subdir,
                     desired_responder_keys_per_participant,
