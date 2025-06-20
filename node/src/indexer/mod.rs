@@ -23,7 +23,7 @@ pub(crate) struct IndexerState {
     /// For querying blockchain sync status.
     client: actix::Addr<near_client::ClientActor>,
     /// For sending txs to the chain.
-    tx_processor: actix::Addr<near_client::TxRequestHandlerActor>,
+    tx_processor: actix::Addr<near_client::RpcHandlerActor>,
     /// AccountId for the mpc contract.
     mpc_contract_id: AccountId,
 }
@@ -32,7 +32,7 @@ impl IndexerState {
     pub fn new(
         view_client: actix::Addr<near_client::ViewClientActor>,
         client: actix::Addr<near_client::ClientActor>,
-        tx_processor: actix::Addr<near_client::TxRequestHandlerActor>,
+        tx_processor: actix::Addr<near_client::RpcHandlerActor>,
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
