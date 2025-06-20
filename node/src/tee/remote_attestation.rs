@@ -25,21 +25,26 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 /// report_data: [u8; 64] = [version(2 bytes (big endian)) || sha384(TLS pub key || account public key ) || zero padding]
 const REPORT_DATA_SIZE: usize = 64;
 
-const BINARY_VERSION_OFFSET: usize = 0;
-const BINARY_VERSION_SIZE: usize = 2;
+const MAJOR_VERSION_OFFSET: usize = 0;
+const MAJOR_VERSION_SIZE: usize = 1;
+
+const MINOR_VERSION_OFFSET: usize = 1;
+const MINOR_VERSION_SIZE: usize = 1;
+
+const PATCH_VERSION_OFFSET: usize = 2;
+const PATCH_VERSION_SIZE: usize = 1;
 
 const PUBLIC_KEYS_OFFSET: usize = 3;
 const PUBLIC_KEYS_SIZE: usize = 48;
 
 // Compile-time assertions
 const _: () = {
+    const TOTAL_SIZE: usize =
+        MAJOR_VERSION_SIZE + MINOR_VERSION_SIZE + PATCH_VERSION_SIZE + PUBLIC_KEYS_SIZE;
+
     assert!(
-        BINARY_VERSION_SIZE + PUBLIC_KEYS_SIZE <= REPORT_DATA_SIZE,
+        TOTAL_SIZE <= REPORT_DATA_SIZE,
         "Version and public key must not exceed report data size."
-    );
-    assert!(
-        BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE + 1 == PUBLIC_KEYS_OFFSET,
-        "Public key offset must be after binary version."
     );
 };
 
@@ -50,6 +55,71 @@ pub struct TeeAttestation {
     collateral: String,
 }
 
+// Nested module to make BinaryVersion inconstructable.
+mod binary_version {
+    /// [Semantic version](https://semver.org)
+    pub(super) struct BinaryVersion {
+        major: u8,
+        minor: u8,
+        patch: u8,
+    }
+
+    impl BinaryVersion {
+        pub(super) fn major(&self) -> u8 {
+            self.major
+        }
+
+        pub(super) fn minor(&self) -> u8 {
+            self.minor
+        }
+
+        pub(super) fn patch(&self) -> u8 {
+            self.patch
+        }
+    }
+
+    const CURRENT_BINARY_VERSION: BinaryVersion = {
+        const VERSION_BASE: u32 = 10;
+
+        const MAJOR_VERSION: u8 = {
+            let Ok(version) = u8::from_str_radix(env!("CARGO_PKG_VERSION_MAJOR"), VERSION_BASE)
+            else {
+                panic!("Failed to parse CARGO_PKG_VERSION_MAJOR to u8")
+            };
+            version
+        };
+
+        const MINOR_VERSION: u8 = {
+            let Ok(version) = u8::from_str_radix(env!("CARGO_PKG_VERSION_MINOR"), VERSION_BASE)
+            else {
+                panic!("Failed to parse CARGO_PKG_VERSION_MINOR to u8")
+            };
+            version
+        };
+
+        const PATCH_VERSION: u8 = {
+            let Ok(version) = u8::from_str_radix(env!("CARGO_PKG_VERSION_PATCH"), VERSION_BASE)
+            else {
+                panic!("Failed to parse CARGO_PKG_VERSION_PATCH to u8")
+            };
+            version
+        };
+
+        // Update these expecations when bumping version.
+        assert!(MAJOR_VERSION == 2);
+        assert!(MINOR_VERSION == 2);
+        assert!(PATCH_VERSION == 0);
+
+        BinaryVersion {
+            major: MAJOR_VERSION,
+            minor: MINOR_VERSION,
+            patch: PATCH_VERSION,
+        }
+    };
+}
+
+// const BINARY_VERSION: BinaryVersion = BinaryVersion (from_str_radix(env!("CARGO_PKG_VERSION_MAJOR"), 10);
+
 #[derive(Deserialize)]
 struct UploadResponse {
     quote_collateral: String,
@@ -57,15 +127,13 @@ struct UploadResponse {
     _checksum: String,
 }
 
-pub struct BinaryVersion(u16);
-
 /// Generates a [`TeeAttestation`] for this node, which can be used to send to the contract to prove that
 /// the node is running in a `TEE` context.
 ///
 /// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
 /// from generating the attestation.
-pub async fn create_remote_attestation_info(
-    binary_version: BinaryVersion,
+async fn create_remote_attestation_info(
+    binary_version: binary_version::BinaryVersion,
     tls_public_key: near_crypto::ED25519PublicKey,
     account_public_key: near_crypto::ED25519PublicKey,
 ) -> anyhow::Result<TeeAttestation> {
@@ -78,9 +146,17 @@ pub async fn create_remote_attestation_info(
         let mut report_data = [0u8; REPORT_DATA_SIZE];
 
         // Copy binary version
-        let byte_representation = binary_version.0.to_be_bytes();
-        report_data[BINARY_VERSION_OFFSET..][..BINARY_VERSION_SIZE]
-            .copy_from_slice(&byte_representation);
+        let major_version = binary_version.major();
+        report_data[MAJOR_VERSION_OFFSET..][..MAJOR_VERSION_SIZE]
+            .copy_from_slice(&major_version.to_be_bytes());
+
+        let minor_version = binary_version.minor();
+        report_data[MINOR_VERSION_OFFSET..][..MINOR_VERSION_SIZE]
+            .copy_from_slice(&minor_version.to_be_bytes());
+
+        let patch_version = binary_version.patch();
+        report_data[PATCH_VERSION_OFFSET..][..PATCH_VERSION_SIZE]
+            .copy_from_slice(&patch_version.to_be_bytes());
 
         // Copy hash
         let mut hasher = Sha3_384::new();
