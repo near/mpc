@@ -550,8 +550,9 @@ impl VersionedMpcContract {
             report,
             sign_pk,
         )? {
-            return Err(InvalidParameters::InvalidTeeRemoteAttestation
-                .message("RTMR3 does not match expected value".to_string()));
+            return Err(InvalidParameters::InvalidTeeRemoteAttestation.message(
+                "The proposed participant is not running the expected MPC Docker image".to_string(),
+            ));
         }
 
         // Add a new proposed participant to the contract state
