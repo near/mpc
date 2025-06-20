@@ -3,6 +3,7 @@ import pathlib
 import sys
 import time
 
+from key import Key
 from ruamel.yaml import YAML
 
 from common_lib.constants import MPC_BINARY_PATH, TIMEOUT
@@ -35,8 +36,14 @@ class MpcNode(NearAccount):
         # a participant in the next epoch, but not the current epoch
         NEW_PARTICIPANT = 4
 
-    def __init__(self, near_node: LocalNode, url, p2p_public_key):
-        super().__init__(near_node)
+    def __init__(
+            self,
+            near_node: LocalNode,
+            signer_key: Key,
+            url,
+            p2p_public_key
+    ):
+        super().__init__(near_node, signer_key)
         self.url = url
         self.p2p_public_key = p2p_public_key
         self.status = MpcNode.NodeStatus.IDLE
@@ -98,16 +105,9 @@ class MpcNode(NearAccount):
     def run(self):
         assert not self.is_running
         self.is_running = True
-
-        p2p_private_key = open(pathlib.Path(self.home_dir) / 'p2p_key').read()
-        near_secret_key = json.loads(
-            open(pathlib.Path(self.home_dir) /
-                 'validator_key.json').read())['secret_key']
         extra_env = {
             'RUST_LOG': 'INFO',  # mpc-node produces too much output on DEBUG
             'MPC_SECRET_STORE_KEY': self.secret_store_key,
-            'MPC_P2P_PRIVATE_KEY': p2p_private_key,
-            'MPC_ACCOUNT_SK': near_secret_key,
         }
         cmd = (MPC_BINARY_PATH, 'start', '--home-dir', self.home_dir)
         self.near_node.run_cmd(cmd=cmd, extra_env=extra_env)

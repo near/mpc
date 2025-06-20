@@ -2,7 +2,7 @@ use super::tx_signer::{TransactionSigner, TransactionSigners};
 use super::types::ChainGetPendingRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
-use crate::config::RespondConfigFile;
+use crate::config::RespondConfig;
 use crate::metrics;
 use legacy_mpc_contract;
 use near_client::Query;
@@ -214,7 +214,7 @@ pub(crate) async fn handle_txn_requests(
     mut receiver: mpsc::Receiver<ChainSendTransactionRequest>,
     owner_account_id: AccountId,
     owner_secret_key: SecretKey,
-    config: RespondConfigFile,
+    config: RespondConfig,
     indexer_state: Arc<IndexerState>,
 ) {
     let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)

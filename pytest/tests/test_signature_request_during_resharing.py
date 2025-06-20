@@ -25,8 +25,7 @@ def test_threshold_from_previous_running_state_is_maintained():
     cluster, mpc_nodes = shared.start_cluster_with_mpc(2,
                                                        4,
                                                        1,
-                                                       load_mpc_contract(),
-                                                       start_mpc_nodes=True)
+                                                       load_mpc_contract())
 
     cluster.init_cluster(participants=mpc_nodes[:2], threshold=2)
 
