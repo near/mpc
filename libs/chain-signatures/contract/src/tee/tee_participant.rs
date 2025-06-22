@@ -11,17 +11,63 @@ use dcap_qvl::{
     verify::{self, VerifiedReport},
 };
 use near_sdk::{env::sha256, near, PublicKey};
+use serde::Deserialize;
 use serde_json::Value;
+
 use serde_yaml::Value as YamlValue;
 use sha3::digest::{consts::U48, generic_array::GenericArray};
 
-const RTMR0: [u8; 48] = [0u8; 48];
-const RTMR1: [u8; 48] = [0u8; 48];
-const RTMR2: [u8; 48] = [0u8; 48];
-const MRTD: [u8; 48] = [0u8; 48];
+//git rev-parse HEAD
+//fbdf2e76fb6bd9142277fdd84809de87d86548ef
+// https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
+
+const MRTD: [u8; 48] = [
+    0xc6, 0x85, 0x18, 0xa0, 0xeb, 0xb4, 0x21, 0x36, 0xc1, 0x2b, 0x22, 0x75, 0x16, 0x4f, 0x8c, 0x72,
+    0xf2, 0x5f, 0xa9, 0xa3, 0x43, 0x92, 0x22, 0x86, 0x87, 0xed, 0x6e, 0x9c, 0xae, 0xb9, 0xc0, 0xf1,
+    0xdb, 0xd8, 0x95, 0xe9, 0xcf, 0x47, 0x51, 0x21, 0xc0, 0x29, 0xdc, 0x47, 0xe7, 0x0e, 0x91, 0xfd,
+];
+
+const RTMR0: [u8; 48] = [
+    0x7a, 0xe1, 0xc6, 0xbc, 0x16, 0x53, 0xc4, 0xcf, 0x03, 0x7b, 0x0e, 0xe6, 0x02, 0x94, 0x57, 0xee,
+    0x67, 0xc4, 0x75, 0x28, 0x5b, 0xcf, 0x47, 0x2a, 0x92, 0xf5, 0x18, 0x43, 0x14, 0x8e, 0x47, 0x7f,
+    0x31, 0x26, 0x18, 0x4d, 0xd6, 0x92, 0x82, 0x27, 0x9d, 0x27, 0x8a, 0x74, 0x66, 0xb6, 0x6c, 0xae,
+];
+
+const RTMR1: [u8; 48] = [
+    0xa7, 0x07, 0xa3, 0x36, 0x70, 0x0c, 0x7d, 0xf3, 0x08, 0x52, 0x1f, 0x70, 0x44, 0xd0, 0xcd, 0x46,
+    0xe1, 0x62, 0xb7, 0xea, 0xeb, 0x6c, 0x1a, 0x91, 0xa0, 0x8e, 0x32, 0xe3, 0xd8, 0xd4, 0xb0, 0xad,
+    0x01, 0xfe, 0x8f, 0xbc, 0x2b, 0x91, 0x30, 0x20, 0x26, 0x2a, 0x45, 0x5f, 0xa6, 0xb1, 0xa5, 0xc4,
+];
+
+const RTMR2: [u8; 48] = [
+    0x2e, 0x36, 0xd0, 0xb6, 0x1a, 0x3a, 0x20, 0xc2, 0xdf, 0xbf, 0xf7, 0x0c, 0x96, 0x00, 0x5f, 0xf3,
+    0xe1, 0xc7, 0x81, 0x3b, 0x4a, 0xba, 0xb4, 0x52, 0x57, 0x03, 0x30, 0xdd, 0xeb, 0xab, 0xf9, 0x39,
+    0x39, 0x30, 0x99, 0x23, 0x4a, 0xbc, 0x03, 0x09, 0xf0, 0x39, 0x36, 0xed, 0xeb, 0xf7, 0x4b, 0x1f,
+];
+
 const EXPECTED_LOCAL_SGX_HASH: &str =
     "1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b";
 const EXPECTED_REPORT_DATA_VERSION: u8 = 1;
+
+#[derive(Deserialize, Debug)]
+struct Config {
+    manifest_version: u8,
+    #[allow(dead_code)]
+    name: String,
+    runner: String,
+    #[allow(dead_code)]
+    docker_compose_file: String,
+    docker_config: serde_json::Value,
+    kms_enabled: bool,
+    gateway_enabled: bool,
+    public_logs: bool,
+    public_sysinfo: bool,
+    local_key_provider_enabled: bool,
+    allowed_envs: Vec<String>,
+    no_instance_id: bool,
+    secure_time: bool,
+    pre_launch_script: String,
+}
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
@@ -75,6 +121,9 @@ impl TeeParticipantInfo {
             return Ok(false);
         }
         if !Self::check_app_compose(event_log, &tcb_info) {
+            return Ok(false);
+        }
+        if !Self::check_app_compose_fields(&tcb_info) {
             return Ok(false);
         }
         if !Self::check_docker_compose_hash(
@@ -136,6 +185,50 @@ impl TeeParticipantInfo {
             (Some(expected), Some(app)) => replay_app_compose(app) == expected,
             _ => false,
         }
+    }
+
+    fn check_app_compose_fields(tcb_info: &Value) -> bool {
+        let compose_str = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
+            Some(compose) => compose,
+            None => return false,
+        };
+
+        let parsed: Config = match serde_json::from_str(compose_str) {
+            Ok(cfg) => cfg,
+            Err(_) => return false,
+        };
+
+        // Construct expected Config baseline
+        let expected = Config {
+            manifest_version: 2,
+            name: "".to_string(), // Not validated
+            runner: "docker-compose".to_string(),
+            docker_compose_file: "".to_string(), // Not validated
+            docker_config: serde_json::json!({}),
+            kms_enabled: false,
+            gateway_enabled: false,
+            public_logs: true,
+            public_sysinfo: true,
+            local_key_provider_enabled: true,
+            allowed_envs: vec![],
+            no_instance_id: true,
+            secure_time: false,
+            pre_launch_script: "".to_string(),
+        };
+
+        // Return false on any mismatch
+        parsed.manifest_version == expected.manifest_version
+            && parsed.runner == expected.runner
+            && parsed.docker_config == expected.docker_config
+            && parsed.kms_enabled == expected.kms_enabled
+            && parsed.gateway_enabled == expected.gateway_enabled
+            && parsed.public_logs == expected.public_logs
+            && parsed.public_sysinfo == expected.public_sysinfo
+            && parsed.local_key_provider_enabled == expected.local_key_provider_enabled
+            && parsed.allowed_envs == expected.allowed_envs
+            && parsed.no_instance_id == expected.no_instance_id
+            && parsed.secure_time == expected.secure_time
+            && parsed.pre_launch_script == expected.pre_launch_script
     }
 
     fn check_docker_compose_hash(
