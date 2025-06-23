@@ -5,11 +5,16 @@ use backon::{BackoffBuilder, ExponentialBuilder};
 use dstack_sdk::dstack_client::{DstackClient, TcbInfo};
 use hex::ToHex;
 use http::status::StatusCode;
+use mpc_contract::tee::tee_participant::TeeParticipantInfo;
+use near_crypto::PublicKey;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
-use std::time::Duration;
-use tracing::{error, info};
+use std::{future::Future, time::Duration};
+use tokio::sync::mpsc;
+use tracing::error;
+
+use crate::indexer::types::{ChainSendTransactionRequest, ProposeJoinArgs};
 
 /// Endpoint to contact dstack service.
 /// Set to [`None`] which defaults to `/var/run/dstack.sock`
@@ -30,6 +35,8 @@ const BINARY_VERSION_SIZE: usize = 2;
 
 const PUBLIC_KEYS_OFFSET: usize = 3;
 const PUBLIC_KEYS_SIZE: usize = 48;
+
+const BINARY_VERSION: BinaryVersion = BinaryVersion(1);
 
 // Compile-time assertions
 const _: () = {
@@ -59,19 +66,47 @@ struct UploadResponse {
 
 pub struct BinaryVersion(u16);
 
+async fn get_with_backoff<Operation, OperationFuture, Value, Error>(
+    operation: Operation,
+    description: &str,
+) -> Value
+where
+    Error: std::fmt::Debug,
+    Operation: Fn() -> OperationFuture,
+    OperationFuture: Future<Output = Result<Value, Error>>,
+{
+    let mut backoff = ExponentialBuilder::default()
+        .with_max_delay(MAX_BACKOFF_DURATION)
+        .without_max_times()
+        .with_jitter()
+        .build();
+
+    // Loop until we have a response.
+    loop {
+        match operation().await {
+            Err(err) => {
+                let duration = backoff.next().unwrap_or(MAX_BACKOFF_DURATION);
+                error!(?err, "{description} failed. retrying in: {:?}", duration);
+                continue;
+            }
+            Ok(response) => break response,
+        }
+    }
+}
+
 /// Generates a [`TeeAttestation`] for this node, which can be used to send to the contract to prove that
 /// the node is running in a `TEE` context.
 ///
 /// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
 /// from generating the attestation.
 pub async fn create_remote_attestation_info(
-    binary_version: BinaryVersion,
-    tls_public_key: near_crypto::ED25519PublicKey,
-    account_public_key: near_crypto::ED25519PublicKey,
-) -> anyhow::Result<TeeAttestation> {
+    binary_version: &BinaryVersion,
+    tls_public_key: &PublicKey,
+    account_public_key: &PublicKey,
+) -> TeeAttestation {
     let client = DstackClient::new(ENDPOINT);
 
-    let client_info_response = client.info().await?;
+    let client_info_response = get_with_backoff(|| client.info(), "dstack client info").await;
     let tcb_info = client_info_response.tcb_info;
 
     let report_data: [u8; REPORT_DATA_SIZE] = {
@@ -84,25 +119,27 @@ pub async fn create_remote_attestation_info(
 
         // Copy hash
         let mut hasher = Sha3_384::new();
-        hasher.update(tls_public_key.0);
-        hasher.update(account_public_key.0);
+        hasher.update(tls_public_key.key_data());
+        hasher.update(account_public_key.key_data());
         let public_keys_hash: [u8; PUBLIC_KEYS_SIZE] = hasher.finalize().into();
         report_data[PUBLIC_KEYS_OFFSET..][..PUBLIC_KEYS_SIZE].copy_from_slice(&public_keys_hash);
 
         report_data
     };
 
-    let tdx_quote: String = client
-        .get_quote(report_data.into())
-        .await?
-        .quote
-        .encode_hex();
+    let tdx_quote: String = get_with_backoff(
+        || client.get_quote(report_data.into()),
+        "dstack client tdx quote",
+    )
+    .await
+    .quote
+    .encode_hex();
 
     let quote_upload_response = {
         let reqwest_client = reqwest::Client::new();
         let tdx_quote = tdx_quote.clone();
 
-        let upload_tdx_quote = async move || {
+        let upload_tdx_quote = async || {
             let form = Form::new().text("hex", tdx_quote.clone());
 
             let response = reqwest_client
@@ -123,30 +160,53 @@ pub async fn create_remote_attestation_info(
                 .context("Failed to deserialize response from Phala.")
         };
 
-        let mut backoff = ExponentialBuilder::default()
-            .with_max_delay(MAX_BACKOFF_DURATION)
-            .without_max_times()
-            .with_jitter()
-            .build();
-
-        // Loop until we have a response.
-        loop {
-            match upload_tdx_quote().await {
-                Err(err) => {
-                    let duration = backoff.next().unwrap_or(MAX_BACKOFF_DURATION);
-                    error!("Failed to upload tdx_quote to Phala due to: {:?}", err);
-                    info!("Retrying tdx_quote upload to Phala in {:?}", duration);
-                    continue;
-                }
-                Ok(response) => break response,
-            }
-        }
+        get_with_backoff(upload_tdx_quote, "upload tdx quote").await
     };
 
     let collateral = quote_upload_response.quote_collateral;
-    Ok(TeeAttestation {
+    TeeAttestation {
         tdx_quote,
         tcb_info,
         collateral,
-    })
+    }
+}
+
+impl TryFrom<TeeAttestation> for TeeParticipantInfo {
+    type Error = anyhow::Error;
+
+    fn try_from(value: TeeAttestation) -> Result<Self, Self::Error> {
+        let tee_quote = hex::decode(value.tdx_quote)
+            .context("Failed to decode tee quote. Expected it to be in hex format.")?;
+        let quote_collateral = value.collateral;
+        let raw_tcb_info =
+            serde_json::to_string(&value.tcb_info).context("Failed to serialize tcb info")?;
+
+        Ok(Self {
+            tee_quote,
+            quote_collateral,
+            raw_tcb_info,
+        })
+    }
+}
+
+pub async fn submit_remote_attestation(
+    tx_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    tls_public_key: PublicKey,
+    account_public_key: PublicKey,
+) -> Result<(), anyhow::Error> {
+    let report_data =
+        create_remote_attestation_info(&BINARY_VERSION, &tls_public_key, &account_public_key).await;
+
+    let report_data_contract: TeeParticipantInfo = report_data.try_into()?;
+    let propose_join_args = ProposeJoinArgs {
+        proposed_tee_participant: report_data_contract,
+        sign_pk: account_public_key,
+    };
+
+    tx_sender
+        .send(ChainSendTransactionRequest::SubmitRemoteAttestation(
+            propose_join_args,
+        ))
+        .await
+        .context("Failed to send remote attestation transaction. Channel is closed.")
 }

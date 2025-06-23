@@ -33,7 +33,10 @@ use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "tee")]
 use {
-    crate::tee::{monitor_allowed_image_hashes, AllowedImageHashesFile},
+    crate::tee::{
+        monitor_allowed_image_hashes, remote_attestation::submit_remote_attestation,
+        AllowedImageHashesFile,
+    },
     mpc_contract::tee::proposal::MpcDockerImageHash,
     tracing::info,
 };
@@ -294,6 +297,20 @@ impl StartCmd {
                 None
             },
         };
+
+        // submit remote attestation
+        #[cfg(feature = "tee")]
+        {
+            let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();
+            let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
+
+            submit_remote_attestation(
+                indexer_api.txn_sender.clone(),
+                tls_public_key,
+                account_public_key,
+            )
+            .await?;
+        }
 
         let coordinator = Coordinator {
             clock: Clock::real(),
