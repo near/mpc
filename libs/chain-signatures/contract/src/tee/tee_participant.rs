@@ -10,12 +10,15 @@ use dcap_qvl::{
     quote::Quote,
     verify::{self, VerifiedReport},
 };
-use near_sdk::{env::sha256, near, PublicKey};
+use k256::sha2::{Digest, Sha384};
+use near_sdk::{
+    env::{self, sha256},
+    near, PublicKey,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
 use serde_yaml::Value as YamlValue;
-use sha3::digest::{consts::U48, generic_array::GenericArray};
 
 //git rev-parse HEAD
 //fbdf2e76fb6bd9142277fdd84809de87d86548ef
@@ -47,7 +50,7 @@ const RTMR2: [u8; 48] = [
 
 const EXPECTED_LOCAL_SGX_HASH: &str =
     "1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b";
-const EXPECTED_REPORT_DATA_VERSION: u8 = 1;
+const EXPECTED_REPORT_DATA_VERSION: u16 = 1;
 
 #[derive(Deserialize, Debug)]
 struct Config {
@@ -154,16 +157,20 @@ impl TeeParticipantInfo {
         }
     }
 
-    fn verify_report_data(&self, quote: &Quote, expected_public_key: PublicKey) -> bool {
+    fn verify_report_data(&self, quote: &Quote, node_signing_public_key: PublicKey) -> bool {
         let report_data = match quote.report.as_td10() {
             Some(r) => r.report_data,
             None => return false,
         };
-        let binary_version = report_data[0];
-        let mut public_keys_hash = GenericArray::<u8, U48>::default();
-        public_keys_hash.copy_from_slice(&report_data[4..52]); // 48 bytes for SHA3-384
-        expected_public_key.into_bytes() == public_keys_hash.as_slice()
-            && binary_version == EXPECTED_REPORT_DATA_VERSION
+        let binary_version = u16::from_be_bytes([report_data[0], report_data[1]]);
+        let expected_hash = &report_data[4..52]; // 48 bytes for SHA3-384
+
+        let mut hasher = Sha384::new();
+        hasher.update(node_signing_public_key.as_bytes());
+        hasher.update(env::signer_account_pk().as_bytes());
+        let actual_hash = hasher.finalize();
+
+        binary_version == EXPECTED_REPORT_DATA_VERSION && actual_hash.as_slice() == expected_hash
     }
 
     fn check_rtmr3_vs_actual(quote: &Quote, event_log: &[Value]) -> bool {
