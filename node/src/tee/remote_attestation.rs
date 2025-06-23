@@ -36,7 +36,7 @@ const BINARY_VERSION_SIZE: usize = 2;
 const PUBLIC_KEYS_OFFSET: usize = 3;
 const PUBLIC_KEYS_SIZE: usize = 48;
 
-const BINARY_VERSION: BinaryVersion = BinaryVersion(1);
+pub const BINARY_VERSION: BinaryVersion = BinaryVersion(1);
 
 // Compile-time assertions
 const _: () = {
@@ -100,7 +100,6 @@ where
 /// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
 /// from generating the attestation.
 pub async fn create_remote_attestation_info(
-    binary_version: &BinaryVersion,
     tls_public_key: &PublicKey,
     account_public_key: &PublicKey,
 ) -> TeeAttestation {
@@ -113,7 +112,7 @@ pub async fn create_remote_attestation_info(
         let mut report_data = [0u8; REPORT_DATA_SIZE];
 
         // Copy binary version
-        let byte_representation = binary_version.0.to_be_bytes();
+        let byte_representation = BINARY_VERSION.0.to_be_bytes();
         report_data[BINARY_VERSION_OFFSET..][..BINARY_VERSION_SIZE]
             .copy_from_slice(&byte_representation);
 
@@ -191,13 +190,13 @@ impl TryFrom<TeeAttestation> for TeeParticipantInfo {
 
 pub async fn submit_remote_attestation(
     tx_sender: mpsc::Sender<ChainSendTransactionRequest>,
-    tls_public_key: PublicKey,
+    report_data_contract: TeeParticipantInfo,
     account_public_key: PublicKey,
 ) -> Result<(), anyhow::Error> {
-    let report_data =
-        create_remote_attestation_info(&BINARY_VERSION, &tls_public_key, &account_public_key).await;
+    //let report_data =
+    //    create_remote_attestation_info(&BINARY_VERSION, &tls_public_key, &account_public_key).await;
 
-    let report_data_contract: TeeParticipantInfo = report_data.try_into()?;
+    //let report_data_contract: TeeParticipantInfo = report_data.try_into()?;
     let propose_join_args = ProposeJoinArgs {
         proposed_tee_participant: report_data_contract,
         sign_pk: account_public_key,

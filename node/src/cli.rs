@@ -1,4 +1,5 @@
 use crate::config::{PersistentSecrets, RespondConfig};
+use crate::web::StaticWebData;
 use crate::{
     config::{
         load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
@@ -21,6 +22,7 @@ use anyhow::{anyhow, Context};
 use clap::Parser;
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
+use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
@@ -34,8 +36,8 @@ use tokio_util::sync::CancellationToken;
 #[cfg(feature = "tee")]
 use {
     crate::tee::{
-        monitor_allowed_image_hashes, remote_attestation::submit_remote_attestation,
-        AllowedImageHashesFile,
+        monitor_allowed_image_hashes, remote_attestation::create_remote_attestation_info,
+        remote_attestation::submit_remote_attestation, AllowedImageHashesFile,
     },
     mpc_contract::tee::proposal::MpcDockerImageHash,
     tracing::info,
@@ -267,12 +269,26 @@ impl StartCmd {
         web_contract_receiver: tokio::sync::watch::Receiver<ProtocolContractState>,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
+
         let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+
+        #[allow(unused_mut, unused_assignments)]
+        let mut report_data_contract: Option<TeeParticipantInfo> = None;
+        #[cfg(feature = "tee")]
+        {
+            let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();
+            let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
+            // create remote attestation:
+            let report_data =
+                create_remote_attestation_info(&tls_public_key, &account_public_key).await;
+            //let report_data_contract: TeeParticipantInfo = report_data.try_into()?;
+            report_data_contract = Some(report_data.try_into()?);
+        }
         let web_server = start_web_server(
             root_task_handle,
             signature_debug_request_sender.clone(),
             config.web_ui.clone(),
-            (&secrets).into(),
+            StaticWebData::new(&secrets, report_data_contract.clone()),
             web_contract_receiver,
         )
         .await?;
@@ -301,12 +317,11 @@ impl StartCmd {
         // submit remote attestation
         #[cfg(feature = "tee")]
         {
-            let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();
             let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
 
             submit_remote_attestation(
                 indexer_api.txn_sender.clone(),
-                tls_public_key,
+                report_data_contract.unwrap(),
                 account_public_key,
             )
             .await?;
