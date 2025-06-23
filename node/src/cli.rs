@@ -1,4 +1,5 @@
 use crate::config::{PersistentSecrets, RespondConfig};
+use crate::tee::remote_attestation::submit_remote_attestation;
 use crate::{
     config::{
         load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
@@ -294,6 +295,20 @@ impl StartCmd {
                 None
             },
         };
+
+        // submit remote attestation
+        #[cfg(feature = "tee")]
+        {
+            // TODO: How do we get handle of these keys?
+            let tls_public_key = todo!();
+            let account_public_key = todo!();
+            submit_remote_attestation(
+                indexer_api.txn_sender.clone(),
+                tls_public_key,
+                account_public_key,
+            )
+            .await?;
+        }
 
         let coordinator = Coordinator {
             clock: Clock::real(),

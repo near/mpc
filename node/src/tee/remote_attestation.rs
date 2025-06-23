@@ -263,7 +263,7 @@ impl TryFrom<TeeAttestation> for TeeParticipantInfo {
     }
 }
 
-async fn submit_remote_attestation_loop(
+pub async fn submit_remote_attestation(
     tx_sender: mpsc::Sender<ChainSendTransactionRequest>,
     tls_public_key: near_crypto::ED25519PublicKey,
     account_public_key: near_crypto::ED25519PublicKey,
