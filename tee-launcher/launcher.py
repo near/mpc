@@ -370,7 +370,6 @@ def get_manifest_digest(docker_image: ResolvedImage, rpc_timeout_secs: float,
                             'architecture') == 'amd64' and platform.get(
                                 'os') == 'linux':
                         tags.append(image_manifest['digest'])
-                        continue
             case 'application/vnd.docker.distribution.manifest.v2+json' | \
                  'application/vnd.oci.image.manifest.v1+json':
                 config_digest = manifest['config']['digest']
