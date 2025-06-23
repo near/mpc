@@ -137,6 +137,7 @@ pub enum ChainSendTransactionRequest {
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEvent(ChainVoteAbortKeyEventArgs),
     VerifyTee(),
+    #[cfg(feature = "tee")]
     SubmitRemoteAttestation(ProposeJoinArgs),
 }
 
@@ -150,6 +151,7 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::StartKeygen(_) => "start_keygen_instance",
             ChainSendTransactionRequest::VoteAbortKeyEvent(_) => "vote_abort_key_event",
             ChainSendTransactionRequest::VerifyTee() => "verify_tee",
+            #[cfg(feature = "tee")]
             ChainSendTransactionRequest::SubmitRemoteAttestation(_) => "submit_remote_attestation",
         }
     }
@@ -162,8 +164,9 @@ impl ChainSendTransactionRequest {
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEvent(_)
-            | Self::VerifyTee()
-            | Self::SubmitRemoteAttestation(_) => 300 * TGAS,
+            | Self::VerifyTee() => 300 * TGAS,
+            #[cfg(feature = "tee")]
+            Self::SubmitRemoteAttestation(_) => 300 * TGAS,
         }
     }
 }

@@ -1,5 +1,4 @@
 use crate::config::{PersistentSecrets, RespondConfig};
-use crate::tee::remote_attestation::submit_remote_attestation;
 use crate::{
     config::{
         load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
@@ -34,7 +33,10 @@ use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "tee")]
 use {
-    crate::tee::{monitor_allowed_image_hashes, AllowedImageHashesFile},
+    crate::tee::{
+        monitor_allowed_image_hashes, remote_attestation::submit_remote_attestation,
+        AllowedImageHashesFile,
+    },
     mpc_contract::tee::proposal::MpcDockerImageHash,
     tracing::info,
 };
