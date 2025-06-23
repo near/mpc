@@ -18,7 +18,7 @@ use crate::keyshare::KeyStorageConfig;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
-use crate::web::start_web_server;
+use crate::web::{start_web_server, StaticWebData};
 use cait_sith::ecdsa::presign::PresignArguments;
 use cait_sith::ecdsa::sign::FullSignature;
 use cait_sith::{ecdsa, eddsa};
@@ -215,7 +215,7 @@ impl OneNodeTestConfig {
                     root_task_handle,
                     signature_debug_request_sender.clone(),
                     config.web_ui.clone(),
-                    (&secrets).into(),
+                    StaticWebData::new(&secrets, None),
                     web_contract_receiver.clone(),
                 )
                 .await?;

@@ -7,6 +7,7 @@ use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
 use futures::future::BoxFuture;
 use mpc_contract::state::ProtocolContractState;
+use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use mpc_contract::utils::protocol_state_to_string;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
@@ -112,22 +113,34 @@ async fn third_party_licenses() -> Html<&'static str> {
 
 #[derive(Clone, Serialize)]
 pub struct StaticWebData {
-    near_signer_public_key: near_crypto::PublicKey,
-    near_responder_public_keys: Vec<near_crypto::PublicKey>,
+    pub near_signer_public_key: near_crypto::PublicKey,
+    pub near_responder_public_keys: Vec<near_crypto::PublicKey>,
+    pub tee_participant_info: Option<TeeParticipantInfo>,
 }
 
-impl From<&SecretsConfig> for StaticWebData {
-    fn from(value: &SecretsConfig) -> Self {
-        let near_signer_public_key = value.persistent_secrets.near_signer_key.public_key();
-        let near_responder_public_keys = value
-            .persistent_secrets
-            .near_responder_keys
-            .iter()
-            .map(|x| x.public_key())
-            .collect();
+fn get_public_keys(
+    secrets_config: &SecretsConfig,
+) -> (near_crypto::PublicKey, Vec<near_crypto::PublicKey>) {
+    let near_signer_public_key = secrets_config
+        .persistent_secrets
+        .near_signer_key
+        .public_key();
+    let near_responder_public_keys = secrets_config
+        .persistent_secrets
+        .near_responder_keys
+        .iter()
+        .map(|x| x.public_key())
+        .collect();
+    (near_signer_public_key, near_responder_public_keys)
+}
+
+impl StaticWebData {
+    pub fn new(value: &SecretsConfig, tee_participant_info: Option<TeeParticipantInfo>) -> Self {
+        let (near_signer_public_key, near_responder_public_keys) = get_public_keys(value);
         Self {
             near_signer_public_key,
             near_responder_public_keys,
+            tee_participant_info,
         }
     }
 }
