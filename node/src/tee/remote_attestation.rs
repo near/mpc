@@ -193,10 +193,6 @@ pub async fn submit_remote_attestation(
     report_data_contract: TeeParticipantInfo,
     account_public_key: PublicKey,
 ) -> Result<(), anyhow::Error> {
-    //let report_data =
-    //    create_remote_attestation_info(&BINARY_VERSION, &tls_public_key, &account_public_key).await;
-
-    //let report_data_contract: TeeParticipantInfo = report_data.try_into()?;
     let propose_join_args = ProposeJoinArgs {
         proposed_tee_participant: report_data_contract,
         sign_pk: account_public_key,
