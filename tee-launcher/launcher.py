@@ -31,9 +31,9 @@ OS_ENV_DOCKER_CONTENT_TRUST = 'DOCKER_CONTENT_TRUST'
 DSTACK_USER_CONFIG_FILE = '/tapp/user_config'
 
 # Dstack user config. Read from `DSTACK_USER_CONFIG_FILE`
-USER_ENV_VAR_LAUNCHER_IMAGE_TAGS = 'LAUNCHER_IMAGE_TAGS'
-USER_ENV_VAR_LAUNCHER_IMAGE_NAME = 'LAUNCHER_IMAGE_NAME'
-USER_ENV_VAR_LAUNCHER_IMAGE_REGISTRY = 'LAUNCHER_REGISTRY'
+DSTACK_USER_CONFIG_LAUNCHER_IMAGE_TAGS = 'LAUNCHER_IMAGE_TAGS'
+DSTACK_USER_CONFIG_LAUNCHER_IMAGE_NAME = 'LAUNCHER_IMAGE_NAME'
+DSTACK_USER_CONFIG_LAUNCHER_IMAGE_REGISTRY = 'LAUNCHER_REGISTRY'
 
 # Default values for dstack user config file.
 DEFAULT_LAUNCHER_IMAGE_NAME = 'nearone/mpc-node-gcp'
@@ -116,17 +116,17 @@ def parse_env_file(path: str) -> dict[str, str]:
 
 def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
     tags_values: list[str] = dstack_config.get(
-        USER_ENV_VAR_LAUNCHER_IMAGE_TAGS,
+        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_TAGS,
         DEFAULT_LAUNCHER_IMAGE_TAG).split(',')
     tags = [tag.strip() for tag in tags_values if tag.strip()]
     logging.info(f"Using tags {tags} to find matching launcher image.")
 
-    image_name: str = dstack_config.get(USER_ENV_VAR_LAUNCHER_IMAGE_NAME,
+    image_name: str = dstack_config.get(DSTACK_USER_CONFIG_LAUNCHER_IMAGE_NAME,
                                         DEFAULT_LAUNCHER_IMAGE_NAME)
     logging.info(f'Using image name {image_name}.')
 
-    registry: str = dstack_config.get(USER_ENV_VAR_LAUNCHER_IMAGE_REGISTRY,
-                                      DEFAULT_REGISTRY)
+    registry: str = dstack_config.get(
+        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_REGISTRY, DEFAULT_REGISTRY)
     logging.info(f'Using registry {registry}.')
 
     return ImageSpec(tags=tags, image_name=image_name, registry=registry)
@@ -320,6 +320,8 @@ def request_until_success(url: str, headers: Dict[str, str],
     for attempt in range(1, rpc_max_attempts + 1):
         # we sleep at the beginning, to ensure that we respect the timeout. Performance is not a priority in this case.
         time.sleep(rpc_request_interval_secs)
+        rpc_request_interval_secs = min(
+            max(rpc_request_interval_secs, 1.0) * 1.5, 60.0)
         manifest_resp = requests.get(url,
                                      headers=headers,
                                      timeout=rpc_request_timeout_secs)

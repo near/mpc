@@ -18,7 +18,7 @@ class TestLauncher(unittest.TestCase):
                                         registry=registry_url),
                               digest=image_hash)
         result = get_manifest_digest(image,
-                                     rpc_timeout_secs=0.5,
+                                     rpc_request_interval_secs=0.5,
                                      rpc_max_attempts=10)
         self.assertEqual(result, expected_manifest_digest)
 
