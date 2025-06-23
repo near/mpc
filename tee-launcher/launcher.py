@@ -20,7 +20,8 @@ IMAGE_DIGEST_FILE = "/mnt/shared/image-digest"
 ENV_VAR_DEFAULT_IMAGE_DIGEST = "DEFAULT_IMAGE_DIGEST"
 # the timeout to use between rpc requests, in milliseconds
 OS_ENV_VAR_RPC_TIMEOUT_MS = 'RPC_TIMEOUT_MS'
-
+# the maximum number of attempts for rpc requests until we raise an exception
+OS_ENV_VAR_RPC_MAX_ATTEMPTS = 'RPC_MAX_RETRIES'
 # MUST be set to 1.
 OS_ENV_DOCKER_CONTENT_TRUST = 'DOCKER_CONTENT_TRUST'
 
@@ -155,9 +156,11 @@ def main():
     image_spec = get_image_spec(dstack_config)
     docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
 
-    timeout_ms = int(os.environ.get(OS_ENV_VAR_RPC_TIMEOUT_MS, '500'))
-    timeout_secs = timeout_ms / 1000.0
-    manifest_digest = get_manifest_digest(docker_image, timeout_secs)
+    rpc_timeout_ms = int(os.environ.get(OS_ENV_VAR_RPC_TIMEOUT_MS, '500'))
+    rpc_timeout_secs = rpc_timeout_ms / 1000.0
+    rpc_max_attempts = int(os.environ.get(OS_ENV_VAR_RPC_MAX_ATTEMPTS, '20'))
+    manifest_digest = get_manifest_digest(docker_image, rpc_timeout_secs,
+                                          rpc_max_attempts)
 
     name_and_digest = image_spec.image_name + "@" + manifest_digest
 
@@ -263,10 +266,9 @@ def main():
         raise RuntimeError("docker run non-zero exit code %d", proc.returncode)
 
 
-def request_until_success(url: str,
-                          headers: Dict[str, str],
-                          timeout_secs: float,
-                          max_retries: int = 20) -> Response:
+def request_until_success(url: str, headers: Dict[str,
+                                                  str], timeout_secs: float,
+                          rpc_max_attempts: int) -> Response:
     """
     Repeatedly sends a GET request to the specified URL until a successful (200 OK) response is received.
 
@@ -282,24 +284,25 @@ def request_until_success(url: str,
         - Retries indefinitely until the request succeeds.
         - Prints a warning with the response content on each failure.
     """
-    for attempt in range(1, max_retries):
+    for attempt in range(1, rpc_max_attempts + 1):
+        # we sleep at the beginning, to ensure that we respect the timeout. Performance is not a priority in this case.
+        time.sleep(timeout_secs)
         manifest_resp = requests.get(url, headers=headers)
         if manifest_resp.status_code != 200:
             print(
-                f"[Warning] Attempt {attempt}/{max_retries}: Failed to fetch {url} for headers {headers}. "
+                f"[Warning] Attempt {attempt}/{rpc_max_attempts}: Failed to fetch {url} for headers {headers}. "
                 f"Status: {manifest_resp.text} {manifest_resp.headers}")
-            time.sleep(timeout_secs)
             continue
         else:
             return manifest_resp
 
     raise RuntimeError(
-        f"Failed to get succesful response from {url} after {max_retries} attempts."
+        f"Failed to get succesful response from {url} after {rpc_max_attempts} attempts."
     )
 
 
-def get_manifest_digest(docker_image: ResolvedImage,
-                        timeout_secs: float) -> str:
+def get_manifest_digest(docker_image: ResolvedImage, rpc_timeout_secs: float,
+                        rpc_max_attempts: int) -> str:
     '''
     Given an `image_digest` returns a manifest digest.
 
@@ -330,25 +333,24 @@ def get_manifest_digest(docker_image: ResolvedImage,
             "Authorization": f"Bearer {token}"
         }
         manifest_resp = request_until_success(manifest_url, headers,
-                                              timeout_secs)
+                                              rpc_timeout_secs,
+                                              rpc_max_attempts)
         manifest = manifest_resp.json()
-        media_type = manifest['mediaType']
-        if media_type == 'application/vnd.oci.image.index.v1+json':
-            # Multi-platform manifest; we scan for amd64/linux images
-            for image_manifest in manifest.get('manifests', []):
-                platform = image_manifest.get('platform', [])
-                if platform.get('architecture') == 'amd64' and platform.get(
-                        'os') == 'linux':
-                    tags.append(image_manifest['digest']
-                                )  # are we sure this is what we want?
-                    pass
-        elif media_type in {
-                'application/vnd.docker.distribution.manifest.v2+json',
-                'application/vnd.oci.image.manifest.v1+json'
-        }:
-            config_digest = manifest['config']['digest']
-            if config_digest == docker_image.digest:
-                return manifest_resp.headers['Docker-Content-Digest']
+        match manifest['mediaType']:
+            case 'application/vnd.oci.image.index.v1+json':
+                # Multi-platform manifest; we scan for amd64/linux images and add them to `tags`
+                for image_manifest in manifest.get('manifests', []):
+                    platform = image_manifest.get('platform', [])
+                    if platform.get(
+                            'architecture') == 'amd64' and platform.get(
+                                'os') == 'linux':
+                        tags.append(image_manifest['digest'])
+                        pass
+            case 'application/vnd.docker.distribution.manifest.v2+json' | \
+                 'application/vnd.oci.image.manifest.v1+json':
+                config_digest = manifest['config']['digest']
+                if config_digest == docker_image.digest:
+                    return manifest_resp.headers['Docker-Content-Digest']
 
     raise Exception("Image hash not found among tags.")
 
