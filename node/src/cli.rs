@@ -281,7 +281,6 @@ impl StartCmd {
             // create remote attestation:
             let report_data =
                 create_remote_attestation_info(&tls_public_key, &account_public_key).await;
-            //let report_data_contract: TeeParticipantInfo = report_data.try_into()?;
             report_data_contract = Some(report_data.try_into()?);
         }
         let web_server = start_web_server(
