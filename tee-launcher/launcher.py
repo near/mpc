@@ -18,7 +18,11 @@ IMAGE_DIGEST_FILE = "/mnt/shared/image-digest"
 
 # only considered if `IMAGE_DIGEST_FILE` does not exist.
 ENV_VAR_DEFAULT_IMAGE_DIGEST = "DEFAULT_IMAGE_DIGEST"
-ENV_VAR_
+# the timeout to use between rpc requests, in milliseconds
+OS_ENV_VAR_RPC_TIMEOUT_MS = 'RPC_TIMEOUT_MS'
+
+# MUST be set to 1.
+OS_ENV_DOCKER_CONTENT_TRUST = 'DOCKER_CONTENT_TRUST'
 
 # Dstack user configuration flags
 DSTACK_USER_CONFIG_FILE = '/tapp/user_config'
@@ -84,9 +88,6 @@ class ResolvedImage:
     def registry(self) -> str:
         return self.spec.registry
 
-    #def name_and_digest(self):
-    #    return self.image_name + "@" + self.manifest_digest
-
 
 def parse_env_file(path: str) -> dict[str, str]:
     '''
@@ -138,7 +139,7 @@ def main():
 
     logging.info(f'start')
     # We want to globally enable DOCKER_CONTENT_TRUST=1 to ensure integrity of Docker images.
-    if os.environ.get('DOCKER_CONTENT_TRUST', '0') != '1':
+    if os.environ.get(OS_ENV_DOCKER_CONTENT_TRUST, '0') != '1':
         raise RuntimeError(
             "Environment variable DOCKER_CONTENT_TRUST must be set to 1.")
 
@@ -153,7 +154,10 @@ def main():
     logging.info(f'Using image digest {image_digest}.')
     image_spec = get_image_spec(dstack_config)
     docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
-    manifest_digest = get_manifest_digest(docker_image)
+
+    timeout_ms = int(os.environ.get(OS_ENV_VAR_RPC_TIMEOUT_MS, '500'))
+    timeout_secs = timeout_ms / 1000.0
+    manifest_digest = get_manifest_digest(docker_image, timeout_secs)
 
     name_and_digest = image_spec.image_name + "@" + manifest_digest
 
@@ -261,7 +265,7 @@ def main():
 
 def request_until_success(url: str,
                           headers: Dict[str, str],
-                          timeout: float,
+                          timeout_secs: float,
                           max_retries: int = 20) -> Response:
     """
     Repeatedly sends a GET request to the specified URL until a successful (200 OK) response is received.
@@ -284,7 +288,7 @@ def request_until_success(url: str,
             print(
                 f"[Warning] Attempt {attempt}/{max_retries}: Failed to fetch {url} for headers {headers}. "
                 f"Status: {manifest_resp.text} {manifest_resp.headers}")
-            time.sleep(timeout)
+            time.sleep(timeout_secs)
             continue
         else:
             return manifest_resp
@@ -294,8 +298,10 @@ def request_until_success(url: str,
     )
 
 
-def get_manifest_digest(docker_image: ResolvedImage) -> str:
-    '''Given an `image_digest` returns a manifest digest.
+def get_manifest_digest(docker_image: ResolvedImage,
+                        timeout_secs: float) -> str:
+    '''
+    Given an `image_digest` returns a manifest digest.
 
        `docker pull` requires a manifest digest. This function translates an image digest into a manifest digest by talking to the Docker registry.
 
@@ -323,10 +329,8 @@ def get_manifest_digest(docker_image: ResolvedImage) -> str:
             "Accept": "application/vnd.docker.distribution.manifest.v2+json",
             "Authorization": f"Bearer {token}"
         }
-        # todo: timeout
-        manifest_resp = request_until_success(manifest_url,
-                                              headers,
-                                              timeout=1.0)
+        manifest_resp = request_until_success(manifest_url, headers,
+                                              timeout_secs)
         manifest = manifest_resp.json()
         media_type = manifest['mediaType']
         if media_type == 'application/vnd.oci.image.index.v1+json':
