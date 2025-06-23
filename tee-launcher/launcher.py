@@ -1,9 +1,9 @@
 from collections import deque
 import logging
 import os
-from typing import Dict
+from typing import Dict, Union
 import requests
-from subprocess import run
+from subprocess import CompletedProcess, run
 import sys
 import time
 import traceback
@@ -139,6 +139,32 @@ def get_image_digest() -> str:
         return os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
 
 
+def curl_unix_socket_post(endpoint: str,
+                          payload: Union[str, bytes],
+                          capture_output: bool = False) -> CompletedProcess:
+    """
+    Send a POST request via curl using the DSTACK UNIX socket.
+    
+    Python's requests package cannot natively talk HTTP over a unix socket (which is the API
+    exposed by dstack's guest agent). To avoid installing another Python depdendency, namely
+    requests-unixsocket, we just use curl.
+
+    Args:
+        endpoint: Path after `http://dstack/`, e.g. 'GetQuote', 'EmitEvent'
+        payload: JSON string or bytes to send as the request body
+        capture_output: Whether to capture stdout/stderr (default: False)
+
+    Returns:
+        subprocess.CompletedProcess result
+    """
+    url = f"http://dstack/{endpoint}"
+    cmd = [
+        'curl', '--unix-socket', DSTACK_UNIX_SOCKET, '-X', 'POST', url, '-H',
+        'Content-Type: application/json', '-d', payload
+    ]
+    return run(cmd, capture_output=capture_output)
+
+
 def main():
 
     logging.info(f'start')
@@ -192,16 +218,9 @@ def main():
                            (pulled_image_digest, image_digest))
 
     # Generate a quote before extending RTMR3 with the image digest
-    # Python's requests package cannot natively talk HTTP over a unix socket (which is the API
-    # exposed by dstack's guest agent). To avoid installing another Python depdendency, namely
-    # requests-unixsocket, we just use curl.
-    proc = run([
-        'curl', '--unix-socket', DSTACK_UNIX_SOCKET, '-X', 'POST',
-        'http://dstack/GetQuote', '-H', 'Content-Type: application/json', '-d',
-        '{"report_data": ""}'
-    ],
-               capture_output=True)
-
+    proc = curl_unix_socket_post(endpoint='GetQuote',
+                                 payload='{"report_data": ""}',
+                                 capture_output=True)
     if proc.returncode:
         raise RuntimeError(
             f"getting quote failed with error code {proc.returncode}:\n{proc.stderr}"
@@ -210,6 +229,10 @@ def main():
 
     extend_rtmr3_json = '{"event": "mpc-image-digest","payload": "%s"}' % image_digest.split(
         ':')[1]
+
+    proc = curl_unix_socket_post(endpoint='EmitEvent',
+                                 payload=extend_rtmr3_json,
+                                 capture_output=True)
     proc = run([
         'curl', '--unix-socket', DSTACK_UNIX_SOCKET, '-X', 'POST',
         'http://dstack/EmitEvent', '-H', 'Content-Type: application/json',
@@ -217,17 +240,14 @@ def main():
     ])
 
     if proc.returncode:
-        raise RuntimeError("extending rtmr3 failed with error code %d" %
-                           proc.returncode)
+        raise RuntimeError(
+            f"extending rtmr3 failed with error code {proc.returncode}:\n {proc.stderr}"
+        )
 
     # Get quote after extending RTMR3 with the image digest
-    proc = run([
-        'curl', '--unix-socket', DSTACK_UNIX_SOCKET, '-X', 'POST',
-        'http://dstack/GetQuote', '-H', 'Content-Type: application/json', '-d',
-        '{"report_data": ""}'
-    ],
-               capture_output=True)
-
+    proc = curl_unix_socket_post(endpoint='GetQuote',
+                                 payload='{"report_data": ""}',
+                                 capture_output=True)
     if proc.returncode:
         raise RuntimeError("getting quote failed with error code %d" %
                            proc.returncode)
