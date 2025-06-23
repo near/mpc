@@ -38,6 +38,9 @@ DEFAULT_LAUNCHER_IMAGE_NAME = 'nearone/mpc-node-gcp'
 DEFAULT_REGISTRY = 'registry.hub.docker.com'
 DEFAULT_LAUNCHER_IMAGE_TAG = 'latest'
 
+# the unix socket to communicate with Dstack
+DSTACK_UNIX_SOCKET = '/var/run/dstack.sock'
+
 
 def is_non_empty_and_cleaned(val: str) -> bool:
     if not isinstance(val, str):
@@ -114,7 +117,7 @@ def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
         USER_ENV_VAR_LAUNCHER_IMAGE_TAGS,
         DEFAULT_LAUNCHER_IMAGE_TAG).split(',')
     tags = [tag.strip() for tag in tags_values if tag.strip()]
-    logging.info(f"Using tags {tags} to find matching image.")
+    logging.info(f"Using tags {tags} to find matching launcher image.")
 
     image_name: str = dstack_config.get(USER_ENV_VAR_LAUNCHER_IMAGE_NAME,
                                         DEFAULT_LAUNCHER_IMAGE_NAME)
@@ -164,11 +167,12 @@ def main():
 
     name_and_digest = image_spec.image_name + "@" + manifest_digest
 
-    proc = run(["docker", "pull", name_and_digest])
+    proc = run(["docker", "pull", name_and_digest], capture_output=True)
 
     if proc.returncode:
-        raise RuntimeError("docker pull returned non-zero exit code %d" %
-                           proc.returncode)
+        raise RuntimeError(
+            f"docker pull returned non-zero exit code {proc.returncode}:\n{proc.stderr}"
+        )
 
     proc = run([
         "docker", "image", "inspect", "--format", "{{index .ID}}",
@@ -178,8 +182,8 @@ def main():
 
     if proc.returncode:
         raise RuntimeError(
-            "docker image inspect returned non-zero exit code: %d" %
-            proc.returncode)
+            f"docker image inspect returned non-zero exit code {proc.returncode}:\n{proc.stderr}"
+        )
 
     pulled_image_digest = proc.stdout.decode('utf-8').strip()
 
@@ -188,25 +192,26 @@ def main():
                            (pulled_image_digest, image_digest))
 
     # Generate a quote before extending RTMR3 with the image digest
+    # Python's requests package cannot natively talk HTTP over a unix socket (which is the API
+    # exposed by dstack's guest agent). To avoid installing another Python depdendency, namely
+    # requests-unixsocket, we just use curl.
     proc = run([
-        'curl', '--unix-socket', '/var/run/dstack.sock', '-X', 'POST',
+        'curl', '--unix-socket', DSTACK_UNIX_SOCKET, '-X', 'POST',
         'http://dstack/GetQuote', '-H', 'Content-Type: application/json', '-d',
         '{"report_data": ""}'
     ],
                capture_output=True)
 
     if proc.returncode:
-        raise RuntimeError("getting quote failed with error code %d" %
-                           proc.returncode)
+        raise RuntimeError(
+            f"getting quote failed with error code {proc.returncode}:\n{proc.stderr}"
+        )
     logging.info("Quote: %s" % proc.stdout.decode('utf-8').strip())
 
-    # Python's requests package cannot natively talk HTTP over a unix socket (which is the API
-    # exposed by dstack's guest agent). To avoid installing another Python depdendency, namely
-    # requests-unixsocket, we just use curl.
     extend_rtmr3_json = '{"event": "mpc-image-digest","payload": "%s"}' % image_digest.split(
         ':')[1]
     proc = run([
-        'curl', '--unix-socket', '/var/run/dstack.sock', '-X', 'POST',
+        'curl', '--unix-socket', DSTACK_UNIX_SOCKET, '-X', 'POST',
         'http://dstack/EmitEvent', '-H', 'Content-Type: application/json',
         '-d', extend_rtmr3_json
     ])
@@ -217,7 +222,7 @@ def main():
 
     # Get quote after extending RTMR3 with the image digest
     proc = run([
-        'curl', '--unix-socket', '/var/run/dstack.sock', '-X', 'POST',
+        'curl', '--unix-socket', DSTACK_UNIX_SOCKET, '-X', 'POST',
         'http://dstack/GetQuote', '-H', 'Content-Type: application/json', '-d',
         '{"report_data": ""}'
     ],
@@ -243,7 +248,7 @@ def main():
         '-v',
         '/tapp:/tapp:ro',
         '-v',
-        '/var/run/dstack.sock:/var/run/dstack.sock',
+        f"{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}",
         '-v',
         'shared-volume:/mnt/shared',
         '-v',
@@ -345,7 +350,7 @@ def get_manifest_digest(docker_image: ResolvedImage, rpc_timeout_secs: float,
                             'architecture') == 'amd64' and platform.get(
                                 'os') == 'linux':
                         tags.append(image_manifest['digest'])
-                        pass
+                        continue
             case 'application/vnd.docker.distribution.manifest.v2+json' | \
                  'application/vnd.oci.image.manifest.v1+json':
                 config_digest = manifest['config']['digest']
