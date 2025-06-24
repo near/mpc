@@ -187,6 +187,9 @@ pub struct NewMpcNetworkCmd {
     /// higher amounts here.
     #[clap(long, default_value = "1")]
     pub near_per_responding_account: u128,
+    /// Indicates if the machines should be using SSD
+    #[clap(long, default_value = "false")]
+    pub ssd: bool,
 }
 
 #[derive(clap::Parser)]

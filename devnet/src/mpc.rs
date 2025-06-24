@@ -126,11 +126,12 @@ async fn update_mpc_network(
 
 impl NewMpcNetworkCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        println!("Going to create MPC network {} with {} maximum participants, {} NEAR per account, and {} additional access keys per participant for responding",
+        println!("Going to create MPC network {} with {} maximum participants, {} NEAR per account, and {} additional access keys per participant for responding. Using SSD: {}",
             name,
             self.num_participants,
             self.near_per_account,
             self.num_responding_access_keys,
+            self.ssd,
         );
 
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
@@ -147,6 +148,7 @@ impl NewMpcNetworkCmd {
                 num_responding_access_keys: self.num_responding_access_keys,
                 desired_balance_per_responding_account: self.near_per_responding_account * ONE_NEAR,
                 nomad_server_url: None,
+                ssd: self.ssd,
             });
         update_mpc_network(
             name,
