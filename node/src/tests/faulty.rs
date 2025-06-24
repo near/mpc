@@ -31,6 +31,7 @@ async fn test_faulty_cluster() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::FAULTY_CLUSTER_TEST,
+        std::time::Duration::from_secs(1),
     );
 
     let domain = DomainConfig {
@@ -146,4 +147,74 @@ async fn test_faulty_cluster() {
     .await
     .is_some());
     tracing::info!("Step 5 complete");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_indexer_stuck() {
+    init_integration_logger();
+    const NUM_PARTICIPANTS: usize = 4;
+    const THRESHOLD: usize = 3;
+    const TXN_DELAY_BLOCKS: u64 = 1;
+    let temp_dir = tempfile::tempdir().unwrap();
+    let accounts = (0..NUM_PARTICIPANTS)
+        .map(|i| format!("test{}", i).parse().unwrap())
+        .collect::<Vec<AccountId>>();
+    let mut setup = IntegrationTestSetup::new(
+        Clock::real(),
+        temp_dir.path(),
+        accounts.clone(),
+        THRESHOLD,
+        TXN_DELAY_BLOCKS,
+        PortSeed::FAULTY_CLUSTER_TEST,
+        std::time::Duration::from_millis(50),
+    );
+
+    let domain = DomainConfig {
+        id: DomainId(0),
+        scheme: SignatureScheme::Secp256k1,
+    };
+
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        contract.initialize(setup.participants.clone());
+        contract.add_domains(vec![domain.clone()]);
+    }
+
+    let _runs = setup
+        .configs
+        .into_iter()
+        .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
+        .collect::<Vec<_>>();
+
+    tracing::info!("Waiting for key generation to complete");
+    setup
+        .indexer
+        .wait_for_contract_state(|state| matches!(state, ContractState::Running(_)))
+        .await;
+    tracing::info!("Key generation complete");
+
+    // Pause the indexer and make sure it doesn't respond to requests
+    tracing::info!("Pausing node #0");
+    let _paused1 = setup.indexer.pause_indexer(accounts[0].clone()).await;
+    tracing::info!(
+        "participants {:?}",
+        setup
+            .participants
+            .participants
+            .iter()
+            .map(|p| p.id)
+            .collect::<Vec<_>>()
+    );
+
+    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user2",
+        &domain,
+        std::time::Duration::from_secs(60)
+    )
+    .await
+    .is_some());
 }
