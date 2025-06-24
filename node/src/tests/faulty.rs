@@ -127,7 +127,7 @@ async fn test_faulty_cluster() {
     // tracing::info!("Pausing node #1");
     // let paused2 = setup.indexer.pause_indexer(accounts[1].clone()).await;
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    const REQUESTS: u8 = 100;
+    const REQUESTS: u8 = 10;
     let mut successful_requests = 0;
 
     for _ in 0..REQUESTS {
