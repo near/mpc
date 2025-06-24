@@ -2,7 +2,7 @@ import json
 import pathlib
 import sys
 
-from key import Key
+from key import Key, SigningKey
 
 from common_lib.constants import TGAS
 
@@ -27,15 +27,21 @@ class NearAccount:
      latest block hash and send transactions.
     """
 
-    def __init__(self, near_node: LocalNode, signer_key: Key):
+    def __init__(
+        self,
+        near_node: LocalNode,
+        signer_key: Key,
+        pytest_signer_keys: list[Key],
+    ):
+        for key in pytest_signer_keys:
+            assert signer_key.account_id == key.account_id, "mismatch in account ids"
         self.near_node = near_node
         self._signer_key = signer_key
-
-    def signer_key(self) -> Key:
-        return self._signer_key
+        self._pytest_signer_keys = pytest_signer_keys
+        self._next_signer_key_id = 0
 
     def account_id(self) -> str:
-        return self.signer_key().account_id
+        return self._signer_key.account_id
 
     def last_block_hash(self):
         return self.near_node.get_latest_block().hash_bytes
@@ -51,25 +57,32 @@ class NearAccount:
         assert_txn_success(res)
         return res
 
-    def get_nonce(self):
-        nonce = self.near_node.get_nonce_for_pk(
-            self.account_id(),
-            self.signer_key().pk
-        )
-        assert nonce is not None
-        return nonce
+    def _get_next_signer_key_id(self) -> int:
+        id = self._next_signer_key_id
+        self._next_signer_key_id = (id + 1) % len(self._pytest_signer_keys)
+        return id
 
-    def sign_tx(self,
-                target_contract,
-                function_name,
-                args,
-                nonce_offset=1,
-                gas=150 * TGAS,
-                deposit=0):
+    def get_key_and_nonce(self) -> tuple[Key, int]:
+        id = self._get_next_signer_key_id()
+        key = self._pytest_signer_keys[id]
+        nonce = self.near_node.get_nonce_for_pk(key.account_id, key.pk)
+        assert nonce is not None
+        return (key, nonce)
+
+    def sign_tx(
+        self,
+        target_contract,
+        function_name,
+        args,
+        nonce_offset=1,
+        gas=150 * TGAS,
+        deposit=0,
+    ):
         last_block_hash = self.last_block_hash()
-        nonce = self.get_nonce() + nonce_offset
-        encoded_args = args if type(args) == bytes else json.dumps(args).encode('utf-8')
-        tx = sign_function_call_tx(self.signer_key(), target_contract,
-                                   function_name, encoded_args, gas, deposit,
-                                   nonce, last_block_hash)
+        (key, nonce) = self.get_key_and_nonce()
+        encoded_args = args if type(args) == bytes else json.dumps(
+            args).encode('utf-8')
+        tx = sign_function_call_tx(key, target_contract, function_name,
+                                   encoded_args, gas, deposit,
+                                   nonce + nonce_offset, last_block_hash)
         return tx

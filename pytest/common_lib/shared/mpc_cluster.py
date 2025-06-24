@@ -86,8 +86,8 @@ class MpcCluster:
     def get_voters(self):
         voters = [
             node for node in self.mpc_nodes if node.is_running and (
-                    node.status == MpcNode.NodeStatus.OLD_PARTICIPANT
-                    or node.status == MpcNode.NodeStatus.PARTICIPANT)
+                node.status == MpcNode.NodeStatus.OLD_PARTICIPANT
+                or node.status == MpcNode.NodeStatus.PARTICIPANT)
         ]
         print("Voters:", " | ".join([node.print() for node in voters]))
         return voters
@@ -111,8 +111,8 @@ class MpcCluster:
 
     def deploy_contract(self, contract):
         last_block_hash = self.contract_node.last_block_hash()
-        tx = sign_deploy_contract_tx(self.contract_node.signer_key(), contract,
-                                     10, last_block_hash)
+        (key, nonce) = self.contract_node.get_key_and_nonce()
+        tx = sign_deploy_contract_tx(key, contract, nonce + 1, last_block_hash)
         self.contract_node.send_txn_and_check_success(tx)
 
     def deploy_secondary_contract(self, contract):
@@ -122,8 +122,8 @@ class MpcCluster:
         so we put the secondary contract on node 1's account.
         """
         last_block_hash = self.secondary_contract_node.last_block_hash()
-        tx = sign_deploy_contract_tx(self.secondary_contract_node.signer_key(),
-                                     contract, 10, last_block_hash)
+        (key, nonce) = self.secondary_contract_node.get_key_and_nonce()
+        tx = sign_deploy_contract_tx(key, contract, nonce + 1, last_block_hash)
         self.secondary_contract_node.send_txn_and_check_success(tx)
 
     def make_function_call_on_secondary_contract(self, function_name, args):
@@ -201,11 +201,9 @@ class MpcCluster:
             'threshold': threshold,
             'participants': {
                 'next_id':
-                    self.next_participant_id,
+                self.next_participant_id,
                 'participants': [[
-                    node.account_id(),
-                    node.participant_id,
-                    {
+                    node.account_id(), node.participant_id, {
                         'sign_pk': node.p2p_public_key,
                         'url': node.url,
                     }
@@ -268,7 +266,7 @@ class MpcCluster:
             tx = node.sign_tx(self.mpc_contract_account(),
                               'vote_add_domains',
                               args,
-                              nonce_offset=2)  # this is a bit hacky
+                              nonce_offset=1)
             try:
                 node.send_txn_and_check_success(tx)
             except Exception as err:
@@ -481,10 +479,3 @@ class MpcCluster:
             json.loads(
                 base64.b64decode(
                     res['result']['status']['SuccessValue']).decode('utf-8')))
-
-    def remove_timed_out_requests(self, max_num_to_remove, node_id=0):
-        node = self.mpc_nodes[node_id]
-        tx = node.sign_tx(self.mpc_contract_account(),
-                          'remove_timed_out_requests',
-                          {'max_num_to_remove': max_num_to_remove})
-        return node.send_txn_and_check_success(tx)

@@ -37,13 +37,14 @@ class MpcNode(NearAccount):
         NEW_PARTICIPANT = 4
 
     def __init__(
-            self,
-            near_node: LocalNode,
-            signer_key: Key,
-            url,
-            p2p_public_key
+        self,
+        near_node: LocalNode,
+        signer_key: Key,
+        url,
+        p2p_public_key,
+        pytest_signer_keys: list[Key],
     ):
-        super().__init__(near_node, signer_key)
+        super().__init__(near_node, signer_key, pytest_signer_keys)
         self.url = url
         self.p2p_public_key = p2p_public_key
         self.status = MpcNode.NodeStatus.IDLE
@@ -119,7 +120,8 @@ class MpcNode(NearAccount):
     def wait_for_connection_count(self, awaited_count):
         started = time.time()
         while True:
-            assert time.time() - started < TIMEOUT, "Waiting for connection count"
+            assert time.time(
+            ) - started < TIMEOUT, "Waiting for connection count"
             try:
                 conns = self.metrics.get_metric_all_values(
                     "mpc_network_live_connections")

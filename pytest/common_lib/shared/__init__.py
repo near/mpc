@@ -3,7 +3,8 @@ import os
 import pathlib
 import subprocess
 import sys
-from typing import List, Iterable, Optional, Tuple
+from typing import List, Optional, Tuple, cast
+import typing
 
 import base58
 import yaml
@@ -36,16 +37,17 @@ def serialize_key(key: Key):
 
 def deserialize_key(account_id: str, key: str) -> Key:
     assert key.startswith('ed25519:')
-    signing_key = SigningKey(base58.b58decode(key.split(':')[1].encode('ascii'))[:32])
+    signing_key = SigningKey(
+        base58.b58decode(key.split(':')[1].encode('ascii'))[:32])
     return Key.from_keypair(account_id, signing_key)
 
 
 def sign_create_account_with_multiple_access_keys_tx(
-        creator_key: Key,
-        new_account_id,
-        keys: List[Key],
-        nonce,
-        block_hash
+    creator_key: Key,
+    new_account_id,
+    keys: List[Key],
+    nonce,
+    block_hash,
 ) -> bytes:
     create_account_action = create_create_account_action()
     payment_action = create_payment_action(100 * NEAR_BASE)
@@ -60,14 +62,14 @@ def sign_create_account_with_multiple_access_keys_tx(
         block_hash,
         creator_key.account_id,
         creator_key.decoded_pk(),
-        creator_key.decoded_sk()
+        creator_key.decoded_sk(),
     )
     return serialize_transaction(signed_tx)
 
 
 def start_neard_cluster_with_cleanup(
-        num_validators: int,
-        num_mpc_nodes: int,
+    num_validators: int,
+    num_mpc_nodes: int,
 ) -> Tuple[List[LocalNode], List[LocalNode]]:
     rpc_polling_config = {
         "rpc": {
@@ -86,14 +88,18 @@ def start_neard_cluster_with_cleanup(
 
     client_config_changes = {
         0: rpc_polling_config,
-        1: rpc_polling_config
+        1: rpc_polling_config,
     }
 
-    nodes = start_cluster(
-        num_validators, num_mpc_nodes, 1, None,
-        [["epoch_length", 1000], ["block_producer_kickout_threshold", 80]],
-        client_config_changes=client_config_changes
-    )
+    # the config is set to local, so we expect local nodes.
+    nodes: typing.List[LocalNode] = cast(
+        List[LocalNode],
+        start_cluster(num_validators,
+                      num_mpc_nodes,
+                      1,
+                      None, [("epoch_length", 1000),
+                             ("block_producer_kickout_threshold", 80)],
+                      client_config_changes=client_config_changes))
 
     validators = nodes[:num_validators]
     observers = nodes[num_validators:]
@@ -107,7 +113,14 @@ def start_neard_cluster_with_cleanup(
 
 
 class Candidate:
-    def __init__(self, signer_key: Key, responder_keys: [Key], p2p_public_key, url):
+
+    def __init__(
+        self,
+        signer_key: Key,
+        responder_keys: list[Key],
+        p2p_public_key,
+        url,
+    ):
         self.signer_key = signer_key
         self.responder_keys = responder_keys
         self.p2p_public_key = p2p_public_key
@@ -115,9 +128,9 @@ class Candidate:
 
 
 def generate_mpc_configs(
-        num_mpc_nodes: int,
-        num_respond_aks: int,
-        presignatures_to_buffer: Optional[int]
+    num_mpc_nodes: int,
+    num_respond_aks: int,
+    presignatures_to_buffer: Optional[int],
 ) -> List[Candidate]:
     """
     Generate MPC configs for each participant.
@@ -131,23 +144,34 @@ def generate_mpc_configs(
     signers = ','.join(f'signer_{i}.test0' for i in range(num_mpc_nodes))
     responders = [f'responder_{i}.test0' for i in range(num_mpc_nodes)]
     cmd = (
-        MPC_BINARY_PATH, 'generate-test-configs',
-        '--output-dir', dot_near,
-        '--participants', signers,
-        '--responders', ','.join(responders),
-        '--threshold', str(num_mpc_nodes),
-        '--desired-responder-keys-per-participant', str(num_respond_aks),
+        MPC_BINARY_PATH,
+        'generate-test-configs',
+        '--output-dir',
+        dot_near,
+        '--participants',
+        signers,
+        '--responders',
+        ','.join(responders),
+        '--threshold',
+        str(num_mpc_nodes),
+        '--desired-responder-keys-per-participant',
+        str(num_respond_aks),
     )
     if presignatures_to_buffer:
         cmd = cmd + (
-            '--desired-presignatures-to-buffer', str(presignatures_to_buffer),
+            '--desired-presignatures-to-buffer',
+            str(presignatures_to_buffer),
         )
     subprocess.run(cmd)
 
     candidates = []
     with open(pathlib.Path(dot_near / 'participants.json')) as file:
         participants_config = yaml.load(file, Loader=SafeLoaderIgnoreUnknown)
-    for idx, (participant, responder_account_id) in enumerate(zip(participants_config['participants'], responders)):
+    for idx, (participant, responder_account_id) in enumerate(
+            zip(
+                participants_config['participants'],
+                responders,
+            )):
         near_account = participant['near_account_id']
         p2p_public_key = participant['p2p_public_key']
         my_addr = participant['address']
@@ -156,22 +180,26 @@ def generate_mpc_configs(
         secrets_file_path = os.path.join(dot_near, str(idx), SECRETS_JSON)
         with open(secrets_file_path) as file:
             participant_secrets = json.load(file)
-        signer_key = deserialize_key(near_account, participant_secrets['near_signer_key'])
+        signer_key = deserialize_key(
+            near_account,
+            participant_secrets['near_signer_key'],
+        )
         responder_keys = []
         for key in participant_secrets['near_responder_keys']:
             responder_keys.append(deserialize_key(responder_account_id, key))
 
-        candidates.append(Candidate(
-            signer_key=signer_key,
-            responder_keys=responder_keys,
-            p2p_public_key=p2p_public_key,
-            url=f"http://{my_addr}:{my_port}",
-        ))
+        candidates.append(
+            Candidate(
+                signer_key=signer_key,
+                responder_keys=responder_keys,
+                p2p_public_key=p2p_public_key,
+                url=f"http://{my_addr}:{my_port}",
+            ))
     return candidates
 
 
 def adjust_indexing_shard(near_node: LocalNode):
-    """Set the node to track shard 0 explicitly in config.json."""
+    """Set the node to track all shards in config.json (any non-empty list for 'tracked_shards' will make the node observe all shards)."""
     path = os.path.join(near_node.node_dir, 'config.json')
 
     with open(path, 'r+') as f:
@@ -184,9 +212,7 @@ def adjust_indexing_shard(near_node: LocalNode):
     print(f"Updated near node config: {path}")
 
 
-def move_mpc_configs(
-        observers: List[LocalNode]
-):
+def move_mpc_configs(observers: List[LocalNode]):
     """
     Rust code generates a folder per each participant, we want to move everything in one place
     Name of each folder is just a node index, e.g. 0, 1, 2, ...
@@ -194,16 +220,20 @@ def move_mpc_configs(
     for idx, observer in enumerate(observers):
         mpc_config_dir = dot_near / str(idx)
         for fname in os.listdir(mpc_config_dir):
-            subprocess.run(('mv', os.path.join(mpc_config_dir, fname), observer.node_dir))
+            subprocess.run((
+                'mv',
+                os.path.join(mpc_config_dir, fname),
+                observer.node_dir,
+            ))
 
 
 def start_cluster_with_mpc(
-        num_validators,
-        num_mpc_nodes,
-        num_respond_aks,
-        contract,
-        presignatures_to_buffer=None,
-        start_mpc_nodes=True
+    num_validators,
+    num_mpc_nodes,
+    num_respond_aks,
+    contract,
+    presignatures_to_buffer=None,
+    start_mpc_nodes=True,
 ):
     validators, observers = start_neard_cluster_with_cleanup(
         num_validators,
@@ -219,38 +249,66 @@ def start_cluster_with_mpc(
     move_mpc_configs(observers)
 
     cluster = MpcCluster(
-        main=NearAccount(validators[0], validators[0].signer_key),
-        secondary=NearAccount(validators[1], validators[1].signer_key)
+        main=NearAccount(
+            validators[0],
+            validators[0].signer_key,
+            [validators[0].signer_key],
+        ),
+        secondary=NearAccount(
+            validators[1],
+            validators[1].signer_key,
+            [validators[1].signer_key],
+        ),
     )
 
+    (key, nonce) = cluster.contract_node.get_key_and_nonce()
+    nonce += 1
     mpc_nodes = []
     for near_node, candidate in zip(observers, candidates):
+
+        # add the nodes access key to the list
+        tx = sign_create_account_with_multiple_access_keys_tx(
+            key,
+            candidate.responder_keys[0].account_id,
+            candidate.responder_keys,
+            nonce,
+            cluster.contract_node.last_block_hash(),
+        )
+        cluster.contract_node.send_txn_and_check_success(tx)
+
+        candidate_account_id = candidate.signer_key.account_id
+
+        pytest_signer_keys = []
+        for i in range(0, 5):
+            # We add a signing key for pytest functions
+            pytest_signing_key: SigningKey = SigningKey.generate()
+            candidate_account_id = candidate.signer_key.account_id
+            pytest_signer_key: Key = Key.from_keypair(
+                candidate_account_id,
+                pytest_signing_key,
+            )
+            pytest_signer_keys.append(pytest_signer_key)
+
+        nonce += 1
+        # Observer nodes haven't started yet so we use cluster node to send txs
+        tx = sign_create_account_with_multiple_access_keys_tx(
+            key,
+            candidate_account_id,
+            [candidate.signer_key] + pytest_signer_keys,
+            nonce,
+            cluster.contract_node.last_block_hash(),
+        )
+        nonce += 1
+        cluster.contract_node.send_txn_and_check_success(tx)
+
         mpc_node = MpcNode(
             near_node,
             candidate.signer_key,
             candidate.url,
-            candidate.p2p_public_key
-        )
-
-        tx = sign_create_account_with_multiple_access_keys_tx(
-            cluster.contract_node.signer_key(),
-            candidate.responder_keys[0].account_id,
-            candidate.responder_keys,
-            cluster.contract_node.get_nonce() + 1,
-            cluster.contract_node.last_block_hash()
+            candidate.p2p_public_key,
+            pytest_signer_keys,
         )
         cluster.contract_node.send_txn_and_check_success(tx)
-
-        # Observer nodes haven't started yet so we use cluster node to send txs
-        tx = sign_create_account_with_multiple_access_keys_tx(
-            cluster.contract_node.signer_key(),
-            candidate.signer_key.account_id,
-            [candidate.signer_key],
-            cluster.contract_node.get_nonce() + 1,
-            cluster.contract_node.last_block_hash()
-        )
-        cluster.contract_node.send_txn_and_check_success(tx)
-
         mpc_nodes.append(mpc_node)
 
     # Deploy the mpc contract

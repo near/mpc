@@ -6,7 +6,7 @@ venv
 **/target/
 /pytest/output.log
 /pytest/venv/
-/pytest/*/__pycache__/
+/pytest/**/__pycache__/
 /pytest/nearcore_pytest/nearcore_pytest.egg-info/
 /pytest/tests/test_contracts/parallel/target/
 
