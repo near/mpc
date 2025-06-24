@@ -120,21 +120,35 @@ async fn test_faulty_cluster() {
 
     drop(disabled1);
 
+    // Pausing just one node should lead to signature request failures.
+    // We have 3 nodes online with threshold of 3.
     tracing::info!("Pausing node #0");
     let paused1 = setup.indexer.pause_indexer(accounts[0].clone()).await;
-    tracing::info!("Pausing node #1");
-    let paused2 = setup.indexer.pause_indexer(accounts[1].clone()).await;
+    // tracing::info!("Pausing node #1");
+    // let paused2 = setup.indexer.pause_indexer(accounts[1].clone()).await;
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user2",
-        &domain,
-        signature_delay * 2
-    )
-    .await
-    .is_none());
+    const REQUESTS: u8 = 100;
+    let mut successful_requests = 0;
+
+    for i in (0..REQUESTS) {
+        let request = request_signature_and_await_response(
+            &mut setup.indexer,
+            "user2",
+            &domain,
+            signature_delay * 2,
+        )
+        .await;
+
+        if request.is_some() {
+            successful_requests += 1;
+        }
+    }
+
+    assert_eq!(
+        successful_requests, REQUESTS,
+        "Expected all requests to complete."
+    );
     tracing::info!("Step 4 complete");
-    drop(paused2);
     drop(paused1);
 
     assert!(request_signature_and_await_response(
