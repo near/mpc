@@ -265,11 +265,13 @@ impl IntegrationTestSetup {
         threshold: usize,
         txn_delay_blocks: u64,
         port_seed: PortSeed,
+        block_time: std::time::Duration,
     ) -> IntegrationTestSetup {
         let p2p_configs =
             generate_test_p2p_configs(&participant_accounts, threshold, port_seed).unwrap();
         let participants = p2p_configs[0].0.participants.clone();
-        let mut indexer_manager = FakeIndexerManager::new(clock.clone(), txn_delay_blocks);
+        let mut indexer_manager =
+            FakeIndexerManager::new(clock.clone(), txn_delay_blocks, block_time);
 
         let mut configs = Vec::new();
         for (i, (_, p2p_key)) in p2p_configs.into_iter().enumerate() {
