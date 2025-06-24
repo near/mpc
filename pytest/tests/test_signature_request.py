@@ -7,9 +7,11 @@ Verifies that the mpc nodes index the signature request.
 Waits for the signature responses. Fails if timeout is reached.
 """
 
+from datetime import datetime
 import sys
 import pathlib
 import argparse
+from time import sleep
 import pytest
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -21,16 +23,40 @@ from common_lib.contracts import load_mpc_contract
 def test_signature_pause_block_ingestion(num_requests,
                                          num_respond_access_keys):
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2, 3, num_respond_access_keys, load_mpc_contract())
-    cluster.init_cluster(mpc_nodes, 2)
+        2, 6, num_respond_access_keys, load_mpc_contract())
+    cluster.init_cluster(mpc_nodes, 4)
     # removing one node should not be a problem.
 
     mpc_nodes[0].set_block_ingestion(False)
-    cluster.send_and_await_signature_requests(num_requests)
     mpc_nodes[1].set_block_ingestion(False)
+    # we pause
+    for _ in range(0, 120):
+        print(
+            "owned and online:\n",
+            cluster.get_int_metric_value("mpc_owned_num_presignatures_online"))
+        print(
+            "owned and offline:\n",
+            cluster.get_int_metric_value(
+                "mpc_owned_num_presignatures_with_offline_participant"))
+        print("block height:\n",
+              cluster.get_int_metric_value("mpc_indexer_latest_block_height"))
+        sleep(1)
+    t0 = datetime.now()
     cluster.send_and_await_signature_requests(num_requests)
-    # we would expect these to fail
+    t1 = datetime.now()
+    delay = t1 - t0
+    print(f"time passed: {delay}")
+
     cluster.send_and_await_signature_requests(num_requests)
+    t2 = datetime.now()
+    delay = t2 - t1
+    print(f"time passed: {delay}")
+    # we would expect to get faster
+    cluster.send_and_await_signature_requests(num_requests)
+    t3 = datetime.now()
+    delay = t3 - t2
+    print(f"time passed: {delay}")
+    # we would expect to get faster
 
 
 @pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
