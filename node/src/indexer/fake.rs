@@ -568,7 +568,7 @@ impl FakeIndexerManager {
             state_change_sender: state_change_sender.clone(),
             block_update_sender: block_update_sender.clone(),
             sign_response_sender,
-            block_time
+            block_time,
         };
         let core_task = AutoAbortTask::from(tokio::spawn(async move { core.run().await }));
         Self {
