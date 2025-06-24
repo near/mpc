@@ -138,6 +138,7 @@ impl StartCmd {
         let config = load_config_file(&home_dir)?;
 
         let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
+
         let indexer_api = spawn_real_indexer(
             home_dir.clone(),
             config.indexer.clone(),

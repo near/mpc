@@ -3,13 +3,43 @@ use super::participants::{monitor_chain_state, ContractState};
 use super::stats::{indexer_logger, IndexerStats};
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
-use crate::config::{load_respond_config_file, IndexerConfig, RespondConfigFile};
+use crate::config::{
+    load_listening_blocks_file, load_respond_config_file, IndexerConfig, RespondConfigFile,
+};
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, Mutex};
-
+use tokio_util::sync::CancellationToken;
+pub async fn check_block_processing(
+    cancellation_token: CancellationToken,
+    process_blocks: Arc<AtomicBool>,
+    home_dir: PathBuf,
+) {
+    loop {
+        tokio::select! {
+            _ = cancellation_token.cancelled() => {
+                println!("File watcher task received cancellation signal.");
+                return;
+            }
+            _ = tokio::time::sleep(Duration::from_secs(2)) => {
+                match load_listening_blocks_file(&home_dir) {
+                    Ok(new_val) => {
+                        tracing::info!("flag file found, setting to {}", new_val);
+                        process_blocks.store(new_val, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    Err(e) => {
+                        tracing::info!("flag file not found, setting to {}. Error: {}", true, e);
+                        process_blocks.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+            }
+        }
+    }
+}
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
 ///
 /// If an unrecoverable error occurs, the spawned indexer will terminate, and the provided [`oneshot::Sender`]
@@ -56,6 +86,9 @@ pub fn spawn_real_indexer(
             // TODO: migrate this into IndexerState
             let stats: Arc<Mutex<IndexerStats>> = Arc::new(Mutex::new(IndexerStats::new()));
 
+            let process_blocks = Arc::new(AtomicBool::new(true));
+            let cancel_token_blocks_processing = CancellationToken::new();
+            actix::spawn(check_block_processing(cancel_token_blocks_processing.clone(), process_blocks.clone(), home_dir));
             actix::spawn(monitor_chain_state(
                 indexer_state.clone(),
                 indexer_config.port_override,
@@ -75,6 +108,7 @@ pub fn spawn_real_indexer(
                 Arc::clone(&stats),
                 indexer_config.mpc_contract_id,
                 block_update_sender,
+                process_blocks,
             )
             .await;
 

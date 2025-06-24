@@ -1,9 +1,9 @@
 use crate::primitives::ParticipantId;
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use near_crypto::{PublicKey, SecretKey};
 use near_indexer_primitives::types::{AccountId, Finality};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{fs, path::Path};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripleConfig {
@@ -232,6 +232,22 @@ impl RespondConfigFile {
             anyhow::bail!("At least one access key must be provided");
         }
         Ok(Some(config))
+    }
+}
+
+pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
+    let listen_blocks_file = home_dir.join("listen_blocks.flag");
+    match fs::read_to_string(&listen_blocks_file) {
+        Ok(content) => {
+            let new_val = content.trim().eq_ignore_ascii_case("true");
+            tracing::info!("flag file found, setting to {}", new_val);
+            Ok(new_val)
+        }
+        Err(err) => Err(anyhow!(
+            "Could not find file {:?}: {}",
+            &listen_blocks_file,
+            err
+        )),
     }
 }
 

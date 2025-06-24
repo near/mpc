@@ -209,6 +209,12 @@ class MpcNode(NearNode):
                 pass
             time.sleep(1)
 
+    def set_block_ingestion(self, value: bool):
+        file_path = pathlib.Path(self.home_dir)
+        file_path = file_path / "listen_blocks.flag"
+        print(f"setting {file_path} to {value}")
+        file_path.write_text(str(value).lower())
+
     def reserve_key_event_attempt(self, epoch_id, domain_id, attempt_id):
         file_path = pathlib.Path(self.home_dir)
         file_path = file_path / "temporary_keys" / f"started_{epoch_id}_{domain_id}_{attempt_id}"
