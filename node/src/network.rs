@@ -120,6 +120,9 @@ impl MeshNetworkClient {
         *last_id = new;
         ChannelId(new)
     }
+    /// The maximum height difference that we are willing to accept.
+    /// This is used to filter out participants that are too far behind in the indexer height.
+    const MAX_HEIGHT_DIFF: u64 = 100;
 
     /// Primary functionality for the MeshNetworkClient: returns a channel for the given
     /// new MPC task. It is expected that the caller is the leader of this MPC task.
@@ -174,14 +177,20 @@ impl MeshNetworkClient {
     /// This is a subset of all_participant_ids, and includes our own participant ID.
     pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
         let mut result = Vec::new();
+        let my_height = *self
+            .get_indexer_heights()
+            .get(&self.my_participant_id())
+            .unwrap_or(&0);
         for participant in self.all_participant_ids() {
             if participant == self.my_participant_id() {
                 continue;
             }
-            if self
-                .transport_sender
-                .connectivity(participant)
-                .is_bidirectionally_connected()
+            let peer_height = *self.get_indexer_heights().get(&participant).unwrap_or(&0);
+            if my_height <= peer_height + Self::MAX_HEIGHT_DIFF
+                && self
+                    .transport_sender
+                    .connectivity(participant)
+                    .is_bidirectionally_connected()
             {
                 result.push(participant);
             }
