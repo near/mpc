@@ -18,11 +18,28 @@ from common_lib.contracts import load_mpc_contract
 
 
 @pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
+def test_signature_pause_block_ingestion(num_requests,
+                                         num_respond_access_keys):
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        2, 3, num_respond_access_keys, load_mpc_contract())
+    cluster.init_cluster(mpc_nodes, 2)
+    # removing one node should not be a problem.
+
+    mpc_nodes[0].set_block_ingestion(False)
+    cluster.send_and_await_signature_requests(num_requests)
+    mpc_nodes[1].set_block_ingestion(False)
+    cluster.send_and_await_signature_requests(num_requests)
+    # we would expect these to fail
+    cluster.send_and_await_signature_requests(num_requests)
+
+
+@pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
 def test_signature_lifecycle(num_requests, num_respond_access_keys):
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
         2, 3, num_respond_access_keys, load_mpc_contract())
     cluster.init_cluster(mpc_nodes, 2)
     # removing one node should not be a problem.
+
     mpc_nodes[0].kill(False)
     cluster.send_and_await_signature_requests(num_requests)
 

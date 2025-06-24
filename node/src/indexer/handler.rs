@@ -12,6 +12,7 @@ use near_indexer_primitives::views::{
 };
 use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
@@ -51,6 +52,7 @@ pub(crate) async fn listen_blocks(
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
     block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
+    process_blocks: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
@@ -64,9 +66,11 @@ pub(crate) async fn listen_blocks(
         .buffer_unordered(usize::from(concurrency.get()));
 
     while let Some(handle_message) = handle_messages.next().await {
-        handle_message?;
+        while !process_blocks.load(Ordering::Relaxed) {
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        }
+        handle_message?
     }
-
     Ok(())
 }
 
