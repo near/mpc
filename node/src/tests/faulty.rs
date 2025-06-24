@@ -119,4 +119,31 @@ async fn test_faulty_cluster() {
     tracing::info!("Step 3 complete");
 
     drop(disabled1);
+
+    tracing::info!("Pausing node #0");
+    let paused1 = setup.indexer.pause_indexer(accounts[0].clone()).await;
+    tracing::info!("Pausing node #1");
+    let paused2 = setup.indexer.pause_indexer(accounts[1].clone()).await;
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user2",
+        &domain,
+        signature_delay * 2
+    )
+    .await
+    .is_none());
+    tracing::info!("Step 4 complete");
+    drop(paused2);
+    drop(paused1);
+
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user3",
+        &domain,
+        signature_delay * 2
+    )
+    .await
+    .is_some());
+    tracing::info!("Step 5 complete");
 }
