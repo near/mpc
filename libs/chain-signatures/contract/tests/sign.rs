@@ -1,16 +1,15 @@
 pub mod common;
 use common::{
-    candidates, create_response, create_response_ed25519, init, init_env_ed25519,
-    init_env_secp256k1, sign_and_validate,
+    candidates, create_response, init, init_env_ed25519, init_env_secp256k1, sign_and_validate,
 };
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::signature::SignRequestArgs;
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::SignatureResponse,
     errors,
     primitives::{
+        domain::DomainId,
         participants::Participants,
+        signature::SignRequestArgs,
         thresholds::{Threshold, ThresholdParameters},
     },
 };
@@ -393,7 +392,7 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
     for msg in messages {
         println!("submitting: {msg}");
         let (payload, respond_req, respond_resp) =
-            create_response_ed25519(predecessor_id, msg, path, &sks[0]).await;
+            create_response(predecessor_id, msg, path, &sks[0]).await;
 
         let request = SignRequestArgs {
             payload_v2: Some(payload),
@@ -408,7 +407,7 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
     // check duplicate requests can also be signed:
     let duplicate_msg = "welp";
     let (payload, respond_req, respond_resp) =
-        create_response_ed25519(predecessor_id, duplicate_msg, path, &sks[0]).await;
+        create_response(predecessor_id, duplicate_msg, path, &sks[0]).await;
     let request = SignRequestArgs {
         payload_v2: Some(payload),
         path: path.into(),

@@ -286,8 +286,10 @@ impl KeyEventInstance {
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod tests {
-    use crate::primitives::participants::ParticipantId;
-    use crate::primitives::test_utils::{gen_account_id, gen_seed};
+    use crate::primitives::{
+        participants::ParticipantId,
+        test_utils::{gen_account_id, gen_seed},
+    };
     use crate::state::key_event::KeyEvent;
     use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, BlockHeight};
     use rand::Rng;

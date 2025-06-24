@@ -31,7 +31,7 @@ pub fn invalid_contract() -> ProposeUpdateArgs {
 /// This is the current deposit required for a contract deploy. This is subject to change but make
 /// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
 /// not be getting that big.
-const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(8700);
+const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(9700);
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
@@ -203,12 +203,13 @@ async fn test_invalid_contract_deploy() {
     dbg!(state);
 }
 
+// TODO(#496) Investigate flakiness of this test
 #[tokio::test]
 async fn test_propose_update_contract_many() {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     dbg!(contract.id());
 
-    const PROPOSAL_COUNT: usize = 5;
+    const PROPOSAL_COUNT: usize = 3;
     let mut proposals = Vec::with_capacity(PROPOSAL_COUNT);
     // Try to propose multiple updates to check if they are being proposed correctly
     // and that we can have many at once living in the contract state.

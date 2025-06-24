@@ -144,15 +144,19 @@ impl ResharingContractState {
 }
 #[cfg(test)]
 mod tests {
-    use crate::primitives::domain::{AddDomainsVotes, DomainId};
-    use crate::primitives::key_state::{AttemptId, KeyEventId};
-    use crate::primitives::test_utils::gen_account_id;
-    use crate::primitives::thresholds::{Threshold, ThresholdParameters};
-    use crate::primitives::votes::ThresholdParametersVotes;
-    use crate::state::key_event::tests::{find_leader, Environment};
-    use crate::state::resharing::ResharingContractState;
-    use crate::state::running::running_tests::{gen_running_state, gen_valid_params_proposal};
-    use crate::state::running::RunningContractState;
+    use crate::primitives::{
+        domain::{AddDomainsVotes, DomainId},
+        key_state::{AttemptId, KeyEventId},
+        test_utils::gen_account_id,
+        thresholds::{Threshold, ThresholdParameters},
+        votes::ThresholdParametersVotes,
+    };
+    use crate::state::{
+        key_event::tests::{find_leader, Environment},
+        resharing::ResharingContractState,
+        running::running_tests::{gen_running_state, gen_valid_params_proposal},
+        running::RunningContractState,
+    };
     use near_sdk::AccountId;
     use std::collections::BTreeSet;
 

@@ -1,3 +1,5 @@
+use crate::config::{PersistentSecrets, RespondConfig};
+use crate::web::StaticWebData;
 use crate::{
     config::{
         load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
@@ -16,11 +18,11 @@ use crate::{
     tracking::{self, start_root_task},
     web::start_web_server,
 };
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use clap::Parser;
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
-use near_crypto::SecretKey;
+use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
@@ -28,7 +30,18 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
+
+#[cfg(feature = "tee")]
+use {
+    crate::tee::{
+        monitor_allowed_image_hashes, remote_attestation::create_remote_attestation_info,
+        remote_attestation::submit_remote_attestation, AllowedImageHashesFile,
+    },
+    mpc_contract::tee::proposal::MpcDockerImageHash,
+    tracing::info,
+};
 
 #[derive(Parser, Debug)]
 pub enum Cli {
@@ -45,13 +58,19 @@ pub enum Cli {
         #[arg(long)]
         output_dir: String,
         #[arg(long, value_delimiter = ',')]
+        /// Near signer account for each participant
         participants: Vec<AccountId>,
+        /// Near responder account for each participant. Refer to `indexer/real.rs` for more details.
+        #[arg(long, value_delimiter = ',')]
+        responders: Vec<AccountId>,
         #[arg(long)]
         threshold: usize,
         #[arg(long, default_value = "65536")]
         desired_triples_to_buffer: usize,
         #[arg(long, default_value = "8192")]
         desired_presignatures_to_buffer: usize,
+        #[arg(long, default_value = "1")]
+        desired_responder_keys_per_participant: usize,
     },
 }
 
@@ -86,6 +105,7 @@ pub struct StartCmd {
     pub home_dir: String,
     /// Hex-encoded 16 byte AES key for local storage encryption.
     /// This key should come from a secure secret storage.
+    /// TODO(#444): After TEE integration decide on what to do with AES encryption key
     #[arg(env("MPC_SECRET_STORE_KEY"))]
     pub secret_store_key_hex: String,
     /// If provided, the root keyshare is stored on GCP.
@@ -94,13 +114,27 @@ pub struct StartCmd {
     pub gcp_keyshare_secret_id: Option<String>,
     #[arg(env("GCP_PROJECT_ID"))]
     pub gcp_project_id: Option<String>,
-    /// p2p private key for TLS. It must be in the format of "ed25519:...".
-    #[arg(env("MPC_P2P_PRIVATE_KEY"))]
-    pub p2p_private_key: SecretKey,
-    /// Near account secret key. Must correspond to the my_near_account_id
-    /// specified in the config.
-    #[arg(env("MPC_ACCOUNT_SK"))]
-    pub account_secret_key: SecretKey,
+    /// TEE related configuration settings.
+    #[command(flatten)]
+    #[cfg(feature = "tee")]
+    pub tee_config: TeeConfig,
+}
+
+#[derive(Parser, Debug)]
+#[cfg(feature = "tee")]
+pub struct TeeConfig {
+    #[arg(
+        long,
+        env("IMAGE_HASH"),
+        help_heading = "hex representation of the hash of the image running."
+    )]
+    pub image_hash: String,
+    #[arg(
+        long,
+        env("LATEST_ALLOWED_HASH_FILE"),
+        help_heading = "Path to the file which the mpc node will write the latest allowed hash to."
+    )]
+    pub latest_allowed_hash_file: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -134,9 +168,13 @@ pub struct ExportKeyshareCmd {
 impl StartCmd {
     async fn run(self) -> anyhow::Result<()> {
         let home_dir = PathBuf::from(self.home_dir.clone());
-        let secrets =
-            SecretsConfig::from_cli(&self.secret_store_key_hex, self.p2p_private_key.clone())?;
+
         let config = load_config_file(&home_dir)?;
+        let persistent_secrets = PersistentSecrets::generate_or_get_existing(
+            &home_dir,
+            config.number_of_responder_keys,
+        )?;
+        let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
 
         let (web_contract_sender, web_contract_receiver) =
             tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
@@ -146,11 +184,44 @@ impl StartCmd {
             home_dir.clone(),
             config.indexer.clone(),
             config.my_near_account_id.clone(),
-            self.account_secret_key.clone(),
+            persistent_secrets.near_signer_key.clone(),
+            respond_config,
             web_contract_sender,
             indexer_exit_sender,
         );
 
+        let root_runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(1)
+            .build()?;
+
+        // Currently, we only trigger graceful shutdowns from TEE logic,
+        // hence we need to disable the `unused_variables` lint when TEE is disabled.
+        #[cfg_attr(not(feature = "tee"), allow(unused_variables))]
+        let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
+        let cancellation_token = CancellationToken::new();
+
+        #[cfg(feature = "tee")]
+        let image_hash_watcher_handle = {
+            let current_image_hash_bytes: [u8; 32] = hex::decode(self.tee_config.image_hash)
+                .expect("The currently running image is a hex string.")
+                .try_into()
+                .expect("The currently running image hash hex representation is 32 bytes.");
+
+            let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
+            let image_hash_storage =
+                AllowedImageHashesFile::new(self.tee_config.latest_allowed_hash_file).await?;
+
+            tokio::spawn(monitor_allowed_image_hashes(
+                cancellation_token.child_token(),
+                MpcDockerImageHash::from(current_image_hash_bytes),
+                allowed_hashes_in_contract,
+                image_hash_storage,
+                shutdown_signal_sender,
+            ))
+        };
+
+        let secrets = SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets)?;
         let root_future = Self::create_root_future(
             home_dir.clone(),
             config.clone(),
@@ -161,21 +232,31 @@ impl StartCmd {
             web_contract_receiver,
         );
 
-        let root_runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(1)
-            .build()?;
-
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
 
-        tokio::select! {
+        let exit_reason = tokio::select! {
             root_task_result = root_task => {
                 root_task_result?
             }
             indexer_exit_response = indexer_exit_receiver => {
                 indexer_exit_response.context("Indexer thread dropped response channel.")?
             }
+            Some(()) = shutdown_signal_receiver.recv() => {
+                Err(anyhow!("TEE allowed image hashes watcher is sending shutdown signal."))
+            }
+        };
+
+        // Perform graceful shutdown
+        cancellation_token.cancel();
+
+        #[cfg(feature = "tee")]
+        {
+            info!("Waiting for image hash watcher to gracefully exit.");
+            let exit_result = image_hash_watcher_handle.await;
+            info!(?exit_result, "Image hash watcher exited.");
         }
+
+        exit_reason
     }
 
     async fn create_root_future(
@@ -188,11 +269,24 @@ impl StartCmd {
         web_contract_receiver: tokio::sync::watch::Receiver<ProtocolContractState>,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
+
         let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+
+        #[allow(unused_mut, unused_assignments)]
+        let mut report_data_contract: Option<TeeParticipantInfo> = None;
+        #[cfg(feature = "tee")]
+        {
+            let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();
+            let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
+            let report_data =
+                create_remote_attestation_info(&tls_public_key, &account_public_key).await;
+            report_data_contract = Some(report_data.try_into()?);
+        }
         let web_server = start_web_server(
             root_task_handle,
             signature_debug_request_sender.clone(),
             config.web_ui.clone(),
+            StaticWebData::new(&secrets, report_data_contract.clone()),
             web_contract_receiver,
         )
         .await?;
@@ -217,6 +311,19 @@ impl StartCmd {
                 None
             },
         };
+
+        // submit remote attestation
+        #[cfg(feature = "tee")]
+        {
+            let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
+
+            submit_remote_attestation(
+                indexer_api.txn_sender.clone(),
+                report_data_contract.unwrap(),
+                account_public_key,
+            )
+            .await?;
+        }
 
         let coordinator = Coordinator {
             clock: Clock::real(),
@@ -260,43 +367,79 @@ impl Cli {
             Cli::GenerateTestConfigs {
                 ref output_dir,
                 ref participants,
+                ref responders,
                 threshold,
                 desired_triples_to_buffer,
                 desired_presignatures_to_buffer,
+                desired_responder_keys_per_participant,
             } => {
+                anyhow::ensure!(
+                    participants.len() == responders.len(),
+                    "Number of participants must match number of responders"
+                );
                 self.run_generate_test_configs(
                     output_dir,
                     participants,
+                    responders,
                     threshold,
                     desired_triples_to_buffer,
                     desired_presignatures_to_buffer,
+                    desired_responder_keys_per_participant,
                 )
                 .await
             }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_generate_test_configs(
         &self,
         output_dir: &str,
         participants: &[AccountId],
+        responders: &[AccountId],
         threshold: usize,
         desired_triples_to_buffer: usize,
         desired_presignatures_to_buffer: usize,
+        desired_responder_keys_per_participant: usize,
     ) -> anyhow::Result<()> {
-        let configs = generate_test_p2p_configs(participants, threshold, PortSeed::CLI_FOR_PYTEST)?;
+        let p2p_key_pairs = participants
+            .iter()
+            .enumerate()
+            .map(|(idx, _account_id)| {
+                let subdir = PathBuf::from(output_dir).join(idx.to_string());
+                PersistentSecrets::generate_or_get_existing(
+                    &subdir,
+                    desired_responder_keys_per_participant,
+                )
+                .map(|secret| {
+                    (
+                        secret.p2p_private_key.unwrap_as_ed25519().clone(),
+                        secret
+                            .p2p_private_key
+                            .public_key()
+                            .unwrap_as_ed25519()
+                            .clone(),
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let configs = generate_test_p2p_configs(
+            participants,
+            threshold,
+            PortSeed::CLI_FOR_PYTEST,
+            Some(p2p_key_pairs),
+        )?;
         let participants_config = configs[0].0.participants.clone();
-        for (i, (_, p2p_private_key)) in configs.into_iter().enumerate() {
+        for (i, (_config, _p2p_private_key)) in configs.into_iter().enumerate() {
             let subdir = format!("{}/{}", output_dir, i);
             std::fs::create_dir_all(&subdir)?;
             let file_config = self.create_file_config(
                 &participants[i],
+                &responders[i],
                 i,
                 desired_triples_to_buffer,
                 desired_presignatures_to_buffer,
             )?;
-            let secret_key = SecretKey::ED25519(p2p_private_key.clone());
-            std::fs::write(format!("{}/p2p_key", subdir), secret_key.to_string())?;
             std::fs::write(
                 format!("{}/config.yaml", subdir),
                 serde_yaml::to_string(&file_config)?,
@@ -312,12 +455,15 @@ impl Cli {
     fn create_file_config(
         &self,
         participant: &AccountId,
+        responder: &AccountId,
         index: usize,
         desired_triples_to_buffer: usize,
         desired_presignatures_to_buffer: usize,
     ) -> anyhow::Result<ConfigFile> {
         Ok(ConfigFile {
             my_near_account_id: participant.clone(),
+            near_responder_account_id: responder.clone(),
+            number_of_responder_keys: 1,
             web_ui: WebUIConfig {
                 host: "127.0.0.1".to_owned(),
                 port: PortSeed::CLI_FOR_PYTEST.web_port(index),

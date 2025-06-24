@@ -9,20 +9,30 @@ use crate::constants::{ONE_NEAR, TESTNET_CONTRACT_ACCOUNT_ID};
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
 use crate::queries;
+use crate::rpc::NearRpcClients;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_contract::config::InitConfig;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
-use mpc_contract::primitives::key_state::EpochId;
-use mpc_contract::primitives::participants::{ParticipantInfo, Participants};
-use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use mpc_contract::state::ProtocolContractState;
-use mpc_contract::utils::protocol_state_to_string;
+use mpc_contract::{
+    config::InitConfig,
+    primitives::{
+        domain::{DomainConfig, DomainId, SignatureScheme},
+        key_state::EpochId,
+        participants::{ParticipantInfo, Participants},
+        thresholds::{Threshold, ThresholdParameters},
+    },
+    state::ProtocolContractState,
+    utils::protocol_state_to_string,
+};
 use near_crypto::SecretKey;
+use near_jsonrpc_client::methods;
+use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use near_primitives::types::{BlockReference, Finality, FunctionArgs};
+use near_primitives::views::QueryRequest;
 use near_sdk::{borsh, AccountId};
 use serde::Serialize;
 use std::str::FromStr;
+use std::sync::Arc;
 
 impl ListMpcCmd {
     pub async fn run(&self, config: ParsedConfig) {
@@ -308,6 +318,7 @@ struct InitV2Args {
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
     let mpc_setup = account.get_mpc_participant().unwrap();
+
     ParticipantInfo {
         sign_pk: near_sdk::PublicKey::from_str(&mpc_setup.p2p_private_key.public_key().to_string())
             .unwrap(),
@@ -512,7 +523,7 @@ impl MpcVoteAddDomainsCmd {
                     .expect(&format!("Failed to parse signature scheme {}", scheme))
             })
             .collect::<Vec<_>>();
-        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mut setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
@@ -524,7 +535,7 @@ impl MpcVoteAddDomainsCmd {
 
         // Query the contract state and use the next_domain_id to construct the domain IDs we should
         // use for the proposal.
-        let contract_state = read_contract_state_v2(&setup.accounts, &contract).await;
+        let contract_state = read_contract_state(&config.rpc, &contract).await;
         let domains = match contract_state {
             ProtocolContractState::Running(running_contract_state) => {
                 running_contract_state.domains
@@ -592,7 +603,7 @@ impl MpcVoteNewParametersCmd {
             "Going to vote_new_parameters for MPC network {}, adding participants {:?}, removing participants {:?}, and overriding threshold with {:?}",
             name, self.add, self.remove, self.set_threshold
         );
-        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mut setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
@@ -605,7 +616,7 @@ impl MpcVoteNewParametersCmd {
         // Query the contract state so we can incrementally construct the new parameters. This is
         // because the existing participants must have the same participant IDs, and the new
         // participants must have contiguous participant IDs.
-        let contract_state = read_contract_state_v2(&setup.accounts, &contract).await;
+        let contract_state = read_contract_state(&config.rpc, &contract).await;
         let prospective_epoch_id = match &contract_state {
             ProtocolContractState::Running(state) => state.keyset.epoch_id.next(),
             ProtocolContractState::Resharing(state) => state.prospective_epoch_id().next(),
@@ -697,19 +708,31 @@ impl MpcVoteNewParametersCmd {
 }
 
 /// Read the contract state from the contract and deserialize it into the V2 state format.
-pub async fn read_contract_state_v2(
-    accounts: &OperatingAccounts,
+pub async fn read_contract_state(
+    rpc: &Arc<NearRpcClients>,
     contract: &AccountId,
 ) -> ProtocolContractState {
-    let contract_state = accounts
-        .account(contract)
-        .query_contract("state", b"{}".to_vec())
+    let request = methods::query::RpcQueryRequest {
+        block_reference: BlockReference::Finality(Finality::Final),
+        request: QueryRequest::CallFunction {
+            account_id: contract.clone(),
+            method_name: "state".to_string(),
+            args: FunctionArgs::from(b"{}".to_vec()),
+        },
+    };
+    let result = rpc
+        .submit(request)
         .await
-        .expect("state() call failed");
-    serde_json::from_slice(&contract_state.result).expect(&format!(
-        "Failed to deserialize contract state: {}",
-        String::from_utf8_lossy(&contract_state.result)
-    ))
+        .expect("Expected rpc node to respond");
+    match result.kind {
+        QueryResponseKind::CallResult(result) => {
+            serde_json::from_slice(&result.result).expect(&format!(
+                "Failed to deserialize contract state: {}",
+                String::from_utf8_lossy(&result.result)
+            ))
+        }
+        _ => panic!("Unexpected response: {:?}", result),
+    }
 }
 
 #[derive(Serialize)]
@@ -727,7 +750,7 @@ impl MpcDescribeCmd {
             .expect(&format!("MPC network {} does not exist", name));
         if let Some(contract) = &mpc_setup.contract {
             println!("MPC contract deployed at: {}", contract);
-            let contract_state = read_contract_state_v2(&setup.accounts, contract).await;
+            let contract_state = read_contract_state(&config.rpc, contract).await;
             print!("{}", protocol_state_to_string(&contract_state));
         } else {
             println!("MPC contract is not deployed");

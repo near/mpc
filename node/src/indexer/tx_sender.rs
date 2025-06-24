@@ -2,7 +2,7 @@ use super::tx_signer::{TransactionSigner, TransactionSigners};
 use super::types::ChainGetPendingRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
-use crate::config::RespondConfigFile;
+use crate::config::RespondConfig;
 use crate::metrics;
 use legacy_mpc_contract;
 use near_client::Query;
@@ -80,8 +80,10 @@ async fn observe_tx_result(
     indexer_state: Arc<IndexerState>,
     request: &ChainSendTransactionRequest,
 ) -> anyhow::Result<ChainTransactionState> {
+    use ChainSendTransactionRequest::*;
+
     match request {
-        ChainSendTransactionRequest::Respond(respond_args) => {
+        Respond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending signature request still exists in the contract state
             let get_pending_request_args: Vec<u8> =
@@ -120,26 +122,11 @@ async fn observe_tx_result(
                 }
             }
         }
-        ChainSendTransactionRequest::StartKeygen(_) => {
-            // we don't care. The contract state change will handle this.
-            Ok(ChainTransactionState::Unknown)
-        }
-        ChainSendTransactionRequest::StartReshare(_) => {
-            // we don't care. The contract state change will handle this.
-            Ok(ChainTransactionState::Unknown)
-        }
-        ChainSendTransactionRequest::VotePk(_) => {
-            // we don't care. The contract state change will handle this.
-            Ok(ChainTransactionState::Unknown)
-        }
-        ChainSendTransactionRequest::VoteReshared(_) => {
-            // we don't care. The contract state change will handle this.
-            Ok(ChainTransactionState::Unknown)
-        }
-        ChainSendTransactionRequest::VoteAbortKeyEvent(_) => {
-            // we don't care. The contract state change will handle this.
-            Ok(ChainTransactionState::Unknown)
-        }
+        // We don't care. The contract state change will handle this.
+        StartKeygen(_) | StartReshare(_) | VotePk(_) | VoteReshared(_) | VoteAbortKeyEvent(_)
+        | VerifyTee() => Ok(ChainTransactionState::Unknown),
+        #[cfg(feature = "tee")]
+        SubmitRemoteAttestation(_) => Ok(ChainTransactionState::Unknown),
     }
 }
 
@@ -210,7 +197,7 @@ pub(crate) async fn handle_txn_requests(
     mut receiver: mpsc::Receiver<ChainSendTransactionRequest>,
     owner_account_id: AccountId,
     owner_secret_key: SecretKey,
-    config: RespondConfigFile,
+    config: RespondConfig,
     indexer_state: Arc<IndexerState>,
 ) {
     let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)

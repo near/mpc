@@ -592,8 +592,14 @@ impl MeshNetworkTransportSender for TlsMeshSender {
         }
     }
 
-    async fn wait_for_ready(&self, threshold: usize) -> anyhow::Result<()> {
-        self.connectivities.wait_for_ready(threshold).await;
+    async fn wait_for_ready(
+        &self,
+        threshold: usize,
+        peers_to_consider: &[ParticipantId],
+    ) -> anyhow::Result<()> {
+        self.connectivities
+            .wait_for_ready(threshold, peers_to_consider)
+            .await;
         Ok(())
     }
 }
@@ -608,11 +614,49 @@ impl MeshNetworkTransportReceiver for TlsMeshReceiver {
     }
 }
 
+pub mod keygen {
+    use crate::p2p::{PKCS8_HEADER, PKCS8_MIDDLE};
+
+    /// Generates an ED25519 keypair, returning the pem-encoded private key and the
+    /// hex-encoded public key.
+    pub fn generate_keypair(
+    ) -> anyhow::Result<(near_crypto::ED25519SecretKey, near_crypto::ED25519PublicKey)> {
+        let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
+        Ok((
+            keypair_to_raw_ed25519_secret_key(&key_pair)?,
+            near_crypto::ED25519PublicKey(key_pair.public_key_raw().try_into()?),
+        ))
+    }
+
+    /// Converts a keypair to an ED25519 secret key, asserting that it is the
+    /// exact kind of keypair we expect.
+    pub fn keypair_to_raw_ed25519_secret_key(
+        keypair: &rcgen::KeyPair,
+    ) -> anyhow::Result<near_crypto::ED25519SecretKey> {
+        let pkcs8_encoded = keypair.serialize_der();
+        if pkcs8_encoded.len() != 16 + 32 + 3 + 32 {
+            anyhow::bail!("Invalid PKCS8 length");
+        }
+        if pkcs8_encoded[..16] != PKCS8_HEADER {
+            anyhow::bail!("Invalid PKCS8 header");
+        }
+        if pkcs8_encoded[16 + 32..16 + 32 + 3] != PKCS8_MIDDLE {
+            anyhow::bail!("Invalid PKCS8 middle");
+        }
+
+        let mut key = [0u8; 64];
+        key[..32].copy_from_slice(&pkcs8_encoded[16..16 + 32]);
+        key[32..].copy_from_slice(&pkcs8_encoded[16 + 32 + 3..]);
+
+        Ok(near_crypto::ED25519SecretKey(key))
+    }
+}
+
 pub mod testing {
-    use super::{PKCS8_HEADER, PKCS8_MIDDLE};
     use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
+    use crate::p2p::keygen::generate_keypair;
     use crate::primitives::ParticipantId;
-    use near_crypto::ED25519SecretKey;
+    use near_crypto::{ED25519PublicKey, ED25519SecretKey};
     use near_sdk::AccountId;
 
     /// A unique seed for each integration test to avoid port conflicts during testing.
@@ -648,51 +692,29 @@ pub mod testing {
         pub const BASIC_MULTIDOMAIN_TEST: Self = Self(8);
     }
 
-    /// Converts a keypair to an ED25519 secret key, asserting that it is the
-    /// exact kind of keypair we expect.
-    pub fn keypair_to_raw_ed25519_secret_key(
-        keypair: &rcgen::KeyPair,
-    ) -> anyhow::Result<near_crypto::ED25519SecretKey> {
-        let pkcs8_encoded = keypair.serialize_der();
-        if pkcs8_encoded.len() != 16 + 32 + 3 + 32 {
-            anyhow::bail!("Invalid PKCS8 length");
-        }
-        if pkcs8_encoded[..16] != PKCS8_HEADER {
-            anyhow::bail!("Invalid PKCS8 header");
-        }
-        if pkcs8_encoded[16 + 32..16 + 32 + 3] != PKCS8_MIDDLE {
-            anyhow::bail!("Invalid PKCS8 middle");
-        }
-
-        let mut key = [0u8; 64];
-        key[..32].copy_from_slice(&pkcs8_encoded[16..16 + 32]);
-        key[32..].copy_from_slice(&pkcs8_encoded[16 + 32 + 3..]);
-
-        Ok(near_crypto::ED25519SecretKey(key))
-    }
-
-    /// Generates an ED25519 keypair, returning the pem-encoded private key and the
-    /// hex-encoded public key.
-    pub fn generate_keypair(
-    ) -> anyhow::Result<(near_crypto::ED25519SecretKey, near_crypto::ED25519PublicKey)> {
-        let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
-        Ok((
-            keypair_to_raw_ed25519_secret_key(&key_pair)?,
-            near_crypto::ED25519PublicKey(key_pair.public_key_raw().try_into().unwrap()),
-        ))
-    }
-
     pub fn generate_test_p2p_configs(
         participant_accounts: &[AccountId],
         threshold: usize,
         // this is a hack to make sure that when tests run in parallel, they don't
         // collide on the same port.
         port_seed: PortSeed,
+        // Supply `Some` value here if you want to use pre-existing p2p key pairs
+        p2p_keypairs: Option<Vec<(ED25519SecretKey, ED25519PublicKey)>>,
     ) -> anyhow::Result<Vec<(MpcConfig, ED25519SecretKey)>> {
+        let p2p_keypairs = if let Some(p2p_keypairs) = p2p_keypairs {
+            p2p_keypairs
+        } else {
+            participant_accounts
+                .iter()
+                .map(|_account_id| generate_keypair())
+                .collect::<Result<Vec<_>, _>>()?
+        };
         let mut participants = Vec::new();
-        let mut keypairs = Vec::new();
-        for (i, participant_account) in participant_accounts.iter().enumerate() {
-            let (p2p_private_key, p2p_public_key) = generate_keypair()?;
+        for (i, (participant_account, (_p2p_secret_key, p2p_public_key))) in participant_accounts
+            .iter()
+            .zip(p2p_keypairs.iter())
+            .enumerate()
+        {
             participants.push(ParticipantInfo {
                 id: ParticipantId::from_raw(rand::random()),
                 address: "127.0.0.1".to_string(),
@@ -700,11 +722,10 @@ pub mod testing {
                 p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
                 near_account_id: participant_account.clone(),
             });
-            keypairs.push((p2p_private_key, p2p_public_key));
         }
 
         let mut configs = Vec::new();
-        for (i, keypair) in keypairs.into_iter().enumerate() {
+        for (i, keypair) in p2p_keypairs.into_iter().enumerate() {
             let participants = ParticipantsConfig {
                 threshold: threshold as u64,
                 participants: participants.clone(),
@@ -723,11 +744,11 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::MpcConfig;
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
+    use crate::p2p::keygen::{generate_keypair, keypair_to_raw_ed25519_secret_key};
     use crate::p2p::raw_ed25519_secret_key_to_keypair;
-    use crate::p2p::testing::{
-        generate_keypair, generate_test_p2p_configs, keypair_to_raw_ed25519_secret_key, PortSeed,
-    };
+    use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
     use crate::primitives::{
         ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
     };
@@ -755,10 +776,13 @@ mod tests {
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
             PortSeed::P2P_BASIC_TEST,
+            None,
         )
         .unwrap();
         let participant0 = configs[0].0.my_participant_id;
         let participant1 = configs[1].0.my_participant_id;
+
+        let all_participants = [participant0, participant1];
 
         start_root_task_with_periodic_dump(async move {
             let (sender0, mut receiver0) =
@@ -770,8 +794,8 @@ mod tests {
                     .await
                     .unwrap();
 
-            sender0.wait_for_ready(2).await.unwrap();
-            sender1.wait_for_ready(2).await.unwrap();
+            sender0.wait_for_ready(2, &all_participants).await.unwrap();
+            sender1.wait_for_ready(2, &all_participants).await.unwrap();
 
             for _ in 0..100 {
                 // todo: adjust test?
@@ -859,8 +883,19 @@ mod tests {
             ],
             4,
             PortSeed::P2P_WAIT_FOR_READY_TEST,
+            None,
         )
         .unwrap();
+
+        let all_participants = |mpc_config: &MpcConfig| {
+            mpc_config
+                .participants
+                .participants
+                .iter()
+                .map(|p| p.id)
+                .collect::<Vec<_>>()
+        };
+
         // Make node 3 use the wrong address for the 0th node. All connections should work
         // except from 3 to 0.
         configs[3].0.participants.participants[0].address = "169.254.1.1".to_owned();
@@ -878,20 +913,31 @@ mod tests {
                 .await
                 .unwrap();
 
-            sender1.wait_for_ready(4).await.unwrap();
-            sender2.wait_for_ready(4).await.unwrap();
+            let all_participants0 = &all_participants(&configs[0].0);
+            let all_participants1 = &all_participants(&configs[1].0);
+            let all_participants2 = &all_participants(&configs[2].0);
+            let all_participants3 = &all_participants(&configs[3].0);
+
+            sender1.wait_for_ready(4, all_participants1).await.unwrap();
+            sender2.wait_for_ready(4, all_participants2).await.unwrap();
             // Node 3 should not be able to connect to node 0, so if we wait for 4,
             // it should fail. This goes both ways (3 to 0 and 0 to 3).
-            assert!(timeout(Duration::from_secs(1), sender0.wait_for_ready(4))
-                .await
-                .is_err());
-            assert!(timeout(Duration::from_secs(1), sender3.wait_for_ready(4))
-                .await
-                .is_err());
+            assert!(timeout(
+                Duration::from_secs(1),
+                sender0.wait_for_ready(4, all_participants0)
+            )
+            .await
+            .is_err());
+            assert!(timeout(
+                Duration::from_secs(1),
+                sender3.wait_for_ready(4, all_participants3)
+            )
+            .await
+            .is_err());
 
             // But if we wait for 3, it should succeed.
-            sender0.wait_for_ready(3).await.unwrap();
-            sender3.wait_for_ready(3).await.unwrap();
+            sender0.wait_for_ready(3, all_participants0).await.unwrap();
+            sender3.wait_for_ready(3, all_participants3).await.unwrap();
 
             let ids: Vec<_> = configs[0]
                 .0
@@ -931,10 +977,10 @@ mod tests {
             let (sender1, _receiver1) = super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
                 .await
                 .unwrap();
-            sender0.wait_for_ready(3).await.unwrap();
-            sender1.wait_for_ready(4).await.unwrap();
-            sender2.wait_for_ready(4).await.unwrap();
-            sender3.wait_for_ready(3).await.unwrap();
+            sender0.wait_for_ready(3, all_participants0).await.unwrap();
+            sender1.wait_for_ready(4, all_participants1).await.unwrap();
+            sender2.wait_for_ready(4, all_participants2).await.unwrap();
+            sender3.wait_for_ready(3, all_participants3).await.unwrap();
             assert_eq!(
                 all_alive_participant_ids(&sender0),
                 sorted(&[ids[0], ids[1], ids[2]]),

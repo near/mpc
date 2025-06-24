@@ -1,4 +1,4 @@
-use crate::config::RespondConfigFile;
+use crate::config::RespondConfig;
 use crate::indexer::types::ChainSendTransactionRequest;
 use near_crypto::{InMemorySigner, PublicKey, SecretKey, Signer};
 use near_indexer::near_primitives::account::AccessKey;
@@ -84,7 +84,7 @@ pub(crate) struct TransactionSigners {
 
 impl TransactionSigners {
     pub fn new(
-        respond_config: RespondConfigFile,
+        respond_config: RespondConfig,
         owner_account_id: AccountId,
         owner_secret_key: SecretKey,
     ) -> anyhow::Result<Self> {

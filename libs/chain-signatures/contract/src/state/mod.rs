@@ -105,8 +105,7 @@ impl ProtocolContractState {
             .map(|x| x.map(ProtocolContractState::Running))
     }
     /// Casts a vote for `proposed_parameters`, returning the new protocol state if the proposal is
-    /// accepted.
-    /// Returns an error if the protocol is not in running resharing.
+    /// accepted. Returns an error if the protocol is not in the Running or Resharing state.
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
@@ -199,5 +198,33 @@ impl ProtocolContractState {
             }
         };
         Ok(())
+    }
+}
+
+#[cfg(feature = "dev-utils")]
+impl ProtocolContractState {
+    pub fn get_domain_config(&self, domain_id: DomainId) -> Option<DomainConfig> {
+        match self {
+            ProtocolContractState::Running(state) => state
+                .domains
+                .domains()
+                .iter()
+                .find(|domain| domain.id == domain_id)
+                .cloned(),
+            ProtocolContractState::Resharing(state) => state
+                .previous_running_state
+                .domains
+                .domains()
+                .iter()
+                .find(|domain| domain.id == domain_id)
+                .cloned(),
+            ProtocolContractState::Initializing(state) => state
+                .domains
+                .domains()
+                .iter()
+                .find(|domain| domain.id == domain_id)
+                .cloned(),
+            _ => None,
+        }
     }
 }

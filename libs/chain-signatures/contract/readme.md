@@ -189,7 +189,7 @@ These functions require the caller to be a participant or candidate.
 | `vote_cancel_keygen(next_domain_id: u64)`                                           | For Initializing state only. Votes to cancel the key generation (identified by the next_domain_id) and revert to the Running state.                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
 | `propose_update(args: ProposeUpdateArgs)`                                           | Proposes an update to the contract, requiring an attached deposit.                                                                                                                                                                      | `Result<UpdateId, Error>` | TBD             | TBD                |
 | `vote_update(id: UpdateId)`                                                         | Votes on a proposed update. If the threshold is met, the update is executed.                                                                                                                                                            | `Result<bool, Error>`     | TBD             | TBD                |
-
+| `propose_join(proposed_tee_participant: TeeParticipantInfo, signer_pk: PublicKey)` | Submits the tee participant info for a potential candidate. c.f. TEE section | `Result<(), Error>` | TBD | TBD |
 
 #### Developer API
 
@@ -211,3 +211,31 @@ we need to use wasm-opt to strip the contract of unused features. Otherwise the 
 cargo build --release --target=wasm32-unknown-unknown
 wasm-opt -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm
 ```
+
+
+## TEE Specific information
+The MPC nodes will eventually run inside a Trusted Execution Environments (TEE). The network is currently in a transitioning period, where both operation modes (TEE and non-TEE) are supported, however, the TEE support is at least as of June 2025, highly experimental and not stable.
+
+
+Participants that run their node inside a TEE will have to submit the following TEE related data to the contract:
+```
+pub struct TeeParticipantInfo {
+    /// TEE Remote Attestation Quote that proves the participant's identity.
+    pub tee_quote: Vec<u8>,
+    /// Supplemental data for the TEE quote, including Intel certificates to verify it came from
+    /// genuine Intel hardware, along with details about the Trusted Computing Base (TCB)
+    /// versioning, status, and other relevant info.
+    pub quote_collateral: String,
+    /// Dstack event log.
+    pub raw_tcb_info: String,
+}
+```
+
+The prospective node operator can retrieve that data from the web endpoint (`:8080/get_public_data`).
+
+The process of doing so is as follows:
+1. The prospective participants set up their MPC inside their TEE environment (todo: [#550](https://github.com/near/mpc/issues/550), documentation to follow).
+2. The prospective participants fetch their TEE related information from their logs.
+3. The prospective participants add the `near_signer_public_key` from the web endpoint (`:8080/get_public_data`) as an access key to their node operator account, eligible for calling the MPC contract (`v1.signer` on mainnet or `v1.signer-prod.testnet` on testnet). Participants should provide sufficient funding to this key.
+4. The prospective participants add the `near_responder_public_keys` from the web endpoint to a different account and provide sufficient funding to it.
+3. The participants submit their data to the contract via `propose_join`.

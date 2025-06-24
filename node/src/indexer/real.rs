@@ -3,13 +3,16 @@ use super::participants::{monitor_contract_state, ContractState};
 use super::stats::{indexer_logger, IndexerStats};
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
-use crate::config::{load_respond_config_file, IndexerConfig, RespondConfigFile};
+use crate::config::{IndexerConfig, RespondConfig};
 use mpc_contract::state::ProtocolContractState;
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, watch, Mutex};
+
+#[cfg(feature = "tee")]
+use crate::indexer::tee::monitor_allowed_docker_images;
 
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
 ///
@@ -20,6 +23,7 @@ pub fn spawn_real_indexer(
     indexer_config: IndexerConfig,
     my_near_account_id: AccountId,
     account_secret_key: SecretKey,
+    respond_config: RespondConfig,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
 ) -> IndexerAPI {
@@ -27,6 +31,8 @@ pub fn spawn_real_indexer(
         tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
+    #[cfg(feature = "tee")]
+    let (tee_sender, tee_receiver) = oneshot::channel();
 
     // TODO(#156): replace actix with tokio
     std::thread::spawn(move || {
@@ -34,19 +40,6 @@ pub fn spawn_real_indexer(
             let indexer =
                 near_indexer::Indexer::new(indexer_config.to_near_indexer_config(home_dir.clone()))
                     .expect("Failed to initialize the Indexer");
-            let respond_config = match load_respond_config_file(&home_dir) {
-                Ok(Some(respond_config)) => respond_config,
-                Ok(None) => {
-                    tracing::warn!("No respond.yaml provided. Using the node's main account to send respond transactions.");
-                    RespondConfigFile {
-                        account_id: my_near_account_id.clone(),
-                        access_keys: vec![account_secret_key.clone()],
-                    }
-                }
-                Err(err) => {
-                    panic!("respond.yaml is provided but failed to parse: {err:?}");
-                }
-            };
             let stream = indexer.streamer();
             let (view_client, client, tx_processor) = indexer.client_actors();
             let indexer_state = Arc::new(IndexerState::new(
@@ -63,7 +56,10 @@ pub fn spawn_real_indexer(
                 chain_config_sender,
                 protocol_state_sender,
             ));
-            actix::spawn(indexer_logger(Arc::clone(&stats), indexer_state.view_client.clone()));
+            actix::spawn(indexer_logger(
+                Arc::clone(&stats),
+                indexer_state.view_client.clone(),
+            ));
             actix::spawn(handle_txn_requests(
                 chain_txn_receiver,
                 my_near_account_id,
@@ -71,6 +67,16 @@ pub fn spawn_real_indexer(
                 respond_config,
                 indexer_state.clone(),
             ));
+
+            #[cfg(feature = "tee")]
+            {
+                let allowed_docker_images_receiver =
+                    monitor_allowed_docker_images(indexer_state.clone()).await;
+                tee_sender
+                    .send(allowed_docker_images_receiver)
+                    .expect("Receiver for watcher must be alive");
+            }
+
             let indexer_result = listen_blocks(
                 stream,
                 indexer_config.concurrency,
@@ -86,9 +92,16 @@ pub fn spawn_real_indexer(
         });
     });
 
+    #[cfg(feature = "tee")]
+    let allowed_docker_images_receiver = tee_receiver
+        .blocking_recv()
+        .expect("monitor_allowed_docker_images must be called.");
+
     IndexerAPI {
         contract_state_receiver: chain_config_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender: chain_txn_sender,
+        #[cfg(feature = "tee")]
+        allowed_docker_images_receiver,
     }
 }

@@ -6,8 +6,8 @@ use mpc_contract::state::ProtocolContractState;
 use std::collections::HashMap;
 
 use crate::config::{
-    ConfigFile, IndexerConfig, KeygenConfig, ParticipantsConfig, PresignatureConfig, SecretsConfig,
-    SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
+    ConfigFile, IndexerConfig, KeygenConfig, ParticipantsConfig, PersistentSecrets,
+    PresignatureConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
 };
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
@@ -18,18 +18,20 @@ use crate::keyshare::KeyStorageConfig;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
-use crate::web::start_web_server;
+use crate::web::{start_web_server, StaticWebData};
 use cait_sith::ecdsa::presign::PresignArguments;
 use cait_sith::ecdsa::sign::FullSignature;
 use cait_sith::{ecdsa, eddsa};
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
+use near_crypto::KeyType::ED25519;
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
 use near_sdk::AccountId;
 use near_time::Clock;
 use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::time::timeout;
 
@@ -213,6 +215,7 @@ impl OneNodeTestConfig {
                     root_task_handle,
                     signature_debug_request_sender.clone(),
                     config.web_ui.clone(),
+                    StaticWebData::new(&secrets, None),
                     web_contract_receiver.clone(),
                 )
                 .await?;
@@ -267,7 +270,7 @@ impl IntegrationTestSetup {
         port_seed: PortSeed,
     ) -> IntegrationTestSetup {
         let p2p_configs =
-            generate_test_p2p_configs(&participant_accounts, threshold, port_seed).unwrap();
+            generate_test_p2p_configs(&participant_accounts, threshold, port_seed, None).unwrap();
         let participants = p2p_configs[0].0.participants.clone();
         let mut indexer_manager = FakeIndexerManager::new(clock.clone(), txn_delay_blocks);
 
@@ -286,6 +289,8 @@ impl IntegrationTestSetup {
                 },
                 keygen: KeygenConfig { timeout_sec: 60 },
                 my_near_account_id: participant_accounts[i].clone(),
+                // Don't care since we use the fake indexer
+                near_responder_account_id: AccountId::from_str("dont_care").unwrap(),
                 presignature: PresignatureConfig {
                     concurrency: 1,
                     desired_presignatures_to_buffer: 5,
@@ -302,10 +307,15 @@ impl IntegrationTestSetup {
                     host: "0.0.0.0".to_string(),
                     port: port_seed.web_port(i),
                 },
+                number_of_responder_keys: 0,
             };
             let secrets = SecretsConfig {
+                persistent_secrets: PersistentSecrets {
+                    p2p_private_key: near_crypto::SecretKey::ED25519(p2p_key),
+                    near_signer_key: near_crypto::SecretKey::from_random(ED25519),
+                    near_responder_keys: vec![near_crypto::SecretKey::from_random(ED25519)],
+                },
                 local_storage_aes_key: rand::random(),
-                p2p_private_key: p2p_key,
             };
             let (indexer_api, task, currently_running_job_name) =
                 indexer_manager.add_indexer_node(participant_accounts[i].clone());

@@ -7,23 +7,22 @@ use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use mpc_contract::config::Config;
-use mpc_contract::primitives::domain::{DomainConfig, DomainRegistry};
-use mpc_contract::primitives::key_state::{EpochId, KeyEventId, Keyset};
-use mpc_contract::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
-use mpc_contract::primitives::signature::Payload;
-use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use mpc_contract::state::initializing::InitializingContractState;
-use mpc_contract::state::key_event::tests::Environment;
-use mpc_contract::state::key_event::KeyEvent;
-use mpc_contract::state::resharing::ResharingContractState;
-use mpc_contract::state::running::RunningContractState;
-use mpc_contract::state::ProtocolContractState;
+use mpc_contract::primitives::{
+    domain::{DomainConfig, DomainRegistry},
+    key_state::{EpochId, KeyEventId, Keyset},
+    participants::{ParticipantId, ParticipantInfo, Participants},
+    signature::Payload,
+    thresholds::{Threshold, ThresholdParameters},
+};
+use mpc_contract::state::{
+    initializing::InitializingContractState, key_event::tests::Environment, key_event::KeyEvent,
+    resharing::ResharingContractState, running::RunningContractState, ProtocolContractState,
+};
 use near_crypto::PublicKey;
 use near_sdk::AccountId;
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
 use tokio::sync::{broadcast, mpsc, watch};
 
 /// A simplification of the real MPC contract state for testing.
@@ -217,6 +216,7 @@ fn participants_config_to_threshold_parameters(
     let mut participants = Participants::new();
     let mut infos = participants_config.participants.clone();
     infos.sort_by_key(|info| info.id);
+
     for info in infos {
         participants
             .insert_with_id(
@@ -379,6 +379,12 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::VoteAbortKeyEvent(abort) => {
                         let mut contract = contract.lock().await;
                         contract.vote_abort_key_event(account_id, abort.key_event_id);
+                    }
+                    ChainSendTransactionRequest::VerifyTee() => {}
+                    ChainSendTransactionRequest::SubmitRemoteAttestation(_tee_attestation) => {
+                        unimplemented!(
+                            "Submitting remote attestation is not implemented for tests yet."
+                        )
                     }
                 }
             }
@@ -600,12 +606,18 @@ impl FakeIndexerManager {
         let (api_signature_request_sender, api_signature_request_receiver) =
             mpsc::unbounded_channel();
         let (api_txn_sender, api_txn_receiver) = mpsc::channel(1000);
+        #[cfg(feature = "tee")]
+        let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
+            watch::channel(vec![]);
+
         let indexer = IndexerAPI {
             contract_state_receiver: api_state_receiver,
             block_update_receiver: Arc::new(tokio::sync::Mutex::new(
                 api_signature_request_receiver,
             )),
             txn_sender: api_txn_sender,
+            #[cfg(feature = "tee")]
+            allowed_docker_images_receiver,
         };
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));
         let disabler = NodeDisabler {

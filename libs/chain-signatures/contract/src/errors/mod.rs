@@ -2,6 +2,12 @@ use std::borrow::Cow;
 mod impls;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TeeError {
+    #[error("Due to previously failed TEE validation, the network is not accepting new signature requests at this point in time. Try again later.")]
+    TeeValidationFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SignError {
     #[error("Signature request has timed out.")]
     Timeout,
@@ -91,6 +97,8 @@ pub enum InvalidParameters {
     NextDomainIdMismatch,
     #[error("Invalid domain ID.")]
     InvalidDomainId,
+    #[error("Invalid TEE Remote Attestation.")]
+    InvalidTeeRemoteAttestation,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -135,6 +143,8 @@ pub enum InvalidCandidateSet {
     NewParticipantIdsNotContiguous,
     #[error("New Participant ids need to not skip any unused participant ids.")]
     NewParticipantIdsTooHigh,
+    #[error("Invalid participants TEE Remote Attestation Quote.")]
+    InvalidParticipantsTeeQuote,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -194,6 +204,9 @@ pub enum ErrorKind {
     // Domain errors
     #[error("{0}")]
     DomainError(#[from] DomainError),
+    // Tee errors
+    #[error("{0}")]
+    TeeError(#[from] TeeError),
 }
 
 #[derive(Debug, thiserror::Error)]

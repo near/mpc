@@ -9,7 +9,10 @@ use k256::{
     AffinePoint, Scalar, Secp256k1,
 };
 use legacy_mpc_contract;
-use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak};
+use mpc_contract::{
+    primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak},
+    tee::tee_participant::TeeParticipantInfo,
+};
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
@@ -117,6 +120,12 @@ pub struct ChainVoteAbortKeyEventArgs {
     pub key_event_id: KeyEventId,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProposeJoinArgs {
+    pub proposed_tee_participant: TeeParticipantInfo,
+    pub sign_pk: PublicKey,
+}
+
 /// Request to send a transaction to the contract on chain.
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
@@ -127,6 +136,9 @@ pub enum ChainSendTransactionRequest {
     VoteReshared(ChainVoteResharedArgs),
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEvent(ChainVoteAbortKeyEventArgs),
+    VerifyTee(),
+    #[cfg(feature = "tee")]
+    SubmitRemoteAttestation(ProposeJoinArgs),
 }
 
 impl ChainSendTransactionRequest {
@@ -138,6 +150,9 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::StartReshare(_) => "start_reshare_instance",
             ChainSendTransactionRequest::StartKeygen(_) => "start_keygen_instance",
             ChainSendTransactionRequest::VoteAbortKeyEvent(_) => "vote_abort_key_event",
+            ChainSendTransactionRequest::VerifyTee() => "verify_tee",
+            #[cfg(feature = "tee")]
+            ChainSendTransactionRequest::SubmitRemoteAttestation(_) => "submit_remote_attestation",
         }
     }
 
@@ -148,7 +163,10 @@ impl ChainSendTransactionRequest {
             | Self::VoteReshared(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
-            | Self::VoteAbortKeyEvent(_) => 300 * TGAS,
+            | Self::VoteAbortKeyEvent(_)
+            | Self::VerifyTee() => 300 * TGAS,
+            #[cfg(feature = "tee")]
+            Self::SubmitRemoteAttestation(_) => 300 * TGAS,
         }
     }
 }

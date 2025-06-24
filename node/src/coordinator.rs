@@ -334,8 +334,11 @@ impl Coordinator {
             mpc_config.my_participant_id
         ));
 
-        let (sender, receiver) =
-            new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
+        let p2p_key = secrets
+            .persistent_secrets
+            .p2p_private_key
+            .unwrap_as_ed25519();
+        let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
         if mpc_config.is_leader_for_key_event() {
@@ -385,7 +388,7 @@ impl Coordinator {
 
         let mut running_participants = running_state.participants.clone();
 
-        let participants = match &running_state.resharing_state {
+        let participants_config = match &running_state.resharing_state {
             Some(resharing_state) => resharing_state.new_participants.clone(),
             None => running_participants.clone(),
         };
@@ -393,10 +396,10 @@ impl Coordinator {
         // Only consider the running participants that are also members of the new resharing state.
         running_participants
             .participants
-            .retain(|p| participants.participants.contains(p));
+            .retain(|p| participants_config.participants.contains(p));
 
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
-            participants,
+            participants_config,
             &config_file.my_near_account_id,
         ) else {
             tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
@@ -405,17 +408,16 @@ impl Coordinator {
 
         tracing::info!("Creating tls mesh");
 
-        let (sender, receiver) =
-            new_tls_mesh_network(&mpc_config, &secrets.p2p_private_key).await?;
-
-        tracing::info!("wait for ready.");
-        sender
-            .wait_for_ready(mpc_config.participants.threshold as usize)
-            .await?;
+        let p2p_key = secrets
+            .persistent_secrets
+            .p2p_private_key
+            .unwrap_as_ed25519();
+        let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
+        let sender = Arc::new(sender);
 
         tracing::info!("Creating network client.");
         let (network_client, mut channel_receiver, _handle) =
-            run_network_client(Arc::new(sender), Box::new(receiver));
+            run_network_client(sender.clone(), Box::new(receiver));
 
         let cancellation_token = CancellationToken::new();
         let cancellation_token_child = cancellation_token.child_token();
@@ -434,7 +436,6 @@ impl Coordinator {
                                 break;
                             };
 
-                            tracing::info!("received channel {:?}", network_channel.task_id());
                             let is_resharing_message = matches!(
                                 network_channel.task_id(),
                                 MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { .. })
@@ -455,7 +456,7 @@ impl Coordinator {
                         }
 
                         _ = cancellation_token_child.cancelled() => {
-                            info!("cancelled token.");
+                            info!("Network multiplexer cancelled.");
                             break;
                         }
 
@@ -522,6 +523,21 @@ impl Coordinator {
                     "Running epoch {:?} as participant {}",
                     running_state.keyset.epoch_id, running_mpc_config.my_participant_id
                 ));
+
+                tracing::info!("wait for ready.");
+                let running_participant_ids = running_mpc_config
+                    .participants
+                    .participants
+                    .iter()
+                    .map(|p| p.id)
+                    .collect::<Vec<_>>();
+
+                sender
+                    .wait_for_ready(
+                        running_mpc_config.participants.threshold as usize,
+                        &running_participant_ids,
+                    )
+                    .await?;
 
                 let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
 

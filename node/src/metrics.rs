@@ -205,3 +205,12 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref VERIFY_TEE_REQUESTS_SENT: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "verify_tee_requests_sent",
+            "failed to send on channel in sign_request_channel",
+        )
+        .unwrap();
+}

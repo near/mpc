@@ -5,7 +5,7 @@ use frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey};
 use fs2::FileExt;
 use k256::{
     elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint, PrimeField},
-    AffinePoint, FieldBytes, Scalar, Secp256k1, SecretKey,
+    AffinePoint, FieldBytes, Scalar, Secp256k1,
 };
 use mpc_contract::{
     config::InitConfig,
@@ -34,9 +34,8 @@ use near_workspaces::{
     types::{AccountId, NearToken},
     Account, Contract, Worker,
 };
-use serde::{Deserialize, Serialize};
-//use once_cell::sync::Lazy;
 use rand::rngs::OsRng;
+use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use signature::DigestSigner;
 use std::{
@@ -161,6 +160,7 @@ pub fn current_contract() -> &'static Vec<u8> {
 
             let status = Command::new("wasm-opt")
                 .args([
+                    "--enable-bulk-memory",
                     "-Oz",
                     "-o",
                     wasm_path.to_str().unwrap(),
@@ -187,6 +187,7 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
     (worker, contract)
 }
 
+/// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
     pks: Vec<near_crypto::PublicKey>,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
@@ -248,6 +249,25 @@ pub async fn init_with_candidates(
     dbg!(init);
     (worker, contract, accounts)
 }
+pub enum SharedSecretKey {
+    Secp256k1(k256::elliptic_curve::SecretKey<k256::Secp256k1>),
+    Ed25519(KeygenOutput),
+}
+
+pub fn new_secp256k1() -> (
+    near_crypto::PublicKey,
+    k256::elliptic_curve::SecretKey<k256::Secp256k1>,
+) {
+    let sk = k256::SecretKey::random(&mut rand::thread_rng());
+    let pk = sk.public_key();
+    let pk = near_crypto::PublicKey::SECP256K1(
+        near_crypto::Secp256K1PublicKey::try_from(
+            &pk.as_affine().to_encoded_point(false).as_bytes()[1..65],
+        )
+        .unwrap(),
+    );
+    (pk, sk)
+}
 
 pub async fn init_env_secp256k1(
     num_domains: usize,
@@ -255,56 +275,72 @@ pub async fn init_env_secp256k1(
     Worker<Sandbox>,
     Contract,
     Vec<Account>,
-    Vec<k256::SecretKey>,
+    Vec<SharedSecretKey>,
 ) {
-    let mut public_keys = Vec::new();
-    let mut secret_keys = Vec::new();
-    for _ in 0..num_domains {
-        // TODO: Also add some ed25519 keys.
-        let sk = k256::SecretKey::random(&mut rand::thread_rng());
-        let pk = sk.public_key();
-        public_keys.push(near_crypto::PublicKey::SECP256K1(
-            near_crypto::Secp256K1PublicKey::try_from(
-                &pk.as_affine().to_encoded_point(false).as_bytes()[1..65],
-            )
-            .unwrap(),
-        ));
-        secret_keys.push(sk);
-    }
+    let (public_keys, secret_keys) =
+        make_key_for_domains(vec![SignatureScheme::Secp256k1; num_domains]);
     let (worker, contract, accounts) = init_with_candidates(public_keys).await;
 
     (worker, contract, accounts, secret_keys)
 }
 
-pub async fn init_env_ed25519(
-    num_domains: usize,
-) -> (Worker<Sandbox>, Contract, Vec<Account>, Vec<KeygenOutput>) {
+pub fn make_key_for_domains(
+    schemes: Vec<SignatureScheme>,
+) -> (Vec<near_crypto::PublicKey>, Vec<SharedSecretKey>) {
     let mut public_keys = Vec::new();
     let mut secret_keys = Vec::new();
-    for _ in 0..num_domains {
-        let scalar = curve25519_dalek::Scalar::random(&mut OsRng);
-        let private_share = SigningShare::new(scalar);
-        let public_key_element = Ed25519Group::generator() * scalar;
-        let public_key = VerifyingKey::new(public_key_element);
-
-        let keygen_output = KeygenOutput {
-            private_share,
-            public_key,
-        };
-
-        public_keys.push(near_crypto::PublicKey::ED25519(
-            near_crypto::ED25519PublicKey::from(public_key.to_element().compress().to_bytes()),
-        ));
-
-        secret_keys.push(keygen_output);
+    for scheme in schemes {
+        match scheme {
+            SignatureScheme::Secp256k1 => {
+                let (pk, sk) = new_secp256k1();
+                public_keys.push(pk);
+                secret_keys.push(SharedSecretKey::Secp256k1(sk));
+            }
+            SignatureScheme::Ed25519 => {
+                let (pk, sk) = new_ed25519();
+                public_keys.push(pk);
+                secret_keys.push(SharedSecretKey::Ed25519(sk));
+            }
+        }
     }
+    (public_keys, secret_keys)
+}
+
+pub fn new_ed25519() -> (near_crypto::PublicKey, KeygenOutput) {
+    let scalar = curve25519_dalek::Scalar::random(&mut OsRng);
+    let private_share = SigningShare::new(scalar);
+    let public_key_element = Ed25519Group::generator() * scalar;
+    let public_key = VerifyingKey::new(public_key_element);
+
+    let keygen_output = KeygenOutput {
+        private_share,
+        public_key,
+    };
+
+    let pk = near_crypto::PublicKey::ED25519(near_crypto::ED25519PublicKey::from(
+        public_key.to_element().compress().to_bytes(),
+    ));
+
+    (pk, keygen_output)
+}
+
+pub async fn init_env_ed25519(
+    num_domains: usize,
+) -> (
+    Worker<Sandbox>,
+    Contract,
+    Vec<Account>,
+    Vec<SharedSecretKey>,
+) {
+    let (public_keys, secret_keys) =
+        make_key_for_domains(vec![SignatureScheme::Ed25519; num_domains]);
     let (worker, contract, accounts) = init_with_candidates(public_keys).await;
 
     (worker, contract, accounts, secret_keys)
 }
 
 /// Process the message, creating the same hash with type of [`Digest`] and [`Payload`]
-pub async fn process_message(msg: &str) -> (impl Digest, Payload) {
+pub fn process_message(msg: &str) -> (impl Digest, Payload) {
     let msg = msg.as_bytes();
     let digest = <k256::Secp256k1 as ecdsa::hazmat::DigestPrimitive>::Digest::new_with_prefix(msg);
     let bytes: FieldBytes = digest.clone().finalize_fixed();
@@ -315,7 +351,7 @@ pub async fn process_message(msg: &str) -> (impl Digest, Payload) {
 
 pub fn derive_secret_key_secp256k1(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
     let tweak = Scalar::from_repr(tweak.as_bytes().into()).unwrap();
-    SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
+    k256::SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
 }
 
 pub fn derive_secret_key_ed25519(secret_key: &KeygenOutput, tweak: &Tweak) -> KeygenOutput {
@@ -334,9 +370,21 @@ pub async fn create_response(
     predecessor_id: &AccountId,
     msg: &str,
     path: &str,
+    sk: &SharedSecretKey,
+) -> (Payload, SignatureRequest, SignatureResponse) {
+    match sk {
+        SharedSecretKey::Secp256k1(sk) => create_response_secp256k1(predecessor_id, msg, path, sk),
+        SharedSecretKey::Ed25519(sk) => create_response_ed25519(predecessor_id, msg, path, sk),
+    }
+}
+
+pub fn create_response_secp256k1(
+    predecessor_id: &AccountId,
+    msg: &str,
+    path: &str,
     sk: &k256::SecretKey,
 ) -> (Payload, SignatureRequest, SignatureResponse) {
-    let (digest, payload) = process_message(msg).await;
+    let (digest, payload) = process_message(msg);
     let pk = sk.public_key();
 
     let tweak = derive_tweak(predecessor_id, path);
@@ -378,7 +426,7 @@ pub async fn create_response(
     (payload, respond_req, respond_resp)
 }
 
-pub async fn create_response_ed25519(
+pub fn create_response_ed25519(
     predecessor_id: &AccountId,
     msg: &str,
     path: &str,

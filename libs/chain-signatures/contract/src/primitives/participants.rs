@@ -1,7 +1,6 @@
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 use near_sdk::{near, AccountId, PublicKey};
-use std::collections::BTreeSet;
-use std::fmt::Display;
+use std::{collections::BTreeSet, fmt::Display};
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
@@ -45,6 +44,7 @@ impl Default for Participants {
         Self::new()
     }
 }
+
 impl Participants {
     pub fn new() -> Self {
         Participants {
@@ -109,10 +109,6 @@ impl Participants {
         }
         Ok(())
     }
-}
-
-#[cfg(any(test, feature = "test-utils"))]
-impl Participants {
     pub fn init(
         next_id: ParticipantId,
         participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
@@ -122,7 +118,10 @@ impl Participants {
             participants,
         }
     }
+}
 
+#[cfg(any(test, feature = "test-utils"))]
+impl Participants {
     pub fn id(&self, account_id: &AccountId) -> Result<ParticipantId, Error> {
         self.participants
             .iter()
@@ -179,9 +178,10 @@ impl Participants {
 
 #[cfg(test)]
 pub mod tests {
-
-    use crate::primitives::participants::{ParticipantId, Participants};
-    use crate::primitives::test_utils::gen_accounts_and_info;
+    use crate::primitives::{
+        participants::{ParticipantId, Participants},
+        test_utils::gen_accounts_and_info,
+    };
     use rand::Rng;
 
     #[test]
