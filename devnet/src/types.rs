@@ -59,6 +59,8 @@ pub struct MpcNetworkSetup {
     pub num_responding_access_keys: usize,
     pub desired_balance_per_responding_account: u128,
     pub nomad_server_url: Option<String>,
+    #[serde(default)]
+    pub ssd: bool,
 }
 
 impl fmt::Display for MpcNetworkSetup {
@@ -92,9 +94,15 @@ impl fmt::Display for MpcNetworkSetup {
         )?;
 
         match &self.nomad_server_url {
-            Some(url) => writeln!(f, "  Nomad Server URL: {}", url),
-            None => writeln!(f, "  Nomad Server URL: None"),
-        }
+            Some(url) => {
+                writeln!(f, "  Nomad Server URL: {}", url)?;
+            }
+            None => {
+                writeln!(f, "  Nomad Server URL: None")?;
+            }
+        };
+        let disk_type = if self.ssd { "SSD" } else { "HDD" };
+        writeln!(f, " Running on {disk_type}")
     }
 }
 

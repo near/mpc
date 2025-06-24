@@ -59,6 +59,7 @@ async fn export_terraform_vars(
         cluster_prefix: name.to_string(),
         mpc_nodes,
         mpc_contract_signer: contract,
+        ssd: mpc_setup.ssd,
     };
     let terraform_file = serde_json::to_string_pretty(&terraform_file).unwrap();
     let current_dir = std::env::current_dir().unwrap();
@@ -73,6 +74,7 @@ struct TerraformFile {
     cluster_prefix: String,
     mpc_nodes: Vec<TerraformMpcNode>,
     mpc_contract_signer: AccountId,
+    ssd: bool,
 }
 
 #[derive(Serialize)]
