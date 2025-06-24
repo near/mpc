@@ -27,6 +27,7 @@ async fn test_basic_multidomain() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::BASIC_MULTIDOMAIN_TEST,
+        std::time::Duration::from_secs(1),
     );
 
     let mut domains = vec![

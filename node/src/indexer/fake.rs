@@ -253,6 +253,9 @@ struct FakeIndexerCore {
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
     /// code.
     sign_response_sender: mpsc::UnboundedSender<ChainRespondArgs>,
+
+    /// How long to wait before generating the next block.
+    block_time: std::time::Duration,
 }
 
 impl FakeIndexerCore {
@@ -390,7 +393,7 @@ impl FakeIndexerCore {
             }
             self.block_update_sender.send(block_update).ok();
             current_block = block;
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(self.block_time).await;
         }
     }
 }
@@ -555,7 +558,7 @@ impl FakeIndexerOneNode {
 
 impl FakeIndexerManager {
     /// Creates a new fake indexer whose contract state begins with WaitingForSync.
-    pub fn new(clock: Clock, txn_delay_blocks: u64) -> Self {
+    pub fn new(clock: Clock, txn_delay_blocks: u64, block_time: std::time::Duration) -> Self {
         let (txn_sender, txn_receiver) = mpsc::unbounded_channel();
         let (state_change_sender, _) = broadcast::channel(1000);
         let (block_update_sender, _) = broadcast::channel(1000);
@@ -571,6 +574,7 @@ impl FakeIndexerManager {
             state_change_sender: state_change_sender.clone(),
             block_update_sender: block_update_sender.clone(),
             sign_response_sender,
+            block_time
         };
         let core_task = AutoAbortTask::from(tokio::spawn(async move { core.run().await }));
         Self {
