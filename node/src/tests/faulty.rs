@@ -130,7 +130,7 @@ async fn test_faulty_cluster() {
     const REQUESTS: u8 = 100;
     let mut successful_requests = 0;
 
-    for i in (0..REQUESTS) {
+    for _ in 0..REQUESTS {
         let request = request_signature_and_await_response(
             &mut setup.indexer,
             "user2",
