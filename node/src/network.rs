@@ -177,15 +177,13 @@ impl MeshNetworkClient {
     /// This is a subset of all_participant_ids, and includes our own participant ID.
     pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
         let mut result = Vec::new();
-        let my_height = *self
-            .get_indexer_heights()
-            .get(&self.my_participant_id())
-            .unwrap_or(&0);
+        let indexer_heights = self.get_indexer_heights();
+        let my_height = *indexer_heights.get(&self.my_participant_id()).unwrap_or(&0);
         for participant in self.all_participant_ids() {
             if participant == self.my_participant_id() {
                 continue;
             }
-            let peer_height = *self.get_indexer_heights().get(&participant).unwrap_or(&0);
+            let peer_height = *indexer_heights.get(&participant).unwrap_or(&0);
             if my_height <= peer_height + Self::MAX_HEIGHT_DIFF
                 && self
                     .transport_sender
