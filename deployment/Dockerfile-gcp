@@ -9,7 +9,7 @@ COPY rust-toolchain.toml rust-toolchain.toml
 COPY libs/chain-signatures libs/chain-signatures
 COPY third-party-licenses third-party-licenses
 
-RUN cargo build --locked --release
+RUN cargo build -p mpc-node --locked --release
 
 FROM google/cloud-sdk:debian_component_based AS runtime
 RUN apt-get update -y \
