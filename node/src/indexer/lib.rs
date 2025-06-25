@@ -9,12 +9,28 @@ use near_indexer_primitives::views::QueryRequest;
 use near_indexer_primitives::views::QueryResponseKind::CallResult;
 use near_o11y::WithSpanContextExt;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::time;
 
 const INTERVAL: Duration = Duration::from_millis(500);
+const LOG_INTERVAL: Duration = Duration::from_secs(5);
 
 pub(crate) async fn wait_for_full_sync(client: &Addr<ClientActor>) {
+    let mut last_log_instant = Instant::now();
+    let sync_start_time = Instant::now();
     loop {
+        let now = Instant::now();
+        let duration_since_last_log = now.duration_since(last_log_instant);
+
+        if duration_since_last_log > LOG_INTERVAL {
+            let syncing_wait_time = now.duration_since(sync_start_time);
+            tracing::info!(
+                "MPC INDEXER HAS BEEN WAITING FOR SYNC FOR: {:?}",
+                syncing_wait_time
+            );
+            last_log_instant = Instant::now();
+        }
+
         time::sleep(INTERVAL).await;
 
         let Ok(Ok(status)) = client
@@ -29,7 +45,6 @@ pub(crate) async fn wait_for_full_sync(client: &Addr<ClientActor>) {
         else {
             continue;
         };
-
         if !status.sync_info.syncing {
             return;
         }
