@@ -4,6 +4,7 @@ use super::stats::{indexer_logger, IndexerStats};
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
 use crate::config::{load_respond_config_file, IndexerConfig, RespondConfigFile};
+use crate::metrics::MPC_INDEXER_MESSAGES_ON_STREAM;
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
@@ -47,7 +48,21 @@ pub fn spawn_real_indexer(
                     panic!("respond.yaml is provided but failed to parse: {err:?}");
                 }
             };
-            let stream = indexer.streamer();
+            let mut inner_stream = indexer.streamer();
+
+            let buffer_size = inner_stream.max_capacity();
+            let (wrapping_sender, stream) = mpsc::channel(buffer_size);
+
+            tokio::spawn(async move {
+                while let Some(message) = inner_stream.recv().await {
+                    MPC_INDEXER_MESSAGES_ON_STREAM.inc();
+                    let send_result = wrapping_sender.send(message).await;
+                    if send_result.is_err() {
+                        tracing::error!("FAILED TO SEND MESSAGE FROM NEAR CORE INDEXER");                        
+                    }
+                }
+            });
+
             let (view_client, client, tx_processor) = indexer.client_actors();
             let indexer_state = Arc::new(IndexerState::new(
                 view_client,

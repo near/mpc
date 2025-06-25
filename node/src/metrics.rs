@@ -205,3 +205,12 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref MPC_INDEXER_MESSAGES_ON_STREAM: prometheus::IntCounter =
+        prometheus::register_int_counter!(
+            "mpc_indexer_received_message_on_stream",
+            "failed to send on channel in sign_request_channel",
+        )
+        .unwrap();
+}
