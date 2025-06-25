@@ -3,6 +3,8 @@ use cait_sith::ecdsa::triples::TripleGenerationOutput;
 use cait_sith::protocol::{run_protocol, Participant, Protocol};
 use k256::{AffinePoint, Scalar, Secp256k1};
 use std::collections::HashMap;
+use std::time::Instant;
+use tokio::sync::watch;
 
 use crate::config::{
     ConfigFile, IndexerConfig, KeygenConfig, ParticipantsConfig, PresignatureConfig, SecretsConfig,
@@ -202,6 +204,7 @@ impl OneNodeTestConfig {
         } = self;
         let my_account_id = config.my_near_account_id.clone();
         std::fs::create_dir_all(&home_dir)?;
+        let (_sender, receiver) = watch::channel(Instant::now());
         async move {
             let root_future = async move {
                 let root_task_handle = tracking::current_task();
@@ -210,6 +213,7 @@ impl OneNodeTestConfig {
                     root_task_handle,
                     signature_debug_request_sender.clone(),
                     config.web_ui.clone(),
+                    receiver.clone(),
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);

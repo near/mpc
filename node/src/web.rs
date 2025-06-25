@@ -8,8 +8,9 @@ use axum::serve;
 use futures::future::BoxFuture;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::net::TcpListener;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -44,6 +45,7 @@ struct WebServerState {
     root_task_handle: Arc<TaskHandle>,
     /// Sender for debug requests that need the MPC client to respond.
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
+    indexer_sleep_time: watch::Receiver<Instant>,
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
@@ -94,6 +96,19 @@ async fn debug_signatures(state: State<WebServerState>) -> Result<String, Anyhow
     debug_request_from_node(state, SignatureDebugRequestKind::RecentSignatures).await
 }
 
+async fn sleep_time(state: State<WebServerState>) -> String {
+    let indexer_sync_time = state.indexer_sleep_time.borrow();
+    let now = Instant::now();
+
+    let sync_duration = now.duration_since(*indexer_sync_time);
+    let sender_is_alive = state.indexer_sleep_time.has_changed().is_err();
+
+    format!(
+        "Indexer has been waiting for sync for: {:#?}\nIndexer is alive: {:?}",
+        sync_duration, sender_is_alive
+    )
+}
+
 /// Starts the web server. This is an async function that returns a future.
 /// The function itself will return error if the server cannot be started.
 ///
@@ -104,6 +119,7 @@ pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     config: WebUIConfig,
+    indexer_sleep_time: watch::Receiver<Instant>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 
@@ -113,9 +129,11 @@ pub async fn start_web_server(
         .route("/debug/blocks", axum::routing::get(debug_blocks))
         .route("/debug/signatures", axum::routing::get(debug_signatures))
         .route("/health", axum::routing::get(|| async { "OK" }))
+        .route("/sleep_time", axum::routing::get(sleep_time))
         .with_state(WebServerState {
             root_task_handle,
             signature_debug_request_sender,
+            indexer_sleep_time,
         });
 
     let tcp_listener = TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;
