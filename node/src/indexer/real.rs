@@ -8,7 +8,8 @@ use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use std::time::Instant;
+use tokio::sync::{mpsc, oneshot, watch, Mutex};
 
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
 ///
@@ -20,6 +21,7 @@ pub fn spawn_real_indexer(
     my_near_account_id: AccountId,
     account_secret_key: SecretKey,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
+    sleep_time: watch::Sender<Instant>,
 ) -> IndexerAPI {
     let (chain_config_sender, chain_config_receiver) =
         tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
@@ -60,6 +62,7 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
                 indexer_config.port_override,
                 chain_config_sender,
+                sleep_time
             ));
             actix::spawn(indexer_logger(Arc::clone(&stats), indexer_state.view_client.clone()));
             actix::spawn(handle_txn_requests(

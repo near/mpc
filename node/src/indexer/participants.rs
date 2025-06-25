@@ -11,6 +11,8 @@ use mpc_contract::state::ProtocolContractState;
 use std::collections::BTreeSet;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Instant;
+use tokio::sync::watch;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,11 +191,13 @@ pub async fn monitor_chain_state(
     indexer_state: Arc<IndexerState>,
     port_override: Option<u16>,
     contract_state_sender: tokio::sync::watch::Sender<ContractState>,
+    sleep_time: watch::Sender<Instant>,
 ) -> anyhow::Result<()> {
     const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
     let mut prev_state = ContractState::Invalid;
     loop {
-        let result = read_contract_state_from_chain(indexer_state.clone(), port_override).await;
+        let result =
+            read_contract_state_from_chain(indexer_state.clone(), port_override, &sleep_time).await;
         match result {
             Ok(state) => {
                 if state != prev_state {
@@ -213,12 +217,14 @@ pub async fn monitor_chain_state(
 async fn read_contract_state_from_chain(
     indexer_state: Arc<IndexerState>,
     port_override: Option<u16>,
+    sleep_time: &watch::Sender<Instant>,
 ) -> anyhow::Result<ContractState> {
     // We wait first to catch up to the chain to avoid reading the participants from an outdated state.
     // We currently assume the participant set is static and do not detect or support any updates.
     tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
+    let now = Instant::now();
+    let _send_result = sleep_time.send(now);
     wait_for_full_sync(&indexer_state.client).await;
-
     tracing::debug!(target: "indexer", "querying contract state");
     let (height, state) = get_mpc_contract_state(
         indexer_state.mpc_contract_id.clone(),
