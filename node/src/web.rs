@@ -101,10 +101,11 @@ async fn sleep_time(state: State<WebServerState>) -> String {
     let now = Instant::now();
 
     let sync_duration = now.duration_since(*indexer_sync_time);
+    let sender_is_alive = state.indexer_sleep_time.has_changed().is_err();
 
     format!(
-        "Indexer has been waiting for sync for: {:#?}",
-        sync_duration
+        "Indexer has been waiting for sync for: {:#?}\nIndexer is alive: {:?}",
+        sync_duration, sender_is_alive
     )
 }
 
