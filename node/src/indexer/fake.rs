@@ -417,6 +417,8 @@ pub struct FakeIndexerManager {
 
     /// Allows nodes to be disabled during tests. See `disable()`.
     node_disabler: HashMap<AccountId, NodeDisabler>,
+    /// Allows nodes' indexers to be paused during tests.
+    indexer_pauser: HashMap<AccountId, IndexerPauser>,
     /// Allows modification of the contract.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 }
@@ -429,10 +431,20 @@ struct NodeDisabler {
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
 }
 
+/// Allows a node's indexer to be paused.
+struct IndexerPauser {
+    indexer_suspended: watch::Sender<bool>,
+}
+
 /// While holding this, the node remains disabled.
 pub struct DisabledNode {
     disable: Arc<AtomicBool>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
+}
+
+/// While holding this, the node's indexer is paused.
+pub struct PausedIndexer {
+    indexer_suspended: watch::Sender<bool>,
 }
 
 impl DisabledNode {
@@ -462,6 +474,12 @@ impl Drop for DisabledNode {
     }
 }
 
+impl Drop for PausedIndexer {
+    fn drop(&mut self) {
+        self.indexer_suspended.send(false).unwrap();
+    }
+}
+
 /// Runs the fake indexer logic for one node.
 struct FakeIndexerOneNode {
     /// Account under which transactions by this node are originated.
@@ -475,6 +493,8 @@ struct FakeIndexerOneNode {
     /// Whether the node should yield ContractState::Invalid to artificially simulate bringing the
     /// node down.
     disable: Arc<AtomicBool>,
+    /// Whether the indexer shall be suspended.
+    indexer_suspended: watch::Receiver<bool>,
 
     // The following are counterparts of the API channels.
     api_state_sender: watch::Sender<ContractState>,
@@ -490,6 +510,7 @@ impl FakeIndexerOneNode {
             mut core_state_change_receiver,
             mut block_update_receiver,
             disable: shutdown,
+            mut indexer_suspended,
             api_state_sender,
             api_block_update_sender,
             mut api_txn_receiver,
@@ -514,6 +535,10 @@ impl FakeIndexerOneNode {
         let monitor_signature_requests = AutoAbortTask::from(tokio::spawn(async move {
             loop {
                 let request = block_update_receiver.recv().await.unwrap();
+                indexer_suspended
+                    .wait_for(|suspended| !suspended)
+                    .await
+                    .unwrap();
                 api_block_update_sender.send(request).unwrap();
             }
         }));
@@ -556,6 +581,7 @@ impl FakeIndexerManager {
             response_receiver,
             signature_request_sender,
             node_disabler: HashMap::new(),
+            indexer_pauser: HashMap::new(),
             contract,
         }
     }
@@ -598,17 +624,23 @@ impl FakeIndexerManager {
             disable: Arc::new(AtomicBool::new(false)),
             currently_running_job_name: currently_running_job_name.clone(),
         };
+        let (indexer_pauser_sender, indexer_pauser_receiver) = watch::channel(false);
+        let indexer_pauser = IndexerPauser {
+            indexer_suspended: indexer_pauser_sender,
+        };
         let one_node = FakeIndexerOneNode {
             account_id: account_id.clone(),
             core_txn_sender: self.core_txn_sender.clone(),
             core_state_change_receiver: self.core_state_change_sender.subscribe(),
             block_update_receiver: self.core_block_update_sender.subscribe(),
             disable: disabler.disable.clone(),
+            indexer_suspended: indexer_pauser_receiver,
             api_state_sender,
             api_block_update_sender: api_signature_request_sender,
             api_txn_receiver,
         };
-        self.node_disabler.insert(account_id, disabler);
+        self.node_disabler.insert(account_id.clone(), disabler);
+        self.indexer_pauser.insert(account_id, indexer_pauser);
         (
             indexer,
             AutoAbortTask::from(tokio::spawn(one_node.run())),
@@ -650,6 +682,15 @@ impl FakeIndexerManager {
         DisabledNode {
             disable: disable.clone(),
             currently_running_job_name: currently_running_job_name.clone(),
+        }
+    }
+
+    /// Pauses a node's indexer, in order to test resilience to indexer being stuck.
+    pub async fn pause_indexer(&self, account_id: AccountId) -> PausedIndexer {
+        let indexer_pauser = self.indexer_pauser.get(&account_id).unwrap();
+        indexer_pauser.indexer_suspended.send(true).unwrap();
+        PausedIndexer {
+            indexer_suspended: indexer_pauser.indexer_suspended.clone(),
         }
     }
 
