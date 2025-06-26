@@ -29,16 +29,14 @@ pub fn spawn_real_indexer(
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
 
-    // TODO(#156): replace actix with tokio
+    let (oneshot_sender, oneshot_receiver) = oneshot::channel();
     std::thread::spawn(move || {
         // Create a new runtime. Suspect current runtime indexer is running on is blocked.
         let wrapping_runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap();
 
-        let (oneshot_sender, oneshot_receiver) = oneshot::channel();
-
-        wrapping_runtime.spawn(async move {
+        wrapping_runtime.block_on(async move {
             let (mut inner_stream, wrapping_sender): (
                 mpsc::Receiver<near_indexer::StreamerMessage>,
                 mpsc::Sender<near_indexer::StreamerMessage>,
@@ -54,7 +52,10 @@ pub fn spawn_real_indexer(
                 }
             }
         });
+    });
 
+    // TODO(#156): replace actix with tokio
+    std::thread::spawn(move || {
         actix::System::new().block_on(async {
             let indexer =
                 near_indexer::Indexer::new(indexer_config.to_near_indexer_config(home_dir.clone()))
