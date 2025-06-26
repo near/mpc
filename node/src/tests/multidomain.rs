@@ -96,16 +96,20 @@ async fn test_basic_multidomain() {
     }
 
     // give nodes time to enter resharing so we don't lose the request.
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_millis(1000)).await;
 
     for domain in &domains {
-        assert!(request_signature_and_await_response(
-            &mut setup.indexer,
-            &format!("user{}", domain.id.0),
-            domain,
-            std::time::Duration::from_secs(60)
-        )
-        .await
-        .is_some());
+        assert!(
+            request_signature_and_await_response(
+                &mut setup.indexer,
+                &format!("user{}", domain.id.0),
+                domain,
+                std::time::Duration::from_secs(60)
+            )
+            .await
+            .is_some(),
+            "failing for domain {}",
+            domain.id.0
+        );
     }
 }
