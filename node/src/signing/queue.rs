@@ -434,6 +434,7 @@ impl PendingSignatureRequests {
 #[cfg(test)]
 mod tests {
     use super::{NetworkAPIForSigning, PendingSignatureRequests, QueuedSignatureRequest};
+    use crate::cli::LogFormat;
     use crate::primitives::ParticipantId;
     use crate::sign_request::SignatureRequest;
     use crate::signing::queue::{
@@ -525,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_pending_signature_requests_leader_retry() {
-        init_logging();
+        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants = TestGenerators::new_contiguous_participant_ids(4, 3).participant_ids();
         let my_participant_id = participants[1];
@@ -623,7 +624,7 @@ mod tests {
 
     #[test]
     fn test_pending_signature_requests_abort_after_maximum_attempts() {
-        init_logging();
+        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants = TestGenerators::new_contiguous_participant_ids(4, 3).participant_ids();
         let my_participant_id = participants[1];
@@ -660,7 +661,7 @@ mod tests {
 
     #[test]
     fn test_pending_signature_requests_discard_old_and_non_canonical_requests() {
-        init_logging();
+        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants = TestGenerators::new_contiguous_participant_ids(4, 3).participant_ids();
         let my_participant_id = participants[1];
@@ -739,7 +740,7 @@ mod tests {
 
     #[test]
     fn test_pending_signature_requests_fallback_leader() {
-        init_logging();
+        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants = TestGenerators::new_contiguous_participant_ids(4, 3).participant_ids();
         let my_participant_id = participants[1];
