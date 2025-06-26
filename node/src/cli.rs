@@ -19,7 +19,7 @@ use crate::{
     web::start_web_server,
 };
 use anyhow::{anyhow, Context};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::tee::tee_participant::TeeParticipantInfo;
@@ -44,7 +44,28 @@ use {
 };
 
 #[derive(Parser, Debug)]
-pub enum Cli {
+pub struct Cli {
+    #[clap(
+        long,
+        value_enum,
+        env("MPC_LOG_FORMAT"),
+        global = true,
+        default_value = "plain",
+        help = "Log format: plain or json"
+    )]
+    pub log_format: LogFormat,
+    #[clap(subcommand)]
+    pub command: CliCommand,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum LogFormat {
+    Plain,
+    Json,
+}
+
+#[derive(Parser, Debug)]
+pub enum CliCommand {
     Start(StartCmd),
     /// Generates/downloads required files for Near node to run
     Init(InitConfigArgs),
@@ -341,9 +362,9 @@ impl StartCmd {
 
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
-        match self {
-            Cli::Start(start) => start.run().await,
-            Cli::Init(config) => near_indexer::init_configs(
+        match self.command {
+            CliCommand::Start(start) => start.run().await,
+            CliCommand::Init(config) => near_indexer::init_configs(
                 &config.dir,
                 config.chain_id,
                 None,
@@ -362,9 +383,9 @@ impl Cli {
                 None,
                 None,
             ),
-            Cli::ImportKeyshare(cmd) => cmd.run().await,
-            Cli::ExportKeyshare(cmd) => cmd.run().await,
-            Cli::GenerateTestConfigs {
+            CliCommand::ImportKeyshare(cmd) => cmd.run().await,
+            CliCommand::ExportKeyshare(cmd) => cmd.run().await,
+            CliCommand::GenerateTestConfigs {
                 ref output_dir,
                 ref participants,
                 ref responders,
