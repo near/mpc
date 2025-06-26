@@ -4,7 +4,7 @@ use super::stats::{indexer_logger, IndexerStats};
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
 use crate::config::{load_respond_config_file, IndexerConfig, RespondConfigFile};
-use crate::metrics::MPC_INDEXER_MESSAGES_ON_STREAM;
+use crate::metrics::{MPC_INDEXER_MESSAGES_ON_STREAM, MPC_INDEXER_MESSAGES_STREAM_CAPACITY};
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
@@ -56,6 +56,8 @@ pub fn spawn_real_indexer(
             tokio::spawn(async move {
                 while let Some(message) = inner_stream.recv().await {
                     MPC_INDEXER_MESSAGES_ON_STREAM.inc();
+                    let stream_capacity = inner_stream.capacity();
+                    MPC_INDEXER_MESSAGES_STREAM_CAPACITY.set(stream_capacity as i64);
                     let send_result = wrapping_sender.send(message).await;
                     if send_result.is_err() {
                         tracing::error!("FAILED TO SEND MESSAGE FROM NEAR CORE INDEXER");                        

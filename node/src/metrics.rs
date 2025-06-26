@@ -214,3 +214,12 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref MPC_INDEXER_MESSAGES_STREAM_CAPACITY: prometheus::IntGauge =
+        prometheus::register_int_gauge!(
+            "mpc_indexer_messages_stream_capacity",
+            "Current capacity of channel of messages from near core indexer."
+        )
+        .unwrap();
+}
