@@ -51,6 +51,8 @@ x509-parser = "0.16.0"
 
 curve25519-dalek = "4.1.3"
 
+# `d11003a9c59807a4f78f0ac49c69b831933a50f1` is from the [ignore-announce-accounts](https://github.com/near/nearcore/tree/ignore-announce-accounts) branch,
+# containing a stability fix. Once this has been released, we can depend on a normal release again.
 near-indexer = { git = "https://github.com/near/nearcore", rev = "d11003a9c59807a4f78f0ac49c69b831933a50f1" }
 near-indexer-primitives = { git = "https://github.com/near/nearcore", rev = "d11003a9c59807a4f78f0ac49c69b831933a50f1" }
 near-client = { git = "https://github.com/near/nearcore", rev = "d11003a9c59807a4f78f0ac49c69b831933a50f1" }
