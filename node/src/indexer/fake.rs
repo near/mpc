@@ -381,6 +381,7 @@ impl FakeIndexerCore {
                         contract.vote_abort_key_event(account_id, abort.key_event_id);
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
+                    #[cfg(feature = "tee")]
                     ChainSendTransactionRequest::SubmitRemoteAttestation(_tee_attestation) => {
                         unimplemented!(
                             "Submitting remote attestation is not implemented for tests yet."
