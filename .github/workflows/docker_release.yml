@@ -31,6 +31,13 @@ jobs:
         run: |
           echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
   
+      - name: Sanitize build-ref for Docker tags
+        shell: bash
+        run: |
+          # Replace forward slashes with hyphens to create valid Docker tags
+          sanitized_ref=$(echo "${{ github.event.inputs.build-ref }}" | sed 's/\//-/g')
+          echo "sanitized_ref=$sanitized_ref" >> "$GITHUB_ENV"
+
       - name: Initialize submodules
         run: git submodule update --init --recursive
 
@@ -47,4 +54,4 @@ jobs:
           profile-name: "mpc-image-builder"
           push: true
           file: deployment/Dockerfile-gcp
-          tags: nearone/mpc-node-gcp:latest,nearone/mpc-node-gcp:${{ github.event.inputs.build-ref }},nearone/mpc-node-gcp:${{ github.event.inputs.build-ref }}-${{ env.sha_short }}
+          tags: nearone/mpc-node-gcp:latest,nearone/mpc-node-gcp:${{ env.sanitized_ref }},nearone/mpc-node-gcp:${{ env.sanitized_ref }}-${{ env.sha_short }}
