@@ -33,6 +33,7 @@ mod tee;
 mod tests;
 
 fn main() -> anyhow::Result<()> {
-    init_logging();
-    futures::executor::block_on(cli::Cli::parse().run())
+    let cli = cli::Cli::parse();
+    init_logging(cli.log_format);
+    futures::executor::block_on(cli.run())
 }

@@ -52,7 +52,7 @@ tokio-util = { version = "0.7.12", features = ["time"] }
 tokio-rustls = { version = "0.26.1", default-features = false }
 tokio-stream = { version = "0.1" }
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "fmt", "std", "json"] }
 url = "2"
 x509-parser = "0.16.0"
 
