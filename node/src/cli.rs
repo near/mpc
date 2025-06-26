@@ -189,6 +189,7 @@ impl StartCmd {
             web_contract_sender,
             indexer_exit_sender,
         );
+        tracing::info!("spawned real indexer");
 
         let root_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -203,15 +204,40 @@ impl StartCmd {
 
         #[cfg(feature = "tee")]
         let image_hash_watcher_handle = {
-            let current_image_hash_bytes: [u8; 32] = hex::decode(self.tee_config.image_hash)
-                .expect("The currently running image is a hex string.")
-                .try_into()
-                .expect("The currently running image hash hex representation is 32 bytes.");
+            tracing::info!(target: "TEE", "setting up monitoring");
 
+            let current_image_hash_bytes: [u8; 32] =
+                match hex::decode(self.tee_config.image_hash.clone()) {
+                    Ok(res) => match res.try_into() {
+                        Ok(res) => res,
+                        Err(_) => {
+                            cancellation_token.cancel();
+                            tracing::error!("can't convert {}", self.tee_config.image_hash);
+                            panic!("conversion error");
+                        }
+                    },
+                    Err(e) => {
+                        cancellation_token.cancel();
+                        tracing::error!("TEE: {} for hash: {}", e, self.tee_config.image_hash);
+                        panic!("{}", e);
+                    }
+                };
+
+            tracing::info!(target: "TEE", "image hash: {}", self.tee_config.image_hash);
             let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
+            tracing::info!(target: "TEE", "cloned receiver");
             let image_hash_storage =
-                AllowedImageHashesFile::new(self.tee_config.latest_allowed_hash_file).await?;
+                AllowedImageHashesFile::new(self.tee_config.latest_allowed_hash_file).await;
+            tracing::info!(target: "TEE", "image hash store found");
+            let image_hash_storage = match image_hash_storage {
+                Ok(x) => x,
+                Err(e) => {
+                    tracing::error!("error reading file: {}", e);
+                    Err(e)?
+                }
+            };
 
+            tracing::info!(target: "TEE", "got hash file");
             tokio::spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
                 MpcDockerImageHash::from(current_image_hash_bytes),
@@ -220,6 +246,7 @@ impl StartCmd {
                 shutdown_signal_sender,
             ))
         };
+        tracing::info!(target: "mpc", "reading secrets");
 
         let secrets = SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets)?;
         let root_future = Self::create_root_future(
@@ -231,17 +258,21 @@ impl StartCmd {
             self.gcp_project_id.clone(),
             web_contract_receiver,
         );
+        tracing::info!(target: "mpc", "set up root future");
 
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
+        tracing::info!(target: "mpc", "spawned root future");
 
         let exit_reason = tokio::select! {
             root_task_result = root_task => {
                 root_task_result?
             }
             indexer_exit_response = indexer_exit_receiver => {
+                tracing::info!(target: "mpc", "indexer thread dropped response channel.");
                 indexer_exit_response.context("Indexer thread dropped response channel.")?
             }
             Some(()) = shutdown_signal_receiver.recv() => {
+                tracing::info!(target: "mpc", "TEE allowed image hashes watcher is sending shutdown signal");
                 Err(anyhow!("TEE allowed image hashes watcher is sending shutdown signal."))
             }
         };
@@ -251,7 +282,7 @@ impl StartCmd {
 
         #[cfg(feature = "tee")]
         {
-            info!("Waiting for image hash watcher to gracefully exit.");
+            info!(target: "tee", "Waiting for image hash watcher to gracefully exit.");
             let exit_result = image_hash_watcher_handle.await;
             info!(?exit_result, "Image hash watcher exited.");
         }
@@ -276,6 +307,7 @@ impl StartCmd {
         let mut report_data_contract: Option<TeeParticipantInfo> = None;
         #[cfg(feature = "tee")]
         {
+            tracing::info!("[TEE] running inside tee");
             let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();
             let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
             let report_data =
@@ -315,6 +347,7 @@ impl StartCmd {
         // submit remote attestation
         #[cfg(feature = "tee")]
         {
+            tracing::info!("[TEE] running inside submitting remote attestation");
             let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
 
             submit_remote_attestation(

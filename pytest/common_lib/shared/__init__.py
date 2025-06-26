@@ -263,7 +263,7 @@ def start_cluster_with_mpc(
 
     (key, nonce) = cluster.contract_node.get_key_and_nonce()
     nonce += 1
-    mpc_nodes = []
+    mpc_nodes: list[MpcNode] = []
     for near_node, candidate in zip(observers, candidates):
 
         # add the nodes access key to the list

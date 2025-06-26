@@ -107,10 +107,24 @@ class MpcNode(NearAccount):
         assert not self.is_running
         self.is_running = True
         extra_env = {
+            'DSTACK_SIMULATOR_ENDPOINT':
+            '~/near/tee/dstack/sdk/simulator/dstack-simulator',
             'RUST_LOG': 'INFO',  # mpc-node produces too much output on DEBUG
             'MPC_SECRET_STORE_KEY': self.secret_store_key,
         }
-        cmd = (MPC_BINARY_PATH, 'start', '--home-dir', self.home_dir)
+        label = b"dummy-hash"
+        padded = label.ljust(32, b'\x00')  # pad with null bytes to 32 bytes
+        hex_str = padded.hex()
+        cmd = (
+            MPC_BINARY_PATH,
+            'start',
+            '--home-dir',
+            self.home_dir,
+            '--image-hash',
+            hex_str,
+            '--latest-allowed-hash-file',
+            'allowed_hashes.txt',
+        )
         self.near_node.run_cmd(cmd=cmd, extra_env=extra_env)
 
     def kill(self, gentle=True):

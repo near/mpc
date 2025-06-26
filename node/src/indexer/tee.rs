@@ -21,7 +21,7 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 pub async fn monitor_allowed_docker_images(
     indexer_state: Arc<IndexerState>,
 ) -> watch::Receiver<Vec<AllowedDockerImageHash>> {
-    tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
+    tracing::info!(target: "indexer", "awaiting full sync to read mpc contract state");
     wait_for_full_sync(&indexer_state.client).await;
 
     let fetch_allowed_image_hashes = {
@@ -43,6 +43,7 @@ pub async fn monitor_allowed_docker_images(
                     Ok((block_height, mut allowed_images_on_contract)) => {
                         let allowed_images: Vec<AllowedDockerImageHash> =
                             allowed_images_on_contract.get(block_height);
+                        tracing::info!(target: "mpc", "got tee state from chain: {:?}", allowed_images_on_contract);
                         break allowed_images;
                     }
                     Err(e) => {

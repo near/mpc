@@ -10,7 +10,7 @@ use near_crypto::PublicKey;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
-use std::{future::Future, time::Duration};
+use std::{env, future::Future, time::Duration};
 use tokio::sync::mpsc;
 use tracing::error;
 
@@ -19,7 +19,7 @@ use crate::indexer::types::{ChainSendTransactionRequest, ProposeJoinArgs};
 /// Endpoint to contact dstack service.
 /// Set to [`None`] which defaults to `/var/run/dstack.sock`
 const ENDPOINT: Option<&str> = None;
-/// URL for usbmission of tdx quote. Returns collateral to be used for verification.
+/// URL for submission of tdx quote. Returns collateral to be used for verification.
 const PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
 /// Expected HTTP [`StatusCode`] for a successful submission.
 const PHALA_SUCCESS_STATUS_CODE: StatusCode = StatusCode::OK;
@@ -103,10 +103,18 @@ pub async fn create_remote_attestation_info(
     tls_public_key: &PublicKey,
     account_public_key: &PublicKey,
 ) -> TeeAttestation {
+    match env::var("DSTACK_SIMULATOR_ENDPOINT") {
+        Ok(val) => tracing::info!("[TEE] DSTACK_SIMULATOR_ENDPOINT = {}", val),
+        Err(e) => tracing::info!("[TEE] Couldn't read DSTACK_SIMULATOR_ENDPOINT: {}", e),
+    }
     let client = DstackClient::new(ENDPOINT);
 
     let client_info_response = get_with_backoff(|| client.info(), "dstack client info").await;
     let tcb_info = client_info_response.tcb_info;
+    tracing::info!(
+        "[TEE] tcb_info: {}",
+        serde_json::to_string_pretty(&tcb_info).unwrap(),
+    );
 
     let report_data: [u8; REPORT_DATA_SIZE] = {
         let mut report_data = [0u8; REPORT_DATA_SIZE];
@@ -134,6 +142,7 @@ pub async fn create_remote_attestation_info(
     .quote
     .encode_hex();
 
+    tracing::info!("[TEE] tdx_quote: {}", tdx_quote);
     let quote_upload_response = {
         let reqwest_client = reqwest::Client::new();
         let tdx_quote = tdx_quote.clone();
@@ -163,6 +172,8 @@ pub async fn create_remote_attestation_info(
     };
 
     let collateral = quote_upload_response.quote_collateral;
+    tracing::info!("[TEE] collateral: {}", collateral);
+
     TeeAttestation {
         tdx_quote,
         tcb_info,

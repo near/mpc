@@ -147,6 +147,7 @@ class MpcCluster:
             assert_contract=False
         )  # do not assert when contract is not initialized
         self.init_contract(threshold=threshold)
+        time.sleep(60)
         self.add_domains(domains, ignore_vote_errors=False)
 
     def define_candidate_set(self, mpc_nodes: List[MpcNode]):
