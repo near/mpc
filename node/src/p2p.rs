@@ -711,6 +711,7 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    use crate::cli::LogFormat;
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::raw_ed25519_secret_key_to_keypair;
     use crate::p2p::testing::{
@@ -736,7 +737,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_basic_tls_mesh_network() {
-        init_logging();
+        init_logging(LogFormat::Plain);
         let configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
@@ -833,7 +834,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wait_for_ready() {
-        init_logging();
+        init_logging(LogFormat::Plain);
         let mut configs = generate_test_p2p_configs(
             &[
                 "test0".parse().unwrap(),
