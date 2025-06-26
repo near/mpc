@@ -282,6 +282,7 @@ impl<const N: usize> MpcLeaderCentricComputation<()>
 #[cfg(test)]
 mod tests_many {
     use super::{ManyTripleGenerationComputation, PairedTriple};
+    use crate::cli::LogFormat;
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -303,7 +304,7 @@ mod tests_many {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_many_triple_generation() {
-        init_logging();
+        init_logging(LogFormat::Plain);
         tracking::testing::start_root_task_with_periodic_dump(async {
             let all_triples = run_test_clients(
                 TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD).participant_ids(),
