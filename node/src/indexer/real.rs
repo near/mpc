@@ -35,6 +35,26 @@ pub fn spawn_real_indexer(
         let wrapping_runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap();
+
+        let (oneshot_sender, oneshot_receiver) = oneshot::channel();
+
+        wrapping_runtime.spawn(async move {
+            let (mut inner_stream, wrapping_sender): (
+                mpsc::Receiver<near_indexer::StreamerMessage>,
+                mpsc::Sender<near_indexer::StreamerMessage>,
+            ) = oneshot_receiver.await.unwrap();
+
+            while let Some(message) = inner_stream.recv().await {
+                MPC_INDEXER_MESSAGES_ON_STREAM.inc();
+                let stream_capacity = inner_stream.capacity();
+                MPC_INDEXER_MESSAGES_STREAM_CAPACITY.set(stream_capacity as i64);
+                let send_result = wrapping_sender.send(message).await;
+                if send_result.is_err() {
+                    tracing::error!("FAILED TO SEND MESSAGE FROM NEAR CORE INDEXER");
+                }
+            }
+        });
+
         actix::System::new().block_on(async {
             let indexer =
                 near_indexer::Indexer::new(indexer_config.to_near_indexer_config(home_dir.clone()))
@@ -52,22 +72,11 @@ pub fn spawn_real_indexer(
                     panic!("respond.yaml is provided but failed to parse: {err:?}");
                 }
             };
-            let mut inner_stream = indexer.streamer();
 
+            let inner_stream: mpsc::Receiver<near_indexer::StreamerMessage> = indexer.streamer();
             let buffer_size = inner_stream.max_capacity();
             let (wrapping_sender, stream) = mpsc::channel(buffer_size);
-
-            wrapping_runtime.spawn(async move {
-                while let Some(message) = inner_stream.recv().await {
-                    MPC_INDEXER_MESSAGES_ON_STREAM.inc();
-                    let stream_capacity = inner_stream.capacity();
-                    MPC_INDEXER_MESSAGES_STREAM_CAPACITY.set(stream_capacity as i64);
-                    let send_result = wrapping_sender.send(message).await;
-                    if send_result.is_err() {
-                        tracing::error!("FAILED TO SEND MESSAGE FROM NEAR CORE INDEXER");                        
-                    }
-                }
-            });
+            let _ = oneshot_sender.send((inner_stream, wrapping_sender));
 
             let (view_client, client, tx_processor) = indexer.client_actors();
             let indexer_state = Arc::new(IndexerState::new(
