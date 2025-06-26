@@ -29,6 +29,11 @@ pub fn spawn_real_indexer(
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
 
+    // Create a new runtime. Suspect current runtime indexer is running on is blocked.
+    let wrapping_runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+
     // TODO(#156): replace actix with tokio
     std::thread::spawn(move || {
         actix::System::new().block_on(async {
@@ -53,7 +58,7 @@ pub fn spawn_real_indexer(
             let buffer_size = inner_stream.max_capacity();
             let (wrapping_sender, stream) = mpsc::channel(buffer_size);
 
-            tokio::spawn(async move {
+            wrapping_runtime.spawn(async move {
                 while let Some(message) = inner_stream.recv().await {
                     MPC_INDEXER_MESSAGES_ON_STREAM.inc();
                     let stream_capacity = inner_stream.capacity();
