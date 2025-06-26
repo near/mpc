@@ -63,8 +63,6 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
 
 #[derive(Error, Debug)]
 pub enum ExitError {
-    #[error("The local image that is running is not in the set of allowed image hashes on the contract.")]
-    RunningImageIsDisallowed,
     #[error("Could not write to the provided storage provider.")]
     StorageProviderError(#[from] io::Error),
     #[error(
@@ -177,10 +175,10 @@ where
         if local_image_is_allowed {
             Ok(())
         } else {
-            warn!(
+            error!(
                 "Current node image not in set of allowed image hashes. Sending shut down signal."
             );
-            Err(ExitError::RunningImageIsDisallowed)
+            Ok(())
         }
     }
 }
@@ -274,7 +272,7 @@ mod tests {
 
     #[rstest]
     #[case::image_is_allowed(image_hash_1().image_hash, vec![image_hash_1()])]
-    // `StorageProviderError` is returned instead of `RunningImageDisallowed`.
+    /// - `ErrorKind::StorageProviderError` is returned also if current image is disallowed.
     #[case::image_is_disallowed(image_hash_2().image_hash, vec![image_hash_1()])]
     #[tokio::test]
     async fn test_shutdown_signal_is_sent_on_write_error(
@@ -336,7 +334,7 @@ mod tests {
                 });
         }
 
-        let join_handle = tokio::spawn(monitor_allowed_image_hashes(
+        let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token,
             current_image,
             receiver,
@@ -344,25 +342,15 @@ mod tests {
             sender_shutdown,
         ));
 
-        write_is_called
-            .notified()
-            .timeout(TEST_TIMEOUT_DURATION)
-            .await
-            .expect("Event loop responds within timeout.");
-
-        let exit_reason = join_handle
-            .timeout(TEST_TIMEOUT_DURATION)
-            .await
-            .expect("Event loop responds exits within timeout.")
-            .unwrap();
-
-        assert_matches!(exit_reason, Err(ExitError::RunningImageIsDisallowed));
+        write_is_called.notified().await;
 
         assert_matches!(
             receiver_shutdown.try_recv(),
-            Ok(()),
-            "Shutdown signal should be sent when running image is disallowed."
+            Err(TryRecvError::Empty),
+            "Shutdown signal was sent unexpectedly."
         );
+        let event_loop_is_alive = !receiver_shutdown.is_closed();
+        assert!(event_loop_is_alive, "Event loop should be running.");
     }
 
     #[tokio::test]
