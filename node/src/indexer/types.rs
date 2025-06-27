@@ -129,7 +129,7 @@ pub struct ProposeJoinArgs {
 /// Request to send a transaction to the contract on chain.
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
-pub enum ChainSendTransactionRequest {
+pub(crate) enum ChainSendTransactionRequest {
     Respond(ChainRespondArgs),
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
