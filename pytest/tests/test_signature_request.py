@@ -7,6 +7,7 @@ Verifies that the mpc nodes index the signature request.
 Waits for the signature responses. Fails if timeout is reached.
 """
 
+from hashlib import sha256
 import sys
 import pathlib
 import argparse
@@ -14,13 +15,21 @@ import pytest
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
-from common_lib.contracts import load_mpc_contract
+from common_lib.contracts import fetch_testnet_contract, load_mpc_contract
 
 
 @pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
 def test_signature_lifecycle(num_requests, num_respond_access_keys):
+    contract = load_mpc_contract()
+    #contract = fetch_testnet_contract()
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2, 3, num_respond_access_keys, load_mpc_contract())
+        2,
+        3,
+        num_respond_access_keys,
+        contract,
+    )
+    hash = cluster.get_deployed_contract_hash()
+    print(f"deployed contract: {hash}")
     cluster.init_cluster(mpc_nodes, 2)
     # removing one node should not be a problem.
     mpc_nodes[0].kill(False)

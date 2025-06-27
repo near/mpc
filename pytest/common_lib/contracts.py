@@ -2,12 +2,13 @@ import json
 import base64
 from utils import load_binary_file, requests
 from enum import Enum
-from borsh_construct import Vec, U8, CStruct, U64, Option, U32
+from borsh_construct import Vec, U8, CStruct, U64, Option
 from .constants import MPC_REPO_DIR
 
 COMPILED_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'res' / 'mpc_contract.wasm'
 MIGRATE_CURRENT_CONTRACT_PATH = MPC_REPO_DIR / 'pytest' / 'tests' / 'test_contracts' / 'migration' / 'migration_contract.wasm'
-TESTNET_ACCOUNT_ID = "v1.signer-prod.testnet"
+#TESTNET_ACCOUNT_ID = "v1.signer-prod.testnet"
+TESTNET_ACCOUNT_ID = "mpc-contract-pat-tee-test-1-25d75144fab2.1c1831304da3.testnet"
 MAINNET_ACCOUNT_ID = "v1.signer"
 
 

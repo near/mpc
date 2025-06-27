@@ -221,6 +221,7 @@ class MpcCluster:
             args.update(additional_init_args)
         tx = self.contract_node.sign_tx(self.contract_node.account_id(),
                                         'init', args)
+        print(f"sending tx:\n{json.dumps(args, indent=' ')}")
         self.contract_node.send_txn_and_check_success(tx)
         assert self.wait_for_state('Running'), "expected running state"
 
