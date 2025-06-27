@@ -51,15 +51,15 @@ x509-parser = "0.16.0"
 
 curve25519-dalek = "4.1.3"
 
-# `d11003a9c59807a4f78f0ac49c69b831933a50f1` is from the [ignore-announce-accounts](https://github.com/near/nearcore/tree/ignore-announce-accounts) branch,
-# containing a stability fix. Once this has been released, we can depend on a normal release again.
-near-indexer = { git = "https://github.com/near/nearcore", rev = "d11003a9c59807a4f78f0ac49c69b831933a50f1" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", rev = "d11003a9c59807a4f78f0ac49c69b831933a50f1" }
-near-client = { git = "https://github.com/near/nearcore", rev = "d11003a9c59807a4f78f0ac49c69b831933a50f1" }
-near-config-utils = { git = "https://github.com/near/nearcore", rev = "d11003a9c59807a4f78f0ac49c69b831933a50f1" }
-near-crypto = { git = "https://github.com/near/nearcore", rev = "d11003a9c59807a4f78f0ac49c69b831933a50f1" }
-near-o11y = { git = "https://github.com/near/nearcore", rev = "d11003a9c59807a4f78f0ac49c69b831933a50f1" }
-near-time = { git = "https://github.com/near/nearcore", rev = "d11003a9c59807a4f78f0ac49c69b831933a50f1" }
+# `4d0e3f7898c043da4d0f786b54db02050c827132` is from the [kd/indexer-logs](https://github.com/near/nearcore/tree/kd/indexer-logs) branch,
+# containing a stability fix and additional logs. (c.f. [diff to 2.6.3 release](https://github.com/near/nearcore/compare/2.6.3...kd/indexer-logs))
+near-indexer = { git = "https://github.com/near/nearcore", rev = "4d0e3f7898c043da4d0f786b54db02050c827132" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", rev = "4d0e3f7898c043da4d0f786b54db02050c827132" }
+near-client = { git = "https://github.com/near/nearcore", rev = "4d0e3f7898c043da4d0f786b54db02050c827132" }
+near-config-utils = { git = "https://github.com/near/nearcore", rev = "4d0e3f7898c043da4d0f786b54db02050c827132" }
+near-crypto = { git = "https://github.com/near/nearcore", rev = "4d0e3f7898c043da4d0f786b54db02050c827132" }
+near-o11y = { git = "https://github.com/near/nearcore", rev = "4d0e3f7898c043da4d0f786b54db02050c827132" }
+near-time = { git = "https://github.com/near/nearcore", rev = "4d0e3f7898c043da4d0f786b54db02050c827132" }
 # todo: update once 1.1.0 is pulbished (though the api did not change)
 legacy-mpc-contract = { package = "mpc-contract", git = "https://github.com/Near-One/mpc/", rev = "1d4954dff28e8eb988fb7762eff414a602a2b124" }
 mpc-contract = { path = "../libs/chain-signatures/contract/" }
