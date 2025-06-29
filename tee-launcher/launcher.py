@@ -43,6 +43,39 @@ DEFAULT_LAUNCHER_IMAGE_TAG = 'latest'
 # the unix socket to communicate with Dstack
 DSTACK_UNIX_SOCKET = '/var/run/dstack.sock'
 
+# Example of .user-config file format:
+#
+# MPC_ACCOUNT_ID=mpc-user-123
+# MPC_LOCAL_ADDRESS=127.0.0.1
+# MPC_SECRET_STORE_KEY=secret
+# MPC_CONTRACT_ID=mpc-contract
+# MPC_ENV=testnet
+# MPC_HOME_DIR=/data
+# NEAR_BOOT_NODES=boot1,boot2
+# RUST_BACKTRACE=1
+# RUST_LOG=info
+# MPC_RESPONDER_ID=responder-xyz
+# IMAGE_HASH=sha256:abc123...
+# LATEST_ALLOWED_HASH_FILE=/mnt/shared/image-digest
+# EXTRA_HOSTS=host1:192.168.0.1,host2:192.168.0.2
+# PORTS=11780:11780,2200:2200
+
+# Define an allow-list of permitted environment variables:
+ALLOWED_ENV_VARS = {
+    "MPC_ACCOUNT_ID",          # ID of the MPC account on the network
+    "MPC_LOCAL_ADDRESS",       # Local IP address or hostname used by the MPC node
+    "MPC_SECRET_STORE_KEY",    # Key used to encrypt/decrypt secrets
+    "MPC_CONTRACT_ID",         # Contract ID associated with the MPC node
+    "MPC_ENV",                 # Environment (e.g., 'testnet', 'mainnet')
+    "MPC_HOME_DIR",            # Home directory for the MPC node
+    "NEAR_BOOT_NODES",         # Comma-separated list of boot nodes
+    "RUST_BACKTRACE",          # Enables backtraces for Rust errors
+    "RUST_LOG",                # Logging level for Rust code
+    "MPC_RESPONDER_ID",        # Unique responder ID for MPC communication
+    "IMAGE_HASH",              # Digest of the Docker image to verify integrity
+    "LATEST_ALLOWED_HASH_FILE" # Path to the shared digest file
+}
+
 
 def is_non_empty_and_cleaned(val: str) -> bool:
     if not isinstance(val, str):
@@ -263,14 +296,33 @@ def main():
     # Build the docker command we use to start the app, i.e., mpc node
     docker_cmd = ['docker', 'run']
 
-    env_file = '/tapp/.host-shared/.user-config'
-    if os.path.isfile(env_file):
-        docker_cmd += ['--env-file', env_file]
+    #load environment variables from the user config file
+    # We allow only a limited set of environment variables to be passed to the container.
+    # This is to prevent users from passing sensitive information or modifying the container's behavior in unexpected ways.
+    # The allowed environment variables are defined in ALLOWED_ENV_VARS.
+    user_env_file = '/tapp/.host-shared/.user-config'
+    if os.path.isfile(user_env_file):
+        user_env = parse_env_file(user_env_file)
+        for key, value in user_env.items():
+            if key in ALLOWED_ENV_VARS:
+                docker_cmd += ['--env', f'{key}={value}']
+            elif key == "EXTRA_HOSTS":
+                # Allow optional host entries in the same file, comma-separated
+                for host_entry in value.split(','):
+                    clean_host = host_entry.strip()
+                    if clean_host:
+                        docker_cmd += ['--add-host', clean_host]
+            elif key == "PORTS":
+                # Allow port bindings in format "host:container" (comma-separated)
+                for port_pair in value.split(','):
+                    clean_port = port_pair.strip()
+                    if clean_port:
+                        docker_cmd += ['-p', clean_port]
+            else:
+                logging.warning(f"Ignoring unauthorized environment variable: {key}")
 
     # hardcoded flags
     docker_cmd += [
-        '-p',
-        '11780:11780',  # TODO: adjust and / or make configurable according to `port_override` from the mpc node.
         '-v',
         '/tapp:/tapp:ro',
         '-v',
@@ -279,11 +331,6 @@ def main():
         'shared-volume:/mnt/shared',
         '-v',
         'mpc-data:/data',
-        # todo: remove these after testing [#535](https://github.com/near/mpc/issues/535)
-        '--add-host',
-        'mpc-node-0.service.mpc.consul:66.220.6.113',
-        '--add-host',
-        'mpc-node-1.service.mpc.consul:57.129.144.117',
         '--detach',
         image_digest
     ]
