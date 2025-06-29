@@ -8,6 +8,8 @@ import sys
 import time
 import traceback
 from dataclasses import dataclass
+import re
+
 
 from requests.models import Response
 
@@ -127,23 +129,19 @@ class ResolvedImage:
     def registry(self) -> str:
         return self.spec.registry
 
-
+#Parses a .env-style file into a dictionary of key-value pairs.
 def parse_env_file(path: str) -> dict[str, str]:
-    '''
-    Parse .env-style files.
-
-    Provide implementation here to avoid external dependency.
-
-    The returned key and value strings are stripped of whitespaces.
-    '''
     env = {}
     with open(path) as f:
         for line in f:
-            line = line.strip()
+            # Remove inline comments (unquoted)
+            line = re.split(r'\s+#', line, 1)[0].strip()
             if not line or line.startswith('#'):
                 continue
             key, _, value = line.partition("=")
-            env[key.strip()] = value.strip()
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")  # remove quotes if any
+            env[key] = value
     return env
 
 
