@@ -90,8 +90,13 @@ impl TeeParticipantInfo {
     pub fn verify_quote(&self, timestamp_s: u64) -> Result<VerifiedReport, Error> {
         let tee_collateral = get_collateral(self.quote_collateral.clone())
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
-        let verification_result = verify::verify(&self.tee_quote, &tee_collateral, timestamp_s);
-        verification_result.map_err(|_| InvalidCandidateSet::InvalidParticipantsTeeQuote.into())
+        let verification_result = verify::verify(&self.tee_quote, &tee_collateral, timestamp_s)
+            .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
+        if verification_result.status == "UpToDate" && verification_result.advisory_ids.is_empty() {
+            Ok(verification_result)
+        } else {
+            Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into())
+        }
     }
 
     /// Checks whether the node is running the expected Docker images (launcher and MPC node) by
