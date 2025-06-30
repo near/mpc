@@ -21,29 +21,29 @@ IMAGE_DIGEST_FILE = "/mnt/shared/image-digest"
 # only considered if `IMAGE_DIGEST_FILE` does not exist.
 ENV_VAR_DEFAULT_IMAGE_DIGEST = "DEFAULT_IMAGE_DIGEST"
 # the time to wait between rpc requests, in milliseconds. Defaults to 500 milliseconds.
-OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS = 'RPC_REQUST_INTERVAL_MS'
+OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS = "RPC_REQUST_INTERVAL_MS"
 # the maximum time to wait for an rpc response. Defaults to 10 seconds.
-OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS = 'RPC_REQUST_TIMEOUT_SECS'
+OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS = "RPC_REQUST_TIMEOUT_SECS"
 # the maximum number of attempts for rpc requests until we raise an exception
-OS_ENV_VAR_RPC_MAX_ATTEMPTS = 'RPC_MAX_RETRIES'
+OS_ENV_VAR_RPC_MAX_ATTEMPTS = "RPC_MAX_RETRIES"
 # MUST be set to 1.
-OS_ENV_DOCKER_CONTENT_TRUST = 'DOCKER_CONTENT_TRUST'
+OS_ENV_DOCKER_CONTENT_TRUST = "DOCKER_CONTENT_TRUST"
 
 # Dstack user configuration flags
-DSTACK_USER_CONFIG_FILE = '/tapp/user_config'
+DSTACK_USER_CONFIG_FILE = "/tapp/user_config"
 
 # Dstack user config. Read from `DSTACK_USER_CONFIG_FILE`
-DSTACK_USER_CONFIG_LAUNCHER_IMAGE_TAGS = 'LAUNCHER_IMAGE_TAGS'
-DSTACK_USER_CONFIG_LAUNCHER_IMAGE_NAME = 'LAUNCHER_IMAGE_NAME'
-DSTACK_USER_CONFIG_LAUNCHER_IMAGE_REGISTRY = 'LAUNCHER_REGISTRY'
+DSTACK_USER_CONFIG_LAUNCHER_IMAGE_TAGS = "LAUNCHER_IMAGE_TAGS"
+DSTACK_USER_CONFIG_LAUNCHER_IMAGE_NAME = "LAUNCHER_IMAGE_NAME"
+DSTACK_USER_CONFIG_LAUNCHER_IMAGE_REGISTRY = "LAUNCHER_REGISTRY"
 
 # Default values for dstack user config file.
-DEFAULT_LAUNCHER_IMAGE_NAME = 'nearone/mpc-node-gcp'
-DEFAULT_REGISTRY = 'registry.hub.docker.com'
-DEFAULT_LAUNCHER_IMAGE_TAG = 'latest'
+DEFAULT_LAUNCHER_IMAGE_NAME = "nearone/mpc-node-gcp"
+DEFAULT_REGISTRY = "registry.hub.docker.com"
+DEFAULT_LAUNCHER_IMAGE_TAG = "latest"
 
 # the unix socket to communicate with Dstack
-DSTACK_UNIX_SOCKET = '/var/run/dstack.sock'
+DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
 
 # Example of .user-config file format:
 #
@@ -65,18 +65,18 @@ DSTACK_UNIX_SOCKET = '/var/run/dstack.sock'
 # Define an allow-list of permitted environment variables:
 # Note - extra hosts and port forwarding are explicitly defined in the docker run command generation.
 ALLOWED_ENV_VARS = {
-    "MPC_ACCOUNT_ID",          # ID of the MPC account on the network
-    "MPC_LOCAL_ADDRESS",       # Local IP address or hostname used by the MPC node
-    "MPC_SECRET_STORE_KEY",    # Key used to encrypt/decrypt secrets
-    "MPC_CONTRACT_ID",         # Contract ID associated with the MPC node
-    "MPC_ENV",                 # Environment (e.g., 'testnet', 'mainnet')
-    "MPC_HOME_DIR",            # Home directory for the MPC node
-    "NEAR_BOOT_NODES",         # Comma-separated list of boot nodes
-    "RUST_BACKTRACE",          # Enables backtraces for Rust errors
-    "RUST_LOG",                # Logging level for Rust code
-    "MPC_RESPONDER_ID",        # Unique responder ID for MPC communication
-    "IMAGE_HASH",              # Digest of the Docker image to verify integrity
-    "LATEST_ALLOWED_HASH_FILE" # Path to the shared digest file
+    "MPC_ACCOUNT_ID",  # ID of the MPC account on the network
+    "MPC_LOCAL_ADDRESS",  # Local IP address or hostname used by the MPC node
+    "MPC_SECRET_STORE_KEY",  # Key used to encrypt/decrypt secrets
+    "MPC_CONTRACT_ID",  # Contract ID associated with the MPC node
+    "MPC_ENV",  # Environment (e.g., 'testnet', 'mainnet')
+    "MPC_HOME_DIR",  # Home directory for the MPC node
+    "NEAR_BOOT_NODES",  # Comma-separated list of boot nodes
+    "RUST_BACKTRACE",  # Enables backtraces for Rust errors
+    "RUST_LOG",  # Logging level for Rust code
+    "MPC_RESPONDER_ID",  # Unique responder ID for MPC communication
+    "IMAGE_HASH",  # Digest of the Docker image to verify integrity
+    "LATEST_ALLOWED_HASH_FILE",  # Path to the shared digest file
 }
 
 
@@ -95,19 +95,18 @@ class ImageSpec:
     registry: str
 
     def __post_init__(self):
-        if not self.tags or not all(
-                is_non_empty_and_cleaned(tag) for tag in self.tags):
+        if not self.tags or not all(is_non_empty_and_cleaned(tag) for tag in self.tags):
             raise ValueError(
                 "tags must be a non-empty list of non-empty strings without whitespaces."
             )
 
         if not is_non_empty_and_cleaned(self.image_name):
             raise ValueError(
-                "image_name must be a non-empty string without whitespaces.")
+                "image_name must be a non-empty string without whitespaces."
+            )
 
         if not is_non_empty_and_cleaned(self.registry):
-            raise ValueError(
-                "registry must be a non-empty string without whitespaces.")
+            raise ValueError("registry must be a non-empty string without whitespaces.")
 
 
 @dataclass(frozen=True)
@@ -118,7 +117,8 @@ class ResolvedImage:
     def __post_init__(self):
         if not is_non_empty_and_cleaned(self.digest):
             raise ValueError(
-                "image digest must be a non-empty string without whitespaces")
+                "image digest must be a non-empty string without whitespaces"
+            )
             # should we require specific lengths?
 
     def name(self) -> str:
@@ -130,14 +130,15 @@ class ResolvedImage:
     def registry(self) -> str:
         return self.spec.registry
 
-#Parses a .env-style file into a dictionary of key-value pairs.
+
+# Parses a .env-style file into a dictionary of key-value pairs.
 def parse_env_file(path: str) -> dict[str, str]:
     env = {}
     with open(path) as f:
         for line in f:
             # Remove inline comments (unquoted)
-            line = re.split(r'\s+#', line, 1)[0].strip()
-            if not line or line.startswith('#'):
+            line = re.split(r"\s+#", line, 1)[0].strip()
+            if not line or line.startswith("#"):
                 continue
             key, _, value = line.partition("=")
             key = key.strip()
@@ -148,18 +149,20 @@ def parse_env_file(path: str) -> dict[str, str]:
 
 def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
     tags_values: list[str] = dstack_config.get(
-        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_TAGS,
-        DEFAULT_LAUNCHER_IMAGE_TAG).split(',')
+        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_TAGS, DEFAULT_LAUNCHER_IMAGE_TAG
+    ).split(",")
     tags = [tag.strip() for tag in tags_values if tag.strip()]
     logging.info(f"Using tags {tags} to find matching launcher image.")
 
-    image_name: str = dstack_config.get(DSTACK_USER_CONFIG_LAUNCHER_IMAGE_NAME,
-                                        DEFAULT_LAUNCHER_IMAGE_NAME)
-    logging.info(f'Using image name {image_name}.')
+    image_name: str = dstack_config.get(
+        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_NAME, DEFAULT_LAUNCHER_IMAGE_NAME
+    )
+    logging.info(f"Using image name {image_name}.")
 
     registry: str = dstack_config.get(
-        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_REGISTRY, DEFAULT_REGISTRY)
-    logging.info(f'Using registry {registry}.')
+        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_REGISTRY, DEFAULT_REGISTRY
+    )
+    logging.info(f"Using registry {registry}.")
 
     return ImageSpec(tags=tags, image_name=image_name, registry=registry)
 
@@ -169,16 +172,16 @@ def get_image_digest() -> str:
         logging.info(f"opening image digest file {IMAGE_DIGEST_FILE}.")
         return open(IMAGE_DIGEST_FILE).readline().strip()
     else:
-        logging.info(f'Using default image digest from environment.')
+        logging.info(f"Using default image digest from environment.")
         return os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
 
 
-def curl_unix_socket_post(endpoint: str,
-                          payload: Union[str, bytes],
-                          capture_output: bool = False) -> CompletedProcess:
+def curl_unix_socket_post(
+    endpoint: str, payload: Union[str, bytes], capture_output: bool = False
+) -> CompletedProcess:
     """
     Send a POST request via curl using the DSTACK UNIX socket.
-    
+
     Python's requests package cannot natively talk HTTP over a unix socket (which is the API
     exposed by dstack's guest agent). To avoid installing another Python depdendency, namely
     requests-unixsocket, we just use curl.
@@ -193,41 +196,52 @@ def curl_unix_socket_post(endpoint: str,
     """
     url = f"http://dstack/{endpoint}"
     cmd = [
-        'curl', '--unix-socket', DSTACK_UNIX_SOCKET, '-X', 'POST', url, '-H',
-        'Content-Type: application/json', '-d', payload
+        "curl",
+        "--unix-socket",
+        DSTACK_UNIX_SOCKET,
+        "-X",
+        "POST",
+        url,
+        "-H",
+        "Content-Type: application/json",
+        "-d",
+        payload,
     ]
     return run(cmd, capture_output=capture_output)
 
 
 def main():
 
-    logging.info(f'start')
+    logging.info(f"start")
     # We want to globally enable DOCKER_CONTENT_TRUST=1 to ensure integrity of Docker images.
-    if os.environ.get(OS_ENV_DOCKER_CONTENT_TRUST, '0') != '1':
+    if os.environ.get(OS_ENV_DOCKER_CONTENT_TRUST, "0") != "1":
         raise RuntimeError(
-            "Environment variable DOCKER_CONTENT_TRUST must be set to 1.")
+            "Environment variable DOCKER_CONTENT_TRUST must be set to 1."
+        )
 
     # In dstack, /tapp/user_config provides unmeasured data to the CVM.
     # We use this interface to make some aspects of the launcher configurable.
     # *** Only security-irrelevant parts *** may be made configurable in this way, e.g., the specific image tag(s) we look up.
-    dstack_config: dict[str, str] = parse_env_file(
-        DSTACK_USER_CONFIG_FILE) if os.path.isfile(
-            DSTACK_USER_CONFIG_FILE) else {}
+    dstack_config: dict[str, str] = (
+        parse_env_file(DSTACK_USER_CONFIG_FILE)
+        if os.path.isfile(DSTACK_USER_CONFIG_FILE)
+        else {}
+    )
 
     image_digest = get_image_digest()
-    logging.info(f'Using image digest {image_digest}.')
+    logging.info(f"Using image digest {image_digest}.")
     image_spec = get_image_spec(dstack_config)
     docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
 
-    rpc_request_timzy = int(
-        os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, '10'))
+    rpc_request_timzy = int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))
     rpc_request_interval_ms = int(
-        os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, '500'))
+        os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, "500")
+    )
     rpc_request_interval_secs = rpc_request_interval_ms / 1000.0
-    rpc_max_attempts = int(os.environ.get(OS_ENV_VAR_RPC_MAX_ATTEMPTS, '20'))
-    manifest_digest = get_manifest_digest(docker_image,
-                                          rpc_request_interval_secs,
-                                          rpc_max_attempts)
+    rpc_max_attempts = int(os.environ.get(OS_ENV_VAR_RPC_MAX_ATTEMPTS, "20"))
+    manifest_digest = get_manifest_digest(
+        docker_image, rpc_request_interval_secs, rpc_max_attempts
+    )
 
     name_and_digest = image_spec.image_name + "@" + manifest_digest
 
@@ -238,44 +252,55 @@ def main():
             f"docker pull returned non-zero exit code {proc.returncode}:\n{proc.stderr}"
         )
 
-    proc = run([
-        "docker", "image", "inspect", "--format", "{{index .ID}}",
-        name_and_digest
-    ],
-               capture_output=True)
+    proc = run(
+        ["docker", "image", "inspect", "--format", "{{index .ID}}", name_and_digest],
+        capture_output=True,
+    )
 
     if proc.returncode:
         raise RuntimeError(
             f"docker image inspect returned non-zero exit code {proc.returncode}:\n{proc.stderr}"
         )
 
-    pulled_image_digest = proc.stdout.decode('utf-8').strip()
+    pulled_image_digest = proc.stdout.decode("utf-8").strip()
 
     if pulled_image_digest != image_digest:
-        raise RuntimeError("Wrong image digest %s. Expected digest is %s" %
-                           (pulled_image_digest, image_digest))
+        raise RuntimeError(
+            "Wrong image digest %s. Expected digest is %s"
+            % (pulled_image_digest, image_digest)
+        )
 
     # Generate a quote before extending RTMR3 with the image digest
-    proc = curl_unix_socket_post(endpoint='GetQuote',
-                                 payload='{"report_data": ""}',
-                                 capture_output=True)
+    proc = curl_unix_socket_post(
+        endpoint="GetQuote", payload='{"report_data": ""}', capture_output=True
+    )
     if proc.returncode:
         raise RuntimeError(
             f"getting quote failed with error code {proc.returncode}:\n{proc.stderr}"
         )
-    logging.info("Quote: %s" % proc.stdout.decode('utf-8').strip())
+    logging.info("Quote: %s" % proc.stdout.decode("utf-8").strip())
 
-    extend_rtmr3_json = '{"event": "mpc-image-digest","payload": "%s"}' % image_digest.split(
-        ':')[1]
+    extend_rtmr3_json = (
+        '{"event": "mpc-image-digest","payload": "%s"}' % image_digest.split(":")[1]
+    )
 
-    proc = curl_unix_socket_post(endpoint='EmitEvent',
-                                 payload=extend_rtmr3_json,
-                                 capture_output=True)
-    proc = run([
-        'curl', '--unix-socket', DSTACK_UNIX_SOCKET, '-X', 'POST',
-        'http://dstack/EmitEvent', '-H', 'Content-Type: application/json',
-        '-d', extend_rtmr3_json
-    ])
+    proc = curl_unix_socket_post(
+        endpoint="EmitEvent", payload=extend_rtmr3_json, capture_output=True
+    )
+    proc = run(
+        [
+            "curl",
+            "--unix-socket",
+            DSTACK_UNIX_SOCKET,
+            "-X",
+            "POST",
+            "http://dstack/EmitEvent",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            extend_rtmr3_json,
+        ]
+    )
 
     if proc.returncode:
         raise RuntimeError(
@@ -283,55 +308,55 @@ def main():
         )
 
     # Get quote after extending RTMR3 with the image digest
-    proc = curl_unix_socket_post(endpoint='GetQuote',
-                                 payload='{"report_data": ""}',
-                                 capture_output=True)
+    proc = curl_unix_socket_post(
+        endpoint="GetQuote", payload='{"report_data": ""}', capture_output=True
+    )
     if proc.returncode:
-        raise RuntimeError("getting quote failed with error code %d" %
-                           proc.returncode)
+        raise RuntimeError("getting quote failed with error code %d" % proc.returncode)
 
-    logging.info("Quote: %s" % proc.stdout.decode('utf-8').strip())
+    logging.info("Quote: %s" % proc.stdout.decode("utf-8").strip())
 
     # Build the docker command we use to start the app, i.e., mpc node
-    docker_cmd = ['docker', 'run']
+    docker_cmd = ["docker", "run"]
 
     # Load environment variables from the user config file
     # We allow only a limited set of environment variables to be passed to the container.
     # This is to prevent users from passing sensitive information or modifying the container's behavior in unexpected ways.
     # The allowed environment variables are defined in ALLOWED_ENV_VARS.
-    user_env_file = '/tapp/.host-shared/.user-config'
+    user_env_file = "/tapp/.host-shared/.user-config"
     if os.path.isfile(user_env_file):
         user_env = parse_env_file(user_env_file)
         for key, value in user_env.items():
             if key in ALLOWED_ENV_VARS:
-                docker_cmd += ['--env', f'{key}={value}']
+                docker_cmd += ["--env", f"{key}={value}"]
             elif key == "EXTRA_HOSTS":
                 # Allow optional host entries in the same file, comma-separated
-                for host_entry in value.split(','):
+                for host_entry in value.split(","):
                     clean_host = host_entry.strip()
                     if clean_host:
-                        docker_cmd += ['--add-host', clean_host]
+                        docker_cmd += ["--add-host", clean_host]
             elif key == "PORTS":
                 # Allow port bindings in format "host:container" (comma-separated)
-                for port_pair in value.split(','):
+                for port_pair in value.split(","):
                     clean_port = port_pair.strip()
                     if clean_port:
-                        docker_cmd += ['-p', clean_port]
+                        docker_cmd += ["-p", clean_port]
             else:
                 logging.warning(f"Ignoring unauthorized environment variable: {key}")
 
     # hardcoded flags
     docker_cmd += [
-        '-v',
-        '/tapp:/tapp:ro',
-        '-v',
+        "--security-opt", "no-new-privileges:true",
+        "-v",
+        "/tapp:/tapp:ro",
+        "-v",
         f"{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}",
-        '-v',
-        'shared-volume:/mnt/shared',
-        '-v',
-        'mpc-data:/data',
-        '--detach',
-        image_digest
+        "-v",
+        "shared-volume:/mnt/shared",
+        "-v",
+        "mpc-data:/data",
+        "--detach",
+        image_digest,
     ]
 
     logging.info("docker cmd %s", " ".join(docker_cmd))
@@ -343,10 +368,13 @@ def main():
         raise RuntimeError("docker run non-zero exit code %d", proc.returncode)
 
 
-def request_until_success(url: str, headers: Dict[str, str],
-                          rpc_request_interval_secs: float,
-                          rpc_request_timeout_secs: float,
-                          rpc_max_attempts: int) -> Response:
+def request_until_success(
+    url: str,
+    headers: Dict[str, str],
+    rpc_request_interval_secs: float,
+    rpc_request_timeout_secs: float,
+    rpc_max_attempts: int,
+) -> Response:
     """
     Repeatedly sends a GET request to the specified URL until a successful (200 OK) response is received.
 
@@ -366,15 +394,15 @@ def request_until_success(url: str, headers: Dict[str, str],
     for attempt in range(1, rpc_max_attempts + 1):
         # we sleep at the beginning, to ensure that we respect the timeout. Performance is not a priority in this case.
         time.sleep(rpc_request_interval_secs)
-        rpc_request_interval_secs = min(
-            max(rpc_request_interval_secs, 1.0) * 1.5, 60.0)
-        manifest_resp = requests.get(url,
-                                     headers=headers,
-                                     timeout=rpc_request_timeout_secs)
+        rpc_request_interval_secs = min(max(rpc_request_interval_secs, 1.0) * 1.5, 60.0)
+        manifest_resp = requests.get(
+            url, headers=headers, timeout=rpc_request_timeout_secs
+        )
         if manifest_resp.status_code != 200:
             print(
                 f"[Warning] Attempt {attempt}/{rpc_max_attempts}: Failed to fetch {url} for headers {headers}. "
-                f"Status: {manifest_resp.text} {manifest_resp.headers}")
+                f"Status: {manifest_resp.text} {manifest_resp.headers}"
+            )
             continue
         else:
             return manifest_resp
@@ -384,27 +412,26 @@ def request_until_success(url: str, headers: Dict[str, str],
     )
 
 
-def get_manifest_digest(docker_image: ResolvedImage,
-                        rpc_request_interval_secs: float,
-                        rpc_max_attempts: int) -> str:
-    '''
+def get_manifest_digest(
+    docker_image: ResolvedImage, rpc_request_interval_secs: float, rpc_max_attempts: int
+) -> str:
+    """
     Given an `image_digest` returns a manifest digest.
 
        `docker pull` requires a manifest digest. This function translates an image digest into a manifest digest by talking to the Docker registry.
 
        API doc for image registry https://distribution.github.io/distribution/spec/api/
-    '''
+    """
     if not docker_image.tags():
-        raise Exception(
-            f"No tags found for image {docker_image.spec.image_name}")
+        raise Exception(f"No tags found for image {docker_image.spec.image_name}")
 
     # We need an authorization token to fetch manifests.
     # TODO this still has the registry hard-coded in the url. also, if we use a different registry, we need a different auth-endpoint.
     token_resp = requests.get(
-        f'https://auth.docker.io/token?service=registry.docker.io&scope=repository:{docker_image.name()}:pull'
+        f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{docker_image.name()}:pull"
     )
     token_resp.raise_for_status()
-    token = token_resp.json().get('token', [])
+    token = token_resp.json().get("token", [])
 
     tags = deque(docker_image.tags())
 
@@ -414,7 +441,7 @@ def get_manifest_digest(docker_image: ResolvedImage,
         manifest_url = f"https://{docker_image.registry()}/v2/{docker_image.name()}/manifests/{tag}"
         headers = {
             "Accept": "application/vnd.docker.distribution.manifest.v2+json",
-            "Authorization": f"Bearer {token}"
+            "Authorization": f"Bearer {token}",
         }
         try:
             manifest_resp = request_until_success(
@@ -422,22 +449,26 @@ def get_manifest_digest(docker_image: ResolvedImage,
                 headers=headers,
                 rpc_request_interval_secs=rpc_request_interval_secs,
                 rpc_request_timeout_secs=rpc_request_interval_secs,
-                rpc_max_attempts=rpc_max_attempts)
+                rpc_max_attempts=rpc_max_attempts,
+            )
             manifest = manifest_resp.json()
-            match manifest['mediaType']:
-                case 'application/vnd.oci.image.index.v1+json':
+            match manifest["mediaType"]:
+                case "application/vnd.oci.image.index.v1+json":
                     # Multi-platform manifest; we scan for amd64/linux images and add them to `tags`
-                    for image_manifest in manifest.get('manifests', []):
-                        platform = image_manifest.get('platform', [])
-                        if platform.get(
-                                'architecture') == 'amd64' and platform.get(
-                                    'os') == 'linux':
-                            tags.append(image_manifest['digest'])
-                case 'application/vnd.docker.distribution.manifest.v2+json' | \
-                     'application/vnd.oci.image.manifest.v1+json':
-                    config_digest = manifest['config']['digest']
+                    for image_manifest in manifest.get("manifests", []):
+                        platform = image_manifest.get("platform", [])
+                        if (
+                            platform.get("architecture") == "amd64"
+                            and platform.get("os") == "linux"
+                        ):
+                            tags.append(image_manifest["digest"])
+                case (
+                    "application/vnd.docker.distribution.manifest.v2+json"
+                    | "application/vnd.oci.image.manifest.v1+json"
+                ):
+                    config_digest = manifest["config"]["digest"]
                     if config_digest == docker_image.digest:
-                        return manifest_resp.headers['Docker-Content-Digest']
+                        return manifest_resp.headers["Docker-Content-Digest"]
         except:
             print(
                 "[Warning] Exceeded number of maximum RPC requests for any given attempt. Will continue in the hopes of finding the matching image hash among remaining tags"
@@ -449,8 +480,9 @@ def get_manifest_digest(docker_image: ResolvedImage,
 
 if __name__ == "__main__":
     try:
-        logging.basicConfig(level=logging.INFO,
-                            format='%(asctime)s [%(levelname)s] %(message)s')
+        logging.basicConfig(
+            level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+        )
 
         main()
         sys.exit(0)
