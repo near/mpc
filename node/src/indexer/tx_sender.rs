@@ -193,7 +193,6 @@ async fn ensure_send_transaction(
     }
 }
 
-#[cfg(not(feature = "network-hardship-simulation"))]
 pub(crate) async fn handle_txn_requests(
     mut receiver: mpsc::Receiver<ChainSendTransactionRequest>,
     owner_account_id: AccountId,

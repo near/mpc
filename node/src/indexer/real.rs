@@ -3,6 +3,8 @@ use super::participants::{monitor_contract_state, ContractState};
 use super::stats::{indexer_logger, IndexerStats};
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
+#[cfg(feature = "network-hardship-simulation")]
+use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
 #[cfg(feature = "tee")]
 use crate::indexer::tee::monitor_allowed_docker_images;
@@ -14,36 +16,28 @@ use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch, Mutex};
-#[cfg(feature = "network-hardship-simulation")]
-use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "network-hardship-simulation")]
-pub async fn check_block_processing(
-    cancellation_token: CancellationToken,
-    process_blocks: Arc<AtomicBool>,
-    home_dir: PathBuf,
-) {
+pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, home_dir: PathBuf) {
     loop {
-        tokio::select! {
-            _ = cancellation_token.cancelled() => {
-                println!("File watcher task received cancellation signal.");
-                return;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let new_val = match load_listening_blocks_file(&home_dir) {
+            Ok(new_val) => {
+                tracing::info!("flag file found, setting to {}", new_val);
+                new_val
             }
-            _ = tokio::time::sleep(Duration::from_secs(2)) => {
-                match load_listening_blocks_file(&home_dir) {
-                    Ok(new_val) => {
-                        tracing::info!("flag file found, setting to {}", new_val);
-                        process_blocks.store(new_val, std::sync::atomic::Ordering::Relaxed);
-                    }
-                    Err(e) => {
-                        tracing::info!("flag file not found, setting to {}. Error: {}", true, e);
-                        process_blocks.store(true, std::sync::atomic::Ordering::Relaxed);
-                    }
-                }
+            Err(e) => {
+                tracing::info!("flag file not found, setting to {}. Error: {}", true, e);
+                true
             }
+        };
+        if process_blocks_sender.send(new_val).is_err() {
+            tracing::info!("channel closed");
+            return;
         }
     }
 }
+
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
 ///
 /// If an unrecoverable error occurs, the spawned indexer will terminate, and the provided [`oneshot::Sender`]
@@ -82,15 +76,10 @@ pub fn spawn_real_indexer(
             let stats: Arc<Mutex<IndexerStats>> = Arc::new(Mutex::new(IndexerStats::new()));
 
             #[cfg(feature = "network-hardship-simulation")]
-            let process_blocks = {
-                let process_blocks = Arc::new(AtomicBool::new(true));
-                let cancel_token_blocks_processing = CancellationToken::new();
-                actix::spawn(check_block_processing(
-                    cancel_token_blocks_processing.clone(),
-                    process_blocks.clone(),
-                    home_dir,
-                ));
-                process_blocks
+            let process_blocks_receiver = {
+                let (process_blocks_sender, process_blocks_receiver) = watch::channel(true);
+                actix::spawn(check_block_processing(process_blocks_sender, home_dir));
+                process_blocks_receiver
             };
 
             actix::spawn(monitor_contract_state(
@@ -99,6 +88,7 @@ pub fn spawn_real_indexer(
                 chain_config_sender,
                 protocol_state_sender,
             ));
+
             actix::spawn(indexer_logger(
                 Arc::clone(&stats),
                 indexer_state.view_client.clone(),
@@ -119,7 +109,7 @@ pub fn spawn_real_indexer(
                 Arc::clone(&stats),
                 indexer_config.mpc_contract_id,
                 block_update_sender,
-                process_blocks,
+                process_blocks_receiver,
             )
             .await;
 

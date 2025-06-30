@@ -12,8 +12,6 @@ use near_indexer_primitives::views::{
 };
 use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "network-hardship-simulation")]
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
@@ -54,7 +52,7 @@ pub(crate) async fn listen_blocks(
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
     block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
-    process_blocks: Arc<AtomicBool>,
+    mut process_blocks_receiver: tokio::sync::watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
@@ -68,10 +66,10 @@ pub(crate) async fn listen_blocks(
         .buffer_unordered(usize::from(concurrency.get()));
 
     while let Some(handle_message) = handle_messages.next().await {
-        while !process_blocks.load(Ordering::Relaxed) {
-            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        while !*process_blocks_receiver.borrow() {
+            process_blocks_receiver.changed().await?;
         }
-        handle_message?
+        handle_message?;
     }
     Ok(())
 }
