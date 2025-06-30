@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   launcher:
-    image: barakeinavhnear/launcher:latest  # TODO (security): Replace with a specific image digest
+    image: barakeinavhnear/launcher:latest  # isuse #531: TODO (security): Replace with a specific image digest
     container_name: launcher
 
     environment:
