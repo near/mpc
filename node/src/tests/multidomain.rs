@@ -126,16 +126,19 @@ async fn test_basic_multidomain() {
     }
 
     // Give nodes some time to transition into resharing state.
-    for i in 0..20 {
+    for i in 0..50 {
         // We're running with [serial] so querying metrics should be OK.
         if let Ok(metric) =
             metrics::MPC_CURRENT_JOB_STATE.get_metric_with_label_values(&["Resharing"])
         {
-            if metric.get() == NUM_PARTICIPANTS as i64 - 1 {
+            println!("current job state: {:?}", metric.get());
+            if metric.get() == NUM_PARTICIPANTS as i64 {
                 break;
             }
+        } else {
+            println!("error, could not get metric!")
         }
-        if i == 19 {
+        if i == 49 {
             panic!("Timeout waiting for resharing to start");
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
