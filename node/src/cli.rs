@@ -45,14 +45,7 @@ use {
 
 #[derive(Parser, Debug)]
 pub struct Cli {
-    #[clap(
-        long,
-        value_enum,
-        env("MPC_LOG_FORMAT"),
-        global = true,
-        default_value = "plain",
-        help = "Log format: plain or json"
-    )]
+    #[arg(long, value_enum, env("MPC_LOG_FORMAT"), default_value = "plain")]
     pub log_format: LogFormat,
     #[clap(subcommand)]
     pub command: CliCommand,
@@ -60,7 +53,9 @@ pub struct Cli {
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum LogFormat {
+    /// Plaintext logs
     Plain,
+    /// JSON logs
     Json,
 }
 
