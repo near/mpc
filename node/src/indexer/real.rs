@@ -1,6 +1,6 @@
 use super::handler::listen_blocks;
 use super::participants::{monitor_contract_state, ContractState};
-use super::stats::{indexer_logger, IndexerStats};
+use super::stats::indexer_logger;
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
 #[cfg(feature = "network-hardship-simulation")]
@@ -72,8 +72,6 @@ pub fn spawn_real_indexer(
                 tx_processor,
                 indexer_config.mpc_contract_id.clone(),
             ));
-            // TODO: migrate this into IndexerState
-            let stats: Arc<Mutex<IndexerStats>> = Arc::new(Mutex::new(IndexerStats::new()));
 
             #[cfg(feature = "network-hardship-simulation")]
             let process_blocks_receiver = {
@@ -90,7 +88,7 @@ pub fn spawn_real_indexer(
             ));
 
             actix::spawn(indexer_logger(
-                Arc::clone(&stats),
+                Arc::clone(&indexer_state.stats),
                 indexer_state.view_client.clone(),
             ));
 
@@ -106,7 +104,7 @@ pub fn spawn_real_indexer(
             let indexer_result = listen_blocks(
                 stream,
                 indexer_config.concurrency,
-                Arc::clone(&stats),
+                Arc::clone(&indexer_state.stats),
                 indexer_config.mpc_contract_id,
                 block_update_sender,
                 process_blocks_receiver,
@@ -117,7 +115,7 @@ pub fn spawn_real_indexer(
             let indexer_result = listen_blocks(
                 stream,
                 indexer_config.concurrency,
-                Arc::clone(&stats),
+                Arc::clone(&indexer_state.stats),
                 indexer_config.mpc_contract_id,
                 block_update_sender,
             )
@@ -131,7 +129,6 @@ pub fn spawn_real_indexer(
                     .send(allowed_docker_images_receiver)
                     .expect("Receiver for watcher must be alive");
             }
-
             if indexer_exit_sender.send(indexer_result).is_err() {
                 tracing::error!("Indexer thread could not send result back to main driver.")
             };
