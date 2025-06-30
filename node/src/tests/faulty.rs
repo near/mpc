@@ -2,6 +2,7 @@ use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
     request_signature_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -54,8 +55,12 @@ async fn test_faulty_cluster() {
     tracing::info!("Waiting for key generation to complete");
     setup
         .indexer
-        .wait_for_contract_state(|state| matches!(state, ContractState::Running(_)))
-        .await;
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("Timeout waiting for resharing to complete");
     tracing::info!("Key generation complete");
 
     let Some(signature_delay) = request_signature_and_await_response(
@@ -166,7 +171,7 @@ async fn test_indexer_stuck() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::FAULTY_STUCK_INDEXER_TEST,
-        std::time::Duration::from_millis(50),
+        std::time::Duration::from_millis(100),
     );
 
     let domain = DomainConfig {
@@ -187,10 +192,18 @@ async fn test_indexer_stuck() {
         .collect::<Vec<_>>();
 
     tracing::info!("Waiting for key generation to complete");
+
     setup
         .indexer
-        .wait_for_contract_state(|state| matches!(state, ContractState::Running(_)))
-        .await;
+        .wait_for_contract_state(
+            |state| {
+                tracing::info!("got state: {:?}", state);
+                matches!(state, ContractState::Running(_))
+            },
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("Key generation must complete within timeout period.");
     tracing::info!("Key generation complete");
 
     // Pause the indexer and make sure it doesn't respond to requests

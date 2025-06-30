@@ -43,6 +43,7 @@ mod research;
 mod resharing;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
+const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// Convenient test utilities to generate keys, triples, presignatures, and signatures.
 pub struct TestGenerators {

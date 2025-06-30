@@ -6,6 +6,7 @@ use crate::config::ParticipantsConfig;
 use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
+use anyhow::Context;
 use mpc_contract::config::Config;
 use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
@@ -654,14 +655,27 @@ impl FakeIndexerManager {
     }
 
     /// Waits for the contract state to satisfy the given predicate.
-    pub async fn wait_for_contract_state(&mut self, f: impl Fn(&ContractState) -> bool) {
+    pub async fn wait_for_contract_state(
+        &mut self,
+        f: impl Fn(&ContractState) -> bool,
+        timeout_duration: tokio::time::Duration,
+    ) -> anyhow::Result<()> {
         let mut state_change_receiver = self.core_state_change_sender.subscribe();
-        loop {
-            let state = state_change_receiver.recv().await.unwrap();
-            if f(&state) {
-                break;
+        tokio::time::timeout(timeout_duration, async {
+            loop {
+                let state: ContractState = state_change_receiver
+                    .recv()
+                    .await
+                    .context("State change sender was dropped")?;
+                if f(&state) {
+                    break;
+                }
             }
-        }
+            Ok::<(), anyhow::Error>(())
+        })
+        .await
+        .context("Timed out while waiting for contract state")??;
+        Ok(())
     }
 
     /// Disables a node, in order to test resilience to node failures.
