@@ -10,7 +10,7 @@ services:
       - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d  # nearone/mpc-node-gcp:testnet-release
 
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock 
+      - /var/run/docker.sock:/var/run/docker.sock
       - /var/run/dstack.sock:/var/run/dstack.sock
       - /tapp:/tapp:ro
       - shared-volume:/mnt/shared:ro
