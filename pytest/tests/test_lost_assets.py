@@ -10,7 +10,6 @@ import time
 import pathlib
 import argparse
 from typing import List
-from datetime import datetime
 import requests
 
 from common_lib.shared import MpcCluster, MpcNode
@@ -107,6 +106,9 @@ def test_lost_assets():
 
 
 def test_signature_pause_block_ingestion():
+    """
+    This test requires the MPC binary to be compiled with the feature flag "network-hardship-simulation"
+    """
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
         2,
         3,
@@ -125,34 +127,8 @@ def test_signature_pause_block_ingestion():
 
     # we wait for the other nodes to cleanup
     wait_for_asset_cleanup(cluster.mpc_nodes[1:])
-    # we pause
-    #for _ in range(0, 120):
-    #    print(
-    #        "owned and online:\n",
-    #        cluster.get_int_metric_value("mpc_owned_num_presignatures_online"))
-    #    print(
-    #        "owned and offline:\n",
-    #        cluster.get_int_metric_value(
-    #            "mpc_owned_num_presignatures_with_offline_participant"))
-    #    print("block height:\n",
-    #          cluster.get_int_metric_value("mpc_indexer_latest_block_height"))
-    #    sleep(1)
-    t0 = datetime.now()
-    cluster.send_and_await_signature_requests(1)
-    t1 = datetime.now()
-    delay = t1 - t0
-    print(f"time passed: {delay}")
 
-    cluster.send_and_await_signature_requests(1)
-    t2 = datetime.now()
-    delay = t2 - t1
-    print(f"time passed: {delay}")
-    # we would expect to get faster
-    cluster.send_and_await_signature_requests(1)
-    t3 = datetime.now()
-    delay = t3 - t2
-    print(f"time passed: {delay}")
-    # we would expect to get faster
+    cluster.send_and_await_signature_requests(5)
 
 
 if __name__ == '__main__':
