@@ -294,7 +294,7 @@ def main():
     # Build the docker command we use to start the app, i.e., mpc node
     docker_cmd = ['docker', 'run']
 
-    #load environment variables from the user config file
+    # Load environment variables from the user config file
     # We allow only a limited set of environment variables to be passed to the container.
     # This is to prevent users from passing sensitive information or modifying the container's behavior in unexpected ways.
     # The allowed environment variables are defined in ALLOWED_ENV_VARS.
