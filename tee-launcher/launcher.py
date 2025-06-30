@@ -63,6 +63,7 @@ DSTACK_UNIX_SOCKET = '/var/run/dstack.sock'
 # PORTS=11780:11780,2200:2200
 
 # Define an allow-list of permitted environment variables:
+# Note - extra hosts and port forwarding are explicitly defined in the docker run command generation.
 ALLOWED_ENV_VARS = {
     "MPC_ACCOUNT_ID",          # ID of the MPC account on the network
     "MPC_LOCAL_ADDRESS",       # Local IP address or hostname used by the MPC node
