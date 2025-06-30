@@ -220,13 +220,14 @@ async fn test_indexer_stuck() {
     );
 
     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user2",
-        &domain,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    for _ in 0..5 {
+        assert!(request_signature_and_await_response(
+            &mut setup.indexer,
+            "user2",
+            &domain,
+            std::time::Duration::from_secs(60)
+        )
+        .await
+        .is_some());
+    }
 }
