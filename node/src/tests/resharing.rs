@@ -397,10 +397,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
         .indexer
         .wait_for_contract_state(
             |state| match state {
-                ContractState::Running(running) => match &running.resharing_state {
-                    Some(_) => false,
-                    None => true,
-                },
+                ContractState::Running(running) => running.resharing_state.is_none(),
                 _ => false,
             },
             std::time::Duration::from_secs(60),
