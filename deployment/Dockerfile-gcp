@@ -15,7 +15,7 @@ RUN apt-get update -y \
     && apt-get install -y --no-install-recommends openssl ca-certificates
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-RUN touch /app/test_file
+
 WORKDIR /app
 COPY --from=builder /app/target/release/mpc-node mpc-node
 COPY deployment/gcp-start.sh /app/gcp-start.sh
