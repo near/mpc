@@ -9,7 +9,7 @@ import time
 import traceback
 from dataclasses import dataclass
 import re
-
+import ipaddress
 
 from requests.models import Response
 
@@ -79,6 +79,32 @@ ALLOWED_ENV_VARS = {
     "LATEST_ALLOWED_HASH_FILE",  # Path to the shared digest file
 }
 
+# Regex: hostnames must be alphanum + dash/dot, IPs must be valid IPv4
+HOST_ENTRY_RE = re.compile(r"^[a-zA-Z0-9\-\.]+:\d{1,3}(\.\d{1,3}){3}$")
+PORT_MAPPING_RE = re.compile(r"^(\d{1,5}):(\d{1,5})$")
+
+
+def is_valid_ip(ip: str) -> bool:
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_host_entry(entry: str) -> bool:
+    if not HOST_ENTRY_RE.match(entry):
+        return False
+    host, ip = entry.split(":")
+    return is_valid_ip(ip)
+
+
+def is_valid_port_mapping(entry: str) -> bool:
+    match = PORT_MAPPING_RE.match(entry)
+    if not match:
+        return False
+    host_port, container_port = map(int, match.groups())
+    return 0 < host_port <= 65535 and 0 < container_port <= 65535
 
 def is_non_empty_and_cleaned(val: str) -> bool:
     if not isinstance(val, str):
@@ -330,17 +356,25 @@ def main():
             if key in ALLOWED_ENV_VARS:
                 docker_cmd += ["--env", f"{key}={value}"]
             elif key == "EXTRA_HOSTS":
-                # Allow optional host entries in the same file, comma-separated
                 for host_entry in value.split(","):
                     clean_host = host_entry.strip()
-                    if clean_host:
+                    if clean_host.startswith("--"):
+                        logging.warning(f"Blocked CLI injection attempt in EXTRA_HOSTS: {clean_host}")
+                        continue
+                    if is_valid_host_entry(clean_host):
                         docker_cmd += ["--add-host", clean_host]
+                    else:
+                        logging.warning(f"Ignoring invalid EXTRA_HOSTS entry: {clean_host}")
             elif key == "PORTS":
-                # Allow port bindings in format "host:container" (comma-separated)
                 for port_pair in value.split(","):
                     clean_port = port_pair.strip()
-                    if clean_port:
+                    if clean_port.startswith("--"):
+                        logging.warning(f"Blocked CLI injection attempt in PORTS: {clean_port}")
+                        continue
+                    if is_valid_port_mapping(clean_port):
                         docker_cmd += ["-p", clean_port]
+                    else:
+                        logging.warning(f"Ignoring invalid PORTS entry: {clean_port}")
             else:
                 logging.warning(f"Ignoring unauthorized environment variable: {key}")
 
