@@ -30,7 +30,13 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-4. Run pytest:
+4. Install `wasm-opt`:
+
+```bash
+cargo install --locked wasm-opt
+```
+
+5. Run pytest:
 ```bash
 pytest # -v -s optional flags for verbosity and -m "not slow" to skip slow tests
 ```

@@ -58,7 +58,7 @@ def compile_contract():
                    stdout=sys.stdout,
                    stderr=sys.stderr)
     
-    subprocess.run(["wasm-opt", "-Oz", "target/wasm32-unknown-unknown/release/mpc_contract.wasm", "-o", "target/wasm32-unknown-unknown/release/mpc_contract.wasm"],
+    subprocess.run(["wasm-opt", "--enable-bulk-memory", "-Oz", "target/wasm32-unknown-unknown/release/mpc_contract.wasm", "-o", "target/wasm32-unknown-unknown/release/mpc_contract.wasm"],
                    cwd=chain_signatures,
                    check=True,
                    stdout=sys.stdout,
