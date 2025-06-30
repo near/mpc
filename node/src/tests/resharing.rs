@@ -311,6 +311,11 @@ async fn test_signature_requests_in_resharing_are_processed() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
+    setup
+        .indexer
+        .wait_for_contract_state(|state| matches!(state, ContractState::Running(_)))
+        .await;
+
     let response_time = request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
@@ -356,12 +361,12 @@ async fn test_signature_requests_in_resharing_are_processed() {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
-    // Send a request for signature. This should timeout.
+    // Send a request for signature.
     request_signature_and_await_response(&mut setup.indexer, "user1", &domain, response_time * 2)
         .await
         .expect("Signature requests during resharing are processed.");
 
-    // Re-enable the node. Now we should get the signature response.
+    // Re-enable the node.
     drop(disabled);
 
     // Give nodes some time to transition back to running state.
@@ -381,7 +386,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
-    // Send a request for signature. This should timeout.
+    // Send a request for signature.
     request_signature_and_await_response(&mut setup.indexer, "user1", &domain, response_time * 2)
         .await
         .expect("Signature request in running should be processed.");
