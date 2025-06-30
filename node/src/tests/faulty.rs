@@ -9,14 +9,12 @@ use near_o11y::testonly::init_integration_logger;
 use near_sdk::AccountId;
 use near_time::Clock;
 use rand::Rng;
-use serial_test::serial;
 
 // Make a cluster of four nodes. Test the following:
 // 1. Shut down one node and confirms that signatures can still be generated.
 // 2. Stop another node and assert that no signatures can be generated.
 // 3. Restart the node that was later shutdown and assert that signatures can be generated again
 #[tokio::test]
-#[serial]
 async fn test_faulty_cluster() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 4;
@@ -152,7 +150,6 @@ async fn test_faulty_cluster() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_indexer_stuck() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 4;

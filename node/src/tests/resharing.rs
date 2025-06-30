@@ -6,14 +6,12 @@ use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
-use serial_test::serial;
 use tokio::time::timeout;
 
 use super::DEFAULT_BLOCK_TIME;
 
 // Test a simple resharing of one node joining a cluster of 4 nodes.
 #[tokio::test]
-#[serial]
 async fn test_key_resharing_simple() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 5;
@@ -94,7 +92,6 @@ async fn test_key_resharing_simple() {
 
 // Test two nodes joining and two old nodes leaving.
 #[tokio::test]
-#[serial]
 async fn test_key_resharing_multistage() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 6;
@@ -275,7 +272,6 @@ async fn test_key_resharing_multistage() {
 /// Test that signatures during resharing
 /// are also processed.
 #[tokio::test]
-#[serial]
 async fn test_signature_requests_in_resharing_are_processed() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 5;
