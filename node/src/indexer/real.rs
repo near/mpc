@@ -1,6 +1,6 @@
 use super::handler::listen_blocks;
 use super::participants::{monitor_contract_state, ContractState};
-use super::stats::{indexer_logger, IndexerStats};
+use super::stats::indexer_logger;
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
 use crate::config::{IndexerConfig, RespondConfig};
@@ -48,8 +48,6 @@ pub fn spawn_real_indexer(
                 tx_processor,
                 indexer_config.mpc_contract_id.clone(),
             ));
-            // TODO: migrate this into IndexerState
-            let stats: Arc<Mutex<IndexerStats>> = Arc::new(Mutex::new(IndexerStats::new()));
             actix::spawn(monitor_contract_state(
                 indexer_state.clone(),
                 indexer_config.port_override,
@@ -57,7 +55,7 @@ pub fn spawn_real_indexer(
                 protocol_state_sender,
             ));
             actix::spawn(indexer_logger(
-                Arc::clone(&stats),
+                Arc::clone(&indexer_state.stats),
                 indexer_state.view_client.clone(),
             ));
             actix::spawn(handle_txn_requests(
@@ -80,7 +78,7 @@ pub fn spawn_real_indexer(
             let indexer_result = listen_blocks(
                 stream,
                 indexer_config.concurrency,
-                Arc::clone(&stats),
+                Arc::clone(&indexer_state.stats),
                 indexer_config.mpc_contract_id,
                 block_update_sender,
             )
