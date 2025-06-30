@@ -1,8 +1,9 @@
-use std::time::Duration;
-
+use crate::indexer::participants::ContractState;
+use crate::metrics;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
     request_signature_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -11,6 +12,7 @@ use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
 // and then produce signatures.
+#[serial_test::serial]
 #[tokio::test]
 async fn test_basic_multidomain() {
     init_integration_logger();
@@ -53,6 +55,16 @@ async fn test_basic_multidomain() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("must not exceed timeout");
+
+    tracing::info!("requesting signature");
     for domain in &domains {
         assert!(request_signature_and_await_response(
             &mut setup.indexer,
@@ -79,6 +91,23 @@ async fn test_basic_multidomain() {
         contract.add_domains(new_domains.clone());
         domains.extend(new_domains);
     }
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Initializing(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("must not exceed timeout");
+
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("must not exceed timeout");
 
     for domain in &domains {
         assert!(request_signature_and_await_response(
@@ -96,9 +125,21 @@ async fn test_basic_multidomain() {
         contract.start_resharing(setup.participants);
     }
 
-    // give nodes time to enter resharing so we don't lose the request.
-    tokio::time::sleep(Duration::from_millis(1000)).await;
-
+    // Give nodes some time to transition into resharing state.
+    for i in 0..20 {
+        // We're running with [serial] so querying metrics should be OK.
+        if let Ok(metric) =
+            metrics::MPC_CURRENT_JOB_STATE.get_metric_with_label_values(&["Resharing"])
+        {
+            if metric.get() == NUM_PARTICIPANTS as i64 - 1 {
+                break;
+            }
+        }
+        if i == 19 {
+            panic!("Timeout waiting for resharing to start");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
     for domain in &domains {
         assert!(
             request_signature_and_await_response(
