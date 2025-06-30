@@ -31,7 +31,7 @@ async fn test_faulty_cluster() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::FAULTY_CLUSTER_TEST,
-        std::time::Duration::from_secs(1),
+        std::time::Duration::from_millis(300),
     );
 
     let domain = DomainConfig {
@@ -166,7 +166,7 @@ async fn test_indexer_stuck() {
         accounts.clone(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::FAULTY_CLUSTER_TEST,
+        PortSeed::FAULTY_STUCK_INDEXER_TEST,
         std::time::Duration::from_millis(50),
     );
 
