@@ -42,6 +42,9 @@ mod multidomain;
 mod research;
 mod resharing;
 
+const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
+const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// Convenient test utilities to generate keys, triples, presignatures, and signatures.
 pub struct TestGenerators {
     pub participants: Vec<Participant>,
@@ -268,11 +271,13 @@ impl IntegrationTestSetup {
         threshold: usize,
         txn_delay_blocks: u64,
         port_seed: PortSeed,
+        block_time: std::time::Duration,
     ) -> IntegrationTestSetup {
         let p2p_configs =
             generate_test_p2p_configs(&participant_accounts, threshold, port_seed, None).unwrap();
         let participants = p2p_configs[0].0.participants.clone();
-        let mut indexer_manager = FakeIndexerManager::new(clock.clone(), txn_delay_blocks);
+        let mut indexer_manager =
+            FakeIndexerManager::new(clock.clone(), txn_delay_blocks, block_time);
 
         let mut configs = Vec::new();
         for (i, (_, p2p_key)) in p2p_configs.into_iter().enumerate() {
