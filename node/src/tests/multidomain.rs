@@ -1,9 +1,7 @@
 use crate::indexer::participants::ContractState;
-use crate::metrics;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
-    DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_MAX_PROTOCOL_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -12,7 +10,6 @@ use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
 // and then produce signatures.
-#[serial_test::serial]
 #[tokio::test]
 async fn test_basic_multidomain() {
     init_integration_logger();
@@ -29,7 +26,7 @@ async fn test_basic_multidomain() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::BASIC_MULTIDOMAIN_TEST,
-        DEFAULT_BLOCK_TIME,
+        std::time::Duration::from_millis(600), // helps to avoid flaky test
     );
 
     let mut domains = vec![
@@ -125,24 +122,23 @@ async fn test_basic_multidomain() {
         contract.start_resharing(setup.participants);
     }
 
-    // Give nodes some time to transition into resharing state.
-    for i in 0..50 {
-        // We're running with [serial] so querying metrics should be OK.
-        if let Ok(metric) =
-            metrics::MPC_CURRENT_JOB_STATE.get_metric_with_label_values(&["Resharing"])
-        {
-            println!("current job state: {:?}", metric.get());
-            if metric.get() == NUM_PARTICIPANTS as i64 {
-                break;
-            }
-        } else {
-            println!("error, could not get metric!")
-        }
-        if i == 49 {
-            panic!("Timeout waiting for resharing to start");
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    }
+    setup
+        .indexer
+        .wait_for_contract_state(
+            {
+                |state| {
+                    println!("state: {:?}", state);
+                    match state {
+                        ContractState::Running(running) => running.keyset.epoch_id.get() == 1,
+                        _ => false,
+                    }
+                }
+            },
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 4,
+        )
+        .await
+        .expect("must not exceed timeout");
+
     for domain in &domains {
         assert!(
             request_signature_and_await_response(
