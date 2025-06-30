@@ -111,7 +111,7 @@ async fn test_key_resharing_multistage() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_MULTISTAGE_TEST,
-        DEFAULT_BLOCK_TIME,
+        std::time::Duration::from_millis(600),
     );
 
     // Initialize the contract with two fewer participants.

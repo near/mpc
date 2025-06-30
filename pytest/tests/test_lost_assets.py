@@ -88,7 +88,7 @@ def test_lost_assets():
     cluster.mpc_nodes[2].wait_for_connection_count(2)
 
     # Wait for nodes 1 and 2 to clean up assets involving node 0
-    wait_for_asset_cleanup(cluster.mpc_nodes)
+    wait_for_asset_cleanup(cluster.mpc_nodes[1:])
 
     # Start node 0 again
     cluster.mpc_nodes[0].run()
@@ -124,6 +124,21 @@ def test_signature_pause_block_ingestion():
 
     # Simulate node 0's indexer falling behind
     mpc_nodes[0].set_block_ingestion(False)
+
+    started = time.time()
+    while True:
+        assert time.time() - started < 120, "Waiting for presignatures"
+        try:
+            block_heights = cluster.get_int_metric_value(
+                "mpc_indexer_latest_block_height")
+            print("block heights:", block_heights)
+            if (block_heights[0] + 10
+                    < block_heights[1]) and (block_heights[0] + 10
+                                             < block_heights[2]):
+                break
+        except requests.exceptions.ConnectionError:
+            pass
+        time.sleep(5)
 
     # we wait for the other nodes to cleanup
     wait_for_asset_cleanup(cluster.mpc_nodes[1:])
