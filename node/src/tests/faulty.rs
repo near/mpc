@@ -1,6 +1,8 @@
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
-use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
+use crate::tests::{
+    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
+};
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use near_o11y::testonly::init_integration_logger;
@@ -31,7 +33,7 @@ async fn test_faulty_cluster() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::FAULTY_CLUSTER_TEST,
-        std::time::Duration::from_millis(300),
+        DEFAULT_BLOCK_TIME,
     );
 
     let domain = DomainConfig {

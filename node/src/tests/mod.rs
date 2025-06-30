@@ -42,6 +42,8 @@ mod multidomain;
 mod research;
 mod resharing;
 
+const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
+
 /// Convenient test utilities to generate keys, triples, presignatures, and signatures.
 pub struct TestGenerators {
     pub participants: Vec<Participant>,

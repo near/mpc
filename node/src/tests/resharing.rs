@@ -9,6 +9,8 @@ use near_time::Clock;
 use serial_test::serial;
 use tokio::time::timeout;
 
+use super::DEFAULT_BLOCK_TIME;
+
 // Test a simple resharing of one node joining a cluster of 4 nodes.
 #[tokio::test]
 #[serial]
@@ -27,7 +29,7 @@ async fn test_key_resharing_simple() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_SIMPLE_TEST,
-        std::time::Duration::from_secs(1),
+        DEFAULT_BLOCK_TIME,
     );
 
     // Initialize the contract with one fewer participant.
@@ -108,7 +110,7 @@ async fn test_key_resharing_multistage() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_MULTISTAGE_TEST,
-        std::time::Duration::from_secs(1),
+        DEFAULT_BLOCK_TIME,
     );
 
     // Initialize the contract with two fewer participants.
@@ -289,7 +291,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_SIGNATURE_BUFFERING_TEST,
-        std::time::Duration::from_secs(1),
+        DEFAULT_BLOCK_TIME,
     );
 
     // Initialize the contract with one fewer participant.
