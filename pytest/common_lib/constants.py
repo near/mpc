@@ -5,6 +5,8 @@ MPC_REPO_DIR = pathlib.Path(__file__).resolve().parents[2]
 MPC_BINARY_PATH = os.path.join(MPC_REPO_DIR / 'target' / 'release', 'mpc-node')
 CONFIG_PATH = os.path.join(MPC_REPO_DIR / 'pytest' / 'config.json')
 
+LISTEN_BLOCKS_FILE = "listen_blocks.flag"
+
 TIMEOUT = 60
 SHORT_TIMEOUT = 10
 NEAR_BASE = 10**24
