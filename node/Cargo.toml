@@ -88,3 +88,4 @@ rstest = "0.25.0"
 
 [features]
 tee = []
+network-hardship-simulation = []

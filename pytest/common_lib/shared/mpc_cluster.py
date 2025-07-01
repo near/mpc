@@ -95,7 +95,7 @@ class MpcCluster:
     def mpc_contract_account(self):
         return self.contract_node.account_id()
 
-    def get_int_metric_value(self, metric_name):
+    def get_int_metric_value(self, metric_name) -> List[Optional[int]]:
         return [
             node.metrics.get_int_metric_value(metric_name)
             for node in self.mpc_nodes

@@ -45,6 +45,36 @@ pub struct ChainBlockUpdate {
     pub completed_signatures: Vec<SignatureId>,
 }
 
+#[cfg(feature = "network-hardship-simulation")]
+pub(crate) async fn listen_blocks(
+    stream: tokio::sync::mpsc::Receiver<near_indexer_primitives::StreamerMessage>,
+    concurrency: std::num::NonZeroU16,
+    stats: Arc<Mutex<IndexerStats>>,
+    mpc_contract_id: AccountId,
+    block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
+    mut process_blocks_receiver: tokio::sync::watch::Receiver<bool>,
+) -> anyhow::Result<()> {
+    let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
+        .map(|streamer_message| {
+            handle_message(
+                streamer_message,
+                Arc::clone(&stats),
+                &mpc_contract_id,
+                block_update_sender.clone(),
+            )
+        })
+        .buffer_unordered(usize::from(concurrency.get()));
+
+    while let Some(handle_message) = handle_messages.next().await {
+        while !*process_blocks_receiver.borrow() {
+            process_blocks_receiver.changed().await?;
+        }
+        handle_message?;
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "network-hardship-simulation"))]
 pub(crate) async fn listen_blocks(
     stream: tokio::sync::mpsc::Receiver<near_indexer_primitives::StreamerMessage>,
     concurrency: std::num::NonZeroU16,

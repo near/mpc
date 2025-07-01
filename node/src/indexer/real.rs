@@ -3,16 +3,40 @@ use super::participants::{monitor_contract_state, ContractState};
 use super::stats::indexer_logger;
 use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
+#[cfg(feature = "network-hardship-simulation")]
+use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
+#[cfg(feature = "tee")]
+use crate::indexer::tee::monitor_allowed_docker_images;
 use mpc_contract::state::ProtocolContractState;
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(feature = "network-hardship-simulation")]
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch, Mutex};
 
-#[cfg(feature = "tee")]
-use crate::indexer::tee::monitor_allowed_docker_images;
+#[cfg(feature = "network-hardship-simulation")]
+pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, home_dir: PathBuf) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let new_val = match load_listening_blocks_file(&home_dir) {
+            Ok(new_val) => {
+                tracing::info!("flag file found, setting to {}", new_val);
+                new_val
+            }
+            Err(e) => {
+                tracing::info!("flag file not found, setting to {}. Error: {}", true, e);
+                true
+            }
+        };
+        if process_blocks_sender.send(new_val).is_err() {
+            tracing::info!("channel closed");
+            return;
+        }
+    }
+}
 
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
 ///
@@ -48,16 +72,26 @@ pub fn spawn_real_indexer(
                 tx_processor,
                 indexer_config.mpc_contract_id.clone(),
             ));
+
+            #[cfg(feature = "network-hardship-simulation")]
+            let process_blocks_receiver = {
+                let (process_blocks_sender, process_blocks_receiver) = watch::channel(true);
+                actix::spawn(check_block_processing(process_blocks_sender, home_dir));
+                process_blocks_receiver
+            };
+
             actix::spawn(monitor_contract_state(
                 indexer_state.clone(),
                 indexer_config.port_override,
                 chain_config_sender,
                 protocol_state_sender,
             ));
+
             actix::spawn(indexer_logger(
                 Arc::clone(&indexer_state.stats),
                 indexer_state.view_client.clone(),
             ));
+
             actix::spawn(handle_txn_requests(
                 chain_txn_receiver,
                 my_near_account_id,
@@ -66,15 +100,18 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
 
-            #[cfg(feature = "tee")]
-            {
-                let allowed_docker_images_receiver =
-                    monitor_allowed_docker_images(indexer_state.clone()).await;
-                tee_sender
-                    .send(allowed_docker_images_receiver)
-                    .expect("Receiver for watcher must be alive");
-            }
+            #[cfg(feature = "network-hardship-simulation")]
+            let indexer_result = listen_blocks(
+                stream,
+                indexer_config.concurrency,
+                Arc::clone(&indexer_state.stats),
+                indexer_config.mpc_contract_id,
+                block_update_sender,
+                process_blocks_receiver,
+            )
+            .await;
 
+            #[cfg(not(feature = "network-hardship-simulation"))]
             let indexer_result = listen_blocks(
                 stream,
                 indexer_config.concurrency,
@@ -84,6 +121,14 @@ pub fn spawn_real_indexer(
             )
             .await;
 
+            #[cfg(feature = "tee")]
+            {
+                let allowed_docker_images_receiver =
+                    monitor_allowed_docker_images(indexer_state.clone()).await;
+                tee_sender
+                    .send(allowed_docker_images_receiver)
+                    .expect("Receiver for watcher must be alive");
+            }
             if indexer_exit_sender.send(indexer_result).is_err() {
                 tracing::error!("Indexer thread could not send result back to main driver.")
             };
