@@ -166,7 +166,7 @@ async fn test_indexer_stuck() {
         accounts.clone(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::FAULTY_CLUSTER_TEST,
+        PortSeed::FAULTY_STUCK_INDEXER_TEST,
         std::time::Duration::from_millis(50),
     );
 
