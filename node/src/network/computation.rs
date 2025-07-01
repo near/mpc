@@ -1,5 +1,3 @@
-use tracing::info;
-
 use super::NetworkTaskChannel;
 use crate::tracking;
 use std::future::Future;

@@ -25,6 +25,7 @@ async fn test_basic_cluster() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::BASIC_CLUSTER_TEST,
+        std::time::Duration::from_secs(1),
     );
 
     let domain = DomainConfig {
