@@ -6,6 +6,7 @@ use crate::config::ParticipantsConfig;
 use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
+use anyhow::Context;
 use mpc_contract::config::Config;
 use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
@@ -253,6 +254,9 @@ struct FakeIndexerCore {
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
     /// code.
     sign_response_sender: mpsc::UnboundedSender<ChainRespondArgs>,
+
+    /// How long to wait before generating the next block.
+    block_time: std::time::Duration,
 }
 
 impl FakeIndexerCore {
@@ -381,6 +385,7 @@ impl FakeIndexerCore {
                         contract.vote_abort_key_event(account_id, abort.key_event_id);
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
+                    #[cfg(feature = "tee")]
                     ChainSendTransactionRequest::SubmitRemoteAttestation(_tee_attestation) => {
                         unimplemented!(
                             "Submitting remote attestation is not implemented for tests yet."
@@ -390,7 +395,7 @@ impl FakeIndexerCore {
             }
             self.block_update_sender.send(block_update).ok();
             current_block = block;
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(self.block_time).await;
         }
     }
 }
@@ -417,6 +422,8 @@ pub struct FakeIndexerManager {
 
     /// Allows nodes to be disabled during tests. See `disable()`.
     node_disabler: HashMap<AccountId, NodeDisabler>,
+    /// Allows nodes' indexers to be paused during tests.
+    indexer_pauser: HashMap<AccountId, IndexerPauser>,
     /// Allows modification of the contract.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 }
@@ -429,10 +436,20 @@ struct NodeDisabler {
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
 }
 
+/// Allows a node's indexer to be paused.
+struct IndexerPauser {
+    indexer_suspended: watch::Sender<bool>,
+}
+
 /// While holding this, the node remains disabled.
 pub struct DisabledNode {
     disable: Arc<AtomicBool>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
+}
+
+/// While holding this, the node's indexer is paused.
+pub struct PausedIndexer {
+    indexer_suspended: watch::Sender<bool>,
 }
 
 impl DisabledNode {
@@ -462,6 +479,12 @@ impl Drop for DisabledNode {
     }
 }
 
+impl Drop for PausedIndexer {
+    fn drop(&mut self) {
+        self.indexer_suspended.send(false).unwrap();
+    }
+}
+
 /// Runs the fake indexer logic for one node.
 struct FakeIndexerOneNode {
     /// Account under which transactions by this node are originated.
@@ -475,6 +498,8 @@ struct FakeIndexerOneNode {
     /// Whether the node should yield ContractState::Invalid to artificially simulate bringing the
     /// node down.
     disable: Arc<AtomicBool>,
+    /// Whether the indexer shall be suspended.
+    indexer_suspended: watch::Receiver<bool>,
 
     // The following are counterparts of the API channels.
     api_state_sender: watch::Sender<ContractState>,
@@ -490,6 +515,7 @@ impl FakeIndexerOneNode {
             mut core_state_change_receiver,
             mut block_update_receiver,
             disable: shutdown,
+            mut indexer_suspended,
             api_state_sender,
             api_block_update_sender,
             mut api_txn_receiver,
@@ -514,6 +540,10 @@ impl FakeIndexerOneNode {
         let monitor_signature_requests = AutoAbortTask::from(tokio::spawn(async move {
             loop {
                 let request = block_update_receiver.recv().await.unwrap();
+                indexer_suspended
+                    .wait_for(|suspended| !suspended)
+                    .await
+                    .unwrap();
                 api_block_update_sender.send(request).unwrap();
             }
         }));
@@ -530,7 +560,7 @@ impl FakeIndexerOneNode {
 
 impl FakeIndexerManager {
     /// Creates a new fake indexer whose contract state begins with WaitingForSync.
-    pub fn new(clock: Clock, txn_delay_blocks: u64) -> Self {
+    pub fn new(clock: Clock, txn_delay_blocks: u64, block_time: std::time::Duration) -> Self {
         let (txn_sender, txn_receiver) = mpsc::unbounded_channel();
         let (state_change_sender, _) = broadcast::channel(1000);
         let (block_update_sender, _) = broadcast::channel(1000);
@@ -546,6 +576,7 @@ impl FakeIndexerManager {
             state_change_sender: state_change_sender.clone(),
             block_update_sender: block_update_sender.clone(),
             sign_response_sender,
+            block_time,
         };
         let core_task = AutoAbortTask::from(tokio::spawn(async move { core.run().await }));
         Self {
@@ -556,6 +587,7 @@ impl FakeIndexerManager {
             response_receiver,
             signature_request_sender,
             node_disabler: HashMap::new(),
+            indexer_pauser: HashMap::new(),
             contract,
         }
     }
@@ -598,17 +630,23 @@ impl FakeIndexerManager {
             disable: Arc::new(AtomicBool::new(false)),
             currently_running_job_name: currently_running_job_name.clone(),
         };
+        let (indexer_pauser_sender, indexer_pauser_receiver) = watch::channel(false);
+        let indexer_pauser = IndexerPauser {
+            indexer_suspended: indexer_pauser_sender,
+        };
         let one_node = FakeIndexerOneNode {
             account_id: account_id.clone(),
             core_txn_sender: self.core_txn_sender.clone(),
             core_state_change_receiver: self.core_state_change_sender.subscribe(),
             block_update_receiver: self.core_block_update_sender.subscribe(),
             disable: disabler.disable.clone(),
+            indexer_suspended: indexer_pauser_receiver,
             api_state_sender,
             api_block_update_sender: api_signature_request_sender,
             api_txn_receiver,
         };
-        self.node_disabler.insert(account_id, disabler);
+        self.node_disabler.insert(account_id.clone(), disabler);
+        self.indexer_pauser.insert(account_id, indexer_pauser);
         (
             indexer,
             AutoAbortTask::from(tokio::spawn(one_node.run())),
@@ -617,14 +655,27 @@ impl FakeIndexerManager {
     }
 
     /// Waits for the contract state to satisfy the given predicate.
-    pub async fn wait_for_contract_state(&mut self, f: impl Fn(&ContractState) -> bool) {
+    pub async fn wait_for_contract_state(
+        &mut self,
+        f: impl Fn(&ContractState) -> bool,
+        timeout_duration: tokio::time::Duration,
+    ) -> anyhow::Result<()> {
         let mut state_change_receiver = self.core_state_change_sender.subscribe();
-        loop {
-            let state = state_change_receiver.recv().await.unwrap();
-            if f(&state) {
-                break;
+        tokio::time::timeout(timeout_duration, async {
+            loop {
+                let state: ContractState = state_change_receiver
+                    .recv()
+                    .await
+                    .context("State change sender was dropped")?;
+                if f(&state) {
+                    break;
+                }
             }
-        }
+            Ok::<(), anyhow::Error>(())
+        })
+        .await
+        .context("Timed out while waiting for contract state")??;
+        Ok(())
     }
 
     /// Disables a node, in order to test resilience to node failures.
@@ -650,6 +701,15 @@ impl FakeIndexerManager {
         DisabledNode {
             disable: disable.clone(),
             currently_running_job_name: currently_running_job_name.clone(),
+        }
+    }
+
+    /// Pauses a node's indexer, in order to test resilience to indexer being stuck.
+    pub async fn pause_indexer(&self, account_id: AccountId) -> PausedIndexer {
+        let indexer_pauser = self.indexer_pauser.get(&account_id).unwrap();
+        indexer_pauser.indexer_suspended.send(true).unwrap();
+        PausedIndexer {
+            indexer_suspended: indexer_pauser.indexer_suspended.clone(),
         }
     }
 

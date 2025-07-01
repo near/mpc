@@ -1,9 +1,11 @@
+use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
 #[cfg(feature = "tee")]
 use mpc_contract::tee::proposal::AllowedDockerImageHash;
 use near_indexer_primitives::types::AccountId;
 use participants::ContractState;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::sync::{mpsc, watch};
 use types::ChainSendTransactionRequest;
 
@@ -32,6 +34,8 @@ pub(crate) struct IndexerState {
     tx_processor: actix::Addr<near_client::TxRequestHandlerActor>,
     /// AccountId for the mpc contract.
     mpc_contract_id: AccountId,
+    /// Stores runtime indexing statistics.
+    stats: Arc<Mutex<IndexerStats>>,
 }
 
 impl IndexerState {
@@ -46,6 +50,7 @@ impl IndexerState {
             client,
             tx_processor,
             mpc_contract_id,
+            stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
     }
 }

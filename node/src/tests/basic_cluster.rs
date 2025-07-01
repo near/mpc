@@ -1,15 +1,15 @@
 use crate::p2p::testing::PortSeed;
-use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
+use crate::tests::{
+    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
+};
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
-use serial_test::serial;
 
 // Make a cluster of four nodes, test that we can generate keyshares
 // and then produce signatures.
 #[tokio::test]
-#[serial]
 async fn test_basic_cluster() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 4;
@@ -25,6 +25,7 @@ async fn test_basic_cluster() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::BASIC_CLUSTER_TEST,
+        DEFAULT_BLOCK_TIME,
     );
 
     let domain = DomainConfig {
