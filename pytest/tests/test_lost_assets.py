@@ -145,6 +145,9 @@ def test_signature_pause_block_ingestion():
 
     cluster.send_and_await_signature_requests(5)
 
+    # re-enable block ingestion, in case any tests run afterwards
+    mpc_nodes[0].set_block_ingestion(True)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
