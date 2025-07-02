@@ -39,7 +39,6 @@ def test_interactive_cluster():
     num_respond_access_keys = 5
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
         2, 6, num_respond_access_keys, load_mpc_contract())
-    cluster.init_cluster(mpc_nodes, 4)
     print(
         "Interactive mode started. Type 'sign <num_signatures>' to send signature requests or 'quit' to exit."
     )
@@ -49,6 +48,10 @@ def test_interactive_cluster():
             if cmd == "quit":
                 print("Quitting interactive mode.")
                 break
+            if cmd == "init":
+                cluster.define_candidate_set(mpc_nodes)
+                cluster.update_participant_status(assert_contract=False)
+                cluster.init_contract(threshold=4)
             elif cmd.startswith("sign"):
                 try:
                     n_signatures = int(cmd.split()[1])

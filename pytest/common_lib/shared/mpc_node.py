@@ -115,6 +115,12 @@ class MpcNode(NearAccount):
         label = b"dummy-hash"
         padded = label.ljust(32, b'\x00')  # pad with null bytes to 32 bytes
         hex_str = padded.hex()
+
+        node_dir = pathlib.Path(self.home_dir)
+        file_path = node_dir / "allowed_hashes.txt"
+        file_path.write_text(
+            "64756d6d792d6861736800000000000000000000000000000000000000000000",
+            encoding='utf-8')
         cmd = (
             MPC_BINARY_PATH,
             'start',

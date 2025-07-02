@@ -1,6 +1,7 @@
+use anyhow::anyhow;
 use itertools::Itertools;
 use mpc_contract::tee::proposal::{AllowedDockerImageHash, MpcDockerImageHash};
-use std::{future::Future, io, panic, path::PathBuf};
+use std::{fs, future::Future, io, panic, path::PathBuf};
 use thiserror::Error;
 use tokio::{
     fs::OpenOptions,
@@ -30,15 +31,36 @@ pub struct AllowedImageHashesFile {
 }
 
 impl AllowedImageHashesFile {
-    pub async fn new(file_path: PathBuf) -> Result<Self, io::Error> {
-        // Make sure the provided path exists.
-        let _file_handle = OpenOptions::new()
-            .write(true)
-            .truncate(false)
-            .open(&file_path)
-            .await?;
+    pub async fn new(file_path: PathBuf) -> anyhow::Result<Self> {
+        let canonical = fs::canonicalize(&file_path);
+        tracing::info!(target : "TEE", "canonical path: {:?}", canonical);
+        tracing::info!(target : "TEE", "opening: {:?}", file_path);
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            OpenOptions::new()
+                .truncate(false)
+                // why do we even need to open in write mode here??
+                //
+                .create(true)
+                .open(&file_path),
+        )
+        .await;
+        tracing::info!(target : "TEE", "canonical path done");
 
-        Ok(Self { file_path })
+        match result {
+            Ok(Ok(_)) => {
+                tracing::info!(target : "TEE", "opened file successfully");
+                Ok(Self { file_path })
+            }
+            Ok(Err(e)) => {
+                tracing::error!(target : "TEE", "file open failed: {:?}", e);
+                Err(anyhow!("file open failed: {:?}", e))
+            }
+            Err(_) => {
+                tracing::error!(target : "TEE", "timed out while opening file");
+                Err(anyhow!("file open failed. timed out"))
+            }
+        }
     }
 }
 

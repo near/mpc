@@ -242,8 +242,10 @@ impl StartCmd {
             tracing::info!(target: "TEE", "image hash: {}", self.tee_config.image_hash);
             let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
             tracing::info!(target: "TEE", "cloned receiver");
-            let image_hash_storage =
-                AllowedImageHashesFile::new(self.tee_config.latest_allowed_hash_file).await;
+            let image_hash_path = home_dir
+                .clone()
+                .join(&self.tee_config.latest_allowed_hash_file);
+            let image_hash_storage = AllowedImageHashesFile::new(image_hash_path).await;
             tracing::info!(target: "TEE", "image hash store found");
             let image_hash_storage = match image_hash_storage {
                 Ok(x) => x,
