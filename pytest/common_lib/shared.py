@@ -792,7 +792,7 @@ def start_cluster_with_mpc(num_validators,
         fname = os.path.join(mpc_node.near_node.node_dir, 'config.json')
         with open(fname) as fd:
             config_json = json.load(fd)
-        config_json['tracked_shards'] = [0]
+        config_json['tracked_shards_config'] = "AllShards"
         with open(fname, 'w') as fd:
             json.dump(config_json, fd, indent=2)
         print(f"Wrote {fname} as config for node {mpc_node.account_id}")
