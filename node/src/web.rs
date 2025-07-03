@@ -158,11 +158,18 @@ async fn get_public_data(state: State<WebServerState>) -> Json<StaticWebData> {
 pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
-    config: WebUIConfig,
+    config: WebUIConfig, // assuming this contains host and port
     static_web_data: StaticWebData,
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
+
+    // Print out the config parameters before attempting to bind
+    tracing::debug!(
+        "Attempting to bind web server to host: {}, port: {}",
+        config.host,
+        config.port
+    );
 
     let router = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics))
@@ -180,9 +187,17 @@ pub async fn start_web_server(
             static_web_data,
         });
 
-    let tcp_listener = TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;
+    // Binding to the address
+    let bind_address = format!("{}:{}", config.host, config.port);
+    tracing::debug!("Binding to address: {}", bind_address); // Added print for bind address
+    let tcp_listener = TcpListener::bind(&bind_address).await?;
+
+    tracing::debug!("Successfully bound to address: {}", bind_address); // Added success print
+
     Ok(async move {
+        tracing::debug!("Starting to serve requests..."); // Print before serving
         serve(tcp_listener, router).await?;
+        tracing::debug!("Server stopped successfully."); // Print after serving
         anyhow::Ok(())
     }
     .boxed())
