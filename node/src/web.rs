@@ -14,6 +14,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
+use tracing::debug;
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -155,6 +156,7 @@ async fn get_public_data(state: State<WebServerState>) -> Json<StaticWebData> {
 /// The returned future is the one that actually serves. It will be
 /// long-running, and is typically not expected to return. However, dropping
 /// the returned future will stop the web server.
+
 pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
@@ -163,6 +165,9 @@ pub async fn start_web_server(
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
+
+    // Print out the config parameters before attempting to bind
+    tracing::debug!("Attempting to bind web server to host: {}, port: {}", config.host, config.port);
 
     let router = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics))
@@ -180,9 +185,25 @@ pub async fn start_web_server(
             static_web_data,
         });
 
-    let tcp_listener = TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;
+    // Binding to the address
+    let bind_address = format!("{}:{}", config.host, config.port);
+    let tcp_listener = TcpListener::bind(&bind_address).await;
+
+    // Check the result of binding and print success or failure
+    match tcp_listener {
+        Ok(_) => {
+            tracing::debug!("Successfully bound to address: {}", bind_address);
+        }
+        Err(e) => {
+            tracing::debug!("Failed to bind to address: {}. Error: {}", bind_address, e);
+            return Err(anyhow::anyhow!("Failed to bind to address: {}", e).into());
+        }
+    }
+
     Ok(async move {
-        serve(tcp_listener, router).await?;
+        axum::Server::from_tcp(tcp_listener)?
+            .serve(router.into_make_service())
+            .await?;
         anyhow::Ok(())
     }
     .boxed())
