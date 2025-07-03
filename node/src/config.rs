@@ -245,12 +245,12 @@ impl PersistentSecrets {
         }
 
         // Generate p2p secret key and public key
-        let p2p_secret = {
-            let (secret_key, public_key) = p2p::keygen::generate_keypair()?;
-            SecretKey::ED25519(secret_key)
-        };
-       // let p2p_public_key = p2p::keygen::get_public_key_from_secret(&p2p_secret); // Assuming you have a way to get public key from secret
+        let (secret_key, public_key) = p2p::keygen::generate_keypair()?;
+        // The public key is available here, so you can log it immediately.
         tracing::debug!("Generated p2p public key: {:?}", public_key);
+
+        // Store the secret key in SecretKey
+        let p2p_secret = SecretKey::ED25519(secret_key);
 
         // Generate near signer key and public key
         let near_signer_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
