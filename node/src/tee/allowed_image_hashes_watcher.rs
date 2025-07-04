@@ -63,7 +63,7 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
 
 #[derive(Error, Debug)]
 pub enum ExitError {
-    #[error("Could not write to the provided storage provider.")]
+    #[error("Could not write allowed image hash to storage provider.")]
     StorageProviderError(#[from] io::Error),
     #[error(
         "The provided watcher that tracks the allowed image hashes on the contract was closed."
@@ -75,7 +75,7 @@ pub enum ExitError {
 /// `allowed_hashes_in_contract` and writes them to the provided storage `image_hash_storage`.
 ///
 /// The future will exit with an error and send a shutdown signal on the `shutdown_signal_sender` if:
-/// - The provided [AllowedImageHashesStorage::set] implementation returns an [io::Error
+/// - The provided [AllowedImageHashesStorage::set] implementation returns an [io::Error]
 /// - The provided `allowed_hashes_in_contract` channel is closed.
 ///
 /// ### Cancellation Safety:
