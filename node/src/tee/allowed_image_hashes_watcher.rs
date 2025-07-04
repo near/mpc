@@ -12,7 +12,6 @@ use tokio::{
     },
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
 
 #[cfg(test)]
 use mockall::automock;
@@ -119,7 +118,7 @@ impl<Storage> Drop for AllowedImageHashesWatcher<Storage> {
         if exiting_without_cancelled_token {
             let sent_shutdown_signal = self.shutdown_signal_sender.try_send(());
             if let Err(TrySendError::Closed(_)) = sent_shutdown_signal {
-                error!("Shutdown signal receiver closed.");
+                tracing::error!("Shutdown signal receiver closed.");
             }
         }
     }
@@ -156,14 +155,16 @@ where
     ///
     /// Returns an [io::Error] if the [AllowedImageHashesStorage::set] implementation fails.
     async fn handle_allowed_image_hashes_update(&mut self) -> Result<(), io::Error> {
-        info!("Set of allowed image hashes on contract has changed. Storing hashes to disk.");
+        tracing::info!(
+            "Set of allowed image hashes on contract has changed. Storing hashes to disk."
+        );
         let allowed_image_hashes = self.allowed_hashes_in_contract.borrow_and_update().clone();
 
         let image_hash_storage = &mut self.image_hash_storage;
         let Some(latest_allowed_image_hash) =
             allowed_image_hashes.iter().max_by_key(|image| image.added)
         else {
-            warn!("Indexer provided an empty set of allowed TEE image hashes.");
+            tracing::warn!("Indexer provided an empty set of allowed TEE image hashes.");
             return Ok(());
         };
 
@@ -175,7 +176,7 @@ where
             .contains(&self.current_image);
 
         if !local_image_is_allowed {
-            error!(
+            tracing::error!(
                 "Current node image not in set of allowed image hashes. Sending shut down signal."
             );
         }
