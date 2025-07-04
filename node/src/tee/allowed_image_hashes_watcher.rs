@@ -74,8 +74,9 @@ pub enum ExitError {
 /// Creates a future that monitors the latest allowed image hashes in
 /// `allowed_hashes_in_contract` and writes them to the provided storage `image_hash_storage`.
 ///
-/// If the node's current running image is not in the latest allowed images on the contract
-/// a shutdown signal will be sent on the provided `shutdown_signal_sender`.
+/// The future will exit with an error and send a shutdown signal on the `shutdown_signal_sender` if:
+/// - The provided [AllowedImageHashesStorage::set] implementation returns an [io::Error
+/// - The provided `allowed_hashes_in_contract` channel is closed.
 ///
 /// ### Cancellation Safety:
 /// This future is only cancel safe iff the provided storage implementation is cancel safe. To cancel this future
@@ -150,7 +151,11 @@ where
         }
     }
 
-    async fn handle_allowed_image_hashes_update(&mut self) -> Result<(), ExitError> {
+    /// Handles an updated list of allowed image hashes in the `allowed_hashes_in_contract` watcher.
+    /// The latest allowed image hash is written to the `image_hash_storage`.
+    ///
+    /// Returns an [io::Error] if the [AllowedImageHashesStorage::set] implementation fails.
+    async fn handle_allowed_image_hashes_update(&mut self) -> Result<(), io::Error> {
         info!("Set of allowed image hashes on contract has changed. Storing hashes to disk.");
         let allowed_image_hashes = self.allowed_hashes_in_contract.borrow_and_update().clone();
 
@@ -162,24 +167,20 @@ where
             return Ok(());
         };
 
-        image_hash_storage
-            .set(latest_allowed_image_hash)
-            .await
-            .map_err(ExitError::StorageProviderError)?;
+        image_hash_storage.set(latest_allowed_image_hash).await?;
 
         let local_image_is_allowed = allowed_image_hashes
             .iter()
             .map(|image| &image.image_hash)
             .contains(&self.current_image);
 
-        if local_image_is_allowed {
-            Ok(())
-        } else {
+        if !local_image_is_allowed {
             error!(
                 "Current node image not in set of allowed image hashes. Sending shut down signal."
             );
-            Ok(())
         }
+
+        Ok(())
     }
 }
 
