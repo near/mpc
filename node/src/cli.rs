@@ -329,13 +329,27 @@ impl StartCmd {
         };
 
         // submit remote attestation
-        #[cfg(feature = "tee")]
+       #[cfg(feature = "tee")]
         {
             let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
+            
+            // Match on `report_data_contract` to safely extract the value
+            let report_data_contract = match report_data_contract {
+                Some(contract) => contract,
+                None => return Err(anyhow::anyhow!("Missing report data contract").into()),
+            };
+
+            // Log the values being sent to submit_remote_attestation
+            info!(
+                "Submitting remote attestation with values: txn_sender = {:?}, report_data_contract = {:?}, account_public_key = {:?}",
+                indexer_api.txn_sender, // Log txn_sender
+                report_data_contract,   // Log report_data_contract (no unwrap, it's already extracted)
+                account_public_key      // Log account_public_key
+            );
 
             submit_remote_attestation(
                 indexer_api.txn_sender.clone(),
-                report_data_contract.unwrap(),
+                report_data_contract,   // Pass the value here
                 account_public_key,
             )
             .await?;
