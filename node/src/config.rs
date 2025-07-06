@@ -307,9 +307,15 @@ impl PersistentSecrets {
             tracing::debug!("p2p and near account secret key not found. Generating...");
             Self::gen_secrets_and_write_to_disk(home_dir, number_of_responder_keys)?
         };
-           // Log the public keys directly
-        tracing::debug!("Using existing near_signer public key: {:?}", secrets.near_signer_key.public_key());
-        tracing::debug!("Using existing p2p public key: {:?}", secrets.p2p_private_key.public_key());
+        // Log the public keys directly
+        tracing::debug!(
+            "Using existing near_signer public key: {:?}",
+            secrets.near_signer_key.public_key()
+        );
+        tracing::debug!(
+            "Using existing p2p public key: {:?}",
+            secrets.p2p_private_key.public_key()
+        );
 
         if secrets.near_responder_keys.len() != number_of_responder_keys {
             tracing::warn!("Number of responder keys in secrets.json does not match number of responder keys specified.")

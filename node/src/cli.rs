@@ -329,10 +329,10 @@ impl StartCmd {
         };
 
         // submit remote attestation
-       #[cfg(feature = "tee")]
+        #[cfg(feature = "tee")]
         {
             let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
-            
+
             // Match on `report_data_contract` to safely extract the value
             let report_data_contract = match report_data_contract {
                 Some(contract) => contract,
@@ -349,7 +349,7 @@ impl StartCmd {
 
             submit_remote_attestation(
                 indexer_api.txn_sender.clone(),
-                report_data_contract,   // Pass the value here
+                report_data_contract, // Pass the value here
                 account_public_key,
             )
             .await?;
