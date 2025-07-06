@@ -336,7 +336,7 @@ impl StartCmd {
             // Match on `report_data_contract` to safely extract the value
             let report_data_contract = match report_data_contract {
                 Some(contract) => contract,
-                None => return Err(anyhow::anyhow!("Missing report data contract").into()),
+                None => return Err(anyhow::anyhow!("Missing report data contract")),
             };
 
             // Log the values being sent to submit_remote_attestation
