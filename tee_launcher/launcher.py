@@ -83,6 +83,9 @@ ALLOWED_ENV_VARS = {
 HOST_ENTRY_RE = re.compile(r"^[a-zA-Z0-9\-\.]+:\d{1,3}(\.\d{1,3}){3}$")
 PORT_MAPPING_RE = re.compile(r"^(\d{1,5}):(\d{1,5})$")
 
+# Updated regex to block any entry starting with '-' (including '--') and other unsafe characters
+INVALID_HOST_ENTRY_PATTERN = re.compile(r"^[;&|`$\\<>-]|^--")
+
 
 def is_valid_ip(ip: str) -> bool:
     try:
@@ -106,12 +109,23 @@ def is_valid_port_mapping(entry: str) -> bool:
     host_port, container_port = map(int, match.groups())
     return 0 < host_port <= 65535 and 0 < container_port <= 65535
 
+
 def is_non_empty_and_cleaned(val: str) -> bool:
     if not isinstance(val, str):
         return False
     if not val.strip():
         return False
     return val.strip() == val
+
+
+def is_safe_host_entry(entry: str) -> bool:
+    """Ensure that host entry does not contain unsafe characters or start with '--' or'-'."""
+    return not INVALID_HOST_ENTRY_PATTERN.search(entry)
+
+
+def is_safe_port_mapping(mapping: str) -> bool:
+    """Ensure that the port mapping does not contain unsafe characters or start with '--' or '-'."""
+    return not INVALID_HOST_ENTRY_PATTERN.search(mapping)
 
 
 @dataclass(frozen=True)
@@ -353,7 +367,7 @@ def main():
     user_env_file = "/tapp/.host-shared/.user-config"
     user_env = parse_env_file(user_env_file) if os.path.isfile(user_env_file) else {}
     docker_cmd = build_docker_cmd(user_env, image_digest)
-    logging.info("docker cmd %s", " ".join(docker_cmd))
+    #logging.info("docker cmd %s", " ".join(docker_cmd))
     proc = run(docker_cmd)
 
     if proc.returncode:
@@ -479,27 +493,23 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         elif key == "EXTRA_HOSTS":
             for host_entry in value.split(","):
                 clean_host = host_entry.strip()
-                if clean_host.startswith("--"):
-                    logging.warning(
-                        f"Blocked CLI injection attempt in EXTRA_HOSTS: {clean_host}"
-                    )
-                    continue
-                if is_valid_host_entry(clean_host):
+                if is_safe_host_entry(clean_host) and is_valid_host_entry(clean_host):
                     docker_cmd += ["--add-host", clean_host]
                 else:
-                    logging.warning(f"Ignoring invalid EXTRA_HOSTS entry: {clean_host}")
+                    logging.warning(
+                        f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean_host}"
+                    )
         elif key == "PORTS":
             for port_pair in value.split(","):
                 clean_port = port_pair.strip()
-                if clean_port.startswith("--"):
-                    logging.warning(
-                        f"Blocked CLI injection attempt in PORTS: {clean_port}"
-                    )
-                    continue
-                if is_valid_port_mapping(clean_port):
+                if is_safe_port_mapping(clean_port) and is_valid_port_mapping(
+                    clean_port
+                ):
                     docker_cmd += ["-p", clean_port]
                 else:
-                    logging.warning(f"Ignoring invalid PORTS entry: {clean_port}")
+                    logging.warning(
+                        f"Ignoring invalid or unsafe PORTS entry: {clean_port}"
+                    )
         else:
             logging.warning(f"Ignoring unauthorized environment variable: {key}")
 
@@ -517,7 +527,9 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         "--detach",
         image_digest,
     ]
+    logging.info("docker cmd %s", " ".join(docker_cmd))
     return docker_cmd
+
 
 if __name__ == "__main__":
     try:

@@ -188,3 +188,117 @@ def test_parse_and_build_docker_cmd_full_flow():
     # Confirm malicious injection is blocked
     assert not any("--env BAD=oops" in s or "oops" in s for s in cmd)
     assert not any("/:/mnt" in s for s in cmd)
+
+
+
+# Test that ensures LD_PRELOAD cannot be injected into the docker command
+def test_ld_preload_injection_blocked1():
+    # Set up the environment variable with a dangerous LD_PRELOAD value
+    malicious_env = {
+        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "--env LD_PRELOAD": "/path/to/my/malloc.so",  # The dangerous value
+    }
+    
+    # Call build_docker_cmd to generate the docker command
+    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+
+    # Check that LD_PRELOAD is not included in the command
+    assert "--env" in docker_cmd  # Ensure there is an env var
+    assert "LD_PRELOAD" not in docker_cmd  # Make sure LD_PRELOAD is not in the generated command
+
+    # Alternatively, if you're using a regex to ensure safe environment variables
+    assert not any("-e " in arg for arg in docker_cmd)  # Ensure no CLI injection for LD_PRELOAD
+
+# Additional tests can go here for host/port validation
+
+  
+# Test that ensures LD_PRELOAD cannot be injected through extra hosts
+def test_ld_preload_in_extra_hosts1():
+    # Set up environment with malicious EXRA_HOSTS containing LD_PRELOAD
+    malicious_env = {
+        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "EXTRA_HOSTS": "host1:192.168.0.1,host2:192.168.0.2,--env LD_PRELOAD=/path/to/my/malloc.so"
+    }
+    
+    # Call build_docker_cmd to generate the docker command
+    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+    
+    # Check that LD_PRELOAD is not part of the extra hosts in the docker command
+    assert "--add-host" in docker_cmd  # Ensure extra hosts are included
+    assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
+
+    # Check that there are no malicious injections
+    assert not any("--env LD_PRELOAD" in arg for arg in docker_cmd)  # No environment injection
+
+# Test that ensures LD_PRELOAD cannot be injected through ports
+def test_ld_preload_in_ports1():
+    # Set up environment with malicious PORTS containing LD_PRELOAD
+    malicious_env = {
+        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "PORTS": "11780:11780,--env LD_PRELOAD=/path/to/my/malloc.so"
+    }
+
+    # Call build_docker_cmd to generate the docker command
+    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+
+    # Check that LD_PRELOAD is not part of the port mappings in the docker command
+    assert "-p" in docker_cmd  # Ensure port mappings are included
+    assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
+
+    # Check that there are no malicious injections
+    assert not any("--env LD_PRELOAD" in arg for arg in docker_cmd)  # No environment injection
+
+# Additional tests could go here to check other edge cases
+
+
+
+# Test that ensures LD_PRELOAD cannot be injected into the docker command
+def test_ld_preload_injection_blocked2():
+    # Set up the environment variable with a dangerous LD_PRELOAD value
+    malicious_env = {
+        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "-e LD_PRELOAD": "/path/to/my/malloc.so",  # The dangerous value
+    }
+    
+    # Call build_docker_cmd to generate the docker command
+    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+
+    assert "-e LD_PRELOAD" not in docker_cmd  # Make sure LD_PRELOAD is not in the generated command
+
+# Additional tests can go here for host/port validation
+
+  
+# Test that ensures LD_PRELOAD cannot be injected through extra hosts
+def test_ld_preload_in_extra_hosts2():
+    # Set up environment with malicious EXRA_HOSTS containing LD_PRELOAD
+    malicious_env = {
+        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "EXTRA_HOSTS": "host1:192.168.0.1,host2:192.168.0.2,-e LD_PRELOAD=/path/to/my/malloc.so"
+    }
+    
+    # Call build_docker_cmd to generate the docker command
+    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+    
+    # Check that LD_PRELOAD is not part of the extra hosts in the docker command
+    assert "--add-host" in docker_cmd  # Ensure extra hosts are included
+    assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
+
+   
+
+# Test that ensures LD_PRELOAD cannot be injected through ports
+def test_ld_preload_in_ports2():
+    # Set up environment with malicious PORTS containing LD_PRELOAD
+    malicious_env = {
+        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "PORTS": "11780:11780,-e LD_PRELOAD=/path/to/my/malloc.so"
+    }
+
+    # Call build_docker_cmd to generate the docker command
+    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+
+    # Check that LD_PRELOAD is not part of the port mappings in the docker command
+    assert "-p" in docker_cmd  # Ensure port mappings are included
+    assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
+    
+
+# Additional tests could go here to check other edge cases
