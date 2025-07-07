@@ -56,7 +56,7 @@ pub fn spawn_real_indexer(
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
     #[cfg(feature = "tee")]
-    let (tee_sender, tee_receiver) = oneshot::channel();
+    let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
 
     // TODO(#156): replace actix with tokio
     std::thread::spawn(move || {
@@ -122,23 +122,16 @@ pub fn spawn_real_indexer(
             .await;
 
             #[cfg(feature = "tee")]
-            {
-                let allowed_docker_images_receiver =
-                    monitor_allowed_docker_images(indexer_state.clone()).await;
-                tee_sender
-                    .send(allowed_docker_images_receiver)
-                    .expect("Receiver for watcher must be alive");
-            }
+            tokio::spawn(monitor_allowed_docker_images(
+                allowed_docker_images_sender,
+                indexer_state.clone(),
+            ));
+
             if indexer_exit_sender.send(indexer_result).is_err() {
                 tracing::error!("Indexer thread could not send result back to main driver.")
             };
         });
     });
-
-    #[cfg(feature = "tee")]
-    let allowed_docker_images_receiver = tee_receiver
-        .blocking_recv()
-        .expect("monitor_allowed_docker_images must be called.");
 
     IndexerAPI {
         contract_state_receiver: chain_config_receiver,
