@@ -294,6 +294,7 @@ impl StartCmd {
         {
             let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();
             let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
+            tracing::info!("Generating remote attestation info");
             let report_data =
                 create_remote_attestation_info(&tls_public_key, &account_public_key).await;
             report_data_contract = Some(report_data.try_into()?);
