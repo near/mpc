@@ -27,10 +27,19 @@ json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
 EOF
 }
 
+if [ -n "$MPC_RESPONDER_ID" ]; then
+  responder_id="$MPC_RESPONDER_ID"
+else
+  echo "WARNING: \$MPC_RESPONDER_ID is not set, falling back to \$MPC_ACCOUNT_ID"
+  responder_id="$MPC_ACCOUNT_ID"
+fi
+
 initialize_mpc_config() {
   cat <<EOF > "$1"
 # Configuration File
 my_near_account_id: $MPC_ACCOUNT_ID
+near_responder_account_id: $responder_id
+number_of_responder_keys: 50
 web_ui:
   host: 0.0.0.0
   port: 8080
