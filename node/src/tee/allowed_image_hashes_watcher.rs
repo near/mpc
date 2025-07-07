@@ -30,7 +30,7 @@ pub struct AllowedImageHashesFile {
 
 impl AllowedImageHashesFile {
     pub async fn new(file_path: PathBuf) -> Result<Self, io::Error> {
-        info!(
+        tracing::info!(
             ?file_path,
             "Creating file handle to store latest allowed image hash."
         );
@@ -43,7 +43,7 @@ impl AllowedImageHashesFile {
             .open(&file_path)
             .await?;
 
-        info!(
+        tracing::info!(
             ?file_path,
             "Successfully created file handle to store latest allowed image hash"
         );
