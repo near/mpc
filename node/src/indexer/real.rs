@@ -122,7 +122,7 @@ pub fn spawn_real_indexer(
             .await;
 
             #[cfg(feature = "tee")]
-            tokio::spawn(monitor_allowed_docker_images(
+            actix::spawn(monitor_allowed_docker_images(
                 allowed_docker_images_sender,
                 indexer_state.clone(),
             ));
