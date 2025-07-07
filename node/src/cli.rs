@@ -441,7 +441,7 @@ impl Cli {
         desired_presignatures_to_buffer: usize,
         desired_responder_keys_per_participant: usize,
     ) -> anyhow::Result<()> {
-    	info!("run_generate_test_configs");
+        info!("run_generate_test_configs");
         let p2p_key_pairs = participants
             .iter()
             .enumerate()
@@ -500,7 +500,7 @@ impl Cli {
         desired_triples_to_buffer: usize,
         desired_presignatures_to_buffer: usize,
     ) -> anyhow::Result<ConfigFile> {
-        info!("create_file_config"); 
+        info!("create_file_config");
         Ok(ConfigFile {
             my_near_account_id: participant.clone(),
             near_responder_account_id: responder.clone(),
