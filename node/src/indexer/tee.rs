@@ -58,8 +58,7 @@ pub async fn monitor_allowed_docker_images(
         }
     };
 
-    let initial_state = fetch_allowed_image_hashes().await;
-    let (sender, receiver) = watch::channel(initial_state);
+    let (sender, receiver) = watch::channel(vec![]);
 
     tokio::spawn(async move {
         loop {
