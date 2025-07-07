@@ -214,6 +214,8 @@ impl StartCmd {
             .worker_threads(1)
             .build()?;
 
+        let _tokio_enter_guard = root_runtime.enter();
+
         // Currently, we only trigger graceful shutdowns from TEE logic,
         // hence we need to disable the `unused_variables` lint when TEE is disabled.
         #[cfg_attr(not(feature = "tee"), allow(unused_variables))]
