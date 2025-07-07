@@ -6,7 +6,7 @@ import time
 from key import Key
 from ruamel.yaml import YAML
 
-from common_lib.constants import MPC_BINARY_PATH, TIMEOUT
+from common_lib.constants import LISTEN_BLOCKS_FILE, MPC_BINARY_PATH, TIMEOUT
 from common_lib.shared.near_account import NearAccount
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -126,7 +126,7 @@ class MpcNode(NearAccount):
                 conns = self.metrics.get_metric_all_values(
                     "mpc_network_live_connections")
                 print("mpc_network_live_connections", conns)
-                connection_count = int(sum([kv[1] for kv in conns]))
+                connection_count = int(sum([int(kv[1]) for kv in conns]))
                 if connection_count == awaited_count:
                     break
             except requests.exceptions.ConnectionError:
@@ -138,3 +138,9 @@ class MpcNode(NearAccount):
         file_path = file_path / "temporary_keys" / f"started_{epoch_id}_{domain_id}_{attempt_id}"
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.touch()
+
+    def set_block_ingestion(self, value: bool):
+        file_path = pathlib.Path(self.home_dir)
+        file_path = file_path / LISTEN_BLOCKS_FILE
+        print(f"setting {file_path} to {value}")
+        file_path.write_text(str(value).lower())

@@ -1,17 +1,16 @@
-use std::time::Duration;
-
+use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
-use crate::tests::{request_signature_and_await_response, IntegrationTestSetup};
+use crate::tests::{
+    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+};
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
-use serial_test::serial;
 
 // Make a cluster of four nodes, test that we can generate keyshares
 // and then produce signatures.
 #[tokio::test]
-#[serial]
 async fn test_basic_multidomain() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 4;
@@ -27,6 +26,7 @@ async fn test_basic_multidomain() {
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::BASIC_MULTIDOMAIN_TEST,
+        std::time::Duration::from_millis(600), // helps to avoid flaky test
     );
 
     let mut domains = vec![
@@ -52,6 +52,16 @@ async fn test_basic_multidomain() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("must not exceed timeout");
+
+    tracing::info!("requesting signature");
     for domain in &domains {
         assert!(request_signature_and_await_response(
             &mut setup.indexer,
@@ -78,6 +88,23 @@ async fn test_basic_multidomain() {
         contract.add_domains(new_domains.clone());
         domains.extend(new_domains);
     }
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Initializing(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("must not exceed timeout");
+
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+        )
+        .await
+        .expect("must not exceed timeout");
 
     for domain in &domains {
         assert!(request_signature_and_await_response(
@@ -95,17 +122,35 @@ async fn test_basic_multidomain() {
         contract.start_resharing(setup.participants);
     }
 
-    // give nodes time to enter resharing so we don't lose the request.
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    for domain in &domains {
-        assert!(request_signature_and_await_response(
-            &mut setup.indexer,
-            &format!("user{}", domain.id.0),
-            domain,
-            std::time::Duration::from_secs(60)
+    setup
+        .indexer
+        .wait_for_contract_state(
+            {
+                |state| {
+                    println!("state: {:?}", state);
+                    match state {
+                        ContractState::Running(running) => running.keyset.epoch_id.get() == 1,
+                        _ => false,
+                    }
+                }
+            },
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 4,
         )
         .await
-        .is_some());
+        .expect("must not exceed timeout");
+
+    for domain in &domains {
+        assert!(
+            request_signature_and_await_response(
+                &mut setup.indexer,
+                &format!("user{}", domain.id.0),
+                domain,
+                std::time::Duration::from_secs(60)
+            )
+            .await
+            .is_some(),
+            "failing for domain {}",
+            domain.id.0
+        );
     }
 }

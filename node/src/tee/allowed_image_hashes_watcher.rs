@@ -30,12 +30,23 @@ pub struct AllowedImageHashesFile {
 
 impl AllowedImageHashesFile {
     pub async fn new(file_path: PathBuf) -> Result<Self, io::Error> {
+        info!(
+            ?file_path,
+            "Creating file handle to store latest allowed image hash."
+        );
+
         // Make sure the provided path exists.
         let _file_handle = OpenOptions::new()
             .write(true)
+            .create(true)
             .truncate(false)
             .open(&file_path)
             .await?;
+
+        info!(
+            ?file_path,
+            "Successfully created file handle to store latest allowed image hash"
+        );
 
         Ok(Self { file_path })
     }
@@ -48,6 +59,7 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
     ) -> Result<(), io::Error> {
         let mut file_handle = OpenOptions::new()
             .truncate(true)
+            .create(true)
             .write(true)
             .open(&self.file_path)
             .await?;

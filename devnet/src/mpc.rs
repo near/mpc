@@ -243,7 +243,7 @@ impl MpcDeployContractCmd {
             AccountToFund::ExistingAccount {
                 account_id: contract.clone(),
                 desired_balance: self.deposit_near * ONE_NEAR,
-                do_not_refill_above: 0,
+                do_not_refill_above: self.deposit_near * ONE_NEAR,
             }
         } else {
             AccountToFund::from_new(

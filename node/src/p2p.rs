@@ -690,6 +690,7 @@ pub mod testing {
         pub const KEY_RESHARING_MULTISTAGE_TEST: Self = Self(6);
         pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: Self = Self(7);
         pub const BASIC_MULTIDOMAIN_TEST: Self = Self(8);
+        pub const FAULTY_STUCK_INDEXER_TEST: Self = Self(9);
     }
 
     pub fn generate_test_p2p_configs(
@@ -744,6 +745,7 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    use crate::cli::LogFormat;
     use crate::config::MpcConfig;
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::keygen::{generate_keypair, keypair_to_raw_ed25519_secret_key};
@@ -771,7 +773,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_basic_tls_mesh_network() {
-        init_logging();
+        init_logging(LogFormat::Plain);
         let configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
@@ -873,7 +875,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wait_for_ready() {
-        init_logging();
+        init_logging(LogFormat::Plain);
         let mut configs = generate_test_p2p_configs(
             &[
                 "test0".parse().unwrap(),

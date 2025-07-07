@@ -110,7 +110,7 @@ if ! log_output bash -c "cd '$LIB_DIR/nearcore' && cargo build --quiet --color=a
 fi
 
 printf "\nBuilding main node"
-if ! log_output bash -c "cd '$GIT_ROOT' && cargo build --quiet --color=always -p mpc-node --release"; then
+if ! log_output bash -c "cd '$GIT_ROOT' && cargo build --quiet --color=always -p mpc-node --release --features=network-hardship-simulation"; then
     echo "Cargo failed to complete mpc node compilation:"
     exit 1
 fi

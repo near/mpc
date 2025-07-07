@@ -4,6 +4,9 @@ use anyhow::Context;
 use near_crypto::{PublicKey, SecretKey};
 use near_indexer_primitives::types::{AccountId, Finality};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "network-hardship-simulation")]
+use std::fs;
+
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -313,6 +316,23 @@ impl RespondConfig {
             account_id: config.near_responder_account_id.clone(),
             access_keys: secrets.near_responder_keys.clone(),
         }
+    }
+}
+
+#[cfg(feature = "network-hardship-simulation")]
+pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
+    let listen_blocks_file = home_dir.join("listen_blocks.flag");
+    match fs::read_to_string(&listen_blocks_file) {
+        Ok(content) => {
+            let new_val = content.trim().eq_ignore_ascii_case("true");
+            tracing::info!("flag file found, setting to {}", new_val);
+            Ok(new_val)
+        }
+        Err(err) => Err(anyhow::anyhow!(
+            "Could not find file {:?}: {}",
+            &listen_blocks_file,
+            err
+        )),
     }
 }
 

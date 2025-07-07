@@ -9,7 +9,10 @@ import sys
 import time
 import pathlib
 import argparse
-import pytest
+from typing import List
+import requests
+
+from common_lib.shared import MpcCluster, MpcNode
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
@@ -19,22 +22,7 @@ from common_lib.constants import TIMEOUT
 PRESIGNATURES_TO_BUFFER = 8
 
 
-@pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
-def test_lost_assets(num_requests, num_respond_access_keys):
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2,
-        3,
-        num_respond_access_keys,
-        load_mpc_contract(),
-        presignatures_to_buffer=PRESIGNATURES_TO_BUFFER)
-    cluster.init_cluster(participants=mpc_nodes, threshold=2)
-
-    # Cluster should connect in a full mesh, including self-connections
-    cluster.mpc_nodes[0].wait_for_connection_count(3)
-    cluster.mpc_nodes[1].wait_for_connection_count(3)
-    cluster.mpc_nodes[2].wait_for_connection_count(3)
-
-    # Wait for presignatures to buffer
+def wait_for_presignatures_to_buffer(cluster: MpcCluster):
     started = time.time()
     while True:
         assert time.time() - started < TIMEOUT, "Waiting for presignatures"
@@ -49,6 +37,46 @@ def test_lost_assets(num_requests, num_respond_access_keys):
             pass
         time.sleep(1)
 
+
+def wait_for_asset_cleanup(mpc_nodes: List[MpcNode]):
+    started = time.time()
+    while True:
+        assert time.time() - started < TIMEOUT, "Waiting for asset cleanup"
+        try:
+            cleanup_done = True
+            for node in mpc_nodes:
+                available = node.metrics.get_int_metric_value(
+                    "mpc_owned_num_presignatures_available")
+                online = node.metrics.get_int_metric_value(
+                    "mpc_owned_num_presignatures_online")
+                offline = node.metrics.get_int_metric_value(
+                    "mpc_owned_num_presignatures_with_offline_participant")
+                print(
+                    f"node {node.print()} has owned presignatures available={available} online={online} with_offline_participant={offline}"
+                )
+                if not (online == PRESIGNATURES_TO_BUFFER and offline == 0):
+                    cleanup_done = False
+            if cleanup_done:
+                break
+        except requests.exceptions.ConnectionError:
+            pass
+        time.sleep(1)
+
+
+def test_lost_assets():
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        2,
+        3,
+        1,
+        load_mpc_contract(),
+        presignatures_to_buffer=PRESIGNATURES_TO_BUFFER,
+    )
+    cluster.init_cluster(participants=mpc_nodes, threshold=2)
+    cluster.wait_for_state("Running")
+
+    # Wait for nodes to have assets with everyone else
+    wait_for_presignatures_to_buffer(cluster)
+
     # Stop mpc node 0 and wipe its database. Any assets generated before this point
     # which included node 0 are now unusable because node 0 has lost its share.
     cluster.mpc_nodes[0].kill(gentle=True)
@@ -60,28 +88,7 @@ def test_lost_assets(num_requests, num_respond_access_keys):
     cluster.mpc_nodes[2].wait_for_connection_count(2)
 
     # Wait for nodes 1 and 2 to clean up assets involving node 0
-    started = time.time()
-    while True:
-        assert time.time() - started < TIMEOUT, "Waiting for asset cleanup"
-        try:
-            cleanup_done = True
-            for i in range(1, len(cluster.mpc_nodes)):
-                available = cluster.get_int_metric_value_for_node(
-                    "mpc_owned_num_presignatures_available", i)
-                online = cluster.get_int_metric_value_for_node(
-                    "mpc_owned_num_presignatures_online", i)
-                offline = cluster.get_int_metric_value_for_node(
-                    "mpc_owned_num_presignatures_with_offline_participant", i)
-                print(
-                    f"node {i} has owned presignatures available={available} online={online} with_offline_participant={offline}"
-                )
-                if not (online == PRESIGNATURES_TO_BUFFER and offline == 0):
-                    cleanup_done = False
-            if cleanup_done:
-                break
-        except requests.exceptions.ConnectionError:
-            pass
-        time.sleep(1)
+    wait_for_asset_cleanup(cluster.mpc_nodes[1:])
 
     # Start node 0 again
     cluster.mpc_nodes[0].run()
@@ -96,6 +103,50 @@ def test_lost_assets(num_requests, num_respond_access_keys):
     presignatures_available = sum(
         cluster.get_int_metric_value('mpc_owned_num_presignatures_available'))
     cluster.send_and_await_signature_requests(presignatures_available // 4)
+
+
+def test_signature_pause_block_ingestion():
+    """
+    This test requires the MPC binary to be compiled with the feature flag "network-hardship-simulation"
+    """
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        2,
+        3,
+        1,
+        load_mpc_contract(),
+        presignatures_to_buffer=PRESIGNATURES_TO_BUFFER,
+    )
+    cluster.init_cluster(mpc_nodes, 2)
+    cluster.wait_for_state("Running")
+
+    # Wait for nodes to have assets with everyone else
+    wait_for_presignatures_to_buffer(cluster)
+
+    # Simulate node 0's indexer falling behind
+    mpc_nodes[0].set_block_ingestion(False)
+
+    started = time.time()
+    while True:
+        assert time.time() - started < 120, "Waiting for presignatures"
+        try:
+            block_heights = cluster.get_int_metric_value(
+                "mpc_indexer_latest_block_height")
+            print("block heights:", block_heights)
+            if (block_heights[0] + 10
+                    < block_heights[1]) and (block_heights[0] + 10
+                                             < block_heights[2]):
+                break
+        except requests.exceptions.ConnectionError:
+            pass
+        time.sleep(5)
+
+    # we wait for the other nodes to cleanup
+    wait_for_asset_cleanup(cluster.mpc_nodes[1:])
+
+    cluster.send_and_await_signature_requests(5)
+
+    # re-enable block ingestion, in case any tests run afterwards
+    mpc_nodes[0].set_block_ingestion(True)
 
 
 if __name__ == '__main__':

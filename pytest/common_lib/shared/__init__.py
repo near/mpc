@@ -309,6 +309,7 @@ def start_cluster_with_mpc(
             pytest_signer_keys,
         )
         cluster.contract_node.send_txn_and_check_success(tx)
+        mpc_node.set_block_ingestion(True)
         mpc_nodes.append(mpc_node)
 
     # Deploy the mpc contract

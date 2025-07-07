@@ -27,10 +27,19 @@ json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
 EOF
 }
 
+if [ -n "$MPC_RESPONDER_ID" ]; then
+  responder_id="$MPC_RESPONDER_ID"
+else
+  echo "WARNING: \$MPC_RESPONDER_ID is not set, falling back to \$MPC_ACCOUNT_ID"
+  responder_id="$MPC_ACCOUNT_ID"
+fi
+
 initialize_mpc_config() {
   cat <<EOF > "$1"
 # Configuration File
 my_near_account_id: $MPC_ACCOUNT_ID
+near_responder_account_id: $responder_id
+number_of_responder_keys: 50
 web_ui:
   host: 0.0.0.0
   port: 8080
@@ -79,23 +88,6 @@ if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
 else
   echo "Using provided MPC_SECRET_STORE_KEY from environment"
 fi
-
-# Check if MPC_P2P_PRIVATE_KEY is empty - if so, fetch from GCP Secret Manager
-if [ -z "${MPC_P2P_PRIVATE_KEY}" ]; then
-  echo "MPC_P2P_PRIVATE_KEY not provided in environment, will fetch from GCP Secret Manager..."
-  export MPC_P2P_PRIVATE_KEY=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_P2P_PRIVATE_KEY_SECRET_ID)
-else
-  echo "Using provided MPC_P2P_PRIVATE_KEY from environment"
-fi
-
-# Check if MPC_ACCOUNT_SK is empty - if so, fetch from GCP Secret Manager
-if [ -z "${MPC_ACCOUNT_SK}" ]; then
-  echo "MPC_ACCOUNT_SK not provided in environment, will fetch from GCP Secret Manager..."
-  export MPC_ACCOUNT_SK=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_ACCOUNT_SK_SECRET_ID)
-else
-  echo "Using provided MPC_ACCOUNT_SK from environment"
-fi
-
 
 echo "Starting mpc node..."
 /app/mpc-node start
