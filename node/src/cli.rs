@@ -284,6 +284,7 @@ impl StartCmd {
         gcp_project_id: Option<String>,
         web_contract_receiver: tokio::sync::watch::Receiver<ProtocolContractState>,
     ) -> anyhow::Result<()> {
+        tracing::info!("Starting root future");
         let root_task_handle = tracking::current_task();
 
         let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
