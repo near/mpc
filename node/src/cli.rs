@@ -183,6 +183,7 @@ pub struct ExportKeyshareCmd {
 
 impl StartCmd {
     async fn run(self) -> anyhow::Result<()> {
+        info!("Starting run() in StartCmd");
         let home_dir = PathBuf::from(self.home_dir.clone());
 
         let config = load_config_file(&home_dir)?;
@@ -192,6 +193,7 @@ impl StartCmd {
         )?;
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
 
+        info!("Starting the indexer API");
         let (web_contract_sender, web_contract_receiver) =
             tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
 
@@ -206,6 +208,7 @@ impl StartCmd {
             indexer_exit_sender,
         );
 
+        info!("Starting the root runtime");
         let root_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .worker_threads(1)
@@ -219,6 +222,8 @@ impl StartCmd {
 
         #[cfg(feature = "tee")]
         let image_hash_watcher_handle = {
+            info!("Spawning image hash watcher task");
+
             let current_image_hash_bytes: [u8; 32] = hex::decode(self.tee_config.image_hash)
                 .expect("The currently running image is a hex string.")
                 .try_into()
@@ -237,6 +242,7 @@ impl StartCmd {
             ))
         };
 
+        info!("Generating secrets and running root future");
         let secrets = SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets)?;
         let root_future = Self::create_root_future(
             home_dir.clone(),
@@ -373,6 +379,7 @@ impl StartCmd {
 
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
+        info!("run");
         match self.command {
             CliCommand::Start(start) => start.run().await,
             CliCommand::Init(config) => near_indexer::init_configs(
@@ -434,6 +441,7 @@ impl Cli {
         desired_presignatures_to_buffer: usize,
         desired_responder_keys_per_participant: usize,
     ) -> anyhow::Result<()> {
+    	info!("run_generate_test_configs");
         let p2p_key_pairs = participants
             .iter()
             .enumerate()
@@ -492,6 +500,7 @@ impl Cli {
         desired_triples_to_buffer: usize,
         desired_presignatures_to_buffer: usize,
     ) -> anyhow::Result<ConfigFile> {
+        info!("create_file_config"); 
         Ok(ConfigFile {
             my_near_account_id: participant.clone(),
             near_responder_account_id: responder.clone(),
