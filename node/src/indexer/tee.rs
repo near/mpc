@@ -21,46 +21,47 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 pub async fn monitor_allowed_docker_images(
     indexer_state: Arc<IndexerState>,
 ) -> watch::Receiver<Vec<AllowedDockerImageHash>> {
-    tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-    wait_for_full_sync(&indexer_state.client).await;
-
-    let fetch_allowed_image_hashes = {
-        async move || {
-            let mut backoff = ExponentialBuilder::default()
-                .with_min_delay(MIN_BACKOFF_DURATION)
-                .with_max_delay(MAX_BACKOFF_DURATION)
-                .without_max_times()
-                .with_jitter()
-                .build();
-
-            loop {
-                match get_mpc_allowed_image_hashes(
-                    indexer_state.mpc_contract_id.clone(),
-                    &indexer_state.view_client,
-                )
-                .await
-                {
-                    Ok((block_height, mut allowed_images_on_contract)) => {
-                        let allowed_images: Vec<AllowedDockerImageHash> =
-                            allowed_images_on_contract.get(block_height);
-                        break allowed_images;
-                    }
-                    Err(e) => {
-                        tracing::error!(target: "mpc", "error reading tee state from chain: {:?}", e);
-
-                        let backoff_duration = backoff.next().unwrap_or(MAX_BACKOFF_DURATION);
-                        tokio::time::sleep(backoff_duration).await;
-
-                        continue;
-                    }
-                };
-            }
-        }
-    };
-
     let (sender, receiver) = watch::channel(vec![]);
 
     tokio::spawn(async move {
+        let fetch_allowed_image_hashes = {
+            let indexer_state = indexer_state.clone();
+            async move || {
+                let mut backoff = ExponentialBuilder::default()
+                    .with_min_delay(MIN_BACKOFF_DURATION)
+                    .with_max_delay(MAX_BACKOFF_DURATION)
+                    .without_max_times()
+                    .with_jitter()
+                    .build();
+
+                loop {
+                    match get_mpc_allowed_image_hashes(
+                        indexer_state.mpc_contract_id.clone(),
+                        &indexer_state.view_client,
+                    )
+                    .await
+                    {
+                        Ok((block_height, mut allowed_images_on_contract)) => {
+                            let allowed_images: Vec<AllowedDockerImageHash> =
+                                allowed_images_on_contract.get(block_height);
+                            break allowed_images;
+                        }
+                        Err(e) => {
+                            tracing::error!(target: "mpc", "error reading tee state from chain: {:?}", e);
+
+                            let backoff_duration = backoff.next().unwrap_or(MAX_BACKOFF_DURATION);
+                            tokio::time::sleep(backoff_duration).await;
+
+                            continue;
+                        }
+                    };
+                }
+            }
+        };
+
+        tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
+        wait_for_full_sync(&indexer_state.client).await;
+
         loop {
             tokio::time::sleep(ALLOWED_IMAGE_HASHES_REFRESH_INTERVAL).await;
             let new_tee_state = fetch_allowed_image_hashes().await;
