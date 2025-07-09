@@ -209,7 +209,7 @@ we need to use wasm-opt to strip the contract of unused features. Otherwise the 
 
 ```
 cargo build --release --target=wasm32-unknown-unknown
-wasm-opt -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm
+wasm-opt --enable-bulk-memory -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm
 ```
 
 
