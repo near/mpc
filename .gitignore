@@ -9,6 +9,9 @@ venv
 /pytest/**/__pycache__/
 /pytest/nearcore_pytest/nearcore_pytest.egg-info/
 /pytest/tests/test_contracts/parallel/target/
+tee_launcher/__pycache__/
+tee_launcher/__pycache__/
+*.pyc
 
 /devnet/generate_keys/target/
 /libs/chain-signatures/res/
@@ -17,3 +20,4 @@ venv
 /node/signature_network_report_best_case.json
 /node/triple_network_report_best_case.json
 /node/triple_network_report_worst_case.json
+.venv/

@@ -183,6 +183,7 @@ pub struct ExportKeyshareCmd {
 
 impl StartCmd {
     async fn run(self) -> anyhow::Result<()> {
+        info!("Starting run() in StartCmd");
         let home_dir = PathBuf::from(self.home_dir.clone());
 
         let config = load_config_file(&home_dir)?;
@@ -192,6 +193,7 @@ impl StartCmd {
         )?;
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
 
+        info!("Starting the indexer API");
         let (web_contract_sender, web_contract_receiver) =
             tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
 
@@ -206,10 +208,13 @@ impl StartCmd {
             indexer_exit_sender,
         );
 
+        info!("Starting the root runtime");
         let root_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .worker_threads(1)
             .build()?;
+
+        let _tokio_enter_guard = root_runtime.enter();
 
         // Currently, we only trigger graceful shutdowns from TEE logic,
         // hence we need to disable the `unused_variables` lint when TEE is disabled.
@@ -219,6 +224,8 @@ impl StartCmd {
 
         #[cfg(feature = "tee")]
         let image_hash_watcher_handle = {
+            info!("Spawning image hash watcher task");
+
             let current_image_hash_bytes: [u8; 32] = hex::decode(self.tee_config.image_hash)
                 .expect("The currently running image is a hex string.")
                 .try_into()
@@ -237,6 +244,7 @@ impl StartCmd {
             ))
         };
 
+        info!("Generating secrets and running root future");
         let secrets = SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets)?;
         let root_future = Self::create_root_future(
             home_dir.clone(),
@@ -284,6 +292,7 @@ impl StartCmd {
         gcp_project_id: Option<String>,
         web_contract_receiver: tokio::sync::watch::Receiver<ProtocolContractState>,
     ) -> anyhow::Result<()> {
+        tracing::info!("Starting root future");
         let root_task_handle = tracking::current_task();
 
         let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
@@ -294,6 +303,7 @@ impl StartCmd {
         {
             let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();
             let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
+            tracing::info!("Generating remote attestation info");
             let report_data =
                 create_remote_attestation_info(&tls_public_key, &account_public_key).await;
             report_data_contract = Some(report_data.try_into()?);
@@ -333,9 +343,23 @@ impl StartCmd {
         {
             let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
 
+            // Match on `report_data_contract` to safely extract the value
+            let report_data_contract = match report_data_contract {
+                Some(contract) => contract,
+                None => return Err(anyhow::anyhow!("Missing report data contract")),
+            };
+
+            // Log the values being sent to submit_remote_attestation
+            info!(
+                "Submitting remote attestation with values: txn_sender = {:?}, report_data_contract = {:?}, account_public_key = {:?}",
+                indexer_api.txn_sender, // Log txn_sender
+                report_data_contract,   // Log report_data_contract (no unwrap, it's already extracted)
+                account_public_key      // Log account_public_key
+            );
+
             submit_remote_attestation(
                 indexer_api.txn_sender.clone(),
-                report_data_contract.unwrap(),
+                report_data_contract, // Pass the value here
                 account_public_key,
             )
             .await?;
@@ -357,6 +381,7 @@ impl StartCmd {
 
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
+        info!("run");
         match self.command {
             CliCommand::Start(start) => start.run().await,
             CliCommand::Init(config) => near_indexer::init_configs(
@@ -418,6 +443,7 @@ impl Cli {
         desired_presignatures_to_buffer: usize,
         desired_responder_keys_per_participant: usize,
     ) -> anyhow::Result<()> {
+        info!("run_generate_test_configs");
         let p2p_key_pairs = participants
             .iter()
             .enumerate()
@@ -476,6 +502,7 @@ impl Cli {
         desired_triples_to_buffer: usize,
         desired_presignatures_to_buffer: usize,
     ) -> anyhow::Result<ConfigFile> {
+        info!("create_file_config");
         Ok(ConfigFile {
             my_near_account_id: participant.clone(),
             near_responder_account_id: responder.clone(),

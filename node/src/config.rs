@@ -243,28 +243,51 @@ impl PersistentSecrets {
         if !home_dir.exists() {
             std::fs::create_dir_all(home_dir)?;
         }
-        let p2p_secret = {
-            let (secret_key, _public_key) = p2p::keygen::generate_keypair()?;
-            SecretKey::ED25519(secret_key)
-        };
-        let near_signer_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
 
+        // Generate p2p secret key and public key
+        let (secret_key, public_key) = p2p::keygen::generate_keypair()?;
+        // The public key is available here, so you can log it immediately.
+        tracing::debug!("Generated p2p public key: {:?}", public_key);
+
+        // Store the secret key in SecretKey
+        let p2p_secret = SecretKey::ED25519(secret_key);
+
+        // Generate near signer key and public key
+        let near_signer_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
+        let near_signer_public_key = near_signer_key.public_key();
+        tracing::debug!(
+            "Generated near signer public key: {:?}",
+            near_signer_public_key
+        );
+
+        // Generate near responder keys and their public keys
         let near_responder_keys = (0..number_of_responder_keys)
             .map(|_| SecretKey::from_random(near_crypto::KeyType::ED25519))
             .collect::<Vec<_>>();
+        let near_responder_public_keys: Vec<_> = near_responder_keys
+            .iter()
+            .map(|secret_key| secret_key.public_key())
+            .collect();
+        tracing::debug!(
+            "Generated {} near responder public keys",
+            near_responder_public_keys.len()
+        );
 
+        // Create PersistentSecrets structure
         let secrets = PersistentSecrets {
             p2p_private_key: p2p_secret,
             near_signer_key,
             near_responder_keys,
         };
 
+        // Save secrets to disk
         let path = home_dir.join(Self::SECRETS_FILE_NAME);
         if path.exists() {
             anyhow::bail!("secrets.json already exists. Refusing to overwrite.");
         }
         std::fs::write(&path, serde_json::to_vec(&secrets)?)?;
-        tracing::debug!("p2p and near account key generated in {}", path.display());
+
+        tracing::debug!("p2p and near account keys generated in {}", path.display());
 
         Ok(secrets)
     }
@@ -284,6 +307,15 @@ impl PersistentSecrets {
             tracing::debug!("p2p and near account secret key not found. Generating...");
             Self::gen_secrets_and_write_to_disk(home_dir, number_of_responder_keys)?
         };
+        // Log the public keys directly
+        tracing::debug!(
+            "Using existing near_signer public key: {:?}",
+            secrets.near_signer_key.public_key()
+        );
+        tracing::debug!(
+            "Using existing p2p public key: {:?}",
+            secrets.p2p_private_key.public_key()
+        );
 
         if secrets.near_responder_keys.len() != number_of_responder_keys {
             tracing::warn!("Number of responder keys in secrets.json does not match number of responder keys specified.")
