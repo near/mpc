@@ -16,7 +16,7 @@ cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "68d381884687
     "k256",
 ] }
 clap = { version = "4.5.20", features = ["derive", "env"] }
-dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", tag = "v0.5.2" }
+dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "2f7343c02a081d11e37ef32d4b167911e2d98a40" }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"
@@ -52,7 +52,12 @@ tokio-util = { version = "0.7.12", features = ["time"] }
 tokio-rustls = { version = "0.26.1", default-features = false }
 tokio-stream = { version = "0.1" }
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "fmt", "std", "json"] }
+tracing-subscriber = { version = "0.3.18", features = [
+    "env-filter",
+    "fmt",
+    "std",
+    "json",
+] }
 url = "2"
 x509-parser = "0.16.0"
 
