@@ -2,19 +2,20 @@
 
 use anyhow::{bail, Context};
 use backon::{BackoffBuilder, ExponentialBuilder};
-use dstack_sdk::dstack_client::{DstackClient, TcbInfo};
+use dstack_sdk::dstack_client::DstackClient;
 use hex::ToHex;
 use http::status::StatusCode;
 use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use near_crypto::PublicKey;
 use reqwest::multipart::Form;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sha3::{Digest, Sha3_384};
 use std::{future::Future, time::Duration};
 use tokio::sync::mpsc;
 use tracing::error;
 
 use crate::indexer::types::{ChainSendTransactionRequest, ProposeJoinArgs};
+use tee::TeeAttestation;
 
 /// Endpoint to contact dstack service.
 /// Set to [`None`] which defaults to `/var/run/dstack.sock`
@@ -49,13 +50,6 @@ const _: () = {
         "Public key offset must be after binary version."
     );
 };
-
-#[derive(Serialize, Deserialize)]
-pub struct TeeAttestation {
-    tcb_info: TcbInfo,
-    tdx_quote: String,
-    collateral: String,
-}
 
 #[derive(Deserialize)]
 struct UploadResponse {
@@ -167,24 +161,6 @@ pub async fn create_remote_attestation_info(
         tdx_quote,
         tcb_info,
         collateral,
-    }
-}
-
-impl TryFrom<TeeAttestation> for TeeParticipantInfo {
-    type Error = anyhow::Error;
-
-    fn try_from(value: TeeAttestation) -> Result<Self, Self::Error> {
-        let tee_quote = hex::decode(value.tdx_quote)
-            .context("Failed to decode tee quote. Expected it to be in hex format.")?;
-        let quote_collateral = value.collateral;
-        let raw_tcb_info =
-            serde_json::to_string(&value.tcb_info).context("Failed to serialize tcb info")?;
-
-        Ok(Self {
-            tee_quote,
-            quote_collateral,
-            raw_tcb_info,
-        })
     }
 }
 

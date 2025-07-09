@@ -16,7 +16,7 @@ git submodule update --init --recursive --force
 cd libs/nearcore && cargo build -p neard --release
 
 # build the main node
-cd ../.. && cargo build -p mpc-node --release --features=network-hardship-simulation
+cd ../.. && cargo build -p mpc-node --release --features=network-hardship-simulation,tee
 ```
 
 3. Set up virtualenv (optional, but recommended):
