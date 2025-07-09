@@ -16,7 +16,9 @@ cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "68d381884687
     "k256",
 ] }
 clap = { version = "4.5.20", features = ["derive", "env"] }
-dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "421a5fb8e321e547efaa67c1a27daac11a0aa5b4" }
+# Currently needed to include https://github.com/Dstack-TEE/dstack/pull/232
+# TODO(https://github.com/near/mpc/issues/618) Use next release once it's out.
+dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "2f7343c02a081d11e37ef32d4b167911e2d98a40" }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"
