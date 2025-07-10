@@ -1,17 +1,14 @@
-#![allow(dead_code)]
-
 use anyhow::{bail, Context};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use dstack_sdk::dstack_client::{DstackClient, TcbInfo};
-use hex::ToHex;
 use http::status::StatusCode;
 use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use near_crypto::PublicKey;
-use reqwest::multipart::Form;
+use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
 use std::{future::Future, time::Duration};
-use tokio::sync::mpsc;
+use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::mpsc};
 use tracing::error;
 
 use crate::indexer::types::{ChainSendTransactionRequest, ProposeJoinArgs};
@@ -128,13 +125,30 @@ pub async fn create_remote_attestation_info(
     };
 
     tracing::info!("Creating tdx quote from dstack.");
-    let tdx_quote: String = get_with_backoff(
+    let tdx_quote = get_with_backoff(
         || client.get_quote(report_data.into()),
         "dstack client tdx quote",
     )
     .await
-    .quote
-    .encode_hex();
+    .quote;
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open("quote.txt")
+        .await
+        .expect("File can be opened.");
+
+    file.write_all(tdx_quote.as_bytes())
+        .await
+        .expect("File is writable");
+
+    file.flush().await.unwrap();
+
+    drop(file);
+
+    tracing::info!(?tdx_quote);
 
     tracing::info!("Uploading tdx info Phala network to generate collateral.");
     let quote_upload_response = {
@@ -162,7 +176,42 @@ pub async fn create_remote_attestation_info(
                 .context("Failed to deserialize response from Phala.")
         };
 
-        get_with_backoff(upload_tdx_quote, "upload tdx quote").await
+        let upload_tdx_quote_binary = async || {
+            let tdx_quote_binary = tdx_quote.clone().into_bytes();
+            let part = Part::bytes(tdx_quote_binary);
+            let form = Form::new().part("file", part);
+
+            let response = reqwest_client
+                .post(PHALA_TDX_QUOTE_UPLOAD_URL)
+                .multipart(form)
+                .send()
+                .await?;
+
+            let status = response.status();
+
+            if status != PHALA_SUCCESS_STATUS_CODE {
+                bail!("Got unexpected HTTP status code: response from phala http_endpoint: {:?}, expected: {:?}", status, PHALA_SUCCESS_STATUS_CODE);
+            }
+
+            response
+                .json::<UploadResponse>()
+                .await
+                .context("Failed to deserialize response from Phala.")
+        };
+
+        let hex_upload_response = upload_tdx_quote().await;
+        match hex_upload_response {
+            Ok(hex_upload_response) => {
+                tracing::info!("Hex upload worked. Got OK response.");
+                hex_upload_response
+            }
+            Err(error) => {
+                tracing::error!(?error, "Hex upload failed.");
+                upload_tdx_quote_binary()
+                    .await
+                    .expect("Upload as binary should suceed")
+            }
+        }
     };
 
     tracing::info!("Successfully created a TeeAttestation.");
