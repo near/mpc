@@ -24,12 +24,6 @@ jobs:
       - name: Initialize submodules
         run: git submodule update --init --recursive
 
-      - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@v2
-        with:
-          cache-on-failure: false
-          cache-all-crates: false
-
       - name: Run Clippy fmt
         run: |
           CARGO_TARGET_DIR="target/clippy" \
