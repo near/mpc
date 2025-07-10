@@ -3219,7 +3219,7 @@ dependencies = [
  "near-primitives 0.29.2",
  "near-sdk",
  "near-workspaces",
- "rand 0.9.1",
+ "rand 0.8.5",
  "reqwest",
  "rstest",
  "schemars 1.0.4",

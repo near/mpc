@@ -4791,7 +4791,7 @@ dependencies = [
  "near-account-id",
  "near-gas 0.2.5",
  "near-sdk",
- "rand 0.9.1",
+ "rand 0.8.5",
  "schemars 1.0.4",
  "serde",
  "serde_json",
