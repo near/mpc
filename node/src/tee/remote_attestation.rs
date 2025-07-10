@@ -54,13 +54,6 @@ pub struct TeeAttestation {
     collateral: String,
 }
 
-#[derive(Deserialize)]
-struct UploadResponse {
-    quote_collateral: String,
-    #[serde(rename = "checksum")]
-    _checksum: String,
-}
-
 pub struct BinaryVersion(u16);
 
 async fn get_with_backoff<Operation, OperationFuture, Value, Error>(
@@ -151,7 +144,7 @@ pub async fn create_remote_attestation_info(
     tracing::info!(?tdx_quote);
 
     tracing::info!("Uploading tdx info Phala network to generate collateral.");
-    let quote_upload_response = {
+    let collateral = {
         let reqwest_client = reqwest::Client::new();
         let tdx_quote = tdx_quote.clone();
 
@@ -170,10 +163,18 @@ pub async fn create_remote_attestation_info(
                 bail!("Got unexpected HTTP status code: response from phala http_endpoint: {:?}, expected: {:?}", status, PHALA_SUCCESS_STATUS_CODE);
             }
 
-            response
-                .json::<UploadResponse>()
+            let response = response
+                .json::<serde_json::Value>()
                 .await
-                .context("Failed to deserialize response from Phala.")
+                .context("Failed to deserialize response from Phala.")?;
+
+            tracing::info!(?response, "Phala API response");
+
+            let quote_collateral_json = response.get("quote_collateral").cloned();
+            match quote_collateral_json {
+                Some(quote_collateral_json) => Ok(quote_collateral_json),
+                None => bail!("No quote_collateral found in Phala's API response."),
+            }
         };
 
         let upload_tdx_quote_binary = async || {
@@ -193,10 +194,18 @@ pub async fn create_remote_attestation_info(
                 bail!("Got unexpected HTTP status code: response from phala http_endpoint: {:?}, expected: {:?}", status, PHALA_SUCCESS_STATUS_CODE);
             }
 
-            response
-                .json::<UploadResponse>()
+            let response = response
+                .json::<serde_json::Value>()
                 .await
-                .context("Failed to deserialize response from Phala.")
+                .context("Failed to deserialize response from Phala.")?;
+
+            tracing::info!(?response, "Phala API response");
+
+            let quote_collateral_json = response.get("quote_collateral").cloned();
+            match quote_collateral_json {
+                Some(quote_collateral_json) => Ok(quote_collateral_json),
+                None => bail!("No quote_collateral found in Phala's API response."),
+            }
         };
 
         let hex_upload_response = upload_tdx_quote().await;
@@ -214,8 +223,10 @@ pub async fn create_remote_attestation_info(
         }
     };
 
+    let collateral = serde_json::to_string(&collateral)
+        .expect("Collateral is a nested json field. Serialization should not fail");
+
     tracing::info!("Successfully created a TeeAttestation.");
-    let collateral = quote_upload_response.quote_collateral;
     TeeAttestation {
         tdx_quote,
         tcb_info,
