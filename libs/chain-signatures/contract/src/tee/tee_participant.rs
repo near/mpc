@@ -6,22 +6,26 @@ use crate::{
         quote::{replay_app_compose, replay_rtmr},
     },
 };
+use anyhow::{Context, Result};
 use dcap_qvl::{
     quote::Quote,
     verify::{self, VerifiedReport},
 };
+use dstack_sdk::dstack_client::TcbInfo;
+use hex;
 use k256::sha2::{Digest, Sha384};
 use near_sdk::{
     env::{self, sha256},
     near, PublicKey,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::tee::quote::verify_mocked_quote;
 use serde_yaml::Value as YamlValue;
 
-//git rev-parse HEAD
-//fbdf2e76fb6bd9142277fdd84809de87d86548ef
+// $ git rev-parse HEAD
+// fbdf2e76fb6bd9142277fdd84809de87d86548ef
 // https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
 
 const MRTD: [u8; 48] = [
@@ -72,9 +76,87 @@ struct Config {
     pre_launch_script: String,
 }
 
+pub trait VerifyQuote {
+    /// Verifies the TEE quote against the provided collateral.
+    fn verify_quote(&self, timestamp_s: u64) -> Result<VerifiedReport, Error>;
+
+    /// Checks whether the node is running the expected Docker image.
+    fn verify_docker_image(
+        &self,
+        allowed_docker_image_hashes: &[MpcDockerImageHash],
+        historical_docker_image_hashes: &[MpcDockerImageHash],
+        report: VerifiedReport,
+        public_key: PublicKey,
+    ) -> Result<bool, Error>;
+}
+
+#[near(serializers=[borsh, json])]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub enum TeeParticipantInfo {
+    Tee(RealTeeParticipantInfo),
+    Local(LocalParticipantInfo),
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TeeAttestation {
+    pub tcb_info: TcbInfo,
+    pub tdx_quote: String,
+    pub collateral: String,
+}
+
+impl TryFrom<TeeAttestation> for RealTeeParticipantInfo {
+    type Error = anyhow::Error;
+
+    fn try_from(value: TeeAttestation) -> Result<Self, Self::Error> {
+        let tee_quote = hex::decode(value.tdx_quote)
+            .context("Failed to decode tee quote. Expected it to be in hex format.")?;
+        let quote_collateral = value.collateral;
+        let raw_tcb_info =
+            serde_json::to_string(&value.tcb_info).context("Failed to serialize tcb info")?;
+
+        Ok(Self {
+            tee_quote,
+            quote_collateral,
+            raw_tcb_info,
+        })
+    }
+}
+
+impl VerifyQuote for TeeParticipantInfo {
+    fn verify_quote(&self, timestamp_s: u64) -> Result<VerifiedReport, Error> {
+        match self {
+            TeeParticipantInfo::Tee(real_tee) => real_tee.verify_quote(timestamp_s),
+            TeeParticipantInfo::Local(local) => local.verify_quote(timestamp_s),
+        }
+    }
+
+    fn verify_docker_image(
+        &self,
+        allowed_docker_image_hashes: &[MpcDockerImageHash],
+        historical_docker_image_hashes: &[MpcDockerImageHash],
+        report: VerifiedReport,
+        public_key: PublicKey,
+    ) -> Result<bool, Error> {
+        match self {
+            TeeParticipantInfo::Tee(real_tee) => real_tee.verify_docker_image(
+                allowed_docker_image_hashes,
+                historical_docker_image_hashes,
+                report,
+                public_key,
+            ),
+            TeeParticipantInfo::Local(local) => local.verify_docker_image(
+                allowed_docker_image_hashes,
+                historical_docker_image_hashes,
+                report,
+                public_key,
+            ),
+        }
+    }
+}
+
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
-pub struct TeeParticipantInfo {
+pub struct RealTeeParticipantInfo {
     /// TEE Remote Attestation Quote that proves the participant's identity.
     pub tee_quote: Vec<u8>,
     /// Supplemental data for the TEE quote, including Intel certificates to verify it came from
@@ -85,9 +167,31 @@ pub struct TeeParticipantInfo {
     pub raw_tcb_info: String,
 }
 
-impl TeeParticipantInfo {
+#[near(serializers=[borsh, json])]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
+pub struct LocalParticipantInfo {
+    is_docker_image_valid: bool,
+}
+
+impl VerifyQuote for LocalParticipantInfo {
+    fn verify_quote(&self, _timestamp_s: u64) -> Result<VerifiedReport, Error> {
+        Ok(verify_mocked_quote().0)
+    }
+
+    fn verify_docker_image(
+        &self,
+        _: &[MpcDockerImageHash],
+        _: &[MpcDockerImageHash],
+        _: VerifiedReport,
+        _: PublicKey,
+    ) -> Result<bool, Error> {
+        Ok(self.is_docker_image_valid)
+    }
+}
+
+impl VerifyQuote for RealTeeParticipantInfo {
     /// Verifies the TEE quote against the provided collateral.
-    pub fn verify_quote(&self, timestamp_s: u64) -> Result<VerifiedReport, Error> {
+    fn verify_quote(&self, timestamp_s: u64) -> Result<VerifiedReport, Error> {
         let tee_collateral = get_collateral(self.quote_collateral.clone())
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
         let verification_result = verify::verify(&self.tee_quote, &tee_collateral, timestamp_s)
@@ -102,7 +206,7 @@ impl TeeParticipantInfo {
     /// Checks whether the node is running the expected Docker images (launcher and MPC node) by
     /// verifying report_data, replaying RTMR3, and comparing the relevant event values to the
     /// expected values.
-    pub fn verify_docker_image(
+    fn verify_docker_image(
         &self,
         allowed_docker_image_hashes: &[MpcDockerImageHash],
         historical_docker_image_hashes: &[MpcDockerImageHash],
@@ -119,38 +223,22 @@ impl TeeParticipantInfo {
             None => return Err(InvalidCandidateSet::InvalidParticipantsTeeQuote.into()),
         };
 
-        if Self::verify_static_rtmrs(report) {
-            return Ok(false);
-        }
-        if self.verify_report_data(&quote, public_key) {
-            return Ok(false);
-        }
-        if !Self::check_rtmr3_vs_actual(&quote, event_log) {
-            return Ok(false);
-        }
-        if !Self::check_app_compose(event_log, &tcb_info) {
-            return Ok(false);
-        }
-        if !Self::check_app_compose_fields(&tcb_info) {
-            return Ok(false);
-        }
-        if !Self::check_docker_compose_hash(
-            &tcb_info,
-            allowed_docker_image_hashes,
-            historical_docker_image_hashes,
-        ) {
-            return Ok(false);
-        }
-        if !Self::check_local_sgx(event_log) {
-            return Ok(false);
-        }
-        if !Self::check_mpc_hash(event_log, allowed_docker_image_hashes) {
-            return Ok(false);
-        }
-
-        Ok(true)
+        Ok(Self::verify_static_rtmrs(report)
+            && self.verify_report_data(&quote, public_key)
+            && Self::check_rtmr3_vs_actual(&quote, event_log)
+            && Self::check_app_compose(event_log, &tcb_info)
+            && Self::check_app_compose_fields(&tcb_info)
+            && Self::check_docker_compose_hash(
+                &tcb_info,
+                allowed_docker_image_hashes,
+                historical_docker_image_hashes,
+            )
+            && Self::check_local_sgx(event_log)
+            && Self::check_mpc_hash(event_log, allowed_docker_image_hashes))
     }
+}
 
+impl RealTeeParticipantInfo {
     fn verify_static_rtmrs(verified_report: VerifiedReport) -> bool {
         if let Some(td10) = verified_report.report.as_td10() {
             td10.rt_mr0 == RTMR0

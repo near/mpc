@@ -1,9 +1,8 @@
-use crate::config::{PersistentSecrets, RespondConfig};
-use crate::web::StaticWebData;
 use crate::{
     config::{
-        load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
-        SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
+        load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PersistentSecrets,
+        PresignatureConfig, RespondConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
+        WebUIConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -16,13 +15,12 @@ use crate::{
     },
     p2p::testing::{generate_test_p2p_configs, PortSeed},
     tracking::{self, start_root_task},
-    web::start_web_server,
+    web::{start_web_server, StaticWebData},
 };
 use anyhow::{anyhow, Context};
 use clap::{Parser, ValueEnum};
 use hex::FromHex;
-use mpc_contract::state::ProtocolContractState;
-use mpc_contract::tee::tee_participant::TeeParticipantInfo;
+use mpc_contract::{state::ProtocolContractState, tee::tee_participant::RealTeeParticipantInfo};
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
@@ -76,7 +74,8 @@ pub enum CliCommand {
         #[arg(long, value_delimiter = ',')]
         /// Near signer account for each participant
         participants: Vec<AccountId>,
-        /// Near responder account for each participant. Refer to `indexer/real.rs` for more details.
+        /// Near responder account for each participant. Refer to `indexer/real.rs` for more
+        /// details.
         #[arg(long, value_delimiter = ',')]
         responders: Vec<AccountId>,
         #[arg(long)]
@@ -289,7 +288,7 @@ impl StartCmd {
         let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
 
         #[allow(unused_mut, unused_assignments)]
-        let mut report_data_contract: Option<TeeParticipantInfo> = None;
+        let mut report_data_contract: Option<RealTeeParticipantInfo> = None;
         #[cfg(feature = "tee")]
         {
             let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();

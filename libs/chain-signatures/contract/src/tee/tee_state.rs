@@ -4,7 +4,7 @@ use crate::{
     tee::{
         proposal::{AllowedDockerImageHashes, CodeHashesVotes, MpcDockerImageHash},
         quote::TeeQuoteStatus,
-        tee_participant::TeeParticipantInfo,
+        tee_participant::{TeeParticipantInfo, VerifyQuote},
     },
 };
 use near_sdk::{env, near, store::IterableMap, AccountId};
@@ -64,8 +64,8 @@ impl TeeState {
         }
     }
 
-    /// Maps `account_id` to its `TeeQuoteStatus`. If `account_id` has no TEE information associated to it, then it is mapped to
-    /// `TeeQuoteStatus::None`.
+    /// Maps `account_id` to its `TeeQuoteStatus`. If `account_id` has no TEE information associated
+    /// to it, then it is mapped to `TeeQuoteStatus::None`.
     pub fn tee_status(&self, account_id: &AccountId) -> TeeQuoteStatus {
         let now_sec = env::block_timestamp_ms() / 1_000;
         self.tee_participant_info

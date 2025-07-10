@@ -11,12 +11,13 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
-use crate::errors::Error;
-use crate::storage_keys::StorageKey;
-use crate::tee::proposal::AllowedDockerImageHashes;
-use crate::tee::tee_state::TeeState;
-use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
-use crate::v0_state::MpcContractV1;
+use crate::{
+    errors::Error,
+    storage_keys::StorageKey,
+    tee::{proposal::AllowedDockerImageHashes, tee_participant::VerifyQuote, tee_state::TeeState},
+    update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
+    v0_state::MpcContractV1,
+};
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -408,11 +409,12 @@ impl VersionedMpcContract {
         derived_public_key.map_err(|_| PublicKeyError::DerivedKeyConversionFailed.into())
     }
 
-    /// Key versions refer new versions of the root key that we may choose to generate on cohort changes
-    /// Older key versions will always work but newer key versions were never held by older signers
-    /// Newer key versions may also add new security features, like only existing within a secure enclave.
-    /// The signature_scheme parameter specifies which signature scheme we're querying the latest version
-    /// for. The default is Secp256k1. The default is **NOT** to query across all signature schemes.
+    /// Key versions refer new versions of the root key that we may choose to generate on cohort ///
+    /// changes Older key versions will always work but newer key versions were never held by ///
+    /// older signers Newer key versions may also add new security features, like only existing ///
+    /// within a secure enclave. The signature_scheme parameter specifies which signature scheme ///
+    /// we're querying the latest version for. The default is Secp256k1. The default is **NOT** ///
+    /// to query across all signature schemes.
     pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
         self.state()
             .most_recent_domain_for_signature_scheme(signature_scheme.unwrap_or_default())
@@ -525,7 +527,8 @@ impl VersionedMpcContract {
             proposed_tee_participant,
         );
 
-        // Save the initial storage usage to know how much to charge the proposer for the storage used
+        // Save the initial storage usage to know how much to charge the proposer for the storage
+        // used
         let initial_storage = env::storage_usage();
 
         // Verify the TEE quote before adding the proposed participant to the contract state
@@ -645,9 +648,9 @@ impl VersionedMpcContract {
     ///
     /// The effect of this method is either:
     ///  - Returns error (which aborts with no changes), if there is no active key generation
-    ///    attempt (including if the attempt timed out), if the signer is not a participant,
-    ///    or if the key_event_id corresponds to a different domain, different epoch, or different
-    ///    attempt from the current key generation attempt.
+    ///    attempt (including if the attempt timed out), if the signer is not a participant, or if
+    ///    the key_event_id corresponds to a different domain, different epoch, or different attempt
+    ///    from the current key generation attempt.
     ///  - Returns Ok(()), with one of the following changes:
     ///    - A vote has been collected but we don't have enough votes yet.
     ///    - This vote is for a public key that disagrees from an earlier voted public key, causing
@@ -691,10 +694,10 @@ impl VersionedMpcContract {
     /// Casts a vote for the successful resharing of the attempt identified by `key_event_id`.
     ///
     /// The effect of this method is either:
-    ///  - Returns error (which aborts with no changes), if there is no active key resharing
-    ///    attempt (including if the attempt timed out), if the signer is not a participant,
-    ///    or if the key_event_id corresponds to a different domain, different epoch, or different
-    ///    attempt from the current key resharing attempt.
+    ///  - Returns error (which aborts with no changes), if there is no active key resharing attempt
+    ///    (including if the attempt timed out), if the signer is not a participant, or if the
+    ///    key_event_id corresponds to a different domain, different epoch, or different attempt
+    ///    from the current key resharing attempt.
     ///  - Returns Ok(()), with one of the following changes:
     ///    - A vote has been collected but we don't have enough votes yet.
     ///    - Everyone has now voted; the state transitions into resharing the key for the next
@@ -784,9 +787,10 @@ impl VersionedMpcContract {
 
     /// Vote for a proposed update given the [`UpdateId`] of the update.
     ///
-    /// Returns Ok(true) if the amount of voters surpassed the threshold and the update was executed.
-    /// Returns Ok(false) if the amount of voters did not surpass the threshold. Returns Err if the update
-    /// was not found or if the voter is not a participant in the protocol.
+    /// Returns Ok(true) if the amount of voters surpassed the threshold and the update was
+    /// executed. Returns Ok(false) if the amount of voters did not surpass the threshold.
+    /// Returns Err if the update was not found or if the voter is not a participant in the
+    /// protocol.
     #[handle_result]
     pub fn vote_update(&mut self, id: UpdateId) -> Result<bool, Error> {
         log!(
@@ -893,9 +897,9 @@ impl VersionedMpcContract {
                 contract.accept_signature_requests = true;
 
                 // do we want to adjust the threshold?
-                //let n_participants_new = new_participants.len();
-                //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
-                //let new_threshold = new_threshold.max(2); // but also minimum 2
+                // let n_participants_new = new_participants.len();
+                // let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
+                // let new_threshold = new_threshold.max(2); // but also minimum 2
                 let new_threshold = threshold;
 
                 let threshold_parameters = ThresholdParameters::new(
@@ -1035,7 +1039,8 @@ impl VersionedMpcContract {
     }
 
     /// Upon success, removes the signature from state and returns it.
-    /// If the signature request times out, removes the signature request from state and panics to fail the original transaction
+    /// If the signature request times out, removes the signature request from state and panics to
+    /// fail the original transaction
     #[private]
     pub fn return_signature_and_clean_state_on_success(
         &mut self,
@@ -1106,17 +1111,17 @@ impl VersionedMpcContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto_shared::k256_types;
-    use crate::primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
-        signature::{Payload, Tweak},
-        test_utils::gen_participants,
+    use crate::{
+        crypto_shared::k256_types,
+        primitives::{
+            domain::{DomainConfig, DomainId, SignatureScheme},
+            signature::{Payload, Tweak},
+            test_utils::gen_participants,
+        },
     };
     use k256::{
-        self,
-        ecdsa::SigningKey,
-        elliptic_curve::point::DecompactPoint,
-        {elliptic_curve, AffinePoint, Secp256k1},
+        self, ecdsa::SigningKey, elliptic_curve, elliptic_curve::point::DecompactPoint,
+        AffinePoint, Secp256k1,
     };
     use near_sdk::{test_utils::VMContextBuilder, testing_env, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
@@ -1134,7 +1139,8 @@ mod tests {
         testing_env!(context.clone());
         let secret_key = SigningKey::random(&mut OsRng);
         let encoded_point = secret_key.verifying_key().to_encoded_point(false);
-        // The first byte of the binary representation of `EncodedPoint` is the tag, so we take the rest 64 bytes
+        // The first byte of the binary representation of `EncodedPoint` is the tag, so we take the
+        // rest 64 bytes
         let public_key_data = encoded_point.as_bytes()[1..].to_vec();
         let domain_id = DomainId::legacy_ecdsa_id();
         let domains = vec![DomainConfig {

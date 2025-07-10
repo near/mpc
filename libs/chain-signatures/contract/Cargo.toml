@@ -20,11 +20,11 @@ near-sdk = { version = "5.11.0", features = [
     "unit-testing",
     "unstable",
 ] }
-rand = { version = "0.8", optional = true }
+rand = { version = "0.9.1", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_with = { version = "3.12.0" }
 serde_json = "1"
-schemars = "0.8"
+schemars = "1.0.4"
 k256 = { version = "0.13.4", features = [
     "sha256",
     "ecdsa",
@@ -35,10 +35,11 @@ k256 = { version = "0.13.4", features = [
 # TODO(#451): Verify changes with upstream and integrate in our workspace.
 # The commit under 'rev' is the latest commit at the time it was added.
 dcap-qvl = { git = "https://github.com/mattlockyer/dcap-qvl", rev = "3caedd8fd0f365841abaf1430ff2922fcb09d9db" }
+dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", tag = "v0.5.2" }
 
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-account-id = "1.1.1"
-thiserror = "1"
+thiserror = "2.0.12"
 sha3 = "0.10.8"
 hex = "0.4.3"
 serde_yaml = "0.9.34"
@@ -47,11 +48,11 @@ serde_yaml = "0.9.34"
 getrandom = { version = "0.2.12", features = ["custom"] }
 
 [dev-dependencies]
-rand = "0.8"
+rand = "0.9.1"
 tokio = { version = "1", features = ["full"] }
 sha2 = "0.10.8"
-reqwest = { version = "0.11", features = ["json"] }
-base64 = "0.21"
+reqwest = { version = "0.12.22", features = ["json"] }
+base64 = "0.22.1"
 
 # crypto dependencies
 ed25519-dalek = { version = "2.1.1", features = ["serde", "digest"] }

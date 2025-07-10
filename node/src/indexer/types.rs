@@ -1,8 +1,6 @@
 use crate::sign_request::SignatureRequest;
 use anyhow::Context;
-use cait_sith::ecdsa::sign::FullSignature;
-use cait_sith::frost_ed25519;
-use cait_sith::frost_secp256k1::VerifyingKey;
+use cait_sith::{ecdsa::sign::FullSignature, frost_ed25519, frost_secp256k1::VerifyingKey};
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
@@ -11,7 +9,7 @@ use k256::{
 use legacy_mpc_contract;
 use mpc_contract::{
     primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak},
-    tee::tee_participant::TeeParticipantInfo,
+    tee::tee_participant::RealTeeParticipantInfo,
 };
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
@@ -29,11 +27,9 @@ struct SerializableAffinePoint {
     pub affine_point: AffinePoint,
 }
 
-/* The format in which the chain signatures contract expects
- * to receive the details of the original request. `epsilon`
- * is used to refer to the (serializable) tweak derived from the caller's
- * account id and the derivation path.
- */
+/// The format in which the chain signatures contract expects to receive the details of the original
+/// request. `epsilon` is used to refer to the (serializable) tweak derived from the caller's
+/// account id and the derivation path.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainSignatureRequest {
     pub tweak: Tweak,
@@ -53,8 +49,10 @@ impl ChainSignatureRequest {
 
 pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
 pub use mpc_contract::crypto_shared::k256_types;
-use mpc_contract::crypto_shared::{ed25519_types, SignatureResponse};
-use mpc_contract::primitives::signature::Payload;
+use mpc_contract::{
+    crypto_shared::{ed25519_types, SignatureResponse},
+    primitives::signature::Payload,
+};
 
 const MAX_RECOVERY_ID: u8 = 3;
 
@@ -71,11 +69,9 @@ fn k256_signature_response(
     Ok(ChainSignatureResponse::Secp256k1(k256_signature))
 }
 
-/* These arguments are passed to the `respond` function of the
- * chain signatures contract. It takes both the details of the
- * original request and the completed signature, then verifies
- * that the signature matches the requested key and payload.
- */
+/// These arguments are passed to the `respond` function of the chain signatures contract. It takes
+/// both the details of the original request and the completed signature, then verifies that the
+/// signature matches the requested key and payload.
 #[derive(Serialize, Debug, Deserialize, Clone)]
 pub struct ChainRespondArgs {
     pub request: ChainSignatureRequest,
@@ -122,7 +118,7 @@ pub struct ChainVoteAbortKeyEventArgs {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProposeJoinArgs {
-    pub proposed_tee_participant: TeeParticipantInfo,
+    pub proposed_tee_participant: RealTeeParticipantInfo,
     pub sign_pk: PublicKey,
 }
 
@@ -172,7 +168,8 @@ impl ChainSendTransactionRequest {
 }
 
 impl ChainRespondArgs {
-    /// WARNING: this function assumes the input full signature is valid and comes from an authentic response
+    /// WARNING: this function assumes the input full signature is valid and comes from an authentic
+    /// response.
     pub fn new_ecdsa(
         request: &SignatureRequest,
         response: &FullSignature<Secp256k1>,
@@ -243,9 +240,11 @@ impl ChainRespondArgs {
 mod recovery_id_tests {
     use crate::indexer::types::ChainRespondArgs;
     use cait_sith::ecdsa::sign::FullSignature;
-    use k256::ecdsa::{RecoveryId, SigningKey};
-    use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
-    use k256::AffinePoint;
+    use k256::{
+        ecdsa::{RecoveryId, SigningKey},
+        elliptic_curve::{point::DecompressPoint, PrimeField},
+        AffinePoint,
+    };
     use rand::rngs::OsRng;
 
     #[test]
@@ -263,7 +262,8 @@ mod recovery_id_tests {
                     let (r, s) = signature.split_scalars();
 
                     // create a full signature
-                    // any big_r creation works here as we only need it's x coordinate during bruteforce (big_r.x())
+                    // any big_r creation works here as we only need it's x coordinate during
+                    // bruteforce (big_r.x())
 
                     let r_bytes = r.to_repr();
                     let hypothetical_big_r = AffinePoint::decompress(&r_bytes, 0.into()).unwrap();

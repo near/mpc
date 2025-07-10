@@ -1,19 +1,26 @@
-use crate::config::{SecretsConfig, WebUIConfig};
-use crate::tracking::TaskHandle;
-use axum::body::Body;
-use axum::extract::State;
-use axum::http::{Response, StatusCode};
-use axum::response::{Html, IntoResponse};
-use axum::{serve, Json};
+use crate::{
+    config::{SecretsConfig, WebUIConfig},
+    tracking::TaskHandle,
+};
+use axum::{
+    body::Body,
+    extract::State,
+    http::{Response, StatusCode},
+    response::{Html, IntoResponse},
+    serve, Json,
+};
 use futures::future::BoxFuture;
-use mpc_contract::state::ProtocolContractState;
-use mpc_contract::tee::tee_participant::TeeParticipantInfo;
-use mpc_contract::utils::protocol_state_to_string;
+use mpc_contract::{
+    state::ProtocolContractState, tee::tee_participant::RealTeeParticipantInfo,
+    utils::protocol_state_to_string,
+};
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
 use std::sync::Arc;
-use tokio::net::TcpListener;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::{
+    net::TcpListener,
+    sync::{broadcast, mpsc, watch},
+};
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -115,7 +122,7 @@ async fn third_party_licenses() -> Html<&'static str> {
 pub struct StaticWebData {
     pub near_signer_public_key: near_crypto::PublicKey,
     pub near_responder_public_keys: Vec<near_crypto::PublicKey>,
-    pub tee_participant_info: Option<TeeParticipantInfo>,
+    pub tee_participant_info: Option<RealTeeParticipantInfo>,
 }
 
 fn get_public_keys(
@@ -135,7 +142,10 @@ fn get_public_keys(
 }
 
 impl StaticWebData {
-    pub fn new(value: &SecretsConfig, tee_participant_info: Option<TeeParticipantInfo>) -> Self {
+    pub fn new(
+        value: &SecretsConfig,
+        tee_participant_info: Option<RealTeeParticipantInfo>,
+    ) -> Self {
         let (near_signer_public_key, near_responder_public_keys) = get_public_keys(value);
         Self {
             near_signer_public_key,

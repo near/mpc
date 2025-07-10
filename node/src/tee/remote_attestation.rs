@@ -1,11 +1,11 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // gated by the `tee` compilation feature
 
 use anyhow::{bail, Context};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use dstack_sdk::dstack_client::DstackClient;
 use hex::ToHex;
 use http::status::StatusCode;
-use mpc_contract::tee::tee_participant::TeeParticipantInfo;
+use mpc_contract::tee::tee_participant::RealTeeParticipantInfo;
 use near_crypto::PublicKey;
 use reqwest::multipart::Form;
 use serde::Deserialize;
@@ -15,20 +15,22 @@ use tokio::sync::mpsc;
 use tracing::error;
 
 use crate::indexer::types::{ChainSendTransactionRequest, ProposeJoinArgs};
-use tee::TeeAttestation;
+use mpc_contract::tee::tee_participant::TeeAttestation;
 
 /// Endpoint to contact dstack service.
 /// Set to [`None`] which defaults to `/var/run/dstack.sock`
 const ENDPOINT: Option<&str> = None;
-/// URL for usbmission of tdx quote. Returns collateral to be used for verification.
+/// URL for submission of tdx quote. Returns collateral to be used for verification.
 const PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
 /// Expected HTTP [`StatusCode`] for a successful submission.
 const PHALA_SUCCESS_STATUS_CODE: StatusCode = StatusCode::OK;
-/// The maximum duration to wait for retrying request to Phala's endpoint, [`PHALA_TDX_QUOTE_UPLOAD_URL`].
+/// The maximum duration to wait for retrying request to Phala's endpoint,
+/// [`PHALA_TDX_QUOTE_UPLOAD_URL`].
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
 /// Number of bytes for the report data.
-/// report_data: [u8; 64] = [version(2 bytes (big endian)) || sha384(TLS pub key || account public key ) || zero padding]
+/// report_data: [u8; 64] = [version(2 bytes (big endian)) || sha384(TLS pub key || account public
+/// key) || zero padding]
 const REPORT_DATA_SIZE: usize = 64;
 
 const BINARY_VERSION_OFFSET: usize = 0;
@@ -88,8 +90,8 @@ where
     }
 }
 
-/// Generates a [`TeeAttestation`] for this node, which can be used to send to the contract to prove that
-/// the node is running in a `TEE` context.
+/// Generates a [`TeeAttestation`] for this node, which can be used to send to the contract to prove
+/// that the node is running in a `TEE` context.
 ///
 /// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
 /// from generating the attestation.
@@ -166,7 +168,7 @@ pub async fn create_remote_attestation_info(
 
 pub async fn submit_remote_attestation(
     tx_sender: mpsc::Sender<ChainSendTransactionRequest>,
-    report_data_contract: TeeParticipantInfo,
+    report_data_contract: RealTeeParticipantInfo,
     account_public_key: PublicKey,
 ) -> Result<(), anyhow::Error> {
     let propose_join_args = ProposeJoinArgs {
