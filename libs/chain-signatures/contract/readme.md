@@ -62,8 +62,8 @@ _EDDSA Signature Request_
     "payload_v2": {
       "Eddsa": "521da91dc9bddb625bd0679d9e735def558761a34653624f5954f44bce6443a9"
     },
-    "path": "sepolia-1",
-    "domain_id": 0
+    "path": "solana-1",
+    "domain_id": 1
   }
 }
 ```
