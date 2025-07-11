@@ -4,11 +4,11 @@ use dstack_sdk::dstack_client::{DstackClient, TcbInfo};
 use http::status::StatusCode;
 use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use near_crypto::PublicKey;
-use reqwest::multipart::{Form, Part};
+use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
 use std::{future::Future, time::Duration};
-use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::mpsc};
+use tokio::sync::mpsc;
 use tracing::error;
 
 use crate::indexer::types::{ChainSendTransactionRequest, ProposeJoinArgs};
@@ -51,7 +51,14 @@ const _: () = {
 pub struct TeeAttestation {
     tcb_info: TcbInfo,
     tdx_quote: String,
-    collateral: String,
+    collateral: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+struct UploadResponse {
+    quote_collateral: serde_json::Value,
+    #[serde(rename = "checksum")]
+    _checksum: String,
 }
 
 pub struct BinaryVersion(u16);
@@ -95,7 +102,6 @@ pub async fn create_remote_attestation_info(
 ) -> TeeAttestation {
     let client = DstackClient::new(ENDPOINT);
 
-    tracing::info!("Requesting TCB info from dstack.");
     let client_info_response = get_with_backoff(|| client.info(), "dstack client info").await;
     let tcb_info = client_info_response.tcb_info;
 
@@ -117,34 +123,14 @@ pub async fn create_remote_attestation_info(
         report_data
     };
 
-    tracing::info!("Creating tdx quote from dstack.");
-    let tdx_quote = get_with_backoff(
+    let tdx_quote: String = get_with_backoff(
         || client.get_quote(report_data.into()),
         "dstack client tdx quote",
     )
     .await
     .quote;
 
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open("quote.txt")
-        .await
-        .expect("File can be opened.");
-
-    file.write_all(tdx_quote.as_bytes())
-        .await
-        .expect("File is writable");
-
-    file.flush().await.unwrap();
-
-    drop(file);
-
-    tracing::info!(?tdx_quote);
-
-    tracing::info!("Uploading tdx info Phala network to generate collateral.");
-    let collateral = {
+    let quote_upload_response = {
         let reqwest_client = reqwest::Client::new();
         let tdx_quote = tdx_quote.clone();
 
@@ -163,70 +149,16 @@ pub async fn create_remote_attestation_info(
                 bail!("Got unexpected HTTP status code: response from phala http_endpoint: {:?}, expected: {:?}", status, PHALA_SUCCESS_STATUS_CODE);
             }
 
-            let response = response
-                .json::<serde_json::Value>()
+            response
+                .json::<UploadResponse>()
                 .await
-                .context("Failed to deserialize response from Phala.")?;
-
-            tracing::info!(?response, "Phala API response");
-
-            let quote_collateral_json = response.get("quote_collateral").cloned();
-            match quote_collateral_json {
-                Some(quote_collateral_json) => Ok(quote_collateral_json),
-                None => bail!("No quote_collateral found in Phala's API response."),
-            }
+                .context("Failed to deserialize response from Phala.")
         };
 
-        let upload_tdx_quote_binary = async || {
-            let tdx_quote_binary = tdx_quote.clone().into_bytes();
-            let part = Part::bytes(tdx_quote_binary);
-            let form = Form::new().part("file", part);
-
-            let response = reqwest_client
-                .post(PHALA_TDX_QUOTE_UPLOAD_URL)
-                .multipart(form)
-                .send()
-                .await?;
-
-            let status = response.status();
-
-            if status != PHALA_SUCCESS_STATUS_CODE {
-                bail!("Got unexpected HTTP status code: response from phala http_endpoint: {:?}, expected: {:?}", status, PHALA_SUCCESS_STATUS_CODE);
-            }
-
-            let response = response
-                .json::<serde_json::Value>()
-                .await
-                .context("Failed to deserialize response from Phala.")?;
-
-            tracing::info!(?response, "Phala API response");
-
-            let quote_collateral_json = response.get("quote_collateral").cloned();
-            match quote_collateral_json {
-                Some(quote_collateral_json) => Ok(quote_collateral_json),
-                None => bail!("No quote_collateral found in Phala's API response."),
-            }
-        };
-
-        let hex_upload_response = upload_tdx_quote().await;
-        match hex_upload_response {
-            Ok(hex_upload_response) => {
-                tracing::info!("Hex upload worked. Got OK response.");
-                hex_upload_response
-            }
-            Err(error) => {
-                tracing::error!(?error, "Hex upload failed.");
-                upload_tdx_quote_binary()
-                    .await
-                    .expect("Upload as binary should suceed")
-            }
-        }
+        get_with_backoff(upload_tdx_quote, "upload tdx quote").await
     };
 
-    let collateral = serde_json::to_string(&collateral)
-        .expect("Collateral is a nested json field. Serialization should not fail");
-
-    tracing::info!("Successfully created a TeeAttestation.");
+    let collateral = quote_upload_response.quote_collateral;
     TeeAttestation {
         tdx_quote,
         tcb_info,
@@ -240,7 +172,8 @@ impl TryFrom<TeeAttestation> for TeeParticipantInfo {
     fn try_from(value: TeeAttestation) -> Result<Self, Self::Error> {
         let tee_quote = hex::decode(value.tdx_quote)
             .context("Failed to decode tee quote. Expected it to be in hex format.")?;
-        let quote_collateral = value.collateral;
+        let quote_collateral = serde_json::to_string(&value.collateral)
+            .context("Failed to serialize quote collateral back to JSON string.")?;
         let raw_tcb_info =
             serde_json::to_string(&value.tcb_info).context("Failed to serialize tcb info")?;
 
