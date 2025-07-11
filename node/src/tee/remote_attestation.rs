@@ -131,8 +131,7 @@ pub async fn create_remote_attestation_info(
         "dstack client tdx quote",
     )
     .await
-    .quote
-    .encode_hex();
+    .quote;
 
     let quote_upload_response = {
         let reqwest_client = reqwest::Client::new();
