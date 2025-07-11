@@ -17,7 +17,7 @@ use super::{
 use crate::protocol::internal::Comms;
 use std::collections::VecDeque;
 
-pub async fn multiplication_sender<'a, C: CSCurve>(
+pub async fn multiplication_sender<C: CSCurve>(
     chan: PrivateChannel,
     sid: &[u8],
     a_i: &C::Scalar,
@@ -50,7 +50,7 @@ pub async fn multiplication_sender<'a, C: CSCurve>(
     Ok(gamma0? + gamma1?)
 }
 
-pub async fn multiplication_receiver<'a, C: CSCurve>(
+pub async fn multiplication_receiver<C: CSCurve>(
     chan: PrivateChannel,
     sid: &[u8],
     a_i: &C::Scalar,
@@ -175,10 +175,10 @@ pub async fn multiplication_many<C: CSCurve, const N: usize>(
         .into_iter()
         .collect::<VecDeque<_>>();
 
-    for i in 0..N {
+    for oi in outs.iter_mut().take(N) {
         for _ in participants.others(me) {
             let result = results.pop_front().unwrap();
-            outs[i] += result;
+            *oi += result;
         }
     }
 
@@ -289,10 +289,11 @@ mod test {
                     .collect()
             });
 
+        #[allow(clippy::type_complexity)]
         let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = Vec<Scalar>>>)> =
             Vec::with_capacity(prep.len());
 
-        let sids: Vec<_> = (0..N).map(|i| hash(&format!("sid{}", i))).collect();
+        let sids: Vec<_> = (0..N).map(|i| hash(&format!("sid{i}"))).collect();
 
         for (p, a_iv, b_iv) in prep {
             let ctx = Comms::new();

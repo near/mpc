@@ -39,8 +39,3 @@ k256 = { version = "0.13.1", features = ["sha256", "ecdsa", "serde"], optional =
 
 [features]
 k256 = ["dep:k256"]
-
-[[example]]
-name = "network-benches"
-path = "examples/network-benches.rs"
-required-features = ["k256"]

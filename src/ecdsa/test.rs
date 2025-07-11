@@ -45,7 +45,7 @@ pub(crate) fn run_refresh(
         let protocol = refresh(
             Some(out.private_share),
             out.public_key,
-            &participants,
+            participants,
             threshold,
             *p,
         )?;
@@ -65,23 +65,20 @@ pub(crate) fn run_reshare(
     new_threshold: usize,
     new_participants: Vec<Participant>,
 ) -> Result<Vec<(Participant, KeygenOutput)>, Box<dyn Error>> {
-    assert!(new_participants.len() > 0);
+    assert!(!new_participants.is_empty());
     let mut setup: Vec<_> = vec![];
 
     for new_participant in &new_participants {
         let mut is_break = false;
         for (p, k) in &keys {
-            if p.clone() == new_participant.clone() {
-                setup.push((
-                    p.clone(),
-                    (Some(k.private_share.clone()), k.public_key.clone()),
-                ));
+            if p == new_participant {
+                setup.push((*p, (Some(k.private_share), k.public_key)));
                 is_break = true;
                 break;
             }
         }
         if !is_break {
-            setup.push((new_participant.clone(), (None, *pub_key)));
+            setup.push((*new_participant, (None, *pub_key)));
         }
     }
 
@@ -90,7 +87,7 @@ pub(crate) fn run_reshare(
 
     for (p, out) in setup.iter() {
         let protocol = reshare(
-            &participants,
+            participants,
             old_threshold,
             out.0,
             out.1,
@@ -109,16 +106,13 @@ pub(crate) fn run_reshare(
 pub(crate) fn assert_public_key_invariant(
     participants: &[(Participant, KeygenOutput)],
 ) -> Result<(), Box<dyn Error>> {
-    let public_key_package = participants.first().unwrap().1.public_key.clone();
+    let public_key_package = participants.first().unwrap().1.public_key;
 
     if participants
         .iter()
         .any(|(_, key_pair)| key_pair.public_key != public_key_package)
     {
-        assert!(
-            false,
-            "public key package is not the same for all participants"
-        );
+        panic!("public key package is not the same for all participants");
     }
 
     Ok(())
@@ -209,7 +203,7 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
     let mut keygen_result = run_keygen(&participants.clone(), threshold)?;
     keygen_result.sort_by_key(|(p, _)| *p);
 
-    let public_key = keygen_result[0].1.public_key.clone();
+    let public_key = keygen_result[0].1.public_key;
     assert_eq!(keygen_result[0].1.public_key, keygen_result[1].1.public_key);
     assert_eq!(keygen_result[1].1.public_key, keygen_result[2].1.public_key);
 
@@ -237,7 +231,7 @@ fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
     let mut keygen_result = run_keygen(&participants.clone(), threshold)?;
     keygen_result.sort_by_key(|(p, _)| *p);
 
-    let public_key = keygen_result[0].1.public_key.clone();
+    let public_key = keygen_result[0].1.public_key;
     assert_eq!(keygen_result[0].1.public_key, keygen_result[1].1.public_key);
     assert_eq!(keygen_result[1].1.public_key, keygen_result[2].1.public_key);
 

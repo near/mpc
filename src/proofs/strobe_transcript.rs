@@ -7,7 +7,7 @@ pub const MERLIN_PROTOCOL_LABEL: &[u8] = b"Mini-Merlin";
 fn encode_usize_as_u32(x: usize) -> [u8; 4] {
     use byteorder::{ByteOrder, LittleEndian};
 
-    assert!(x <= (u32::max_value() as usize));
+    assert!(x <= (u32::MAX as usize));
 
     let mut buf = [0; 4];
     LittleEndian::write_u32(&mut buf, x as u32);

@@ -46,8 +46,8 @@ pub enum ProtocolError {
 impl fmt::Display for ProtocolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProtocolError::Other(e) => write!(f, "{}", e),
-            ProtocolError::AssertionFailed(e) => write!(f, "assertion failed {}", e),
+            ProtocolError::Other(e) => write!(f, "{e}"),
+            ProtocolError::AssertionFailed(e) => write!(f, "assertion failed {e}"),
             ProtocolError::DKGNotSupported => write!(f, "the ciphersuite does not support DKG"),
             ProtocolError::ErrorExtractVerificationKey => write!(
                 f,
@@ -104,7 +104,7 @@ pub enum InitializationError {
 impl fmt::Display for InitializationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            InitializationError::BadParameters(s) => write!(f, "bad parameters: {}", s),
+            InitializationError::BadParameters(s) => write!(f, "bad parameters: {s}"),
         }
     }
 }

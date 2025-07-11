@@ -9,8 +9,8 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::constants::SECURITY_PARAMETER;
 
-pub const SEC_PARAM_64: usize = (SECURITY_PARAMETER + 64 - 1) / 64;
-pub const SEC_PARAM_8: usize = (SECURITY_PARAMETER + 8 - 1) / 8;
+pub const SEC_PARAM_64: usize = SECURITY_PARAMETER.div_ceil(64);
+pub const SEC_PARAM_8: usize = SECURITY_PARAMETER.div_ceil(8);
 
 /// Represents a vector of bits.
 ///
@@ -314,7 +314,7 @@ impl SquareBitMatrix {
         let mut out = BitMatrix(vec![BitVector::zero(); rows]);
 
         // How many bytes to get rows bits?
-        let row8 = (rows + 7) / 8;
+        let row8 = rows.div_ceil(8);
         hasher.update(b"row");
 
         for (j, row) in self.matrix.0.iter().enumerate() {

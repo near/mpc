@@ -541,9 +541,9 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
 
     // Spec 2.1
     let mut all_commitments_vec: Vec<ParticipantMap<Commitment>> = vec![];
-    for i in 0..N {
+    for comi in my_commitments.iter().take(N) {
         let mut m = ParticipantMap::new(&participants);
-        m.put(me, my_commitments[i]);
+        m.put(me, *comi);
         all_commitments_vec.push(m);
     }
 
@@ -559,9 +559,8 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
 
     // Spec 2.2
     let mut my_confirmations = vec![];
-    for i in 0..N {
-        let all_commitments = &all_commitments_vec[i];
-        let my_confirmation = hash(all_commitments);
+    for comi in all_commitments_vec.iter().take(N) {
+        let my_confirmation = hash(comi);
         my_confirmations.push(my_confirmation);
     }
 
@@ -704,6 +703,7 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
         seen.clear();
         seen.put(me);
         while !seen.full() {
+            #[allow(clippy::type_complexity)]
             let (
                 from,
                 (
@@ -796,6 +796,7 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
         seen.clear();
         seen.put(me);
         while !seen.full() {
+            #[allow(clippy::type_complexity)]
             let (from, (a_j_i_v, b_j_i_v)): (
                 _,
                 (Vec<ScalarPrimitive<C>>, Vec<ScalarPrimitive<C>>),
@@ -859,10 +860,11 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
         seen.clear();
         seen.put(me);
         let mut big_c_v = vec![];
-        for i in 0..N {
-            big_c_v.push(big_c_i_v[i]);
+        for big_c_i_v_i in big_c_i_v.iter().take(N) {
+            big_c_v.push(*big_c_i_v_i);
         }
         while !seen.full() {
+            #[allow(clippy::type_complexity)]
             let (from, (big_c_j_v, their_phi_proofs)): (
                 _,
                 (Vec<SerializablePoint<C>>, Vec<dlogeq::Proof<C>>),
@@ -923,16 +925,15 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
     let mut hat_big_c_i_points = vec![];
     let mut hat_big_c_i_v = vec![];
     let mut my_phi_proofs = vec![];
-    for i in 0..N {
+    for l0 in l0_v.iter().take(N) {
         // Spec 4.5
-        let l0 = l0_v[i];
         let hat_big_c_i = C::ProjectivePoint::generator() * l0;
 
         // Spec 4.6
         let statement = dlog::Statement::<C> {
             public: &hat_big_c_i,
         };
-        let witness = dlog::Witness::<C> { x: &l0 };
+        let witness = dlog::Witness::<C> { x: l0 };
         let my_phi_proof = dlog::prove(
             &mut rng,
             &mut transcript.fork(b"dlog2", &me.bytes()),
@@ -958,15 +959,13 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
     let mut c_i_v = vec![];
     for p in participants.others(me) {
         let mut c_i_j_v = Vec::new();
-        for i in 0..N {
-            let l = &mut l_v[i];
+        for l in l_v.iter_mut().take(N) {
             let c_i_j: ScalarPrimitive<C> = l.evaluate(&p.scalar::<C>()).into();
             c_i_j_v.push(c_i_j);
         }
         chan.send_private(wait6, p, &c_i_j_v);
     }
-    for i in 0..N {
-        let l = &mut l_v[i];
+    for l in l_v.iter_mut().take(N) {
         let c_i = l.evaluate(&me.scalar::<C>());
         c_i_v.push(c_i);
     }
@@ -975,11 +974,12 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
     seen.clear();
     seen.put(me);
     let mut hat_big_c_v = vec![];
-    for i in 0..N {
-        hat_big_c_v.push(hat_big_c_i_v[i]);
+    for hat_big_c_i_v_i in hat_big_c_i_v.iter().take(N) {
+        hat_big_c_v.push(*hat_big_c_i_v_i);
     }
 
     while !seen.full() {
+        #[allow(clippy::type_complexity)]
         let (from, (their_hat_big_c_i_points, their_phi_proofs)): (
             _,
             (Vec<SerializablePoint<C>>, Vec<dlog::Proof<C>>),

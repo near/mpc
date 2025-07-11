@@ -1,7 +1,6 @@
 use elliptic_curve::{Field, Group};
 use rand_core::OsRng;
 use sha2::{Digest, Sha256};
-use smol::stream::{self, StreamExt};
 use std::sync::Arc;
 use subtle::ConditionallySelectable;
 
@@ -28,10 +27,10 @@ fn hash<C: CSCurve>(
 ) -> BitVector {
     let mut hasher = Sha256::new();
     hasher.update(BATCH_RANDOM_OT_HASH);
-    hasher.update(&(i as u64).to_le_bytes());
-    hasher.update(&encode(&big_x_i));
-    hasher.update(&encode(&big_y));
-    hasher.update(&encode(&SerializablePoint::<C>::from_projective(p)));
+    hasher.update((i as u64).to_le_bytes());
+    hasher.update(encode(&big_x_i));
+    hasher.update(encode(&big_y));
+    hasher.update(encode(&SerializablePoint::<C>::from_projective(p)));
 
     let bytes: [u8; 32] = hasher.finalize().into();
     // the hash output is 256 bits
@@ -95,9 +94,8 @@ pub async fn batch_random_ot_sender_many<C: CSCurve, const N: usize>(
 
     let wait0 = chan.next_waitpoint();
     let mut big_y_affine_v = vec![];
-    for i in 0..N {
-        let big_y = &big_y_v[i];
-        let big_y_affine = SerializablePoint::<C>::from_projective(&big_y);
+    for big_y in big_y_v.iter() {
+        let big_y_affine = SerializablePoint::<C>::from_projective(big_y);
         big_y_affine_v.push(big_y_affine);
     }
     chan.send(wait0, &big_y_affine_v);
@@ -115,13 +113,13 @@ pub async fn batch_random_ot_sender_many<C: CSCurve, const N: usize>(
             let big_x_i_affine_v: Vec<SerializablePoint<C>> = chan.recv(wait0).await?;
 
             let mut ret = vec![];
-            for j in 0..N {
+            for (j, big_x_i_affine_v_j) in big_x_i_affine_v.iter().enumerate() {
                 let y = &yv_arc.as_slice()[j];
                 let big_y_affine = &big_y_affine_v_arc.as_slice()[j];
                 let big_z = &big_z_v_arc.as_slice()[j];
-                let y_big_x_i = big_x_i_affine_v[j].to_projective() * *y;
-                let big_k0 = hash(i, &big_x_i_affine_v[j], big_y_affine, &y_big_x_i);
-                let big_k1 = hash(i, &big_x_i_affine_v[j], big_y_affine, &(y_big_x_i - big_z));
+                let y_big_x_i = big_x_i_affine_v_j.to_projective() * *y;
+                let big_k0 = hash(i, big_x_i_affine_v_j, big_y_affine, &y_big_x_i);
+                let big_k1 = hash(i, big_x_i_affine_v_j, big_y_affine, &(y_big_x_i - big_z));
                 ret.push((big_k0, big_k1));
             }
 
@@ -134,15 +132,14 @@ pub async fn batch_random_ot_sender_many<C: CSCurve, const N: usize>(
     for _ in 0..N {
         reshaped_outs.push(Vec::new());
     }
-    for i in 0..outs.len() {
+    for outsi in outs {
         for j in 0..N {
-            reshaped_outs[j].push(outs[i][j])
+            reshaped_outs[j].push(outsi[j])
         }
     }
     let outs = reshaped_outs;
     let mut ret = vec![];
-    for i in 0..N {
-        let out = &outs[i];
+    for out in outs.iter().take(N) {
         let big_k0: BitMatrix = out.iter().map(|r| r.0).collect();
         let big_k1: BitMatrix = out.iter().map(|r| r.1).collect();
         ret.push((big_k0.try_into().unwrap(), big_k1.try_into().unwrap()));
@@ -201,8 +198,7 @@ pub async fn batch_random_ot_receiver_many<C: CSCurve, const N: usize>(
 
     let mut big_y_v = vec![];
     let mut deltav = vec![];
-    for i in 0..N {
-        let big_y_affine = big_y_affine_v[i];
+    for big_y_affine in big_y_affine_v.iter().take(N) {
         let big_y = big_y_affine.to_projective();
         if bool::from(big_y.is_identity()) {
             return Err(ProtocolError::AssertionFailed(
@@ -223,19 +219,19 @@ pub async fn batch_random_ot_receiver_many<C: CSCurve, const N: usize>(
     for _ in deltav[0].bits() {
         choices.push(Vec::new());
     }
-    for j in 0..N {
-        for (i, d_i) in deltav[j].bits().enumerate() {
+    for deltavj in deltav.iter().take(N) {
+        for (i, d_i) in deltavj.bits().enumerate() {
             choices[i].push(d_i);
         }
     }
     // wrap in arc
     let choices: Vec<_> = choices.into_iter().map(Arc::new).collect();
 
-    let mut outs = Vec::new();
-    for i in 0..choices.len() {
+    let mut outs: Vec<Vec<BitVector>> = Vec::new();
+    for (i, choicesi) in choices.iter().enumerate() {
         let mut chan = chan.child(i as u64);
         // clone arcs
-        let d_i_v = choices[i].clone();
+        let d_i_v = choicesi.clone();
         let big_y_v_arc = big_y_v_arc.clone();
         let big_y_affine_v_arc = big_y_affine_v_arc.clone();
         let hashv = {
@@ -254,8 +250,8 @@ pub async fn batch_random_ot_receiver_many<C: CSCurve, const N: usize>(
             let wait0 = chan.next_waitpoint();
 
             let mut big_x_i_affine_v = Vec::new();
-            for j in 0..N {
-                let big_x_i_affine = SerializablePoint::<C>::from_projective(&big_x_i_v[j]);
+            for big_x_i_v_j in big_x_i_v.iter().take(N) {
+                let big_x_i_affine = SerializablePoint::<C>::from_projective(big_x_i_v_j);
                 big_x_i_affine_v.push(big_x_i_affine);
             }
             chan.send(wait0, &big_x_i_affine_v);
@@ -279,9 +275,9 @@ pub async fn batch_random_ot_receiver_many<C: CSCurve, const N: usize>(
     for _ in 0..N {
         reshaped_outs.push(Vec::new());
     }
-    for i in 0..outs.len() {
+    for outsi in outs.iter() {
         for j in 0..N {
-            reshaped_outs[j].push(outs[i][j]);
+            reshaped_outs[j].push(outsi[j]);
         }
     }
     let outs = reshaped_outs;

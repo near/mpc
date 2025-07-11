@@ -121,7 +121,7 @@ mod test {
         let pub_key = result[2].1.public_key.to_element();
 
         let participants = vec![result[0].0, result[1].0, result[2].0];
-        let shares = vec![
+        let shares = [
             result[0].1.private_share.to_scalar(),
             result[1].1.private_share.to_scalar(),
             result[2].1.private_share.to_scalar(),
@@ -152,7 +152,7 @@ mod test {
         assert_public_key_invariant(&result1)?;
 
         let participants = vec![result1[0].0, result1[1].0, result1[2].0];
-        let shares = vec![
+        let shares = [
             result1[0].1.private_share.to_scalar(),
             result1[1].1.private_share.to_scalar(),
             result1[2].1.private_share.to_scalar(),
@@ -178,7 +178,7 @@ mod test {
         let result0 = run_keygen(&participants, threshold0)?;
         assert_public_key_invariant(&result0)?;
 
-        let pub_key = result0[2].1.public_key.clone();
+        let pub_key = result0[2].1.public_key;
 
         let mut new_participant = participants.clone();
         new_participant.push(Participant::from(31u32));
@@ -193,7 +193,7 @@ mod test {
         assert_public_key_invariant(&result1)?;
 
         let participants = vec![result1[0].0, result1[1].0, result1[2].0, result1[3].0];
-        let shares = vec![
+        let shares = [
             result1[0].1.private_share.to_scalar(),
             result1[1].1.private_share.to_scalar(),
             result1[2].1.private_share.to_scalar(),

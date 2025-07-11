@@ -47,8 +47,8 @@ use futures::future::BoxFuture;
 use futures::task::noop_waker;
 use futures::{FutureExt, StreamExt};
 use serde::{de::DeserializeOwned, Serialize};
-use smol::{future, lock::Mutex};
 use sha2::{Digest, Sha256};
+use smol::{future, lock::Mutex};
 use std::collections::VecDeque;
 use std::task::Context;
 use std::{collections::HashMap, error, future::Future, sync::Arc};
@@ -88,9 +88,9 @@ impl ChannelTag {
         hasher.update(DOMAIN);
         hasher.update(b"root private");
         hasher.update(b"p0");
-        hasher.update(&p0.bytes());
+        hasher.update(p0.bytes());
         hasher.update(b"p1");
-        hasher.update(&p1.bytes());
+        hasher.update(p1.bytes());
 
         let out = hasher.finalize().into();
         Self(out)
@@ -105,9 +105,9 @@ impl ChannelTag {
         let mut hasher = Sha256::new();
         hasher.update(DOMAIN);
         hasher.update(b"parent");
-        hasher.update(&self.0);
+        hasher.update(self.0);
         hasher.update(b"i");
-        hasher.update(&i.to_le_bytes());
+        hasher.update(i.to_le_bytes());
         let out = hasher.finalize().into();
         Self(out)
     }

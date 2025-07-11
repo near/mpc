@@ -388,7 +388,7 @@ mod tests {
         )
         .unwrap();
         let signature = assert_single_coordinator_result(data);
-        let pub_key = key_packages1[2].1.public_key.clone();
+        let pub_key = key_packages1[2].1.public_key;
         assert!(key_packages1[0]
             .1
             .public_key
@@ -442,7 +442,7 @@ mod tests {
         let result0 = run_keygen(&participants, threshold)?;
         assert_public_key_invariant(&result0)?;
 
-        let pub_key = result0[2].1.public_key.clone();
+        let pub_key = result0[2].1.public_key;
 
         // Run heavy reshare
         let new_threshold = 5;
@@ -516,7 +516,7 @@ mod tests {
         assert_public_key_invariant(&result0)?;
         let coordinators = vec![result0[0].0];
 
-        let pub_key = result0[2].1.public_key.clone();
+        let pub_key = result0[2].1.public_key;
 
         // Run heavy reshare
         let new_threshold = 3;

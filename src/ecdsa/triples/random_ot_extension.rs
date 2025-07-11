@@ -26,8 +26,8 @@ fn hash_to_scalar<C: CSCurve>(i: usize, v: &BitVector) -> C::Scalar {
     let i64 = u64::try_from(i).expect("failed to convert usize to u64");
 
     hasher.update(CTX);
-    hasher.update(&i64.to_le_bytes());
-    hasher.update(&v.bytes());
+    hasher.update(i64.to_le_bytes());
+    hasher.update(v.bytes());
     let seed = hasher.finalize().into();
 
     // Could in theory avoid one PRF call by using a more direct RNG wrapper

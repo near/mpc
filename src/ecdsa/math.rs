@@ -104,6 +104,11 @@ impl<C: CSCurve> Polynomial<C> {
     pub fn len(&self) -> usize {
         self.coefficients.len()
     }
+
+    /// Required by https://rust-lang.github.io/rust-clippy/master/index.html#len_without_is_empty
+    pub fn is_empty(&self) -> bool {
+        self.coefficients.is_empty()
+    }
 }
 
 impl<C: CSCurve> Index<usize> for Polynomial<C> {
@@ -200,6 +205,11 @@ impl<C: CSCurve> GroupPolynomial<C> {
     /// Return the length of this polynomial.
     pub fn len(&self) -> usize {
         self.coefficients.len()
+    }
+
+    /// Required by https://rust-lang.github.io/rust-clippy/master/index.html#len_without_is_empty
+    pub fn is_empty(&self) -> bool {
+        self.coefficients.is_empty()
     }
 }
 

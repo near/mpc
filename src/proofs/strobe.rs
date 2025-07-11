@@ -6,7 +6,6 @@
 
 use core::ops::{Deref, DerefMut};
 
-use keccak;
 use zeroize::Zeroize;
 
 /// Strobe R value; security level 128 is hardcoded

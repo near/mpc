@@ -85,12 +85,8 @@ mod k256_impl {
                 Ok(encoded) => encoded,
                 Err(_) => return None,
             };
-            match Option::<Self::AffinePoint>::from(Self::AffinePoint::from_encoded_point(
-                &encoded_point,
-            )) {
-                Some(point) => Some(Self::ProjectivePoint::from(point)),
-                None => None,
-            }
+            Option::<Self::AffinePoint>::from(Self::AffinePoint::from_encoded_point(&encoded_point))
+                .map(Self::ProjectivePoint::from)
         }
     }
 }
