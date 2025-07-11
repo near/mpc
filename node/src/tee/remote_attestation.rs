@@ -1,9 +1,6 @@
-#![allow(dead_code)]
-
 use anyhow::{bail, Context};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use dstack_sdk::dstack_client::{DstackClient, TcbInfo};
-use hex::ToHex;
 use http::status::StatusCode;
 use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use near_crypto::PublicKey;
