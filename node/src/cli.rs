@@ -1,8 +1,9 @@
+use crate::config::{PersistentSecrets, RespondConfig};
+use crate::web::StaticWebData;
 use crate::{
     config::{
-        load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PersistentSecrets,
-        PresignatureConfig, RespondConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
-        WebUIConfig,
+        load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
+        SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -15,12 +16,13 @@ use crate::{
     },
     p2p::testing::{generate_test_p2p_configs, PortSeed},
     tracking::{self, start_root_task},
-    web::{start_web_server, StaticWebData},
+    web::start_web_server,
 };
 use anyhow::{anyhow, Context};
 use clap::{Parser, ValueEnum};
 use hex::FromHex;
-use mpc_contract::{state::ProtocolContractState, tee::tee_participant::RealTeeParticipantInfo};
+use mpc_contract::state::ProtocolContractState;
+use mpc_contract::tee::tee_participant::RealTeeParticipantInfo;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
@@ -74,8 +76,7 @@ pub enum CliCommand {
         #[arg(long, value_delimiter = ',')]
         /// Near signer account for each participant
         participants: Vec<AccountId>,
-        /// Near responder account for each participant. Refer to `indexer/real.rs` for more
-        /// details.
+        /// Near responder account for each participant. Refer to `indexer/real.rs` for more details.
         #[arg(long, value_delimiter = ',')]
         responders: Vec<AccountId>,
         #[arg(long)]
