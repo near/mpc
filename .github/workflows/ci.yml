@@ -27,8 +27,8 @@ jobs:
       - name: Cache Rust dependencies
         uses: WarpBuilds/rust-cache@v2
         with:
-          cache-on-failure: false
-          cache-all-crates: false
+          cache-on-failure: true
+          cache-all-crates: true
 
       - name: Run Clippy fmt
         run: |
