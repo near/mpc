@@ -51,12 +51,12 @@ const _: () = {
 pub struct TeeAttestation {
     tcb_info: TcbInfo,
     tdx_quote: String,
-    collateral: String,
+    collateral: serde_json::Value,
 }
 
 #[derive(Deserialize)]
 struct UploadResponse {
-    quote_collateral: String,
+    quote_collateral: serde_json::Value,
     #[serde(rename = "checksum")]
     _checksum: String,
 }
@@ -172,7 +172,8 @@ impl TryFrom<TeeAttestation> for TeeParticipantInfo {
     fn try_from(value: TeeAttestation) -> Result<Self, Self::Error> {
         let tee_quote = hex::decode(value.tdx_quote)
             .context("Failed to decode tee quote. Expected it to be in hex format.")?;
-        let quote_collateral = value.collateral;
+        let quote_collateral = serde_json::to_string(&value.collateral)
+            .context("Failed to serialize quote collateral back to JSON string.")?;
         let raw_tcb_info =
             serde_json::to_string(&value.tcb_info).context("Failed to serialize tcb info")?;
 
