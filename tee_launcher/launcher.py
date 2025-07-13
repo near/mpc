@@ -129,9 +129,15 @@ def is_non_empty_and_cleaned(val: str) -> bool:
 
 
 def is_safe_host_entry(entry: str) -> bool:
-    """Ensure that host entry does not contain unsafe characters or start with '--' or'-'."""
-    return not INVALID_HOST_ENTRY_PATTERN.search(entry)
-
+    """
+    Ensure that host entry does not contain unsafe characters,
+    does not start with '--' or '-', and does not include LD_PRELOAD.
+    """
+    if INVALID_HOST_ENTRY_PATTERN.search(entry):
+        return False
+    if "LD_PRELOAD" in entry:
+        return False
+    return True
 
 def is_safe_port_mapping(mapping: str) -> bool:
     """Ensure that the port mapping does not contain unsafe characters or start with '--' or '-'."""
