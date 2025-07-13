@@ -87,7 +87,6 @@ def test_valid_port_mapping():
 
 
 def test_build_docker_cmd_sanitizes_ports_and_hosts():
-    print("test_build_docker_cmd_sanitizes_ports_and_hosts")
     env = {
         "PORTS": "11780:11780,--env BAD=1",
         "EXTRA_HOSTS": "node:192.168.1.1,--volume /:/mnt",
