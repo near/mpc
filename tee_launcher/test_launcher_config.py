@@ -75,7 +75,6 @@ def test_config_overrides_duplicate_keys():
 # test valid and invalid host entries and port mappings
 
 def test_valid_host_entry():
-    print("test_valid_host_entry") 
     assert is_valid_host_entry("node.local:192.168.1.1")
     assert not is_valid_host_entry("node.local:not-an-ip")
     assert not is_valid_host_entry("--env LD_PRELOAD=hack.so")
