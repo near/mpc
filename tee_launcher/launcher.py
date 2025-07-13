@@ -87,6 +87,16 @@ PORT_MAPPING_RE = re.compile(r"^(\d{1,5}):(\d{1,5})$")
 INVALID_HOST_ENTRY_PATTERN = re.compile(r"^[;&|`$\\<>-]|^--")
 
 
+def is_safe_env_value(value: str) -> bool:
+    """
+    Ensures that an environment variable value does not contain dangerous substrings
+    like LD_PRELOAD which may be used for injection.
+    """
+    if not isinstance(value, str):
+        return False
+    return "LD_PRELOAD" not in value
+
+
 def is_valid_ip(ip: str) -> bool:
     try:
         ipaddress.ip_address(ip)
@@ -367,7 +377,7 @@ def main():
     user_env_file = "/tapp/.host-shared/.user-config"
     user_env = parse_env_file(user_env_file) if os.path.isfile(user_env_file) else {}
     docker_cmd = build_docker_cmd(user_env, image_digest)
-    #logging.info("docker cmd %s", " ".join(docker_cmd))
+    # logging.info("docker cmd %s", " ".join(docker_cmd))
     proc = run(docker_cmd)
 
     if proc.returncode:
@@ -489,7 +499,12 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
 
     for key, value in user_env.items():
         if key in ALLOWED_ENV_VARS:
-            docker_cmd += ["--env", f"{key}={value}"]
+            if is_safe_env_value(value):
+                docker_cmd += ["--env", f"{key}={value}"]
+            else:
+                logging.warning(
+                    f"Ignoring environment variable with unsafe value: {key}"
+                )
         elif key == "EXTRA_HOSTS":
             for host_entry in value.split(","):
                 clean_host = host_entry.strip()
@@ -528,6 +543,16 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         image_digest,
     ]
     logging.info("docker cmd %s", " ".join(docker_cmd))
+
+   # Final safeguard: ensure LD_PRELOAD isn't anywhere in the command
+    if any("LD_PRELOAD" in arg for arg in docker_cmd):
+        raise RuntimeError("Unsafe docker command: LD_PRELOAD detected in argument list.")
+
+    # Also check the full command as a single string
+    docker_cmd_str = " ".join(docker_cmd)
+    if "LD_PRELOAD" in docker_cmd_str:
+        raise RuntimeError("Unsafe docker command string: LD_PRELOAD detected.")
+
     return docker_cmd
 
 
