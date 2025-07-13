@@ -139,6 +139,7 @@ def is_safe_host_entry(entry: str) -> bool:
         return False
     return True
 
+
 def is_safe_port_mapping(mapping: str) -> bool:
     """Ensure that the port mapping does not contain unsafe characters or start with '--' or '-'."""
     return not INVALID_HOST_ENTRY_PATTERN.search(mapping)
@@ -187,21 +188,25 @@ class ResolvedImage:
         return self.spec.registry
 
 
+def parse_env_lines(lines: list[str]) -> dict:
+    env = {}
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        env[key] = value
+    return env
+
+
 # Parses a .env-style file into a dictionary of key-value pairs.
 def parse_env_file(path: str) -> dict:
-    env = {}
     with open(path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip()
-            if not key:
-                continue  # skip lines with empty keys
-            env[key] = value
-    return env
+        return parse_env_lines(f.readlines())
 
 
 def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
@@ -550,9 +555,11 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
     ]
     logging.info("docker cmd %s", " ".join(docker_cmd))
 
-   # Final safeguard: ensure LD_PRELOAD isn't anywhere in the command
+    # Final safeguard: ensure LD_PRELOAD isn't anywhere in the command
     if any("LD_PRELOAD" in arg for arg in docker_cmd):
-        raise RuntimeError("Unsafe docker command: LD_PRELOAD detected in argument list.")
+        raise RuntimeError(
+            "Unsafe docker command: LD_PRELOAD detected in argument list."
+        )
 
     # Also check the full command as a single string
     docker_cmd_str = " ".join(docker_cmd)

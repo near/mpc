@@ -2,12 +2,29 @@
 import inspect
 
 import tempfile
+from tee_launcher.launcher import parse_env_lines
+
 from tee_launcher.launcher import (
     parse_env_file,
     build_docker_cmd,
     is_valid_host_entry,
     is_valid_port_mapping
 )
+
+def parse_env_string(text: str) -> dict:
+    return parse_env_lines(text.splitlines())
+
+def test_parse_env_lines_basic():
+    lines = [
+        "# a comment",
+        "KEY1=value1",
+        "  KEY2 = value2 ",
+        "",
+        "INVALIDLINE",
+        "EMPTY_KEY=",
+    ]
+    env = parse_env_lines(lines)
+    assert env == {"KEY1": "value1", "KEY2": "value2", "EMPTY_KEY": ""}
 
 #test user config loading and parsing
 def write_temp_config(content: str) -> str:
@@ -24,8 +41,7 @@ def test_valid_user_config_parsing():
     # A comment
     MPC_ENV=testnet
     """
-    path = write_temp_config(config_str)
-    env = parse_env_file(path)
+    env = parse_env_string(config_str)
 
     assert env["MPC_ACCOUNT_ID"] == "account123"
     assert env["MPC_LOCAL_ADDRESS"] == "127.0.0.1"
@@ -39,8 +55,7 @@ def test_config_ignores_blank_lines_and_comments():
     MPC_SECRET_STORE_KEY=topsecret
 
     """
-    path = write_temp_config(config_str)
-    env = parse_env_file(path)
+    env = parse_env_string(config_str)
 
     assert env["MPC_SECRET_STORE_KEY"] == "topsecret"
     assert len(env) == 1
@@ -53,8 +68,7 @@ def test_config_skips_malformed_lines():
     ANOTHER_GOOD=ok
     =
     """
-    path = write_temp_config(config_str)
-    env = parse_env_file(path)
+    env = parse_env_string(config_str)
 
     assert "GOOD_KEY" in env
     assert "ANOTHER_GOOD" in env
@@ -67,8 +81,7 @@ def test_config_overrides_duplicate_keys():
     MPC_ACCOUNT_ID=first
     MPC_ACCOUNT_ID=second
     """
-    path = write_temp_config(config_str)
-    env = parse_env_file(path)
+    env = parse_env_string(config_str)
 
     assert env["MPC_ACCOUNT_ID"] == "second"  # last one wins
 
@@ -160,7 +173,7 @@ def test_env_value_with_shell_injection_is_handled_safely():
     assert "MPC_ACCOUNT_ID=safe; rm -rf /" in cmd
 
 def test_parse_and_build_docker_cmd_full_flow():
-    config = """
+    config_str = """
     # Valid entries
     MPC_ACCOUNT_ID=test-user
     PORTS=11780:11780, --env BAD=oops
@@ -168,8 +181,7 @@ def test_parse_and_build_docker_cmd_full_flow():
     IMAGE_HASH=sha256:abc123
     """
 
-    path = write_temp_config(config)
-    env = parse_env_file(path)
+    env = parse_env_string(config_str)
     image_hash = env.get("IMAGE_HASH", "sha256:default")
 
     cmd = build_docker_cmd(env, image_hash)
