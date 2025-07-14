@@ -1238,6 +1238,7 @@ name = "attestation"
 version = "0.1.0"
 dependencies = [
  "dcap-qvl",
+ "dstack-sdk",
  "hex",
  "near-sdk",
 ]

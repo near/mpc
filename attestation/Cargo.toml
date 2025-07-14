@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-// TODO(#451): Use our own fork or upstream library
+# TODO(#451): Use our own fork or upstream library
 dcap-qvl = { git = "https://github.com/mattlockyer/dcap-qvl", rev = "3caedd8fd0f365841abaf1430ff2922fcb09d9db" }
+dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "2f7343c02a081d11e37ef32d4b167911e2d98a40" }
 near-sdk = { version = "5.11.0", features = [
     "legacy",
     "unit-testing",
