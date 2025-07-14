@@ -1,6 +1,4 @@
-use near_sdk::PublicKey;
-
-use crate::attestation::Attestation;
+use crate::{attestation::Attestation, report_data::ReportData};
 
 pub struct LocalTeeAuthorityConfig;
 
@@ -12,11 +10,7 @@ enum TeeAuthority {
 }
 
 impl TeeAuthority {
-    async fn generate_attestation(
-        &self,
-        _tls_public_key: &PublicKey,
-        _account_public_key: &PublicKey,
-    ) -> Attestation {
+    async fn generate_attestation(&self, _report_data: ReportData) -> Attestation {
         match self {
             TeeAuthority::Local(_config) => {
                 // Generate attestation using local TEE authority

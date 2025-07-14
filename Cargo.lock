@@ -1240,7 +1240,9 @@ dependencies = [
  "dcap-qvl",
  "dstack-sdk",
  "hex",
+ "near-crypto 2.7.0-rc.2",
  "near-sdk",
+ "sha3",
 ]
 
 [[package]]
