@@ -18,6 +18,7 @@ impl Attestation {
         }
     }
 }
+
 struct Measurements {
     rt_mr0: [u8; 48],
     rt_mr1: [u8; 48],

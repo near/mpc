@@ -1,4 +1,5 @@
-use std::marker::PhantomData;
+use alloc::string::String;
+use core::marker::PhantomData;
 
 pub struct Hash32<T> {
     pub bytes: [u8; 32],
@@ -15,7 +16,7 @@ impl<T> From<[u8; 32]> for Hash32<T> {
     fn from(bytes: [u8; 32]) -> Self {
         Self {
             bytes,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         }
     }
 }
