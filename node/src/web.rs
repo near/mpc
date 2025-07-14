@@ -121,7 +121,11 @@ pub struct StaticWebData {
 
 fn get_public_keys(
     secrets_config: &SecretsConfig,
-) -> (near_crypto::PublicKey,near_crypto::PublicKey, Vec<near_crypto::PublicKey>) {
+) -> (
+    near_crypto::PublicKey,
+    near_crypto::PublicKey,
+    Vec<near_crypto::PublicKey>,
+) {
     let near_signer_public_key = secrets_config
         .persistent_secrets
         .near_signer_key
@@ -136,12 +140,17 @@ fn get_public_keys(
         .iter()
         .map(|x| x.public_key())
         .collect();
-    (near_signer_public_key,near_p2p_public_key, near_responder_public_keys)
+    (
+        near_signer_public_key,
+        near_p2p_public_key,
+        near_responder_public_keys,
+    )
 }
 
 impl StaticWebData {
     pub fn new(value: &SecretsConfig, tee_participant_info: Option<TeeParticipantInfo>) -> Self {
-        let (near_signer_public_key,near_p2p_public_key, near_responder_public_keys) = get_public_keys(value);
+        let (near_signer_public_key, near_p2p_public_key, near_responder_public_keys) =
+            get_public_keys(value);
         Self {
             near_signer_public_key,
             near_p2p_public_key,
