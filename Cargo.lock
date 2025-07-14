@@ -282,38 +282,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
-name = "cait-sith"
-version = "0.8.0"
-dependencies = [
- "auto_ops",
- "byteorder",
- "criterion",
- "digest",
- "easy-parallel",
- "ecdsa",
- "elliptic-curve",
- "event-listener 2.5.3",
- "frost-core",
- "frost-ed25519",
- "frost-secp256k1",
- "futures",
- "haisou-chan",
- "itertools 0.14.0",
- "k256",
- "keccak",
- "rand",
- "rand_core 0.6.4",
- "rmp-serde",
- "serde",
- "sha2",
- "sha3",
- "smol",
- "structopt",
- "subtle",
- "zeroize",
-]
-
-[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1848,6 +1816,38 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.101",
+]
+
+[[package]]
+name = "threshold-signatures"
+version = "0.8.0"
+dependencies = [
+ "auto_ops",
+ "byteorder",
+ "criterion",
+ "digest",
+ "easy-parallel",
+ "ecdsa",
+ "elliptic-curve",
+ "event-listener 2.5.3",
+ "frost-core",
+ "frost-ed25519",
+ "frost-secp256k1",
+ "futures",
+ "haisou-chan",
+ "itertools 0.14.0",
+ "k256",
+ "keccak",
+ "rand",
+ "rand_core 0.6.4",
+ "rmp-serde",
+ "serde",
+ "sha2",
+ "sha3",
+ "smol",
+ "structopt",
+ "subtle",
+ "zeroize",
 ]
 
 [[package]]
