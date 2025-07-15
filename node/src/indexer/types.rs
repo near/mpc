@@ -1,8 +1,5 @@
 use crate::sign_request::SignatureRequest;
 use anyhow::Context;
-use cait_sith::ecdsa::sign::FullSignature;
-use cait_sith::frost_ed25519;
-use cait_sith::frost_secp256k1::VerifyingKey;
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
@@ -16,6 +13,9 @@ use mpc_contract::{
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
+use threshold_signatures::ecdsa::sign::FullSignature;
+use threshold_signatures::frost_ed25519;
+use threshold_signatures::frost_secp256k1::VerifyingKey;
 
 const TGAS: u64 = 1_000_000_000_000;
 
@@ -242,11 +242,11 @@ impl ChainRespondArgs {
 #[cfg(test)]
 mod recovery_id_tests {
     use crate::indexer::types::ChainRespondArgs;
-    use cait_sith::ecdsa::sign::FullSignature;
     use k256::ecdsa::{RecoveryId, SigningKey};
     use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
     use k256::AffinePoint;
     use rand::rngs::OsRng;
+    use threshold_signatures::ecdsa::sign::FullSignature;
 
     #[test]
     fn test_brute_force_recovery_id() {

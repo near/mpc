@@ -1,9 +1,9 @@
-use cait_sith::ecdsa::presign::PresignOutput;
-use cait_sith::ecdsa::triples::TripleGenerationOutput;
-use cait_sith::protocol::{run_protocol, Participant, Protocol};
 use k256::{AffinePoint, Scalar, Secp256k1};
 use mpc_contract::state::ProtocolContractState;
 use std::collections::HashMap;
+use threshold_signatures::ecdsa::presign::PresignOutput;
+use threshold_signatures::ecdsa::triples::TripleGenerationOutput;
+use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
 
 use crate::config::{
     ConfigFile, IndexerConfig, KeygenConfig, ParticipantsConfig, PersistentSecrets,
@@ -19,9 +19,6 @@ use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, StaticWebData};
-use cait_sith::ecdsa::presign::PresignArguments;
-use cait_sith::ecdsa::sign::FullSignature;
-use cait_sith::{ecdsa, eddsa};
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_crypto::KeyType::ED25519;
@@ -33,6 +30,9 @@ use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
+use threshold_signatures::ecdsa::presign::PresignArguments;
+use threshold_signatures::ecdsa::sign::FullSignature;
+use threshold_signatures::{ecdsa, eddsa};
 use tokio::time::timeout;
 
 mod basic_cluster;
