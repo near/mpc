@@ -16,11 +16,11 @@ use crate::{
     network::NetworkTaskChannel,
     providers::{EcdsaSignatureProvider, SignatureProvider},
 };
-use cait_sith::{frost_ed25519, frost_secp256k1};
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use std::sync::Arc;
 use std::time::Duration;
+use threshold_signatures::{frost_ed25519, frost_secp256k1};
 use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
 use tracing::{error, info};

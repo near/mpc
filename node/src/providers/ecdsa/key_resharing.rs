@@ -4,9 +4,9 @@ use crate::network::NetworkTaskChannel;
 use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
-use cait_sith::frost_secp256k1::keys::SigningShare;
-use cait_sith::frost_secp256k1::VerifyingKey;
-use cait_sith::protocol::Participant;
+use threshold_signatures::frost_secp256k1::keys::SigningShare;
+use threshold_signatures::frost_secp256k1::VerifyingKey;
+use threshold_signatures::protocol::Participant;
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
@@ -73,7 +73,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let protocol = cait_sith::ecdsa::dkg_ecdsa::reshare(
+        let protocol = threshold_signatures::ecdsa::dkg_ecdsa::reshare(
             &old_participants,
             self.old_threshold,
             self.my_share,

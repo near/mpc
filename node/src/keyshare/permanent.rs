@@ -112,11 +112,11 @@ mod tests {
     };
     use crate::keyshare::test_utils::{generate_dummy_keyshare, KeysetBuilder};
     use crate::keyshare::KeyshareData;
-    use cait_sith::frost_secp256k1::keys::SigningShare;
-    use cait_sith::frost_secp256k1::VerifyingKey;
     use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
     use mpc_contract::primitives::key_state::EpochId;
+    use threshold_signatures::frost_secp256k1::keys::SigningShare;
+    use threshold_signatures::frost_secp256k1::VerifyingKey;
 
     #[tokio::test]
     async fn test_load_store() {
@@ -209,7 +209,7 @@ mod tests {
         assert_eq!(loaded.keyshares[0].key_id.attempt_id.get(), 0);
         assert_eq!(
             loaded.keyshares[0].data,
-            KeyshareData::Secp256k1(cait_sith::ecdsa::KeygenOutput {
+            KeyshareData::Secp256k1(threshold_signatures::ecdsa::KeygenOutput {
                 private_share: SigningShare::new(legacy_data.private_share),
                 public_key: VerifyingKey::new(legacy_data.public_key.into()),
             })

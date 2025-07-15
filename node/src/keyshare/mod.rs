@@ -16,8 +16,8 @@ use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum KeyshareData {
-    Secp256k1(cait_sith::ecdsa::KeygenOutput),
-    Ed25519(cait_sith::eddsa::KeygenOutput),
+    Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
+    Ed25519(threshold_signatures::eddsa::KeygenOutput),
 }
 
 /// A single keyshare, corresponding to one epoch, one domain, one attempt.
