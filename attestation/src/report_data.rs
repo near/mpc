@@ -75,18 +75,6 @@ impl ReportData {
     }
 }
 
-impl From<ReportData> for [u8; REPORT_DATA_SIZE] {
-    fn from(report_data: ReportData) -> Self {
-        (&report_data).into()
-    }
-}
-
-impl From<&ReportData> for [u8; REPORT_DATA_SIZE] {
-    fn from(report_data: &ReportData) -> Self {
-        report_data.to_bytes()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,19 +90,6 @@ mod tests {
     fn test_binary_version_serialization() {
         let version = BinaryVersion(1);
         assert_eq!(version.0.to_be_bytes(), [0, 1]);
-    }
-
-    #[test]
-    fn test_conversion_methods_consistency() {
-        let (tls_key, account_key) = create_test_keys();
-        let data = ReportData::new(tls_key, account_key);
-
-        let owned: [u8; REPORT_DATA_SIZE] = data.clone().into();
-        let referenced: [u8; REPORT_DATA_SIZE] = (&data).into();
-        let direct = data.to_bytes();
-
-        assert_eq!(owned, referenced);
-        assert_eq!(referenced, direct);
     }
 
     #[test]
