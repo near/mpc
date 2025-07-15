@@ -172,7 +172,7 @@ async fn get_public_data(state: State<WebServerState>) -> Json<StaticWebData> {
 pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
-    config: WebUIConfig, // assuming this contains host and port
+    config: WebUIConfig,
     static_web_data: StaticWebData,
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
@@ -200,14 +200,13 @@ pub async fn start_web_server(
             static_web_data,
         });
 
-    // Binding to the address
     let bind_address = format!("{}:{}", config.host, config.port);
 
-    tracing::info!(address = %bind_address, "Binding to address");
+    tracing::info!(address = %bind_address,"Binding to address");
 
     let tcp_listener = TcpListener::bind(&bind_address).await?;
 
-    tracing::info!("Successfully bound to address: {}", bind_address);
+    tracing::info!(address = %bind_address,"Successfully bound to address");
 
     Ok(async move {
         tracing::info!("Starting to serve requests...");
