@@ -9,13 +9,13 @@ use crate::primitives::MpcTaskId;
 use crate::providers::{PublicKeyConversion, SignatureProvider};
 use crate::sign_request::{SignRequestStorage, SignatureId};
 use borsh::{BorshDeserialize, BorshSerialize};
-use cait_sith::eddsa::KeygenOutput;
-use cait_sith::frost_ed25519::keys::SigningShare;
-use cait_sith::frost_ed25519::{Signature, VerifyingKey};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::KeyEventId;
 use std::collections::HashMap;
 use std::sync::Arc;
+use threshold_signatures::eddsa::KeygenOutput;
+use threshold_signatures::frost_ed25519::keys::SigningShare;
+use threshold_signatures::frost_ed25519::{Signature, VerifyingKey};
 
 #[derive(Clone)]
 pub struct EddsaSignatureProvider {

@@ -1869,32 +1869,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cait-sith"
-version = "0.8.0"
-source = "git+https://github.com/Near-One/cait-sith?rev=68d38188468733dd890dabd8d35b8b7a011e71dd#68d38188468733dd890dabd8d35b8b7a011e71dd"
-dependencies = [
- "auto_ops",
- "ck-meow",
- "digest 0.10.7",
- "ecdsa",
- "elliptic-curve",
- "event-listener 2.5.3",
- "frost-core",
- "frost-ed25519",
- "frost-secp256k1",
- "futures",
- "itertools 0.14.0",
- "k256",
- "magikitten",
- "rand 0.9.1",
- "rand_core 0.6.4",
- "rmp-serde",
- "serde",
- "smol",
- "subtle",
-]
-
-[[package]]
 name = "cc"
 version = "1.2.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1953,17 +1927,6 @@ checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
 dependencies = [
  "crypto-common",
  "inout",
-]
-
-[[package]]
-name = "ck-meow"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20351a318fc4110699260ffde844f0302bc3b34e528b9c48ea429fcd54d81323"
-dependencies = [
- "keccak",
- "subtle",
- "zeroize",
 ]
 
 [[package]]
@@ -4577,16 +4540,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "magikitten"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "277c454ad884bdcf0a283beaa7a22e0791fe0475791d01cf8becd1bd4549f4ba"
-dependencies = [
- "ck-meow",
- "rand_core 0.6.4",
-]
-
-[[package]]
 name = "matchers"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4861,7 +4814,6 @@ dependencies = [
  "axum 0.7.9",
  "backon",
  "borsh",
- "cait-sith",
  "clap",
  "curve25519-dalek",
  "deranged",
@@ -4905,6 +4857,7 @@ dependencies = [
  "sha3",
  "tempfile",
  "thiserror 2.0.12",
+ "threshold-signatures",
  "time",
  "tokio",
  "tokio-rustls",
@@ -9386,6 +9339,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
 dependencies = [
  "num_cpus",
+]
+
+[[package]]
+name = "threshold-signatures"
+version = "0.8.0"
+source = "git+https://github.com/near/threshold-signatures?rev=52109e54c4c574b44fe3e29378b2cb5ca8b1bb63#52109e54c4c574b44fe3e29378b2cb5ca8b1bb63"
+dependencies = [
+ "auto_ops",
+ "byteorder",
+ "digest 0.10.7",
+ "ecdsa",
+ "elliptic-curve",
+ "event-listener 2.5.3",
+ "frost-core",
+ "frost-ed25519",
+ "frost-secp256k1",
+ "futures",
+ "itertools 0.14.0",
+ "k256",
+ "keccak",
+ "rand 0.9.1",
+ "rand_core 0.6.4",
+ "rmp-serde",
+ "serde",
+ "sha2",
+ "sha3",
+ "smol",
+ "subtle",
+ "zeroize",
 ]
 
 [[package]]

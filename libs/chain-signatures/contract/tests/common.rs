@@ -1,4 +1,3 @@
-use cait_sith::eddsa::KeygenOutput;
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey};
@@ -47,6 +46,7 @@ use std::{
     sync::OnceLock,
     time::{SystemTime, UNIX_EPOCH},
 };
+use threshold_signatures::eddsa::KeygenOutput;
 
 pub const CONTRACT_FILE_PATH: &str = "../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;

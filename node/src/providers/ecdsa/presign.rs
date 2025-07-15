@@ -10,9 +10,6 @@ use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput,
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
-use cait_sith::ecdsa::presign::{presign, PresignArguments, PresignOutput};
-use cait_sith::ecdsa::triples::TripleGenerationOutput;
-use cait_sith::protocol::Participant;
 use k256::Secp256k1;
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
@@ -21,6 +18,9 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
 use std::time::Duration;
+use threshold_signatures::ecdsa::presign::{presign, PresignArguments, PresignOutput};
+use threshold_signatures::ecdsa::triples::TripleGenerationOutput;
+use threshold_signatures::protocol::Participant;
 
 pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
 

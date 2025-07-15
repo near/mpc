@@ -1,10 +1,10 @@
 use super::permanent::LegacyRootKeyshareData;
 use super::{Keyshare, KeyshareData};
-use cait_sith::ecdsa::KeygenOutput;
-use cait_sith::frost_core::keys::SigningShare;
-use cait_sith::frost_secp256k1::VerifyingKey;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+use threshold_signatures::ecdsa::KeygenOutput;
+use threshold_signatures::frost_core::keys::SigningShare;
+use threshold_signatures::frost_secp256k1::VerifyingKey;
 
 /// For compatibility while we perform the refactoring.
 /// Converts the new format keyshares array to the old format.
