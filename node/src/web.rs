@@ -175,10 +175,10 @@ pub async fn start_web_server(
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 
-    tracing::debug!(
-        "Attempting to bind web server to host: {}, port: {}",
-        config.host,
-        config.port
+    tracing::info!(
+        host = %config.host,
+        port = %config.port,
+        "Attempting to bind web server to host",
     );
 
     let router = axum::Router::new()
