@@ -179,7 +179,6 @@ pub async fn start_web_server(
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 
-    // Print out the config parameters before attempting to bind
     tracing::debug!(
         "Attempting to bind web server to host: {}, port: {}",
         config.host,
