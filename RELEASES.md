@@ -35,3 +35,8 @@ We follow [Semantic Versioning (SemVer)](https://semver.org/) with the following
 #### Patch Version Bumps (X.Y.Z → X.Y.Z+1)
 - **Full Backward Compatibility**: No breaking changes allowed.
 - **Bug Fixes Only**: Only bug fixes and security patches.
+
+### 4. Rebase `mainnet-release` and `testnet-release` branches
+In addition to the version-tags, we have branches to mark the current releases running on `mainnet` and `testnet`: `mainnet-release` and `testnet-release`. Whenever we upgrade `mainnet` or `testnet`, we must set the `mainnet-release` and `testnet-release` branches to point to the release tag we intend to run in these environments.
+
+Note: When patching `mainnet` and `testnet` we should not merge new commits into the `mainnet-release` or `testnet-release` branches. Instead, we should create a SemVer patch-release with the appropriate tag first, and then rebase the `mainnet-release` or `testnet-release` tags on top of this version.
