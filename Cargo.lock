@@ -1238,6 +1238,7 @@ name = "attestation"
 version = "0.1.0"
 dependencies = [
  "dcap-qvl",
+ "derive_more 2.0.1",
  "dstack-sdk",
  "hex",
  "near-crypto 2.7.0-rc.2",

@@ -26,24 +26,25 @@ struct Measurements {
     rt_td: [u8; 48],
 }
 
-impl From<VerifiedReport> for Measurements {
-    fn from(verified_report: VerifiedReport) -> Self {
-        if let Some(td10) = verified_report.report.as_td10() {
-            Self {
-                rt_mr0: td10.rt_mr0,
-                rt_mr1: td10.rt_mr1,
-                rt_mr2: td10.rt_mr2,
-                rt_td: td10.mr_td,
-            }
-        } else {
-            // Default/zero measurements if TD10 report is not available
-            Self {
-                rt_mr0: [0; 48],
-                rt_mr1: [0; 48],
-                rt_mr2: [0; 48],
-                rt_td: [0; 48],
-            }
-        }
+#[derive(Debug)]
+pub enum MeasurementsError {
+    NoTd10Report,
+}
+
+impl TryFrom<VerifiedReport> for Measurements {
+    type Error = MeasurementsError;
+
+    fn try_from(verified_report: VerifiedReport) -> Result<Self, Self::Error> {
+        let td10 = verified_report
+            .report
+            .as_td10()
+            .ok_or(MeasurementsError::NoTd10Report)?;
+        Ok(Self {
+            rt_mr0: td10.rt_mr0,
+            rt_mr1: td10.rt_mr1,
+            rt_mr2: td10.rt_mr2,
+            rt_td: td10.mr_td,
+        })
     }
 }
 
@@ -53,6 +54,7 @@ enum ValidationContext {
 }
 
 impl Attestation {
+    // TODO(#642): Implement the attestation quote verification logic in the attestation module
     fn verify_quote(&self, context: &ValidationContext) -> bool {
         match context {
             ValidationContext::Tee => {
@@ -64,6 +66,7 @@ impl Attestation {
         }
     }
 
+    // TODO(#643): Implement the Docker image verification logic in the attestation module
     fn verify_docker_image(
         &self,
         context: &ValidationContext,

@@ -1,14 +1,6 @@
 use dcap_qvl::quote::Quote as DcapQuote;
+use derive_more::{Deref, From};
 
 /// TEE Remote Attestation Quote that proves the participant's identity.
+#[derive(From, Deref)]
 pub struct Quote(DcapQuote);
-
-impl Quote {
-    pub fn new(quote: DcapQuote) -> Self {
-        Self(quote)
-    }
-
-    pub fn get(&self) -> &DcapQuote {
-        &self.0
-    }
-}

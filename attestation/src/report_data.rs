@@ -77,7 +77,7 @@ impl ReportData {
 
 impl From<ReportData> for [u8; REPORT_DATA_SIZE] {
     fn from(report_data: ReportData) -> Self {
-        report_data.to_bytes()
+        (&report_data).into()
     }
 }
 
@@ -93,9 +93,9 @@ mod tests {
     use near_crypto::{KeyType, SecretKey};
 
     fn create_test_keys() -> (PublicKey, PublicKey) {
-        let tls_key = SecretKey::from_random(KeyType::ED25519).public_key();
-        let account_key = SecretKey::from_random(KeyType::ED25519).public_key();
-        (tls_key, account_key)
+        let tls_secret = SecretKey::from_seed(KeyType::ED25519, "test_tls_seed");
+        let account_secret = SecretKey::from_seed(KeyType::ED25519, "test_account_seed");
+        (tls_secret.public_key(), account_secret.public_key())
     }
 
     #[test]
