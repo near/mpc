@@ -119,9 +119,13 @@ pub struct StaticWebData {
     pub tee_participant_info: Option<TeeParticipantInfo>,
 }
 
-fn get_public_keys(
-    secrets_config: &SecretsConfig,
-) -> PublicKeys {
+struct PublicKeys {
+    near_signer_public_key: near_crypto::PublicKey,
+    near_p2p_public_key: near_crypto::PublicKey,
+    near_responder_public_keys: Vec<near_crypto::PublicKey>,
+}
+
+fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
     let near_signer_public_key = secrets_config
         .persistent_secrets
         .near_signer_key
@@ -136,21 +140,20 @@ fn get_public_keys(
         .iter()
         .map(|x| x.public_key())
         .collect();
-    (
+    PublicKeys {
         near_signer_public_key,
         near_p2p_public_key,
         near_responder_public_keys,
-    )
+    }
 }
 
 impl StaticWebData {
     pub fn new(value: &SecretsConfig, tee_participant_info: Option<TeeParticipantInfo>) -> Self {
-        let (near_signer_public_key, near_p2p_public_key, near_responder_public_keys) =
-            get_public_keys(value);
+        let public_keys = get_public_keys(value);
         Self {
-            near_signer_public_key,
-            near_p2p_public_key,
-            near_responder_public_keys,
+            near_signer_public_key: public_keys.near_signer_public_key,
+            near_p2p_public_key: public_keys.near_p2p_public_key,
+            near_responder_public_keys: public_keys.near_responder_public_keys,
             tee_participant_info,
         }
     }
@@ -199,15 +202,17 @@ pub async fn start_web_server(
 
     // Binding to the address
     let bind_address = format!("{}:{}", config.host, config.port);
-    tracing::debug!("Binding to address: {}", bind_address); // Added print for bind address
+
+    tracing::info!(address = %bind_address, "Binding to address");
+
     let tcp_listener = TcpListener::bind(&bind_address).await?;
 
-    tracing::debug!("Successfully bound to address: {}", bind_address); // Added success print
+    tracing::info!("Successfully bound to address: {}", bind_address);
 
     Ok(async move {
-        tracing::debug!("Starting to serve requests..."); // Print before serving
+        tracing::info!("Starting to serve requests...");
         serve(tcp_listener, router).await?;
-        tracing::debug!("Server stopped successfully."); // Print after serving
+        tracing::info!("Server stopped successfully.");
         anyhow::Ok(())
     }
     .boxed())
