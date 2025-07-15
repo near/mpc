@@ -1,12 +1,11 @@
 #![no_std]
-#![allow(dead_code)]
 
 extern crate alloc;
 
-mod attestation;
-mod collateral;
-mod hash;
-mod quote;
-mod report_data;
-mod tcbinfo;
-mod tee_authority;
+pub mod attestation;
+pub mod collateral;
+pub mod hash;
+pub mod quote;
+pub mod report_data;
+pub mod tcbinfo;
+pub mod tee_authority;

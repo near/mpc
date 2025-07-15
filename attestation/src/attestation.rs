@@ -3,6 +3,7 @@ use dcap_qvl::verify::VerifiedReport;
 use crate::{collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, tcbinfo::TcbInfo};
 use near_sdk::PublicKey;
 
+#[allow(dead_code)]
 pub struct Attestation {
     quote: Quote,
     collateral: Collateral,
@@ -10,6 +11,7 @@ pub struct Attestation {
 }
 
 impl Attestation {
+    #[allow(dead_code)]
     fn new(quote: Quote, collateral: Collateral, tcb_info: TcbInfo) -> Self {
         Self {
             quote,
@@ -19,6 +21,7 @@ impl Attestation {
     }
 }
 
+#[allow(dead_code)]
 struct Measurements {
     rt_mr0: [u8; 48],
     rt_mr1: [u8; 48],
@@ -48,6 +51,7 @@ impl TryFrom<VerifiedReport> for Measurements {
     }
 }
 
+#[allow(dead_code)]
 enum ValidationContext {
     Tee,
     Local,
@@ -55,6 +59,7 @@ enum ValidationContext {
 
 impl Attestation {
     // TODO(#642): Implement the attestation quote verification logic in the attestation module
+    #[allow(dead_code)]
     fn verify_quote(&self, context: &ValidationContext) -> bool {
         match context {
             ValidationContext::Tee => {
@@ -67,6 +72,7 @@ impl Attestation {
     }
 
     // TODO(#643): Implement the Docker image verification logic in the attestation module
+    #[allow(dead_code)]
     fn verify_docker_image(
         &self,
         context: &ValidationContext,

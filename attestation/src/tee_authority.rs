@@ -4,6 +4,7 @@ pub struct LocalTeeAuthorityConfig;
 
 pub struct DstackTeeAuthorityConfig;
 
+#[allow(dead_code)]
 enum TeeAuthority {
     Local(LocalTeeAuthorityConfig),
     Dstack(DstackTeeAuthorityConfig),
@@ -11,6 +12,7 @@ enum TeeAuthority {
 
 impl TeeAuthority {
     // TODO(#644): Implement the attestation quote generation logic in the attestation module
+    #[allow(dead_code)]
     async fn generate_attestation(&self, _report_data: ReportData) -> Attestation {
         match self {
             TeeAuthority::Local(_config) => {
