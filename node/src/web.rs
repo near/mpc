@@ -121,11 +121,7 @@ pub struct StaticWebData {
 
 fn get_public_keys(
     secrets_config: &SecretsConfig,
-) -> (
-    near_crypto::PublicKey,
-    near_crypto::PublicKey,
-    Vec<near_crypto::PublicKey>,
-) {
+) -> PublicKeys {
     let near_signer_public_key = secrets_config
         .persistent_secrets
         .near_signer_key
