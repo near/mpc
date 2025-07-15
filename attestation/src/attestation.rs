@@ -1,24 +1,15 @@
 use dcap_qvl::verify::VerifiedReport;
 
 use crate::{collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, tcbinfo::TcbInfo};
+use derive_more::Constructor;
 use near_sdk::PublicKey;
 
 #[allow(dead_code)]
+#[derive(Constructor)]
 pub struct Attestation {
     quote: Quote,
     collateral: Collateral,
     tcb_info: TcbInfo,
-}
-
-impl Attestation {
-    #[allow(dead_code)]
-    fn new(quote: Quote, collateral: Collateral, tcb_info: TcbInfo) -> Self {
-        Self {
-            quote,
-            collateral,
-            tcb_info,
-        }
-    }
 }
 
 #[allow(dead_code)]

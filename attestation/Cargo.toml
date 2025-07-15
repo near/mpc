@@ -13,6 +13,6 @@ near-sdk = { version = "5.11.0", features = [
     "unit-testing",
     "unstable",
 ] }
-derive_more = { version = "2.0.1", features = ["from", "deref", "into", "as_ref"] }
+derive_more = { version = "2.0.1", features = ["from", "deref", "into", "as_ref", "constructor"] }
 hex = { version = "0.4.3", features = ["serde"] }
 sha3 = "0.10.8"

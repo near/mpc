@@ -5,7 +5,7 @@ pub struct LocalTeeAuthorityConfig;
 pub struct DstackTeeAuthorityConfig;
 
 #[allow(dead_code)]
-enum TeeAuthority {
+pub enum TeeAuthority {
     Local(LocalTeeAuthorityConfig),
     Dstack(DstackTeeAuthorityConfig),
 }

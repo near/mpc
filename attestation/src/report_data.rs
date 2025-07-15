@@ -1,3 +1,4 @@
+use derive_more::{Deref, From, Into};
 use near_crypto::PublicKey;
 use sha3::{Digest, Sha3_384};
 
@@ -26,8 +27,8 @@ const _: () = {
     );
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BinaryVersion(pub u16);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deref, From, Into)]
+pub struct BinaryVersion(u16);
 
 #[derive(Debug, Clone)]
 pub struct ReportData {
