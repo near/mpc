@@ -42,8 +42,7 @@ impl TryFrom<VerifiedReport> for Measurements {
     }
 }
 
-#[allow(dead_code)]
-enum ValidationContext {
+pub enum ValidationContext {
     Tee,
     Local,
 }
