@@ -20,15 +20,15 @@ use crate::sign_request::{SignRequestStorage, SignatureId};
 use crate::tracking;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
-use cait_sith::ecdsa::sign::FullSignature;
-use cait_sith::ecdsa::KeygenOutput;
-use cait_sith::frost_secp256k1::keys::SigningShare;
-use cait_sith::frost_secp256k1::VerifyingKey;
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use k256::{AffinePoint, EncodedPoint, Secp256k1};
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
+use threshold_signatures::ecdsa::sign::FullSignature;
+use threshold_signatures::ecdsa::KeygenOutput;
+use threshold_signatures::frost_secp256k1::keys::SigningShare;
+use threshold_signatures::frost_secp256k1::VerifyingKey;
 
 pub struct EcdsaSignatureProvider {
     config: Arc<ConfigFile>,

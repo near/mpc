@@ -12,11 +12,13 @@ async-trait = "0.1.83"
 axum = "0.7.9"
 backon = { version = "1.5.1", features = ["tokio-sleep"] }
 borsh = { version = "1.5.1", features = ["derive"] }
-cait-sith = { git = "https://github.com/Near-One/cait-sith", rev = "68d38188468733dd890dabd8d35b8b7a011e71dd", features = [
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "52109e54c4c574b44fe3e29378b2cb5ca8b1bb63", features = [
     "k256",
 ] }
 clap = { version = "4.5.20", features = ["derive", "env"] }
-dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", tag = "v0.5.2" }
+# Currently needed to include https://github.com/Dstack-TEE/dstack/pull/232
+# TODO(https://github.com/near/mpc/issues/618) Use next release once it's out.
+dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "2f7343c02a081d11e37ef32d4b167911e2d98a40" }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"
@@ -52,21 +54,26 @@ tokio-util = { version = "0.7.12", features = ["time"] }
 tokio-rustls = { version = "0.26.1", default-features = false }
 tokio-stream = { version = "0.1" }
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.18", features = [
+    "env-filter",
+    "fmt",
+    "std",
+    "json",
+] }
 url = "2"
 x509-parser = "0.16.0"
 
 curve25519-dalek = "4.1.3"
 
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.6.0-rc.1" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.6.0-rc.1" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.6.0-rc.1" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.6.0-rc.1" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.6.0-rc.1" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.6.0-rc.1" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.6.0-rc.1" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.7.0-rc.2" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.7.0-rc.2" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.7.0-rc.2" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.7.0-rc.2" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.7.0-rc.2" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.7.0-rc.2" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.7.0-rc.2" }
 # todo: update once 1.1.0 is pulbished (though the api did not change)
-legacy-mpc-contract = { package = "mpc-contract", git = "https://github.com/Near-One/mpc/", rev = "1d4954dff28e8eb988fb7762eff414a602a2b124" }
+legacy-mpc-contract = { package = "mpc-contract", git = "https://github.com/near/mpc/", rev = "1d4954dff28e8eb988fb7762eff414a602a2b124" }
 mpc-contract = { path = "../libs/chain-signatures/contract/", features = [
     "dev-utils",
 ] }
@@ -88,3 +95,4 @@ rstest = "0.25.0"
 
 [features]
 tee = []
+network-hardship-simulation = []

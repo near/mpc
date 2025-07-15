@@ -98,6 +98,9 @@ impl NetworkTaskChannelManager {
 const LRU_CAPACITY: usize = 10000;
 
 impl MeshNetworkClient {
+    /// The maximum height difference that we are willing to accept.
+    /// This is used to filter out participants that are too far behind in the indexer height.
+    const MAX_HEIGHT_DIFF: u64 = 100;
     fn new(
         transport_sender: Arc<dyn MeshNetworkTransportSender>,
         channels: Arc<Mutex<NetworkTaskChannelManager>>,
@@ -174,14 +177,18 @@ impl MeshNetworkClient {
     /// This is a subset of all_participant_ids, and includes our own participant ID.
     pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
         let mut result = Vec::new();
+        let indexer_heights = self.get_indexer_heights();
+        let my_height = *indexer_heights.get(&self.my_participant_id()).unwrap_or(&0);
         for participant in self.all_participant_ids() {
             if participant == self.my_participant_id() {
                 continue;
             }
-            if self
-                .transport_sender
-                .connectivity(participant)
-                .is_bidirectionally_connected()
+            let peer_height = *indexer_heights.get(&participant).unwrap_or(&0);
+            if my_height <= peer_height + Self::MAX_HEIGHT_DIFF
+                && self
+                    .transport_sender
+                    .connectivity(participant)
+                    .is_bidirectionally_connected()
             {
                 result.push(participant);
             }

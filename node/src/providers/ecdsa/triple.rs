@@ -10,13 +10,13 @@ use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
-use cait_sith::ecdsa::triples::TripleGenerationOutput;
-use cait_sith::protocol::Participant;
 use k256::Secp256k1;
 use near_time::Clock;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
+use threshold_signatures::ecdsa::triples::TripleGenerationOutput;
+use threshold_signatures::protocol::Participant;
 
 pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
 
@@ -222,7 +222,7 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = cait_sith::ecdsa::triples::generate_triple_many::<Secp256k1, N>(
+        let protocol = threshold_signatures::ecdsa::triples::generate_triple_many::<Secp256k1, N>(
             &cs_participants,
             me.into(),
             self.threshold,
@@ -282,6 +282,7 @@ impl<const N: usize> MpcLeaderCentricComputation<()>
 #[cfg(test)]
 mod tests_many {
     use super::{ManyTripleGenerationComputation, PairedTriple};
+    use crate::cli::LogFormat;
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -303,7 +304,7 @@ mod tests_many {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_many_triple_generation() {
-        init_logging();
+        init_logging(LogFormat::Plain);
         tracking::testing::start_root_task_with_periodic_dump(async {
             let all_triples = run_test_clients(
                 TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD).participant_ids(),

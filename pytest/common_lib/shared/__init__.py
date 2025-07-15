@@ -204,7 +204,7 @@ def adjust_indexing_shard(near_node: LocalNode):
 
     with open(path, 'r+') as f:
         config = json.load(f)
-        config['tracked_shards'] = [0]
+        config['tracked_shards_config'] = "AllShards"
         f.seek(0)
         json.dump(config, f, indent=2)
         f.truncate()
@@ -309,6 +309,7 @@ def start_cluster_with_mpc(
             pytest_signer_keys,
         )
         cluster.contract_node.send_txn_and_check_success(tx)
+        mpc_node.set_block_ingestion(True)
         mpc_nodes.append(mpc_node)
 
     # Deploy the mpc contract

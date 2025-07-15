@@ -1,10 +1,10 @@
 use crate::primitives::{BatchedMessages, ParticipantId};
 use crate::tracking;
 use crate::{network::NetworkTaskChannel, tracking::TaskHandle};
-use cait_sith::protocol::{Action, Protocol};
 use futures::TryFutureExt;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{atomic::AtomicUsize, Arc};
+use threshold_signatures::protocol::{Action, Protocol};
 use tokio::sync::mpsc;
 
 /// Runs any cait-sith protocol, returning the result. Exports tracking progress

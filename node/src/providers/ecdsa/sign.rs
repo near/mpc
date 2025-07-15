@@ -9,15 +9,15 @@ use crate::providers::ecdsa::{
 };
 use crate::sign_request::SignatureId;
 use anyhow::Context;
-use cait_sith::ecdsa::presign::PresignOutput;
-use cait_sith::ecdsa::sign::FullSignature;
-use cait_sith::frost_secp256k1::VerifyingKey;
-use cait_sith::protocol::Participant;
 use k256::elliptic_curve::PrimeField;
 use k256::{Scalar, Secp256k1};
 use mpc_contract::primitives::signature::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
+use threshold_signatures::ecdsa::presign::PresignOutput;
+use threshold_signatures::ecdsa::sign::FullSignature;
+use threshold_signatures::frost_secp256k1::VerifyingKey;
+use threshold_signatures::protocol::Participant;
 use tokio::time::timeout;
 
 impl EcdsaSignatureProvider {
@@ -149,7 +149,7 @@ impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, VerifyingKey)> for S
             sigma: (sigma + tweak * k) * inverted_delta,
         };
 
-        let protocol = cait_sith::ecdsa::sign::sign(
+        let protocol = threshold_signatures::ecdsa::sign::sign(
             &cs_participants,
             me.into(),
             public_key,
