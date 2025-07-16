@@ -51,8 +51,91 @@ impl TeeAuthority {
                 // Generate attestation using local TEE authority
                 todo!("Implement local TEE attestation generation")
             }
-            TeeAuthority::Dstack(config) => generate_dstack_attestation(config, report_data).await,
+            TeeAuthority::Dstack(config) => {
+                self.generate_dstack_attestation(config, report_data).await
+            }
         }
+    }
+
+    /// Generates attestation using Dstack TEE authority.
+    async fn generate_dstack_attestation(
+        &self,
+        config: &DstackTeeAuthorityConfig,
+        report_data: ReportData,
+    ) -> anyhow::Result<Attestation> {
+        let client = DstackClient::new(config.endpoint.as_deref());
+        let tcb_info = self.get_tcb_info(&client).await;
+        let tdx_quote = self.get_tdx_quote(&client, report_data).await;
+        let collateral = self
+            .upload_quote_for_collateral(&config.quote_upload_url, &tdx_quote)
+            .await?;
+        let quote = Self::parse_quote_from_hex(&tdx_quote)?;
+
+        Ok(Attestation::new(quote, collateral, tcb_info))
+    }
+
+    /// Retrieves TCB info from Dstack client.
+    async fn get_tcb_info(&self, client: &DstackClient) -> TcbInfo {
+        let client_info_response = get_with_backoff(|| client.info(), "dstack client info").await;
+        TcbInfo::from(client_info_response.tcb_info)
+    }
+
+    /// Generates TDX quote from report data using Dstack client.
+    async fn get_tdx_quote(&self, client: &DstackClient, report_data: ReportData) -> String {
+        let report_data_bytes = report_data.to_bytes();
+        let tdx_quote_response = get_with_backoff(
+            || client.get_quote(report_data_bytes.into()),
+            "dstack client tdx quote",
+        )
+        .await;
+        tdx_quote_response.quote
+    }
+
+    /// Uploads TDX quote to Phala endpoint and retrieves collateral.
+    async fn upload_quote_for_collateral(
+        &self,
+        quote_upload_url: &str,
+        tdx_quote: &str,
+    ) -> anyhow::Result<Collateral> {
+        let reqwest_client = reqwest::Client::new();
+        let tdx_quote = String::from(tdx_quote);
+
+        let upload_tdx_quote = async || {
+            let form = Form::new().text("hex", tdx_quote.clone());
+
+            let response = reqwest_client
+                .post(quote_upload_url)
+                .multipart(form)
+                .send()
+                .await?;
+
+            let status = response.status();
+            if status != PHALA_SUCCESS_STATUS_CODE {
+                bail!(
+                    "Got unexpected HTTP status code: response from phala endpoint: {:?}, expected: {:?}",
+                    status,
+                    PHALA_SUCCESS_STATUS_CODE
+                );
+            }
+
+            response
+                .json::<UploadResponse>()
+                .await
+                .context("Failed to deserialize response from Phala.")
+        };
+
+        let upload_response = get_with_backoff(upload_tdx_quote, "upload tdx quote").await;
+
+        Collateral::try_from(upload_response.quote_collateral)
+            .map_err(|e| anyhow::anyhow!("Failed to parse collateral: {}", e))
+    }
+
+    /// Parses a hex-encoded TDX quote into a Quote object.
+    fn parse_quote_from_hex(tdx_quote_hex: &str) -> anyhow::Result<Quote> {
+        let quote_bytes = hex::decode(tdx_quote_hex)?;
+        let dcap_quote = dcap_qvl::quote::Quote::parse(quote_bytes.as_slice())
+            .map_err(|e| anyhow::anyhow!("Failed to parse quote: {:?}", e))?;
+        Ok(Quote::from(dcap_quote))
     }
 }
 
@@ -61,83 +144,6 @@ struct UploadResponse {
     quote_collateral: serde_json::Value,
     #[serde(rename = "checksum")]
     _checksum: String,
-}
-
-/// Generates attestation using Dstack TEE authority.
-async fn generate_dstack_attestation(
-    config: &DstackTeeAuthorityConfig,
-    report_data: ReportData,
-) -> anyhow::Result<Attestation> {
-    let client = DstackClient::new(config.endpoint.as_deref());
-    let tcb_info = get_tcb_info(&client).await;
-    let tdx_quote = get_tdx_quote(&client, report_data).await;
-    let collateral = upload_quote_for_collateral(&config.quote_upload_url, &tdx_quote).await?;
-    let quote = parse_quote_from_hex(&tdx_quote)?;
-
-    Ok(Attestation::new(quote, collateral, tcb_info))
-}
-
-/// Retrieves TCB info from Dstack client.
-async fn get_tcb_info(client: &DstackClient) -> TcbInfo {
-    let client_info_response = get_with_backoff(|| client.info(), "dstack client info").await;
-    TcbInfo::from(client_info_response.tcb_info)
-}
-
-/// Generates TDX quote from report data using Dstack client.
-async fn get_tdx_quote(client: &DstackClient, report_data: ReportData) -> String {
-    let report_data_bytes = report_data.to_bytes();
-    let tdx_quote_response = get_with_backoff(
-        || client.get_quote(report_data_bytes.into()),
-        "dstack client tdx quote",
-    )
-    .await;
-    tdx_quote_response.quote
-}
-
-/// Uploads TDX quote to Phala endpoint and retrieves collateral.
-async fn upload_quote_for_collateral(
-    quote_upload_url: &str,
-    tdx_quote: &str,
-) -> anyhow::Result<Collateral> {
-    let reqwest_client = reqwest::Client::new();
-    let tdx_quote = String::from(tdx_quote);
-
-    let upload_tdx_quote = async || {
-        let form = Form::new().text("hex", tdx_quote.clone());
-
-        let response = reqwest_client
-            .post(quote_upload_url)
-            .multipart(form)
-            .send()
-            .await?;
-
-        let status = response.status();
-        if status != PHALA_SUCCESS_STATUS_CODE {
-            bail!(
-                "Got unexpected HTTP status code: response from phala endpoint: {:?}, expected: {:?}",
-                status,
-                PHALA_SUCCESS_STATUS_CODE
-            );
-        }
-
-        response
-            .json::<UploadResponse>()
-            .await
-            .context("Failed to deserialize response from Phala.")
-    };
-
-    let upload_response = get_with_backoff(upload_tdx_quote, "upload tdx quote").await;
-    let collateral_json = serde_json::to_string(&upload_response.quote_collateral)?;
-
-    Ok(Collateral::from(collateral_json))
-}
-
-/// Parses a hex-encoded TDX quote into a Quote object.
-fn parse_quote_from_hex(tdx_quote_hex: &str) -> anyhow::Result<Quote> {
-    let quote_bytes = hex::decode(tdx_quote_hex)?;
-    let dcap_quote = dcap_qvl::quote::Quote::parse(quote_bytes.as_slice())
-        .map_err(|e| anyhow::anyhow!("Failed to parse quote: {:?}", e))?;
-    Ok(Quote::from(dcap_quote))
 }
 
 async fn get_with_backoff<Operation, OperationFuture, Value, Error>(
