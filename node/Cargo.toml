@@ -94,5 +94,6 @@ mockall = "0.13.1"
 rstest = "0.25.0"
 
 [features]
+default = ["tee"]
 tee = []
 network-hardship-simulation = []
