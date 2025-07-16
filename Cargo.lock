@@ -4823,6 +4823,7 @@ dependencies = [
  "humantime",
  "itertools 0.12.1",
  "k256",
+ "lazy_static",
  "lru 0.12.5",
  "mockall",
  "mpc-contract 1.0.1",
