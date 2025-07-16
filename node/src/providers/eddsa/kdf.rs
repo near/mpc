@@ -1,8 +1,8 @@
 //! Key Derivation Function for eddsa keys.
-use cait_sith::eddsa::KeygenOutput;
-use cait_sith::frost_ed25519::keys::SigningShare;
-use cait_sith::frost_ed25519::{Ed25519Group, Group, VerifyingKey};
 use curve25519_dalek::Scalar;
+use threshold_signatures::eddsa::KeygenOutput;
+use threshold_signatures::frost_ed25519::keys::SigningShare;
+use threshold_signatures::frost_ed25519::{Ed25519Group, Group, VerifyingKey};
 
 pub(crate) fn derive_keygen_output(keygen_output: &KeygenOutput, tweak: [u8; 32]) -> KeygenOutput {
     let tweak = Scalar::from_bytes_mod_order(tweak);

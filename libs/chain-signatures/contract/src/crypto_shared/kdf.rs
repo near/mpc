@@ -118,13 +118,13 @@ pub fn recover(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cait_sith::eddsa::KeygenOutput;
-    use cait_sith::frost_core::keys::SigningShare;
-    use cait_sith::frost_core::VerifyingKey;
-    use cait_sith::frost_ed25519::{Ed25519Group, Ed25519Sha512, Group};
     use curve25519_dalek::Scalar;
     use rand::rngs::OsRng;
     use rand::Rng;
+    use threshold_signatures::eddsa::KeygenOutput;
+    use threshold_signatures::frost_core::keys::SigningShare;
+    use threshold_signatures::frost_core::VerifyingKey;
+    use threshold_signatures::frost_ed25519::{Ed25519Group, Ed25519Sha512, Group};
 
     pub(crate) fn derive_keygen_output(
         keygen_output: &KeygenOutput,

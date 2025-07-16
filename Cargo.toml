@@ -1,5 +1,5 @@
 [workspace]
-members = ["node", "devnet"]
+members = ["node", "devnet", "attestation"]
 resolver = "2"
 exclude = ["libs", "pytest"]
 
