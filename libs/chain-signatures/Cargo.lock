@@ -8,6 +8,7 @@ version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
 dependencies = [
+ "lazy_static",
  "regex",
 ]
 
@@ -2197,6 +2198,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+dependencies = [
+ "spin",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.174"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2619,6 +2629,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "752aa5d0080f6c3bad8ba349046069a406e7536ab101d6cfc7db3e157144b921"
 dependencies = [
  "borsh",
+ "lazy_static",
  "log",
  "near-chain-configs",
  "near-crypto 0.29.2",
@@ -4901,6 +4912,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0200d0fc04d809396c2ad43f3c95da3582a2556eba8d453c1087f4120ee352ff"
 dependencies = [
  "fnv",
+ "lazy_static",
 ]
 
 [[package]]
@@ -5571,6 +5583,7 @@ checksum = "71e61de68ede9ffdd69c01664f65a178c5188b73f78faa21f0936016a888ff7c"
 dependencies = [
  "byteorder",
  "crunchy",
+ "lazy_static",
  "rand 0.8.5",
  "rustc-hex",
 ]
