@@ -16,9 +16,7 @@ threshold-signatures = { git = "https://github.com/near/threshold-signatures", r
     "k256",
 ] }
 clap = { version = "4.5.20", features = ["derive", "env"] }
-# Currently needed to include https://github.com/Dstack-TEE/dstack/pull/232
-# TODO(https://github.com/near/mpc/issues/618) Use next release once it's out.
-dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "2f7343c02a081d11e37ef32d4b167911e2d98a40" }
+dstack-sdk = { workspace = true }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"

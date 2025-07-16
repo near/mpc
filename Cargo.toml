@@ -6,3 +6,8 @@ exclude = ["libs", "pytest"]
 [profile.dev-release]
 inherits = "release"
 debug = true
+
+[workspace.dependencies]
+# Currently needed to include https://github.com/Dstack-TEE/dstack/pull/232
+# TODO(https://github.com/near/mpc/issues/618) Use next release once it's out.
+dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "421a5fb8e321e547efaa67c1a27daac11a0aa5b4" }

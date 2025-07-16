@@ -6,13 +6,19 @@ edition = "2024"
 [dependencies]
 # TODO(#451): Use our own fork or upstream library
 dcap-qvl = { git = "https://github.com/mattlockyer/dcap-qvl", rev = "3caedd8fd0f365841abaf1430ff2922fcb09d9db" }
-dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "2f7343c02a081d11e37ef32d4b167911e2d98a40" }
+dstack-sdk = { workspace = true }
 near-crypto = { git = "https://github.com/near/nearcore", tag = "2.7.0-rc.2" }
 near-sdk = { version = "5.11.0", features = [
     "legacy",
     "unit-testing",
     "unstable",
 ] }
-derive_more = { version = "2.0.1", features = ["from", "deref", "into", "as_ref", "constructor"] }
+derive_more = { version = "2.0.1", features = [
+    "from",
+    "deref",
+    "into",
+    "as_ref",
+    "constructor",
+] }
 hex = { version = "0.4.3", features = ["serde"] }
 sha3 = "0.10.8"
