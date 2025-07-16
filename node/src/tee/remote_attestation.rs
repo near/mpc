@@ -100,8 +100,10 @@ pub async fn create_remote_attestation_info(
     tls_public_key: &PublicKey,
     account_public_key: &PublicKey,
 ) -> TeeAttestation {
+    tracing::info!("Generating remote attestation info");
     let client = DstackClient::new(ENDPOINT);
 
+    tracing::info!("Requesting TCB info from dstack.");
     let client_info_response = get_with_backoff(|| client.info(), "dstack client info").await;
     let tcb_info = client_info_response.tcb_info;
 
@@ -123,6 +125,7 @@ pub async fn create_remote_attestation_info(
         report_data
     };
 
+    tracing::info!("Creating tdx quote from dstack");
     let tdx_quote: String = get_with_backoff(
         || client.get_quote(report_data.into()),
         "dstack client tdx quote",
@@ -155,9 +158,11 @@ pub async fn create_remote_attestation_info(
                 .context("Failed to deserialize response from Phala.")
         };
 
+        tracing::info!("Uploading tdx info Phala network to generate collateral.");
         get_with_backoff(upload_tdx_quote, "upload tdx quote").await
     };
 
+    tracing::info!("Successfully created a TeeAttestation.");
     let collateral = quote_upload_response.quote_collateral;
     TeeAttestation {
         tdx_quote,
