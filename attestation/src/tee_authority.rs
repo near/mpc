@@ -11,6 +11,7 @@ use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use dstack_sdk::dstack_client::DstackClient;
 use http::status::StatusCode;
+use near_sdk::serde_json;
 use reqwest::multipart::Form;
 use serde::Deserialize;
 use tracing::error;

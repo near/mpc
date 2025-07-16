@@ -4,22 +4,17 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# TODO(#451): Use our own fork or upstream library
-dcap-qvl = { git = "https://github.com/mattlockyer/dcap-qvl", rev = "3caedd8fd0f365841abaf1430ff2922fcb09d9db" }
-dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "2f7343c02a081d11e37ef32d4b167911e2d98a40" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.7.0-rc.2" }
-near-sdk = { version = "5.11.0", features = [
-    "legacy",
-    "unit-testing",
-    "unstable",
-] }
-derive_more = { version = "2.0.1", features = ["from", "deref", "into", "as_ref", "constructor"] }
-anyhow = "1.0"
-backon = "1.0"
-http = "1.0"
-reqwest = { version = "0.12", features = ["json", "multipart"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tracing = "0.1"
-hex = { version = "0.4.3", features = ["serde"] }
-sha3 = "0.10.8"
+anyhow = { workspace = true }
+backon = { workspace = true }
+dcap-qvl = { workspace = true }
+dstack-sdk = { workspace = true }
+http = { workspace = true }
+near-crypto = { workspace = true }
+near-sdk = { workspace = true }
+derive_more = { workspace = true }
+hex = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha3 = { workspace = true }
+tracing = { workspace = true }
