@@ -11,11 +11,8 @@ clap = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
-near-crypto = "0.28.0"
-near-jsonrpc-client = "0.15.1"
-near-jsonrpc-primitives = "0.28.0"
-near-primitives = "0.28.0"
-near-sdk = { version = "5.8.1" }
+legacy-mpc-contract = { workspace = true }
+mpc-contract = { workspace = true, features = ["test-utils", "dev-utils"] }
 rand = "0.9.0"
 reqwest = { workspace = true }
 serde = { workspace = true }
@@ -24,5 +21,10 @@ serde_yaml = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 
-legacy-mpc-contract = { workspace = true }
-mpc-contract = { workspace = true, features = ["test-utils", "dev-utils"] }
+# TODO: #657 use workspace versions.
+# https://github.com/near/mpc/issues/657 
+near-crypto = "0.28.0"
+near-jsonrpc-client = "0.15.1"
+near-jsonrpc-primitives = "0.28.0"
+near-primitives = "0.28.0"
+near-sdk = { version = "5.8.1" }
