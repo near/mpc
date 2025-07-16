@@ -10,6 +10,24 @@ on:
   merge_group:
 
 jobs:
+  docker-build: 
+    name: "Build Docker image"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
+      
+      - name: Build MPC Docker image
+        uses: Warpbuilds/build-push-action@v6
+        with:
+          context: .
+          profile-name: "mpc-image-builder"
+          file: deployment/Dockerfile-gcp
+
   ci-tests:
     name: "Run tests"
     runs-on: warp-ubuntu-2204-x64-8x
