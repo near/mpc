@@ -1,9 +1,9 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
 use crate::tests::TestGenerators;
-use cait_sith::ecdsa::KeygenOutput;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
+use threshold_signatures::ecdsa::KeygenOutput;
 
 pub fn generate_dummy_keyshare(epoch_id: u64, domain_id: u64, attempt_id: u64) -> Keyshare {
     let key = TestGenerators::new(2, 2)

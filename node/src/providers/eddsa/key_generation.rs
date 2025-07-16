@@ -2,8 +2,8 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::EddsaSignatureProvider;
-use cait_sith::eddsa::KeygenOutput;
-use cait_sith::protocol::Participant;
+use threshold_signatures::eddsa::KeygenOutput;
+use threshold_signatures::protocol::Participant;
 
 impl EddsaSignatureProvider {
     pub(super) async fn run_key_generation_client_internal(
@@ -39,8 +39,11 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol =
-            cait_sith::eddsa::dkg_ed25519::keygen(&cs_participants, me.into(), self.threshold)?;
+        let protocol = threshold_signatures::eddsa::dkg_ed25519::keygen(
+            &cs_participants,
+            me.into(),
+            self.threshold,
+        )?;
         run_protocol("eddsa key generation", channel, protocol).await
     }
 
@@ -58,10 +61,10 @@ mod tests {
     use crate::providers::eddsa::EddsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use cait_sith::eddsa::KeygenOutput;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
+    use threshold_signatures::eddsa::KeygenOutput;
     use tokio::sync::mpsc;
 
     #[tokio::test]

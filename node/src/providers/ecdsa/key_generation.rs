@@ -2,7 +2,7 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
-use cait_sith::protocol::Participant;
+use threshold_signatures::protocol::Participant;
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_generation_client_internal(
@@ -38,8 +38,11 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol =
-            cait_sith::ecdsa::dkg_ecdsa::keygen(&cs_participants, me.into(), self.threshold)?;
+        let protocol = threshold_signatures::ecdsa::dkg_ecdsa::keygen(
+            &cs_participants,
+            me.into(),
+            self.threshold,
+        )?;
         run_protocol("ecdsa key generation", channel, protocol).await
     }
 
