@@ -8,8 +8,6 @@ inherits = "release"
 debug = true
 
 [workspace.dependencies]
-# Currently needed to include https://github.com/Dstack-TEE/dstack/pull/232
-# TODO(https://github.com/near/mpc/issues/618) Use next release once it's out.
 actix = "0.13.0"
 aes-gcm = "0.10.3"
 anyhow = "1.0.92"
@@ -32,6 +30,8 @@ derive_more = { version = "2.0.1", features = [
     "as_ref",
     "constructor",
 ] }
+# Currently needed to include https://github.com/Dstack-TEE/dstack/pull/232
+# TODO(https://github.com/near/mpc/issues/618) Use next release once it's out.
 dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "421a5fb8e321e547efaa67c1a27daac11a0aa5b4" }
 flume = "0.11.1"
 futures = "0.3.31"
