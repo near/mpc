@@ -19,12 +19,11 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 /// allowed [`AllowedDockerImageHash`]es when a change is detected
 /// on the MPC smart contract.
 pub async fn monitor_allowed_docker_images(
+    sender: watch::Sender<Vec<AllowedDockerImageHash>>,
     indexer_state: Arc<IndexerState>,
-) -> watch::Receiver<Vec<AllowedDockerImageHash>> {
-    tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-    wait_for_full_sync(&indexer_state.client).await;
-
+) {
     let fetch_allowed_image_hashes = {
+        let indexer_state = indexer_state.clone();
         async move || {
             let mut backoff = ExponentialBuilder::default()
                 .with_min_delay(MIN_BACKOFF_DURATION)
@@ -58,23 +57,19 @@ pub async fn monitor_allowed_docker_images(
         }
     };
 
-    let initial_state = fetch_allowed_image_hashes().await;
-    let (sender, receiver) = watch::channel(initial_state);
+    tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
+    wait_for_full_sync(&indexer_state.client).await;
 
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(ALLOWED_IMAGE_HASHES_REFRESH_INTERVAL).await;
-            let new_tee_state = fetch_allowed_image_hashes().await;
-            sender.send_if_modified(|previous_state| {
-                if *previous_state != new_tee_state {
-                    *previous_state = new_tee_state;
-                    true
-                } else {
-                    false
-                }
-            });
-        }
-    });
-
-    receiver
+    loop {
+        tokio::time::sleep(ALLOWED_IMAGE_HASHES_REFRESH_INTERVAL).await;
+        let new_tee_state = fetch_allowed_image_hashes().await;
+        sender.send_if_modified(|previous_state| {
+            if *previous_state != new_tee_state {
+                *previous_state = new_tee_state;
+                true
+            } else {
+                false
+            }
+        });
+    }
 }

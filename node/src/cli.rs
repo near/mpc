@@ -211,6 +211,8 @@ impl StartCmd {
             .worker_threads(1)
             .build()?;
 
+        let _tokio_enter_guard = root_runtime.enter();
+
         // Currently, we only trigger graceful shutdowns from TEE logic,
         // hence we need to disable the `unused_variables` lint when TEE is disabled.
         #[cfg_attr(not(feature = "tee"), allow(unused_variables))]
@@ -284,6 +286,7 @@ impl StartCmd {
         gcp_project_id: Option<String>,
         web_contract_receiver: tokio::sync::watch::Receiver<ProtocolContractState>,
     ) -> anyhow::Result<()> {
+        tracing::info!("Starting root future");
         let root_task_handle = tracking::current_task();
 
         let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
