@@ -189,7 +189,7 @@ pub async fn submit_remote_attestation(
     tx_sender: mpsc::Sender<ChainSendTransactionRequest>,
     report_data_contract: TeeParticipantInfo,
     account_public_key: PublicKey,
-) -> Result<(), anyhow::Error> {
+) -> anyhow::Result<()> {
     let propose_join_args = ProposeJoinArgs {
         proposed_tee_participant: report_data_contract,
         sign_pk: account_public_key,

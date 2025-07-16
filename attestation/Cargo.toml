@@ -14,5 +14,13 @@ near-sdk = { version = "5.11.0", features = [
     "unstable",
 ] }
 derive_more = { version = "2.0.1", features = ["from", "deref", "into", "as_ref", "constructor"] }
+anyhow = "1.0"
+backon = "1.0"
+http = "1.0"
+reqwest = { version = "0.12", features = ["json", "multipart"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["time"] }
+tracing = "0.1"
 hex = { version = "0.4.3", features = ["serde"] }
 sha3 = "0.10.8"
