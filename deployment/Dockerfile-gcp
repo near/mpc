@@ -3,7 +3,7 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends clang  # nee
 
 WORKDIR /app
 COPY node node
-
+COPY devnet devnet
 COPY attestation attestation
 COPY Cargo.lock Cargo.lock
 COPY Cargo.toml Cargo.toml
