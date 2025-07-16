@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 
@@ -5,7 +6,7 @@ use crate::{collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, tcbi
 use near_sdk::PublicKey;
 
 pub enum Attestation {
-    Dstack(DstackAttestation),
+    Dstack(Box<DstackAttestation>),
     Local(LocalAttestation),
 }
 
@@ -97,10 +98,10 @@ mod tests {
 
     #[test]
     fn test_mock_attestation_verify_quote() {
-        assert_eq!(mock_attestation(false, false).verify_quote(), false);
-        assert_eq!(mock_attestation(false, true).verify_quote(), false);
-        assert_eq!(mock_attestation(true, false).verify_quote(), true);
-        assert_eq!(mock_attestation(true, true).verify_quote(), true);
+        assert!(!mock_attestation(false, false).verify_quote());
+        assert!(!mock_attestation(false, true).verify_quote());
+        assert!(mock_attestation(true, false).verify_quote());
+        assert!(mock_attestation(true, true).verify_quote());
     }
 
     #[test]

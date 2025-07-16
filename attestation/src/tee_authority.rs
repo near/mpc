@@ -5,7 +5,7 @@ use crate::{
     report_data::ReportData,
     tcbinfo::TcbInfo,
 };
-use alloc::string::String;
+use alloc::{boxed::Box, string::String};
 use anyhow::{Context, bail};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
@@ -78,9 +78,9 @@ impl TeeAuthority {
             .await?;
         let quote = Self::parse_quote_from_hex(&tdx_quote)?;
 
-        Ok(Attestation::Dstack(DstackAttestation::new(
+        Ok(Attestation::Dstack(Box::new(DstackAttestation::new(
             quote, collateral, tcb_info,
-        )))
+        ))))
     }
 
     /// Retrieves TCB info from Dstack client.
