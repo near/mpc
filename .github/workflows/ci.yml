@@ -12,7 +12,7 @@ on:
 jobs:
   docker-build: 
     name: "Build Docker image"
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-2204-x64-2x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Initialize submodules
         run: git submodule update --init --recursive
       
