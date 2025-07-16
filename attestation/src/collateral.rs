@@ -8,7 +8,7 @@ use serde_json::Value;
 /// genuine Intel hardware, along with details about the Trusted Computing Base (TCB)
 /// versioning, status, and other relevant info.
 #[derive(From, Deref, Into, Debug)]
-pub(crate) struct Collateral(QuoteCollateralV3);
+pub struct Collateral(QuoteCollateralV3);
 
 impl TryFrom<Value> for Collateral {
     type Error = CollateralError;
