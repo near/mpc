@@ -34,7 +34,6 @@ impl Attestation {
     }
 
     // TODO(#643): Implement the Docker image verification logic in the attestation module
-    #[allow(dead_code)]
     pub fn verify_docker_image(
         &self,
         _allowed_docker_image_hashes: &[MpcDockerImageHash],
@@ -86,10 +85,13 @@ impl TryFrom<VerifiedReport> for Measurements {
 mod tests {
     use super::*;
 
-    fn mock_attestation(quote_result: bool, docker_result: bool) -> Attestation {
+    fn mock_attestation(
+        quote_verification_result: bool,
+        docker_image_verification_result: bool,
+    ) -> Attestation {
         Attestation::Local(LocalAttestation {
-            quote_verification_result: quote_result,
-            docker_image_verification_result: docker_result,
+            quote_verification_result,
+            docker_image_verification_result,
         })
     }
 
@@ -113,19 +115,15 @@ mod tests {
             .parse()
             .unwrap();
 
-        for (quote_result, docker_result, expected) in [
+        for (quote_verification_result, docker_image_verification_result, expected) in [
             (false, false, false),
             (false, true, true),
             (true, false, false),
             (true, true, true),
         ] {
             assert_eq!(
-                mock_attestation(quote_result, docker_result).verify_docker_image(
-                    &[],
-                    &[],
-                    measurements,
-                    key.clone()
-                ),
+                mock_attestation(quote_verification_result, docker_image_verification_result)
+                    .verify_docker_image(&[], &[], measurements, key.clone()),
                 expected
             );
         }
