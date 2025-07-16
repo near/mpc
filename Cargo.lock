@@ -1037,9 +1037,9 @@ dependencies = [
 
 [[package]]
 name = "async-compression"
-version = "0.4.25"
+version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40f6024f3f856663b45fd0c9b6f2024034a702f453549449e0d84a305900dad4"
+checksum = "ddb939d66e4ae03cee6091612804ba446b12878410cfa17f785f4dd67d4014e8"
 dependencies = [
  "flate2",
  "futures-core",
@@ -1107,7 +1107,7 @@ dependencies = [
  "futures-lite 2.6.0",
  "parking",
  "polling 3.8.0",
- "rustix 1.0.7",
+ "rustix 1.0.8",
  "slab",
  "tracing",
  "windows-sys 0.59.0",
@@ -1173,7 +1173,7 @@ dependencies = [
  "cfg-if 1.0.1",
  "futures-core",
  "futures-io",
- "rustix 1.0.7",
+ "rustix 1.0.8",
  "signal-hook-registry",
  "slab",
  "windows-sys 0.59.0",
@@ -1239,7 +1239,7 @@ version = "0.1.0"
 dependencies = [
  "dcap-qvl",
  "derive_more 2.0.1",
- "dstack-sdk 0.1.0 (git+https://github.com/Dstack-TEE/dstack.git?rev=2f7343c02a081d11e37ef32d4b167911e2d98a40)",
+ "dstack-sdk",
  "hex",
  "near-crypto 2.7.0-rc.2",
  "near-sdk",
@@ -2270,9 +2270,9 @@ checksum = "19d374276b40fb8bbdee95aef7c7fa6b5316ec764510eb64b8dd0e2ed0d7e7f5"
 
 [[package]]
 name = "crc32fast"
-version = "1.4.2"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a97769d94ddab943e4510d138150169a2758b5ef3eb191a9ee688de3e23ef7b3"
+checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
 dependencies = [
  "cfg-if 1.0.1",
 ]
@@ -2366,23 +2366,6 @@ dependencies = [
  "generic-array",
  "rand_core 0.6.4",
  "typenum",
-]
-
-[[package]]
-name = "crypto-shared"
-version = "0.1.1"
-source = "git+https://github.com/Near-One/mpc/?rev=1d4954dff28e8eb988fb7762eff414a602a2b124#1d4954dff28e8eb988fb7762eff414a602a2b124"
-dependencies = [
- "anyhow",
- "borsh",
- "getrandom 0.2.16",
- "k256",
- "near-account-id",
- "near-sdk",
- "serde",
- "serde_json",
- "sha3",
- "subtle",
 ]
 
 [[package]]
@@ -2738,23 +2721,6 @@ name = "downcast"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
-
-[[package]]
-name = "dstack-sdk"
-version = "0.1.0"
-source = "git+https://github.com/Dstack-TEE/dstack.git?rev=2f7343c02a081d11e37ef32d4b167911e2d98a40#2f7343c02a081d11e37ef32d4b167911e2d98a40"
-dependencies = [
- "alloy",
- "anyhow",
- "bon",
- "hex",
- "http 1.3.1",
- "http-client-unix-domain-socket",
- "reqwest 0.12.22",
- "serde",
- "serde_json",
- "sha2",
-]
 
 [[package]]
 name = "dstack-sdk"
@@ -4766,26 +4732,10 @@ checksum = "7843ec2de400bcbc6a6328c958dc38e5359da6e93e72e37bc5246bf1ae776389"
 [[package]]
 name = "mpc-contract"
 version = "1.0.1"
-source = "git+https://github.com/Near-One/mpc/?rev=1d4954dff28e8eb988fb7762eff414a602a2b124#1d4954dff28e8eb988fb7762eff414a602a2b124"
-dependencies = [
- "borsh",
- "crypto-shared 0.1.1 (git+https://github.com/Near-One/mpc/?rev=1d4954dff28e8eb988fb7762eff414a602a2b124)",
- "k256",
- "near-gas 0.2.5",
- "near-sdk",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "mpc-contract"
-version = "1.0.1"
 source = "git+https://github.com/near/mpc/?rev=1d4954dff28e8eb988fb7762eff414a602a2b124#1d4954dff28e8eb988fb7762eff414a602a2b124"
 dependencies = [
  "borsh",
- "crypto-shared 0.1.1 (git+https://github.com/near/mpc/?rev=1d4954dff28e8eb988fb7762eff414a602a2b124)",
+ "crypto-shared",
  "k256",
  "near-gas 0.2.5",
  "near-sdk",
@@ -4830,7 +4780,7 @@ dependencies = [
  "flume",
  "futures",
  "hex",
- "mpc-contract 1.0.1 (git+https://github.com/Near-One/mpc/?rev=1d4954dff28e8eb988fb7762eff414a602a2b124)",
+ "mpc-contract 1.0.1",
  "mpc-contract 2.2.0-rc.1",
  "near-crypto 0.28.0",
  "near-jsonrpc-client",
@@ -4861,7 +4811,7 @@ dependencies = [
  "clap",
  "curve25519-dalek",
  "deranged",
- "dstack-sdk 0.1.0 (git+https://github.com/Dstack-TEE/dstack.git?rev=421a5fb8e321e547efaa67c1a27daac11a0aa5b4)",
+ "dstack-sdk",
  "flume",
  "futures",
  "futures-util",
@@ -4875,7 +4825,7 @@ dependencies = [
  "k256",
  "lru 0.12.5",
  "mockall",
- "mpc-contract 1.0.1 (git+https://github.com/near/mpc/?rev=1d4954dff28e8eb988fb7762eff414a602a2b124)",
+ "mpc-contract 1.0.1",
  "mpc-contract 2.2.0-rc.1",
  "near-client",
  "near-config-utils 2.7.0-rc.2",
@@ -4960,9 +4910,9 @@ dependencies = [
 
 [[package]]
 name = "near-account-id"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4826896a974cd6d1c0d805cb8c177481e1d8d655cfeb3cc258f912b25649d2d3"
+checksum = "8542f031adc257a27ba46ad904c241a88470ee95130663a9e5c08cf8e124f4d4"
 dependencies = [
  "borsh",
  "serde",
@@ -6218,7 +6168,7 @@ dependencies = [
  "parking_lot 0.12.4",
  "rkyv",
  "rustc-demangle",
- "rustix 1.0.7",
+ "rustix 1.0.8",
  "thiserror 2.0.12",
  "tracing",
 ]
@@ -6244,7 +6194,7 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "ripemd",
- "rustix 1.0.7",
+ "rustix 1.0.8",
  "serde",
  "serde_repr",
  "sha2",
@@ -6288,7 +6238,7 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "ripemd",
- "rustix 1.0.7",
+ "rustix 1.0.8",
  "serde",
  "sha2",
  "sha3",
@@ -6575,9 +6525,9 @@ dependencies = [
 
 [[package]]
 name = "object_store"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7781f96d79ed0f961a7021424ab01840efbda64ae7a505aaea195efc91eaaec4"
+checksum = "efc4f07659e11cd45a341cd24d71e683e3be65d9ff1f8150061678fe60437496"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -7114,7 +7064,7 @@ dependencies = [
  "concurrent-queue",
  "hermit-abi 0.5.2",
  "pin-project-lite",
- "rustix 1.0.7",
+ "rustix 1.0.8",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -7496,9 +7446,9 @@ checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 
 [[package]]
 name = "quick-xml"
-version = "0.37.5"
+version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "331e97a1af0bf59823e6eadffe373d7b27f485be8748f71471c662c1f269b7fb"
+checksum = "8927b0664f5c5a98265138b7e3f90aa19a6b21353182469ace36d4ac527b7b1b"
 dependencies = [
  "memchr",
  "serde",
@@ -8288,15 +8238,15 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "1.0.7"
+version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c71e83d6afe7ff64890ec6b71d6a69bb8a610ab78ce364b3352876bb4c801266"
+checksum = "11181fbabf243db407ef8df94a6ce0b2f9a733bd8be4ad02b4eda9602296cac8"
 dependencies = [
  "bitflags 2.9.1",
  "errno",
  "libc",
  "linux-raw-sys 0.9.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
