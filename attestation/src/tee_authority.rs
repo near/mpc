@@ -76,7 +76,7 @@ impl TeeAuthority {
         let collateral = self
             .upload_quote_for_collateral(&config.quote_upload_url, &tdx_quote)
             .await?;
-        let quote = Self::parse_quote_from_hex(&tdx_quote)?;
+        let quote: Quote = tdx_quote.parse()?;
 
         Ok(Attestation::Dstack(Box::new(DstackAttestation::new(
             quote, collateral, tcb_info,
@@ -137,14 +137,6 @@ impl TeeAuthority {
 
         Collateral::try_from_json(upload_response.quote_collateral)
             .map_err(|e| anyhow::anyhow!("Failed to parse collateral: {}", e))
-    }
-
-    /// Parses a hex-encoded TDX quote into a Quote object.
-    fn parse_quote_from_hex(tdx_quote_hex: &str) -> anyhow::Result<Quote> {
-        let quote_bytes = hex::decode(tdx_quote_hex)?;
-        let dcap_quote = dcap_qvl::quote::Quote::parse(quote_bytes.as_slice())
-            .map_err(|e| anyhow::anyhow!("Failed to parse quote: {:?}", e))?;
-        Ok(Quote::from(dcap_quote))
     }
 }
 
