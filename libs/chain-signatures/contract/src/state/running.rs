@@ -21,7 +21,6 @@ use std::collections::{BTreeSet, HashSet};
 ///    threshold if desired.
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
-// #[cfg_attr(feature = "dev-utils", derive(Clone))]
 pub struct RunningContractState {
     /// The domains for which we have a key ready for signature processing.
     pub domains: DomainRegistry,
@@ -34,8 +33,10 @@ pub struct RunningContractState {
     pub parameters_votes: ThresholdParametersVotes,
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
-    /// Prospective epoch id from failed resharing attempt
-    pub cancelled_resharing_epoch_id: Option<EpochId>,
+    /// The previous epoch id for a resharing state that was cancelled.
+    /// This epoch id is tracked, as the next time the state transitions to resharing,
+    /// we can't reuse a previously cancelled epoch id.
+    pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
 
 impl RunningContractState {
@@ -46,7 +47,7 @@ impl RunningContractState {
             parameters,
             parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: AddDomainsVotes::default(),
-            cancelled_resharing_epoch_id: None,
+            previously_cancelled_resharing_epoch_id: None,
         }
     }
 
@@ -103,7 +104,7 @@ impl RunningContractState {
     }
 
     pub fn prospective_epoch_id(&self) -> EpochId {
-        match self.cancelled_resharing_epoch_id {
+        match self.previously_cancelled_resharing_epoch_id {
             // If `cancelled_epoch_id`, then a resharing has already
             // been attempted but was cancelled.
             // We must make sure to not reuse previously used prospective epoch ids,

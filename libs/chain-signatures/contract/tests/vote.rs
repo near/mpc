@@ -322,7 +322,7 @@ async fn test_cancel_resharing() -> anyhow::Result<()> {
     let initial_running_state = state.clone();
 
     assert_eq!(
-        initial_running_state.cancelled_resharing_epoch_id, None,
+        initial_running_state.previously_cancelled_resharing_epoch_id, None,
         "There have been no resharing state yet for the cancellation epoch id to be maintained."
     );
 
@@ -412,7 +412,7 @@ async fn test_cancel_resharing() -> anyhow::Result<()> {
     const PROSPECTIVE_EPOCH_ID: EpochId = CANCELLED_EPOCH_ID.next();
 
     assert_eq!(
-        new_running_state.cancelled_resharing_epoch_id,
+        new_running_state.previously_cancelled_resharing_epoch_id,
         Some(CANCELLED_EPOCH_ID),
         "Unexpected prospective epoch id after cancellation."
     );
@@ -424,7 +424,7 @@ async fn test_cancel_resharing() -> anyhow::Result<()> {
     // Set this field to none for equality check.
     // (The previous running set was not the result of a cancellation, thus has `cancelled_resharing_epoch_id`
     // set to None)
-    new_running_state.cancelled_resharing_epoch_id = None;
+    new_running_state.previously_cancelled_resharing_epoch_id = None;
     assert_eq!(new_running_state, initial_running_state);
 
     // Check that starting a new resharing with epoch id that was cancelled fails

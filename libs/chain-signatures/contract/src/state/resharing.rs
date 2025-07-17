@@ -173,7 +173,8 @@ impl ResharingContractState {
         let running_state = if threshold_cancellation_votes_reached {
             let mut previous_running_state = self.previous_running_state.clone();
             let prospective_epoch_id = self.prospective_epoch_id();
-            previous_running_state.cancelled_resharing_epoch_id = Some(prospective_epoch_id);
+            previous_running_state.previously_cancelled_resharing_epoch_id =
+                Some(prospective_epoch_id);
 
             Some(previous_running_state)
         } else {
