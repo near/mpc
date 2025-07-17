@@ -97,6 +97,7 @@ mod tests {
     }
 
     #[test]
+    // TODO(#643): Test quote verification logic (as much as possible except signature verification)
     fn test_mock_attestation_verify_quote() {
         assert!(!mock_attestation(false, false).verify_quote());
         assert!(!mock_attestation(false, true).verify_quote());
@@ -105,6 +106,7 @@ mod tests {
     }
 
     #[test]
+    // TODO(#643): Test docker image verification logic
     fn test_mock_attestation_verify_docker_image() {
         let measurements = Measurements {
             rt_mr0: [0u8; 48],
