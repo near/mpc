@@ -1,20 +1,26 @@
 use alloc::{string::String, vec::Vec};
+use core::str::FromStr;
 use dcap_qvl::QuoteCollateralV3;
 use derive_more::{Deref, From, Into};
 use hex::FromHexError;
 use serde_json::Value;
 use thiserror::Error;
 
-/// Supplemental data for the TEE quote, including Intel certificates to verify it came from
-/// genuine Intel hardware, along with details about the Trusted Computing Base (TCB)
-/// versioning, status, and other relevant info.
+/// Supplemental data for the TEE quote, including Intel certificates to verify it came from genuine
+/// Intel hardware, along with details about the Trusted Computing Base (TCB) versioning, status,
+/// and other relevant info.
 #[derive(From, Deref, Into, Debug)]
 pub struct Collateral(QuoteCollateralV3);
 
-impl TryFrom<Value> for Collateral {
-    type Error = CollateralError;
-
-    fn try_from(v: Value) -> Result<Self, Self::Error> {
+impl Collateral {
+    /// Attempts to create a [`Collateral`] from a JSON value containing quote collateral data.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`CollateralError`] if:
+    /// - Any required field is missing or has an invalid type
+    /// - Hex fields cannot be decoded
+    pub fn try_from_json(v: Value) -> Result<Self, CollateralError> {
         fn get_str(v: &Value, key: &str) -> Result<String, CollateralError> {
             v.get(key)
                 .and_then(Value::as_str)
@@ -43,6 +49,27 @@ impl TryFrom<Value> for Collateral {
     }
 }
 
+impl FromStr for Collateral {
+    type Err = CollateralError;
+
+    /// Attempts to parse a JSON string into a [`Collateral`].
+    ///
+    /// This is a convenience method that first parses the string as JSON, then attempts to convert
+    /// it to a [`Collateral`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`CollateralError`] if:
+    /// - The string is not valid JSON
+    /// - The JSON doesn't contain the required collateral fields
+    /// - Hex fields cannot be decoded
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let json_value: Value =
+            serde_json::from_str(s).map_err(|_| CollateralError::InvalidJson)?;
+        Self::try_from_json(json_value)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum CollateralError {
     #[error("Missing or invalid field: {0}")]
@@ -53,6 +80,8 @@ pub enum CollateralError {
         #[source]
         source: FromHexError,
     },
+    #[error("Invalid JSON format")]
+    InvalidJson,
 }
 
 #[cfg(test)]
@@ -77,7 +106,7 @@ mod tests {
         // Remove a required field
         json_value.as_object_mut().unwrap().remove("tcb_info");
 
-        let result = Collateral::try_from(json_value);
+        let result = Collateral::try_from_json(json_value);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -94,7 +123,7 @@ mod tests {
         // Set invalid hex value
         json_value["tcb_info_signature"] = json!("not_valid_hex");
 
-        let result = Collateral::try_from(json_value);
+        let result = Collateral::try_from_json(json_value);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -111,7 +140,7 @@ mod tests {
         // Set field to null
         json_value["qe_identity"] = json!(null);
 
-        let result = Collateral::try_from(json_value);
+        let result = Collateral::try_from_json(json_value);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -128,7 +157,7 @@ mod tests {
         // Set field to wrong type (number instead of string)
         json_value["tcb_info_issuer_chain"] = json!(12345);
 
-        let result = Collateral::try_from(json_value);
+        let result = Collateral::try_from_json(json_value);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -142,7 +171,7 @@ mod tests {
     #[test]
     fn test_hex_signature_lengths() {
         let json_value = create_test_collateral_json();
-        let collateral = Collateral::try_from(json_value).unwrap();
+        let collateral = Collateral::try_from_json(json_value).unwrap();
 
         // TCB info signature should be 64 hex chars (32 bytes)
         assert_eq!(collateral.tcb_info_signature.len(), 64);
@@ -153,7 +182,7 @@ mod tests {
     #[test]
     fn test_derive_traits() {
         let json_value = create_test_collateral_json();
-        let collateral = Collateral::try_from(json_value.clone()).unwrap();
+        let collateral = Collateral::try_from_json(json_value.clone()).unwrap();
 
         // Test From trait (should work through derive_more)
         let quote_collateral_v3: QuoteCollateralV3 = collateral.into();
@@ -162,5 +191,25 @@ mod tests {
         // Test creating from QuoteCollateralV3
         let new_collateral = Collateral::from(quote_collateral_v3);
         assert!(new_collateral.tcb_info.contains("\"id\":\"TDX\""));
+    }
+
+    #[test]
+    fn test_from_str_valid_json() {
+        let json_str = serde_json::to_string(&create_test_collateral_json()).unwrap();
+        let collateral = Collateral::from_str(&json_str).unwrap();
+
+        assert!(collateral.tcb_info.contains("\"id\":\"TDX\""));
+    }
+
+    #[test]
+    fn test_from_str_invalid_json() {
+        let invalid_json = "{ invalid json }";
+        let result = Collateral::from_str(invalid_json);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CollateralError::InvalidJson => {}
+            _ => panic!("Expected InvalidJson error"),
+        }
     }
 }

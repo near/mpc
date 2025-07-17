@@ -135,7 +135,7 @@ impl TeeAuthority {
 
         let upload_response = get_with_backoff(upload_tdx_quote, "upload tdx quote").await;
 
-        Collateral::try_from(upload_response.quote_collateral)
+        Collateral::try_from_json(upload_response.quote_collateral)
             .map_err(|e| anyhow::anyhow!("Failed to parse collateral: {}", e))
     }
 
