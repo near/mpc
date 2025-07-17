@@ -19,8 +19,8 @@ use tracing::error;
 /// The maximum duration to wait for retrying request to Phala's endpoint.
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
-/// URL for submission of TDX quote. Returns collateral to be used for verification.
-const PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
+/// Default URL for submission of TDX quote. Returns collateral to be used for verification.
+const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
 
 pub struct LocalTeeAuthorityConfig;
 
@@ -35,7 +35,7 @@ impl Default for DstackTeeAuthorityConfig {
     fn default() -> Self {
         Self {
             endpoint: None,
-            quote_upload_url: String::from(PHALA_TDX_QUOTE_UPLOAD_URL),
+            quote_upload_url: String::from(DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL),
         }
     }
 }
