@@ -26,7 +26,7 @@ pub struct LocalTeeAuthorityConfig;
 
 pub struct DstackTeeAuthorityConfig {
     /// Endpoint to contact dstack service. [`None`]` defaults to `/var/run/dstack.sock`
-    pub endpoint: Option<String>,
+    pub dstack_endpoint: Option<String>,
     /// URL for submission of TDX quote. Returns collateral to be used for verification.
     pub quote_upload_url: String,
 }
@@ -34,7 +34,7 @@ pub struct DstackTeeAuthorityConfig {
 impl Default for DstackTeeAuthorityConfig {
     fn default() -> Self {
         Self {
-            endpoint: None,
+            dstack_endpoint: None,
             quote_upload_url: String::from(DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL),
         }
     }
@@ -67,7 +67,7 @@ impl TeeAuthority {
         config: &DstackTeeAuthorityConfig,
         report_data: ReportData,
     ) -> anyhow::Result<Attestation> {
-        let client = DstackClient::new(config.endpoint.as_deref());
+        let client = DstackClient::new(config.dstack_endpoint.as_deref());
         let tcb_info = self.get_tcb_info(&client).await;
         let tdx_quote = self.get_tdx_quote(&client, report_data).await;
         let collateral = self
