@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+
+use crate::primitives::key_state::EpochId;
 mod impls;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -71,6 +73,8 @@ pub enum VoteError {
         "Candidates can only cast a vote after `threshold` participants casted one to admit them"
     )]
     VoterPending,
+    #[error("Voter already voted for cancellation of key resharing.")]
+    VoterAlreadyRequestedCancellation,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -91,8 +95,11 @@ pub enum InvalidParameters {
     ParticipantAlreadyUsed,
     #[error("The provided domain was not found.")]
     DomainNotFound,
-    #[error("Provided Epoch Id does not match expected.")]
-    EpochMismatch,
+    #[error("Provided Epoch Id, {provided}, does not match expected, {expected}.")]
+    EpochMismatch {
+        provided: EpochId,
+        expected: EpochId,
+    },
     #[error("Next domain ID mismatch")]
     NextDomainIdMismatch,
     #[error("Invalid domain ID.")]
