@@ -19,9 +19,6 @@ use tracing::error;
 /// The maximum duration to wait for retrying request to Phala's endpoint.
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
-/// Expected HTTP [`StatusCode`] for a successful submission.
-const PHALA_SUCCESS_STATUS_CODE: StatusCode = StatusCode::OK;
-
 /// URL for submission of TDX quote. Returns collateral to be used for verification.
 const PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
 
@@ -119,11 +116,11 @@ impl TeeAuthority {
                 .await?;
 
             let status = response.status();
-            if status != PHALA_SUCCESS_STATUS_CODE {
+            if status != StatusCode::OK {
                 bail!(
                     "Got unexpected HTTP status code: response from phala endpoint: {:?}, expected: {:?}",
                     status,
-                    PHALA_SUCCESS_STATUS_CODE
+                    StatusCode::OK
                 );
             }
 
