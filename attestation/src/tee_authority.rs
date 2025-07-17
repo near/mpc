@@ -12,7 +12,7 @@ use core::{future::Future, time::Duration};
 use dstack_sdk::dstack_client::DstackClient;
 use http::status::StatusCode;
 use near_sdk::serde_json;
-use reqwest::multipart::Form;
+use reqwest::{Url, multipart::Form};
 use serde::Deserialize;
 use tracing::error;
 
@@ -28,14 +28,16 @@ pub struct DstackTeeAuthorityConfig {
     /// Endpoint to contact dstack service. [`None`]` defaults to `/var/run/dstack.sock`
     pub dstack_endpoint: Option<String>,
     /// URL for submission of TDX quote. Returns collateral to be used for verification.
-    pub quote_upload_url: String,
+    pub quote_upload_url: Url,
 }
 
 impl Default for DstackTeeAuthorityConfig {
     fn default() -> Self {
         Self {
             dstack_endpoint: None,
-            quote_upload_url: String::from(DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL),
+            quote_upload_url: DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL
+                .parse()
+                .expect("Default URL should be valid"),
         }
     }
 }
@@ -100,7 +102,7 @@ impl TeeAuthority {
     /// Uploads TDX quote to Phala endpoint and retrieves collateral.
     async fn upload_quote_for_collateral(
         &self,
-        quote_upload_url: &str,
+        quote_upload_url: &Url,
         tdx_quote: &str,
     ) -> anyhow::Result<Collateral> {
         let reqwest_client = reqwest::Client::new();
@@ -110,7 +112,7 @@ impl TeeAuthority {
             let form = Form::new().text("hex", tdx_quote.clone());
 
             let response = reqwest_client
-                .post(quote_upload_url)
+                .post(quote_upload_url.clone())
                 .multipart(form)
                 .send()
                 .await?;
