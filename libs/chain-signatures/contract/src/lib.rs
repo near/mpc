@@ -725,9 +725,9 @@ impl VersionedMpcContract {
     /// Casts a vote to cancel the current key resharing. If a threshold number of votes are collected
     /// to cancel the resharing, the contract state will revert back to the previous running state.
     ///
-    /// Only nodes from the previous running state
+    /// Only nodes from the previous running state are allowed to vote.
     ///
-    /// Returns [Ok] if the vote was successfully collected to cancel
+    /// Returns [Ok] if the vote was successfully collected.
     ///
     /// Returns [Err] if:
     ///  - The signer is not a participant in the previous running state.
