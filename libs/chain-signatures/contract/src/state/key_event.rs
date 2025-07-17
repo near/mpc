@@ -151,7 +151,7 @@ impl KeyEvent {
 
     /// Verifies that the signer is authorized to cast a vote and that the key event ID corresponds
     /// to the current generation attempt.
-    pub(crate) fn verify_vote(
+    fn verify_vote(
         &mut self,
         key_event_id: &KeyEventId,
     ) -> Result<AuthenticatedParticipantId, Error> {
