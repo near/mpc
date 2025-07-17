@@ -22,11 +22,14 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 /// Default URL for submission of TDX quote. Returns collateral to be used for verification.
 const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
 
+/// Default path for dstack Unix socket endpoint.
+const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
+
 pub struct LocalTeeAuthorityConfig;
 
 pub struct DstackTeeAuthorityConfig {
-    /// Endpoint to contact dstack service. [`None`]` defaults to `/var/run/dstack.sock`
-    pub dstack_endpoint: Option<String>,
+    /// Endpoint to contact dstack service. Defaults to `/var/run/dstack.sock`
+    pub dstack_endpoint: String,
     /// URL for submission of TDX quote. Returns collateral to be used for verification.
     pub quote_upload_url: Url,
 }
@@ -34,7 +37,7 @@ pub struct DstackTeeAuthorityConfig {
 impl Default for DstackTeeAuthorityConfig {
     fn default() -> Self {
         Self {
-            dstack_endpoint: None,
+            dstack_endpoint: String::from(DEFAULT_DSTACK_ENDPOINT),
             quote_upload_url: DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL
                 .parse()
                 .expect("Default URL should be valid"),
@@ -69,7 +72,7 @@ impl TeeAuthority {
         config: &DstackTeeAuthorityConfig,
         report_data: ReportData,
     ) -> anyhow::Result<Attestation> {
-        let client = DstackClient::new(config.dstack_endpoint.as_deref());
+        let client = DstackClient::new(Some(config.dstack_endpoint.as_str()));
         let tcb_info = self.get_tcb_info(&client).await;
         let tdx_quote = self.get_tdx_quote(&client, report_data).await;
         let collateral = self
