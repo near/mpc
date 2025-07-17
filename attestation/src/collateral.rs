@@ -3,6 +3,7 @@ use dcap_qvl::QuoteCollateralV3;
 use derive_more::{Deref, From, Into};
 use hex::FromHexError;
 use serde_json::Value;
+use thiserror::Error;
 
 /// Supplemental data for the TEE quote, including Intel certificates to verify it came from
 /// genuine Intel hardware, along with details about the Trusted Computing Base (TCB)
@@ -23,7 +24,10 @@ impl TryFrom<Value> for Collateral {
 
         fn get_hex(v: &Value, key: &str) -> Result<Vec<u8>, CollateralError> {
             let hex_str = get_str(v, key)?;
-            hex::decode(hex_str).map_err(|e| CollateralError::HexDecode(String::from(key), e))
+            hex::decode(hex_str).map_err(|source| CollateralError::HexDecode {
+                field: String::from(key),
+                source,
+            })
         }
 
         let quote_collateral = QuoteCollateralV3 {
@@ -39,29 +43,16 @@ impl TryFrom<Value> for Collateral {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum CollateralError {
+    #[error("Missing or invalid field: {0}")]
     MissingField(String),
-    HexDecode(String, FromHexError),
-}
-
-impl core::fmt::Display for CollateralError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            CollateralError::MissingField(field) => {
-                write!(f, "Missing or invalid field: {}", field)
-            }
-            CollateralError::HexDecode(field, e) => {
-                write!(f, "Failed to decode hex field '{}': {}", field, e)
-            }
-        }
-    }
-}
-
-impl From<CollateralError> for anyhow::Error {
-    fn from(err: CollateralError) -> Self {
-        anyhow::anyhow!("{}", err)
-    }
+    #[error("Failed to decode hex field '{field}': {source}")]
+    HexDecode {
+        field: String,
+        #[source]
+        source: FromHexError,
+    },
 }
 
 #[cfg(test)]
@@ -107,7 +98,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            CollateralError::HexDecode(field, _) => {
+            CollateralError::HexDecode { field, .. } => {
                 assert_eq!(field, "tcb_info_signature");
             }
             _ => panic!("Expected HexDecode error"),
