@@ -11,7 +11,6 @@ use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use dstack_sdk::dstack_client::DstackClient;
 use http::status::StatusCode;
-use near_sdk::serde_json;
 use reqwest::{Url, multipart::Form};
 use serde::Deserialize;
 use tracing::error;
@@ -137,14 +136,13 @@ impl TeeAuthority {
 
         let upload_response = get_with_backoff(upload_tdx_quote, "upload tdx quote").await;
 
-        Collateral::try_from_json(upload_response.quote_collateral)
-            .map_err(|e| anyhow::anyhow!("Failed to parse collateral: {}", e))
+        Ok(upload_response.quote_collateral)
     }
 }
 
 #[derive(Deserialize)]
 struct UploadResponse {
-    quote_collateral: serde_json::Value,
+    quote_collateral: Collateral,
     #[serde(rename = "checksum")]
     _checksum: String,
 }
