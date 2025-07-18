@@ -9,12 +9,13 @@
 use near_account_id::AccountId;
 use near_sdk::store::IterableMap;
 use near_sdk::{env, near, store::LookupMap};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
 use crate::legacy_contract_state::ConfigV1;
+use crate::primitives::votes::ThresholdParametersVotes;
 use crate::primitives::{
     domain::{AddDomainsVotes, DomainRegistry},
-    key_state::{AuthenticatedParticipantId, KeyForDomain, Keyset},
+    key_state::{KeyForDomain, Keyset},
     thresholds::ThresholdParameters,
 };
 use crate::state::{initializing::InitializingContractState, key_event::KeyEvent};
@@ -33,13 +34,6 @@ pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
-}
-
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Default, PartialEq)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
-pub struct ThresholdParametersVotes {
-    proposal_by_account: BTreeMap<AuthenticatedParticipantId, ThresholdParameters>,
 }
 
 #[near(serializers=[borsh, json])]
