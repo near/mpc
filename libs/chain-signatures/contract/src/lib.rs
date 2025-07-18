@@ -151,6 +151,14 @@ impl MpcContract {
         Ok(())
     }
 
+    pub fn vote_cancel_resharing(&mut self) -> Result<(), Error> {
+        if let Some(new_state) = self.protocol_state.vote_cancel_resharing()? {
+            self.protocol_state = new_state;
+        }
+
+        Ok(())
+    }
+
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
@@ -710,6 +718,27 @@ impl VersionedMpcContract {
         );
         match self {
             Self::V2(contract_state) => contract_state.vote_reshared(key_event_id),
+            _ => env::panic_str("expected V2"),
+        }
+    }
+
+    /// Casts a vote to cancel the current key resharing. If a threshold number of unique
+    /// votes are collected to cancel the resharing, the contract state will revert back to the
+    /// previous running state.
+    ///
+    /// - This method is idempotent, meaning a single account can not make more than one vote.
+    /// - Only nodes from the previous running state are allowed to vote.
+    ///
+    /// Return value:
+    /// - [Ok] if the vote was successfully collected.
+    /// - [Err] if:
+    ///     - The signer is not a participant in the previous running state.
+    ///     - The contract is not in a resharing state.
+    #[handle_result]
+    pub fn vote_cancel_resharing(&mut self) -> Result<(), Error> {
+        log!("vote_cancel_resharing: signer={}", env::signer_account_id());
+        match self {
+            Self::V2(contract_state) => contract_state.vote_cancel_resharing(),
             _ => env::panic_str("expected V2"),
         }
     }

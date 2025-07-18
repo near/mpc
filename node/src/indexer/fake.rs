@@ -22,7 +22,7 @@ use mpc_contract::state::{
 use near_crypto::PublicKey;
 use near_sdk::AccountId;
 use near_time::{Clock, Duration};
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -105,6 +105,7 @@ impl FakeMpcContractState {
                     .clone(),
                 participants_config_to_threshold_parameters(&new_participants),
             ),
+            cancellation_requests: HashSet::new(),
         });
     }
 

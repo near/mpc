@@ -15,10 +15,10 @@ use std::fmt::Display;
 pub struct EpochId(u64);
 
 impl EpochId {
-    pub fn next(&self) -> Self {
+    pub const fn next(&self) -> Self {
         EpochId(self.0 + 1)
     }
-    pub fn new(epoch_id: u64) -> Self {
+    pub const fn new(epoch_id: u64) -> Self {
         EpochId(epoch_id)
     }
     pub fn get(&self) -> u64 {
@@ -162,7 +162,7 @@ impl AuthenticatedParticipantId {
 /// set of participants that include the signer, thus acting as a typesystem-based enforcement
 /// mechanism (albeit a best-effort one) for authenticating the signer.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AuthenticatedAccountId(AccountId);
 impl AuthenticatedAccountId {
     pub fn get(&self) -> &AccountId {

@@ -1,7 +1,11 @@
+use std::collections::HashSet;
+
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
 use crate::errors::{Error, InvalidParameters};
-use crate::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
+use crate::primitives::key_state::{
+    AuthenticatedAccountId, EpochId, KeyEventId, KeyForDomain, Keyset,
+};
 use crate::primitives::thresholds::ThresholdParameters;
 use near_sdk::near;
 
@@ -25,6 +29,7 @@ pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
+    pub cancellation_requests: HashSet<AuthenticatedAccountId>,
 }
 
 impl ResharingContractState {
@@ -47,8 +52,13 @@ impl ResharingContractState {
         prospective_epoch_id: EpochId,
         proposal: &ThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
-        if prospective_epoch_id != self.prospective_epoch_id().next() {
-            return Err(InvalidParameters::EpochMismatch.into());
+        let expected_prospective_epoch_id = self.prospective_epoch_id().next();
+        if prospective_epoch_id != expected_prospective_epoch_id {
+            return Err(InvalidParameters::EpochMismatch {
+                expected: expected_prospective_epoch_id,
+                provided: prospective_epoch_id,
+            }
+            .into());
         }
         if self
             .previous_running_state
@@ -70,6 +80,7 @@ impl ResharingContractState {
                         .clone(),
                     proposal.clone(),
                 ),
+                cancellation_requests: HashSet::new(),
             }));
         }
         Ok(None)
@@ -140,6 +151,31 @@ impl ResharingContractState {
     /// Returns error if there is no active attempt, or if the signer is not a proposed participant.
     pub fn vote_abort(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         self.resharing_key.vote_abort(key_event_id)
+    }
+
+    pub fn vote_cancel_resharing(&mut self) -> Result<Option<RunningContractState>, Error> {
+        let previous_running_participants = self.previous_running_state.parameters.participants();
+        let authenticated_candidate = AuthenticatedAccountId::new(previous_running_participants)?;
+        self.cancellation_requests.insert(authenticated_candidate);
+
+        let cancellation_votes_count = self.cancellation_requests.len() as u64;
+        let previous_running_threshold = self.previous_running_state.parameters.threshold();
+
+        let threshold_cancellation_votes_reached: bool =
+            cancellation_votes_count >= previous_running_threshold.value();
+
+        let running_state = if threshold_cancellation_votes_reached {
+            let mut previous_running_state = self.previous_running_state.clone();
+            let prospective_epoch_id = self.prospective_epoch_id();
+            previous_running_state.previously_cancelled_resharing_epoch_id =
+                Some(prospective_epoch_id);
+
+            Some(previous_running_state)
+        } else {
+            None
+        };
+
+        Ok(running_state)
     }
 }
 #[cfg(test)]
