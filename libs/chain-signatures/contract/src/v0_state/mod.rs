@@ -114,7 +114,7 @@ impl From<TeeState> for crate::TeeState {
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct MpcContractV1 {
-    protocol_state: crate::state::ProtocolContractState,
+    protocol_state: ProtocolContractState,
     pending_requests: LookupMap<SignatureRequest, YieldIndex>,
     proposed_updates: crate::update::ProposedUpdates,
     config: Config,
@@ -148,7 +148,7 @@ impl From<ProtocolContractState> for crate::ProtocolContractState {
 impl From<MpcContractV1> for MpcContract {
     fn from(value: MpcContractV1) -> Self {
         Self {
-            protocol_state: value.protocol_state,
+            protocol_state: value.protocol_state.into(),
             pending_requests: value.pending_requests,
             proposed_updates: value.proposed_updates,
             config: value.config,
