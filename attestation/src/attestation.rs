@@ -1,19 +1,59 @@
 use dcap_qvl::verify::VerifiedReport;
+use derive_more::Constructor;
 
 use crate::{collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, tcbinfo::TcbInfo};
-use derive_more::Constructor;
 use near_sdk::PublicKey;
+
+#[allow(clippy::large_enum_variant)]
+pub enum Attestation {
+    Dstack(DstackAttestation),
+    Local(LocalAttestation),
+}
 
 #[allow(dead_code)]
 #[derive(Constructor)]
-pub struct Attestation {
+pub struct DstackAttestation {
     quote: Quote,
     collateral: Collateral,
     tcb_info: TcbInfo,
 }
 
+pub struct LocalAttestation {
+    quote_verification_result: bool,
+    docker_image_verification_result: bool,
+}
+
+impl Attestation {
+    // TODO(#642): Implement the attestation quote verification logic in the attestation module
+    pub fn verify_quote(&self) -> bool {
+        match self {
+            Self::Dstack(_config) => {
+                todo!("Implement TEE validation logic")
+            }
+            Self::Local(config) => config.quote_verification_result,
+        }
+    }
+
+    // TODO(#643): Implement the Docker image verification logic in the attestation module
+    pub fn verify_docker_image(
+        &self,
+        _allowed_docker_image_hashes: &[MpcDockerImageHash],
+        _historical_docker_image_hashes: &[MpcDockerImageHash],
+        _measurements: Measurements,
+        _public_key: PublicKey,
+    ) -> bool {
+        match self {
+            Self::Dstack(_config) => {
+                todo!("Implement Docker image validation logic")
+            }
+            Self::Local(config) => config.docker_image_verification_result,
+        }
+    }
+}
+
 #[allow(dead_code)]
-struct Measurements {
+#[derive(Debug, Clone, Copy)]
+pub struct Measurements {
     rt_mr0: [u8; 48],
     rt_mr1: [u8; 48],
     rt_mr2: [u8; 48],
@@ -42,42 +82,53 @@ impl TryFrom<VerifiedReport> for Measurements {
     }
 }
 
-pub enum ValidationContext {
-    Tee,
-    Local,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl Attestation {
-    // TODO(#642): Implement the attestation quote verification logic in the attestation module
-    #[allow(dead_code)]
-    fn verify_quote(&self, context: &ValidationContext) -> bool {
-        match context {
-            ValidationContext::Tee => {
-                todo!("Implement TEE validation logic")
-            }
-            ValidationContext::Local => {
-                todo!("Implement local attestation validation logic")
-            }
-        }
+    fn mock_attestation(
+        quote_verification_result: bool,
+        docker_image_verification_result: bool,
+    ) -> Attestation {
+        Attestation::Local(LocalAttestation {
+            quote_verification_result,
+            docker_image_verification_result,
+        })
     }
 
-    // TODO(#643): Implement the Docker image verification logic in the attestation module
-    #[allow(dead_code)]
-    fn verify_docker_image(
-        &self,
-        context: &ValidationContext,
-        _allowed_docker_image_hashes: &[MpcDockerImageHash],
-        _historical_docker_image_hashes: &[MpcDockerImageHash],
-        _measurements: Measurements,
-        _public_key: PublicKey,
-    ) -> bool {
-        match context {
-            ValidationContext::Tee => {
-                todo!("Implement Docker image validation logic")
-            }
-            ValidationContext::Local => {
-                todo!("Implement local Docker image validation logic")
-            }
+    #[test]
+    // TODO(#643): Test quote verification logic (as much as possible except signature verification)
+    fn test_mock_attestation_verify_quote() {
+        assert!(!mock_attestation(false, false).verify_quote());
+        assert!(!mock_attestation(false, true).verify_quote());
+        assert!(mock_attestation(true, false).verify_quote());
+        assert!(mock_attestation(true, true).verify_quote());
+    }
+
+    #[test]
+    // TODO(#643): Test docker image verification logic
+    fn test_mock_attestation_verify_docker_image() {
+        let measurements = Measurements {
+            rt_mr0: [0u8; 48],
+            rt_mr1: [0u8; 48],
+            rt_mr2: [0u8; 48],
+            rt_td: [0u8; 48],
+        };
+        let key: PublicKey = "ed25519:9Tfe2FVj6nv2Y7R9NZynD46Nqb8LKRyVZjPgJVSKKxoR"
+            .parse()
+            .unwrap();
+
+        for (quote_verification_result, docker_image_verification_result, expected) in [
+            (false, false, false),
+            (false, true, true),
+            (true, false, false),
+            (true, true, true),
+        ] {
+            assert_eq!(
+                mock_attestation(quote_verification_result, docker_image_verification_result)
+                    .verify_docker_image(&[], &[], measurements, key.clone()),
+                expected
+            );
         }
     }
 }
