@@ -72,71 +72,55 @@ impl TeeAuthority {
         report_data: ReportData,
     ) -> anyhow::Result<Attestation> {
         let client = DstackClient::new(Some(config.dstack_endpoint.as_str()));
-        let tcb_info = self.get_tcb_info(&client).await;
-        let tdx_quote = self.get_tdx_quote(&client, report_data).await;
-        let collateral = self
-            .upload_quote_for_collateral(&config.quote_upload_url, &tdx_quote)
-            .await?;
+
+        let client_info_response = get_with_backoff(|| client.info(), "dstack client info").await;
+        let tcb_info = TcbInfo::from(client_info_response.tcb_info);
+
+        let tdx_quote = get_with_backoff(
+            || client.get_quote(report_data.to_bytes().into()),
+            "dstack client tdx quote",
+        )
+        .await
+        .quote;
+
+        let quote_upload_response = {
+            let reqwest_client = reqwest::Client::new();
+            let tdx_quote = tdx_quote.clone();
+
+            let upload_tdx_quote = async || {
+                let form = Form::new().text("hex", tdx_quote.clone());
+
+                let response = reqwest_client
+                    .post(config.quote_upload_url.clone())
+                    .multipart(form)
+                    .send()
+                    .await?;
+
+                let status = response.status();
+
+                if status != StatusCode::OK {
+                    bail!(
+                        "Got unexpected HTTP status code: response from phala http_endpoint: {:?}, expected: {:?}",
+                        status,
+                        StatusCode::OK
+                    );
+                }
+
+                response
+                    .json::<UploadResponse>()
+                    .await
+                    .context("Failed to deserialize response from Phala.")
+            };
+
+            get_with_backoff(upload_tdx_quote, "upload tdx quote").await
+        };
+
+        let collateral = quote_upload_response.quote_collateral;
         let quote: Quote = tdx_quote.parse()?;
 
         Ok(Attestation::Dstack(DstackAttestation::new(
             quote, collateral, tcb_info,
         )))
-    }
-
-    /// Retrieves TCB info from Dstack client.
-    async fn get_tcb_info(&self, client: &DstackClient) -> TcbInfo {
-        let client_info_response = get_with_backoff(|| client.info(), "dstack client info").await;
-        TcbInfo::from(client_info_response.tcb_info)
-    }
-
-    /// Generates TDX quote from report data using Dstack client.
-    async fn get_tdx_quote(&self, client: &DstackClient, report_data: ReportData) -> String {
-        let report_data_bytes = report_data.to_bytes();
-        let tdx_quote_response = get_with_backoff(
-            || client.get_quote(report_data_bytes.into()),
-            "dstack client tdx quote",
-        )
-        .await;
-        tdx_quote_response.quote
-    }
-
-    /// Uploads TDX quote to Phala endpoint and retrieves collateral.
-    async fn upload_quote_for_collateral(
-        &self,
-        quote_upload_url: &Url,
-        tdx_quote: &str,
-    ) -> anyhow::Result<Collateral> {
-        let reqwest_client = reqwest::Client::new();
-        let tdx_quote = String::from(tdx_quote);
-
-        let upload_tdx_quote = async || {
-            let form = Form::new().text("hex", tdx_quote.clone());
-
-            let response = reqwest_client
-                .post(quote_upload_url.clone())
-                .multipart(form)
-                .send()
-                .await?;
-
-            let status = response.status();
-            if status != StatusCode::OK {
-                bail!(
-                    "Got unexpected HTTP status code: response from phala endpoint: {:?}, expected: {:?}",
-                    status,
-                    StatusCode::OK
-                );
-            }
-
-            response
-                .json::<UploadResponse>()
-                .await
-                .context("Failed to deserialize response from Phala.")
-        };
-
-        let upload_response = get_with_backoff(upload_tdx_quote, "upload tdx quote").await;
-
-        Ok(upload_response.quote_collateral)
     }
 }
 
