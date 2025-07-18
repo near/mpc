@@ -219,7 +219,7 @@ mod tests {
                 assert!(!collateral.qe_identity_signature.is_empty());
             }
             Ok(Err(e)) => panic!("Test failed: {e:?}"),
-            Err(e) => panic!("Test timed ou`t: {e:?}"),
+            Err(e) => panic!("Test timed out: {e:?}"),
         }
     }
 }
