@@ -3,10 +3,7 @@ pub mod common;
 use assert_matches::assert_matches;
 use common::{check_call_success, gen_accounts, init_env_secp256k1};
 use mpc_contract::{
-    primitives::{
-        key_state::EpochId,
-        thresholds::{Threshold, ThresholdParameters},
-    },
+    primitives::thresholds::{Threshold, ThresholdParameters},
     state::{running::RunningContractState, ProtocolContractState},
 };
 use near_sdk::PublicKey;
