@@ -1,12 +1,12 @@
-use alloc::boxed::Box;
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 
 use crate::{collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, tcbinfo::TcbInfo};
 use near_sdk::PublicKey;
 
+#[allow(clippy::large_enum_variant)]
 pub enum Attestation {
-    Dstack(Box<DstackAttestation>),
+    Dstack(DstackAttestation),
     Local(LocalAttestation),
 }
 
