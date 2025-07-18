@@ -440,7 +440,7 @@ class MpcCluster:
         tx = participant.sign_tx(self.mpc_contract_account(),
                                  'propose_update',
                                  args,
-                                 deposit=9624860000000000000000000)
+                                 deposit=9750000000000000000000000)
         res = participant.send_txn_and_check_success(tx, timeout=30)
         return int(
             base64.b64decode(res['result']['status']['SuccessValue']).decode(
