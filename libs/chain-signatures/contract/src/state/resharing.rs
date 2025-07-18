@@ -156,13 +156,7 @@ impl ResharingContractState {
     pub fn vote_cancel_resharing(&mut self) -> Result<Option<RunningContractState>, Error> {
         let previous_running_participants = self.previous_running_state.parameters.participants();
         let authenticated_candidate = AuthenticatedAccountId::new(previous_running_participants)?;
-
-        let participant_already_voted_cancellation =
-            !self.cancellation_requests.insert(authenticated_candidate);
-
-        if participant_already_voted_cancellation {
-            Err(VoteError::VoterAlreadyRequestedCancellation)?;
-        }
+        self.cancellation_requests.insert(authenticated_candidate);
 
         let cancellation_votes_count = self.cancellation_requests.len() as u64;
         let previous_running_threshold = self.previous_running_state.parameters.threshold();

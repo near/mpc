@@ -303,7 +303,6 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
 ///
 /// Invariants tested:
 /// - Cancellation requires threshold votes from previous running state.
-/// - Double votes are rejected.
 /// - Only votes from participants in the previous running state are considered.
 /// - The contract state reverts to the running state upon cancellation of a resharing.
 /// - Cancelled epoch IDs cannot be reused for future resharing attempts.
@@ -386,17 +385,12 @@ async fn test_cancel_resharing() -> anyhow::Result<()> {
         .filter(|account| *account.id() != new_account_id)
         .take(initial_threshold.value() as usize)
     {
-        let account_votes_for_cancellation = async || {
+        check_call_success(
             account
                 .call(contract.id(), "vote_cancel_resharing")
                 .transact()
-                .await
-        };
-        check_call_success(account_votes_for_cancellation().await?);
-        assert!(
-            account_votes_for_cancellation().await?.is_failure(),
-            "Voting again with same account should fail as re-votes are not allowed."
-        )
+                .await?,
+        );
     }
 
     // Check that state transitions back to running
@@ -472,6 +466,132 @@ async fn test_cancel_resharing() -> anyhow::Result<()> {
         }
         _ => panic!("should be in resharing state"),
     }
+
+    Ok(())
+}
+
+/// Tests that the `vote_cancel_resharing` method on the contract is idempotent. That is
+/// if an account votes multiple times it has the same effect as voting once.
+#[tokio::test]
+async fn test_cancel_resharing_vote_is_idempotent() -> anyhow::Result<()> {
+    const INITIAL_EPOCH_ID: EpochId = EpochId::new(5);
+
+    let (_worker, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    let ProtocolContractState::Running(state) = state else {
+        panic!("State is not running: {:#?}", state)
+    };
+
+    let initial_threshold = state.parameters.threshold();
+    assert_ne!(
+        initial_threshold.value(),
+        1,
+        "Sanity check failed. Initial_threshold should be at least 2 or greater for the purpose of this test."
+    );
+
+    let initial_running_state = state.clone();
+
+    assert_eq!(
+        initial_running_state.previously_cancelled_resharing_epoch_id, None,
+        "There have been no resharing state yet for the cancellation epoch id to be maintained."
+    );
+
+    assert_eq!(
+        initial_running_state.keyset.epoch_id, INITIAL_EPOCH_ID,
+        "Current epoch ID has wrong initial value."
+    );
+
+    let existing_params = state.parameters;
+    let current_participants = existing_params.participants().clone();
+
+    let proposal = ThresholdParameters::new(
+        current_participants.clone(),
+        Threshold::new(current_participants.len() as u64),
+    )
+    .unwrap();
+
+    for account in &accounts {
+        check_call_success(
+            account
+                .call(contract.id(), "vote_new_parameters")
+                .args_json(json!({
+                    "prospective_epoch_id": INITIAL_EPOCH_ID.next(),
+                    "proposal": proposal,
+                }))
+                .transact()
+                .await?,
+        );
+    }
+    match contract.view("state").await.unwrap().json()? {
+        ProtocolContractState::Resharing(state) => {
+            assert_eq!(state.resharing_key.proposed_parameters(), &proposal);
+            assert_eq!(state.resharing_key.epoch_id(), INITIAL_EPOCH_ID.next());
+        }
+        _ => panic!("should be in resharing state"),
+    }
+
+    // Try submit threshold votes with one account.
+    let account_1 = accounts.first().unwrap();
+    for _ in 0..initial_threshold.value() {
+        check_call_success(
+            account_1
+                .call(contract.id(), "vote_cancel_resharing")
+                .transact()
+                .await?,
+        );
+    }
+
+    match contract.view("state").await.unwrap().json()? {
+        ProtocolContractState::Resharing(state) => {
+            assert_eq!(state.resharing_key.proposed_parameters(), &proposal);
+            assert_eq!(state.resharing_key.epoch_id(), INITIAL_EPOCH_ID.next());
+        }
+        _ => panic!("Contract should still be in resharing state. A threshold number of unique votes have not been casted."),
+    }
+
+    // one vote is already casted by `account_1`.
+    let remaining_votes_needed = initial_threshold.value() as usize - 1;
+
+    for account in accounts
+        .iter()
+        .filter(|account| account.id() != account_1.id())
+        .take(remaining_votes_needed)
+    {
+        check_call_success(
+            account
+                .call(contract.id(), "vote_cancel_resharing")
+                .transact()
+                .await?,
+        );
+    }
+
+    // Check that state transitions back to running
+    let new_state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    let ProtocolContractState::Running(mut new_running_state) = new_state else {
+        panic!(
+            "State must transition back to running after voting for cancellation {:#?}",
+            new_state
+        )
+    };
+
+    const CANCELLED_EPOCH_ID: EpochId = EpochId::new(6);
+
+    assert_eq!(
+        new_running_state.previously_cancelled_resharing_epoch_id,
+        Some(CANCELLED_EPOCH_ID),
+        "Unexpected prospective epoch id after cancellation."
+    );
+    assert_eq!(
+        new_running_state.keyset.epoch_id, INITIAL_EPOCH_ID,
+        "Current epoch ID should remain unchanged after a cancellation."
+    );
+
+    // Set this field to none for equality check.
+    // (The previous running set was not the result of a cancellation, thus has `cancelled_resharing_epoch_id`
+    // set to None)
+    new_running_state.previously_cancelled_resharing_epoch_id = None;
+    assert_eq!(new_running_state, initial_running_state);
 
     Ok(())
 }

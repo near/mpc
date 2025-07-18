@@ -722,17 +722,18 @@ impl VersionedMpcContract {
         }
     }
 
-    /// Casts a vote to cancel the current key resharing. If a threshold number of votes are collected
-    /// to cancel the resharing, the contract state will revert back to the previous running state.
+    /// Casts a vote to cancel the current key resharing. If a threshold number of unique
+    /// votes are collected to cancel the resharing, the contract state will revert back to the
+    /// previous running state.
     ///
-    /// Only nodes from the previous running state are allowed to vote.
+    /// - This method is idempotent, meaning a single account can not make more than one vote.
+    /// - Only nodes from the previous running state are allowed to vote.
     ///
-    /// Returns [Ok] if the vote was successfully collected.
-    ///
-    /// Returns [Err] if:
-    ///  - The signer is not a participant in the previous running state.
-    ///  - The signer has already voted to cancel the resharing.
-    ///  - The contract is not in a resharing state.
+    /// Return value:
+    /// - [Ok] if the vote was successfully collected.
+    /// - [Err] if:
+    ///     - The signer is not a participant in the previous running state.
+    ///     - The contract is not in a resharing state.
     #[handle_result]
     pub fn vote_cancel_resharing(&mut self) -> Result<(), Error> {
         log!("vote_cancel_resharing: signer={}", env::signer_account_id());

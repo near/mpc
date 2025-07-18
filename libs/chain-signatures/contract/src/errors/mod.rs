@@ -73,8 +73,6 @@ pub enum VoteError {
         "Candidates can only cast a vote after `threshold` participants casted one to admit them"
     )]
     VoterPending,
-    #[error("Voter already voted for cancellation of key resharing.")]
-    VoterAlreadyRequestedCancellation,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
