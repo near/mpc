@@ -11,6 +11,7 @@ use thiserror::Error;
 /// Intel hardware, along with details about the Trusted Computing Base (TCB) versioning, status,
 /// and other relevant info.
 #[derive(From, Deref, Into, Debug, Deserialize)]
+#[serde(try_from = "Value")]
 pub struct Collateral(QuoteCollateralV3);
 
 impl Collateral {
@@ -68,6 +69,14 @@ impl FromStr for Collateral {
         let json_value: Value =
             serde_json::from_str(s).map_err(|_| CollateralError::InvalidJson)?;
         Self::try_from_json(json_value)
+    }
+}
+
+impl TryFrom<Value> for Collateral {
+    type Error = CollateralError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        Self::try_from_json(value)
     }
 }
 

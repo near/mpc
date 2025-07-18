@@ -1251,6 +1251,7 @@ dependencies = [
  "serde_json",
  "sha3",
  "thiserror 2.0.12",
+ "tokio",
  "tracing",
 ]
 
