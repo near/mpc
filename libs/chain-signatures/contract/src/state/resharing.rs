@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
-use crate::errors::{Error, InvalidParameters, VoteError};
+use crate::errors::{Error, InvalidParameters};
 use crate::primitives::key_state::{
     AuthenticatedAccountId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
