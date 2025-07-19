@@ -65,7 +65,7 @@ def compile_contract():
             "target/wasm32-unknown-unknown/release/mpc_contract.wasm",
             "-o",
             "target/wasm32-unknown-unknown/release/mpc_contract.wasm",
-            "--enable-bulk-memory-opt",
+            "--enable-bulk-memory",
         ],
         cwd=chain_signatures,
         check=True,
