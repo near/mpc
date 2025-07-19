@@ -113,6 +113,8 @@ pub struct InitConfigArgs {
     pub download_genesis_url: Option<String>,
     #[arg(long)]
     pub donwload_genesis_records_url: Option<String>,
+    #[arg(long)]
+    pub boot_nodes: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -377,7 +379,7 @@ impl Cli {
                     .map(AsRef::as_ref),
                 Some(near_config_utils::DownloadConfigType::RPC),
                 config.download_config_url.as_ref().map(AsRef::as_ref),
-                None,
+                config.boot_nodes.as_ref().map(AsRef::as_ref),
                 None,
             ),
             CliCommand::ImportKeyshare(cmd) => cmd.run().await,

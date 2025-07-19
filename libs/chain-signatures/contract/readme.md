@@ -74,11 +74,11 @@ Note that an Ecdsa payload is subsequently represented as a Scalar on curve Secp
 ### Changing the participant set
 
 The set of MPC participants can be changed, subject to following restrictions:
-- There must at least be `thershold` (the current threshold) number of current participants in the prospective participant set.
+- There must at least be `threshold` (the current threshold) number of current participants in the prospective participant set.
 - The prospective threshold must be at least 60% of the number of participants (rounded upwards).
 - The set of participants must have at least two participants.
 
-In order for a change to be accepted by the contract, all prospective participants must vote for it using the `vote_new_participants` endpoint. Note that any new participants vote will only be accepted after at least `threshold` (the current threshold) old participants voted for the same participant set.
+In order for a change to be accepted by the contract, all prospective participants must vote for it using the `vote_new_parameters` endpoint. Note that any new participants vote will only be accepted after at least `threshold` (the current threshold) old participants voted for the same participant set.
 
 
 **Example**

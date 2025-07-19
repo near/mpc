@@ -10,19 +10,18 @@ MPC_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.yaml"
 NEAR_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.json"
 
 initialize_near_node() {
-    ./mpc-node init --dir $1 --chain-id $MPC_ENV --download-genesis --download-config
+    # boot_nodes must be filled in or else the node will not have any peers.
+    ./mpc-node init --dir $1 --chain-id $MPC_ENV --download-genesis --download-config --boot-nodes "$NEAR_BOOT_NODES"
     python3 << EOF
 import json;
 config = json.load(open("$NEAR_NODE_CONFIG_FILE"))
 
 # boot nodes must be filled in or else the node will not have any peers.
-config['network']['boot_nodes'] = "${NEAR_BOOT_NODES}"
 config['store']['load_mem_tries_for_tracked_shards'] = True
 config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
 
 # Track whichever shard the contract account is on.
-config['tracked_shards'] = []
-config['tracked_accounts'] = ["$MPC_CONTRACT_ID"]
+config['tracked_shards_config']['Accounts'] = ["$MPC_CONTRACT_ID"]
 json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
 EOF
 }
