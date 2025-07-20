@@ -205,17 +205,10 @@ impl MeshNetworkClient {
     ) -> anyhow::Result<Vec<ParticipantId>> {
         let me = self.my_participant_id();
         let participants = self.all_alive_participant_ids();
-
-        if participants.len() < total {
-            anyhow::bail!(
-                "Not enough active participants: need {}, got {}",
-                total,
-                participants.len()
-            );
-        }
-        if !participants.contains(&me) {
-            anyhow::bail!("There's no `me` in active participants");
-        }
+        anyhow::ensure!(
+            participants.contains(&me),
+            "There's no `me` in active participants"
+        );
 
         let mut res = participants
             .into_iter()
@@ -226,6 +219,14 @@ impl MeshNetworkClient {
             })
             .choose_multiple(&mut rand::thread_rng(), total - 1);
         res.push(me);
+
+        anyhow::ensure!(
+            res.len() == total,
+            "Not enough active participants: need {}, got {}",
+            total,
+            res.len()
+        );
+
         Ok(res)
     }
 
