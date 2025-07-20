@@ -13,7 +13,8 @@ from common_lib.contracts import load_mpc_contract
 
 
 def test_web_endpoints():
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1, load_mpc_contract())
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1,
+                                                       load_mpc_contract())
     cluster.init_cluster(participants=mpc_nodes, threshold=2)
     cluster.send_and_await_signature_requests(1)
 
