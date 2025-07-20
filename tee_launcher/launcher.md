@@ -14,6 +14,13 @@ It is designed to run inside a TEE-enabled environment (e.g., Intel TDX) to add 
 - prints remote attestation and quote generation infomation to log
 - Starts the MPC node container with secure mount and network settings
 
+##  usage
+The launcher script is designed to run inside a confidential TDX VM managed by DStack VMM.
+
+launcher-docker-compose.yaml — Docker Compose file used to start the launcher and supporting containers.
+config.txt — File containing trusted environment variables used by the launcher and MPC node.
+It should be uploaded to: /tapp/.host-shared/.user-config
+
 ## 🧩 Environment Variables
 
 - `DOCKER_CONTENT_TRUST=1`: Must be enabled
@@ -21,13 +28,13 @@ It is designed to run inside a TEE-enabled environment (e.g., Intel TDX) to add 
 
 ## 📁 File Locations
 
-- `/tapp/user_config`: Optional `.env` file for overriding defaults
+- `/tapp/.host-shared/.user-config`: Optional `.env` file for overriding defaults
 - `/mnt/shared/image-digest`: Optional override of image digest (written by external components)
 - `/var/run/dstack.sock`: Unix socket used to communicate with `dstack`
 
-## 🔧 Configuration (via user_config)
+## 🔧 Configuration (via user-config)
 
-The launcher supports the following environment variables via `/tapp/user_config`:
+The launcher supports the following environment variables via `/tapp/.host-shared/.user-config`:
 
 LAUNCHER_IMAGE_NAME=nearone/mpc-node-gcp
 LAUNCHER_IMAGE_TAGS=latest
@@ -35,6 +42,8 @@ LAUNCHER_REGISTRY=registry.hub.docker.com
 
 
 ## Reproducible builds
+from: tee_launcher folder run:
+docker build -t barakeinavnear/launcher:latest -f development/Dockerfile.launcher .
 
 - [Makefile](Makefile): use this to build the mpc binary in a reproducible manner
 - [deployment/Dockerfile-gcp](deployment/Dockerfile-gcp) Dockerfile with all dependencies pinned to specific versions, e.g., other Dockerfile via sha256 digests and Linux distribution packages via explicit version strings
