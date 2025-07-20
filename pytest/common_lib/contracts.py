@@ -68,10 +68,8 @@ class ConfigV2:
 
     def dump_json(self):
         return json.dumps({
-            "request_timeout_blocks":
-            self.max_num_requests_to_remove,
-            "key_event_timeout_blocks":
-            self.request_timeout_blocks
+            "request_timeout_blocks": self.max_num_requests_to_remove,
+            "key_event_timeout_blocks": self.request_timeout_blocks
         })
 
     def get(self):
@@ -95,10 +93,8 @@ class UpdateArgsV2:
 
     def borsh_serialize(self):
         return ProposeUpdateArgsV2.build({
-            'code':
-            self.code(),
-            'config':
-            self.config.get() if self.config is not None else None
+            'code': self.code(),
+            'config': self.config.get() if self.config is not None else None
         })
 
     def code(self):

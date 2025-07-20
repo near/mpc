@@ -6,6 +6,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
 
+
 def test_threshold_from_previous_running_state_is_maintained():
     """
     Tests that signature requests are still processed while performing key resharing, when
@@ -22,9 +23,7 @@ def test_threshold_from_previous_running_state_is_maintained():
            even if less nodes than the new treshold are online.
     """
     # Have the nodes disabled
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(2,
-                                                       4,
-                                                       1,
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 4, 1,
                                                        load_mpc_contract())
 
     cluster.init_cluster(participants=mpc_nodes[:2], threshold=2)
@@ -42,12 +41,10 @@ def test_threshold_from_previous_running_state_is_maintained():
 
     # sanity check
     assert cluster.wait_for_state(
-        "Resharing"
-    ), "State should still be in resharing. 4th node was killed."
+        "Resharing"), "State should still be in resharing. 4th node was killed."
 
     cluster.send_and_await_signature_requests(3)
 
     # sanity check
     assert cluster.wait_for_state(
-        "Resharing"
-    ), "State should still be in resharing. 4th node was killed."
+        "Resharing"), "State should still be in resharing. 4th node was killed."

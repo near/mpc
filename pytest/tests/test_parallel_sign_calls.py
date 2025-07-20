@@ -73,10 +73,10 @@ def test_parallel_sign_calls(num_parallel_signatures):
             print(
                 f"Node {i}: queue_size={queue_size}, requests_indexed={requests_indexed}, responses_indexed={responses_indexed}, matching_responses_indexed={matching_responses_indexed}"
             )
-            if not (queue_size == 0
-                    and requests_indexed == num_parallel_signatures
-                    and responses_indexed == num_parallel_signatures
-                    and matching_responses_indexed == num_parallel_signatures):
+            if not (queue_size == 0 and
+                    requests_indexed == num_parallel_signatures and
+                    responses_indexed == num_parallel_signatures and
+                    matching_responses_indexed == num_parallel_signatures):
                 metrics_good = False
         led_signatures = cluster.get_int_metric_value(
             "mpc_pending_signatures_queue_attempts_generated")

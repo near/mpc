@@ -28,7 +28,8 @@ def test_single_domain():
 
     Signature requests are sent after each resharing to verify liveness.
     """
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 4, 1, load_mpc_contract())
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 4, 1,
+                                                       load_mpc_contract())
     mpc_nodes[0].reserve_key_event_attempt(0, 0, 0)
     mpc_nodes[0].reserve_key_event_attempt(0, 0, 1)
     # start with 2 nodes
@@ -37,15 +38,15 @@ def test_single_domain():
     cluster.send_and_await_signature_requests(1)
 
     # two new nodes join, increase threshold
-    cluster.do_resharing(
-        new_participants=mpc_nodes[:4], new_threshold=3, prospective_epoch_id=1
-    )
+    cluster.do_resharing(new_participants=mpc_nodes[:4],
+                         new_threshold=3,
+                         prospective_epoch_id=1)
     cluster.update_participant_status()
     cluster.send_and_await_signature_requests(1)
 
-    cluster.do_resharing(
-        new_participants=mpc_nodes[1:4], new_threshold=3, prospective_epoch_id=2
-    )
+    cluster.do_resharing(new_participants=mpc_nodes[1:4],
+                         new_threshold=3,
+                         prospective_epoch_id=2)
 
     cluster.update_participant_status()
     cluster.send_and_await_signature_requests(1)
@@ -64,9 +65,9 @@ def test_single_domain():
 
     mpc_nodes[0].reserve_key_event_attempt(4, 0, 0)
     mpc_nodes[0].reserve_key_event_attempt(4, 0, 1)
-    cluster.do_resharing(
-        new_participants=mpc_nodes[0:4], new_threshold=4, prospective_epoch_id=4
-    )
+    cluster.do_resharing(new_participants=mpc_nodes[0:4],
+                         new_threshold=4,
+                         prospective_epoch_id=4)
     cluster.update_participant_status()
     assert cluster.contract_state().keyset().keyset[0].attempt_id == 2
     cluster.send_and_await_signature_requests(1)
@@ -81,20 +82,20 @@ def test_multi_domain():
 
     Afterwards, it adds another domain but cancels the key generation before completion.
     """
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 4, 1, load_mpc_contract())
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 4, 1,
+                                                       load_mpc_contract())
 
     # start with 2 nodes
     cluster.init_cluster(participants=mpc_nodes[:2], threshold=2)
     cluster.send_and_await_signature_requests(1)
 
-    cluster.add_domains(
-        ["Secp256k1", "Ed25519", "Secp256k1", "Ed25519"], wait_for_running=False
-    )
+    cluster.add_domains(["Secp256k1", "Ed25519", "Secp256k1", "Ed25519"],
+                        wait_for_running=False)
     cluster.wait_for_state("Running")
     ## two new nodes join, increase threshold
-    cluster.do_resharing(
-        new_participants=mpc_nodes[:4], new_threshold=3, prospective_epoch_id=1
-    )
+    cluster.do_resharing(new_participants=mpc_nodes[:4],
+                         new_threshold=3,
+                         prospective_epoch_id=1)
     cluster.update_participant_status()
 
     mpc_nodes[1].reserve_key_event_attempt(1, 5, 0)
@@ -106,7 +107,8 @@ def test_multi_domain():
         args = {
             "next_domain_id": 7,
         }
-        tx = node.sign_tx(cluster.mpc_contract_account(), "vote_cancel_keygen", args)
+        tx = node.sign_tx(cluster.mpc_contract_account(), "vote_cancel_keygen",
+                          args)
         node.send_txn_and_check_success(tx)
     cluster.wait_for_state("Running")
     with pytest.raises(KeyError):

@@ -37,8 +37,9 @@ def test_interactive_cluster():
             "Only used for manual interactive testing. Set INTERACTIVE_PYTEST=1 to run."
         )
     num_respond_access_keys = 5
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2, 6, num_respond_access_keys, load_mpc_contract())
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 6,
+                                                       num_respond_access_keys,
+                                                       load_mpc_contract())
     cluster.init_cluster(mpc_nodes, 4)
     print(
         "Interactive mode started. Type 'sign <num_signatures>' to send signature requests or 'quit' to exit."
@@ -66,7 +67,6 @@ def test_interactive_cluster():
                 except Exception as e:
                     print(f"error: {e}")
             else:
-                print(
-                    "Unknown command. Use 'sign <num_signatures>' or 'quit'.")
+                print("Unknown command. Use 'sign <num_signatures>' or 'quit'.")
         except EOFError:
             break  # e.g., if piped input ends

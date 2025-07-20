@@ -141,9 +141,8 @@ class ParameterVotes:
 
         parts = []
         for id, vote in self.proposal_by_account.items():
-            participants_str = " ".join(
-                f"\033[92m{p.account_id}\033[95m"
-                for p in vote.participants.participants)
+            participants_str = " ".join(f"\033[92m{p.account_id}\033[95m"
+                                        for p in vote.participants.participants)
             parts.append(
                 f"\033[95m{id}→{vote.threshold} [{participants_str}]\033[0m")
 

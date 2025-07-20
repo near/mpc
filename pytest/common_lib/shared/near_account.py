@@ -80,8 +80,8 @@ class NearAccount:
     ):
         last_block_hash = self.last_block_hash()
         (key, nonce) = self.get_key_and_nonce()
-        encoded_args = args if type(args) == bytes else json.dumps(
-            args).encode('utf-8')
+        encoded_args = args if type(args) == bytes else json.dumps(args).encode(
+            'utf-8')
         tx = sign_function_call_tx(key, target_contract, function_name,
                                    encoded_args, gas, deposit,
                                    nonce + nonce_offset, last_block_hash)

@@ -85,9 +85,9 @@ class MpcCluster:
 
     def get_voters(self):
         voters = [
-            node for node in self.mpc_nodes if node.is_running and (
-                node.status == MpcNode.NodeStatus.OLD_PARTICIPANT
-                or node.status == MpcNode.NodeStatus.PARTICIPANT)
+            node for node in self.mpc_nodes if node.is_running and
+            (node.status == MpcNode.NodeStatus.OLD_PARTICIPANT or
+             node.status == MpcNode.NodeStatus.PARTICIPANT)
         ]
         print("Voters:", " | ".join([node.print() for node in voters]))
         return voters
@@ -201,7 +201,7 @@ class MpcCluster:
             'threshold': threshold,
             'participants': {
                 'next_id':
-                self.next_participant_id,
+                    self.next_participant_id,
                 'participants': [[
                     node.account_id(), node.participant_id, {
                         'sign_pk': node.p2p_public_key,
@@ -219,8 +219,8 @@ class MpcCluster:
         args = {'parameters': self.make_threshold_parameters(threshold)}
         if additional_init_args is not None:
             args.update(additional_init_args)
-        tx = self.contract_node.sign_tx(self.contract_node.account_id(),
-                                        'init', args)
+        tx = self.contract_node.sign_tx(self.contract_node.account_id(), 'init',
+                                        args)
         self.contract_node.send_txn_and_check_success(tx)
         assert self.wait_for_state('Running'), "expected running state"
 
@@ -345,20 +345,18 @@ class MpcCluster:
                 sign_args = generate_sign_args(domain)
                 nonce_offset += 1
 
-                tx = self.sign_request_node.sign_tx(
-                    self.mpc_contract_account(),
-                    'sign',
-                    sign_args,
-                    nonce_offset=nonce_offset,
-                    deposit=deposit,
-                    gas=gas)
+                tx = self.sign_request_node.sign_tx(self.mpc_contract_account(),
+                                                    'sign',
+                                                    sign_args,
+                                                    nonce_offset=nonce_offset,
+                                                    deposit=deposit,
+                                                    gas=gas)
                 txs.append(tx)
         return txs
 
     def send_sign_request_txns(self, txs):
         print(
-            f"\033[91mSending \033[93m{len(txs)}\033[91m sign requests.\033[0m"
-        )
+            f"\033[91mSending \033[93m{len(txs)}\033[91m sign requests.\033[0m")
 
         def send_tx(tx):
             return self.sign_request_node.send_tx(tx)['result']
@@ -387,11 +385,10 @@ class MpcCluster:
         results = self.await_txs_responses(tx_hashes)
         verify_txs(results, sig_verification)
 
-    def generate_and_send_signature_requests(
-            self,
-            requests_per_domains: int,
-            add_gas: Optional[int] = None,
-            add_deposit: Optional[int] = None):
+    def generate_and_send_signature_requests(self,
+                                             requests_per_domains: int,
+                                             add_gas: Optional[int] = None,
+                                             add_deposit: Optional[int] = None):
         """
             Sends signature requests and returns the transactions and the timestamp they were sent.
         """
