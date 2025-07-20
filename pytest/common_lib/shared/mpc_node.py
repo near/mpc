@@ -55,19 +55,21 @@ class MpcNode(NearAccount):
 
     def change_contract_id(self, new_contract_id: str):
         yaml = YAML()
-        yaml.preserve_quotes = True  # optional: keeps any quotes if present in original file
+        yaml.preserve_quotes = (
+            True  # optional: keeps any quotes if present in original file
+        )
 
-        path = pathlib.Path(self.home_dir) / 'config.yaml'
-        with path.open('r') as f:
+        path = pathlib.Path(self.home_dir) / "config.yaml"
+        with path.open("r") as f:
             config = yaml.load(f)
 
-        old_contract_id = config['indexer']['mpc_contract_id']
+        old_contract_id = config["indexer"]["mpc_contract_id"]
         print(
             f"changing contract_id from {old_contract_id} to {new_contract_id} for node {self.account_id()}"
         )
-        config['indexer']['mpc_contract_id'] = new_contract_id
+        config["indexer"]["mpc_contract_id"] = new_contract_id
 
-        with path.open('w') as f:
+        with path.open("w") as f:
             yaml.dump(config, f)
 
     def print(self):
@@ -90,14 +92,13 @@ class MpcNode(NearAccount):
     def reset_mpc_data(self):
         assert not self.is_running
         patterns = [
-            'CURRENT',
-            'IDENTITY'
-            'LOCK',
-            'LOG',
-            'MANIFEST-.*',
-            'OPTIONS-.*',
-            '*.log',
-            '*.sst',
+            "CURRENT",
+            "IDENTITY" "LOCK",
+            "LOG",
+            "MANIFEST-.*",
+            "OPTIONS-.*",
+            "*.log",
+            "*.sst",
         ]
         for pattern in patterns:
             for file_path in pathlib.Path(self.home_dir).glob(pattern):
@@ -107,10 +108,10 @@ class MpcNode(NearAccount):
         assert not self.is_running
         self.is_running = True
         extra_env = {
-            'RUST_LOG': 'INFO',  # mpc-node produces too much output on DEBUG
-            'MPC_SECRET_STORE_KEY': self.secret_store_key,
+            "RUST_LOG": "INFO",  # mpc-node produces too much output on DEBUG
+            "MPC_SECRET_STORE_KEY": self.secret_store_key,
         }
-        cmd = (MPC_BINARY_PATH, 'start', '--home-dir', self.home_dir)
+        cmd = (MPC_BINARY_PATH, "start", "--home-dir", self.home_dir)
         self.near_node.run_cmd(cmd=cmd, extra_env=extra_env)
 
     def kill(self, gentle=True):
@@ -120,11 +121,11 @@ class MpcNode(NearAccount):
     def wait_for_connection_count(self, awaited_count):
         started = time.time()
         while True:
-            assert time.time(
-            ) - started < TIMEOUT, "Waiting for connection count"
+            assert time.time() - started < TIMEOUT, "Waiting for connection count"
             try:
                 conns = self.metrics.get_metric_all_values(
-                    "mpc_network_live_connections")
+                    "mpc_network_live_connections"
+                )
                 print("mpc_network_live_connections", conns)
                 connection_count = int(sum([int(kv[1]) for kv in conns]))
                 if connection_count == awaited_count:
@@ -135,7 +136,11 @@ class MpcNode(NearAccount):
 
     def reserve_key_event_attempt(self, epoch_id, domain_id, attempt_id):
         file_path = pathlib.Path(self.home_dir)
-        file_path = file_path / "temporary_keys" / f"started_{epoch_id}_{domain_id}_{attempt_id}"
+        file_path = (
+            file_path
+            / "temporary_keys"
+            / f"started_{epoch_id}_{domain_id}_{attempt_id}"
+        )
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.touch()
 

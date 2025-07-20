@@ -5,8 +5,17 @@ from enum import Enum
 from borsh_construct import Vec, U8, CStruct, U64, Option, U32
 from .constants import MPC_REPO_DIR
 
-COMPILED_CONTRACT_PATH = MPC_REPO_DIR / 'libs' / 'chain-signatures' / 'res' / 'mpc_contract.wasm'
-MIGRATE_CURRENT_CONTRACT_PATH = MPC_REPO_DIR / 'pytest' / 'tests' / 'test_contracts' / 'migration' / 'migration_contract.wasm'
+COMPILED_CONTRACT_PATH = (
+    MPC_REPO_DIR / "libs" / "chain-signatures" / "res" / "mpc_contract.wasm"
+)
+MIGRATE_CURRENT_CONTRACT_PATH = (
+    MPC_REPO_DIR
+    / "pytest"
+    / "tests"
+    / "test_contracts"
+    / "migration"
+    / "migration_contract.wasm"
+)
 TESTNET_ACCOUNT_ID = "v1.signer-prod.testnet"
 MAINNET_ACCOUNT_ID = "v1.signer"
 
@@ -19,8 +28,8 @@ def build_view_code_request(account_id: str) -> dict:
         "params": {
             "request_type": "view_code",
             "finality": "final",
-            "account_id": account_id
-        }
+            "account_id": account_id,
+        },
     }
 
 
@@ -67,23 +76,24 @@ class ConfigV2:
         self.request_timeout_blocks = request_timeout_blocks
 
     def dump_json(self):
-        return json.dumps({
-            "request_timeout_blocks":
-            self.max_num_requests_to_remove,
-            "key_event_timeout_blocks":
-            self.request_timeout_blocks
-        })
+        return json.dumps(
+            {
+                "request_timeout_blocks": self.max_num_requests_to_remove,
+                "key_event_timeout_blocks": self.request_timeout_blocks,
+            }
+        )
 
     def get(self):
         return {
             "max_num_requests_to_remove": self.max_num_requests_to_remove,
-            "request_timeout_blocks": self.request_timeout_blocks
+            "request_timeout_blocks": self.request_timeout_blocks,
         }
 
 
 ConfigV2Borsh = CStruct("key_event_timeout_blocks" / U64)
-ProposeUpdateArgsV2 = CStruct("code" / Option(Vec(U8)),
-                              "config" / Option(ConfigV2Borsh))
+ProposeUpdateArgsV2 = CStruct(
+    "code" / Option(Vec(U8)), "config" / Option(ConfigV2Borsh)
+)
 
 
 class UpdateArgsV2:
@@ -94,12 +104,12 @@ class UpdateArgsV2:
         self._code = None
 
     def borsh_serialize(self):
-        return ProposeUpdateArgsV2.build({
-            'code':
-            self.code(),
-            'config':
-            self.config.get() if self.config is not None else None
-        })
+        return ProposeUpdateArgsV2.build(
+            {
+                "code": self.code(),
+                "config": self.config.get() if self.config is not None else None,
+            }
+        )
 
     def code(self):
         if self.code_path == None:

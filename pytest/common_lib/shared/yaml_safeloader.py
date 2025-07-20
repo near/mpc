@@ -10,4 +10,4 @@ class SafeLoaderIgnoreUnknown(yaml.SafeLoader):
     pass
 
 
-SafeLoaderIgnoreUnknown.add_multi_constructor('!', ignore_unknown)
+SafeLoaderIgnoreUnknown.add_multi_constructor("!", ignore_unknown)

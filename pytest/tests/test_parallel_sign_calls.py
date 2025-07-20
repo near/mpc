@@ -1,4 +1,4 @@
-#/usr/bin/env python3
+# /usr/bin/env python3
 """
 Starts 2 near validators and 2 mpc nodes.
 Deploys mpc contract.
@@ -22,7 +22,10 @@ def load_parallel_sign_contract() -> bytearray:
     """
     returns test contract for parallel sign
     """
-    path = constants.MPC_REPO_DIR / 'pytest/tests/test_contracts/parallel/res/contract.wasm'
+    path = (
+        constants.MPC_REPO_DIR
+        / "pytest/tests/test_contracts/parallel/res/contract.wasm"
+    )
     return load_binary_file(path)
 
 
@@ -38,48 +41,51 @@ def test_parallel_sign_calls(num_parallel_signatures):
 
     # call `parallel_sign` and verify that it returns successfully
     res = cluster.make_function_call_on_secondary_contract(
-        function_name='make_parallel_sign_calls',
+        function_name="make_parallel_sign_calls",
         args={
-            'target_contract': cluster.mpc_contract_account(),
-            'ecdsa_calls_by_domain': {
-                0: int(num_parallel_signatures / 2)
-            },
-            'eddsa_calls_by_domain': {
-                1: int(num_parallel_signatures / 2)
-            },
-            'seed': 23,
-        })
+            "target_contract": cluster.mpc_contract_account(),
+            "ecdsa_calls_by_domain": {0: int(num_parallel_signatures / 2)},
+            "eddsa_calls_by_domain": {1: int(num_parallel_signatures / 2)},
+            "seed": 23,
+        },
+    )
 
     # check the return value
-    encoded_value = res['result']['status']['SuccessValue']
+    encoded_value = res["result"]["status"]["SuccessValue"]
     decoded_value = base64.b64decode(encoded_value).decode("utf-8")
     assert int(decoded_value) == num_parallel_signatures
 
     # check metrics to make sure signature requests are handled properly.
     started = time.time()
     while True:
-        assert time.time(
-        ) - started < constants.SHORT_TIMEOUT, "Waiting for metrics"
+        assert time.time() - started < constants.SHORT_TIMEOUT, "Waiting for metrics"
         metrics_good = True
         for i in range(len(cluster.mpc_nodes)):
             queue_size = cluster.get_int_metric_value_for_node(
-                "mpc_pending_signatures_queue_size", i)
+                "mpc_pending_signatures_queue_size", i
+            )
             requests_indexed = cluster.get_int_metric_value_for_node(
-                "mpc_pending_signatures_queue_requests_indexed", i)
+                "mpc_pending_signatures_queue_requests_indexed", i
+            )
             responses_indexed = cluster.get_int_metric_value_for_node(
-                "mpc_pending_signatures_queue_responses_indexed", i)
+                "mpc_pending_signatures_queue_responses_indexed", i
+            )
             matching_responses_indexed = cluster.get_int_metric_value_for_node(
-                "mpc_pending_signatures_queue_matching_responses_indexed", i)
+                "mpc_pending_signatures_queue_matching_responses_indexed", i
+            )
             print(
                 f"Node {i}: queue_size={queue_size}, requests_indexed={requests_indexed}, responses_indexed={responses_indexed}, matching_responses_indexed={matching_responses_indexed}"
             )
-            if not (queue_size == 0
-                    and requests_indexed == num_parallel_signatures
-                    and responses_indexed == num_parallel_signatures
-                    and matching_responses_indexed == num_parallel_signatures):
+            if not (
+                queue_size == 0
+                and requests_indexed == num_parallel_signatures
+                and responses_indexed == num_parallel_signatures
+                and matching_responses_indexed == num_parallel_signatures
+            ):
                 metrics_good = False
         led_signatures = cluster.get_int_metric_value(
-            "mpc_pending_signatures_queue_attempts_generated")
+            "mpc_pending_signatures_queue_attempts_generated"
+        )
         print(f"led_signatures={led_signatures}")
         if sum(led_signatures) != num_parallel_signatures:
             metrics_good = False
