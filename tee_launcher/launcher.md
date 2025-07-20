@@ -42,6 +42,8 @@ LAUNCHER_REGISTRY=registry.hub.docker.com
 
 
 ## Reproducible builds
+from: tee_launcher folder run:
+docker build -t barakeinavnear/launcher:latest -f development/Dockerfile.launcher .
 
 - [Makefile](Makefile): use this to build the mpc binary in a reproducible manner
 - [deployment/Dockerfile-gcp](deployment/Dockerfile-gcp) Dockerfile with all dependencies pinned to specific versions, e.g., other Dockerfile via sha256 digests and Linux distribution packages via explicit version strings
