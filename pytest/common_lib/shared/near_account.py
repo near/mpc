@@ -14,10 +14,11 @@ from transaction import sign_function_call_tx
 
 
 def assert_txn_success(res):
-    assert 'result' in res, json.dumps(res, indent=1)
-    assert 'status' in res['result'], json.dumps(res['result'], indent=1)
-    assert 'SuccessValue' in res['result']['status'], json.dumps(
-        res['result']['status'])
+    assert "result" in res, json.dumps(res, indent=1)
+    assert "status" in res["result"], json.dumps(res["result"], indent=1)
+    assert "SuccessValue" in res["result"]["status"], json.dumps(
+        res["result"]["status"]
+    )
 
 
 class NearAccount:
@@ -80,9 +81,15 @@ class NearAccount:
     ):
         last_block_hash = self.last_block_hash()
         (key, nonce) = self.get_key_and_nonce()
-        encoded_args = args if type(args) == bytes else json.dumps(
-            args).encode('utf-8')
-        tx = sign_function_call_tx(key, target_contract, function_name,
-                                   encoded_args, gas, deposit,
-                                   nonce + nonce_offset, last_block_hash)
+        encoded_args = args if type(args) == bytes else json.dumps(args).encode("utf-8")
+        tx = sign_function_call_tx(
+            key,
+            target_contract,
+            function_name,
+            encoded_args,
+            gas,
+            deposit,
+            nonce + nonce_offset,
+            last_block_hash,
+        )
         return tx

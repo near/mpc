@@ -30,6 +30,17 @@ This repository uses `rust-toolchain.toml` files, as some code sections may requ
 
 For more information, refer to the [Rustup book on overrides](https://rust-lang.github.io/rustup/overrides.html).
 
+### Releases
+
+This project follows a standard release process with semantic versioning. Each release includes both the MPC node binary and the chain signatures contract as a single bundle.
+
+For detailed information about our release process, compatibility guarantees, and procedures, see [RELEASES.md](RELEASES.md).
+
+**Key Release Principles:**
+- Releases are created from the `main` branch using semantic versioning.
+- Minor versions maintain backward compatibility with previous node versions.
+- Major versions ensure contract compatibility with the previous major version.
+
 ### Contributions
 
 The NEAR MPC Node is actively maintained by **[NEAR One](https://github.com/Near-One)** and **[HOT Labs](https://github.com/hot-dao)** <img src="https://storage.herewallet.app/ft/1:hot.png" alt="HOT Labs" height="20" style="position: relative; top: 10px;"/>, with valuable contributions from the broader open-source community. 

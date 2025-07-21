@@ -1,6 +1,6 @@
 # conftest.py
 """
-    Fixtures for pytest
+Fixtures for pytest
 """
 import pytest
 import atexit
@@ -45,26 +45,46 @@ def compile_contract():
     This ensures that the pytests will always use the source code inside chain-signatures/contract.
     """
     print("compiling contract")
-    git_repo = git.Repo('.', search_parent_directories=True)
+    git_repo = git.Repo(".", search_parent_directories=True)
     git_root = Path(git_repo.git.rev_parse("--show-toplevel"))
     chain_signatures = git_root / "libs" / "chain-signatures"
 
-    subprocess.run([
-        "cargo", "build", "-p", "mpc-contract",
-        "--target=wasm32-unknown-unknown", "--release"
-    ],
-                   cwd=chain_signatures,
-                   check=True,
-                   stdout=sys.stdout,
-                   stderr=sys.stderr)
-    
-    subprocess.run(["wasm-opt", "-Oz", "target/wasm32-unknown-unknown/release/mpc_contract.wasm", "-o", "target/wasm32-unknown-unknown/release/mpc_contract.wasm"],
-                   cwd=chain_signatures,
-                   check=True,
-                   stdout=sys.stdout,
-                   stderr=sys.stderr)
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "-p",
+            "mpc-contract",
+            "--target=wasm32-unknown-unknown",
+            "--release",
+        ],
+        cwd=chain_signatures,
+        check=True,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
 
-    compiled_contract = chain_signatures / "target" / "wasm32-unknown-unknown" / "release" / "mpc_contract.wasm"
-    os.makedirs(os.path.dirname(contracts.COMPILED_CONTRACT_PATH),
-                exist_ok=True)
+    subprocess.run(
+        [
+            "wasm-opt",
+            "-Oz",
+            "target/wasm32-unknown-unknown/release/mpc_contract.wasm",
+            "-o",
+            "target/wasm32-unknown-unknown/release/mpc_contract.wasm",
+            "--enable-bulk-memory",
+        ],
+        cwd=chain_signatures,
+        check=True,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+
+    compiled_contract = (
+        chain_signatures
+        / "target"
+        / "wasm32-unknown-unknown"
+        / "release"
+        / "mpc_contract.wasm"
+    )
+    os.makedirs(os.path.dirname(contracts.COMPILED_CONTRACT_PATH), exist_ok=True)
     shutil.copy(compiled_contract, contracts.COMPILED_CONTRACT_PATH)

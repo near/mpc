@@ -1,10 +1,10 @@
 use crate::tests::TestGenerators;
-use cait_sith::ecdsa::presign::PresignArguments;
-use cait_sith::protocol::{Participant, Protocol};
 use k256::elliptic_curve::PrimeField;
 use k256::{Scalar, Secp256k1};
 use serde::Serialize;
 use std::collections::VecDeque;
+use threshold_signatures::ecdsa::presign::PresignArguments;
+use threshold_signatures::protocol::{Participant, Protocol};
 
 #[derive(Debug, Serialize)]
 pub struct NetworkResearchReport {
@@ -57,8 +57,8 @@ where
             }
             loop {
                 match protocols[i].poke().unwrap() {
-                    cait_sith::protocol::Action::Wait => break,
-                    cait_sith::protocol::Action::SendMany(vec) => {
+                    threshold_signatures::protocol::Action::Wait => break,
+                    threshold_signatures::protocol::Action::SendMany(vec) => {
                         for j in 0..protocols.len() {
                             if i == j {
                                 continue;
@@ -66,10 +66,10 @@ where
                             p2p_messages_to_send[i][j].push(vec.clone());
                         }
                     }
-                    cait_sith::protocol::Action::SendPrivate(participant, vec) => {
+                    threshold_signatures::protocol::Action::SendPrivate(participant, vec) => {
                         p2p_messages_to_send[i][u32::from(participant) as usize].push(vec);
                     }
-                    cait_sith::protocol::Action::Return(_) => {
+                    threshold_signatures::protocol::Action::Return(_) => {
                         completed[i] = true;
                         break;
                     }
@@ -123,8 +123,8 @@ fn run_protocol_and_generate_network_report_for_worst_case(
                 let mut made_progress = false;
                 loop {
                     match protocols[i].poke().unwrap() {
-                        cait_sith::protocol::Action::Wait => break,
-                        cait_sith::protocol::Action::SendMany(vec) => {
+                        threshold_signatures::protocol::Action::Wait => break,
+                        threshold_signatures::protocol::Action::SendMany(vec) => {
                             for j in 0..protocols.len() {
                                 if i == j {
                                     continue;
@@ -133,11 +133,11 @@ fn run_protocol_and_generate_network_report_for_worst_case(
                                 made_progress = true;
                             }
                         }
-                        cait_sith::protocol::Action::SendPrivate(participant, vec) => {
+                        threshold_signatures::protocol::Action::SendPrivate(participant, vec) => {
                             p2p_messages_to_send[i][u32::from(participant) as usize].push(vec);
                             made_progress = true;
                         }
-                        cait_sith::protocol::Action::Return(_) => {
+                        threshold_signatures::protocol::Action::Return(_) => {
                             completed[i] = true;
                             made_progress = true;
                             break;
@@ -192,7 +192,7 @@ fn triple_network_research_best_case() {
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            cait_sith::ecdsa::triples::generate_triple_many::<Secp256k1, 4>(
+            threshold_signatures::ecdsa::triples::generate_triple_many::<Secp256k1, 4>(
                 &participants,
                 participants[i],
                 THRESHOLD,
@@ -221,7 +221,7 @@ fn triple_network_research_worst_case() {
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            cait_sith::ecdsa::triples::generate_triple_many::<Secp256k1, 4>(
+            threshold_signatures::ecdsa::triples::generate_triple_many::<Secp256k1, 4>(
                 &participants,
                 participants[i],
                 THRESHOLD,
@@ -256,7 +256,7 @@ fn presignature_network_research_best_case() {
 
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            cait_sith::ecdsa::presign::presign(
+            threshold_signatures::ecdsa::presign::presign(
                 &participants,
                 participants[i],
                 &participants,
@@ -297,7 +297,7 @@ fn signature_network_research_best_case() {
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            cait_sith::ecdsa::sign::sign(
+            threshold_signatures::ecdsa::sign::sign(
                 &participants,
                 participants[i],
                 keygens[&participants[i]]

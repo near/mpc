@@ -114,16 +114,25 @@ async fn third_party_licenses() -> Html<&'static str> {
 #[derive(Clone, Serialize)]
 pub struct StaticWebData {
     pub near_signer_public_key: near_crypto::PublicKey,
+    pub near_p2p_public_key: near_crypto::PublicKey,
     pub near_responder_public_keys: Vec<near_crypto::PublicKey>,
     pub tee_participant_info: Option<TeeParticipantInfo>,
 }
 
-fn get_public_keys(
-    secrets_config: &SecretsConfig,
-) -> (near_crypto::PublicKey, Vec<near_crypto::PublicKey>) {
+struct PublicKeys {
+    near_signer_public_key: near_crypto::PublicKey,
+    near_p2p_public_key: near_crypto::PublicKey,
+    near_responder_public_keys: Vec<near_crypto::PublicKey>,
+}
+
+fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
     let near_signer_public_key = secrets_config
         .persistent_secrets
         .near_signer_key
+        .public_key();
+    let near_p2p_public_key = secrets_config
+        .persistent_secrets
+        .p2p_private_key
         .public_key();
     let near_responder_public_keys = secrets_config
         .persistent_secrets
@@ -131,15 +140,20 @@ fn get_public_keys(
         .iter()
         .map(|x| x.public_key())
         .collect();
-    (near_signer_public_key, near_responder_public_keys)
+    PublicKeys {
+        near_signer_public_key,
+        near_p2p_public_key,
+        near_responder_public_keys,
+    }
 }
 
 impl StaticWebData {
     pub fn new(value: &SecretsConfig, tee_participant_info: Option<TeeParticipantInfo>) -> Self {
-        let (near_signer_public_key, near_responder_public_keys) = get_public_keys(value);
+        let public_keys = get_public_keys(value);
         Self {
-            near_signer_public_key,
-            near_responder_public_keys,
+            near_signer_public_key: public_keys.near_signer_public_key,
+            near_p2p_public_key: public_keys.near_p2p_public_key,
+            near_responder_public_keys: public_keys.near_responder_public_keys,
             tee_participant_info,
         }
     }
@@ -164,6 +178,12 @@ pub async fn start_web_server(
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 
+    tracing::info!(
+        host = %config.host,
+        port = %config.port,
+        "Attempting to bind web server to host",
+    );
+
     let router = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics))
         .route("/debug/tasks", axum::routing::get(debug_tasks))
@@ -180,9 +200,18 @@ pub async fn start_web_server(
             static_web_data,
         });
 
-    let tcp_listener = TcpListener::bind(&format!("{}:{}", config.host, config.port)).await?;
+    let bind_address = format!("{}:{}", config.host, config.port);
+
+    tracing::info!(address = %bind_address,"Binding to address");
+
+    let tcp_listener = TcpListener::bind(&bind_address).await?;
+
+    tracing::info!(address = %bind_address,"Successfully bound to address");
+
     Ok(async move {
+        tracing::info!("Starting to serve requests...");
         serve(tcp_listener, router).await?;
+        tracing::info!("Server stopped successfully.");
         anyhow::Ok(())
     }
     .boxed())

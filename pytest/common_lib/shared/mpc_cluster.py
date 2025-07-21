@@ -46,8 +46,7 @@ def extract_tx_costs(res):
     returns `total_gas_used`, `num_receipts`
     """
     # Extract the gas burnt at transaction level
-    total_gas_used = res["result"]["transaction_outcome"]["outcome"][
-        "gas_burnt"]
+    total_gas_used = res["result"]["transaction_outcome"]["outcome"]["gas_burnt"]
 
     # Add the gas burnt for each receipt
     num_receipts = 0
@@ -85,9 +84,13 @@ class MpcCluster:
 
     def get_voters(self):
         voters = [
-            node for node in self.mpc_nodes if node.is_running and (
+            node
+            for node in self.mpc_nodes
+            if node.is_running
+            and (
                 node.status == MpcNode.NodeStatus.OLD_PARTICIPANT
-                or node.status == MpcNode.NodeStatus.PARTICIPANT)
+                or node.status == MpcNode.NodeStatus.PARTICIPANT
+            )
         ]
         print("Voters:", " | ".join([node.print() for node in voters]))
         return voters
@@ -97,13 +100,11 @@ class MpcCluster:
 
     def get_int_metric_value(self, metric_name) -> List[Optional[int]]:
         return [
-            node.metrics.get_int_metric_value(metric_name)
-            for node in self.mpc_nodes
+            node.metrics.get_int_metric_value(metric_name) for node in self.mpc_nodes
         ]
 
     def get_int_metric_value_for_node(self, metric_name, node_index):
-        return self.mpc_nodes[node_index].metrics.get_int_metric_value(
-            metric_name)
+        return self.mpc_nodes[node_index].metrics.get_int_metric_value(metric_name)
 
     """
     Deploy the MPC contract.
@@ -131,13 +132,16 @@ class MpcCluster:
             self.secondary_contract_node.account_id(),
             function_name,
             args,
-            gas=300 * TGAS)
+            gas=300 * TGAS,
+        )
         return self.secondary_contract_node.near_node.send_tx_and_wait(tx, 20)
 
-    def init_cluster(self,
-                     participants: List[MpcNode],
-                     threshold: int,
-                     domains=['Secp256k1', 'Ed25519']):
+    def init_cluster(
+        self,
+        participants: List[MpcNode],
+        threshold: int,
+        domains=["Secp256k1", "Ed25519"],
+    ):
         """
         initializes the contract with `participants` and `threshold`.
         Adds `Secp256k1` to the contract domains.
@@ -188,27 +192,33 @@ class MpcCluster:
         self.nodes = nodes
         if assert_contract:
             contract_state = self.contract_state()
-            assert len(contract_state.protocol_state.parameters.participants.
-                       participants) == len(self.mpc_nodes)
+            assert len(
+                contract_state.protocol_state.parameters.participants.participants
+            ) == len(self.mpc_nodes)
             for p in self.mpc_nodes:
                 assert contract_state.protocol_state.parameters.participants.is_participant(
-                    p.account_id())
+                    p.account_id()
+                )
 
         self.print_cluster_status()
 
     def make_threshold_parameters(self, threshold: int):
         return {
-            'threshold': threshold,
-            'participants': {
-                'next_id':
-                self.next_participant_id,
-                'participants': [[
-                    node.account_id(), node.participant_id, {
-                        'sign_pk': node.p2p_public_key,
-                        'url': node.url,
-                    }
-                ] for node in self.mpc_nodes]
-            }
+            "threshold": threshold,
+            "participants": {
+                "next_id": self.next_participant_id,
+                "participants": [
+                    [
+                        node.account_id(),
+                        node.participant_id,
+                        {
+                            "sign_pk": node.p2p_public_key,
+                            "url": node.url,
+                        },
+                    ]
+                    for node in self.mpc_nodes
+                ],
+            },
         }
 
     def init_contract(self, threshold, additional_init_args=None):
@@ -216,13 +226,12 @@ class MpcCluster:
         Initializes the contract by calling init. This needs to be done before
         the contract is usable.
         """
-        args = {'parameters': self.make_threshold_parameters(threshold)}
+        args = {"parameters": self.make_threshold_parameters(threshold)}
         if additional_init_args is not None:
             args.update(additional_init_args)
-        tx = self.contract_node.sign_tx(self.contract_node.account_id(),
-                                        'init', args)
+        tx = self.contract_node.sign_tx(self.contract_node.account_id(), "init", args)
         self.contract_node.send_txn_and_check_success(tx)
-        assert self.wait_for_state('Running'), "expected running state"
+        assert self.wait_for_state("Running"), "expected running state"
 
     def wait_for_state(self, state: ProtocolState):
         """
@@ -239,34 +248,37 @@ class MpcCluster:
         self.contract_state().print()
         return n < n_attempts
 
-    def add_domains(self,
-                    signature_schemes: List[SignatureScheme],
-                    wait_for_running=True,
-                    ignore_vote_errors=False):
+    def add_domains(
+        self,
+        signature_schemes: List[SignatureScheme],
+        wait_for_running=True,
+        ignore_vote_errors=False,
+    ):
         print(
             f"\033[91m(Vote Domains) Adding domains: \033[93m{signature_schemes}\033[0m"
         )
         state = self.contract_state()
         state.print()
-        assert state.is_state('Running'), "require running state"
+        assert state.is_state("Running"), "require running state"
         domains_to_add = []
         next_domain_id = state.protocol_state.next_domain_id()
         for scheme in signature_schemes:
-            domains_to_add.append({
-                'id': next_domain_id,
-                'scheme': scheme,
-            })
+            domains_to_add.append(
+                {
+                    "id": next_domain_id,
+                    "scheme": scheme,
+                }
+            )
             next_domain_id += 1
         args = {
-            'domains': domains_to_add,
+            "domains": domains_to_add,
         }
 
         for node in self.get_voters():
             print(f"{node.print()} voting to add domain(s)")
-            tx = node.sign_tx(self.mpc_contract_account(),
-                              'vote_add_domains',
-                              args,
-                              nonce_offset=1)
+            tx = node.sign_tx(
+                self.mpc_contract_account(), "vote_add_domains", args, nonce_offset=1
+            )
             try:
                 node.send_txn_and_check_success(tx)
             except Exception as err:
@@ -274,47 +286,48 @@ class MpcCluster:
                     continue
                 else:
                     assert False, err
-        assert self.wait_for_state('Initializing'), "failed to initialize"
+        assert self.wait_for_state("Initializing"), "failed to initialize"
         if wait_for_running:
-            assert self.wait_for_state('Running'), "failed to run"
+            assert self.wait_for_state("Running"), "failed to run"
 
-    def do_resharing(self,
-                     new_participants: List[MpcNode],
-                     new_threshold: int,
-                     prospective_epoch_id: int,
-                     wait_for_running=True):
+    def do_resharing(
+        self,
+        new_participants: List[MpcNode],
+        new_threshold: int,
+        prospective_epoch_id: int,
+        wait_for_running=True,
+    ):
         self.define_candidate_set(new_participants)
         print(
             f"\033[91m(Vote Resharing) Voting to reshare with new threshold: \033[93m{new_threshold}\033[0m"
         )
         args = {
-            'prospective_epoch_id': prospective_epoch_id,
-            'proposal': self.make_threshold_parameters(new_threshold)
+            "prospective_epoch_id": prospective_epoch_id,
+            "proposal": self.make_threshold_parameters(new_threshold),
         }
         state = self.contract_state()
-        assert state.is_state('Running'), "Require running state"
+        assert state.is_state("Running"), "Require running state"
         for node in self.get_voters():
-            tx = node.sign_tx(self.mpc_contract_account(),
-                              'vote_new_parameters', args)
+            tx = node.sign_tx(self.mpc_contract_account(), "vote_new_parameters", args)
             node.send_txn_and_check_success(tx)
         for node in new_participants:
             if node not in self.get_voters():
-                tx = node.sign_tx(self.mpc_contract_account(),
-                                  'vote_new_parameters', args)
+                tx = node.sign_tx(
+                    self.mpc_contract_account(), "vote_new_parameters", args
+                )
                 node.send_txn_and_check_success(tx)
 
-        assert self.wait_for_state('Resharing'), "failed to start resharing"
+        assert self.wait_for_state("Resharing"), "failed to start resharing"
         if wait_for_running:
-            assert self.wait_for_state(
-                'Running'), "failed to conclude resharing"
+            assert self.wait_for_state("Running"), "failed to conclude resharing"
             self.update_participant_status()
 
     def get_contract_state(self):
         cn = self.contract_node
-        txn = cn.sign_tx(self.mpc_contract_account(), 'state', {})
+        txn = cn.sign_tx(self.mpc_contract_account(), "state", {})
         res = cn.send_txn_and_check_success(txn)
-        assert 'error' not in res, res
-        res = res['result']['status']['SuccessValue']
+        assert "error" not in res, res
+        res = res["result"]["status"]["SuccessValue"]
         res = base64.b64decode(res)
         res = json.loads(res)
         return res
@@ -322,11 +335,13 @@ class MpcCluster:
     def contract_state(self):
         return ContractState(self.get_contract_state())
 
-    def make_sign_request_txns(self,
-                               requests_per_domains: int,
-                               nonce_offset: int = 1,
-                               add_gas: Optional[int] = None,
-                               add_deposit: Optional[int] = None):
+    def make_sign_request_txns(
+        self,
+        requests_per_domains: int,
+        nonce_offset: int = 1,
+        add_gas: Optional[int] = None,
+        add_deposit: Optional[int] = None,
+    ):
         """
         Creates signature transactions for each domain and request count pair.
 
@@ -347,57 +362,59 @@ class MpcCluster:
 
                 tx = self.sign_request_node.sign_tx(
                     self.mpc_contract_account(),
-                    'sign',
+                    "sign",
                     sign_args,
                     nonce_offset=nonce_offset,
                     deposit=deposit,
-                    gas=gas)
+                    gas=gas,
+                )
                 txs.append(tx)
         return txs
 
     def send_sign_request_txns(self, txs):
-        print(
-            f"\033[91mSending \033[93m{len(txs)}\033[91m sign requests.\033[0m"
-        )
+        print(f"\033[91mSending \033[93m{len(txs)}\033[91m sign requests.\033[0m")
 
         def send_tx(tx):
-            return self.sign_request_node.send_tx(tx)['result']
+            return self.sign_request_node.send_tx(tx)["result"]
 
         with ThreadPoolExecutor() as executor:
             tx_hashes = list(executor.map(send_tx, txs))
         return tx_hashes
 
     def send_and_await_signature_requests(
-            self,
-            requests_per_domains: int,
-            sig_verification=signature.assert_signature_success,
-            add_gas: Optional[int] = None,
-            add_deposit: Optional[int] = None):
+        self,
+        requests_per_domains: int,
+        sig_verification=signature.assert_signature_success,
+        add_gas: Optional[int] = None,
+        add_deposit: Optional[int] = None,
+    ):
         """
-            Sends signature requests, waits for the results and validates them with `sig_verification`.
+        Sends signature requests, waits for the results and validates them with `sig_verification`.
 
-            Raises:
-                AssertionError:
-                    - If the indexers fail to observe the signature requests before `constants.TIMEOUT` is reached.
-                    - If `sig_verification` raises an AssertionError.
+        Raises:
+            AssertionError:
+                - If the indexers fail to observe the signature requests before `constants.TIMEOUT` is reached.
+                - If `sig_verification` raises an AssertionError.
         """
         tx_hashes, _ = self.generate_and_send_signature_requests(
-            requests_per_domains, add_gas, add_deposit)
+            requests_per_domains, add_gas, add_deposit
+        )
 
         results = self.await_txs_responses(tx_hashes)
         verify_txs(results, sig_verification)
 
     def generate_and_send_signature_requests(
-            self,
-            requests_per_domains: int,
-            add_gas: Optional[int] = None,
-            add_deposit: Optional[int] = None):
+        self,
+        requests_per_domains: int,
+        add_gas: Optional[int] = None,
+        add_deposit: Optional[int] = None,
+    ):
         """
-            Sends signature requests and returns the transactions and the timestamp they were sent.
+        Sends signature requests and returns the transactions and the timestamp they were sent.
         """
-        txs = self.make_sign_request_txns(requests_per_domains,
-                                          add_gas=add_gas,
-                                          add_deposit=add_deposit)
+        txs = self.make_sign_request_txns(
+            requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
+        )
         return self.send_sign_request_txns(txs), time.time()
 
     def observe_signature_requests(self, num_requests, started, tx_sent):
@@ -409,7 +426,8 @@ class MpcCluster:
             assert time.time() - started < TIMEOUT, "Waiting for mpc indexers"
             try:
                 indexed_request_count = self.get_int_metric_value(
-                    "mpc_num_signature_requests_indexed")
+                    "mpc_num_signature_requests_indexed"
+                )
                 print("num_signature_requests_indexed:", indexed_request_count)
                 if all(x and x == num_requests for x in indexed_request_count):
                     tx_indexed = time.time()
@@ -437,45 +455,53 @@ class MpcCluster:
 
     def propose_update(self, args):
         participant = self.mpc_nodes[0]
-        tx = participant.sign_tx(self.mpc_contract_account(),
-                                 'propose_update',
-                                 args,
-                                 deposit=9624860000000000000000000)
+        tx = participant.sign_tx(
+            self.mpc_contract_account(),
+            "propose_update",
+            args,
+            deposit=9753060000000000000000000,
+        )
         res = participant.send_txn_and_check_success(tx, timeout=30)
         return int(
-            base64.b64decode(res['result']['status']['SuccessValue']).decode(
-                'utf-8').strip(""))
+            base64.b64decode(res["result"]["status"]["SuccessValue"])
+            .decode("utf-8")
+            .strip("")
+        )
 
-    def get_deployed_contract_hash(self, finality='optimistic'):
+    def get_deployed_contract_hash(self, finality="optimistic"):
         account_id = self.mpc_contract_account()
         query = {
             "request_type": "view_code",
             "account_id": account_id,
-            "finality": finality
+            "finality": finality,
         }
-        response = self.contract_node.near_node.json_rpc('query', query)
-        assert 'error' not in response, f"Error fetching contract code: {response['error']}"
-        code_b64 = response.get('result', {}).get('code_base64', '')
+        response = self.contract_node.near_node.json_rpc("query", query)
+        assert (
+            "error" not in response
+        ), f"Error fetching contract code: {response['error']}"
+        code_b64 = response.get("result", {}).get("code_base64", "")
         contract_code = base64.b64decode(code_b64)
         sha256_hash = hashlib.sha256(contract_code).hexdigest()
         return sha256_hash
 
     def vote_update(self, node, update_id):
-        vote_update_args = {'id': update_id}
-        tx = node.sign_tx(self.mpc_contract_account(), 'vote_update',
-                          vote_update_args)
+        vote_update_args = {"id": update_id}
+        tx = node.sign_tx(self.mpc_contract_account(), "vote_update", vote_update_args)
         return node.send_txn_and_check_success(tx)
 
     def assert_is_deployed(self, contract):
         hash_expected = hashlib.sha256(contract).hexdigest()
         hash_deployed = self.get_deployed_contract_hash()
-        assert (hash_expected == hash_deployed), "invalid contract deployed"
+        assert hash_expected == hash_deployed, "invalid contract deployed"
 
     def get_config(self, node_id=0):
         node = self.mpc_nodes[node_id]
-        tx = node.sign_tx(self.mpc_contract_account(), 'config', {})
+        tx = node.sign_tx(self.mpc_contract_account(), "config", {})
         res = node.send_txn_and_check_success(tx)
         return json.dumps(
             json.loads(
-                base64.b64decode(
-                    res['result']['status']['SuccessValue']).decode('utf-8')))
+                base64.b64decode(res["result"]["status"]["SuccessValue"]).decode(
+                    "utf-8"
+                )
+            )
+        )

@@ -5,14 +5,14 @@ use crate::providers::eddsa::kdf::derive_keygen_output;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::sign_request::SignatureId;
 use anyhow::Context;
-use cait_sith::eddsa::sign::sign;
-use cait_sith::eddsa::KeygenOutput;
-use cait_sith::frost_ed25519::Signature;
-use cait_sith::frost_ed25519::VerifyingKey;
-use cait_sith::protocol::Participant;
 use mpc_contract::primitives::signature::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
+use threshold_signatures::eddsa::sign::sign;
+use threshold_signatures::eddsa::KeygenOutput;
+use threshold_signatures::frost_ed25519::Signature;
+use threshold_signatures::frost_ed25519::VerifyingKey;
+use threshold_signatures::protocol::Participant;
 use tokio::time::timeout;
 
 impl EddsaSignatureProvider {

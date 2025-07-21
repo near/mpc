@@ -2,11 +2,11 @@ use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::EcdsaTaskId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
-use cait_sith::ecdsa::triples::TripleGenerationOutput;
-use cait_sith::protocol::Participant;
 use k256::Secp256k1;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
+use threshold_signatures::ecdsa::triples::TripleGenerationOutput;
+use threshold_signatures::protocol::Participant;
 
 /// A unique ID representing a resource (e.g., a triple/presignature/signature, or a channel).
 /// The ID shall be globally unique across all participants and across time.

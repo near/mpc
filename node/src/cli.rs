@@ -113,6 +113,8 @@ pub struct InitConfigArgs {
     pub download_genesis_url: Option<String>,
     #[arg(long)]
     pub donwload_genesis_records_url: Option<String>,
+    #[arg(long)]
+    pub boot_nodes: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -210,6 +212,8 @@ impl StartCmd {
             .enable_all()
             .worker_threads(1)
             .build()?;
+
+        let _tokio_enter_guard = root_runtime.enter();
 
         // Currently, we only trigger graceful shutdowns from TEE logic,
         // hence we need to disable the `unused_variables` lint when TEE is disabled.
@@ -375,7 +379,7 @@ impl Cli {
                     .map(AsRef::as_ref),
                 Some(near_config_utils::DownloadConfigType::RPC),
                 config.download_config_url.as_ref().map(AsRef::as_ref),
-                None,
+                config.boot_nodes.as_ref().map(AsRef::as_ref),
                 None,
             ),
             CliCommand::ImportKeyshare(cmd) => cmd.run().await,
