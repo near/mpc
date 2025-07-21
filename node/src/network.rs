@@ -936,16 +936,18 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::computation::MpcLeaderCentricComputation;
-    use super::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::network::testing::run_test_clients;
+    use super::{MeshNetworkClient, NetworkTaskChannel, NetworkTaskChannelManager};
+    use crate::network::indexer_heights::IndexerHeightTracker;
+    use crate::network::testing::{new_test_transports, run_test_clients};
     use crate::primitives::{MpcTaskId, UniqueId};
     use crate::providers::EcdsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
-    use std::collections::HashSet;
-    use std::sync::Arc;
+    use std::collections::{HashMap, HashSet};
+    use std::sync::atomic::AtomicU64;
+    use std::sync::{Arc, Mutex};
     use tokio::sync::mpsc;
 
     /// Just some big prime number
@@ -1090,6 +1092,30 @@ mod tests {
     #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
     struct TestTripleMessage {
         data: u64,
+    }
+
+    #[test]
+    fn foo() {
+        let num_participants = 4;
+        let participant_ids =
+            TestGenerators::new(num_participants, num_participants).participant_ids();
+        let transports = new_test_transports(participant_ids.clone());
+        let indexer_heights = {
+            let heights = participant_ids
+                .iter()
+                .map(|id| (*id, AtomicU64::new(0)))
+                .collect::<HashMap<_, _>>();
+            Arc::new(IndexerHeightTracker { heights })
+        };
+        let channels = Arc::new(Mutex::new(NetworkTaskChannelManager::new()));
+        let mesh_network_client = MeshNetworkClient::new(
+            transports[0].0.clone(),
+            channels.clone(),
+            indexer_heights.clone(),
+        );
+        let result = mesh_network_client
+            .select_random_active_participants_including_me(num_participants, &[]);
+        assert!(result.is_err())
     }
 }
 
