@@ -1095,7 +1095,7 @@ mod tests {
     }
 
     #[test]
-    fn test_random_participant_selection() {
+    fn select_random_active_participants_including_me_should_return_error_when_peers_to_consider_is_empty() {
         let num_participants = 4;
         let participant_ids =
             TestGenerators::new(num_participants, num_participants).participant_ids();
