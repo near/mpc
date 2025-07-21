@@ -12,6 +12,7 @@ from common_lib import constants
 from common_lib import signature
 from common_lib.constants import TGAS, TIMEOUT
 from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
+from common_lib.shared.metrics import IntMetricName
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
 from common_lib.signature import generate_sign_args
@@ -98,10 +99,8 @@ class MpcCluster:
     def mpc_contract_account(self):
         return self.contract_node.account_id()
 
-    def get_int_metric_value(self, metric_name) -> List[Optional[int]]:
-        return [
-            node.metrics.get_int_metric_value(metric_name) for node in self.mpc_nodes
-        ]
+    def get_int_metric_value(self, metric_name: IntMetricName) -> List[Optional[int]]:
+        return [node.get_int_metric_value(metric_name) for node in self.mpc_nodes]
 
     def get_int_metric_value_for_node(self, metric_name, node_index):
         return self.mpc_nodes[node_index].metrics.get_int_metric_value(metric_name)
