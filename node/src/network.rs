@@ -1095,7 +1095,7 @@ mod tests {
     }
 
     #[test]
-    fn select_random_active_participants_including_me_should_return_error_when_peers_to_consider_is_empty() {
+    fn select_random_active_participants_including_me_should_return_not_enough_active_participants_when_peers_to_consider_is_empty() {
         let num_participants = 4;
         let participant_ids =
             TestGenerators::new(num_participants, num_participants).participant_ids();
@@ -1113,9 +1113,17 @@ mod tests {
             channels.clone(),
             indexer_heights.clone(),
         );
-        let result = mesh_network_client
-            .select_random_active_participants_including_me(num_participants, &[]);
-        assert!(result.is_err())
+
+        let err = mesh_network_client
+            .select_random_active_participants_including_me(num_participants, &[])
+            .unwrap_err();
+
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.starts_with("Not enough active participants"),
+            "unexpected error message: {}",
+            err_msg
+        );
     }
 }
 
