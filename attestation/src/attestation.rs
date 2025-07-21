@@ -1,5 +1,6 @@
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
+use tracing::error;
 
 use crate::{collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, tcbinfo::TcbInfo};
 use near_sdk::PublicKey;
@@ -18,19 +19,34 @@ pub struct DstackAttestation {
     tcb_info: TcbInfo,
 }
 
+#[derive(Constructor)]
 pub struct LocalAttestation {
     quote_verification_result: bool,
     docker_image_verification_result: bool,
 }
 
 impl Attestation {
-    // TODO(#642): Implement the attestation quote verification logic in the attestation module
-    pub fn verify_quote(&self) -> bool {
+    pub fn verify_quote(&self, timestamp_s: u64) -> bool {
         match self {
-            Self::Dstack(_config) => {
-                todo!("Implement TEE validation logic")
+            Self::Dstack(dstack_attestation) => {
+                self.verify_tee_quote(dstack_attestation, timestamp_s)
             }
             Self::Local(config) => config.quote_verification_result,
+        }
+    }
+
+    fn verify_tee_quote(&self, attestation: &DstackAttestation, timestamp_s: u64) -> bool {
+        let quote_bytes = attestation.quote.raw_bytes();
+
+        match dcap_qvl::verify::verify(quote_bytes, &attestation.collateral, timestamp_s) {
+            Ok(verification_result) => {
+                verification_result.status == "UpToDate"
+                    && verification_result.advisory_ids.is_empty()
+            }
+            Err(err) => {
+                error!("TEE quote verification failed: {:?}", err);
+                false
+            }
         }
     }
 
@@ -99,10 +115,11 @@ mod tests {
     #[test]
     // TODO(#643): Test quote verification logic (as much as possible except signature verification)
     fn test_mock_attestation_verify_quote() {
-        assert!(!mock_attestation(false, false).verify_quote());
-        assert!(!mock_attestation(false, true).verify_quote());
-        assert!(mock_attestation(true, false).verify_quote());
-        assert!(mock_attestation(true, true).verify_quote());
+        let timestamp_s = 0u64;
+        assert!(!mock_attestation(false, false).verify_quote(timestamp_s));
+        assert!(!mock_attestation(false, true).verify_quote(timestamp_s));
+        assert!(mock_attestation(true, false).verify_quote(timestamp_s));
+        assert!(mock_attestation(true, true).verify_quote(timestamp_s));
     }
 
     #[test]

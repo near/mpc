@@ -1,5 +1,5 @@
 use crate::{
-    attestation::{Attestation, DstackAttestation},
+    attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
     quote::Quote,
     report_data::ReportData,
@@ -9,6 +9,7 @@ use alloc::string::String;
 use anyhow::{Context, bail};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
+use derive_more::Constructor;
 use dstack_sdk::dstack_client::DstackClient;
 use http::status::StatusCode;
 use reqwest::{Url, multipart::Form};
@@ -24,13 +25,18 @@ const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upl
 /// Default path for dstack Unix socket endpoint.
 const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
 
-pub struct LocalTeeAuthorityConfig;
+#[derive(Constructor)]
+pub struct LocalTeeAuthorityConfig {
+    quote_verification_result: bool,
+    docker_image_verification_result: bool,
+}
 
+#[derive(Constructor)]
 pub struct DstackTeeAuthorityConfig {
     /// Endpoint to contact dstack service. Defaults to `/var/run/dstack.sock`
-    pub dstack_endpoint: String,
+    dstack_endpoint: String,
     /// URL for submission of TDX quote. Returns collateral to be used for verification.
-    pub quote_upload_url: Url,
+    quote_upload_url: Url,
 }
 
 impl Default for DstackTeeAuthorityConfig {
@@ -44,6 +50,8 @@ impl Default for DstackTeeAuthorityConfig {
     }
 }
 
+/// TeeAuthority is an abstraction over different TEE attestation generator implementations. It
+/// generates [`Attestation`] instances - either mocked or real ones.
 pub enum TeeAuthority {
     Dstack(DstackTeeAuthorityConfig),
     Local(LocalTeeAuthorityConfig),
@@ -55,17 +63,16 @@ impl TeeAuthority {
         report_data: ReportData,
     ) -> anyhow::Result<Attestation> {
         match self {
-            TeeAuthority::Local(_config) => {
-                // Generate attestation using local TEE authority
-                todo!("Implement local TEE attestation generation")
-            }
+            TeeAuthority::Local(config) => Ok(Attestation::Local(LocalAttestation::new(
+                config.quote_verification_result,
+                config.docker_image_verification_result,
+            ))),
             TeeAuthority::Dstack(config) => {
                 self.generate_dstack_attestation(config, report_data).await
             }
         }
     }
 
-    /// Generates attestation using Dstack TEE authority.
     async fn generate_dstack_attestation(
         &self,
         config: &DstackTeeAuthorityConfig,
