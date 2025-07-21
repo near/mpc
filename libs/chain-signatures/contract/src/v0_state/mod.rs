@@ -123,6 +123,7 @@ impl From<RunningContractState> for crate::RunningContractState {
             parameters: value.parameters,
             parameters_votes: crate::primitives::votes::ThresholdParametersVotes::default(),
             add_domains_votes: value.add_domains_votes,
+            previously_cancelled_resharing_epoch_id: None,
         }
     }
 }

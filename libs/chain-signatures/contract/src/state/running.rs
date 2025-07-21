@@ -9,7 +9,7 @@ use crate::primitives::{
     votes::ThresholdParametersVotes,
 };
 use near_sdk::near;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 /// In this state, the contract is ready to process signature requests.
 ///
@@ -20,8 +20,7 @@ use std::collections::BTreeSet;
 ///    Resharing state to reshare keys for new participants and also change the
 ///    threshold if desired.
 #[near(serializers=[borsh, json])]
-#[derive(Debug)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunningContractState {
     /// The domains for which we have a key ready for signature processing.
     pub domains: DomainRegistry,
@@ -34,6 +33,10 @@ pub struct RunningContractState {
     pub parameters_votes: ThresholdParametersVotes,
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
+    /// The previous epoch id for a resharing state that was cancelled.
+    /// This epoch id is tracked, as the next time the state transitions to resharing,
+    /// we can't reuse a previously cancelled epoch id.
+    pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
 
 impl RunningContractState {
@@ -44,6 +47,7 @@ impl RunningContractState {
             parameters,
             parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: AddDomainsVotes::default(),
+            previously_cancelled_resharing_epoch_id: None,
         }
     }
 
@@ -52,6 +56,8 @@ impl RunningContractState {
         proposal: &ThresholdParameters,
     ) -> Option<ResharingContractState> {
         if let Some(first_domain) = self.domains.get_domain_by_index(0) {
+            let epoch_id = self.prospective_epoch_id();
+
             Some(ResharingContractState {
                 previous_running_state: RunningContractState::new(
                     self.domains.clone(),
@@ -59,11 +65,8 @@ impl RunningContractState {
                     self.parameters.clone(),
                 ),
                 reshared_keys: Vec::new(),
-                resharing_key: KeyEvent::new(
-                    self.keyset.epoch_id.next(),
-                    first_domain.clone(),
-                    proposal.clone(),
-                ),
+                resharing_key: KeyEvent::new(epoch_id, first_domain.clone(), proposal.clone()),
+                cancellation_requests: HashSet::new(),
             })
         } else {
             // A new ThresholdParameters was proposed, but we have no keys, so directly
@@ -84,13 +87,33 @@ impl RunningContractState {
         prospective_epoch_id: EpochId,
         proposal: &ThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
-        if prospective_epoch_id != self.keyset.epoch_id.next() {
-            return Err(InvalidParameters::EpochMismatch.into());
+        let expected_prospective_epoch_id = self.prospective_epoch_id();
+
+        if prospective_epoch_id != expected_prospective_epoch_id {
+            return Err(InvalidParameters::EpochMismatch {
+                expected: expected_prospective_epoch_id,
+                provided: prospective_epoch_id,
+            }
+            .into());
         }
+
         if self.process_new_parameters_proposal(proposal)? {
             return Ok(self.transition_to_resharing_no_checks(proposal));
         }
         Ok(None)
+    }
+
+    pub fn prospective_epoch_id(&self) -> EpochId {
+        match self.previously_cancelled_resharing_epoch_id {
+            // If `cancelled_epoch_id`, then a resharing has already
+            // been attempted but was cancelled.
+            // We must make sure to not reuse previously used prospective epoch ids,
+            // and continue from the last prospective epoch id for the previous resharing attempt.
+            Some(cancelled_epoch_id) => cancelled_epoch_id,
+            // No resharing has been attempted for this running state.
+            None => self.keyset.epoch_id,
+        }
+        .next()
     }
 
     /// Casts a vote for `proposal`, removing any previous votes by `env::signer_account_id()`.

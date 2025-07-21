@@ -89,6 +89,16 @@ impl ProtocolContractState {
             .vote_reshared(key_event_id)
             .map(|x| x.map(ProtocolContractState::Running))
     }
+
+    pub fn vote_cancel_resharing(&mut self) -> Result<Option<ProtocolContractState>, Error> {
+        let ProtocolContractState::Resharing(state) = self else {
+            return Err(InvalidState::ProtocolStateNotResharing.into());
+        };
+        state
+            .vote_cancel_resharing()
+            .map(|x| x.map(ProtocolContractState::Running))
+    }
+
     /// Casts a vote for `public_key` in `key_event_id` during Initialization.
     /// Fails if the protocol is not in `Initializing` state.
     /// Returns the new protocol state if enough votes have been submitted.
