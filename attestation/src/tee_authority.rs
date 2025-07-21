@@ -244,6 +244,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_generate_and_verify_attestation_local() {
+        let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
+            .parse()
+            .unwrap();
+        let account_key = "ed25519:H9k5eiU4xXyb8F7cUDjZYNuH1zGAx5BBNrYwLPNhq6Zx"
+            .parse()
+            .unwrap();
+        let report_data = ReportData::new(tls_key, account_key);
+
+        for quote_verification_result in [true, false] {
+            for docker_image_verification_result in [true, false] {
+                let authority = TeeAuthority::Local(LocalTeeAuthorityConfig::new(
+                    quote_verification_result,
+                    docker_image_verification_result,
+                ));
+                let attestation = authority
+                    .generate_attestation(report_data.clone())
+                    .await
+                    .unwrap();
+                let timestamp_s = 0u64;
+                assert_eq!(
+                    attestation.verify_quote(timestamp_s),
+                    quote_verification_result
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
     #[cfg(feature = "external-services-tests")]
     async fn test_upload_quote_for_collateral_with_phala_endpoint() {
         extern crate std;
