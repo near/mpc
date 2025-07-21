@@ -1095,7 +1095,7 @@ mod tests {
     }
 
     #[test]
-    fn foo() {
+    fn test_random_participant_selection() {
         let num_participants = 4;
         let participant_ids =
             TestGenerators::new(num_participants, num_participants).participant_ids();
