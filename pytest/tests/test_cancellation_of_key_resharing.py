@@ -12,7 +12,7 @@ from common_lib.contract_state import (
 
 def test_cancellation_of_key_resharing():
     """
-    Tests that flow of cancellation of key resharing by calling the `vote_cancel_resharing` on the contract.
+    Tests that flow of cancellation of key resharing by calling the `vote_cancel_resharing` method on the contract.
 
     This test verifies:
     1. When a key resharing is cancelled, the contract stores the cancelled epoch ID
