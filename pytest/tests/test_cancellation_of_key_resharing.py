@@ -2,9 +2,10 @@
 import pathlib
 import sys
 
+
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
-from common_lib.shared.near_account import assert_txn_execution_error
+from common_lib.shared.transaction_status import assert_txn_execution_error
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
 from common_lib.contract_state import (
