@@ -1,21 +1,24 @@
-name: Docker Build and Publish MPC Image
+name: Docker Build and Publish TEE Launcher
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 on:
+  push:
+    branches:
+      - main
+
   workflow_dispatch:
     inputs:
       build-ref:
         default: 'main'
-        description: "The branch, tag or SHA to build MPC Docker image from. Default to latest commit on main branch."
+        description: "The branch, tag or SHA to build the launcher Docker image from. Default to latest commit on main branch."
         type: string
-    
 
 jobs:
   docker-image-build:
-    name: "Build and push MPC Docker image"
+    name: "Build and push Tee Launcher image"
     runs-on: warp-ubuntu-2204-x64-2x
     permissions:
       contents: read
@@ -25,12 +28,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.build-ref }}
-        
+
       - name: Get short SHA
         shell: bash
         run: |
           echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
-  
+
       - name: Sanitize build-ref for Docker tags
         shell: bash
         run: |
@@ -47,11 +50,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push MPC Docker image to Docker Hub
+      - name: Build and push Tee Launcher image to Docker Hub
         uses: Warpbuilds/build-push-action@v6
         with:
-          context: .
+          context: tee_launcher/
           profile-name: "mpc-image-builder"
           push: true
-          file: deployment/Dockerfile-gcp
-          tags: nearone/mpc-node-gcp:latest,nearone/mpc-node-gcp:${{ env.sanitized_ref }},nearone/mpc-node-gcp:${{ env.sanitized_ref }}-${{ env.sha_short }}
+          file: tee_launcher/development/Dockerfile.launcher
+          tags: nearone/mpc-tee-launcher:latest,nearone/mpc-tee-launcher:${{ env.sanitized_ref }},nearone/mpc-tee-launcher:${{ env.sanitized_ref }}-${{ env.sha_short }}
