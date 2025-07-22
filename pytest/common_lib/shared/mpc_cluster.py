@@ -322,22 +322,6 @@ class MpcCluster:
             assert self.wait_for_state("Running"), "failed to conclude resharing"
             self.update_participant_status()
 
-    def do_cancellation(self, new_participants: List[MpcNode]):
-        print(f"\033[91mVoting on cancellation of resharing\033[0m")
-        state = self.contract_state()
-        assert state.is_state(
-            "Resharing"
-        ), "Require resharing state to do cancellation of key resharing."
-
-        args = {}
-        for node in self.get_voters():
-            tx = node.sign_tx(
-                self.mpc_contract_account(), "vote_cancel_resharing", args
-            )
-            node.send_txn_and_check_success(tx)
-
-        assert self.wait_for_state("Running"), "failed to start resharing"
-
     def get_contract_state(self):
         cn = self.contract_node
         txn = cn.sign_tx(self.mpc_contract_account(), "state", {})

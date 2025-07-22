@@ -3,6 +3,8 @@ import pathlib
 import sys
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+
+from common_lib.shared.near_account import assert_txn_execution_error
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
 from common_lib.contract_state import (
@@ -15,17 +17,32 @@ def test_cancellation_of_key_resharing():
     Tests the flow of cancellation of key resharing by calling the `vote_cancel_resharing` method on the contract.
 
     This test verifies:
-    1. When a key resharing is cancelled, the contract stores the cancelled epoch ID
+    1. Votes for cancellation of key resharing by new participants are rejected by the contract.
+    2. Cancellation of key resharing requires threshold number of votes from previous running set.
+    3. Cancellation of key resharing reverts the contract state back to the previous running state.
+    4. When a key resharing is cancelled, the contract stores the cancelled epoch ID
        in `previously_cancelled_resharing_epoch_id`.
-    2. Network can serve sign requests after cancelling and transitions to the running state.
-    3. After successful resharing completion, `previously_cancelled_resharing_epoch_id`
+    5. Network can serve sign requests after cancelling.
+    6. After successful resharing completion, `previously_cancelled_resharing_epoch_id`
        is cleared (set to None).
     """
-    # Start cluster with 2 active nodes out of 4 total
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 4, 1, load_mpc_contract())
-    initial_participants = mpc_nodes[:2]
-    all_participants = mpc_nodes[:4]
-    cluster.init_cluster(participants=initial_participants, threshold=2)
+    # Start cluster with:
+    initial_threshold = 2
+    initial_running_nodes = 3
+    total_nodes = 5
+
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        initial_running_nodes,
+        total_nodes,
+        1,
+        load_mpc_contract(),
+        threshold=initial_threshold,
+    )
+    initial_running_nodes = mpc_nodes[:initial_running_nodes]
+    all_participants = mpc_nodes[:total_nodes]
+    cluster.init_cluster(
+        participants=initial_running_nodes, threshold=initial_threshold
+    )
 
     state = cluster.contract_state()
     initial_prospective_epoch_id = 1
@@ -38,11 +55,40 @@ def test_cancellation_of_key_resharing():
         wait_for_running=False,
     )
 
-    # Kill one of the new nodes to make resharing stall
-    mpc_nodes[3].kill()
+    # Kill the last one of the new nodes to make resharing stall
+    killed_node = mpc_nodes[-1]
+    killed_node.kill()
 
     # Cancel resharing
-    cluster.do_cancellation(initial_participants)
+    print(f"\033[91mVoting on cancellation of resharing\033[0m")
+
+    # Vote with nodes that were not in the previous running state.
+    # These votes should be reject by the contract.
+    for node in all_participants:
+        # Our pytest setup will not allow us to run voting commands
+        # on nodes that are killed. Thus skip voting with this node.
+        node_is_killed = node == killed_node
+        node_is_participant = node in initial_running_nodes
+
+        if node_is_killed or node_is_participant:
+            continue
+
+        tx = node.sign_tx(cluster.mpc_contract_account(), "vote_cancel_resharing", {})
+        response = node.near_node.send_tx_and_wait(tx, timeout=20)
+        assert_txn_execution_error(response, expected_error_msg="Not a participant")
+
+    # Vote with a threshold number of the running nodes
+    for running_node in initial_running_nodes[:initial_threshold]:
+        tx = running_node.sign_tx(
+            cluster.mpc_contract_account(), "vote_cancel_resharing", {}
+        )
+        running_node.send_txn_and_check_success(tx)
+
+    # Assert cancellation works.
+    assert cluster.wait_for_state(
+        "Running"
+    ), "Contract should transition to running state after threshold running nodes voted for cancellation."
+
     state = cluster.contract_state()
     assert isinstance(
         state.protocol_state, RunningProtocolState
@@ -63,7 +109,7 @@ def test_cancellation_of_key_resharing():
     cluster.send_and_await_signature_requests(3)
 
     # Retry resharing with the previously killed node back online
-    mpc_nodes[3].run()
+    killed_node.run()
 
     cluster.do_resharing(
         all_participants,
