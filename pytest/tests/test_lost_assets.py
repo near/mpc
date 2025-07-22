@@ -8,11 +8,10 @@ Restarts the node and verifies that signature requests succeed.
 import sys
 import time
 import pathlib
-import argparse
 from typing import List
 import requests
 
-from common_lib.shared import MpcCluster, MpcNode
+from common_lib.shared import MpcCluster, MpcNode, metrics
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
@@ -28,7 +27,7 @@ def wait_for_presignatures_to_buffer(cluster: MpcCluster):
         assert time.time() - started < TIMEOUT, "Waiting for presignatures"
         try:
             presignature_count = cluster.get_int_metric_value(
-                "mpc_owned_num_presignatures_available"
+                metrics.IntMetricName.MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE
             )
             print("Owned presignatures:", presignature_count)
             if all(x and x == PRESIGNATURES_TO_BUFFER for x in presignature_count):
@@ -43,19 +42,24 @@ def wait_for_asset_cleanup(mpc_nodes: List[MpcNode]):
     while True:
         assert time.time() - started < TIMEOUT, "Waiting for asset cleanup"
         try:
+
             cleanup_done = True
             for node in mpc_nodes:
-                available = node.metrics.get_int_metric_value(
-                    "mpc_owned_num_presignatures_available"
+                available = node.get_int_metric_value(
+                    metrics.IntMetricName.MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE
                 )
-                online = node.metrics.get_int_metric_value(
-                    "mpc_owned_num_presignatures_online"
+                online = node.get_int_metric_value(
+                    metrics.IntMetricName.MPC_OWNED_NUM_PRESIGNATURES_ONLINE
                 )
-                offline = node.metrics.get_int_metric_value(
-                    "mpc_owned_num_presignatures_with_offline_participant"
+                offline = node.get_int_metric_value(
+                    metrics.IntMetricName.MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT
                 )
                 print(
                     f"node {node.print()} has owned presignatures available={available} online={online} with_offline_participant={offline}"
+                )
+                peers_indexer_block_heights = node.get_peers_block_height_metric_value()
+                print(
+                    f"node {node.print()} has following peer block heights: {peers_indexer_block_heights}"
                 )
                 if not (online == PRESIGNATURES_TO_BUFFER and offline == 0):
                     cleanup_done = False
@@ -104,7 +108,9 @@ def test_lost_assets():
     # are assigned as leaders for the requests.
 
     presignatures_available = sum(
-        cluster.get_int_metric_value("mpc_owned_num_presignatures_available")
+        cluster.get_int_metric_value(
+            metrics.IntMetricName.MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE
+        )
     )
     cluster.send_and_await_signature_requests(presignatures_available // 4)
 
@@ -131,10 +137,15 @@ def test_signature_pause_block_ingestion():
 
     started = time.time()
     while True:
+        peers_indexer_block_heights = mpc_nodes[0].get_peers_block_height_metric_value()
+        print(
+            f"node {mpc_nodes[0].print()} has following peer block heights = {peers_indexer_block_heights}"
+        )
         assert time.time() - started < 120, "Waiting for presignatures"
         try:
+
             block_heights = cluster.get_int_metric_value(
-                "mpc_indexer_latest_block_height"
+                metrics.IntMetricName.MPC_INDEXER_LATEST_BLOCK_HEIGHT
             )
             print("block heights:", block_heights)
             if (block_heights[0] + 10 < block_heights[1]) and (
@@ -152,22 +163,3 @@ def test_signature_pause_block_ingestion():
 
     # re-enable block ingestion, in case any tests run afterwards
     mpc_nodes[0].set_block_ingestion(True)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--num-requests",
-        type=int,
-        default=10,
-        help="Number of signature requests to make",
-    )
-    parser.add_argument(
-        "--num-respond-access-keys",
-        type=int,
-        default=1,
-        help="Number of access keys to provision for the respond signer account",
-    )
-    args = parser.parse_args()
-
-    test_lost_assets(args.num_requests, args.num_respond_access_keys)
