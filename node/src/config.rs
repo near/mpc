@@ -279,7 +279,7 @@ impl PersistentSecrets {
         );
         let secrets = if let Some(secrets) = Self::maybe_get_existing(home_dir)? {
             tracing::debug!("p2p and near account secret key already exists. Using existing.");
-            // todo: add keys if necessary
+            // todo: consistent number of keys [(#534)](https://github.com/near/mpc/issues/534)
             secrets
         } else {
             tracing::debug!("p2p and near account secret key not found. Generating...");

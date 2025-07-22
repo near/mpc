@@ -1,7 +1,7 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts};
 use crate::cli::{
-    ListMpcCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
+    ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
     MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteNewParametersCmd,
     MpcVoteUpdateCmd, NewMpcNetworkCmd, RemoveContractCmd, UpdateMpcNetworkCmd,
 };
@@ -10,9 +10,11 @@ use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{fund_accounts, AccountToFund};
 use crate::queries;
 use crate::rpc::NearRpcClients;
+use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use mpc_contract::{
     config::InitConfig,
     primitives::{
@@ -25,12 +27,15 @@ use mpc_contract::{
     utils::protocol_state_to_string,
 };
 use near_crypto::SecretKey;
+use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
+use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use near_sdk::{borsh, AccountId};
-use serde::Serialize;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -93,15 +98,19 @@ async fn update_mpc_network(
 
     for i in mpc_setup.participants.len()..desired_num_participants {
         let account_id = funded_accounts[i * 2].clone();
+        let p2p_private_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
         accounts
             .account_mut(&account_id)
             .set_mpc_participant(MpcParticipantSetup {
-                p2p_private_key: SecretKey::from_random(near_crypto::KeyType::ED25519),
+                p2p_private_key: p2p_private_key.clone(),
                 responding_account_id: funded_accounts[i * 2 + 1].clone(),
+                p2p_public_key: Some(p2p_private_key.public_key()),
             });
         mpc_setup.participants.push(account_id);
     }
 
+    // todo: remove this logic [(#710)](https://github.com/near/mpc/issues/710)
+    println!("Generating responding access keys - this step is not required after update to v2.2.");
     let responding_accounts = mpc_setup
         .participants
         .iter()
@@ -198,57 +207,71 @@ impl UpdateMpcNetworkCmd {
         .await;
     }
 }
-impl MpcInitContractCmd {
+
+#[derive(Clone, Deserialize)]
+pub struct StaticWebData {
+    pub near_signer_public_key: near_crypto::PublicKey,
+    pub near_p2p_public_key: near_crypto::PublicKey,
+    pub near_responder_public_keys: Vec<near_crypto::PublicKey>,
+    pub _tee_participant_info: Option<TeeParticipantInfo>,
+}
+
+impl MpcAddKeysCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let urls = get_urls(name, &config);
+        println!("Adding Keys for network {}", name);
+        let mut setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} does not exist", name));
-        let contract: AccountId = mpc_setup
-            .contract
-            .clone()
-            .expect("Require MPC network to have a contract deployed.");
-
-        let mut access_key = setup.accounts.account(&contract).any_access_key().await;
-
-        let mut participants = Participants::new();
-        for (i, account_id) in mpc_setup
-            .participants
-            .iter()
-            .enumerate()
-            .take(self.init_participants)
-        {
-            participants
-                .insert(
-                    account_id.clone(),
-                    mpc_account_to_participant_info(setup.accounts.account(account_id), i),
-                )
+            .expect(&format!("MPC network {} must exist", name));
+        for (i, account_id) in mpc_setup.participants.iter().enumerate() {
+            let participant = setup
+                .accounts
+                .account(account_id)
+                .get_mpc_participant()
                 .unwrap();
-        }
-        let parameters =
-            ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
-        let args = serde_json::to_vec(&InitV2Args {
-            parameters,
-            init_config: None,
-        })
-        .unwrap();
 
-        access_key
-            .submit_tx_to_call_function(
-                &contract,
-                "init",
-                &args,
-                300,
-                0,
-                near_primitives::views::TxExecutionStatus::Final,
-                true,
-            )
-            .await
-            .into_return_value()
-            .unwrap();
+            let client = Client::new();
+
+            let response = client
+                .get(format!("{}/public_data", urls[i]))
+                .send()
+                .await
+                .expect("require result")
+                .error_for_status()
+                .expect("code 200");
+
+            let public_data: StaticWebData = response.json::<StaticWebData>().await.unwrap();
+
+            let mpc_participant = MpcParticipantSetup {
+                p2p_private_key: participant.p2p_private_key.clone(), // todo: remove this [(#710)](https://github.com/near/mpc/issues/710)
+                p2p_public_key: Some(public_data.near_p2p_public_key),
+                responding_account_id: participant.responding_account_id.clone(),
+            };
+
+            setup
+                .accounts
+                .account_mut(account_id)
+                .set_mpc_participant(mpc_participant.clone());
+
+            // add all access keys:
+            for key in public_data.near_responder_public_keys {
+                setup
+                    .accounts
+                    .account_mut(&mpc_participant.responding_account_id)
+                    .add_access_key(key)
+                    .await;
+            }
+            setup
+                .accounts
+                .account_mut(&account_id)
+                .add_access_key(public_data.near_signer_public_key)
+                .await;
+        }
     }
 }
+
 impl MpcDeployContractCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         let (contract_data, contract_path) = match &self.path {
@@ -320,6 +343,58 @@ impl MpcDeployContractCmd {
     }
 }
 
+impl MpcInitContractCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} must exist", name));
+        let contract: AccountId = mpc_setup
+            .contract
+            .clone()
+            .expect("Require MPC network to have a contract deployed.");
+
+        let mut access_key = setup.accounts.account(&contract).any_access_key().await;
+
+        let mut participants = Participants::new();
+        for (i, account_id) in mpc_setup
+            .participants
+            .iter()
+            .enumerate()
+            .take(self.init_participants)
+        {
+            participants
+                .insert(
+                    account_id.clone(),
+                    mpc_account_to_participant_info(setup.accounts.account(account_id), i),
+                )
+                .unwrap();
+        }
+        let parameters =
+            ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
+        let args = serde_json::to_vec(&InitV2Args {
+            parameters,
+            init_config: None,
+        })
+        .unwrap();
+
+        access_key
+            .submit_tx_to_call_function(
+                &contract,
+                "init",
+                &args,
+                300,
+                0,
+                near_primitives::views::TxExecutionStatus::Final,
+                true,
+            )
+            .await
+            .into_return_value()
+            .unwrap();
+    }
+}
+
 #[derive(Serialize)]
 struct InitV2Args {
     parameters: ThresholdParameters,
@@ -330,8 +405,14 @@ fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> 
     let mpc_setup = account.get_mpc_participant().unwrap();
 
     ParticipantInfo {
-        sign_pk: near_sdk::PublicKey::from_str(&mpc_setup.p2p_private_key.public_key().to_string())
-            .unwrap(),
+        sign_pk: near_sdk::PublicKey::from_str(
+            &mpc_setup
+                .p2p_public_key
+                .clone()
+                .expect("require public key")
+                .to_string(),
+        )
+        .unwrap(),
         url: format!("http://mpc-node-{}.service.mpc.consul:3000", index),
     }
 }
@@ -730,18 +811,30 @@ pub async fn read_contract_state(
             args: FunctionArgs::from(b"{}".to_vec()),
         },
     };
-    let result = rpc
-        .submit(request)
-        .await
-        .expect("Expected rpc node to respond");
-    match result.kind {
-        QueryResponseKind::CallResult(result) => {
-            serde_json::from_slice(&result.result).expect(&format!(
-                "Failed to deserialize contract state: {}",
-                String::from_utf8_lossy(&result.result)
-            ))
+    let result = rpc.submit(request).await;
+    match result {
+        Ok(result) => match result.kind {
+            QueryResponseKind::CallResult(result) => {
+                serde_json::from_slice(&result.result).expect(&format!(
+                    "Failed to deserialize contract state: {}",
+                    String::from_utf8_lossy(&result.result)
+                ))
+            }
+            _ => panic!("Unexpected response: {:?}", result),
+        },
+        Err(JsonRpcError::ServerError(server_err)) => {
+            if let JsonRpcServerError::HandlerError(e) = &server_err {
+                if let RpcQueryError::ContractExecutionError { vm_error, .. } = e {
+                    if vm_error.contains("Calling default not allowed.") {
+                        return ProtocolContractState::NotInitialized;
+                    }
+                }
+            }
+            panic!("Unexpected error: {:?}", server_err);
         }
-        _ => panic!("Unexpected response: {:?}", result),
+        Err(err) => {
+            panic!("Unexpected error: {:?}", err);
+        }
     }
 }
 
