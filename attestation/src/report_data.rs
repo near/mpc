@@ -34,10 +34,10 @@ pub struct ReportDataV1 {
     account_public_key: PublicKey,
 }
 
+/// report_data_v1: [u8; 64] =
+///   [version(2 bytes big endian) || sha384(TLS pub key || account pub key) || zero padding]
 impl ReportDataV1 {
     /// V1-specific format constants
-    /// report_data: [u8; 64] =
-    ///   [version(2 bytes big endian) || sha384(TLS pub key || account pub key) || zero padding]
     const PUBLIC_KEYS_OFFSET: usize = BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE;
     const PUBLIC_KEYS_HASH_SIZE: usize = 48;
 
@@ -50,9 +50,6 @@ impl ReportDataV1 {
     };
 
     /// Generates the binary representation of V1 report data.
-    ///
-    /// Format:
-    /// [version(2 bytes big endian) || sha384(TLS pub key || account pub key) || zero padding]
     pub fn to_bytes(&self) -> [u8; REPORT_DATA_SIZE] {
         let mut report_data = [0u8; REPORT_DATA_SIZE];
 
@@ -61,7 +58,7 @@ impl ReportDataV1 {
         report_data[BINARY_VERSION_OFFSET..BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE]
             .copy_from_slice(&version_bytes);
 
-        // Generate and copy hash of public keys (48 bytes)
+        // Generate and copy hash of public keys
         let public_keys_hash = self.public_keys_hash();
         report_data
             [Self::PUBLIC_KEYS_OFFSET..Self::PUBLIC_KEYS_OFFSET + Self::PUBLIC_KEYS_HASH_SIZE]
@@ -79,7 +76,7 @@ impl ReportDataV1 {
         hasher.finalize().into()
     }
 
-    /// Parse V1 report data from bytes. Returns the public_keys_hash.
+    /// Parses V1 report data from bytes. Returns the hash of public keys.
     /// Note: This only extracts the hash, not the original public keys.
     pub fn from_bytes(bytes: &[u8; REPORT_DATA_SIZE]) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
         // Extract hash using V1 format

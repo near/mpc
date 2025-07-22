@@ -6,6 +6,9 @@ use hex::FromHexError;
 use thiserror::Error;
 
 /// TEE Remote Attestation Quote that proves the participant's identity.
+///
+/// We keep the raw bytes of the quote since they're needed for verification and Phala probably
+/// doesn't provide an easy way to encode it back to the [`DcapQuote`] structure.
 #[derive(Debug, Deref)]
 pub struct Quote {
     raw_bytes: Vec<u8>,
