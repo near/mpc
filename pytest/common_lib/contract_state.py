@@ -178,7 +178,9 @@ class RunningProtocolState:
         parameters = Parameters.from_json(running_data["parameters"])
         votes = ParameterVotes.from_json(running_data["parameters_votes"])
 
-        cancel_resharing_field = running_data["previously_cancelled_resharing_epoch_id"]
+        cancel_resharing_field = running_data.get(
+            "previously_cancelled_resharing_epoch_id", None
+        )
 
         if cancel_resharing_field != None:
             previously_cancelled_resharing_epoch_id = int(cancel_resharing_field)
