@@ -164,14 +164,13 @@ jobs:
 
       - name: Setup virtualenv
         run: |
-          python3 -m venv pytest/venv
-          source pytest/venv/bin/activate
+          python3 -m venv tee_launcher/venv
+          source tee_launcher/venv/bin/activate
           cd tee_launcher 
           pip install -r requirements.txt
 
       - name: Run pytest
         run: |
-          python3 -m venv tee_launcher/venv
           source tee_launcher/venv/bin/activate
           cd tee_launcher 
           PYTHONPATH=. pytest -vsx
