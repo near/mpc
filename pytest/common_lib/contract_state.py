@@ -214,6 +214,7 @@ class RunningProtocolState:
             f"\033[97m🔑 {keyset_str}\033[0m | "
             f"\033[96m{self.domains.make_str()} | "
             f"{self.parameter_votes.pretty_string()}\033[0m"
+            f"\033[96m[Previously cancelled epoch id {self.previously_cancelled_resharing_epoch_id}]\033[0m "
         )
 
 
