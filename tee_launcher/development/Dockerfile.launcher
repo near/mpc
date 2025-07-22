@@ -1,6 +1,7 @@
 FROM debian:bookworm-slim@sha256:4b44499bc2a6c78d726f3b281e6798009c0ae1f034b0bfaf6a227147dcff928b
 
-ARG SNAP=20250714T202759Z
+# https://snapshot.debian.org/archive/debian/20241201T025825Z/
+ARG SNAP=20241201T025825Z
 
 RUN set -eux; \
   echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot; \
@@ -8,6 +9,7 @@ RUN set -eux; \
 deb http://snapshot.debian.org/archive/debian/${SNAP} bookworm main contrib non-free-firmware
 deb http://snapshot.debian.org/archive/debian/${SNAP} bookworm-updates main contrib non-free-firmware
 deb http://snapshot.debian.org/archive/debian-security/${SNAP} bookworm-security main contrib non-free-firmware
+deb http://snapshot.debian.org/archive/debian-debug/${SNAP} bookworm-debug main
 EOF
 
 # Install packages with exact versions for reproducibility
