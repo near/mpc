@@ -6,19 +6,17 @@ concurrency:
 
 on:
   push:
-    branches:
-      - main
-
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       build-ref:
-        default: 'main'
-        description: "The branch, tag or SHA to build the launcher Docker image from. Default to latest commit on main branch."
+        description: "Branch, tag or SHA to build the launcher Docker image from"
         type: string
+        default: "main"
 
 jobs:
   docker-image-build:
-    name: "Build and push Tee Launcher image"
+    name: Build and push TEE Launcher image
     runs-on: warp-ubuntu-2204-x64-2x
     permissions:
       contents: read
@@ -27,19 +25,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.build-ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build-ref || github.ref }}
 
-      - name: Get short SHA
+      - name: Compute tags meta
+        id: meta
         shell: bash
         run: |
-          echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          RAW_REF="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build-ref || github.ref_name }}"
+          SANITIZED_REF=$(echo "$RAW_REF" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed 's/[^a-z0-9_.-]/-/g; s/^-*//; s/-*$//')
+          SHA_SHORT="${GITHUB_SHA::7}"
 
-      - name: Sanitize build-ref for Docker tags
-        shell: bash
-        run: |
-          # Replace forward slashes with hyphens to create valid Docker tags
-          sanitized_ref=$(echo "${{ github.event.inputs.build-ref }}" | sed 's/\//-/g')
-          echo "sanitized_ref=$sanitized_ref" >> "$GITHUB_ENV"
+          echo "sanitized_ref=$SANITIZED_REF" >> "$GITHUB_ENV"
+          echo "sha_short=$SHA_SHORT"         >> "$GITHUB_ENV"
+          echo "raw_ref=$RAW_REF"             >> "$GITHUB_OUTPUT"
 
       - name: Initialize submodules
         run: git submodule update --init --recursive
@@ -50,11 +50,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Tee Launcher image to Docker Hub
+      - name: Build and push TEE Launcher image to Docker Hub
         uses: Warpbuilds/build-push-action@v6
         with:
           context: tee_launcher/
-          profile-name: "mpc-image-builder"
+          profile-name: mpc-image-builder
           push: true
           file: tee_launcher/development/Dockerfile.launcher
-          tags: nearone/mpc-tee-launcher:latest,nearone/mpc-tee-launcher:${{ env.sanitized_ref }},nearone/mpc-tee-launcher:${{ env.sanitized_ref }}-${{ env.sha_short }}
+          tags: |
+            nearone/mpc-tee-launcher:latest
+            nearone/mpc-tee-launcher:${{ env.sanitized_ref }}
+            nearone/mpc-tee-launcher:${{ env.sanitized_ref }}-${{ env.sha_short }}
