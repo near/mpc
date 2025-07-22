@@ -30,6 +30,9 @@ impl Cli {
                     MpcNetworkSubCmd::DeployContract(cmd) => {
                         cmd.run(&name, config).await;
                     }
+                    MpcNetworkSubCmd::InitContract(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
                     MpcNetworkSubCmd::RemoveContract(cmd) => {
                         cmd.run(&name, config).await;
                     }
@@ -124,8 +127,10 @@ pub enum MpcNetworkSubCmd {
     New(NewMpcNetworkCmd),
     /// Update the parameters of an existing MPC network, including refilling accounts.
     Update(UpdateMpcNetworkCmd),
-    /// Deploy the MPC contract, initializing it to a number of participants.
+    /// Deploy the MPC contract code (without initializing it).
     DeployContract(MpcDeployContractCmd),
+    /// Initialize the MPC contract, initializing it to the specified parameters.
+    InitContract(MpcInitContractCmd),
     /// Remove the MPC contract from the local state, so a fresh one can be deployed.
     RemoveContract(RemoveContractCmd),
     /// View the contract state.
@@ -205,7 +210,7 @@ pub struct UpdateMpcNetworkCmd {
 }
 
 #[derive(clap::Parser)]
-pub struct MpcDeployContractCmd {
+pub struct MpcInitContractCmd {
     /// File path that contains the contract code.
     /// If not set, then the contract from TESTNET_CONTRACT_ACCOUNT_ID is fetched and deployed.
     #[clap(long)]
@@ -224,6 +229,17 @@ pub struct MpcDeployContractCmd {
     /// optimize gas cost for signature requests.
     #[clap(long)]
     pub max_requests_to_remove: Option<u32>,
+}
+
+#[derive(clap::Parser)]
+pub struct MpcDeployContractCmd {
+    /// File path that contains the contract code.
+    /// If not set, then the contract from TESTNET_CONTRACT_ACCOUNT_ID is fetched and deployed.
+    #[clap(long)]
+    pub path: Option<String>,
+    /// The number of NEAR to deposit into the contract account, for storage deposit.
+    #[clap(long, default_value = "20")]
+    pub deposit_near: u128,
 }
 
 #[derive(clap::Parser)]

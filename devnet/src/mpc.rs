@@ -1,9 +1,9 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts};
 use crate::cli::{
-    ListMpcCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcProposeUpdateContractCmd,
-    MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteNewParametersCmd, MpcVoteUpdateCmd,
-    NewMpcNetworkCmd, RemoveContractCmd, UpdateMpcNetworkCmd,
+    ListMpcCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
+    MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteNewParametersCmd,
+    MpcVoteUpdateCmd, NewMpcNetworkCmd, RemoveContractCmd, UpdateMpcNetworkCmd,
 };
 use crate::constants::{ONE_NEAR, TESTNET_CONTRACT_ACCOUNT_ID};
 use crate::devnet::OperatingDevnetSetup;
@@ -198,7 +198,57 @@ impl UpdateMpcNetworkCmd {
         .await;
     }
 }
+impl MpcInitContractCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        let mut setup = OperatingDevnetSetup::load(config.rpc).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} does not exist", name));
+        let contract: AccountId = mpc_setup
+            .contract
+            .clone()
+            .expect("Require MPC network to have a contract deployed.");
 
+        let mut access_key = setup.accounts.account(&contract).any_access_key().await;
+
+        let mut participants = Participants::new();
+        for (i, account_id) in mpc_setup
+            .participants
+            .iter()
+            .enumerate()
+            .take(self.init_participants)
+        {
+            participants
+                .insert(
+                    account_id.clone(),
+                    mpc_account_to_participant_info(setup.accounts.account(account_id), i),
+                )
+                .unwrap();
+        }
+        let parameters =
+            ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
+        let args = serde_json::to_vec(&InitV2Args {
+            parameters,
+            init_config: None,
+        })
+        .unwrap();
+
+        access_key
+            .submit_tx_to_call_function(
+                &contract,
+                "init",
+                &args,
+                300,
+                0,
+                near_primitives::views::TxExecutionStatus::Final,
+                true,
+            )
+            .await
+            .into_return_value()
+            .unwrap();
+    }
+}
 impl MpcDeployContractCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         let (contract_data, contract_path) = match &self.path {
@@ -267,48 +317,6 @@ impl MpcDeployContractCmd {
             .account_mut(&contract_account)
             .deploy_contract(contract_data, &contract_path)
             .await;
-
-        let mut access_key = setup
-            .accounts
-            .account(&contract_account)
-            .any_access_key()
-            .await;
-
-        let mut participants = Participants::new();
-        for (i, account_id) in mpc_setup
-            .participants
-            .iter()
-            .enumerate()
-            .take(self.init_participants)
-        {
-            participants
-                .insert(
-                    account_id.clone(),
-                    mpc_account_to_participant_info(setup.accounts.account(account_id), i),
-                )
-                .unwrap();
-        }
-        let parameters =
-            ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
-        let args = serde_json::to_vec(&InitV2Args {
-            parameters,
-            init_config: None,
-        })
-        .unwrap();
-
-        access_key
-            .submit_tx_to_call_function(
-                &contract_account,
-                "init",
-                &args,
-                300,
-                0,
-                near_primitives::views::TxExecutionStatus::Final,
-                true,
-            )
-            .await
-            .into_return_value()
-            .unwrap();
     }
 }
 
