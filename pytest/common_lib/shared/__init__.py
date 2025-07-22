@@ -20,25 +20,29 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 from cluster import start_cluster, LocalNode
 
-from transaction import create_create_account_action, create_payment_action, \
-    create_full_access_key_action, sign_transaction, serialize_transaction
+from transaction import (
+    create_create_account_action,
+    create_payment_action,
+    create_full_access_key_action,
+    sign_transaction,
+    serialize_transaction,
+)
 
 from key import Key
 
-dot_near = pathlib.Path.home() / '.near'
-SECRETS_JSON = 'secrets.json'
+dot_near = pathlib.Path.home() / ".near"
+SECRETS_JSON = "secrets.json"
 
 
 # Output is deserializable into the rust type near_crypto::SecretKey
 def serialize_key(key: Key):
     full_key = bytes(key.decoded_sk())
-    return 'ed25519:' + base58.b58encode(full_key).decode('ascii')
+    return "ed25519:" + base58.b58encode(full_key).decode("ascii")
 
 
 def deserialize_key(account_id: str, key: str) -> Key:
-    assert key.startswith('ed25519:')
-    signing_key = SigningKey(
-        base58.b58decode(key.split(':')[1].encode('ascii'))[:32])
+    assert key.startswith("ed25519:")
+    signing_key = SigningKey(base58.b58decode(key.split(":")[1].encode("ascii"))[:32])
     return Key.from_keypair(account_id, signing_key)
 
 
@@ -74,14 +78,8 @@ def start_neard_cluster_with_cleanup(
     rpc_polling_config = {
         "rpc": {
             "polling_config": {
-                "polling_timeout": {
-                    "secs": 20,
-                    "nanos": 0
-                },
-                "polling_interval": {
-                    "secs": 1,
-                    "nanos": 0
-                },
+                "polling_timeout": {"secs": 20, "nanos": 0},
+                "polling_interval": {"secs": 1, "nanos": 0},
             }
         }
     }
@@ -94,12 +92,15 @@ def start_neard_cluster_with_cleanup(
     # the config is set to local, so we expect local nodes.
     nodes: typing.List[LocalNode] = cast(
         List[LocalNode],
-        start_cluster(num_validators,
-                      num_mpc_nodes,
-                      1,
-                      None, [("epoch_length", 1000),
-                             ("block_producer_kickout_threshold", 80)],
-                      client_config_changes=client_config_changes))
+        start_cluster(
+            num_validators,
+            num_mpc_nodes,
+            1,
+            None,
+            [("epoch_length", 1000), ("block_producer_kickout_threshold", 80)],
+            client_config_changes=client_config_changes,
+        ),
+    )
 
     validators = nodes[:num_validators]
     observers = nodes[num_validators:]
@@ -141,51 +142,52 @@ def generate_mpc_configs(
       (2) observer nodes that corresponds to the mpc participant hasn't been started yet,
         so we can not make any requests from them yet.
     """
-    signers = ','.join(f'signer_{i}.test0' for i in range(num_mpc_nodes))
-    responders = [f'responder_{i}.test0' for i in range(num_mpc_nodes)]
+    signers = ",".join(f"signer_{i}.test0" for i in range(num_mpc_nodes))
+    responders = [f"responder_{i}.test0" for i in range(num_mpc_nodes)]
     cmd = (
         MPC_BINARY_PATH,
-        'generate-test-configs',
-        '--output-dir',
+        "generate-test-configs",
+        "--output-dir",
         dot_near,
-        '--participants',
+        "--participants",
         signers,
-        '--responders',
-        ','.join(responders),
-        '--threshold',
+        "--responders",
+        ",".join(responders),
+        "--threshold",
         str(num_mpc_nodes),
-        '--desired-responder-keys-per-participant',
+        "--desired-responder-keys-per-participant",
         str(num_respond_aks),
     )
     if presignatures_to_buffer:
         cmd = cmd + (
-            '--desired-presignatures-to-buffer',
+            "--desired-presignatures-to-buffer",
             str(presignatures_to_buffer),
         )
     subprocess.run(cmd)
 
     candidates = []
-    with open(pathlib.Path(dot_near / 'participants.json')) as file:
+    with open(pathlib.Path(dot_near / "participants.json")) as file:
         participants_config = yaml.load(file, Loader=SafeLoaderIgnoreUnknown)
     for idx, (participant, responder_account_id) in enumerate(
-            zip(
-                participants_config['participants'],
-                responders,
-            )):
-        near_account = participant['near_account_id']
-        p2p_public_key = participant['p2p_public_key']
-        my_addr = participant['address']
-        my_port = participant['port']
+        zip(
+            participants_config["participants"],
+            responders,
+        )
+    ):
+        near_account = participant["near_account_id"]
+        p2p_public_key = participant["p2p_public_key"]
+        my_addr = participant["address"]
+        my_port = participant["port"]
 
         secrets_file_path = os.path.join(dot_near, str(idx), SECRETS_JSON)
         with open(secrets_file_path) as file:
             participant_secrets = json.load(file)
         signer_key = deserialize_key(
             near_account,
-            participant_secrets['near_signer_key'],
+            participant_secrets["near_signer_key"],
         )
         responder_keys = []
-        for key in participant_secrets['near_responder_keys']:
+        for key in participant_secrets["near_responder_keys"]:
             responder_keys.append(deserialize_key(responder_account_id, key))
 
         candidates.append(
@@ -194,17 +196,18 @@ def generate_mpc_configs(
                 responder_keys=responder_keys,
                 p2p_public_key=p2p_public_key,
                 url=f"http://{my_addr}:{my_port}",
-            ))
+            )
+        )
     return candidates
 
 
 def adjust_indexing_shard(near_node: LocalNode):
     """Set the node to track all shards in config.json (any non-empty list for 'tracked_shards' will make the node observe all shards)."""
-    path = os.path.join(near_node.node_dir, 'config.json')
+    path = os.path.join(near_node.node_dir, "config.json")
 
-    with open(path, 'r+') as f:
+    with open(path, "r+") as f:
         config = json.load(f)
-        config['tracked_shards_config'] = "AllShards"
+        config["tracked_shards_config"] = "AllShards"
         f.seek(0)
         json.dump(config, f, indent=2)
         f.truncate()
@@ -220,11 +223,13 @@ def move_mpc_configs(observers: List[LocalNode]):
     for idx, observer in enumerate(observers):
         mpc_config_dir = dot_near / str(idx)
         for fname in os.listdir(mpc_config_dir):
-            subprocess.run((
-                'mv',
-                os.path.join(mpc_config_dir, fname),
-                observer.node_dir,
-            ))
+            subprocess.run(
+                (
+                    "mv",
+                    os.path.join(mpc_config_dir, fname),
+                    observer.node_dir,
+                )
+            )
 
 
 def start_cluster_with_mpc(
@@ -317,7 +322,7 @@ def start_cluster_with_mpc(
 
     # Name mpc nodes A, B, C, ...
     for i, mpc_node in enumerate(mpc_nodes):
-        mpc_node.set_secret_store_key(str(chr(ord('A') + i) * 32))
+        mpc_node.set_secret_store_key(str(chr(ord("A") + i) * 32))
 
     # Start the mpc nodes
     if start_mpc_nodes:

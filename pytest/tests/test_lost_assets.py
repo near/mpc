@@ -28,10 +28,10 @@ def wait_for_presignatures_to_buffer(cluster: MpcCluster):
         assert time.time() - started < TIMEOUT, "Waiting for presignatures"
         try:
             presignature_count = cluster.get_int_metric_value(
-                "mpc_owned_num_presignatures_available")
+                "mpc_owned_num_presignatures_available"
+            )
             print("Owned presignatures:", presignature_count)
-            if all(x and x == PRESIGNATURES_TO_BUFFER
-                   for x in presignature_count):
+            if all(x and x == PRESIGNATURES_TO_BUFFER for x in presignature_count):
                 break
         except requests.exceptions.ConnectionError:
             pass
@@ -46,11 +46,14 @@ def wait_for_asset_cleanup(mpc_nodes: List[MpcNode]):
             cleanup_done = True
             for node in mpc_nodes:
                 available = node.metrics.get_int_metric_value(
-                    "mpc_owned_num_presignatures_available")
+                    "mpc_owned_num_presignatures_available"
+                )
                 online = node.metrics.get_int_metric_value(
-                    "mpc_owned_num_presignatures_online")
+                    "mpc_owned_num_presignatures_online"
+                )
                 offline = node.metrics.get_int_metric_value(
-                    "mpc_owned_num_presignatures_with_offline_participant")
+                    "mpc_owned_num_presignatures_with_offline_participant"
+                )
                 print(
                     f"node {node.print()} has owned presignatures available={available} online={online} with_offline_participant={offline}"
                 )
@@ -101,7 +104,8 @@ def test_lost_assets():
     # are assigned as leaders for the requests.
 
     presignatures_available = sum(
-        cluster.get_int_metric_value('mpc_owned_num_presignatures_available'))
+        cluster.get_int_metric_value("mpc_owned_num_presignatures_available")
+    )
     cluster.send_and_await_signature_requests(presignatures_available // 4)
 
 
@@ -130,11 +134,12 @@ def test_signature_pause_block_ingestion():
         assert time.time() - started < 120, "Waiting for presignatures"
         try:
             block_heights = cluster.get_int_metric_value(
-                "mpc_indexer_latest_block_height")
+                "mpc_indexer_latest_block_height"
+            )
             print("block heights:", block_heights)
-            if (block_heights[0] + 10
-                    < block_heights[1]) and (block_heights[0] + 10
-                                             < block_heights[2]):
+            if (block_heights[0] + 10 < block_heights[1]) and (
+                block_heights[0] + 10 < block_heights[2]
+            ):
                 break
         except requests.exceptions.ConnectionError:
             pass
@@ -149,17 +154,19 @@ def test_signature_pause_block_ingestion():
     mpc_nodes[0].set_block_ingestion(True)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num-requests",
-                        type=int,
-                        default=10,
-                        help="Number of signature requests to make")
+    parser.add_argument(
+        "--num-requests",
+        type=int,
+        default=10,
+        help="Number of signature requests to make",
+    )
     parser.add_argument(
         "--num-respond-access-keys",
         type=int,
         default=1,
-        help="Number of access keys to provision for the respond signer account"
+        help="Number of access keys to provision for the respond signer account",
     )
     args = parser.parse_args()
 
