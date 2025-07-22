@@ -113,7 +113,6 @@ mod tests {
     }
 
     #[test]
-    // TODO(#643): Test quote verification logic (as much as possible except signature verification)
     fn test_mock_attestation_verify_quote() {
         let timestamp_s = 0u64;
         assert!(!mock_attestation(false, false).verify_quote(timestamp_s));

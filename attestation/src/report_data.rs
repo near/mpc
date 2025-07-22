@@ -1,52 +1,56 @@
-use derive_more::{Deref, From, Into};
+use core::ops::Deref;
+use derive_more::Constructor;
 use near_crypto::PublicKey;
 use sha3::{Digest, Sha3_384};
 
 /// Number of bytes for the report data.
-/// report_data: [u8; 64] =
-///   [version(2 bytes big endian) || sha384(TLS pub key || account pub key) || zero padding]
 const REPORT_DATA_SIZE: usize = 64;
 
+/// Common constants for all [`ReportData`] versions.
 const BINARY_VERSION_OFFSET: usize = 0;
 const BINARY_VERSION_SIZE: usize = 2;
 
-const PUBLIC_KEYS_OFFSET: usize = 2;
-const PUBLIC_KEYS_SIZE: usize = 48;
-
-pub const BINARY_VERSION: BinaryVersion = BinaryVersion(1);
-
-// Compile-time assertions
-const _: () = {
-    assert!(
-        BINARY_VERSION_SIZE + PUBLIC_KEYS_SIZE <= REPORT_DATA_SIZE,
-        "Version and public key must not exceed report data size."
-    );
-    assert!(
-        BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE == PUBLIC_KEYS_OFFSET,
-        "Public key offset must be after binary version."
-    );
-};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deref, From, Into)]
-pub struct BinaryVersion(u16);
-
-#[derive(Debug, Clone)]
-pub struct ReportData {
-    pub version: BinaryVersion,
-    pub tls_public_key: PublicKey,
-    pub account_public_key: PublicKey,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u16)]
+pub enum BinaryVersion {
+    V1 = 1,
 }
 
-impl ReportData {
-    pub fn new(tls_public_key: PublicKey, account_public_key: PublicKey) -> Self {
-        Self {
-            version: BINARY_VERSION,
-            tls_public_key,
-            account_public_key,
-        }
+impl BinaryVersion {
+    pub fn to_be_bytes(self) -> [u8; 2] {
+        (self as u16).to_be_bytes()
     }
 
-    /// Generates the binary representation of the report data.
+    pub fn from_be_bytes(bytes: [u8; 2]) -> Option<Self> {
+        match u16::from_be_bytes(bytes) {
+            1 => Some(Self::V1),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Constructor)]
+pub struct ReportDataV1 {
+    tls_public_key: PublicKey,
+    account_public_key: PublicKey,
+}
+
+impl ReportDataV1 {
+    /// V1-specific format constants
+    /// report_data: [u8; 64] =
+    ///   [version(2 bytes big endian) || sha384(TLS pub key || account pub key) || zero padding]
+    const PUBLIC_KEYS_OFFSET: usize = BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE;
+    const PUBLIC_KEYS_HASH_SIZE: usize = 48;
+
+    // Compile-time assertions for V1 format.
+    const _V1_LAYOUT_CHECK: () = {
+        assert!(
+            BINARY_VERSION_SIZE + Self::PUBLIC_KEYS_HASH_SIZE <= REPORT_DATA_SIZE,
+            "V1: Version and public key must not exceed report data size."
+        );
+    };
+
+    /// Generates the binary representation of V1 report data.
     ///
     /// Format:
     /// [version(2 bytes big endian) || sha384(TLS pub key || account pub key) || zero padding]
@@ -54,13 +58,14 @@ impl ReportData {
         let mut report_data = [0u8; REPORT_DATA_SIZE];
 
         // Copy binary version (2 bytes, big endian)
-        let version_bytes = self.version.to_be_bytes();
+        let version_bytes = BinaryVersion::V1.to_be_bytes();
         report_data[BINARY_VERSION_OFFSET..BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE]
             .copy_from_slice(&version_bytes);
 
         // Generate and copy hash of public keys (48 bytes)
         let public_keys_hash = self.public_keys_hash();
-        report_data[PUBLIC_KEYS_OFFSET..PUBLIC_KEYS_OFFSET + PUBLIC_KEYS_SIZE]
+        report_data
+            [Self::PUBLIC_KEYS_OFFSET..Self::PUBLIC_KEYS_OFFSET + Self::PUBLIC_KEYS_HASH_SIZE]
             .copy_from_slice(&public_keys_hash);
 
         // Remaining bytes are already zero-padded by default
@@ -68,11 +73,46 @@ impl ReportData {
     }
 
     /// Generates SHA3-384 hash of concatenated TLS and account public keys.
-    pub fn public_keys_hash(&self) -> [u8; PUBLIC_KEYS_SIZE] {
+    pub fn public_keys_hash(&self) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
         let mut hasher = Sha3_384::new();
         hasher.update(self.tls_public_key.key_data());
         hasher.update(self.account_public_key.key_data());
         hasher.finalize().into()
+    }
+
+    /// Parse V1 report data from bytes. Returns the public_keys_hash.
+    /// Note: This only extracts the hash, not the original public keys.
+    pub fn from_bytes(bytes: &[u8; REPORT_DATA_SIZE]) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
+        // Extract hash using V1 format
+        let mut hash = [0u8; Self::PUBLIC_KEYS_HASH_SIZE];
+        hash.copy_from_slice(
+            &bytes
+                [Self::PUBLIC_KEYS_OFFSET..Self::PUBLIC_KEYS_OFFSET + Self::PUBLIC_KEYS_HASH_SIZE],
+        );
+        hash
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ReportData {
+    V1(ReportDataV1),
+}
+
+impl ReportData {
+    pub fn version(&self) -> BinaryVersion {
+        match self {
+            ReportData::V1(_) => BinaryVersion::V1,
+        }
+    }
+}
+
+impl Deref for ReportData {
+    type Target = ReportDataV1;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ReportData::V1(v1) => v1,
+        }
     }
 }
 
@@ -120,32 +160,79 @@ mod tests {
 
     #[test]
     fn test_binary_version_serialization() {
-        let version = BinaryVersion(1);
+        let version = BinaryVersion::V1;
         assert_eq!(version.to_be_bytes(), [0, 1]);
+
+        let parsed = BinaryVersion::from_be_bytes([0, 1]).unwrap();
+        assert_eq!(parsed, BinaryVersion::V1);
+
+        assert!(BinaryVersion::from_be_bytes([0, 2]).is_none());
+    }
+
+    #[test]
+    fn test_report_data_enum_structure() {
+        let (tls_key, account_key) = create_test_keys();
+        let data = ReportData::V1(ReportDataV1::new(tls_key.clone(), account_key.clone()));
+
+        match &data {
+            ReportData::V1(v1) => {
+                assert_eq!(&v1.tls_public_key, &tls_key);
+                assert_eq!(&v1.account_public_key, &account_key);
+            }
+        }
+
+        assert_eq!(data.version(), BinaryVersion::V1);
+        assert_eq!(&data.tls_public_key, &tls_key);
+        assert_eq!(&data.account_public_key, &account_key);
+    }
+
+    #[test]
+    fn test_report_data_v1_struct() {
+        let (tls_key, account_key) = create_test_keys();
+
+        let v1 = ReportDataV1::new(tls_key.clone(), account_key.clone());
+        assert_eq!(v1.tls_public_key, tls_key);
+        assert_eq!(v1.account_public_key, account_key);
+
+        let data = ReportData::V1(v1);
+        assert_eq!(&data.tls_public_key, &tls_key);
+        assert_eq!(&data.account_public_key, &account_key);
+    }
+
+    #[test]
+    fn test_from_bytes() {
+        let (tls_key, account_key) = create_test_keys();
+        let data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+        let bytes = data.to_bytes();
+
+        let hash = ReportDataV1::from_bytes(&bytes);
+        assert_eq!(hash, data.public_keys_hash());
     }
 
     #[test]
     fn test_binary_version_placement() {
         let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportData::new(tls_key, account_key).to_bytes();
+        let bytes = ReportData::V1(ReportDataV1::new(tls_key, account_key)).to_bytes();
 
-        let version_bytes = &bytes[0..2];
+        let version_bytes =
+            &bytes[BINARY_VERSION_OFFSET..BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE];
         assert_eq!(version_bytes, &[0, 1]);
     }
 
     #[test]
     fn test_public_key_hash_placement() {
         let (tls_key, account_key) = create_test_keys();
-        let data = ReportData::new(tls_key.clone(), account_key.clone());
+        let data = ReportData::V1(ReportDataV1::new(tls_key.clone(), account_key.clone()));
         let bytes = data.to_bytes();
 
-        let hash_bytes = &bytes[PUBLIC_KEYS_OFFSET..PUBLIC_KEYS_OFFSET + PUBLIC_KEYS_SIZE];
-        assert_ne!(hash_bytes, &[0u8; 48]);
+        let hash_bytes = &bytes[ReportDataV1::PUBLIC_KEYS_OFFSET
+            ..ReportDataV1::PUBLIC_KEYS_OFFSET + ReportDataV1::PUBLIC_KEYS_HASH_SIZE];
+        assert_ne!(hash_bytes, &[0u8; ReportDataV1::PUBLIC_KEYS_HASH_SIZE]);
 
         let mut hasher = Sha3_384::new();
         hasher.update(tls_key.key_data());
         hasher.update(account_key.key_data());
-        let expected: [u8; 48] = hasher.finalize().into();
+        let expected: [u8; ReportDataV1::PUBLIC_KEYS_HASH_SIZE] = hasher.finalize().into();
 
         assert_eq!(hash_bytes, &expected);
     }
@@ -153,16 +240,17 @@ mod tests {
     #[test]
     fn test_zero_padding() {
         let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportData::new(tls_key, account_key).to_bytes();
+        let bytes = ReportData::V1(ReportDataV1::new(tls_key, account_key)).to_bytes();
 
-        let padding = &bytes[PUBLIC_KEYS_OFFSET + PUBLIC_KEYS_SIZE..];
+        let padding =
+            &bytes[ReportDataV1::PUBLIC_KEYS_OFFSET + ReportDataV1::PUBLIC_KEYS_HASH_SIZE..];
         assert!(padding.iter().all(|&b| b == 0));
     }
 
     #[test]
     fn test_report_data_size() {
         let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportData::new(tls_key, account_key).to_bytes();
-        assert_eq!(bytes.len(), 64);
+        let bytes = ReportData::V1(ReportDataV1::new(tls_key, account_key)).to_bytes();
+        assert_eq!(bytes.len(), REPORT_DATA_SIZE);
     }
 }

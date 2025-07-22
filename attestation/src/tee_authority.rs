@@ -196,6 +196,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::report_data::ReportDataV1;
+
     use super::*;
 
     #[test]
@@ -251,7 +253,7 @@ mod tests {
         let account_key = "ed25519:H9k5eiU4xXyb8F7cUDjZYNuH1zGAx5BBNrYwLPNhq6Zx"
             .parse()
             .unwrap();
-        let report_data = ReportData::new(tls_key, account_key);
+        let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
         for quote_verification_result in [true, false] {
             for docker_image_verification_result in [true, false] {
