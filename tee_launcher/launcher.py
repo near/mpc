@@ -73,7 +73,6 @@ ALLOWED_ENV_VARS = {
     "RUST_BACKTRACE",  # Enables backtraces for Rust errors
     "RUST_LOG",  # Logging level for Rust code
     "MPC_RESPONDER_ID",  # Unique responder ID for MPC communication
-   
 }
 
 # Regex: hostnames must be alphanum + dash/dot, IPs must be valid IPv4

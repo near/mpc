@@ -13,5 +13,5 @@ jobs:
       - name: Check Python code formatting with Black
         uses: psf/black@stable
         with:
-          options: "--check --diff --verbose"
-          src: "./pytest"
+          options: "--check --diff --verbose --extend-exclude libs/nearcore"
+          src: "."
