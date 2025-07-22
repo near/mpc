@@ -30,7 +30,7 @@ const REPORT_DATA_SIZE: usize = 64;
 const BINARY_VERSION_OFFSET: usize = 0;
 const BINARY_VERSION_SIZE: usize = 2;
 
-const PUBLIC_KEYS_OFFSET: usize = 3;
+const PUBLIC_KEYS_OFFSET: usize = 2;
 const PUBLIC_KEYS_SIZE: usize = 48;
 
 pub const BINARY_VERSION: BinaryVersion = BinaryVersion(1);
@@ -42,7 +42,7 @@ const _: () = {
         "Version and public key must not exceed report data size."
     );
     assert!(
-        BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE + 1 == PUBLIC_KEYS_OFFSET,
+        BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE == PUBLIC_KEYS_OFFSET,
         "Public key offset must be after binary version."
     );
 };
