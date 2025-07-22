@@ -6,7 +6,6 @@ Deploys a test contract with a function that makes parallel sign calls.
 Calls the test function and ensures a successful response.
 """
 
-import json
 import sys
 import base64
 import pytest

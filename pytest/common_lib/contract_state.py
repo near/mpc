@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import json
 from typing import Dict, List, Literal, Optional
 
 ProtocolState = Literal["Initializing", "Running", "Resharing"]

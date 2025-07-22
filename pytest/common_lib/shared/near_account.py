@@ -2,7 +2,7 @@ import json
 import pathlib
 import sys
 
-from key import Key, SigningKey
+from key import Key
 
 from common_lib.constants import TGAS
 from common_lib.shared.transaction_status import assert_txn_success

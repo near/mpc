@@ -230,7 +230,7 @@ def get_image_digest() -> str:
         logging.info(f"opening image digest file {IMAGE_DIGEST_FILE}.")
         return open(IMAGE_DIGEST_FILE).readline().strip()
     else:
-        logging.info(f"Using default image digest from environment.")
+        logging.info("Using default image digest from environment.")
         return os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
 
 
@@ -270,7 +270,7 @@ def curl_unix_socket_post(
 
 def main():
 
-    logging.info(f"start")
+    logging.info("start")
     # We want to globally enable DOCKER_CONTENT_TRUST=1 to ensure integrity of Docker images.
     if os.environ.get(OS_ENV_DOCKER_CONTENT_TRUST, "0") != "1":
         raise RuntimeError(

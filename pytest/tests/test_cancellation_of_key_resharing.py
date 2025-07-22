@@ -60,7 +60,7 @@ def test_cancellation_of_key_resharing():
     killed_node.kill()
 
     # Cancel resharing
-    print(f"\033[91mVoting on cancellation of resharing\033[0m")
+    print("\033[91mVoting on cancellation of resharing\033[0m")
 
     # Vote with nodes that were not in the previous running state.
     # These votes should be reject by the contract.
