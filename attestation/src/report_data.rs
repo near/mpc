@@ -1,4 +1,3 @@
-use core::ops::Deref;
 use derive_more::Constructor;
 use near_crypto::PublicKey;
 use sha3::{Digest, Sha3_384};
@@ -17,11 +16,11 @@ pub enum BinaryVersion {
 }
 
 impl BinaryVersion {
-    pub fn to_be_bytes(self) -> [u8; 2] {
+    pub fn to_be_bytes(self) -> [u8; BINARY_VERSION_SIZE] {
         (self as u16).to_be_bytes()
     }
 
-    pub fn from_be_bytes(bytes: [u8; 2]) -> Option<Self> {
+    pub fn from_be_bytes(bytes: [u8; BINARY_VERSION_SIZE]) -> Option<Self> {
         match u16::from_be_bytes(bytes) {
             1 => Some(Self::V1),
             _ => None,
@@ -104,14 +103,11 @@ impl ReportData {
             ReportData::V1(_) => BinaryVersion::V1,
         }
     }
-}
 
-impl Deref for ReportData {
-    type Target = ReportDataV1;
-
-    fn deref(&self) -> &Self::Target {
+    /// Generates the binary representation of report data.
+    pub fn to_bytes(&self) -> [u8; REPORT_DATA_SIZE] {
         match self {
-            ReportData::V1(v1) => v1,
+            ReportData::V1(v1) => v1.to_bytes(),
         }
     }
 }
@@ -182,8 +178,6 @@ mod tests {
         }
 
         assert_eq!(data.version(), BinaryVersion::V1);
-        assert_eq!(&data.tls_public_key, &tls_key);
-        assert_eq!(&data.account_public_key, &account_key);
     }
 
     #[test]
@@ -193,26 +187,25 @@ mod tests {
         let v1 = ReportDataV1::new(tls_key.clone(), account_key.clone());
         assert_eq!(v1.tls_public_key, tls_key);
         assert_eq!(v1.account_public_key, account_key);
-
-        let data = ReportData::V1(v1);
-        assert_eq!(&data.tls_public_key, &tls_key);
-        assert_eq!(&data.account_public_key, &account_key);
     }
 
     #[test]
     fn test_from_bytes() {
         let (tls_key, account_key) = create_test_keys();
-        let data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
-        let bytes = data.to_bytes();
+        let report_data_v1 = ReportDataV1::new(tls_key, account_key);
+        let bytes = report_data_v1.to_bytes();
 
         let hash = ReportDataV1::from_bytes(&bytes);
-        assert_eq!(hash, data.public_keys_hash());
+        assert_eq!(hash, report_data_v1.public_keys_hash());
+
+        let report_data = ReportData::V1(report_data_v1);
+        assert_eq!(report_data.to_bytes(), bytes);
     }
 
     #[test]
     fn test_binary_version_placement() {
         let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportData::V1(ReportDataV1::new(tls_key, account_key)).to_bytes();
+        let bytes = ReportDataV1::new(tls_key, account_key).to_bytes();
 
         let version_bytes =
             &bytes[BINARY_VERSION_OFFSET..BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE];
@@ -222,8 +215,11 @@ mod tests {
     #[test]
     fn test_public_key_hash_placement() {
         let (tls_key, account_key) = create_test_keys();
-        let data = ReportData::V1(ReportDataV1::new(tls_key.clone(), account_key.clone()));
-        let bytes = data.to_bytes();
+        let report_data_v1 = ReportDataV1::new(tls_key.clone(), account_key.clone());
+        let bytes = report_data_v1.to_bytes();
+
+        let report_data = ReportData::V1(report_data_v1);
+        assert_eq!(report_data.to_bytes(), bytes);
 
         let hash_bytes = &bytes[ReportDataV1::PUBLIC_KEYS_OFFSET
             ..ReportDataV1::PUBLIC_KEYS_OFFSET + ReportDataV1::PUBLIC_KEYS_HASH_SIZE];
@@ -240,7 +236,7 @@ mod tests {
     #[test]
     fn test_zero_padding() {
         let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportData::V1(ReportDataV1::new(tls_key, account_key)).to_bytes();
+        let bytes = ReportDataV1::new(tls_key, account_key).to_bytes();
 
         let padding =
             &bytes[ReportDataV1::PUBLIC_KEYS_OFFSET + ReportDataV1::PUBLIC_KEYS_HASH_SIZE..];
@@ -250,7 +246,7 @@ mod tests {
     #[test]
     fn test_report_data_size() {
         let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportData::V1(ReportDataV1::new(tls_key, account_key)).to_bytes();
-        assert_eq!(bytes.len(), REPORT_DATA_SIZE);
+        let bytes = ReportDataV1::new(tls_key, account_key);
+        assert_eq!(bytes.to_bytes().len(), REPORT_DATA_SIZE);
     }
 }
