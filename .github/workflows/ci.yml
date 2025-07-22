@@ -171,7 +171,7 @@ jobs:
 
       - name: Run pytest
         run: |
-          python3 -m venv pytest/venv
-          source pytest/venv/bin/activate
+          python3 -m venv tee_launcher/venv
+          source tee_launcher/venv/bin/activate
           cd tee_launcher 
           pytest test_launcher_config.py -v -s -x
