@@ -68,14 +68,6 @@ impl ReportDataV1 {
         report_data
     }
 
-    /// Generates SHA3-384 hash of concatenated TLS and account public keys.
-    pub fn public_keys_hash(&self) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
-        let mut hasher = Sha3_384::new();
-        hasher.update(self.tls_public_key.key_data());
-        hasher.update(self.account_public_key.key_data());
-        hasher.finalize().into()
-    }
-
     /// Parses V1 report data from bytes. Returns the hash of public keys.
     /// Note: This only extracts the hash, not the original public keys.
     pub fn from_bytes(bytes: &[u8; REPORT_DATA_SIZE]) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
@@ -86,6 +78,14 @@ impl ReportDataV1 {
                 [Self::PUBLIC_KEYS_OFFSET..Self::PUBLIC_KEYS_OFFSET + Self::PUBLIC_KEYS_HASH_SIZE],
         );
         hash
+    }
+
+    /// Generates SHA3-384 hash of concatenated TLS and account public keys.
+    fn public_keys_hash(&self) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
+        let mut hasher = Sha3_384::new();
+        hasher.update(self.tls_public_key.key_data());
+        hasher.update(self.account_public_key.key_data());
+        hasher.finalize().into()
     }
 }
 
