@@ -42,8 +42,13 @@ impl Attestation {
 
         match dcap_qvl::verify::verify(quote_bytes, &attestation.collateral, timestamp_s) {
             Ok(verification_result) => {
-                verification_result.status == EXPECTED_QUOTE_STATUS
-                    && verification_result.advisory_ids.is_empty()
+                let status_is_up_to_date = verification_result.status == EXPECTED_QUOTE_STATUS;
+
+                // Advisory IDs indicate known security vulnerabilities or issues with the TEE.
+                // For a quote to be considered secure, there should be no outstanding advisories.
+                let no_security_advisories = verification_result.advisory_ids.is_empty();
+
+                status_is_up_to_date && no_security_advisories
             }
             Err(err) => {
                 tracing::error!("TEE quote verification failed: {:?}", err);
