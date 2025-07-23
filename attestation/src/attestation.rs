@@ -1,6 +1,5 @@
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
-use tracing::error;
 
 use crate::{collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, tcbinfo::TcbInfo};
 use near_sdk::PublicKey;
@@ -44,7 +43,7 @@ impl Attestation {
                     && verification_result.advisory_ids.is_empty()
             }
             Err(err) => {
-                error!("TEE quote verification failed: {:?}", err);
+                tracing::error!("TEE quote verification failed: {:?}", err);
                 false
             }
         }
