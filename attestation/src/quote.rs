@@ -9,6 +9,8 @@ use thiserror::Error;
 ///
 /// We keep the raw bytes of the quote since they're needed for verification and Phala probably
 /// doesn't provide an easy way to encode it back to the [`DcapQuote`] structure.
+///
+/// See: https://github.com/Phala-Network/dcap-qvl/issues/12
 #[derive(Debug, Deref)]
 pub struct Quote {
     raw_bytes: Vec<u8>,
