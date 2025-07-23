@@ -1,13 +1,35 @@
-use alloc::{format, string::String};
+use alloc::{format, string::String, vec::Vec};
 use core::str::FromStr;
 use dcap_qvl::quote::Quote as DcapQuote;
-use derive_more::{Deref, From, Into};
+use derive_more::Deref;
 use hex::FromHexError;
 use thiserror::Error;
 
 /// TEE Remote Attestation Quote that proves the participant's identity.
-#[derive(From, Deref, Into, Debug)]
-pub struct Quote(DcapQuote);
+#[derive(Debug, Deref)]
+pub struct Quote {
+    /// We keep the raw bytes of the quote since they're needed for verification and Phala probably
+    /// doesn't provide an easy way to encode it back to the [`DcapQuote`] structure.
+    /// Once https://github.com/Phala-Network/dcap-qvl/issues/12 is done we can remove this.
+    raw_bytes: Vec<u8>,
+    #[deref]
+    dcap_quote: DcapQuote,
+}
+
+impl Quote {
+    pub fn new(raw_bytes: Vec<u8>) -> Result<Self, QuoteError> {
+        let dcap_quote =
+            DcapQuote::parse(&raw_bytes).map_err(|e| QuoteError::ParseError(format!("{:?}", e)))?;
+        Ok(Self {
+            raw_bytes,
+            dcap_quote,
+        })
+    }
+
+    pub fn raw_bytes(&self) -> &[u8] {
+        &self.raw_bytes
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum QuoteError {
@@ -31,9 +53,7 @@ impl FromStr for Quote {
     /// - The decoded bytes don't represent a valid quote
     fn from_str(tdx_quote_hex: &str) -> Result<Self, Self::Err> {
         let quote_bytes = hex::decode(tdx_quote_hex)?;
-        let dcap_quote = DcapQuote::parse(&quote_bytes)
-            .map_err(|e| QuoteError::ParseError(format!("{:?}", e)))?;
-        Ok(Quote(dcap_quote))
+        Self::new(quote_bytes)
     }
 }
 
