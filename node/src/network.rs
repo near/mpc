@@ -205,17 +205,10 @@ impl MeshNetworkClient {
     ) -> anyhow::Result<Vec<ParticipantId>> {
         let me = self.my_participant_id();
         let participants = self.all_alive_participant_ids();
-
-        if participants.len() < total {
-            anyhow::bail!(
-                "Not enough active participants: need {}, got {}",
-                total,
-                participants.len()
-            );
-        }
-        if !participants.contains(&me) {
-            anyhow::bail!("There's no `me` in active participants");
-        }
+        anyhow::ensure!(
+            participants.contains(&me),
+            "There's no `me` in active participants"
+        );
 
         let mut res = participants
             .into_iter()
@@ -226,6 +219,14 @@ impl MeshNetworkClient {
             })
             .choose_multiple(&mut rand::thread_rng(), total - 1);
         res.push(me);
+
+        anyhow::ensure!(
+            res.len() == total,
+            "Not enough active participants: need {}, got {}",
+            total,
+            res.len()
+        );
+
         Ok(res)
     }
 
@@ -933,16 +934,18 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::computation::MpcLeaderCentricComputation;
-    use super::{MeshNetworkClient, NetworkTaskChannel};
-    use crate::network::testing::run_test_clients;
+    use super::{MeshNetworkClient, NetworkTaskChannel, NetworkTaskChannelManager};
+    use crate::network::indexer_heights::IndexerHeightTracker;
+    use crate::network::testing::{new_test_transports, run_test_clients};
     use crate::primitives::{MpcTaskId, UniqueId};
     use crate::providers::EcdsaTaskId;
     use crate::tests::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
-    use std::collections::HashSet;
-    use std::sync::Arc;
+    use std::collections::{HashMap, HashSet};
+    use std::sync::atomic::AtomicU64;
+    use std::sync::{Arc, Mutex};
     use tokio::sync::mpsc;
 
     /// Just some big prime number
@@ -1087,6 +1090,39 @@ mod tests {
     #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
     struct TestTripleMessage {
         data: u64,
+    }
+
+    #[test]
+    fn select_random_active_participants_including_me_should_return_not_enough_active_participants_when_peers_to_consider_is_empty(
+    ) {
+        let num_participants = 4;
+        let participant_ids =
+            TestGenerators::new(num_participants, num_participants).participant_ids();
+        let transports = new_test_transports(participant_ids.clone());
+        let indexer_heights = {
+            let heights = participant_ids
+                .iter()
+                .map(|id| (*id, AtomicU64::new(0)))
+                .collect::<HashMap<_, _>>();
+            Arc::new(IndexerHeightTracker { heights })
+        };
+        let channels = Arc::new(Mutex::new(NetworkTaskChannelManager::new()));
+        let mesh_network_client = MeshNetworkClient::new(
+            transports[0].0.clone(),
+            channels.clone(),
+            indexer_heights.clone(),
+        );
+
+        let err = mesh_network_client
+            .select_random_active_participants_including_me(num_participants, &[])
+            .unwrap_err();
+
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.starts_with("Not enough active participants"),
+            "unexpected error message: {}",
+            err_msg
+        );
     }
 }
 
