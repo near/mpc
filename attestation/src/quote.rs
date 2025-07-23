@@ -18,11 +18,11 @@ pub struct Quote {
 }
 
 impl Quote {
-    pub fn new(raw_bytes: &[u8]) -> Result<Self, QuoteError> {
+    pub fn new(raw_bytes: Vec<u8>) -> Result<Self, QuoteError> {
         let dcap_quote =
-            DcapQuote::parse(raw_bytes).map_err(|e| QuoteError::ParseError(format!("{:?}", e)))?;
+            DcapQuote::parse(&raw_bytes).map_err(|e| QuoteError::ParseError(format!("{:?}", e)))?;
         Ok(Self {
-            raw_bytes: raw_bytes.to_vec(),
+            raw_bytes,
             dcap_quote,
         })
     }
@@ -54,7 +54,7 @@ impl FromStr for Quote {
     /// - The decoded bytes don't represent a valid quote
     fn from_str(tdx_quote_hex: &str) -> Result<Self, Self::Err> {
         let quote_bytes = hex::decode(tdx_quote_hex)?;
-        Self::new(&quote_bytes)
+        Self::new(quote_bytes)
     }
 }
 
