@@ -82,4 +82,20 @@ When the contract has been deployed you should be able to see its functions thro
 near contract inspect mpc-contract.test.near network-config mpc-localnet now
 ```
 
+Now when the contract has been deployed, the next step is to initialize it.
+
 ## 3. Initialize the MPC contract
+We'll initialize the MPC contract with two participants. Before we can call the contract, we first need to create accounts for the participants. Let's call them `alice` and `bob`.
+
+```
+near account create-account fund-myself alice.test.near '10 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+
+near account create-account fund-myself bob.test.near '10 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+```
+
+now we can extract their public keys.
+```
+export ALICE_PUBKEY=$(near account get-public-key from-keychain alice.test.near network-config mpc-localnet)
+export BOB_PUBKEY=$(near account get-public-key from-keychain bob.test.near network-config mpc-localnet)
+```
+
