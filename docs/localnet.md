@@ -62,3 +62,24 @@ We can verify that the account exists and has 10 NEAR with this command.
 ```
 near account view-account-summary mpc-contract.test.near network-config mpc-localnet now
 ```
+
+Now it's time to deploy the contract.
+First build the contract with `cargo build --release` from the `libs/chain-singatures` folder.
+Now you should have a `mpc_contract.wasm` artifact ready in the target directory.
+Let's add an env variable for it. From the workspace root, run the following:
+
+```
+export MPC_CONTRACT_PATH=$(pwd)/libs/chain-signatures/target/wasm32-unknown-unknown/release/mpc_contract.wasm
+```
+
+Now we can deploy the contract with this command.
+```
+near contract deploy mpc-contract.test.near use-file $MPC_CONTRACT_PATH without-init-call network-config mpc-localnet sign-with-keychain send
+```
+
+When the contract has been deployed you should be able to see its functions through the CLI.
+```
+near contract inspect mpc-contract.test.near network-config mpc-localnet now
+```
+
+## 3. Initialize the MPC contract
