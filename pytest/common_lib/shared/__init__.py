@@ -132,7 +132,6 @@ def generate_mpc_configs(
     num_mpc_nodes: int,
     num_respond_aks: int,
     presignatures_to_buffer: Optional[int],
-    threshold: int,
 ) -> List[Candidate]:
     """
     Generate MPC configs for each participant.
@@ -155,7 +154,7 @@ def generate_mpc_configs(
         "--responders",
         ",".join(responders),
         "--threshold",
-        str(threshold),
+        str(num_mpc_nodes),
         "--desired-responder-keys-per-participant",
         str(num_respond_aks),
     )
@@ -240,18 +239,14 @@ def start_cluster_with_mpc(
     contract,
     presignatures_to_buffer=None,
     start_mpc_nodes=True,
-    threshold=None,
 ):
     validators, observers = start_neard_cluster_with_cleanup(
         num_validators,
         num_mpc_nodes,
     )
 
-    if threshold is None:
-        threshold = num_mpc_nodes
-
     candidates = generate_mpc_configs(
-        num_mpc_nodes, num_respond_aks, presignatures_to_buffer, threshold=threshold
+        num_mpc_nodes, num_respond_aks, presignatures_to_buffer
     )
 
     move_mpc_configs(observers)

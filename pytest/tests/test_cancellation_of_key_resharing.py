@@ -37,7 +37,6 @@ def test_cancellation_of_key_resharing():
         total_nodes,
         1,
         load_mpc_contract(),
-        threshold=initial_threshold,
     )
     initial_running_nodes = mpc_nodes[:initial_running_nodes]
     all_participants = mpc_nodes[:total_nodes]
