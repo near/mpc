@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   launcher:
-    image: barakeinavhnear/launcher:latest  # isuse #531: TODO (security): Replace with a specific image digest
+    image: nearone/mpc-tee-launcher@sha256:380e638cab6be5c01e6409ae1b8716887c03092eed05db48d33a62d1956586de
     container_name: launcher
 
     environment:
