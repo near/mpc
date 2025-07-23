@@ -2,8 +2,8 @@
 use crate::account::{OperatingAccount, OperatingAccounts};
 use crate::cli::{
     ListMpcCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcProposeUpdateContractCmd,
-    MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteNewParametersCmd, MpcVoteUpdateCmd,
-    NewMpcNetworkCmd, RemoveContractCmd, UpdateMpcNetworkCmd,
+    MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd, MpcVoteNewParametersCmd,
+    MpcVoteUpdateCmd, NewMpcNetworkCmd, RemoveContractCmd, UpdateMpcNetworkCmd,
 };
 use crate::constants::{ONE_NEAR, TESTNET_CONTRACT_ACCOUNT_ID};
 use crate::devnet::OperatingDevnetSetup;
@@ -706,6 +706,25 @@ impl MpcVoteNewParametersCmd {
                 }
             }
         }
+    }
+}
+
+impl MpcVoteApprovedHashCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        println!(
+            "Going to vote_approved_hash for MPC network {}, adding following image hash to approved image hashes: {}.",
+            name, hex::encode(self.mpc_docker_image_hash)
+        );
+
+        let mut setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} does not exist", name));
+        let contract = mpc_setup
+            .contract
+            .clone()
+            .expect("Contract is not deployed");
     }
 }
 
