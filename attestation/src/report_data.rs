@@ -111,9 +111,8 @@ impl ReportData {
 
 #[cfg(test)]
 mod tests {
-    use crate::quote::Quote;
-
     use super::*;
+    use crate::{quote::Quote, report_data::ReportData};
     use near_crypto::{KeyType, SecretKey};
 
     #[test]
@@ -138,12 +137,17 @@ mod tests {
         assert_eq!(td_report.rt_mr3, expected_rtmr3,);
 
         // let near_p2p_public_key: PublicKey =
-        // "ed25519:6tCE66bysAp32rTejdMaKipV74vXzUVr6uyQutZALPqQ".parse().unwrap();
+        // "ed25519:6tCE66bysAp32rTejdMaKipV74vXzUVr6uyQutZALPqQ"     .parse()
+        //     .unwrap();
         // let near_signer_public_key: PublicKey =
-        //     "ed25519:9c3MBFXSKiC4m96P7JmeFfsfKSta37RyiZqkhWJ3asYL".parse().unwrap();
-        // let report_data = report_data::ReportData::new(near_p2p_public_key,
-        // near_signer_public_key); assert_eq!(report_data.to_bytes(),
-        // td_report.report_data,);
+        //     "ed25519:9c3MBFXSKiC4m96P7JmeFfsfKSta37RyiZqkhWJ3asYL"
+        //         .parse()
+        //         .unwrap();
+        // let report_data = ReportData::V1(ReportDataV1::new(
+        //     near_p2p_public_key,
+        //     near_signer_public_key,
+        // ));
+        // assert_eq!(report_data.to_bytes(), td_report.report_data,);
     }
 
     fn create_test_keys() -> (PublicKey, PublicKey) {

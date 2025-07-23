@@ -270,7 +270,7 @@ mod tests {
             .unwrap();
         let timestamp_s = 0u64;
         assert_eq!(
-            attestation.verify_quote(timestamp_s),
+            attestation.verify_quote(report_data, timestamp_s),
             quote_verification_result
         );
     }

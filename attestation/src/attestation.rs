@@ -1,7 +1,10 @@
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 
-use crate::{collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, tcbinfo::TcbInfo};
+use crate::{
+    collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, report_data::ReportData,
+    tcbinfo::TcbInfo,
+};
 use near_sdk::PublicKey;
 
 /// Expected status for a successfully verified TEE quote.
@@ -28,16 +31,21 @@ pub struct LocalAttestation {
 }
 
 impl Attestation {
-    pub fn verify_quote(&self, timestamp_s: u64) -> bool {
+    pub fn verify_quote(&self, expected_report_data: ReportData, timestamp_s: u64) -> bool {
         match self {
             Self::Dstack(dstack_attestation) => {
-                self.verify_tee_quote(dstack_attestation, timestamp_s)
+                self.verify_tee_quote(dstack_attestation, expected_report_data, timestamp_s)
             }
             Self::Local(config) => config.quote_verification_result,
         }
     }
 
-    fn verify_tee_quote(&self, attestation: &DstackAttestation, timestamp_s: u64) -> bool {
+    fn verify_tee_quote(
+        &self,
+        attestation: &DstackAttestation,
+        expected_report_data: ReportData,
+        timestamp_s: u64,
+    ) -> bool {
         let quote_bytes = attestation.quote.raw_bytes();
 
         match dcap_qvl::verify::verify(quote_bytes, &attestation.collateral, timestamp_s) {
@@ -48,7 +56,18 @@ impl Attestation {
                 // For a quote to be considered secure, there should be no outstanding advisories.
                 let no_security_advisories = verification_result.advisory_ids.is_empty();
 
-                status_is_up_to_date && no_security_advisories
+                let report_data_valid =
+                    if let Some(actual_report_data) = verification_result.report.as_td10() {
+                        expected_report_data.to_bytes() == actual_report_data.report_data
+                    } else {
+                        tracing::error!(
+                            "Expected TD10 report data, but got: {:?}",
+                            verification_result.report
+                        );
+                        false
+                    };
+
+                status_is_up_to_date && no_security_advisories && report_data_valid
             }
             Err(err) => {
                 tracing::error!("TEE quote verification failed: {:?}", err);
@@ -107,6 +126,8 @@ impl TryFrom<VerifiedReport> for Measurements {
 
 #[cfg(test)]
 mod tests {
+    use crate::report_data::ReportDataV1;
+
     use super::*;
     use rstest::rstest;
 
@@ -120,13 +141,30 @@ mod tests {
         })
     }
 
-    #[test]
-    fn test_mock_attestation_verify_quote() {
+    #[rstest]
+    #[case(false, false, false)]
+    #[case(false, true, false)]
+    #[case(true, false, true)]
+    #[case(true, true, true)]
+    fn test_mock_attestation_verify_quote(
+        #[case] quote_verification_result: bool,
+        #[case] docker_image_verification_result: bool,
+        #[case] expected_quote_verification_result: bool,
+    ) {
         let timestamp_s = 0u64;
-        assert!(!mock_attestation(false, false).verify_quote(timestamp_s));
-        assert!(!mock_attestation(false, true).verify_quote(timestamp_s));
-        assert!(mock_attestation(true, false).verify_quote(timestamp_s));
-        assert!(mock_attestation(true, true).verify_quote(timestamp_s));
+        let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
+            .parse()
+            .unwrap();
+        let account_key = "ed25519:H9k5eiU4xXyb8F7cUDjZYNuH1zGAx5BBNrYwLPNhq6Zx"
+            .parse()
+            .unwrap();
+        let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+
+        assert_eq!(
+            mock_attestation(quote_verification_result, docker_image_verification_result)
+                .verify_quote(report_data, timestamp_s),
+            expected_quote_verification_result
+        );
     }
 
     #[rstest]
