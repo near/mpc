@@ -199,6 +199,7 @@ mod tests {
     use crate::report_data::ReportDataV1;
 
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn test_upload_response_deserialization() {
@@ -245,8 +246,12 @@ mod tests {
         assert_eq!(collateral.qe_identity_signature.len(), 64);
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_generate_and_verify_attestation_local() {
+    async fn test_generate_and_verify_attestation_local(
+        #[values(true, false)] quote_verification_result: bool,
+        #[values(true, false)] docker_image_verification_result: bool,
+    ) {
         let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
             .parse()
             .unwrap();
@@ -255,23 +260,19 @@ mod tests {
             .unwrap();
         let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
-        for quote_verification_result in [true, false] {
-            for docker_image_verification_result in [true, false] {
-                let authority = TeeAuthority::Local(LocalTeeAuthorityConfig::new(
-                    quote_verification_result,
-                    docker_image_verification_result,
-                ));
-                let attestation = authority
-                    .generate_attestation(report_data.clone())
-                    .await
-                    .unwrap();
-                let timestamp_s = 0u64;
-                assert_eq!(
-                    attestation.verify_quote(timestamp_s),
-                    quote_verification_result
-                );
-            }
-        }
+        let authority = TeeAuthority::Local(LocalTeeAuthorityConfig::new(
+            quote_verification_result,
+            docker_image_verification_result,
+        ));
+        let attestation = authority
+            .generate_attestation(report_data.clone())
+            .await
+            .unwrap();
+        let timestamp_s = 0u64;
+        assert_eq!(
+            attestation.verify_quote(timestamp_s),
+            quote_verification_result
+        );
     }
 
     #[tokio::test]
