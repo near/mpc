@@ -99,3 +99,17 @@ export ALICE_PUBKEY=$(near account get-public-key from-keychain alice.test.near 
 export BOB_PUBKEY=$(near account get-public-key from-keychain bob.test.near network-config mpc-localnet)
 ```
 
+With these set, we can prepare the arguments for the init call.
+```
+envsubst < docs/init_args_template.json > /tmp/init_args.json
+```
+
+Now, we should be ready to call the `init` function on the contract.
+```
+near contract call-function as-transaction mpc-contract.test.near init file-args /tmp/init_args.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+If this succeeded, you should now be able to query the contract state.
+```
+near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
+```

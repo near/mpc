@@ -1,0 +1,26 @@
+{
+  "parameters": {
+    "threshold": 2,
+    "participants": {
+      "next_id": 2,
+      "participants": [
+        [
+          "alice.test.near",
+          0,
+          {
+            "sign_pk": "$ALICE_PUBKEY",
+            "url": "https://localhost:3000"
+          }
+        ],
+        [
+          "bob.test.near", 
+          1,
+          {
+            "sign_pk": "$BOB_PUBKEY",
+            "url": "https://localhost:3001"
+          }
+        ]
+      ]
+    }
+  }
+}
