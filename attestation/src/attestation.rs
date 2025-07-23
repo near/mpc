@@ -4,6 +4,9 @@ use derive_more::Constructor;
 use crate::{collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, tcbinfo::TcbInfo};
 use near_sdk::PublicKey;
 
+/// Expected status for a successfully verified TEE quote.
+const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
+
 #[allow(clippy::large_enum_variant)]
 pub enum Attestation {
     Dstack(DstackAttestation),
@@ -39,7 +42,7 @@ impl Attestation {
 
         match dcap_qvl::verify::verify(quote_bytes, &attestation.collateral, timestamp_s) {
             Ok(verification_result) => {
-                verification_result.status == "UpToDate"
+                verification_result.status == EXPECTED_QUOTE_STATUS
                     && verification_result.advisory_ids.is_empty()
             }
             Err(err) => {
