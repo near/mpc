@@ -108,6 +108,7 @@ impl TryFrom<VerifiedReport> for Measurements {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn mock_attestation(
         quote_verification_result: bool,
@@ -128,9 +129,17 @@ mod tests {
         assert!(mock_attestation(true, true).verify_quote(timestamp_s));
     }
 
-    #[test]
+    #[rstest]
+    #[case(false, false, false)]
+    #[case(false, true, true)]
+    #[case(true, false, false)]
+    #[case(true, true, true)]
     // TODO(#643): Test docker image verification logic
-    fn test_mock_attestation_verify_docker_image() {
+    fn test_mock_attestation_verify_docker_image(
+        #[case] quote_verification_result: bool,
+        #[case] docker_image_verification_result: bool,
+        #[case] expected: bool,
+    ) {
         let measurements = Measurements {
             rt_mr0: [0u8; 48],
             rt_mr1: [0u8; 48],
@@ -141,17 +150,10 @@ mod tests {
             .parse()
             .unwrap();
 
-        for (quote_verification_result, docker_image_verification_result, expected) in [
-            (false, false, false),
-            (false, true, true),
-            (true, false, false),
-            (true, true, true),
-        ] {
-            assert_eq!(
-                mock_attestation(quote_verification_result, docker_image_verification_result)
-                    .verify_docker_image(&[], &[], measurements, key.clone()),
-                expected
-            );
-        }
+        assert_eq!(
+            mock_attestation(quote_verification_result, docker_image_verification_result)
+                .verify_docker_image(&[], &[], measurements, key),
+            expected
+        );
     }
 }
