@@ -19,6 +19,7 @@ use derive_more::{AsRef, Deref, Into};
     AsRef,
     Into,
 )]
+#[serde(transparent)]
 pub struct Hash32<T> {
     #[deref]
     #[as_ref]
