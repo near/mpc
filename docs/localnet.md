@@ -113,3 +113,11 @@ If this succeeded, you should now be able to query the contract state.
 ```
 near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
 ```
+
+## Appendix: Further useful command
+
+### Add more funds to the mpc-contract account
+The following command sends 10 NEAR to the mpc-contract.test.near account.
+```
+near transaction construct-transaction test.near mpc-contract.test.near add-action transfer '10 NEAR' skip network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+```
