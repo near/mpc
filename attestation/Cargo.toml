@@ -14,6 +14,7 @@ borsh = { workspace = true }
 dcap-qvl = { workspace = true }
 dstack-sdk = { workspace = true }
 http = { workspace = true }
+mpc-primitives = { workspace = true }
 near-crypto = { workspace = true }
 near-sdk = { workspace = true }
 derive_more = { workspace = true }

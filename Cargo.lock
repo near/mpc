@@ -1245,6 +1245,7 @@ dependencies = [
  "dstack-sdk",
  "hex",
  "http 1.3.1",
+ "mpc-primitives",
  "near-crypto 2.7.0-rc.2",
  "near-sdk",
  "rand 0.8.5",
@@ -4762,7 +4763,6 @@ name = "mpc-contract"
 version = "2.2.0-rc.1"
 dependencies = [
  "anyhow",
- "attestation",
  "borsh",
  "curve25519-dalek",
  "dcap-qvl",
@@ -4770,6 +4770,7 @@ dependencies = [
  "getrandom 0.2.16",
  "hex",
  "k256",
+ "mpc-primitives",
  "near-account-id",
  "near-gas 0.2.5",
  "near-sdk",
@@ -4874,6 +4875,18 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "x509-parser",
+]
+
+[[package]]
+name = "mpc-primitives"
+version = "0.0.0"
+dependencies = [
+ "borsh",
+ "derive_more 2.0.1",
+ "hex",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

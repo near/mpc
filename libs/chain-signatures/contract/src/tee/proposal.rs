@@ -6,8 +6,8 @@ use crate::primitives::key_state::AuthenticatedParticipantId;
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds
 
-pub use attestation::hash::LauncherDockerComposeHash;
-pub use attestation::hash::MpcDockerImageHash;
+pub use mpc_primitives::hash::LauncherDockerComposeHash;
+pub use mpc_primitives::hash::MpcDockerImageHash;
 
 /// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
 /// a code hash to add.

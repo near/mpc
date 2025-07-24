@@ -4,7 +4,6 @@ extern crate alloc;
 
 pub mod attestation;
 pub mod collateral;
-pub mod hash;
 pub mod quote;
 pub mod report_data;
 pub mod tcbinfo;
