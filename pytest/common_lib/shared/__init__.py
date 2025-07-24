@@ -246,9 +246,7 @@ def start_cluster_with_mpc(
     )
 
     candidates = generate_mpc_configs(
-        num_mpc_nodes,
-        num_respond_aks,
-        presignatures_to_buffer,
+        num_mpc_nodes, num_respond_aks, presignatures_to_buffer
     )
 
     move_mpc_configs(observers)

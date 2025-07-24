@@ -1247,6 +1247,7 @@ dependencies = [
  "near-crypto 2.7.0-rc.2",
  "near-sdk",
  "reqwest 0.12.22",
+ "rstest",
  "serde",
  "serde_json",
  "sha3",

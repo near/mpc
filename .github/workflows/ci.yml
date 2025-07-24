@@ -145,3 +145,32 @@ jobs:
           source pytest/venv/bin/activate
           cd pytest 
           pytest -m "not ci_excluded" -s -x
+
+  tee-launcher-tests:
+    name: "Run TEE Launcher pytests"
+    runs-on: warp-ubuntu-2204-x64-8x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Setup virtualenv
+        run: |
+          python3 -m venv tee_launcher/venv
+          source tee_launcher/venv/bin/activate
+          cd tee_launcher 
+          pip install -r requirements.txt
+
+      - name: Run pytest
+        run: |
+          source tee_launcher/venv/bin/activate
+          cd tee_launcher 
+          PYTHONPATH=. pytest -vsx
