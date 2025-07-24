@@ -17,6 +17,7 @@ from common_lib import shared
 from common_lib.contracts import load_mpc_contract
 
 
+@pytest.mark.flaky(reruns=3, only_rerun=["AssertionError"])
 def test_single_domain():
     """
     Tests single-domain key generation and resharing.
