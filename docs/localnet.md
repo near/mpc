@@ -124,15 +124,15 @@ export NODE_PUBKEY=$(cat .near/mpc-localnet/node_key.json | rg public_key | rg -
 Now we can initialize Alice's node.
 
 ```
-mpc-node init --dir ~/.near/mpc-alice --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030
+mpc-node init --dir ~/.near/mpc-alice --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030 --download-config-url https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/testnet/rpc/config.json
 
 ```
 
-NOTE: This command currently fails due to:
+TODO(issue link): Don't download any config.
 
-```
-Error: Failed to download the config file from https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/mpc-localnet/rpc/config.json
-```
+The following modificatios are needed (TODO add copy-pasteable command)
+- rpc.addr has to be changed to localhost:3031 (alice) and localhost:3032 (bob) (or any other free values, this is arbitrary).
+
 
 ## Appendix: Further useful command
 
