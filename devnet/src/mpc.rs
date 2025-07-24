@@ -265,7 +265,7 @@ impl MpcAddKeysCmd {
             }
             setup
                 .accounts
-                .account_mut(&account_id)
+                .account_mut(account_id)
                 .add_access_key(public_data.near_signer_public_key)
                 .await;
         }
@@ -822,15 +822,10 @@ pub async fn read_contract_state(
             }
             _ => panic!("Unexpected response: {:?}", result),
         },
-        Err(JsonRpcError::ServerError(server_err)) => {
-            if let JsonRpcServerError::HandlerError(e) = &server_err {
-                if let RpcQueryError::ContractExecutionError { vm_error, .. } = e {
-                    if vm_error.contains("Calling default not allowed.") {
-                        return ProtocolContractState::NotInitialized;
-                    }
-                }
-            }
-            panic!("Unexpected error: {:?}", server_err);
+        Err(JsonRpcError::ServerError(JsonRpcServerError::HandlerError(
+            RpcQueryError::ContractExecutionError { vm_error, .. },
+        ))) if vm_error.contains("Calling default not allowed.") => {
+            return ProtocolContractState::NotInitialized;
         }
         Err(err) => {
             panic!("Unexpected error: {:?}", err);
