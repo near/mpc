@@ -1,8 +1,24 @@
 use alloc::string::String;
+use borsh::{BorshDeserialize, BorshSerialize};
 use core::marker::PhantomData;
 use derive_more::{AsRef, Deref, Into};
 
-#[derive(Deref, AsRef, Into)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Deref,
+    AsRef,
+    Into,
+)]
 pub struct Hash32<T> {
     #[deref]
     #[as_ref]
@@ -44,6 +60,8 @@ pub type LauncherDockerComposeHash = Hash32<Compose>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use rand::{RngCore, SeedableRng, rngs::StdRng};
 
     struct TestMarker;
     type TestHash = Hash32<TestMarker>;
@@ -179,5 +197,40 @@ mod tests {
         let converted_back: [u8; 32] = hash.into();
 
         assert_eq!(original_bytes, converted_back);
+    }
+
+    #[test]
+    fn should_serialize_equivalent_to_byte_array_with_serde() {
+        // Given
+        let bytes = random_byte_slice(42);
+        let hash = TestHash::from(bytes);
+
+        // When
+        let bytes_as_json = serde_json::to_string(&bytes).unwrap();
+        let hash_as_json = serde_json::to_string(&hash).unwrap();
+
+        // Then
+        assert_eq!(bytes_as_json, hash_as_json);
+    }
+
+    #[test]
+    fn should_serialize_equivalent_to_byte_array_with_borsh() {
+        // Given
+        let bytes = random_byte_slice(42);
+        let hash = TestHash::from(bytes);
+
+        // When
+        let bytes_as_borsh_vec = borsh::to_vec(&bytes).unwrap();
+        let hash_as_borsh_vec = borsh::to_vec(&hash).unwrap();
+
+        // Then
+        assert_eq!(bytes_as_borsh_vec, hash_as_borsh_vec);
+    }
+
+    fn random_byte_slice(seed: u64) -> [u8; 32] {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut bytes = [0u8; 32];
+        rng.fill_bytes(&mut bytes);
+        bytes
     }
 }
