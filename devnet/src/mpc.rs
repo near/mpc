@@ -825,7 +825,7 @@ pub async fn read_contract_state(
         Err(JsonRpcError::ServerError(JsonRpcServerError::HandlerError(
             RpcQueryError::ContractExecutionError { vm_error, .. },
         ))) if vm_error.contains("Calling default not allowed.") => {
-            return ProtocolContractState::NotInitialized;
+            ProtocolContractState::NotInitialized
         }
         Err(err) => {
             panic!("Unexpected error: {:?}", err);
