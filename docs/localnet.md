@@ -1,7 +1,7 @@
 # Localnet - instructions for how to run a local MPC network
 
 ## Prerequisites
-neard, near CLI, cargo.
+neard, near CLI, cargo, ripgrep
 
 ## 1. Run a local NEAR network
 
