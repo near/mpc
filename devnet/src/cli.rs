@@ -291,6 +291,9 @@ pub(crate) struct MpcVoteApprovedHashCmd {
     /// The Docker image hash to approve on the contract.
     #[clap(long, value_parser = Self::mpc_docker_image_hash_parser)]
     pub mpc_docker_image_hash: [u8; 32],
+    /// The indices of the voters; leave empty to vote from every other participant.
+    #[clap(long, value_delimiter = ',')]
+    pub voters: Vec<usize>,
 }
 
 impl MpcVoteApprovedHashCmd {

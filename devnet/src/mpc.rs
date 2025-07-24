@@ -13,6 +13,7 @@ use crate::rpc::NearRpcClients;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
     config::InitConfig,
     primitives::{
@@ -725,6 +726,59 @@ impl MpcVoteApprovedHashCmd {
             .contract
             .clone()
             .expect("Contract is not deployed");
+
+        let contract_state = read_contract_state(&config.rpc, &contract).await;
+        let running_state = match contract_state {
+            ProtocolContractState::Running(state) => state,
+            state => {
+                panic!(
+                    "Cannot vote for new parameters when not in the running state: {:#?}",
+                    state
+                );
+            }
+        };
+
+        let threshold = running_state.parameters.threshold();
+        let accounts = get_voter_account_ids(mpc_setup, &self.voters);
+        let mut voting_futures = vec![];
+
+        for account_id in accounts.iter().take(*threshold as usize) {
+            let account = setup.accounts.account(account_id);
+            let mut key = account.any_access_key().await;
+            let contract = contract.clone();
+            let code_hash = self.mpc_docker_image_hash.into();
+
+            voting_futures.push(async move {
+                key.submit_tx_to_call_function(
+                    &contract,
+                    "vote_new_parameters",
+                    &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
+                    300,
+                    0,
+                    near_primitives::views::TxExecutionStatus::Final,
+                    true,
+                )
+                .await
+            });
+        }
+
+        let voting_results = futures::future::join_all(voting_futures).await;
+        for (participant_index, voting_result) in voting_results.into_iter().enumerate() {
+            match voting_result.into_return_value() {
+                Ok(_) => {
+                    println!(
+                        "Participant {} vote_new_parameters succeed",
+                        participant_index
+                    );
+                }
+                Err(err) => {
+                    println!(
+                        "Participant {} vote_new_parameters failed: {:?}",
+                        participant_index, err
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -760,6 +814,11 @@ pub async fn read_contract_state(
 struct VoteNewParametersArgs {
     prospective_epoch_id: EpochId,
     proposal: ThresholdParameters,
+}
+
+#[derive(Serialize)]
+struct VoteCodeHashArgs {
+    code_hash: MpcDockerImageHash,
 }
 
 impl MpcDescribeCmd {
