@@ -118,7 +118,7 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 
 Before we can start the MPC nodes for Alice and Bob, we need to know the public key of our NEAR validator.
 ```
-export NODE_PUBKEY=$(cat .near/mpc-localnet/node_key.json | rg public_key | rg -o "ed25519:\w+")
+export NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | rg public_key | rg -o "ed25519:\w+")
 ```
 
 Now we can initialize Alice's node.
@@ -128,7 +128,7 @@ mpc-node init --dir ~/.near/mpc-alice --chain-id mpc-localnet --genesis ~/.near/
 
 ```
 
-TODO(issue link): Don't download any config.
+TODO([#714](https://github.com/near/mpc/issues/714)): Don't download any config.
 
 The following modificatios are needed (TODO add copy-pasteable command)
 - rpc.addr has to be changed to localhost:3031 (alice) and localhost:3032 (bob) (or any other free values, this is arbitrary).
