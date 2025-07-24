@@ -10,7 +10,6 @@ external-services-tests = []
 [dependencies]
 anyhow = { workspace = true }
 backon = { workspace = true }
-borsh = { workspace = true }
 dcap-qvl = { workspace = true }
 dstack-sdk = { workspace = true }
 http = { workspace = true }
@@ -20,7 +19,6 @@ near-sdk = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
 reqwest = { workspace = true }
-rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha3 = { workspace = true }
@@ -29,4 +27,4 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
-rand = { workspace = true }
+rstest = { workspace = true }

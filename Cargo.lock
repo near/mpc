@@ -1239,7 +1239,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "backon",
- "borsh",
  "dcap-qvl",
  "derive_more 2.0.1",
  "dstack-sdk",
@@ -1248,7 +1247,6 @@ dependencies = [
  "mpc-primitives",
  "near-crypto 2.7.0-rc.2",
  "near-sdk",
- "rand 0.8.5",
  "reqwest 0.12.22",
  "rstest",
  "serde",
