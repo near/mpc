@@ -114,6 +114,26 @@ If this succeeded, you should now be able to query the contract state.
 near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
 ```
 
+## 4. Start Alice and Bob's MPC nodes
+
+Before we can start the MPC nodes for Alice and Bob, we need to know the public key of our NEAR validator.
+```
+export NODE_PUBKEY=$(cat .near/mpc-localnet/node_key.json | rg public_key | rg -o "ed25519:\w+")
+```
+
+Now we can initialize Alice's node.
+
+```
+mpc-node init --dir ~/.near/mpc-alice --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030
+
+```
+
+NOTE: This command currently fails due to:
+
+```
+Error: Failed to download the config file from https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/mpc-localnet/rpc/config.json
+```
+
 ## Appendix: Further useful command
 
 ### Add more funds to the mpc-contract account
