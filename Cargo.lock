@@ -4762,6 +4762,7 @@ name = "mpc-contract"
 version = "2.2.0-rc.1"
 dependencies = [
  "anyhow",
+ "attestation",
  "borsh",
  "curve25519-dalek",
  "dcap-qvl",

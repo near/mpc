@@ -45,7 +45,27 @@ impl<T> Hash32<T> {
 }
 
 // Marker types
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 pub struct Image;
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 pub struct Compose;
 
 /// Hash of an MPC Docker image running in the TEE environment. Used as a proposal for a new TEE
