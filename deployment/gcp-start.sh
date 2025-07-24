@@ -24,14 +24,15 @@ json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
 EOF
 }
 
-if [ -n "$MPC_RESPONDER_ID" ]; then
-    responder_id="$MPC_RESPONDER_ID"
-else
-    echo "WARNING: \$MPC_RESPONDER_ID is not set, falling back to \$MPC_ACCOUNT_ID"
-    responder_id="$MPC_ACCOUNT_ID"
-fi
-
 initialize_mpc_config() {
+
+    if [ -n "$MPC_RESPONDER_ID" ]; then
+        responder_id="$MPC_RESPONDER_ID"
+    else
+        echo "WARNING: \$MPC_RESPONDER_ID is not set, falling back to \$MPC_ACCOUNT_ID"
+        responder_id="$MPC_ACCOUNT_ID"
+    fi
+
     cat <<EOF >"$1"
 # Configuration File
 my_near_account_id: $MPC_ACCOUNT_ID
