@@ -36,6 +36,7 @@ k256 = { version = "0.13.4", features = [
 # The commit under 'rev' is the latest commit at the time it was added.
 dcap-qvl = { git = "https://github.com/mattlockyer/dcap-qvl", rev = "3caedd8fd0f365841abaf1430ff2922fcb09d9db" }
 
+mpc-primitives = { path = "../../../crates/primitives" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-account-id = "1.1.1"
 thiserror = "1"

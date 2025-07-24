@@ -1,10 +1,8 @@
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
+use mpc_primitives::hash::MpcDockerImageHash;
 
-use crate::{
-    collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, report_data::ReportData,
-    tcbinfo::TcbInfo,
-};
+use crate::{collateral::Collateral, quote::Quote, report_data::ReportData, tcbinfo::TcbInfo};
 use near_sdk::PublicKey;
 
 /// Expected status for a successfully verified TEE quote.
