@@ -11,6 +11,7 @@ on:
         default: 'main'
         description: "The branch, tag or SHA to build MPC Docker image from. Default to latest commit on main branch."
         type: string
+  pull_request:
     
 
 jobs:
