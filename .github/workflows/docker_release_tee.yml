@@ -11,7 +11,6 @@ on:
         default: 'main'
         description: "The branch, tag or SHA to build MPC TEE enabled Docker image from. Default to latest commit on main branch."
         type: string
-  pull_request:
     
 
 jobs:
@@ -55,4 +54,4 @@ jobs:
           profile-name: "mpc-image-builder"
           push: true
           file: deployment/Dockerfile-tee-gcp
-          tags: nearone/mpc-node-gcp:latest-tee
+          tags: nearone/mpc-node-gcp:latest-tee,nearone/mpc-node-gcp:${{ env.sanitized_ref }}-tee,nearone/mpc-node-gcp:${{ env.sanitized_ref }}-${{ env.sha_short }}-tee
