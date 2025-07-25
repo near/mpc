@@ -43,7 +43,7 @@ edit it:
   * The CLI will utilize all available RPC nodes by aggregating their
     available throughput.
 * Set the directory of your local clone of the infra-ops repository.
-  This is used for Terraform deployment of the test cluster.
+  This is used for Terraform deployment of the test cluster. To avoid any errors, it is advised to ensure the local repo is up to date.
 * Set `rpcs` to point to your RPC endpoints
 * (Optional) Configure a `funding_account` to use a specific account for funding operations:
   ```yaml
@@ -87,14 +87,10 @@ independent nonce.
 
 Then, deploy the contract.
 ```
-mpc-devnet mpc my-test deploy-contract \
-  --init-participants 2 --threshold 2
+mpc-devnet mpc my-test deploy-contract 
 ```
-
-The `--init-participants` can be fewer than the total number of participants,
-if we wish to have fewer participants join the network at the beginning.
-
 The path of the contract binary can be overridden via `--path`.
+
 
 We can now deploy the infra with Terraform:
 ```
@@ -106,6 +102,9 @@ the Nomad server UI shows up, we can then deploy the MPC nodes:
 ```
 mpc-devnet mpc my-test deploy-nomad
 ```
+The docker image to be deployed can be change with the `--docker-image` flag.
+By default, devnet assumes that a legacy docker image is deployed (with node version strictly older than 2.2.0).
+For newer versions, one must pass the `--not-legacy` flag, because they require different terraform varibles (todo: remove the flag [(#710)](https://github.com/near/mpc/issues/710)).
 
 Both the `deploy-infra` and `deploy-nomad` commands can be repeated as 
 needed.
@@ -114,6 +113,26 @@ The Terraform deployments use the Terraform Workspaces feature, where
 the workspace name is the same as the MPC network name. The Terraform
 state is stored in S3, which is why this workspace name needs to be
 unique in the team.
+
+
+Now, wait for the nodes to spin-up and start syncing. Once the `public_data` endpoint is accessible, run
+```
+mpc-devnet my-test add-keys
+```
+
+Finally, initialize the contract
+```
+mpc-devnet mpc my-test init-contract \
+  --init-participants 2 --threshold 2
+```
+
+(todo: [(#710)](https://github.com/near/mpc/issues/710) merge these two steps)
+
+The `--init-participants` can be fewer than the total number of participants,
+if we wish to have fewer participants join the network at the beginning.
+
+The path of the contract binary can be overridden via `--path`.
+
 
 ### Generating Keys
 
