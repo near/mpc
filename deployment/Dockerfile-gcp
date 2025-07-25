@@ -5,6 +5,7 @@ WORKDIR /app
 COPY node node
 COPY devnet devnet
 COPY attestation attestation
+COPY crates crates
 COPY Cargo.lock Cargo.lock
 COPY Cargo.toml Cargo.toml
 COPY rust-toolchain.toml rust-toolchain.toml

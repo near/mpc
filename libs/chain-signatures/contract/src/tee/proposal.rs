@@ -6,60 +6,8 @@ use crate::primitives::key_state::AuthenticatedParticipantId;
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds
 
-use std::marker::PhantomData;
-
-use borsh::{BorshDeserialize, BorshSerialize};
-/// Common functionality for 32-byte SHA256 hashes used in the TEE environment.
-use serde::{Deserialize, Serialize};
-
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-pub struct Hash32<T> {
-    pub bytes: [u8; 32],
-    _marker: PhantomData<T>,
-}
-
-impl<T> Hash32<T> {
-    pub fn as_hex(&self) -> String {
-        hex::encode(self.bytes)
-    }
-}
-
-impl<T> From<[u8; 32]> for Hash32<T> {
-    fn from(bytes: [u8; 32]) -> Self {
-        Self {
-            bytes,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-// Marker types
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-pub struct Image;
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-pub struct Compose;
-
-/// Hash of an MPC Docker image running in the TEE environment. Used as a proposal for a new TEE
-/// code hash to add to the whitelist, together with the TEE quote (which includes the RTMR3
-/// measurement and more).
-pub type MpcDockerImageHash = Hash32<Image>;
-
-/// Hash of the launcher's Docker Compose file used to run the MPC node in the TEE environment. It
-/// is computed from the launcher's Docker Compose template populated with the MPC node's Docker
-/// image hash.
-pub type LauncherDockerComposeHash = Hash32<Compose>;
+pub use mpc_primitives::hash::LauncherDockerComposeHash;
+pub use mpc_primitives::hash::MpcDockerImageHash;
 
 /// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
 /// a code hash to add.

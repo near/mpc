@@ -159,7 +159,7 @@ impl StaticWebData {
     }
 }
 
-async fn get_public_data(state: State<WebServerState>) -> Json<StaticWebData> {
+async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
     state.static_web_data.clone().into()
 }
 
@@ -192,7 +192,7 @@ pub async fn start_web_server(
         .route("/debug/contract", axum::routing::get(contract_state))
         .route("/licenses", axum::routing::get(third_party_licenses))
         .route("/health", axum::routing::get(|| async { "OK" }))
-        .route("/get_public_data", axum::routing::get(get_public_data))
+        .route("/public_data", axum::routing::get(public_data))
         .with_state(WebServerState {
             root_task_handle,
             signature_debug_request_sender,

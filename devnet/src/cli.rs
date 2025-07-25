@@ -30,6 +30,9 @@ impl Cli {
                     MpcNetworkSubCmd::DeployContract(cmd) => {
                         cmd.run(&name, config).await;
                     }
+                    MpcNetworkSubCmd::InitContract(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
                     MpcNetworkSubCmd::RemoveContract(cmd) => {
                         cmd.run(&name, config).await;
                     }
@@ -58,6 +61,9 @@ impl Cli {
                         cmd.run(&name, config).await;
                     }
                     MpcNetworkSubCmd::Describe(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
+                    MpcNetworkSubCmd::AddKeys(cmd) => {
                         cmd.run(&name, config).await;
                     }
                 }
@@ -119,13 +125,20 @@ pub struct MpcNetworkCmd {
 }
 
 #[derive(clap::Parser)]
+pub struct MpcAddKeysCmd {}
+
+#[derive(clap::Parser)]
 pub enum MpcNetworkSubCmd {
     /// Create a new MPC network.
     New(NewMpcNetworkCmd),
     /// Update the parameters of an existing MPC network, including refilling accounts.
     Update(UpdateMpcNetworkCmd),
-    /// Deploy the MPC contract, initializing it to a number of participants.
+    /// Deploy the MPC contract code (without initializing it).
     DeployContract(MpcDeployContractCmd),
+    /// Initialize the MPC contract, initializing it to the specified parameters.
+    InitContract(MpcInitContractCmd),
+    /// fetch data from `get_public_data` and add the keys.
+    AddKeys(MpcAddKeysCmd),
     /// Remove the MPC contract from the local state, so a fresh one can be deployed.
     RemoveContract(RemoveContractCmd),
     /// View the contract state.
@@ -205,11 +218,7 @@ pub struct UpdateMpcNetworkCmd {
 }
 
 #[derive(clap::Parser)]
-pub struct MpcDeployContractCmd {
-    /// File path that contains the contract code.
-    /// If not set, then the contract from TESTNET_CONTRACT_ACCOUNT_ID is fetched and deployed.
-    #[clap(long)]
-    pub path: Option<String>,
+pub struct MpcInitContractCmd {
     /// The number of participants to initialize with; the participants will be from 0 to
     /// init_participants-1.
     #[clap(long)]
@@ -217,13 +226,17 @@ pub struct MpcDeployContractCmd {
     /// The threshold to initialize with.
     #[clap(long)]
     pub threshold: u64,
+}
+
+#[derive(clap::Parser)]
+pub struct MpcDeployContractCmd {
+    /// File path that contains the contract code.
+    /// If not set, then the contract from TESTNET_CONTRACT_ACCOUNT_ID is fetched and deployed.
+    #[clap(long)]
+    pub path: Option<String>,
     /// The number of NEAR to deposit into the contract account, for storage deposit.
     #[clap(long, default_value = "20")]
     pub deposit_near: u128,
-    /// Maximum number of requests to remove per signature request; reduce this to
-    /// optimize gas cost for signature requests.
-    #[clap(long)]
-    pub max_requests_to_remove: Option<u32>,
 }
 
 #[derive(clap::Parser)]
@@ -297,6 +310,11 @@ pub struct MpcTerraformDeployNomadCmd {
     /// The default is `constants::DEFAULT_MPC_DOCKER_IMAGE`.
     #[clap(long)]
     pub docker_image: Option<String>,
+    /// By default, we deploy the default docker image, which is a legacy node, requiring secret
+    /// shares.
+    /// Set this flag if you deploy a newer node that generates its secrets on its own.
+    #[clap(long)]
+    pub not_legacy: bool, // todo: remove [(#710)](https://github.com/near/mpc/issues/710)
 }
 
 #[derive(clap::Parser)]

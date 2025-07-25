@@ -1,14 +1,11 @@
+use crate::{collateral::Collateral, quote::Quote, report_data::ReportData, tcbinfo::TcbInfo};
 use alloc::vec::Vec;
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk::dstack_client::EventLog;
 use k256::sha2::{Digest as _, Sha384};
+use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::env::sha256;
-
-use crate::{
-    collateral::Collateral, hash::MpcDockerImageHash, quote::Quote, report_data::ReportData,
-    tcbinfo::TcbInfo,
-};
 
 /// Expected status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";

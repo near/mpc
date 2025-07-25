@@ -2304,6 +2304,7 @@ dependencies = [
  "getrandom 0.2.16",
  "hex",
  "k256",
+ "mpc-primitives",
  "near-account-id",
  "near-crypto 0.26.0",
  "near-gas 0.2.5",
@@ -2324,6 +2325,16 @@ dependencies = [
  "thiserror 1.0.69",
  "threshold-signatures",
  "tokio",
+]
+
+[[package]]
+name = "mpc-primitives"
+version = "0.0.0"
+dependencies = [
+ "borsh",
+ "derive_more 2.0.1",
+ "hex",
+ "serde",
 ]
 
 [[package]]

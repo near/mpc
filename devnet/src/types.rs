@@ -1,5 +1,5 @@
 use crate::rpc::NearRpcClients;
-use near_crypto::SecretKey;
+use near_crypto::{PublicKey, SecretKey};
 use near_sdk::AccountId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -30,9 +30,10 @@ pub enum NearAccountKind {
 /// Locally stored MPC participant keys and other info.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MpcParticipantSetup {
-    pub p2p_private_key: SecretKey,
+    pub p2p_private_key: SecretKey, // todo: this can eventually be removed [(#710)](https://github.com/near/mpc/issues/710)
     /// The account this participant uses to respond to signature requests.
     pub responding_account_id: AccountId,
+    pub p2p_public_key: Option<PublicKey>, // todo: this can eventually be made non-optional [(#710)](https://github.com/near/mpc/issues/710)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
