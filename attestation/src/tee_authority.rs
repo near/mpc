@@ -33,7 +33,7 @@ pub struct LocalTeeAuthorityConfig {
 
 #[derive(Constructor)]
 pub struct DstackTeeAuthorityConfig {
-    /// Endpoint to contact dstack service. Defaults to `/var/run/dstack.sock`
+    /// Endpoint to contact dstack service. Defaults to [`DEFAULT_DSTACK_ENDPOINT`]
     dstack_endpoint: String,
     /// URL for submission of TDX quote. Returns collateral to be used for verification.
     quote_upload_url: Url,
@@ -270,7 +270,7 @@ mod tests {
             .unwrap();
         let timestamp_s = 0u64;
         assert_eq!(
-            attestation.verify_quote(report_data, timestamp_s),
+            attestation.verify(report_data, timestamp_s, &[], &[]),
             quote_verification_result
         );
     }
