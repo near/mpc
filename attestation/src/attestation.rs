@@ -291,7 +291,7 @@ impl Attestation {
             .iter()
             .find(|event| event.event == "local-sgx")
             .map(|event| &event.digest)
-            .map_or(false, |hash| hash == Self::EXPECTED_LOCAL_SGX_HASH)
+            .is_some_and(|hash| hash == Self::EXPECTED_LOCAL_SGX_HASH)
     }
 
     /// Verifies MPC node image hash is in allowed list.
@@ -301,9 +301,7 @@ impl Attestation {
             .iter()
             .find(|e| e.event == "mpc-image-digest")
             .map(|e| &e.digest)
-            .map_or(false, |digest| {
-                allowed_hashes.iter().any(|hash| hash.as_hex() == *digest)
-            })
+            .is_some_and(|digest| allowed_hashes.iter().any(|hash| hash.as_hex() == *digest))
     }
 }
 
