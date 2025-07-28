@@ -70,12 +70,14 @@ impl Attestation {
         0xf7, 0x4b, 0x1f,
     ];
 
+    const EXPECTED_LOCAL_SGX_HASH: &str =
+        "1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b";
+
     pub fn verify(
         &self,
         expected_report_data: ReportData,
         timestamp_s: u64,
         allowed_docker_image_hashes: &[MpcDockerImageHash],
-        historical_docker_image_hashes: &[MpcDockerImageHash],
     ) -> bool {
         match self {
             Self::Dstack(dstack_attestation) => self.verify_attestation(
@@ -83,7 +85,6 @@ impl Attestation {
                 expected_report_data,
                 timestamp_s,
                 allowed_docker_image_hashes,
-                historical_docker_image_hashes,
             ),
             Self::Local(config) => config.quote_verification_result,
         }
@@ -97,8 +98,7 @@ impl Attestation {
         attestation: &DstackAttestation,
         expected_report_data: ReportData,
         timestamp_s: u64,
-        _allowed_docker_image_hashes: &[MpcDockerImageHash],
-        _historical_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_docker_image_hashes: &[MpcDockerImageHash],
     ) -> bool {
         let quote_bytes = attestation.quote.raw_bytes();
 
@@ -141,12 +141,27 @@ impl Attestation {
                         && attestation.tcb_info.rtmr2 == hex::encode(Self::RTMR2)
                         && attestation.tcb_info.mrtd == hex::encode(Self::MRTD);
 
-                    let rtmr3_valid =
-                        report_data.rt_mr3 == Self::replay_rtmr3(&attestation.tcb_info.event_log);
+                    // attestation.tcb_info.rtmr3
+                    let rtmr3_valid = attestation.tcb_info.rtmr3 == hex::encode(report_data.rt_mr3)
+                        && report_data.rt_mr3
+                            == Self::replay_rtmr3(&attestation.tcb_info.event_log);
 
                     // TODO: Verifying the app compose file seems redundant since both the
                     // app_compose and the expected app_compose hash come from the same TCB info
                     // fetched from the /Info dstack endpoint.
+                    let app_compose: AppCompose =
+                        match serde_json::from_str(&attestation.tcb_info.app_compose) {
+                            Ok(compose) => compose,
+                            Err(e) => {
+                                tracing::error!("Failed to parse app_compose JSON: {:?}", e);
+                                return false;
+                            }
+                        };
+                    let docker_compose =
+                        match serde_yaml::to_string(&app_compose.docker_compose_file) {
+                            Ok(yaml_string) => yaml_string,
+                            Err(_) => return false,
+                        };
                     let app_compose_valid = {
                         let expected_compose_hash = attestation
                             .tcb_info
@@ -154,23 +169,54 @@ impl Attestation {
                             .iter()
                             .find(|event| event.event == "compose-hash")
                             .map(|event| &event.digest);
-                        let app_compose: AppCompose =
-                            match serde_json::from_str(&attestation.tcb_info.app_compose) {
-                                Ok(compose) => compose,
-                                Err(e) => {
-                                    tracing::error!("Failed to parse app_compose JSON: {:?}", e);
-                                    return false;
-                                }
-                            };
 
                         match expected_compose_hash {
                             Some(expected_hex) => {
-                                let docker_compose_string =
-                                    serde_yaml::to_string(&app_compose.docker_compose_file)
-                                        .unwrap_or_else(|_| alloc::string::String::new());
-                                Self::validate_compose_hash(expected_hex, &docker_compose_string)
+                                let app_compose_fields_valid = app_compose.manifest_version == 2
+                                    && app_compose.runner == "docker-compose"
+                                    && app_compose.docker_config == serde_json::json!({})
+                                    && app_compose.kms_enabled == false
+                                    && app_compose.gateway_enabled == Some(false)
+                                    && app_compose.public_logs == true
+                                    && app_compose.public_sysinfo == true
+                                    && app_compose.local_key_provider_enabled == true
+                                    && app_compose.allowed_envs.is_empty()
+                                    && app_compose.no_instance_id == true
+                                    && app_compose.secure_time == Some(false)
+                                    && app_compose.pre_launch_script.is_none();
+                                app_compose_fields_valid
+                                    && Self::validate_compose_hash(expected_hex, &docker_compose)
                             }
                             _ => false,
+                        }
+                    };
+
+                    let local_sgx_hash_valid = {
+                        let local_sgx_hash = attestation
+                            .tcb_info
+                            .event_log
+                            .iter()
+                            .find(|event| event.event == "local-sgx")
+                            .map(|event| &event.digest);
+                        match local_sgx_hash {
+                            Some(hash) => hash == Self::EXPECTED_LOCAL_SGX_HASH,
+                            None => false,
+                        }
+                    };
+
+                    let mpc_hash_allowed = {
+                        let mpc_node_image_digest = attestation
+                            .tcb_info
+                            .event_log
+                            .iter()
+                            .find(|e| e.event == "mpc-image-digest")
+                            .and_then(|e| Some(e.digest.clone()));
+
+                        match mpc_node_image_digest {
+                            Some(digest) => allowed_docker_image_hashes
+                                .iter()
+                                .any(|hash| hash.as_hex() == digest),
+                            None => false,
                         }
                     };
 
@@ -180,6 +226,8 @@ impl Attestation {
                         && static_rtmrs_valid
                         && rtmr3_valid
                         && app_compose_valid
+                        && local_sgx_hash_valid
+                        && mpc_hash_allowed
                 } else {
                     tracing::error!(
                         "Expected TD10 report data, but got: {:?}",
@@ -322,7 +370,6 @@ mod tests {
                 report_data,
                 timestamp_s,
                 &[],
-                &[]
             ),
             expected_quote_verification_result
         );
