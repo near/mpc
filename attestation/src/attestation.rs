@@ -105,142 +105,31 @@ impl Attestation {
         // TODO(#451): We rely on a forked dcap_qvl crate that has some questionable code changes
         // that could be critical from a security perspective (commented out code section that
         // checks TCB validity time)
-        match dcap_qvl::verify::verify(quote_bytes, &attestation.collateral, timestamp_s) {
-            Ok(verification_result) => {
-                // The "UpToDate" TCB status indicates that the measured platform components (CPU
-                // microcode, firmware, etc.) match the latest known good values published by Intel
-                // and do not require any updates or mitigations.
-                let status_is_up_to_date = verification_result.status == EXPECTED_QUOTE_STATUS;
-
-                // Advisory IDs indicate known security vulnerabilities or issues with the TEE.
-                // For a quote to be considered secure, there should be no outstanding advisories.
-                let no_security_advisories = verification_result.advisory_ids.is_empty();
-
-                if let Some(report_data) = verification_result.report.as_td10() {
-                    // Check if sha384(tls_public_key || account_public_key) matches the hash in
-                    // report_data. This check effectively proves that both tls_public_key and
-                    // account_public_key were included in the quote's report_data by an app running
-                    // inside a TDX enclave. The RTMR checks that follow this check ensure that the
-                    // app was run in an environment measured by the RTMRs (which are also part of
-                    // the quote). In particular, if the tls_public_key was generated inside the
-                    // enclave, this effectively proves that its private counterpart never left the
-                    // enclave.
-                    let report_data_valid =
-                        expected_report_data.to_bytes() == report_data.report_data;
-
-                    // Check if the RTMRs match the expected values. To learn more about RTMRs and
-                    // their significance, refer to the TDX documentation:
-                    // - https://phala.network/posts/understanding-tdx-attestation-reports-a-developers-guide
-                    // - https://www.kernel.org/doc/Documentation/x86/tdx.rst
-                    let static_rtmrs_valid = report_data.rt_mr0 == Self::RTMR0
-                        && report_data.rt_mr1 == Self::RTMR1
-                        && report_data.rt_mr2 == Self::RTMR2
-                        && report_data.mr_td == Self::MRTD
-                        && attestation.tcb_info.rtmr0 == hex::encode(Self::RTMR0)
-                        && attestation.tcb_info.rtmr1 == hex::encode(Self::RTMR1)
-                        && attestation.tcb_info.rtmr2 == hex::encode(Self::RTMR2)
-                        && attestation.tcb_info.mrtd == hex::encode(Self::MRTD);
-
-                    // attestation.tcb_info.rtmr3
-                    let rtmr3_valid = attestation.tcb_info.rtmr3 == hex::encode(report_data.rt_mr3)
-                        && report_data.rt_mr3
-                            == Self::replay_rtmr3(&attestation.tcb_info.event_log);
-
-                    // TODO: Verifying the app compose file seems redundant since both the
-                    // app_compose and the expected app_compose hash come from the same TCB info
-                    // fetched from the /Info dstack endpoint.
-                    let app_compose: AppCompose =
-                        match serde_json::from_str(&attestation.tcb_info.app_compose) {
-                            Ok(compose) => compose,
-                            Err(e) => {
-                                tracing::error!("Failed to parse app_compose JSON: {:?}", e);
-                                return false;
-                            }
-                        };
-                    let docker_compose =
-                        match serde_yaml::to_string(&app_compose.docker_compose_file) {
-                            Ok(yaml_string) => yaml_string,
-                            Err(_) => return false,
-                        };
-                    let app_compose_valid = {
-                        let expected_compose_hash = attestation
-                            .tcb_info
-                            .event_log
-                            .iter()
-                            .find(|event| event.event == "compose-hash")
-                            .map(|event| &event.digest);
-
-                        match expected_compose_hash {
-                            Some(expected_hex) => {
-                                let app_compose_fields_valid = app_compose.manifest_version == 2
-                                    && app_compose.runner == "docker-compose"
-                                    && app_compose.docker_config == serde_json::json!({})
-                                    && app_compose.kms_enabled == false
-                                    && app_compose.gateway_enabled == Some(false)
-                                    && app_compose.public_logs == true
-                                    && app_compose.public_sysinfo == true
-                                    && app_compose.local_key_provider_enabled == true
-                                    && app_compose.allowed_envs.is_empty()
-                                    && app_compose.no_instance_id == true
-                                    && app_compose.secure_time == Some(false)
-                                    && app_compose.pre_launch_script.is_none();
-                                app_compose_fields_valid
-                                    && Self::validate_compose_hash(expected_hex, &docker_compose)
-                            }
-                            _ => false,
-                        }
-                    };
-
-                    let local_sgx_hash_valid = {
-                        let local_sgx_hash = attestation
-                            .tcb_info
-                            .event_log
-                            .iter()
-                            .find(|event| event.event == "local-sgx")
-                            .map(|event| &event.digest);
-                        match local_sgx_hash {
-                            Some(hash) => hash == Self::EXPECTED_LOCAL_SGX_HASH,
-                            None => false,
-                        }
-                    };
-
-                    let mpc_hash_allowed = {
-                        let mpc_node_image_digest = attestation
-                            .tcb_info
-                            .event_log
-                            .iter()
-                            .find(|e| e.event == "mpc-image-digest")
-                            .and_then(|e| Some(e.digest.clone()));
-
-                        match mpc_node_image_digest {
-                            Some(digest) => allowed_docker_image_hashes
-                                .iter()
-                                .any(|hash| hash.as_hex() == digest),
-                            None => false,
-                        }
-                    };
-
-                    status_is_up_to_date
-                        && no_security_advisories
-                        && report_data_valid
-                        && static_rtmrs_valid
-                        && rtmr3_valid
-                        && app_compose_valid
-                        && local_sgx_hash_valid
-                        && mpc_hash_allowed
-                } else {
-                    tracing::error!(
-                        "Expected TD10 report data, but got: {:?}",
-                        verification_result.report
-                    );
-                    false
+        let verification_result =
+            match dcap_qvl::verify::verify(quote_bytes, &attestation.collateral, timestamp_s) {
+                Ok(result) => result,
+                Err(err) => {
+                    tracing::error!("TEE quote verification failed: {:?}", err);
+                    return false;
                 }
-            }
-            Err(err) => {
-                tracing::error!("TEE quote verification failed: {:?}", err);
-                false
-            }
-        }
+            };
+
+        let Some(report_data) = verification_result.report.as_td10() else {
+            tracing::error!(
+                "Expected TD10 report data, but got: {:?}",
+                verification_result.report
+            );
+            return false;
+        };
+
+        // Verify all attestation components
+        self.verify_tcb_status(&verification_result)
+            && self.verify_report_data(&expected_report_data, report_data)
+            && self.verify_static_rtmrs(report_data, &attestation.tcb_info)
+            && self.verify_rtmr3(report_data, &attestation.tcb_info)
+            && self.verify_app_compose(&attestation.tcb_info)
+            && self.verify_local_sgx_hash(&attestation.tcb_info)
+            && self.verify_mpc_hash(&attestation.tcb_info, allowed_docker_image_hashes)
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together.
@@ -295,6 +184,126 @@ impl Attestation {
         hasher.update(b":");
         hasher.update(sha256_bytes);
         hasher.finalize().into()
+    }
+
+    /// Verifies TCB status and security advisories.
+    fn verify_tcb_status(&self, verification_result: &VerifiedReport) -> bool {
+        // The "UpToDate" TCB status indicates that the measured platform components (CPU
+        // microcode, firmware, etc.) match the latest known good values published by Intel
+        // and do not require any updates or mitigations.
+        let status_is_up_to_date = verification_result.status == EXPECTED_QUOTE_STATUS;
+
+        // Advisory IDs indicate known security vulnerabilities or issues with the TEE.
+        // For a quote to be considered secure, there should be no outstanding advisories.
+        let no_security_advisories = verification_result.advisory_ids.is_empty();
+
+        status_is_up_to_date && no_security_advisories
+    }
+
+    /// Verifies report data matches expected values.
+    fn verify_report_data(
+        &self,
+        expected: &ReportData,
+        actual: &dcap_qvl::quote::TDReport10,
+    ) -> bool {
+        // Check if sha384(tls_public_key || account_public_key) matches the hash in
+        // report_data. This check effectively proves that both tls_public_key and
+        // account_public_key were included in the quote's report_data by an app running
+        // inside a TDX enclave.
+        expected.to_bytes() == actual.report_data
+    }
+
+    /// Verifies static RTMRs match expected values.
+    fn verify_static_rtmrs(
+        &self,
+        report_data: &dcap_qvl::quote::TDReport10,
+        tcb_info: &TcbInfo,
+    ) -> bool {
+        // Check if the RTMRs match the expected values. To learn more about RTMRs and
+        // their significance, refer to the TDX documentation:
+        // - https://phala.network/posts/understanding-tdx-attestation-reports-a-developers-guide
+        // - https://www.kernel.org/doc/Documentation/x86/tdx.rst
+        report_data.rt_mr0 == Self::RTMR0
+            && report_data.rt_mr1 == Self::RTMR1
+            && report_data.rt_mr2 == Self::RTMR2
+            && report_data.mr_td == Self::MRTD
+            && tcb_info.rtmr0 == hex::encode(Self::RTMR0)
+            && tcb_info.rtmr1 == hex::encode(Self::RTMR1)
+            && tcb_info.rtmr2 == hex::encode(Self::RTMR2)
+            && tcb_info.mrtd == hex::encode(Self::MRTD)
+    }
+
+    /// Verifies RTMR3 by replaying event log.
+    fn verify_rtmr3(&self, report_data: &dcap_qvl::quote::TDReport10, tcb_info: &TcbInfo) -> bool {
+        tcb_info.rtmr3 == hex::encode(report_data.rt_mr3)
+            && report_data.rt_mr3 == Self::replay_rtmr3(&tcb_info.event_log)
+    }
+
+    /// Verifies app compose configuration and hash.
+    fn verify_app_compose(&self, tcb_info: &TcbInfo) -> bool {
+        // TODO: Verifying the app compose file seems redundant since both the
+        // app_compose and the expected app_compose hash come from the same TCB info
+        // fetched from the /Info dstack endpoint. It's also not clear how we ensure
+        // the event log passed to the smart contract was not forgotten or replayed.
+        let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
+            Ok(compose) => compose,
+            Err(e) => {
+                tracing::error!("Failed to parse app_compose JSON: {:?}", e);
+                return false;
+            }
+        };
+
+        let docker_compose = match serde_yaml::to_string(&app_compose.docker_compose_file) {
+            Ok(yaml_string) => yaml_string,
+            Err(_) => return false,
+        };
+
+        let expected_compose_hash = tcb_info
+            .event_log
+            .iter()
+            .find(|event| event.event == "compose-hash")
+            .map(|event| &event.digest);
+
+        match expected_compose_hash {
+            Some(expected_hex) => {
+                app_compose.manifest_version == 2
+                    && app_compose.runner == "docker-compose"
+                    && app_compose.docker_config == serde_json::json!({})
+                    && !app_compose.kms_enabled
+                    && app_compose.gateway_enabled == Some(false)
+                    && app_compose.public_logs
+                    && app_compose.public_sysinfo
+                    && app_compose.local_key_provider_enabled
+                    && app_compose.allowed_envs.is_empty()
+                    && app_compose.no_instance_id
+                    && app_compose.secure_time == Some(false)
+                    && app_compose.pre_launch_script.is_none()
+                    && Self::validate_compose_hash(expected_hex, &docker_compose)
+            }
+            None => false,
+        }
+    }
+
+    /// Verifies local SGX hash matches expected value.
+    fn verify_local_sgx_hash(&self, tcb_info: &TcbInfo) -> bool {
+        tcb_info
+            .event_log
+            .iter()
+            .find(|event| event.event == "local-sgx")
+            .map(|event| &event.digest)
+            .map_or(false, |hash| hash == Self::EXPECTED_LOCAL_SGX_HASH)
+    }
+
+    /// Verifies MPC node image hash is in allowed list.
+    fn verify_mpc_hash(&self, tcb_info: &TcbInfo, allowed_hashes: &[MpcDockerImageHash]) -> bool {
+        tcb_info
+            .event_log
+            .iter()
+            .find(|e| e.event == "mpc-image-digest")
+            .map(|e| &e.digest)
+            .map_or(false, |digest| {
+                allowed_hashes.iter().any(|hash| hash.as_hex() == *digest)
+            })
     }
 }
 
