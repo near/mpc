@@ -1,0 +1,27 @@
+FROM rust:latest AS builder
+RUN apt-get update -y && apt-get install -y --no-install-recommends clang  # needed for rocksdb
+
+WORKDIR /app
+COPY node node
+COPY devnet devnet
+COPY attestation attestation
+COPY crates crates
+COPY Cargo.lock Cargo.lock
+COPY Cargo.toml Cargo.toml
+COPY rust-toolchain.toml rust-toolchain.toml
+COPY libs/chain-signatures libs/chain-signatures
+COPY third-party-licenses third-party-licenses
+
+RUN cargo build -p mpc-node --locked --release --features=tee
+
+FROM google/cloud-sdk:debian_component_based AS runtime
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends openssl ca-certificates
+
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+WORKDIR /app
+COPY --from=builder /app/target/release/mpc-node mpc-node
+COPY deployment/gcp-start.sh /app/gcp-start.sh
+RUN chmod +x /app/gcp-start.sh
+CMD [ "/app/gcp-start.sh" ]
