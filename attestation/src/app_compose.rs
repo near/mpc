@@ -89,7 +89,7 @@ mod tests {
         assert!(!app_compose.public_tcbinfo);
         assert!(!app_compose.local_key_provider_enabled);
         assert_eq!(app_compose.allowed_envs, Vec::<String>::new());
-        assert!(app_compose.no_instance_id);
+        assert!(!app_compose.no_instance_id);
 
         // Test optional fields
         assert_eq!(app_compose.gateway_enabled, None);
