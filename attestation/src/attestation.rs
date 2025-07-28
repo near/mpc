@@ -2,7 +2,6 @@ use crate::{
     app_compose::AppCompose, collateral::Collateral, quote::Quote, report_data::ReportData,
     tcbinfo::TcbInfo,
 };
-use alloc::vec::Vec;
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk::dstack_client::EventLog;
@@ -197,7 +196,7 @@ impl Attestation {
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together.
-    fn replay_rtmr3(event_log: &Vec<EventLog>) -> [u8; 48] {
+    fn replay_rtmr3(event_log: &[EventLog]) -> [u8; 48] {
         const IMR: u32 = 3;
         let mut digest = [0u8; 48];
 
@@ -242,7 +241,7 @@ impl Attestation {
 
         // sha384 of custom encoding: [phala_prefix]:[event_name]:[sha256_payload]
         let mut hasher = Sha384::new();
-        hasher.update(&[0x01, 0x00, 0x00, 0x08]);
+        hasher.update([0x01, 0x00, 0x00, 0x08]);
         hasher.update(b":");
         hasher.update("compose-hash".as_bytes());
         hasher.update(b":");

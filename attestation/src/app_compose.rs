@@ -82,14 +82,14 @@ mod tests {
         assert!(app_compose.docker_config.is_object());
         assert!(app_compose.docker_config.as_object().unwrap().is_empty());
 
-        assert_eq!(app_compose.kms_enabled, true);
+        assert!(app_compose.kms_enabled);
         assert_eq!(app_compose.tproxy_enabled, Some(true));
-        assert_eq!(app_compose.public_logs, true);
-        assert_eq!(app_compose.public_sysinfo, true);
-        assert_eq!(app_compose.public_tcbinfo, false);
-        assert_eq!(app_compose.local_key_provider_enabled, false);
+        assert!(app_compose.public_logs);
+        assert!(app_compose.public_sysinfo);
+        assert!(!app_compose.public_tcbinfo);
+        assert!(!app_compose.local_key_provider_enabled);
         assert_eq!(app_compose.allowed_envs, Vec::<String>::new());
-        assert_eq!(app_compose.no_instance_id, false);
+        assert!(app_compose.no_instance_id);
 
         // Test optional fields
         assert_eq!(app_compose.gateway_enabled, None);
