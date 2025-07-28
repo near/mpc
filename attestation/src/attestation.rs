@@ -1,4 +1,7 @@
-use crate::{collateral::Collateral, quote::Quote, report_data::ReportData, tcbinfo::TcbInfo};
+use crate::{
+    app_compose::AppCompose, collateral::Collateral, quote::Quote, report_data::ReportData,
+    tcbinfo::TcbInfo,
+};
 use alloc::vec::Vec;
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
@@ -7,7 +10,7 @@ use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::env::sha256;
 
-/// Expected status for a successfully verified TEE quote.
+/// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
 
 #[allow(clippy::large_enum_variant)]
@@ -105,6 +108,9 @@ impl Attestation {
         // checks TCB validity time)
         match dcap_qvl::verify::verify(quote_bytes, &attestation.collateral, timestamp_s) {
             Ok(verification_result) => {
+                // The "UpToDate" TCB status indicates that the measured platform components (CPU
+                // microcode, firmware, etc.) match the latest known good values published by Intel
+                // and do not require any updates or mitigations.
                 let status_is_up_to_date = verification_result.status == EXPECTED_QUOTE_STATUS;
 
                 // Advisory IDs indicate known security vulnerabilities or issues with the TEE.
@@ -139,43 +145,36 @@ impl Attestation {
                     let rtmr3_valid =
                         report_data.rt_mr3 == Self::replay_rtmr3(&attestation.tcb_info.event_log);
 
+                    // TODO: Verifying the app compose file seems redundant since both the
+                    // app_compose and the expected app_compose hash come from the same TCB info
+                    // fetched from the /Info dstack endpoint.
                     let app_compose_valid = {
                         let expected_compose_hash = attestation
                             .tcb_info
                             .event_log
                             .iter()
                             .find(|event| event.event == "compose-hash")
-                            .and_then(|event| Some(event.digest.clone()));
-                        let app_compose = attestation
-                            .tcb_info
-                            .event_log
-                            .iter()
-                            .find(|event| event.event == "app_compose")
-                            .and_then(|event| Some(event.event_payload.clone()));
-                        match (expected_compose_hash, app_compose) {
-                            (Some(expected_hex), Some(app)) => match hex::decode(expected_hex) {
-                                Ok(bytes) => match <[u8; 48]>::try_from(bytes.as_slice()) {
-                                    Ok(expected_bytes) => {
-                                        Self::replay_app_compose(&app) == expected_bytes
-                                    }
-                                    Err(_) => {
-                                        tracing::error!(
-                                            "Failed to convert decoded hex to [u8; 48] for compose-hash event"
-                                        );
-                                        false
-                                    }
-                                },
+                            .map(|event| &event.digest);
+                        let app_compose: AppCompose =
+                            match serde_json::from_str(&attestation.tcb_info.app_compose) {
+                                Ok(compose) => compose,
                                 Err(e) => {
-                                    tracing::error!(
-                                        "Failed to decode hex string for compose-hash event: {:?}",
-                                        e
-                                    );
-                                    false
+                                    tracing::error!("Failed to parse app_compose JSON: {:?}", e);
+                                    return false;
                                 }
-                            },
+                            };
+
+                        match expected_compose_hash {
+                            Some(expected_hex) => {
+                                let docker_compose_string =
+                                    serde_yaml::to_string(&app_compose.docker_compose_file)
+                                        .unwrap_or_else(|_| alloc::string::String::new());
+                                Self::validate_compose_hash(expected_hex, &docker_compose_string)
+                            }
                             _ => false,
                         }
                     };
+
                     status_is_up_to_date
                         && no_security_advisories
                         && report_data_valid
@@ -212,6 +211,27 @@ impl Attestation {
         }
 
         digest
+    }
+
+    fn validate_compose_hash(expected_hex: &str, app_compose: &str) -> bool {
+        match hex::decode(expected_hex) {
+            Ok(bytes) => match <[u8; 48]>::try_from(bytes.as_slice()) {
+                Ok(expected_bytes) => Self::replay_app_compose(app_compose) == expected_bytes,
+                Err(_) => {
+                    tracing::error!(
+                        "Failed to convert decoded hex to [u8; 48] for compose-hash event"
+                    );
+                    false
+                }
+            },
+            Err(e) => {
+                tracing::error!(
+                    "Failed to decode hex string for compose-hash event: {:?}",
+                    e
+                );
+                false
+            }
+        }
     }
 
     fn replay_app_compose(app_compose: &str) -> [u8; 48] {
