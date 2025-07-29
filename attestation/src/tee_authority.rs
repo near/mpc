@@ -1,7 +1,7 @@
 use crate::{
     attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
-    expected_rtmrs::ExpectedRTMRs,
+    measurements::ExpectedMeasurements,
     quote::Quote,
     report_data::ReportData,
     tcbinfo::TcbInfo,
@@ -102,7 +102,7 @@ impl TeeAuthority {
             quote,
             collateral,
             tcb_info,
-            ExpectedRTMRs::default(),
+            ExpectedMeasurements::default(),
         )))
     }
 

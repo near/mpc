@@ -1,6 +1,6 @@
 use crate::{
-    app_compose::AppCompose, collateral::Collateral, expected_rtmrs::ExpectedRTMRs, quote::Quote,
-    report_data::ReportData, tcbinfo::TcbInfo,
+    app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
+    quote::Quote, report_data::ReportData, tcbinfo::TcbInfo,
 };
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
@@ -24,7 +24,7 @@ pub struct DstackAttestation {
     quote: Quote,
     collateral: Collateral,
     tcb_info: TcbInfo,
-    expected_measurements: ExpectedRTMRs,
+    expected_measurements: ExpectedMeasurements,
 }
 
 #[derive(Constructor)]
@@ -184,20 +184,20 @@ impl Attestation {
         &self,
         report_data: &dcap_qvl::quote::TDReport10,
         tcb_info: &TcbInfo,
-        expected_measurements: &ExpectedRTMRs,
+        expected_measurements: &ExpectedMeasurements,
     ) -> bool {
         // Check if the RTMRs match the expected values. To learn more about RTMRs and
         // their significance, refer to the TDX documentation:
         // - https://phala.network/posts/understanding-tdx-attestation-reports-a-developers-guide
         // - https://www.kernel.org/doc/Documentation/x86/tdx.rst
-        report_data.rt_mr0 == expected_measurements.rtmr0
-            && report_data.rt_mr1 == expected_measurements.rtmr1
-            && report_data.rt_mr2 == expected_measurements.rtmr2
-            && report_data.mr_td == expected_measurements.mrtd
-            && tcb_info.rtmr0 == hex::encode(expected_measurements.rtmr0)
-            && tcb_info.rtmr1 == hex::encode(expected_measurements.rtmr1)
-            && tcb_info.rtmr2 == hex::encode(expected_measurements.rtmr2)
-            && tcb_info.mrtd == hex::encode(expected_measurements.mrtd)
+        report_data.rt_mr0 == expected_measurements.rtmrs.rtmr0
+            && report_data.rt_mr1 == expected_measurements.rtmrs.rtmr1
+            && report_data.rt_mr2 == expected_measurements.rtmrs.rtmr2
+            && report_data.mr_td == expected_measurements.rtmrs.mrtd
+            && tcb_info.rtmr0 == hex::encode(expected_measurements.rtmrs.rtmr0)
+            && tcb_info.rtmr1 == hex::encode(expected_measurements.rtmrs.rtmr1)
+            && tcb_info.rtmr2 == hex::encode(expected_measurements.rtmrs.rtmr2)
+            && tcb_info.mrtd == hex::encode(expected_measurements.rtmrs.mrtd)
     }
 
     /// Verifies RTMR3 by replaying event log.
@@ -255,14 +255,14 @@ impl Attestation {
     fn verify_local_sgx_hash(
         &self,
         tcb_info: &TcbInfo,
-        expected_measurements: &ExpectedRTMRs,
+        expected_measurements: &ExpectedMeasurements,
     ) -> bool {
         tcb_info
             .event_log
             .iter()
             .find(|event| event.event == "local-sgx")
             .map(|event| &event.digest)
-            .is_some_and(|hash| *hash == hex::encode(expected_measurements.expected_local_sgx_hash))
+            .is_some_and(|hash| *hash == hex::encode(expected_measurements.local_sgx_hash))
     }
 
     /// Verifies MPC node image hash is in allowed list.
@@ -273,37 +273,6 @@ impl Attestation {
             .find(|e| e.event == "mpc-image-digest")
             .map(|e| &e.digest)
             .is_some_and(|digest| allowed_hashes.iter().any(|hash| hash.as_hex() == *digest))
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
-pub struct Measurements {
-    rt_mr0: [u8; 48],
-    rt_mr1: [u8; 48],
-    rt_mr2: [u8; 48],
-    rt_td: [u8; 48],
-}
-
-#[derive(Debug)]
-pub enum MeasurementsError {
-    NoTd10Report,
-}
-
-impl TryFrom<VerifiedReport> for Measurements {
-    type Error = MeasurementsError;
-
-    fn try_from(verified_report: VerifiedReport) -> Result<Self, Self::Error> {
-        let td10 = verified_report
-            .report
-            .as_td10()
-            .ok_or(MeasurementsError::NoTd10Report)?;
-        Ok(Self {
-            rt_mr0: td10.rt_mr0,
-            rt_mr1: td10.rt_mr1,
-            rt_mr2: td10.rt_mr2,
-            rt_td: td10.mr_td,
-        })
     }
 }
 
