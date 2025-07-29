@@ -108,7 +108,16 @@ impl Attestation {
         for event in filtered_events {
             let mut hasher = Sha384::new();
             hasher.update(digest);
-            hasher.update(hex::decode(event.digest.as_str()).unwrap().as_slice());
+            match hex::decode(event.digest.as_str()) {
+                Ok(decoded_bytes) => hasher.update(decoded_bytes.as_slice()),
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to decode hex digest in event log; skipping invalid event: {:?}",
+                        e
+                    );
+                    continue;
+                }
+            }
             digest = hasher.finalize().into();
         }
 
@@ -206,12 +215,10 @@ impl Attestation {
             && report_data.rt_mr3 == Self::replay_rtmr3(&tcb_info.event_log)
     }
 
-    /// Verifies app compose configuration and hash.
+    /// Verifies app compose configuration and hash. The compose-hash is measured into RTMR3, and
+    /// since it's (roughly) a hash of the unmeasured docker_compose_file, this is sufficient to
+    /// prove its validity.
     fn verify_app_compose(&self, tcb_info: &TcbInfo) -> bool {
-        // TODO: Verifying the app compose file seems redundant since both the
-        // app_compose and the expected app_compose hash come from the same TCB info
-        // fetched from the /Info dstack endpoint. It's also not clear how we ensure
-        // the event log passed to the smart contract was not forgotten or replayed.
         let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
             Ok(compose) => compose,
             Err(e) => {
