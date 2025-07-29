@@ -88,6 +88,12 @@ jobs:
         run: |
           cargo install wasm-opt --locked
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install cargo-near
+        run: |
+          apt-get update
+          apt-get install -y libudev-dev
+          cargo install cargo-near
 
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked --all-features
@@ -127,9 +133,6 @@ jobs:
 
       - name: Build mpc node
         run: cargo build -p mpc-node --release --features=network-hardship-simulation
-      
-      - name: Install cargo-near
-        run: cargo install cargo-near
 
       - name: Setup python
         uses: actions/setup-python@v4
