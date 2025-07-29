@@ -40,10 +40,10 @@ def set_config():
 
 def pytest_addoption(parser):
     parser.addoption(
-        "--deterministic",
+        "--non-reproducible",
         action="store_true",
         default=False,
-        help="Enable deterministic contract build",
+        help="Enable non-reproducible contract build",
     )
 
 
@@ -57,9 +57,9 @@ def compile_contract(request):
     git_repo = git.Repo(".", search_parent_directories=True)
     git_root = Path(git_repo.git.rev_parse("--show-toplevel"))
     chain_signatures = git_root / "libs" / "chain-signatures"
-    deterministic = request.config.getoption("--deterministic")
+    non_reproducible = request.config.getoption("--non-reproducible")
 
-    if deterministic:
+    if not non_reproducible:
         subprocess.run(
             [
                 "cargo",
@@ -69,7 +69,7 @@ def compile_contract(request):
                 "--manifest-path",
                 Path("contract") / "Cargo.toml",
                 "--out-dir",
-                Path("target") / "wasm32-unknown-unknown" / "release-deterministic",
+                Path("target") / "wasm32-unknown-unknown" / "release-reproducible",
             ],
             cwd=chain_signatures,
             check=True,
@@ -81,7 +81,7 @@ def compile_contract(request):
             chain_signatures
             / "target"
             / "wasm32-unknown-unknown"
-            / "release-deterministic"
+            / "release-reproducible"
             / "mpc_contract.wasm"
         )
     else:
