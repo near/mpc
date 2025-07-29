@@ -127,6 +127,9 @@ jobs:
 
       - name: Build mpc node
         run: cargo build -p mpc-node --release --features=network-hardship-simulation
+      
+      - name: Install cargo-near
+        run: cargo install cargo-near
 
       - name: Setup python
         uses: actions/setup-python@v4
