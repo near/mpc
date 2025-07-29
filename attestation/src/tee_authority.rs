@@ -1,6 +1,7 @@
 use crate::{
     attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
+    expected_rtmrs::ExpectedRTMRs,
     quote::Quote,
     report_data::ReportData,
     tcbinfo::TcbInfo,
@@ -98,7 +99,10 @@ impl TeeAuthority {
         let quote: Quote = quote.parse()?;
 
         Ok(Attestation::Dstack(DstackAttestation::new(
-            quote, collateral, tcb_info,
+            quote,
+            collateral,
+            tcb_info,
+            ExpectedRTMRs::default(),
         )))
     }
 
