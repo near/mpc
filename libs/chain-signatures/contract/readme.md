@@ -231,8 +231,6 @@ The contract can also be built deterministically using
 cargo near build reproducible-wasm
 ```
 
-The current digest is stored in [digest](./.digest)
-
 ## TEE Specific information
 
 The MPC nodes will eventually run inside a Trusted Execution Environments (TEE). The network is currently in a transitioning period, where both operation modes (TEE and non-TEE) are supported, however, the TEE support is at least as of June 2025, highly experimental and not stable.
