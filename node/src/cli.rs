@@ -397,6 +397,10 @@ impl Cli {
                     participants.len() == responders.len(),
                     "Number of participants must match number of responders"
                 );
+                anyhow::ensure!(
+                    participants.len() > 0,
+                    "Number of participants must be greater than 0"
+                );
                 self.run_generate_test_configs(
                     output_dir,
                     participants,
