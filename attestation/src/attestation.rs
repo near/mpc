@@ -232,30 +232,30 @@ impl Attestation {
             Err(_) => return false,
         };
 
-        let expected_compose_hash = tcb_info
+        tcb_info
             .event_log
             .iter()
             .find(|event| event.event == "compose-hash")
-            .map(|event| &event.digest);
+            .is_some_and(|event| {
+                Self::validate_app_compose_config(&app_compose)
+                    && Self::validate_compose_hash(&event.digest, &docker_compose)
+            })
+    }
 
-        match expected_compose_hash {
-            Some(expected_hex) => {
-                app_compose.manifest_version == 2
-                    && app_compose.runner == "docker-compose"
-                    && app_compose.docker_config == serde_json::json!({})
-                    && !app_compose.kms_enabled
-                    && app_compose.gateway_enabled == Some(false)
-                    && app_compose.public_logs
-                    && app_compose.public_sysinfo
-                    && app_compose.local_key_provider_enabled
-                    && app_compose.allowed_envs.is_empty()
-                    && app_compose.no_instance_id
-                    && app_compose.secure_time == Some(false)
-                    && app_compose.pre_launch_script.is_none()
-                    && Self::validate_compose_hash(expected_hex, &docker_compose)
-            }
-            None => false,
-        }
+    /// Validates app compose configuration against expected security requirements.
+    fn validate_app_compose_config(app_compose: &AppCompose) -> bool {
+        app_compose.manifest_version == 2
+            && app_compose.runner == "docker-compose"
+            && app_compose.docker_config == serde_json::json!({})
+            && !app_compose.kms_enabled
+            && app_compose.gateway_enabled == Some(false)
+            && app_compose.public_logs
+            && app_compose.public_sysinfo
+            && app_compose.local_key_provider_enabled
+            && app_compose.allowed_envs.is_empty()
+            && app_compose.no_instance_id
+            && app_compose.secure_time == Some(false)
+            && app_compose.pre_launch_script.is_none()
     }
 
     /// Verifies local SGX hash matches expected value.

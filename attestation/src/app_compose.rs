@@ -1,4 +1,4 @@
-use alloc::{format, string::String, vec::Vec};
+use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
@@ -9,15 +9,13 @@ where
     D: serde::Deserializer<'de>,
 {
     let yaml_string = String::deserialize(deserializer)?;
-    serde_yaml::from_str(&yaml_string)
-        .map_err(|e| serde::de::Error::custom(format!("Failed to parse YAML: {}", e)))
+    serde_yaml::from_str(&yaml_string).map_err(serde::de::Error::custom)
 }
 
 /// Helper struct to deserialize the app_compose JSON from TCB info. This file would never exist if
-/// the dstack SDK was designed more cleanly.
+/// the dstack SDK were designed more cleanly.
 ///
-/// TODO: Open GitHub issue to dstack SDK to use strong types instead of plain String for JSONs and
-/// YAMLs.
+/// See: https://github.com/Dstack-TEE/dstack/issues/267
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AppCompose {
     pub manifest_version: u32,
