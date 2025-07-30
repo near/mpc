@@ -165,7 +165,7 @@ stateDiagram-v2
 | `public_key(domain: Option<DomainId>)`                                                       | Read-only function; returns the public key used for the given domain (defaulting to first).              | `Result<PublicKey, Error>` |                 |                    |
 | `derived_public_key(path: String, predecessor: Option<AccountId>, domain: Option<DomainId>)` | Generates a derived public key for a given path and account, for the given domain (defaulting to first). | `Result<PublicKey, Error>` |                 |                    |
 
-### SignRequestArgs (Latest version)
+#### SignRequestArgs (Latest version)
 
 The sign request takes the following arguments:
 
@@ -173,7 +173,7 @@ The sign request takes the following arguments:
 - `payload_v2`: either `{"Ecdsa": "<hex encoded 32 bytes>"}` or `{"Eddsa": "<hex encoded between 32 and 1232 bytes>"}`
 - `domain_id` (integer): the domain ID that identifies the key and signature scheme to use for signing.
 
-### SignRequestArgs (Legacy version for backwards compatibility with V1)
+#### SignRequestArgs (Legacy version for backwards compatibility with V1)
 
 - The legacy argument `payload` can be used in place of `payload_v2`; the format for that is an array of 32 integer bytes. This argument can only be used
   to pass in an ECDSA payload.
