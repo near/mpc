@@ -27,8 +27,11 @@ container_build_command = [
     "cargo",
     "near",
     "build",
-    "non-reproducible-wasm",
+ # this is counter intuitive, but it correctly follows the docs,
+ # the non-reproducible build inside a reproducible environment becomes reproducible
+    "non-reproducible-wasm", 
     "--locked",
+# this should be removed in the future, tracked in #739
     "--no-abi"
 ]
 
