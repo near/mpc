@@ -6,39 +6,45 @@ Simply run `exec_pytest.sh` (optinal flag `--verbose` and `--reset-submodules`) 
 
 1. Ensure submodules are clean and point to the correct commit. Use the following commands at your own risk:
 
-```bash
-git submodule foreach --recursive git reset --hard
-git submodule foreach --recursive git clean -fdx
-git submodule update --init --recursive --force
-```
+    ```bash
+    git submodule foreach --recursive git reset --hard
+    git submodule foreach --recursive git clean -fdx
+    git submodule update --init --recursive --force
+    ```
 
 2. Build nearcore and main node:
 
-```bash
-# build nearcore:
-cd libs/nearcore && cargo build -p neard --release
+    ```bash
+    # build nearcore:
+    cd libs/nearcore && cargo build -p neard --release
 
-# build the main node
-cd ../.. && cargo build -p mpc-node --release --features=network-hardship-simulation
-```
+    # build the main node
+    cd ../.. && cargo build -p mpc-node --release --features=network-hardship-simulation
+    ```
 
 3. Set up virtualenv (optional, but recommended):
 
-```bash
-cd pytest && python3 -m venv venv
+    ```bash
+    cd pytest && python3 -m venv venv
 
-# activate virtualenv:
-source venv/bin/activate
+    # activate virtualenv:
+    source venv/bin/activate
 
-# install requirements:
-pip install -r requirements.txt
-```
+    # install requirements:
+    pip install -r requirements.txt
+    ```
 
-4. Run pytest:
+4. Install docker and cargo-near. For the latter:
 
-```bash
-pytest # -v -s optional flags for verbosity and -m "not slow" to skip slow tests
-```
+    ```bash
+    cargo install cargo-near
+    ```
+
+5. Run pytest:
+
+    ```bash
+    pytest # -v -s optional flags for verbosity and -m "not slow" to skip slow tests
+    ```
 
 Run individual tests with e.g. `pytest tests/test_contract_update.py::test_code_update`
 
@@ -48,13 +54,15 @@ To automate formatting and avoid excessive bike shedding, we're using
 [Black](https://github.com/psf/black) to format Python source code in the pytest directory. It can be
 installed from Python Package Index (PyPI) using `pip` tool:
 
-    python3 -m pip install black
+```bash
+python3 -m pip install black
+```
 
 Once installed, it can be run either on a single file, or a directory for example
 with the following command:
 
 ```bash
-    python3 -m black pytest/
+python3 -m black pytest/
 ```
 
 #### Auto formatting - Editor Integration
