@@ -17,3 +17,5 @@ venv
 /node/signature_network_report_best_case.json
 /node/triple_network_report_best_case.json
 /node/triple_network_report_worst_case.json
+
+/libs/nearcore/pytest/lib/nearcore_pytest.egg-info/

@@ -10,9 +10,10 @@
 # - Run the script with optional flags:
 #   --reset-submodules : Resets git submodules.
 #   --verbose          : Enables detailed log output.
+#   --non-reproducible : Disables reproducible contract build
 #
 # Example:
-#   bash exec_pytest.sh --reset-submodules --verbose
+#   bash exec_pytest.sh --reset-submodules --verbose --non-reproducible
 #
 # Requirements:
 # - bash
@@ -70,6 +71,7 @@ REQ_DIRS=(
 )
 RESET_SUBMODULES=false
 VERBOSE=false
+NON_REPRODUCIBLE=false
 for arg in "$@"; do
     case $arg in
     --reset-submodules)
@@ -78,6 +80,9 @@ for arg in "$@"; do
         ;;
     --verbose)
         VERBOSE=true
+        ;;
+    --non-reproducible)
+        NON_REPRODUCIBLE=true
         ;;
     *)
         printf "\nError: Unknown argument: %s, $arg\n"
@@ -150,8 +155,12 @@ fi
 # Add -s flag if verbose is enabled
 PYTEST_FLAGS=""
 if $VERBOSE; then
-    PYTEST_FLAGS="-s"
+    PYTEST_FLAGS+=" -s"
     printf "\nVerbose mode activated. Adding -s flag to pytest.\n"
+fi
+
+if $NON_REPRODUCIBLE; then
+    PYTEST_FLAGS+=" --non-reproducible"
 fi
 
 # set the NEAR config ensuring that the release version of nearcore is run.

@@ -458,7 +458,7 @@ class MpcCluster:
             self.mpc_contract_account(),
             "propose_update",
             args,
-            deposit=9753060000000000000000000,
+            deposit=9764820000000000000000000,
         )
         res = participant.send_txn_and_check_success(tx, timeout=30)
         return int(
