@@ -29,9 +29,7 @@ pub struct DstackAttestation {
 
 #[derive(Constructor)]
 pub struct LocalAttestation {
-    quote_verification_result: bool,
-    #[allow(dead_code)]
-    docker_image_verification_result: bool,
+    verification_result: bool,
 }
 
 impl Attestation {
@@ -48,7 +46,7 @@ impl Attestation {
                 timestamp_s,
                 allowed_docker_image_hashes,
             ),
-            Self::Local(config) => config.quote_verification_result,
+            Self::Local(config) => config.verification_result,
         }
     }
 
@@ -290,24 +288,17 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    fn mock_attestation(
-        quote_verification_result: bool,
-        docker_image_verification_result: bool,
-    ) -> Attestation {
+    fn mock_attestation(quote_verification_result: bool) -> Attestation {
         Attestation::Local(LocalAttestation {
-            quote_verification_result,
-            docker_image_verification_result,
+            verification_result: quote_verification_result,
         })
     }
 
     #[rstest]
-    #[case(false, false, false)]
-    #[case(false, true, false)]
-    #[case(true, false, true)]
-    #[case(true, true, true)]
+    #[case(false, false)]
+    #[case(true, true)]
     fn test_mock_attestation_verify(
         #[case] quote_verification_result: bool,
-        #[case] docker_image_verification_result: bool,
         #[case] expected_quote_verification_result: bool,
     ) {
         let timestamp_s = 0u64;
@@ -320,11 +311,7 @@ mod tests {
         let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
         assert_eq!(
-            mock_attestation(quote_verification_result, docker_image_verification_result).verify(
-                report_data,
-                timestamp_s,
-                &[],
-            ),
+            mock_attestation(quote_verification_result).verify(report_data, timestamp_s, &[],),
             expected_quote_verification_result
         );
     }
