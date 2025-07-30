@@ -49,6 +49,8 @@ Simply run `exec_pytest.sh` (optinal flag `--verbose` and `--reset-submodules`) 
     pytest # -v -s optional flags for verbosity and -m "not slow" to skip slow tests
     ```
 
+    In case you run into docker permission issues, make sure your user is part of the docker group and the docker daemon is running, c.f. [docker docs](https://docs.docker.com/engine/install/linux-postinstall/).
+
     To disable the reproducible build of the contract, use:
 
     ```bash
