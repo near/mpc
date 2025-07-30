@@ -73,7 +73,7 @@ pub enum CliCommand {
     GenerateTestConfigs {
         #[arg(long)]
         output_dir: String,
-        #[arg(long, value_delimiter = ',')]
+        #[arg(long, value_delimiter = ',', required = true)]
         /// Near signer account for each participant
         participants: Vec<AccountId>,
         /// Near responder account for each participant. Refer to `indexer/real.rs` for more details.
