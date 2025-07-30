@@ -4,7 +4,7 @@ This folder contains the code for the **MPC Contract**, which is deployed on the
 
 This code will be moved to its own repository in the near future (c.f. [issue #417](https://github.com/Near-One/mpc/issues/417)).
 
-### Role of the contract in Chain Signatures:
+## Role of the contract in Chain Signatures
 
 This contract serves as an API-endpoint to the MPC network. Users can submit signature requests via this contract and MPC Participants can vote on changes to the MPC network, such as:
 
@@ -13,17 +13,15 @@ This contract serves as an API-endpoint to the MPC network. Users can submit sig
 - Generating new distributed keys
 - Updating the contract code
 
-
-### Contract State
+## Contract State
 
 The contract tracks the following information:
+
 - Pending signature requests
 - Current participant set of the MPC network
 - Current set of keys managed by the MPC network (each key is associated to a unique `domain_id`)
 - (Currently unused) metadata related to trusted execution environments
 - Current protocol state of the MPC network (see [Protocol State and Lifecycle](#protocol-state).
-
-
 
 ## Usage
 
@@ -32,15 +30,16 @@ The contract tracks the following information:
 Users can submit a signature request to the MPC network via the `sign` endpoint of this contract. Note that a **deposit of 1 yoctonear is required** to prevent abuse by malicious frontends.
 
 The sign request takes the following arguments:
-* `path` (String): the derivation path (used for key-derivation).
-* `payload_v2`: either
-   * `{"Ecdsa": "<hex encoded 32 bytes>"}` or
-   * `{"Eddsa": "<hex encoded between 32 and 1232 bytes>"}`
-* `domain_id` (integer): identifies the key to use for generating the signature. Note that the payload type must match the associated signature scheme. 
+
+- `path` (String): the derivation path (used for key-derivation).
+- `payload_v2`: either
+  - `{"Ecdsa": "<hex encoded 32 bytes>"}` or
+  - `{"Eddsa": "<hex encoded between 32 and 1232 bytes>"}`
+- `domain_id` (integer): identifies the key to use for generating the signature. Note that the payload type must match the associated signature scheme.
 
 Submitting a signature request costs approximately 7 Tgas, but the contract requires that at least 10 Tgas are attached to the transaction.
 
-**Example**
+#### Example
 
 _ECDSA Signature Request_
 ```Json
@@ -69,19 +68,21 @@ _EDDSA Signature Request_
 ```
 
 #### Ecdsa palyoad restrictions
+
 Note that an Ecdsa payload is subsequently represented as a Scalar on curve Secp256k1. This means that the payload must be strictly less than the field size `p = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE FFFFFC2F` (see also [curve parameters](https://www.secg.org/sec2-v2.pdf#subsubsection.2.4.1) and [k256 implementation details](https://docs.rs/k256/latest/k256/struct.Scalar.html#method.from_repr)).
 
 ### Changing the participant set
 
 The set of MPC participants can be changed, subject to following restrictions:
+
 - There must at least be `threshold` (the current threshold) number of current participants in the prospective participant set.
 - The prospective threshold must be at least 60% of the number of participants (rounded upwards).
 - The set of participants must have at least two participants.
 
 In order for a change to be accepted by the contract, all prospective participants must vote for it using the `vote_new_parameters` endpoint. Note that any new participants vote will only be accepted after at least `threshold` (the current threshold) old participants voted for the same participant set.
 
+#### Example
 
-**Example**
 ```Json
 {
   "prospective_epoch_id":1,
@@ -110,10 +111,10 @@ In order for a change to be accepted by the contract, all prospective participan
     }
   }
 }
-
-
 ```
+
 ### Adding a Key
+
 To generate a new threshold signature key, all participants must vote for it to be added via `vote_new_domain`. Only votes from existing participants will be accepted.
 
 ```Json
@@ -131,15 +132,16 @@ To generate a new threshold signature key, all participants must vote for it to 
 }
 ```
 
-
-### Deployment 
+### Deployment
 
 After deploying the contract, it will first be in an uninitialized state. The owner will need to initialize it via `init`, providing the set of participants and threshold parameters.
 
 The contract will then switch to running state, where further operations (like initializing keys, or changing the participant set), can be taken.
 
 ### Protocol State
+
 The following protocol state transitions are allowed.
+
 ```mermaid
 stateDiagram-v2
     direction LR
@@ -154,7 +156,8 @@ stateDiagram-v2
 ```
 
 ## Contract API
-#### User API
+
+### User API
 
 | Function                                                                                     | Behavior                                                                                                 | Return Value               | Gas requirement | Effective Gas Cost |
 | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------- | --------------- | ------------------ |
@@ -163,17 +166,21 @@ stateDiagram-v2
 | `derived_public_key(path: String, predecessor: Option<AccountId>, domain: Option<DomainId>)` | Generates a derived public key for a given path and account, for the given domain (defaulting to first). | `Result<PublicKey, Error>` |                 |                    |
 
 #### SignRequestArgs (Latest version)
+
 The sign request takes the following arguments:
-* `path` (String): the derivation path.
-* `payload_v2`: either `{"Ecdsa": "<hex encoded 32 bytes>"}` or `{"Eddsa": "<hex encoded between 32 and 1232 bytes>"}`
-* `domain_id` (integer): the domain ID that identifies the key and signature scheme to use for signing.
+
+- `path` (String): the derivation path.
+- `payload_v2`: either `{"Ecdsa": "<hex encoded 32 bytes>"}` or `{"Eddsa": "<hex encoded between 32 and 1232 bytes>"}`
+- `domain_id` (integer): the domain ID that identifies the key and signature scheme to use for signing.
 
 #### SignRequestArgs (Legacy version for backwards compatibility with V1)
-* The legacy argument `payload` can be used in place of `payload_v2`; the format for that is an array of 32 integer bytes. This argument can only be used
-  to pass in an ECDSA payload.
-* The legacy argument `key_version` can be used in place of `domain_id` and means the same thing.
 
-#### Participants API
+- The legacy argument `payload` can be used in place of `payload_v2`; the format for that is an array of 32 integer bytes. This argument can only be used
+  to pass in an ECDSA payload.
+- The legacy argument `key_version` can be used in place of `domain_id` and means the same thing.
+
+### Participants API
+
 These functions require the caller to be a participant or candidate.
 
 | Function                                                                            | Behavior                                                                                                                                                                                                                                | Return Value              | Gas Requirement | Effective Gas Cost |
@@ -191,7 +198,7 @@ These functions require the caller to be a participant or candidate.
 | `vote_update(id: UpdateId)`                                                         | Votes on a proposed update. If the threshold is met, the update is executed.                                                                                                                                                            | `Result<bool, Error>`     | TBD             | TBD                |
 | `propose_join(proposed_tee_participant: TeeParticipantInfo, signer_pk: PublicKey)` | Submits the tee participant info for a potential candidate. c.f. TEE section | `Result<(), Error>` | TBD | TBD |
 
-#### Developer API
+### Developer API
 
 | Function                                                                   | Behavior                                                                                                                                                                                                                                 | Return Value             | Gas Requirement | Effective Gas Cost |
 | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | --------------- | ------------------ |
@@ -202,25 +209,35 @@ These functions require the caller to be a participant or candidate.
 | `version()`                                                                | Returns the contract version.                                                                                                                                                                                                            | `String`                 | TBD             | TBD                |
 | `update_config(config: ConfigV1)`                                          | Updates the contract configuration for `V1`.                                                                                                                                                                                             | `()`                     | TBD             | TBD                |
 
-
 ## Development
+
 Note that due to the Rust compiler version used in this project and a lack of compatibility with the runtime version used in near-workspaces,
 we need to use wasm-opt to strip the contract of unused features. Otherwise the contract cannot be deserialized by near-workspaces runtime.
 
 Make sure you have wasm-opt installed on version 123 or later.
 
-```
+```bash
 cargo build --release --target=wasm32-unknown-unknown
 wasm-opt -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm --enable-bulk-memory-opt
 ```
 
+### Deterministic build
+
+The contract can also be built deterministically using
+[cargo-near](https://github.com/near/cargo-near). Make sure you have
+`cargo-near` and `docker` installed.
+
+```bash
+cargo near build reproducible-wasm
+```
 
 ## TEE Specific information
+
 The MPC nodes will eventually run inside a Trusted Execution Environments (TEE). The network is currently in a transitioning period, where both operation modes (TEE and non-TEE) are supported, however, the TEE support is at least as of June 2025, highly experimental and not stable.
 
-
 Participants that run their node inside a TEE will have to submit the following TEE related data to the contract:
-```
+
+```rust
 pub struct TeeParticipantInfo {
     /// TEE Remote Attestation Quote that proves the participant's identity.
     pub tee_quote: Vec<u8>,
@@ -236,8 +253,9 @@ pub struct TeeParticipantInfo {
 The prospective node operator can retrieve that data from the web endpoint (`:8080/get_public_data`).
 
 The process of doing so is as follows:
+
 1. The prospective participants set up their MPC inside their TEE environment (todo: [#550](https://github.com/near/mpc/issues/550), documentation to follow).
 2. The prospective participants fetch their TEE related information from their logs.
 3. The prospective participants add the `near_signer_public_key` from the web endpoint (`:8080/get_public_data`) as an access key to their node operator account, eligible for calling the MPC contract (`v1.signer` on mainnet or `v1.signer-prod.testnet` on testnet). Participants should provide sufficient funding to this key.
 4. The prospective participants add the `near_responder_public_keys` from the web endpoint to a different account and provide sufficient funding to it.
-3. The participants submit their data to the contract via `propose_join`.
+5. The participants submit their data to the contract via `propose_join`.
