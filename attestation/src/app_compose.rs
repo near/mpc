@@ -12,8 +12,8 @@ where
     serde_yaml::from_str(&yaml_string).map_err(serde::de::Error::custom)
 }
 
-/// Helper struct to deserialize the app_compose JSON from TCB info. This file would never exist if
-/// the dstack SDK were designed more cleanly.
+/// Helper struct to deserialize the `app_compose` JSON from TCB info. This is a workaround due to
+/// current limitations in the dstack SDK.
 ///
 /// See: https://github.com/Dstack-TEE/dstack/issues/267
 #[derive(Debug, Deserialize, Serialize)]
