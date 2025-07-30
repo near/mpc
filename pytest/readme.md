@@ -40,10 +40,19 @@ Simply run `exec_pytest.sh` (optinal flag `--verbose` and `--reset-submodules`) 
     cargo install cargo-near
     ```
 
+    This is only needed if using reproducible builds for the contract, which is 
+    enabled by default.
+
 5. Run pytest:
 
     ```bash
     pytest # -v -s optional flags for verbosity and -m "not slow" to skip slow tests
+    ```
+
+    To disable the reproducible build of the contract, use:
+
+    ```bash
+    pytest --non-reproducible
     ```
 
 Run individual tests with e.g. `pytest tests/test_contract_update.py::test_code_update`
