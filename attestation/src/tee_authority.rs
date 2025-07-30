@@ -28,8 +28,7 @@ const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
 
 #[derive(Constructor)]
 pub struct LocalTeeAuthorityConfig {
-    quote_verification_result: bool,
-    docker_image_verification_result: bool,
+    verification_result: bool,
 }
 
 #[derive(Constructor)]
@@ -65,8 +64,7 @@ impl TeeAuthority {
     ) -> anyhow::Result<Attestation> {
         match self {
             TeeAuthority::Local(config) => Ok(Attestation::Local(LocalAttestation::new(
-                config.quote_verification_result,
-                config.docker_image_verification_result,
+                config.verification_result,
             ))),
             TeeAuthority::Dstack(config) => {
                 self.generate_dstack_attestation(config, report_data).await
@@ -254,7 +252,6 @@ mod tests {
     #[tokio::test]
     async fn test_generate_and_verify_attestation_local(
         #[values(true, false)] quote_verification_result: bool,
-        #[values(true, false)] docker_image_verification_result: bool,
     ) {
         let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
             .parse()
@@ -264,10 +261,8 @@ mod tests {
             .unwrap();
         let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
-        let authority = TeeAuthority::Local(LocalTeeAuthorityConfig::new(
-            quote_verification_result,
-            docker_image_verification_result,
-        ));
+        let authority =
+            TeeAuthority::Local(LocalTeeAuthorityConfig::new(quote_verification_result));
         let attestation = authority
             .generate_attestation(report_data.clone())
             .await

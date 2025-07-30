@@ -72,9 +72,40 @@ mod tests {
         assert_eq!(app_compose.runner, "docker-compose");
 
         // Test that docker_compose_file was parsed as YAML
-        assert!(app_compose.docker_compose_file.get("services").is_some());
-        let services = app_compose.docker_compose_file.get("services").unwrap();
-        assert!(services.get("jupyter").is_some());
+        let services = app_compose.docker_compose_file["services"]
+            .as_mapping()
+            .unwrap();
+        let jupyter = &services["jupyter"];
+
+        assert_eq!(
+            jupyter["image"].as_str().unwrap(),
+            "quay.io/jupyter/base-notebook"
+        );
+        assert_eq!(jupyter["user"].as_str().unwrap(), "root");
+
+        let environment = jupyter["environment"].as_sequence().unwrap();
+        assert_eq!(environment[0].as_str().unwrap(), "GRANT_SUDO=yes");
+
+        let ports = jupyter["ports"].as_sequence().unwrap();
+        assert_eq!(ports[0].as_str().unwrap(), "8888:8888");
+
+        let volumes = jupyter["volumes"].as_sequence().unwrap();
+        assert_eq!(volumes[0].as_str().unwrap(), "/:/host/");
+        assert_eq!(
+            volumes[1].as_str().unwrap(),
+            "/var/run/tappd.sock:/var/run/tappd.sock"
+        );
+        assert_eq!(
+            volumes[2].as_str().unwrap(),
+            "/var/run/dstack.sock:/var/run/dstack.sock"
+        );
+
+        let logging = &jupyter["logging"];
+        assert_eq!(logging["driver"].as_str().unwrap(), "journald");
+        assert_eq!(
+            logging["options"]["tag"].as_str().unwrap(),
+            "jupyter-notebook"
+        );
 
         // Test that docker_config was parsed as JSON
         assert!(app_compose.docker_config.is_object());
