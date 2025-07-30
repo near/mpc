@@ -2,6 +2,7 @@ use crate::crypto_shared;
 use crate::errors::{Error, InvalidParameters};
 use crate::DomainId;
 use crypto_shared::derive_tweak;
+use near_sdk::schemars;
 use near_sdk::{near, AccountId, CryptoHash};
 use std::fmt::Debug;
 
@@ -52,7 +53,7 @@ impl Payload {
 /// The `new` function as well as json deserialization checks that the length is within bounds.
 /// The borsh deserialization does not perform such checks, as the borsh serialization is only
 /// used for internal contract storage.
-#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd, schemars::JsonSchema)]
 #[near(serializers=[borsh])]
 pub struct Bytes<const MIN_LEN: usize, const MAX_LEN: usize>(Vec<u8>);
 

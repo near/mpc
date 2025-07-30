@@ -1,6 +1,6 @@
 mod impls;
 
-use borsh::{self, BorshDeserialize, BorshSerialize};
+use borsh::{self, BorshDeserialize, BorshSchema, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{store::IterableMap, AccountId};
 use std::collections::{HashMap, HashSet};
@@ -118,7 +118,7 @@ pub enum Update {
     ConfigV1(ConfigV1),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, BorshSchema, PartialEq, Eq)]
 pub struct ConfigV1 {
     pub max_num_requests_to_remove: u32,
     pub request_timeout_blocks: u64,

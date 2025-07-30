@@ -5,7 +5,8 @@ use crate::config::Config;
 use crate::storage_keys::StorageKey;
 
 use crate::errors::{ConversionError, Error};
-use borsh::{self, BorshDeserialize, BorshSerialize};
+use borsh::{self, BorshDeserialize, BorshSchema, BorshSerialize};
+use near_sdk::schemars;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::IterableMap;
 use near_sdk::{env, near, AccountId, Gas, NearToken, Promise};
@@ -17,6 +18,8 @@ use near_sdk::{env, near, AccountId, Gas, NearToken, Promise};
     Debug,
     BorshDeserialize,
     BorshSerialize,
+    BorshSchema,
+    schemars::JsonSchema,
     Serialize,
     Deserialize,
     PartialEq,

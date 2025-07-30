@@ -1,23 +1,24 @@
 use std::fmt::Display;
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 use curve25519_dalek::EdwardsPoint;
 use k256::{
     elliptic_curve::{group::GroupEncoding, CurveArithmetic, PrimeField},
     AffinePoint, Secp256k1,
 };
 use near_sdk::near;
+use near_sdk::schemars;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(tag = "scheme")]
 pub enum SignatureResponse {
     Secp256k1(k256_types::Signature),
     Ed25519 { signature: ed25519_types::Signature },
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, BorshSchema, schemars::JsonSchema)]
 pub enum PublicKeyExtended {
     Secp256k1 {
         near_public_key: near_sdk::PublicKey,
@@ -27,7 +28,7 @@ pub enum PublicKeyExtended {
         /// Serialized compressed Edwards-y point.
         near_public_key_compressed: near_sdk::PublicKey,
         /// Decompressed Edwards point used for curve arithmetic operations.
-        edwards_point: EdwardsPoint,
+        edwards_point: serialize::SerializableEdwardsPoint,
     },
 }
 
@@ -80,7 +81,7 @@ impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
 
                 Self::Ed25519 {
                     near_public_key_compressed: near_public_key,
-                    edwards_point,
+                    edwards_point: serialize::SerializableEdwardsPoint(edwards_point),
                 }
             }
             near_sdk::CurveType::SECP256K1 => Self::Secp256k1 { near_public_key },
@@ -104,7 +105,9 @@ impl AsRef<near_sdk::PublicKey> for PublicKeyExtended {
 
 /// Module that adds implementation of [`BorshSerialize`] and [`BorshDeserialize`] for
 /// [`PublicKeyExtended`].
-mod serialize {
+pub mod serialize {
+    use schemars::JsonSchema;
+
     use super::*;
 
     #[near(serializers=[borsh, json])]
@@ -130,7 +133,7 @@ mod serialize {
                     edwards_point,
                 } => PublicKeyExtendedHelper::Ed25519 {
                     near_public_key_compressed,
-                    edwards_point: SerializableEdwardsPoint(edwards_point),
+                    edwards_point,
                 },
             };
             BorshSerialize::serialize(&serializable_helper_representation, writer)
@@ -151,7 +154,7 @@ mod serialize {
                     edwards_point,
                 } => PublicKeyExtended::Ed25519 {
                     near_public_key_compressed,
-                    edwards_point: edwards_point.0,
+                    edwards_point,
                 },
             };
 
@@ -160,7 +163,7 @@ mod serialize {
     }
 
     #[derive(Debug, PartialEq, Serialize, Deserialize, Eq, Clone, Copy)]
-    pub struct SerializableEdwardsPoint(EdwardsPoint);
+    pub struct SerializableEdwardsPoint(pub EdwardsPoint);
 
     impl BorshSerialize for SerializableEdwardsPoint {
         fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
@@ -180,6 +183,27 @@ mod serialize {
                     "The provided bytes is not a valid edwards point.",
                 ))
                 .map(SerializableEdwardsPoint)
+        }
+    }
+
+    impl BorshSchema for SerializableEdwardsPoint{
+        fn add_definitions_recursively(definitions: &mut std::collections::BTreeMap<borsh::schema::Declaration, borsh::schema::Definition>) {
+            <[u8; 32]>::add_definitions_recursively(definitions);
+        }
+    
+        fn declaration() -> borsh::schema::Declaration {
+            "SerializableEdwardsPoint".into()
+        }
+    }
+
+    impl JsonSchema for SerializableEdwardsPoint{
+        
+        fn schema_name() -> String {
+            "SerializableEdwardsPoint".into()
+        }
+        
+        fn json_schema(generator: &mut near_sdk::schemars::gen::SchemaGenerator) -> near_sdk::schemars::schema::Schema {
+            <[u8; 32]>::json_schema(generator)
         }
     }
 }
@@ -229,12 +253,34 @@ pub mod k256_types {
         }
     }
 
+    impl schemars::JsonSchema for SerializableScalar{
+        
+        fn schema_name() -> String {
+            "SerializableScalar".into()
+        }
+        
+        fn json_schema(generator: &mut near_sdk::schemars::gen::SchemaGenerator) -> near_sdk::schemars::schema::Schema {
+            <[u8; 32]>::json_schema(generator)
+        }
+    }
+
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
     pub struct SerializableAffinePoint {
         pub affine_point: AffinePoint,
     }
 
-    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+    impl schemars::JsonSchema for SerializableAffinePoint{
+        
+        fn schema_name() -> String {
+            "SerializableAffinePoint".into()
+        }
+        
+        fn json_schema(generator: &mut near_sdk::schemars::gen::SchemaGenerator) -> near_sdk::schemars::schema::Schema {
+            <[u8; 32]>::json_schema(generator)
+        }
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
     pub struct Signature {
         pub big_r: SerializableAffinePoint,
         pub s: SerializableScalar,
@@ -321,6 +367,17 @@ pub mod ed25519_types {
 
         pub fn new(bytes: [u8; 64]) -> Self {
             Self(bytes)
+        }
+    }
+
+    impl schemars::JsonSchema for Signature{
+        
+        fn schema_name() -> String {
+            "Signature".into()
+        }
+        
+        fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+            <[u8; 32]>::json_schema(generator)
         }
     }
 }

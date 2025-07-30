@@ -1,5 +1,5 @@
 use crate::{
-    crypto_shared::types::PublicKeyExtended,
+    crypto_shared::types::{PublicKeyExtended,serialize::SerializableEdwardsPoint},
     primitives::{
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -23,7 +23,7 @@ pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
 
     PublicKeyExtended::Ed25519 {
         near_public_key_compressed,
-        edwards_point,
+        edwards_point: SerializableEdwardsPoint(edwards_point),
     }
 }
 

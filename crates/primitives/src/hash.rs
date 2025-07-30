@@ -1,7 +1,9 @@
 use alloc::string::String;
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
+use schemars::JsonSchema;
 use core::marker::PhantomData;
 use derive_more::{AsRef, Deref, Into};
+use crate::alloc::string::ToString;
 
 #[derive(
     Debug,
@@ -15,6 +17,8 @@ use derive_more::{AsRef, Deref, Into};
     serde::Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    BorshSchema,
+    JsonSchema,
     Deref,
     AsRef,
     Into,
@@ -54,6 +58,8 @@ impl<T> Hash32<T> {
     serde::Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    BorshSchema,
+    JsonSchema,
 )]
 pub struct Image;
 #[derive(
@@ -65,6 +71,8 @@ pub struct Image;
     serde::Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    BorshSchema,
+    JsonSchema,
 )]
 pub struct Compose;
 

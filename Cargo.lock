@@ -4883,6 +4883,7 @@ dependencies = [
  "derive_more 2.0.1",
  "hex",
  "rand 0.8.5",
+ "schemars 0.8.22",
  "serde",
  "serde_json",
 ]
@@ -4934,12 +4935,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-abi"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c49593c9e94454a2368a4c0a511bf4bf1413aff4d23f16e1d8f4e64b5215351"
+dependencies = [
+ "borsh",
+ "schemars 0.8.22",
+ "semver 1.0.26",
+ "serde",
+]
+
+[[package]]
 name = "near-account-id"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8542f031adc257a27ba46ad904c241a88470ee95130663a9e5c08cf8e124f4d4"
 dependencies = [
  "borsh",
+ "schemars 0.8.22",
  "serde",
 ]
 
@@ -5396,6 +5410,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "180edcc7dc2fac41f93570d0c7b759c1b6d492f6ad093d749d644a40b4310a97"
 dependencies = [
  "borsh",
+ "schemars 0.8.22",
  "serde",
 ]
 
@@ -5983,6 +5998,7 @@ dependencies = [
  "base64 0.22.1",
  "borsh",
  "bs58 0.5.1",
+ "near-abi",
  "near-account-id",
  "near-crypto 0.30.3",
  "near-gas 0.3.0",
@@ -5994,6 +6010,7 @@ dependencies = [
  "near-token",
  "near-vm-runner 0.30.3",
  "once_cell",
+ "schemars 0.8.22",
  "serde",
  "serde_json",
  "wee_alloc",
@@ -6141,6 +6158,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd3e60aa26a74dc514b1b6408fdd06cefe2eb0ff029020956c1c6517594048fd"
 dependencies = [
  "borsh",
+ "schemars 0.8.22",
  "serde",
 ]
 
