@@ -1,6 +1,7 @@
 use crate::{
     attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
+    measurements::ExpectedMeasurements,
     quote::Quote,
     report_data::ReportData,
     tcbinfo::TcbInfo,
@@ -27,13 +28,12 @@ const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
 
 #[derive(Constructor)]
 pub struct LocalTeeAuthorityConfig {
-    quote_verification_result: bool,
-    docker_image_verification_result: bool,
+    verification_result: bool,
 }
 
 #[derive(Constructor)]
 pub struct DstackTeeAuthorityConfig {
-    /// Endpoint to contact dstack service. Defaults to `/var/run/dstack.sock`
+    /// Endpoint to contact dstack service. Defaults to [`DEFAULT_DSTACK_ENDPOINT`]
     dstack_endpoint: String,
     /// URL for submission of TDX quote. Returns collateral to be used for verification.
     quote_upload_url: Url,
@@ -64,8 +64,7 @@ impl TeeAuthority {
     ) -> anyhow::Result<Attestation> {
         match self {
             TeeAuthority::Local(config) => Ok(Attestation::Local(LocalAttestation::new(
-                config.quote_verification_result,
-                config.docker_image_verification_result,
+                config.verification_result,
             ))),
             TeeAuthority::Dstack(config) => {
                 self.generate_dstack_attestation(config, report_data).await
@@ -98,7 +97,10 @@ impl TeeAuthority {
         let quote: Quote = quote.parse()?;
 
         Ok(Attestation::Dstack(DstackAttestation::new(
-            quote, collateral, tcb_info,
+            quote,
+            collateral,
+            tcb_info,
+            ExpectedMeasurements::default(),
         )))
     }
 
@@ -250,7 +252,6 @@ mod tests {
     #[tokio::test]
     async fn test_generate_and_verify_attestation_local(
         #[values(true, false)] quote_verification_result: bool,
-        #[values(true, false)] docker_image_verification_result: bool,
     ) {
         let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
             .parse()
@@ -260,17 +261,15 @@ mod tests {
             .unwrap();
         let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
-        let authority = TeeAuthority::Local(LocalTeeAuthorityConfig::new(
-            quote_verification_result,
-            docker_image_verification_result,
-        ));
+        let authority =
+            TeeAuthority::Local(LocalTeeAuthorityConfig::new(quote_verification_result));
         let attestation = authority
             .generate_attestation(report_data.clone())
             .await
             .unwrap();
         let timestamp_s = 0u64;
         assert_eq!(
-            attestation.verify_quote(report_data, timestamp_s),
+            attestation.verify(report_data, timestamp_s, &[]),
             quote_verification_result
         );
     }
