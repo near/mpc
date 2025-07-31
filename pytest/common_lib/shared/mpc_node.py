@@ -93,7 +93,7 @@ class MpcNode(NearAccount):
         assert not self.is_running
         patterns = [
             "CURRENT",
-            "IDENTITY" "LOCK",
+            "IDENTITYLOCK",
             "LOG",
             "MANIFEST-.*",
             "OPTIONS-.*",

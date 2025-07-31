@@ -309,7 +309,6 @@ class ResharingProtocolState:
         return " ".join(marker(pid) for pid in all_ids)
 
     def key_transitions_str(self) -> str:
-
         def transition(k: KeyForDomain) -> str:
             domain = k.domain_id
             old_attempt = k.attempt_id
@@ -388,7 +387,6 @@ class InitializingProtocolState:
         )
 
     def domain_transitions_str(self) -> str:
-
         def transition(domain) -> str:
             domain_id = domain.id
 
@@ -424,7 +422,6 @@ class InitializingProtocolState:
 
 
 class ContractState:
-
     def get_running_domains(self) -> List[Domain]:
         if self.state == "Running":
             return self.protocol_state.domains.domains

@@ -269,7 +269,6 @@ def curl_unix_socket_post(
 
 
 def main():
-
     logging.info("start")
     # We want to globally enable DOCKER_CONTENT_TRUST=1 to ensure integrity of Docker images.
     if os.environ.get(OS_ENV_DOCKER_CONTENT_TRUST, "0") != "1":

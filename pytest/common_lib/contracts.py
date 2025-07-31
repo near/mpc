@@ -70,7 +70,6 @@ def load_mpc_contract() -> bytearray:
 
 
 class ConfigV2:
-
     def __init__(self, max_num_requests_to_remove, request_timeout_blocks):
         self.max_num_requests_to_remove = max_num_requests_to_remove
         self.request_timeout_blocks = request_timeout_blocks
@@ -97,7 +96,6 @@ ProposeUpdateArgsV2 = CStruct(
 
 
 class UpdateArgsV2:
-
     def __init__(self, code_path=None, config=None):
         self.code_path = code_path
         self.config = config
