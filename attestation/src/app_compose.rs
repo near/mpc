@@ -25,21 +25,16 @@ pub struct AppCompose {
     pub docker_compose_file: YamlValue,
     pub docker_config: JsonValue,
     pub kms_enabled: bool,
-    #[serde(default)]
     pub tproxy_enabled: Option<bool>,
-    #[serde(default)]
     pub gateway_enabled: Option<bool>,
     pub public_logs: bool,
     pub public_sysinfo: bool,
     pub public_tcbinfo: bool,
     pub local_key_provider_enabled: bool,
-    #[serde(default)]
     pub key_provider_id: Option<String>,
     pub allowed_envs: Vec<String>,
     pub no_instance_id: bool,
-    #[serde(default)]
     pub secure_time: Option<bool>,
-    #[serde(default)]
     pub pre_launch_script: Option<String>,
 }
 
