@@ -3,6 +3,11 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use core::marker::PhantomData;
 use derive_more::{AsRef, Deref, Into};
 
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
 #[derive(
     Debug,
     Clone,
@@ -45,6 +50,11 @@ impl<T> Hash32<T> {
 }
 
 // Marker types
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
 #[derive(
     Debug,
     Clone,
@@ -56,6 +66,11 @@ impl<T> Hash32<T> {
     BorshDeserialize,
 )]
 pub struct Image;
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
 #[derive(
     Debug,
     Clone,

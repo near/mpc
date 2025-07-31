@@ -2334,6 +2334,7 @@ dependencies = [
  "borsh",
  "derive_more 2.0.1",
  "hex",
+ "schemars 0.8.22",
  "serde",
 ]
 

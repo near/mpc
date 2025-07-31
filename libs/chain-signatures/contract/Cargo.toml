@@ -31,8 +31,7 @@ container_build_command = [
  # the non-reproducible build inside a reproducible environment becomes reproducible
     "non-reproducible-wasm", 
     "--locked",
-# this should be removed in the future, tracked in #739
-    "--no-abi"
+    "--features", "abi"
 ]
 
 [dependencies]
@@ -104,3 +103,4 @@ rstest = "0.25.0"
 [features]
 test-utils = ["rand"]
 dev-utils = []
+abi = ["borsh/unstable__schema", "mpc-primitives/abi"]

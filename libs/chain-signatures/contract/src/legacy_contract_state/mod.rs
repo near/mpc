@@ -118,6 +118,12 @@ pub enum Update {
     ConfigV1(ConfigV1),
 }
 
+
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::near_sdk::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct ConfigV1 {
     pub max_num_requests_to_remove: u32,
