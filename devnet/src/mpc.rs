@@ -827,7 +827,7 @@ impl MpcVoteApprovedHashCmd {
             }
         };
 
-        let threshold: u64 = *running_state.parameters.threshold();
+        let threshold: u64 = running_state.parameters.threshold().value();
         let accounts = get_voter_account_ids(mpc_setup, &self.voters);
         let mut voting_futures = vec![];
 

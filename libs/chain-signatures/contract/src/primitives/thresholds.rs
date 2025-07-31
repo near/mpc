@@ -1,6 +1,5 @@
 use super::participants::{ParticipantId, ParticipantInfo, Participants};
 use crate::errors::{Error, InvalidCandidateSet, InvalidThreshold};
-use derive_more::Deref;
 use near_sdk::{near, AccountId};
 use std::collections::BTreeMap;
 
@@ -14,7 +13,7 @@ const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
 /// assert!(dt.value() == 8);
 /// ```
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Deref, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Threshold(u64);
 impl Threshold {
     pub fn new(val: u64) -> Self {
