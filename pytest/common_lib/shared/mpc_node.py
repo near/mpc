@@ -6,7 +6,7 @@ from key import Key
 from ruamel.yaml import YAML
 
 from common_lib.constants import LISTEN_BLOCKS_FILE, MPC_BINARY_PATH, TIMEOUT
-from common_lib.shared.metrics import DictMetricName, IntMetricName
+from common_lib.shared.metrics import DictMetricName, FloatMetricName, IntMetricName
 from common_lib.shared.near_account import NearAccount
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -150,6 +150,9 @@ class MpcNode(NearAccount):
         file_path = file_path / LISTEN_BLOCKS_FILE
         print(f"setting {file_path} to {value}")
         file_path.write_text(str(value).lower())
+
+    def get_float_metric_value(self, metric: FloatMetricName) -> float | None:
+        return self.metrics.get_float_metric_value(metric)
 
     def get_int_metric_value(self, metric: IntMetricName) -> int | None:
         return self.metrics.get_int_metric_value(metric)

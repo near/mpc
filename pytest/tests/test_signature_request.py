@@ -12,6 +12,8 @@ import pathlib
 import argparse
 import pytest
 
+from common_lib.shared import metrics
+
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
@@ -23,6 +25,15 @@ def test_signature_lifecycle(num_requests, num_respond_access_keys):
         2, 3, num_respond_access_keys, load_mpc_contract()
     )
     cluster.init_cluster(mpc_nodes, 2)
+
+    responder_balances = cluster.get_float_metric_value(
+        metrics.FloatMetricName.MPC_NEAR_RESPONDER_BALANCE
+    )
+    print(f"responder_balances: {responder_balances}")
+    signer_balances = cluster.get_float_metric_value(
+        metrics.FloatMetricName.MPC_NEAR_SIGNER_BALANCE
+    )
+    print(f"signer_balances: {signer_balances}")
     # removing one node should not be a problem.
     mpc_nodes[0].kill(False)
     cluster.send_and_await_signature_requests(num_requests)
