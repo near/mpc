@@ -224,3 +224,19 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref NEAR_RESPONDER_BALANCE: prometheus::Gauge = prometheus::register_gauge!(
+        "mpc_near_responder_balance",
+        "Balance for the mpc responder account"
+    )
+    .unwrap();
+}
+
+lazy_static! {
+    pub static ref NEAR_SIGNER_BALANCE: prometheus::Gauge = prometheus::register_gauge!(
+        "mpc_near_signer_balance",
+        "Balance for the mpc signer account"
+    )
+    .unwrap();
+}

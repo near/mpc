@@ -6,8 +6,10 @@ use super::{IndexerAPI, IndexerState};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
+use crate::indexer::lib::get_account_balance;
 #[cfg(feature = "tee")]
 use crate::indexer::tee::monitor_allowed_docker_images;
+use crate::metrics;
 use mpc_contract::state::ProtocolContractState;
 use near_crypto::SecretKey;
 use near_sdk::AccountId;
@@ -94,9 +96,9 @@ pub fn spawn_real_indexer(
 
             actix::spawn(handle_txn_requests(
                 chain_txn_receiver,
-                my_near_account_id,
+                my_near_account_id.clone(),
                 account_secret_key.clone(),
-                respond_config,
+                respond_config.clone(),
                 indexer_state.clone(),
             ));
 
@@ -127,9 +129,38 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
 
-            if indexer_exit_sender.send(indexer_result).is_err() {
-                tracing::error!("Indexer thread could not send result back to main driver.")
-            };
+            actix::spawn(async move {
+                const BALANCE_REFRESH_INTERVAL: std::time::Duration =
+                    std::time::Duration::from_secs(60);
+
+                loop {
+                    tokio::time::sleep(BALANCE_REFRESH_INTERVAL).await;
+                    let account_balance = get_account_balance(
+                        my_near_account_id.clone(),
+                        &indexer_state.view_client.clone(),
+                    )
+                    .await
+                    .unwrap_or((0, 0.0));
+                    tracing::info!(
+                        "block {}, near signer account balance: {}",
+                        account_balance.0,
+                        account_balance.1
+                    );
+                    metrics::NEAR_SIGNER_BALANCE.set(account_balance.1);
+                    let account_balance = get_account_balance(
+                        respond_config.account_id.clone(),
+                        &indexer_state.view_client.clone(),
+                    )
+                    .await
+                    .unwrap_or((0, 0.0));
+                    tracing::info!(
+                        "block {}, near responder account balance: {}",
+                        account_balance.0,
+                        account_balance.1
+                    );
+                    metrics::NEAR_RESPONDER_BALANCE.set(account_balance.1);
+                }
+            })
         });
     });
 
