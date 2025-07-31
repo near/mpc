@@ -181,7 +181,7 @@ class RunningProtocolState:
             "previously_cancelled_resharing_epoch_id", None
         )
 
-        if cancel_resharing_field != None:
+        if cancel_resharing_field is not None:
             previously_cancelled_resharing_epoch_id = int(cancel_resharing_field)
         else:
             previously_cancelled_resharing_epoch_id = None

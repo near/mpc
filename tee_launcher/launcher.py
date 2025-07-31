@@ -291,7 +291,7 @@ def main():
     image_spec = get_image_spec(dstack_config)
     docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
 
-    rpc_request_timzy = int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))
+    int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))
     rpc_request_interval_ms = int(
         os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, "500")
     )

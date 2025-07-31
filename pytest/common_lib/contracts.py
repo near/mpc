@@ -112,7 +112,7 @@ class UpdateArgsV2:
         )
 
     def code(self):
-        if self.code_path == None:
+        if self.code_path is None:
             return None
         if self._code is None:
             self._code = load_binary_file(self.code_path)
