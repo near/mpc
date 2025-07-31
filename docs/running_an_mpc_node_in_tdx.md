@@ -76,7 +76,7 @@ TODO: Add some sentence here about providers.
 
    ```bash
    # Run dstack-kms
-   sudo ./dstack-kms -c kms.toml
+   ./dstack-kms -c kms.toml
    ```
 
    Open new tmux panel with `Ctrl+B` then `%`
@@ -84,7 +84,7 @@ TODO: Add some sentence here about providers.
    Run Dstack Virtual Machine Manager:
 
    ```bash
-   sudo ./dstack-vmm -c vmm.toml
+   ./dstack-vmm -c vmm.toml
    ```
 
    Look for the log where it shows the localhost + port the VMM is running on. In
