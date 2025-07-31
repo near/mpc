@@ -10,10 +10,9 @@ use near_sdk::near;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::near_sdk::schemars::JsonSchema),
+    derive(::near_sdk::schemars::JsonSchema)
 )]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "scheme")]
@@ -40,14 +39,10 @@ pub enum PublicKeyExtended {
         #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
             schemars(with = "[u8; 32]"),
-            borsh(
-                schema(
-                    with_funcs(
-                        declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
-                        definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
-                    ),
-                )
-            )
+            borsh(schema(with_funcs(
+                declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
+                definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
+            ),))
         )]
         edwards_point: EdwardsPoint,
     },
@@ -191,16 +186,12 @@ mod serialize {
         #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
             schemars(with = "[u8; 32]"),
-            borsh(
-                schema(
-                    with_funcs(
-                        declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
-                        definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
-                    ),
-                )
-            )
+            borsh(schema(with_funcs(
+                declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
+                definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
+            ),))
         )]
-        EdwardsPoint
+        EdwardsPoint,
     );
 
     impl BorshSerialize for SerializableEdwardsPoint {
@@ -233,7 +224,7 @@ pub mod k256_types {
 
     #[cfg_attr(
         all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema),
+        derive(::near_sdk::schemars::JsonSchema)
     )]
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy, Ord, PartialOrd)]
     pub struct SerializableScalar {
@@ -280,7 +271,7 @@ pub mod k256_types {
 
     #[cfg_attr(
         all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema),
+        derive(::near_sdk::schemars::JsonSchema)
     )]
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
     pub struct SerializableAffinePoint {
@@ -293,7 +284,7 @@ pub mod k256_types {
 
     #[cfg_attr(
         all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema),
+        derive(::near_sdk::schemars::JsonSchema)
     )]
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
     pub struct Signature {
@@ -371,7 +362,7 @@ pub mod ed25519_types {
 
     #[cfg_attr(
         all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema),
+        derive(::near_sdk::schemars::JsonSchema)
     )]
     #[serde_as]
     #[derive(
@@ -383,7 +374,7 @@ pub mod ed25519_types {
             schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32. 
         )]
         #[serde_as(as = "[_; 64]")]
-        [u8; 64]
+        [u8; 64],
     );
 
     impl Signature {

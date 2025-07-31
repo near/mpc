@@ -118,7 +118,6 @@ pub enum Update {
     ConfigV1(ConfigV1),
 }
 
-
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(::near_sdk::schemars::JsonSchema),

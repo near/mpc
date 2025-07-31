@@ -28,31 +28,23 @@ pub enum Payload {
         #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
             schemars(with = "[u8; 32]"),
-            borsh(
-                schema(
-                    with_funcs(
-                        declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
-                        definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
-                    ),
-                )
-            )
+            borsh(schema(with_funcs(
+                declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
+                definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
+            ),))
         )]
-        Bytes<32, 32>
+        Bytes<32, 32>,
     ),
     Eddsa(
         #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
             schemars(with = "Vec<u8>"),
-            borsh(
-                schema(
-                    with_funcs(
-                        declaration = "<Vec<u8> as ::borsh::BorshSchema>::declaration",
-                        definitions = "<Vec<u8> as ::borsh::BorshSchema>::add_definitions_recursively"
-                    ),
-                )
-            )
+            borsh(schema(with_funcs(
+                declaration = "<Vec<u8> as ::borsh::BorshSchema>::declaration",
+                definitions = "<Vec<u8> as ::borsh::BorshSchema>::add_definitions_recursively"
+            ),))
         )]
-        Bytes<32, 1232>
+        Bytes<32, 1232>,
     ),
 }
 
