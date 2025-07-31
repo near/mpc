@@ -1,0 +1,138 @@
+#!/bin/bash
+
+# Deploys a new launcher_test_app VM to dstack-vmm using a templated Docker Compose file.
+# Loads environment variables from a .env file, generates app-compose.json, and runs deployment.
+# Based on: https://github.com/Dstack-TEE/dstack/blob/be9d0476a63e937eda4c13659547a25088393394/kms/dstack-app/deploy-to-vmm.sh
+
+
+
+#!/bin/bash
+
+# Default .env path
+ENV_FILE=".env"
+
+# Parse optional --env-file or -e argument
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -e|--env-file)
+      ENV_FILE="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: $0 [--env-file <path>]"
+      exit 1
+      ;;
+  esac
+done
+
+# Check if .env file exists
+if [ -f "$ENV_FILE" ]; then
+  echo "Loading environment variables from $ENV_FILE..."
+  set -a
+  source "$ENV_FILE"
+  set +a
+else
+  echo "Creating template $ENV_FILE..."
+  cat >"$ENV_FILE" <<EOF
+
+EOF
+  echo "Please edit $ENV_FILE and set the required variables, then run this script again."
+  exit 1
+fi
+
+required_env_vars=(
+  "VMM_RPC"
+  "GUEST_AGENT_ADDR"
+  "SEALING_KEY_TYPE"
+#  "IMAGE_DOWNLOAD_URL"
+)
+
+for var in "${required_env_vars[@]}"; do
+  if [ -z "${!var}" ]; then
+    echo "Error: Required environment variable $var is not set."
+    echo "Please edit the .env file and set a value for $var, then run this script again."
+    exit 1
+  fi
+done
+
+#CLI="/home/thomas/.venvs/myenv/bin/python /home/thomas/code/meta-dstack/dstack/vmm/src/vmm-cli.py --url $VMM_RPC"
+CLI="/mnt/data/barak/deployment/.venv/bin/python /mnt/data/barak/meta-dstack/dstack/vmm/src/vmm-cli.py --url $VMM_RPC"
+
+COMPOSE_TMP=$(mktemp)
+
+GIT_REV=$(git rev-parse $GIT_REV)
+
+# cp launcher-docker-compose.yaml "$COMPOSE_TMP"
+cp $DOCKER_COMPOSE_FILE_PATH "$COMPOSE_TMP"
+
+subvar() {
+  sed -i "s|\${$1}|${!1}|g" "$COMPOSE_TMP"
+}
+
+
+echo "Docker compose file:"
+cat "$COMPOSE_TMP"
+
+# if [ -t 0 ]; then
+#   # Only ask for confirmation if running in an interactive terminal
+#   read -p "Continue? [y/N] " -n 1 -r
+#   echo
+
+#   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+#     echo "Deployment cancelled"
+#     exit 1
+#   fi
+# fi
+
+KEY_FLAG=""
+case $SEALING_KEY_TYPE in
+  KMS)
+    KEY_FLAG="--kms"
+    ;;
+  SGX)
+    KEY_FLAG="--local-key-provider"
+    ;;
+  *)
+    echo "Error: unknown KEY_PROVIDER value '$SEALING_KEY_TYPE'. Use 'KMS' or 'SGX'."
+    exit 1
+    ;;
+esac
+
+
+echo "strting to create app-compose.json..."
+$CLI compose \
+  --docker-compose "$COMPOSE_TMP" \
+  --name $APP_NAME \
+  $KEY_FLAG \
+  --public-logs \
+  --public-sysinfo \
+  --no-instance-id \
+  --output .app-compose.json
+
+echo "app-compose.json"
+cat .app-compose.json
+
+# Remove the temporary file as it is no longer needed
+# TODO Uncomment again after testing
+# rm "$COMPOSE_TMP"
+
+
+
+
+echo "Deploying $APP_NAME to dstack-vmm..."
+echo "Press enter to continue..."
+read
+
+
+$CLI deploy \
+  --name $APP_NAME \
+  --compose .app-compose.json \
+  --image $OS_IMAGE \
+  --port tcp:$GUEST_AGENT_ADDR:8090 \
+  --port tcp:$SSH_HOST_PORT:22 \
+  --port tcp:$MPC_PUBLIC_PORT:$MPC_VM_PORT \
+  --user-config $USER_CONFIG_FILE_PATH \
+  --vcpu 8 \
+  --memory 64G \
+  --disk 128G
