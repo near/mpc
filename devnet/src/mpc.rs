@@ -2,8 +2,9 @@
 use crate::account::{OperatingAccount, OperatingAccounts};
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
-    MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteNewParametersCmd,
-    MpcVoteUpdateCmd, NewMpcNetworkCmd, RemoveContractCmd, UpdateMpcNetworkCmd,
+    MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
+    MpcVoteNewParametersCmd, MpcVoteUpdateCmd, NewMpcNetworkCmd, RemoveContractCmd,
+    UpdateMpcNetworkCmd,
 };
 use crate::constants::{ONE_NEAR, TESTNET_CONTRACT_ACCOUNT_ID};
 use crate::devnet::OperatingDevnetSetup;
@@ -14,7 +15,7 @@ use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_contract::tee::tee_participant::TeeParticipantInfo;
+use mpc_contract::tee::{proposal::MpcDockerImageHash, tee_participant::TeeParticipantInfo};
 use mpc_contract::{
     config::InitConfig,
     primitives::{
@@ -798,6 +799,75 @@ impl MpcVoteNewParametersCmd {
     }
 }
 
+impl MpcVoteApprovedHashCmd {
+    pub async fn run(&self, name: &str, config: ParsedConfig) {
+        println!(
+            "Going to vote_approved_hash for MPC network {}, adding following image hash to approved image hashes: {}.",
+            name, hex::encode(self.mpc_docker_image_hash)
+        );
+
+        let mut setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
+        let mpc_setup = setup
+            .mpc_setups
+            .get_mut(name)
+            .expect(&format!("MPC network {} does not exist", name));
+        let contract = mpc_setup
+            .contract
+            .clone()
+            .expect("Contract is not deployed");
+
+        let contract_state = read_contract_state(&config.rpc, &contract).await;
+        let running_state = match contract_state {
+            ProtocolContractState::Running(state) => state,
+            state => {
+                panic!(
+                    "Cannot vote for new parameters when not in the running state: {:#?}",
+                    state
+                );
+            }
+        };
+
+        let threshold: u64 = *running_state.parameters.threshold();
+        let accounts = get_voter_account_ids(mpc_setup, &self.voters);
+        let mut voting_futures = vec![];
+
+        for account_id in accounts.iter().take(threshold as usize) {
+            let account = setup.accounts.account(account_id);
+            let mut key = account.any_access_key().await;
+            let contract = contract.clone();
+            let code_hash = self.mpc_docker_image_hash.into();
+
+            voting_futures.push(async move {
+                key.submit_tx_to_call_function(
+                    &contract,
+                    "vote_code_hash",
+                    &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
+                    300,
+                    0,
+                    near_primitives::views::TxExecutionStatus::Final,
+                    true,
+                )
+                .await
+            });
+        }
+
+        let voting_results = futures::future::join_all(voting_futures).await;
+        for (participant_index, voting_result) in voting_results.into_iter().enumerate() {
+            match voting_result.into_return_value() {
+                Ok(_) => {
+                    println!("Participant {} vote_code_hash succeed", participant_index);
+                }
+                Err(err) => {
+                    println!(
+                        "Participant {} vote_code_hash failed: {:?}",
+                        participant_index, err
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Read the contract state from the contract and deserialize it into the V2 state format.
 pub async fn read_contract_state(
     rpc: &Arc<NearRpcClients>,
@@ -837,6 +907,11 @@ pub async fn read_contract_state(
 struct VoteNewParametersArgs {
     prospective_epoch_id: EpochId,
     proposal: ThresholdParameters,
+}
+
+#[derive(Serialize)]
+struct VoteCodeHashArgs {
+    code_hash: MpcDockerImageHash,
 }
 
 impl MpcDescribeCmd {

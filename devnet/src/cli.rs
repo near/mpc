@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use anyhow::Context;
 use near_sdk::AccountId;
 
 use crate::types::load_config;
@@ -49,6 +50,9 @@ impl Cli {
                         cmd.run(&name, config).await;
                     }
                     MpcNetworkSubCmd::VoteNewParameters(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
+                    MpcNetworkSubCmd::VoteCodeHash(cmd) => {
                         cmd.run(&name, config).await;
                     }
                     MpcNetworkSubCmd::DeployInfra(cmd) => {
@@ -151,6 +155,8 @@ pub enum MpcNetworkSubCmd {
     VoteAddDomains(MpcVoteAddDomainsCmd),
     /// Send vote_new_parameters() transactions to vote for new parameters.
     VoteNewParameters(MpcVoteNewParametersCmd),
+    /// Send `vote_code_hash()` transactions to vote for a new approved MPC image hash.
+    VoteCodeHash(MpcVoteApprovedHashCmd),
     /// Deploy the GCP nodes with Terraform to host Nomad jobs to run this network.
     DeployInfra(MpcTerraformDeployInfraCmd),
     /// Deploy the Nomad jobs to run this network.
@@ -291,6 +297,25 @@ pub struct MpcVoteNewParametersCmd {
     /// The indices of the voters; leave empty to vote from every other participant.
     #[clap(long, value_delimiter = ',')]
     pub voters: Vec<usize>,
+}
+
+#[derive(clap::Parser)]
+pub(crate) struct MpcVoteApprovedHashCmd {
+    /// The Docker image hash to approve on the contract.
+    #[clap(long, value_parser = Self::mpc_docker_image_hash_parser)]
+    pub mpc_docker_image_hash: [u8; 32],
+    /// The indices of the voters; leave empty to vote from every other participant.
+    #[clap(long, value_delimiter = ',')]
+    pub voters: Vec<usize>,
+}
+
+impl MpcVoteApprovedHashCmd {
+    fn mpc_docker_image_hash_parser(value: &str) -> anyhow::Result<[u8; 32]> {
+        hex::decode(value)
+            .context("image hash is not a valid hex string")?
+            .try_into()
+            .map_err(|_| anyhow::Error::msg("Image hash is not 32 bytes"))
+    }
 }
 
 #[derive(clap::Parser)]
