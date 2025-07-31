@@ -151,7 +151,11 @@ class MpcNode(NearAccount):
         file_path.write_text(str(value).lower())
 
     def get_float_metric_value(self, metric: FloatMetricName) -> float | None:
-        return self.metrics.get_float_metric_value(metric)
+        """Helper function to return the integer value of the metric (as function above returns strings)."""
+        value = self.metrics.get_metric_value(metric, None)
+        if value is None:
+            return None
+        return float(value)
 
     def get_int_metric_value(self, metric: IntMetricName) -> int | None:
         return self.metrics.get_int_metric_value(metric)
