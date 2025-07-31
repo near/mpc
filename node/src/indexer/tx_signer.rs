@@ -69,6 +69,10 @@ impl TransactionSigner {
     pub(crate) fn public_key(&self) -> PublicKey {
         self.signer.public_key()
     }
+
+    pub(crate) fn get_account_id(&self) -> AccountId {
+        self.signer.get_account_id()
+    }
 }
 
 pub(crate) struct TransactionSigners {

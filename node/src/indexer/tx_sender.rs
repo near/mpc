@@ -41,10 +41,11 @@ async fn submit_tx(
     );
 
     let tx_hash = transaction.get_hash();
-    tracing::info!(
+    tracing::debug!(
         target = "mpc",
-        "sending tx {:?} with ak={} nonce={}",
+        "sending tx {:?}, signer={} with ak={} nonce={}",
         tx_hash,
+        tx_signer.get_account_id(),
         tx_signer.public_key(),
         transaction.transaction.nonce(),
     );
@@ -60,6 +61,11 @@ async fn submit_tx(
             .with_span_context(),
         )
         .await?;
+    tracing::debug!(
+        target = "mpc",
+        "tx processed {:?}",
+        response
+    );
     match response {
         // We're not a validator, so we should always be routing the transaction.
         near_client::ProcessTxResponse::RequestRouted => Ok(()),
