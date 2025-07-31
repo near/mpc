@@ -492,9 +492,9 @@ def get_manifest_digest(
                     config_digest = manifest["config"]["digest"]
                     if config_digest == docker_image.digest:
                         return manifest_resp.headers["Docker-Content-Digest"]
-        except:
+        except RuntimeError as e:
             print(
-                "[Warning] Exceeded number of maximum RPC requests for any given attempt. Will continue in the hopes of finding the matching image hash among remaining tags"
+                f"[Warning] {e}: Exceeded number of maximum RPC requests for any given attempt. Will continue in the hopes of finding the matching image hash among remaining tags"
             )
             # Q: Do we expect all requests to succeed?
 
