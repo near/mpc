@@ -48,7 +48,7 @@ pub struct Measurements {
     /// firmware data, and configuration.
     pub rtmr0: [u8; 48],
     /// RTMR1 (Runtime Measurement Register 1) - typically measures the OS kernel, boot parameters,
-    /// and initrd
+    /// and initrd (initial ramdisk).
     pub rtmr1: [u8; 48],
     /// RTMR2 (Runtime Measurement Register 2) - typically measures the OS application.
     pub rtmr2: [u8; 48],
