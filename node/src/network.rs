@@ -314,8 +314,6 @@ impl MeshNetworkClient {
             .send_indexer_height(IndexerHeightMessage { height });
     }
 
-    // TODO(#226): Use.
-    #[allow(dead_code)]
     pub fn get_indexer_heights(&self) -> HashMap<ParticipantId, u64> {
         self.indexer_heights.get_heights()
     }

@@ -205,3 +205,13 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref PEERS_INDEXER_HEIGHTS: prometheus::IntGaugeVec =
+        prometheus::register_int_gauge_vec!(
+            "mpc_peers_indexer_block_heights",
+            "Latest known block height of peers",
+            &["participant"]
+        )
+        .unwrap();
+}

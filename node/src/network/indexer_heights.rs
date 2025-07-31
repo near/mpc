@@ -1,3 +1,4 @@
+use crate::metrics;
 use crate::primitives::ParticipantId;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
@@ -22,6 +23,13 @@ impl IndexerHeightTracker {
         let current = atomic.load(std::sync::atomic::Ordering::Relaxed);
         if height > current {
             atomic.store(height, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        if let Err(e) = metrics::PEERS_INDEXER_HEIGHTS
+            .get_metric_with_label_values(&[&participant.to_string()])
+            .map(|gauge| gauge.set(height as i64))
+        {
+            tracing::error!("Could not submit indexer height metric: {}", e);
         }
     }
 
