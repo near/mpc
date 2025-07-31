@@ -1,6 +1,7 @@
 use crate::{
-    attestation::{Attestation, DstackAttestation},
+    attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
+    measurements::ExpectedMeasurements,
     quote::Quote,
     report_data::ReportData,
     tcbinfo::TcbInfo,
@@ -9,6 +10,7 @@ use alloc::string::String;
 use anyhow::{Context, bail};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
+use derive_more::Constructor;
 use dstack_sdk::dstack_client::DstackClient;
 use http::status::StatusCode;
 use reqwest::{Url, multipart::Form};
@@ -24,13 +26,17 @@ const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upl
 /// Default path for dstack Unix socket endpoint.
 const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
 
-pub struct LocalTeeAuthorityConfig;
+#[derive(Constructor)]
+pub struct LocalTeeAuthorityConfig {
+    verification_result: bool,
+}
 
+#[derive(Constructor)]
 pub struct DstackTeeAuthorityConfig {
-    /// Endpoint to contact dstack service. Defaults to `/var/run/dstack.sock`
-    pub dstack_endpoint: String,
+    /// Endpoint to contact dstack service. Defaults to [`DEFAULT_DSTACK_ENDPOINT`]
+    dstack_endpoint: String,
     /// URL for submission of TDX quote. Returns collateral to be used for verification.
-    pub quote_upload_url: Url,
+    quote_upload_url: Url,
 }
 
 impl Default for DstackTeeAuthorityConfig {
@@ -44,6 +50,8 @@ impl Default for DstackTeeAuthorityConfig {
     }
 }
 
+/// TeeAuthority is an abstraction over different TEE attestation generator implementations. It
+/// generates [`Attestation`] instances - either mocked or real ones.
 pub enum TeeAuthority {
     Dstack(DstackTeeAuthorityConfig),
     Local(LocalTeeAuthorityConfig),
@@ -55,17 +63,15 @@ impl TeeAuthority {
         report_data: ReportData,
     ) -> anyhow::Result<Attestation> {
         match self {
-            TeeAuthority::Local(_config) => {
-                // Generate attestation using local TEE authority
-                todo!("Implement local TEE attestation generation")
-            }
+            TeeAuthority::Local(config) => Ok(Attestation::Local(LocalAttestation::new(
+                config.verification_result,
+            ))),
             TeeAuthority::Dstack(config) => {
                 self.generate_dstack_attestation(config, report_data).await
             }
         }
     }
 
-    /// Generates attestation using Dstack TEE authority.
     async fn generate_dstack_attestation(
         &self,
         config: &DstackTeeAuthorityConfig,
@@ -91,7 +97,10 @@ impl TeeAuthority {
         let quote: Quote = quote.parse()?;
 
         Ok(Attestation::Dstack(DstackAttestation::new(
-            quote, collateral, tcb_info,
+            quote,
+            collateral,
+            tcb_info,
+            ExpectedMeasurements::default(),
         )))
     }
 
@@ -189,7 +198,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::report_data::ReportDataV1;
+
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn test_upload_response_deserialization() {
@@ -234,6 +246,32 @@ mod tests {
 
         assert!(!collateral.qe_identity_signature.is_empty());
         assert_eq!(collateral.qe_identity_signature.len(), 64);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_generate_and_verify_attestation_local(
+        #[values(true, false)] quote_verification_result: bool,
+    ) {
+        let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
+            .parse()
+            .unwrap();
+        let account_key = "ed25519:H9k5eiU4xXyb8F7cUDjZYNuH1zGAx5BBNrYwLPNhq6Zx"
+            .parse()
+            .unwrap();
+        let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+
+        let authority =
+            TeeAuthority::Local(LocalTeeAuthorityConfig::new(quote_verification_result));
+        let attestation = authority
+            .generate_attestation(report_data.clone())
+            .await
+            .unwrap();
+        let timestamp_s = 0u64;
+        assert_eq!(
+            attestation.verify(report_data, timestamp_s, &[]),
+            quote_verification_result
+        );
     }
 
     #[tokio::test]

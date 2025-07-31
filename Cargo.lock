@@ -1244,11 +1244,15 @@ dependencies = [
  "dstack-sdk",
  "hex",
  "http 1.3.1",
+ "k256",
+ "mpc-primitives",
  "near-crypto 2.7.0-rc.2",
  "near-sdk",
  "reqwest 0.12.22",
+ "rstest",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sha3",
  "thiserror 2.0.12",
  "tokio",
@@ -2734,7 +2738,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 [[package]]
 name = "dstack-sdk"
 version = "0.1.0"
-source = "git+https://github.com/Dstack-TEE/dstack.git?rev=421a5fb8e321e547efaa67c1a27daac11a0aa5b4#421a5fb8e321e547efaa67c1a27daac11a0aa5b4"
+source = "git+https://github.com/Dstack-TEE/dstack.git?rev=c5192dac8801ebc4e6780aa4d268f2611e4f0e1b#c5192dac8801ebc4e6780aa4d268f2611e4f0e1b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -4766,6 +4770,7 @@ dependencies = [
  "getrandom 0.2.16",
  "hex",
  "k256",
+ "mpc-primitives",
  "near-account-id",
  "near-gas 0.2.5",
  "near-sdk",
@@ -4870,6 +4875,18 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "x509-parser",
+]
+
+[[package]]
+name = "mpc-primitives"
+version = "0.0.0"
+dependencies = [
+ "borsh",
+ "derive_more 2.0.1",
+ "hex",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
