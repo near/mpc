@@ -475,9 +475,9 @@ class MpcCluster:
             "finality": finality,
         }
         response = self.contract_node.near_node.json_rpc("query", query)
-        assert (
-            "error" not in response
-        ), f"Error fetching contract code: {response['error']}"
+        assert "error" not in response, (
+            f"Error fetching contract code: {response['error']}"
+        )
         code_b64 = response.get("result", {}).get("code_base64", "")
         contract_code = base64.b64decode(code_b64)
         sha256_hash = hashlib.sha256(contract_code).hexdigest()

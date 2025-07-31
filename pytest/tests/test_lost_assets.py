@@ -42,7 +42,6 @@ def wait_for_asset_cleanup(mpc_nodes: List[MpcNode]):
     while True:
         assert time.time() - started < TIMEOUT, "Waiting for asset cleanup"
         try:
-
             cleanup_done = True
             for node in mpc_nodes:
                 available = node.get_int_metric_value(
@@ -143,7 +142,6 @@ def test_signature_pause_block_ingestion():
         )
         assert time.time() - started < 120, "Waiting for presignatures"
         try:
-
             block_heights = cluster.get_int_metric_value(
                 metrics.IntMetricName.MPC_INDEXER_LATEST_BLOCK_HEIGHT
             )

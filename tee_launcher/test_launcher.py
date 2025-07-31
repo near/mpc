@@ -4,9 +4,7 @@ from launcher import ImageSpec, ResolvedImage, get_manifest_digest
 
 
 class TestLauncher(unittest.TestCase):
-
     def test_get_manifest_digest(self):
-
         # Use a recent (at the time of writing) tag/image digest/manifest digest combination for testing
         registry_url = "registry.hub.docker.com"
         image_name = "nearone/mpc-node-gcp"

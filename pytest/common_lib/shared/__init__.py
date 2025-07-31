@@ -114,7 +114,6 @@ def start_neard_cluster_with_cleanup(
 
 
 class Candidate:
-
     def __init__(
         self,
         signer_key: Key,
@@ -268,7 +267,6 @@ def start_cluster_with_mpc(
     nonce += 1
     mpc_nodes = []
     for near_node, candidate in zip(observers, candidates):
-
         # add the nodes access key to the list
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
