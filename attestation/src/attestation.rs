@@ -93,7 +93,7 @@ impl Attestation {
         // [0, 1, 152, 133, 168, 120, 6, 125, 128, 206, 88, 93, 83, 39, 23, 122, 249, 14, 74, 153,
         // 227, 204, 237, 235, 214, 216, 101, 203, 137, 117, 246, 51, 89, 48, 106, 71, 93, 52, 61,
         // 76, 179, 141, 155, 5, 98, 242, 112, 61, 83, 69, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        // && self.verify_report_data(&expected_report_data, report_data)
+        && self.verify_report_data(&expected_report_data, report_data)
         // && self.verify_static_rtmrs(
         //     report_data,
         //     &attestation.tcb_info,
@@ -296,6 +296,7 @@ mod tests {
 
     use super::*;
     use dstack_sdk::dstack_client::TcbInfo as DstackTcbInfo;
+    use near_crypto::PublicKey;
     use rstest::rstest;
     use serde_json::{Value, json};
 
@@ -559,10 +560,10 @@ mod tests {
     #[test]
     fn test_verify_method_signature() {
         let attestation = mock_dstack_attestation();
-        let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
+        let tls_key: PublicKey = "ed25519:29tEkzF4Xk1V62xow8zCJi9HXyUob8oZPwTaKviXFMjZ"
             .parse()
             .unwrap();
-        let account_key = "ed25519:H9k5eiU4xXyb8F7cUDjZYNuH1zGAx5BBNrYwLPNhq6Zx"
+        let account_key: PublicKey = "ed25519:BWoViHSCBKD9dSxg3s5juQnhQWfyPE2SAdUdrbJGoCLJ"
             .parse()
             .unwrap();
         let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
