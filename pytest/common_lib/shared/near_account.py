@@ -5,20 +5,13 @@ import sys
 from key import Key, SigningKey
 
 from common_lib.constants import TGAS
+from common_lib.shared.transaction_status import assert_txn_success
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 from cluster import LocalNode
 
 from transaction import sign_function_call_tx
-
-
-def assert_txn_success(res):
-    assert "result" in res, json.dumps(res, indent=1)
-    assert "status" in res["result"], json.dumps(res["result"], indent=1)
-    assert "SuccessValue" in res["result"]["status"], json.dumps(
-        res["result"]["status"]
-    )
 
 
 class NearAccount:

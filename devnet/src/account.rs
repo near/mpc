@@ -281,6 +281,11 @@ impl OperatingAccessKey {
 }
 
 impl OperatingAccount {
+    pub async fn add_access_key(&mut self, new_key: PublicKey) {
+        let key = self.keys.first().unwrap().clone();
+        let mut key = key.lock().await;
+        key.add_access_key(new_key).await;
+    }
     /// In log(N) serial steps, ensure that this account has at least the desired number of access
     /// keys. Internally, what this does is it uses each access key to add another key to the
     /// account, doubling the number of keys every time up to the desired limit.

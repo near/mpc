@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use anyhow::Context;
 use near_sdk::AccountId;
 
 use crate::types::load_config;
@@ -30,6 +31,9 @@ impl Cli {
                     MpcNetworkSubCmd::DeployContract(cmd) => {
                         cmd.run(&name, config).await;
                     }
+                    MpcNetworkSubCmd::InitContract(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
                     MpcNetworkSubCmd::RemoveContract(cmd) => {
                         cmd.run(&name, config).await;
                     }
@@ -48,6 +52,9 @@ impl Cli {
                     MpcNetworkSubCmd::VoteNewParameters(cmd) => {
                         cmd.run(&name, config).await;
                     }
+                    MpcNetworkSubCmd::VoteCodeHash(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
                     MpcNetworkSubCmd::DeployInfra(cmd) => {
                         cmd.run(&name, config).await;
                     }
@@ -58,6 +65,9 @@ impl Cli {
                         cmd.run(&name, config).await;
                     }
                     MpcNetworkSubCmd::Describe(cmd) => {
+                        cmd.run(&name, config).await;
+                    }
+                    MpcNetworkSubCmd::AddKeys(cmd) => {
                         cmd.run(&name, config).await;
                     }
                 }
@@ -119,13 +129,20 @@ pub struct MpcNetworkCmd {
 }
 
 #[derive(clap::Parser)]
+pub struct MpcAddKeysCmd {}
+
+#[derive(clap::Parser)]
 pub enum MpcNetworkSubCmd {
     /// Create a new MPC network.
     New(NewMpcNetworkCmd),
     /// Update the parameters of an existing MPC network, including refilling accounts.
     Update(UpdateMpcNetworkCmd),
-    /// Deploy the MPC contract, initializing it to a number of participants.
+    /// Deploy the MPC contract code (without initializing it).
     DeployContract(MpcDeployContractCmd),
+    /// Initialize the MPC contract, initializing it to the specified parameters.
+    InitContract(MpcInitContractCmd),
+    /// fetch data from `get_public_data` and add the keys.
+    AddKeys(MpcAddKeysCmd),
     /// Remove the MPC contract from the local state, so a fresh one can be deployed.
     RemoveContract(RemoveContractCmd),
     /// View the contract state.
@@ -138,6 +155,8 @@ pub enum MpcNetworkSubCmd {
     VoteAddDomains(MpcVoteAddDomainsCmd),
     /// Send vote_new_parameters() transactions to vote for new parameters.
     VoteNewParameters(MpcVoteNewParametersCmd),
+    /// Send `vote_code_hash()` transactions to vote for a new approved MPC image hash.
+    VoteCodeHash(MpcVoteApprovedHashCmd),
     /// Deploy the GCP nodes with Terraform to host Nomad jobs to run this network.
     DeployInfra(MpcTerraformDeployInfraCmd),
     /// Deploy the Nomad jobs to run this network.
@@ -205,11 +224,7 @@ pub struct UpdateMpcNetworkCmd {
 }
 
 #[derive(clap::Parser)]
-pub struct MpcDeployContractCmd {
-    /// File path that contains the contract code.
-    /// If not set, then the contract from TESTNET_CONTRACT_ACCOUNT_ID is fetched and deployed.
-    #[clap(long)]
-    pub path: Option<String>,
+pub struct MpcInitContractCmd {
     /// The number of participants to initialize with; the participants will be from 0 to
     /// init_participants-1.
     #[clap(long)]
@@ -217,13 +232,17 @@ pub struct MpcDeployContractCmd {
     /// The threshold to initialize with.
     #[clap(long)]
     pub threshold: u64,
+}
+
+#[derive(clap::Parser)]
+pub struct MpcDeployContractCmd {
+    /// File path that contains the contract code.
+    /// If not set, then the contract from TESTNET_CONTRACT_ACCOUNT_ID is fetched and deployed.
+    #[clap(long)]
+    pub path: Option<String>,
     /// The number of NEAR to deposit into the contract account, for storage deposit.
     #[clap(long, default_value = "20")]
     pub deposit_near: u128,
-    /// Maximum number of requests to remove per signature request; reduce this to
-    /// optimize gas cost for signature requests.
-    #[clap(long)]
-    pub max_requests_to_remove: Option<u32>,
 }
 
 #[derive(clap::Parser)]
@@ -281,6 +300,25 @@ pub struct MpcVoteNewParametersCmd {
 }
 
 #[derive(clap::Parser)]
+pub(crate) struct MpcVoteApprovedHashCmd {
+    /// The Docker image hash to approve on the contract.
+    #[clap(long, value_parser = Self::mpc_docker_image_hash_parser)]
+    pub mpc_docker_image_hash: [u8; 32],
+    /// The indices of the voters; leave empty to vote from every other participant.
+    #[clap(long, value_delimiter = ',')]
+    pub voters: Vec<usize>,
+}
+
+impl MpcVoteApprovedHashCmd {
+    fn mpc_docker_image_hash_parser(value: &str) -> anyhow::Result<[u8; 32]> {
+        hex::decode(value)
+            .context("image hash is not a valid hex string")?
+            .try_into()
+            .map_err(|_| anyhow::Error::msg("Image hash is not 32 bytes"))
+    }
+}
+
+#[derive(clap::Parser)]
 pub struct MpcTerraformDeployInfraCmd {
     /// If true, deletes the keyshares from the GCP secrets manager. This is useful if you wish to
     /// deploy a new contract and need to re-generate the key.
@@ -297,6 +335,11 @@ pub struct MpcTerraformDeployNomadCmd {
     /// The default is `constants::DEFAULT_MPC_DOCKER_IMAGE`.
     #[clap(long)]
     pub docker_image: Option<String>,
+    /// By default, we deploy the default docker image, which is a legacy node, requiring secret
+    /// shares.
+    /// Set this flag if you deploy a newer node that generates its secrets on its own.
+    #[clap(long)]
+    pub not_legacy: bool, // todo: remove [(#710)](https://github.com/near/mpc/issues/710)
 }
 
 #[derive(clap::Parser)]

@@ -1,5 +1,5 @@
 [workspace]
-members = ["node", "devnet", "attestation"]
+members = ["node", "devnet", "attestation", "crates/primitives"]
 resolver = "2"
 exclude = ["libs", "pytest"]
 
@@ -32,7 +32,7 @@ derive_more = { version = "2.0.1", features = [
 ] }
 # Currently needed to include https://github.com/Dstack-TEE/dstack/pull/232
 # TODO(https://github.com/near/mpc/issues/618) Use next release once it's out.
-dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "421a5fb8e321e547efaa67c1a27daac11a0aa5b4" }
+dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "c5192dac8801ebc4e6780aa4d268f2611e4f0e1b" }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"
@@ -50,6 +50,7 @@ k256 = "0.13.4"
 lazy_static = "1.5.0"
 lru = "0.12.5"
 mockall = "0.13.1"
+mpc-primitives = { path = "crates/primitives" }
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
@@ -91,7 +92,7 @@ tracing-subscriber = { version = "0.3.18", features = [
 url = "2"
 x509-parser = "0.16.0"
 
-
+mpc-node = { path = "node" }
 # MPC Contract
 mpc-contract = { path = "libs/chain-signatures/contract/", features = [
     "dev-utils",
