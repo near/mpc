@@ -84,21 +84,12 @@ impl Attestation {
 
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)
-        // TODO test is failing here; actual report data:
-        // [0, 1, 134, 163, 17, 143, 229, 16, 3, 39, 64, 40, 88, 255, 21, 132, 198, 182, 125, 151,
-        // 83, 18, 201, 70, 226, 182, 120, 66, 182, 209, 141, 58, 2, 40, 228, 119, 78, 117, 16, 27,
-        // 173, 92, 76, 171, 3, 174, 124, 123, 8, 138, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        //
-        // expected report data:
-        // [0, 1, 152, 133, 168, 120, 6, 125, 128, 206, 88, 93, 83, 39, 23, 122, 249, 14, 74, 153,
-        // 227, 204, 237, 235, 214, 216, 101, 203, 137, 117, 246, 51, 89, 48, 106, 71, 93, 52, 61,
-        // 76, 179, 141, 155, 5, 98, 242, 112, 61, 83, 69, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        && self.verify_report_data(&expected_report_data, report_data)
-        // && self.verify_static_rtmrs(
-        //     report_data,
-        //     &attestation.tcb_info,
-        //     &attestation.expected_measurements,
-        // )
+            && self.verify_report_data(&expected_report_data, report_data)
+            && self.verify_static_rtmrs(
+                report_data,
+                &attestation.tcb_info,
+                &attestation.expected_measurements,
+            )
         // && self.verify_rtmr3(report_data, &attestation.tcb_info)
         // && self.verify_app_compose(&attestation.tcb_info)
         // && self.verify_local_sgx_hash(&attestation.tcb_info, &attestation.expected_measurements)
@@ -292,7 +283,10 @@ impl Attestation {
 
 #[cfg(test)]
 mod tests {
-    use crate::report_data::ReportDataV1;
+    use crate::{
+        measurements::Measurements,
+        report_data::{ReportDataV1, ReportDataVersion},
+    };
 
     use super::*;
     use dstack_sdk::dstack_client::TcbInfo as DstackTcbInfo;
@@ -526,11 +520,45 @@ mod tests {
           "app_compose": "{\"manifest_version\":2,\"name\":\"tee-mpc2\",\"runner\":\"docker-compose\",\"docker_compose_file\":\"services:\\n  mpc-node:\\n    image: nearone/mpc-node-gcp:cc377dd0276dd1258f53786255d5481516cdd505-cc377dd\\n    container_name: mpc-node\\n    network_mode: \\\"host\\\"\\n    restart: unless-stopped\\n\\n    volumes:\\n      - mpc-data:/data\\n      - shared-volume:/mnt/shared\\n      - /:/host/\\n      - /var/run/tappd.sock:/var/run/tappd.sock\\n      - /var/run/dstack.sock:/var/run/dstack.sock\\n    environment:\\n      - MPC_HOME_DIR=/data\\n      - MPC_ACCOUNT_ID=$MPC_ACCOUNT_ID\\n      - MPC_LOCAL_ADDRESS=$MPC_LOCAL_ADDRESS\\n      - MPC_SECRET_STORE_KEY=$MPC_SECRET_STORE_KEY\\n      - MPC_CONTRACT_ID=$MPC_CONTRACT_ID\\n      - MPC_ENV=$MPC_ENV\\n      - MPC_HOME_DIR=$MPC_HOME_DIR\\n      - NEAR_BOOT_NODES=$NEAR_BOOT_NODES\\n      - RUST_BACKTRACE=$RUST_BACKTRACE\\n      - RUST_LOG=$RUST_LOG\\n      - MPC_RESPONDER_ID=mpc-responder-2-barak-launch1-cdd0fd949a48.5035bf56abb0.testnet\\n      - IMAGE_HASH=e1a3c6b4180a9cdd6bb0df4c7f47a64eaef9305ff3c9b8bbd6b5fe9932a89a68\\n      - LATEST_ALLOWED_HASH_FILE=/mnt/shared/image-digest\\n\\n    extra_hosts:\\n      - \\\"mpc-node-0.service.mpc.consul=35.185.233.54\\\"\\n      - \\\"mpc-node-1.service.mpc.consul=34.168.117.59\\\"\\n\\nvolumes:\\n  mpc-data:\\n  shared-volume:\",\"docker_config\":{},\"kms_enabled\":true,\"gateway_enabled\":false,\"public_logs\":true,\"public_sysinfo\":true,\"public_tcbinfo\":true,\"local_key_provider_enabled\":false,\"key_provider_id\":\"\",\"allowed_envs\":[\"MPC_ACCOUNT_ID\",\"MPC_LOCAL_ADDRESS\",\"MPC_SECRET_STORE_KEY\",\"MPC_CONTRACT_ID\",\"MPC_ENV\",\"MPC_HOME_DIR\",\"NEAR_BOOT_NODES\",\"RUST_BACKTRACE\",\"RUST_LOG\"],\"no_instance_id\":true,\"secure_time\":false,\"pre_launch_script\":\"\"}"
         });
         let tcb_info: DstackTcbInfo = serde_json::from_value(tcb_info).unwrap();
+        let expected_measurements = ExpectedMeasurements {
+            rtmrs: Measurements {
+                rtmr0: [
+                    0x37, 0x44, 0xb1, 0x54, 0x06, 0x95, 0x00, 0xa4, 0x66, 0xf5, 0x14, 0x25, 0x3b,
+                    0x49, 0x85, 0x82, 0x99, 0xb2, 0xe1, 0xbd, 0xc4, 0x4e, 0x3d, 0x55, 0x73, 0x37,
+                    0xd8, 0x1e, 0x82, 0x8b, 0xed, 0xf6, 0xa0, 0x41, 0x0f, 0x27, 0xd3, 0xa1, 0x8c,
+                    0x93, 0x2e, 0x5e, 0x49, 0xe1, 0xc4, 0x21, 0x57, 0x37,
+                ],
+                rtmr1: [
+                    0x4b, 0x66, 0xe8, 0x88, 0xc8, 0xdf, 0xa7, 0xa5, 0x04, 0xfc, 0x7c, 0xa0, 0x60,
+                    0xab, 0x9e, 0x2d, 0x05, 0x12, 0x33, 0xf1, 0x15, 0xd7, 0x13, 0x04, 0x08, 0x55,
+                    0x70, 0xc7, 0xac, 0x71, 0xf5, 0xa1, 0x90, 0xa3, 0xe2, 0x37, 0xd1, 0x5f, 0x09,
+                    0x65, 0x96, 0x7a, 0x78, 0x53, 0x9b, 0xa0, 0xd7, 0x87,
+                ],
+                rtmr2: [
+                    0x5a, 0x41, 0xc9, 0xf7, 0x1c, 0xe5, 0x65, 0x5b, 0x6b, 0xa6, 0x05, 0xfe, 0x0d,
+                    0x00, 0xa0, 0xa0, 0x5a, 0xdd, 0x74, 0x71, 0xac, 0xaa, 0xa6, 0xaa, 0x15, 0x5b,
+                    0xce, 0x1e, 0x04, 0xb8, 0x20, 0x4f, 0x0f, 0xff, 0xae, 0xc2, 0xe6, 0xc9, 0x5f,
+                    0xfc, 0x14, 0x42, 0xb3, 0x7e, 0x14, 0x11, 0x27, 0xd9,
+                ],
+                mrtd: [
+                    0xc6, 0x85, 0x18, 0xa0, 0xeb, 0xb4, 0x21, 0x36, 0xc1, 0x2b, 0x22, 0x75, 0x16,
+                    0x4f, 0x8c, 0x72, 0xf2, 0x5f, 0xa9, 0xa3, 0x43, 0x92, 0x22, 0x86, 0x87, 0xed,
+                    0x6e, 0x9c, 0xae, 0xb9, 0xc0, 0xf1, 0xdb, 0xd8, 0x95, 0xe9, 0xcf, 0x47, 0x51,
+                    0x21, 0xc0, 0x29, 0xdc, 0x47, 0xe7, 0x0e, 0x91, 0xfd,
+                ],
+            },
+            local_sgx_hash: [
+                0x1b, 0x7a, 0x49, 0x37, 0x84, 0x03, 0x24, 0x9b, 0x69, 0x86, 0xa9, 0x07, 0x84, 0x4c,
+                0xab, 0x09, 0x21, 0xec, 0xa3, 0x2d, 0xd4, 0x7e, 0x65, 0x7f, 0x3c, 0x10, 0x31, 0x1c,
+                0xca, 0xec, 0xcf, 0x8b,
+            ],
+            report_data_version: ReportDataVersion::V1,
+        };
         Attestation::Dstack(DstackAttestation::new(
             quote,
             collateral,
             tcb_info.into(),
-            ExpectedMeasurements::default(),
+            expected_measurements,
         ))
     }
 
