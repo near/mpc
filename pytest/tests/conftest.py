@@ -2,6 +2,7 @@
 """
 Fixtures for pytest
 """
+
 import pytest
 import atexit
 import subprocess
@@ -85,7 +86,6 @@ def compile_contract(request):
             / "mpc_contract.wasm"
         )
     else:
-
         subprocess.run(
             [
                 "cargo",

@@ -230,7 +230,7 @@ def get_image_digest() -> str:
         logging.info(f"opening image digest file {IMAGE_DIGEST_FILE}.")
         return open(IMAGE_DIGEST_FILE).readline().strip()
     else:
-        logging.info(f"Using default image digest from environment.")
+        logging.info("Using default image digest from environment.")
         return os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
 
 
@@ -269,8 +269,7 @@ def curl_unix_socket_post(
 
 
 def main():
-
-    logging.info(f"start")
+    logging.info("start")
     # We want to globally enable DOCKER_CONTENT_TRUST=1 to ensure integrity of Docker images.
     if os.environ.get(OS_ENV_DOCKER_CONTENT_TRUST, "0") != "1":
         raise RuntimeError(
@@ -291,7 +290,7 @@ def main():
     image_spec = get_image_spec(dstack_config)
     docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
 
-    rpc_request_timzy = int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))
+    int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))
     rpc_request_interval_ms = int(
         os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, "500")
     )
@@ -492,9 +491,9 @@ def get_manifest_digest(
                     config_digest = manifest["config"]["digest"]
                     if config_digest == docker_image.digest:
                         return manifest_resp.headers["Docker-Content-Digest"]
-        except:
+        except RuntimeError as e:
             print(
-                "[Warning] Exceeded number of maximum RPC requests for any given attempt. Will continue in the hopes of finding the matching image hash among remaining tags"
+                f"[Warning] {e}: Exceeded number of maximum RPC requests for any given attempt. Will continue in the hopes of finding the matching image hash among remaining tags"
             )
             # Q: Do we expect all requests to succeed?
 
