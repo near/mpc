@@ -73,23 +73,3 @@ pub async fn monitor_allowed_docker_images(
         });
     }
 }
-
-pub async fn monitor_balance(
-    sender: watch::Sender<Vec<AllowedDockerImageHash>>,
-    indexer_state: Arc<IndexerState>,
-) {
-    const BALANCE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
-
-    loop {
-        tokio::time::sleep(ALLOWED_IMAGE_HASHES_REFRESH_INTERVAL).await;
-        let new_tee_state = fetch_allowed_image_hashes().await;
-        sender.send_if_modified(|previous_state| {
-            if *previous_state != new_tee_state {
-                *previous_state = new_tee_state;
-                true
-            } else {
-                false
-            }
-        });
-    }
-}
