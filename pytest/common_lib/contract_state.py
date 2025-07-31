@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import json
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Optional
 
 ProtocolState = Literal["Initializing", "Running", "Resharing"]
 
@@ -166,6 +166,7 @@ class RunningProtocolState:
     keyset: Keyset
     parameters: Parameters
     parameter_votes: ParameterVotes
+    previously_cancelled_resharing_epoch_id: Optional[int]
 
     def threshold(self) -> int:
         return self.parameters.threshold
@@ -176,8 +177,22 @@ class RunningProtocolState:
         keyset = Keyset.from_json(running_data["keyset"])
         parameters = Parameters.from_json(running_data["parameters"])
         votes = ParameterVotes.from_json(running_data["parameters_votes"])
+
+        cancel_resharing_field = running_data.get(
+            "previously_cancelled_resharing_epoch_id", None
+        )
+
+        if cancel_resharing_field != None:
+            previously_cancelled_resharing_epoch_id = int(cancel_resharing_field)
+        else:
+            previously_cancelled_resharing_epoch_id = None
+
         return RunningProtocolState(
-            domains=domains, keyset=keyset, parameters=parameters, parameter_votes=votes
+            domains=domains,
+            keyset=keyset,
+            parameters=parameters,
+            parameter_votes=votes,
+            previously_cancelled_resharing_epoch_id=previously_cancelled_resharing_epoch_id,
         )
 
     def next_domain_id(self) -> int:
@@ -199,6 +214,7 @@ class RunningProtocolState:
             f"\033[97m🔑 {keyset_str}\033[0m | "
             f"\033[96m{self.domains.make_str()} | "
             f"{self.parameter_votes.pretty_string()}\033[0m"
+            f"\033[96m[Previously cancelled epoch id {self.previously_cancelled_resharing_epoch_id}]\033[0m "
         )
 
 

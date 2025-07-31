@@ -16,57 +16,134 @@ use near_sdk::AccountId;
 use serde::Serialize;
 use std::path::PathBuf;
 
+async fn export_terraform_infra_vars(name: &str, mpc_setup: &MpcNetworkSetup) -> PathBuf {
+    let contract = mpc_setup
+        .contract
+        .clone()
+        .expect("Contract is not deployed");
+    let num_mpc_nodes = mpc_setup.participants.len();
+    let terraform_file = TerraformDeployInfraFile {
+        cluster_prefix: name.to_string(),
+        num_mpc_nodes,
+        mpc_contract_signer: contract,
+        ssd: mpc_setup.ssd,
+    };
+    let terraform_file = serde_json::to_string_pretty(&terraform_file).unwrap();
+
+    let current_dir = std::env::current_dir().unwrap();
+    let path = current_dir.join(format!("mpc-{}.tfvars.json", name));
+    std::fs::write(&path, terraform_file).unwrap();
+    println!("Wrote terraform vars file at {}", path.display());
+    path
+}
+
 /// Creates a {name}.tfvars.json file in the current directory with the Terraform variables
 /// needed by the infra-ops scripts.
 async fn export_terraform_vars(
     name: &str,
     accounts: &OperatingAccounts,
     mpc_setup: &MpcNetworkSetup,
+    not_legacy: bool,
 ) -> PathBuf {
     let contract = mpc_setup
         .contract
         .clone()
         .expect("Contract is not deployed");
-    let mut mpc_nodes = Vec::new();
-    for (i, account_id) in mpc_setup.participants.iter().enumerate() {
-        let account = accounts.account(account_id);
-        let participant = account
-            .get_mpc_participant()
-            .expect("Not an MPC participant");
-        let responding_account = accounts.account(&participant.responding_account_id);
-        let respond_config = RespondConfigFile {
-            account_id: participant.responding_account_id.clone(),
-            access_keys: responding_account
-                .all_access_keys()
-                .await
-                .into_iter()
-                .map(|k| k.secret_key())
-                .collect(),
+    let terraform_file = if !not_legacy {
+        // todo: eventually remove [(#710)](https://github.com/near/mpc/issues/710)
+        let mut mpc_nodes = Vec::new();
+        for (i, account_id) in mpc_setup.participants.iter().enumerate() {
+            let account = accounts.account(account_id);
+            let participant = account
+                .get_mpc_participant()
+                .expect("Not an MPC participant");
+            let responding_account = accounts.account(&participant.responding_account_id);
+            let respond_config = RespondConfigFile {
+                account_id: participant.responding_account_id.clone(),
+                access_keys: responding_account
+                    .all_access_keys()
+                    .await
+                    .into_iter()
+                    .map(|k| k.secret_key())
+                    .collect(),
+            };
+
+            let account_sk = account.any_access_key().await.secret_key();
+            let mpc_node = LegacyTerraformMpcNode {
+                account: account_id.clone(),
+                account_pk: account_sk.public_key(),
+                account_sk,
+                sign_sk: participant.p2p_private_key.clone(),
+                sign_pk: participant.p2p_private_key.public_key(),
+                url: format!("http://mpc-node-{}.service.mpc.consul:3000", i),
+                respond_yaml: serde_yaml::to_string(&respond_config).unwrap(),
+            };
+            mpc_nodes.push(mpc_node);
+        }
+        let terraform_file = LegacyTerraformFile {
+            cluster_prefix: name.to_string(),
+            legacy_mpc_nodes: mpc_nodes,
+            mpc_contract_signer: contract,
+            ssd: mpc_setup.ssd,
         };
-        let account_sk = account.any_access_key().await.secret_key();
-        let mpc_node = TerraformMpcNode {
-            account: account_id.clone(),
-            account_pk: account_sk.public_key(),
-            account_sk,
-            sign_sk: participant.p2p_private_key.clone(),
-            sign_pk: participant.p2p_private_key.public_key(),
-            url: format!("http://mpc-node-{}.service.mpc.consul:3000", i),
-            respond_yaml: serde_yaml::to_string(&respond_config).unwrap(),
+        serde_json::to_string_pretty(&terraform_file).unwrap()
+    } else {
+        let mut mpc_nodes = Vec::new();
+        for (i, account_id) in mpc_setup.participants.iter().enumerate() {
+            let responding_account_id = accounts
+                .account(account_id)
+                .get_mpc_participant()
+                .unwrap()
+                .responding_account_id
+                .clone();
+            mpc_nodes.push(TerraformMpcNode {
+                account: account_id.clone(),
+                url: format!("http://mpc-node-{}.service.mpc.consul:3000", i),
+                number_of_responder_keys: mpc_setup.num_responding_access_keys,
+                near_responder_account_id: responding_account_id,
+            });
+        }
+        let terraform_file = TerraformFile {
+            cluster_prefix: name.to_string(),
+            mpc_nodes,
+            mpc_contract_signer: contract,
+            ssd: mpc_setup.ssd,
         };
-        mpc_nodes.push(mpc_node);
-    }
-    let terraform_file = TerraformFile {
-        cluster_prefix: name.to_string(),
-        mpc_nodes,
-        mpc_contract_signer: contract,
-        ssd: mpc_setup.ssd,
+        serde_json::to_string_pretty(&terraform_file).unwrap()
     };
-    let terraform_file = serde_json::to_string_pretty(&terraform_file).unwrap();
+
     let current_dir = std::env::current_dir().unwrap();
     let path = current_dir.join(format!("mpc-{}.tfvars.json", name));
     std::fs::write(&path, terraform_file).unwrap();
     println!("Wrote terraform vars file at {}", path.display());
     path
+}
+
+#[derive(Serialize)]
+struct TerraformDeployInfraFile {
+    cluster_prefix: String,
+    num_mpc_nodes: usize,
+    mpc_contract_signer: AccountId,
+    ssd: bool,
+}
+
+#[derive(Serialize)]
+struct LegacyTerraformFile {
+    cluster_prefix: String,
+    legacy_mpc_nodes: Vec<LegacyTerraformMpcNode>,
+    mpc_contract_signer: AccountId,
+    ssd: bool,
+}
+
+#[derive(Serialize)]
+struct LegacyTerraformMpcNode {
+    account: AccountId,
+    account_pk: PublicKey,
+    account_sk: SecretKey,
+    sign_sk: SecretKey,
+    sign_pk: PublicKey,
+    url: String,
+    respond_yaml: String,
 }
 
 #[derive(Serialize)]
@@ -80,12 +157,9 @@ struct TerraformFile {
 #[derive(Serialize)]
 struct TerraformMpcNode {
     account: AccountId,
-    account_pk: PublicKey,
-    account_sk: SecretKey,
-    sign_sk: SecretKey,
-    sign_pk: PublicKey,
     url: String,
-    respond_yaml: String,
+    number_of_responder_keys: usize,
+    near_responder_account_id: AccountId,
 }
 
 // From MPC code.
@@ -106,7 +180,7 @@ impl MpcTerraformDeployInfraCmd {
             .mpc_setups
             .get_mut(name)
             .expect(&format!("MPC network {} does not exist", name));
-        let terraform_vars_file = export_terraform_vars(name, &setup.accounts, mpc_setup).await;
+        let terraform_vars_file = export_terraform_infra_vars(name, mpc_setup).await;
         let infra_ops_path = &config.infra_ops_path;
         let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
 
@@ -176,7 +250,8 @@ impl MpcTerraformDeployNomadCmd {
             .mpc_setups
             .get(name)
             .expect(&format!("MPC network {} does not exist", name));
-        let terraform_vars_file = export_terraform_vars(name, &setup.accounts, mpc_setup).await;
+        let terraform_vars_file =
+            export_terraform_vars(name, &setup.accounts, mpc_setup, self.not_legacy).await;
         let nomad_server_url = mpc_setup
             .nomad_server_url
             .clone()
@@ -230,7 +305,7 @@ impl MpcTerraformDestroyInfraCmd {
             .mpc_setups
             .get_mut(name)
             .expect(&format!("MPC network {} does not exist", name));
-        let terraform_vars_file = export_terraform_vars(name, &setup.accounts, mpc_setup).await;
+        let terraform_vars_file = export_terraform_infra_vars(name, mpc_setup).await;
         // Invoke terraform
         let infra_ops_path = &config.infra_ops_path;
         let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
@@ -259,37 +334,57 @@ impl MpcTerraformDestroyInfraCmd {
     }
 }
 
+pub fn get_urls(name: &str, config: &ParsedConfig) -> Vec<String> {
+    let output: TerraformInfraShowOutput = get_terraform_values(name, config);
+    let mut ret = Vec::new();
+    for resource in &output.values.root_module.resources {
+        if let Some((_, instance)) = resource.as_mpc_nomad_client() {
+            ret.push(format!(
+                "http://{}:8080",
+                instance.nat_ip().unwrap_or_default()
+            ));
+            // todo: display account_ids on the endpoint too, as this index might not be reliable.
+            // [(#712)](https://github.com/near/mpc/issues/712)
+        }
+    }
+    ret
+}
+
+fn get_terraform_values(name: &str, config: &ParsedConfig) -> TerraformInfraShowOutput {
+    let infra_ops_path = &config.infra_ops_path;
+    let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
+
+    std::process::Command::new("terraform")
+        .arg("init")
+        .current_dir(&infra_dir)
+        .output()
+        .unwrap();
+
+    std::process::Command::new("terraform")
+        .arg("workspace")
+        .arg("select")
+        .arg("-or-create")
+        .arg(name)
+        .current_dir(&infra_dir)
+        .output()
+        .unwrap();
+
+    let output = std::process::Command::new("terraform")
+        .arg("show")
+        .arg("-json")
+        .current_dir(&infra_dir)
+        .output()
+        .expect("Failed to run terraform show -json");
+
+    let output: TerraformInfraShowOutput =
+        serde_json::from_slice(&output.stdout).expect("Failed to parse terraform show output");
+
+    output
+}
+
 impl MpcDescribeCmd {
     pub async fn describe_terraform(&self, name: &str, config: &ParsedConfig) {
-        // Invoke terraform
-        let infra_ops_path = &config.infra_ops_path;
-        let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
-
-        std::process::Command::new("terraform")
-            .arg("init")
-            .current_dir(&infra_dir)
-            .output()
-            .unwrap();
-
-        std::process::Command::new("terraform")
-            .arg("workspace")
-            .arg("select")
-            .arg("-or-create")
-            .arg(name)
-            .current_dir(&infra_dir)
-            .output()
-            .unwrap();
-
-        let output = std::process::Command::new("terraform")
-            .arg("show")
-            .arg("-json")
-            .current_dir(&infra_dir)
-            .output()
-            .expect("Failed to run terraform show -json");
-
-        let output: TerraformInfraShowOutput =
-            serde_json::from_slice(&output.stdout).expect("Failed to parse terraform show output");
-
+        let output: TerraformInfraShowOutput = get_terraform_values(name, config);
         for resource in &output.values.root_module.resources {
             if let Some(instance) = resource.as_mpc_nomad_server() {
                 println!(

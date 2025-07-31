@@ -1,4 +1,4 @@
-name: Docker Build and Publish MPC Image
+name: Docker Build and Publish MPC TEE enabled Image
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -9,13 +9,13 @@ on:
     inputs:
       build-ref:
         default: 'main'
-        description: "The branch, tag or SHA to build MPC Docker image from. Default to latest commit on main branch."
+        description: "The branch, tag or SHA to build MPC TEE enabled Docker image from. Default to latest commit on main branch."
         type: string
     
 
 jobs:
   docker-image-build:
-    name: "Build and push MPC Docker image"
+    name: "Build and push MPC TEE enabled Docker image"
     runs-on: warp-ubuntu-2204-x64-2x
     permissions:
       contents: read
@@ -53,5 +53,5 @@ jobs:
           context: .
           profile-name: "mpc-image-builder"
           push: true
-          file: deployment/Dockerfile-gcp
-          tags: nearone/mpc-node-gcp:latest,nearone/mpc-node-gcp:${{ env.sanitized_ref }},nearone/mpc-node-gcp:${{ env.sanitized_ref }}-${{ env.sha_short }}
+          file: deployment/Dockerfile-tee-gcp
+          tags: nearone/mpc-node-gcp:latest-tee,nearone/mpc-node-gcp:${{ env.sanitized_ref }}-tee,nearone/mpc-node-gcp:${{ env.sanitized_ref }}-${{ env.sha_short }}-tee
