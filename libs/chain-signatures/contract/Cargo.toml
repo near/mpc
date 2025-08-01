@@ -31,7 +31,8 @@ container_build_command = [
  # the non-reproducible build inside a reproducible environment becomes reproducible
     "non-reproducible-wasm", 
     "--locked",
-    "--features", "abi"
+    "--features", "abi",
+    "--no-embed-abi"
 ]
 
 [dependencies]
