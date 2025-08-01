@@ -309,7 +309,6 @@ impl StartCmd {
                     account_public_key,
                 )))
                 .await?;
-            // report_data_contract = Some(attestation.try_into()?);
             match attestation {
                 Attestation::Dstack(dstack_attestation) => {
                     report_data_contract = Some(
