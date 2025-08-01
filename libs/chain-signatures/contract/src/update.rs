@@ -10,6 +10,11 @@ use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::IterableMap;
 use near_sdk::{env, near, AccountId, Gas, NearToken, Promise};
 
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::near_sdk::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
 #[derive(
     Copy,
     Clone,

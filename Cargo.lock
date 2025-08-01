@@ -4884,6 +4884,7 @@ dependencies = [
  "derive_more 2.0.1",
  "hex",
  "rand 0.8.5",
+ "schemars 0.8.22",
  "serde",
  "serde_json",
 ]
