@@ -1,4 +1,5 @@
-#![cfg_attr(not(all(feature = "abi", not(target_arch = "wasm32"))), no_std)]
+#![deny(unused_crate_dependencies)]
+#![cfg_attr(not(not(target_arch = "wasm32")), no_std)]
 
 extern crate alloc;
 

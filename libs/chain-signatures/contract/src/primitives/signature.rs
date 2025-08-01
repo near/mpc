@@ -26,7 +26,7 @@ impl Tweak {
 pub enum Payload {
     Ecdsa(
         #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
+            not(target_arch = "wasm32"),
             schemars(with = "[u8; 32]"),
             borsh(schema(with_funcs(
                 declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
@@ -37,7 +37,7 @@ pub enum Payload {
     ),
     Eddsa(
         #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
+            not(target_arch = "wasm32"),
             schemars(with = "Vec<u8>"),
             borsh(schema(with_funcs(
                 declaration = "<Vec<u8> as ::borsh::BorshSchema>::declaration",

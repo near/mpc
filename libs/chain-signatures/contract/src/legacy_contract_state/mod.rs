@@ -1,6 +1,8 @@
 mod impls;
 
 use borsh::{self, BorshDeserialize, BorshSerialize};
+#[cfg(not(target_arch = "wasm32"))]
+use near_sdk::schemars;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{store::IterableMap, AccountId};
 use std::collections::{HashMap, HashSet};
@@ -119,7 +121,7 @@ pub enum Update {
 }
 
 #[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
+    not(target_arch = "wasm32"),
     derive(::near_sdk::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]

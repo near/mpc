@@ -6,12 +6,14 @@ use crate::storage_keys::StorageKey;
 
 use crate::errors::{ConversionError, Error};
 use borsh::{self, BorshDeserialize, BorshSerialize};
+#[cfg(not(target_arch = "wasm32"))]
+use near_sdk::schemars;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::IterableMap;
 use near_sdk::{env, near, AccountId, Gas, NearToken, Promise};
 
 #[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
+    not(target_arch = "wasm32"),
     derive(::near_sdk::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]

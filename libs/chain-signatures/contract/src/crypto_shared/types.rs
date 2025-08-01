@@ -7,13 +7,12 @@ use k256::{
     AffinePoint, Secp256k1,
 };
 use near_sdk::near;
+#[cfg(not(target_arch = "wasm32"))]
+use near_sdk::schemars;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::near_sdk::schemars::JsonSchema)
-)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(::near_sdk::schemars::JsonSchema))]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "scheme")]
 pub enum SignatureResponse {
@@ -22,7 +21,7 @@ pub enum SignatureResponse {
 }
 
 #[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
+    not(target_arch = "wasm32"),
     derive(::near_sdk::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]
@@ -37,7 +36,7 @@ pub enum PublicKeyExtended {
         near_public_key_compressed: near_sdk::PublicKey,
         /// Decompressed Edwards point used for curve arithmetic operations.
         #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
+            not(target_arch = "wasm32"),
             schemars(with = "[u8; 32]"),
             borsh(schema(with_funcs(
                 declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
@@ -177,14 +176,14 @@ mod serialize {
     }
 
     #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
+        not(target_arch = "wasm32"),
         derive(::near_sdk::schemars::JsonSchema),
         derive(::borsh::BorshSchema)
     )]
     #[derive(Debug, PartialEq, Serialize, Deserialize, Eq, Clone, Copy)]
     pub struct SerializableEdwardsPoint(
         #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
+            not(target_arch = "wasm32"),
             schemars(with = "[u8; 32]"),
             borsh(schema(with_funcs(
                 declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
@@ -222,14 +221,11 @@ pub mod k256_types {
 
     pub type PublicKey = <Secp256k1 as CurveArithmetic>::AffinePoint;
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
+    #[cfg_attr(not(target_arch = "wasm32"), derive(::near_sdk::schemars::JsonSchema))]
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy, Ord, PartialOrd)]
     pub struct SerializableScalar {
         #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
+            not(target_arch = "wasm32"),
             schemars(with = "String"), // Scalar is a U256, which becomes a HEX-string after serialization.
         )]
         pub scalar: Scalar,
@@ -269,23 +265,17 @@ pub mod k256_types {
         }
     }
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
+    #[cfg_attr(not(target_arch = "wasm32"), derive(::near_sdk::schemars::JsonSchema))]
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
     pub struct SerializableAffinePoint {
         #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
+            not(target_arch = "wasm32"),
             schemars(with = "Vec<u8>"), // Affine point may be compressed or decompressed.
         )]
         pub affine_point: AffinePoint,
     }
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
+    #[cfg_attr(not(target_arch = "wasm32"), derive(::near_sdk::schemars::JsonSchema))]
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
     pub struct Signature {
         pub big_r: SerializableAffinePoint,
@@ -360,17 +350,14 @@ pub mod ed25519_types {
         }
     }
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
+    #[cfg_attr(not(target_arch = "wasm32"), derive(::near_sdk::schemars::JsonSchema))]
     #[serde_as]
     #[derive(
         BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
     )]
     pub struct Signature(
         #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
+            not(target_arch = "wasm32"),
             schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32. 
         )]
         #[serde_as(as = "[_; 64]")]
