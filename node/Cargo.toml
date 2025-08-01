@@ -61,6 +61,9 @@ legacy-mpc-contract = { workspace = true }
 mpc-contract = { workspace = true }
 deranged = { workspace = true }
 itertools = { workspace = true }
+derive_more = { workspace = true }
+
+attestation = { path = "../attestation" }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
@@ -72,5 +75,7 @@ mockall = { workspace = true }
 rstest = { workspace = true }
 
 [features]
+default = []
+external-services-tests = []
 tee = []
 network-hardship-simulation = []

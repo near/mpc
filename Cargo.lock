@@ -4763,6 +4763,7 @@ name = "mpc-contract"
 version = "2.2.0-rc.1"
 dependencies = [
  "anyhow",
+ "attestation",
  "borsh",
  "curve25519-dalek",
  "dcap-qvl",
@@ -4819,12 +4820,14 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "async-trait",
+ "attestation",
  "axum 0.7.9",
  "backon",
  "borsh",
  "clap",
  "curve25519-dalek",
  "deranged",
+ "derive_more 2.0.1",
  "dstack-sdk",
  "flume",
  "futures",
