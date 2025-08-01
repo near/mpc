@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use derive_more::{AsRef, Deref, Into};
 
 #[cfg_attr(
-    not(target_arch = "wasm32"),
+    all(feature = "abi", not(target_arch = "wasm32")),
     derive(::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]
@@ -51,7 +51,7 @@ impl<T> Hash32<T> {
 
 // Marker types
 #[cfg_attr(
-    not(target_arch = "wasm32"),
+    all(feature = "abi", not(target_arch = "wasm32")),
     derive(::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]
@@ -67,7 +67,7 @@ impl<T> Hash32<T> {
 )]
 pub struct Image;
 #[cfg_attr(
-    not(target_arch = "wasm32"),
+    all(feature = "abi", not(target_arch = "wasm32")),
     derive(::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]
