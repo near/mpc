@@ -2,7 +2,7 @@ import json
 import pathlib
 import sys
 
-from key import Key, SigningKey
+from key import Key
 
 from common_lib.constants import TGAS
 from common_lib.shared.transaction_status import assert_txn_success
@@ -74,7 +74,9 @@ class NearAccount:
     ):
         last_block_hash = self.last_block_hash()
         (key, nonce) = self.get_key_and_nonce()
-        encoded_args = args if type(args) == bytes else json.dumps(args).encode("utf-8")
+        encoded_args = (
+            args if isinstance(args, bytes) else json.dumps(args).encode("utf-8")
+        )
         tx = sign_function_call_tx(
             key,
             target_contract,

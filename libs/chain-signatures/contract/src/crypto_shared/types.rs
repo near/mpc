@@ -10,6 +10,10 @@ use near_sdk::near;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::near_sdk::schemars::JsonSchema)
+)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "scheme")]
 pub enum SignatureResponse {
@@ -17,6 +21,11 @@ pub enum SignatureResponse {
     Ed25519 { signature: ed25519_types::Signature },
 }
 
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::near_sdk::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum PublicKeyExtended {
     Secp256k1 {
@@ -27,6 +36,14 @@ pub enum PublicKeyExtended {
         /// Serialized compressed Edwards-y point.
         near_public_key_compressed: near_sdk::PublicKey,
         /// Decompressed Edwards point used for curve arithmetic operations.
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "[u8; 32]"),
+            borsh(schema(with_funcs(
+                declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
+                definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
+            ),))
+        )]
         edwards_point: EdwardsPoint,
     },
 }
@@ -159,8 +176,23 @@ mod serialize {
         }
     }
 
+    #[cfg_attr(
+        all(feature = "abi", not(target_arch = "wasm32")),
+        derive(::near_sdk::schemars::JsonSchema),
+        derive(::borsh::BorshSchema)
+    )]
     #[derive(Debug, PartialEq, Serialize, Deserialize, Eq, Clone, Copy)]
-    pub struct SerializableEdwardsPoint(EdwardsPoint);
+    pub struct SerializableEdwardsPoint(
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "[u8; 32]"),
+            borsh(schema(with_funcs(
+                declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
+                definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
+            ),))
+        )]
+        EdwardsPoint,
+    );
 
     impl BorshSerialize for SerializableEdwardsPoint {
         fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
@@ -190,9 +222,16 @@ pub mod k256_types {
 
     pub type PublicKey = <Secp256k1 as CurveArithmetic>::AffinePoint;
 
-    // Is there a better way to force a borsh serialization?
+    #[cfg_attr(
+        all(feature = "abi", not(target_arch = "wasm32")),
+        derive(::near_sdk::schemars::JsonSchema)
+    )]
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy, Ord, PartialOrd)]
     pub struct SerializableScalar {
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "String"), // Scalar is a U256, which becomes a HEX-string after serialization.
+        )]
         pub scalar: Scalar,
     }
 
@@ -208,6 +247,7 @@ pub mod k256_types {
         }
     }
 
+    // Is there a better way to enforce `borsh` serialization?
     impl BorshSerialize for SerializableScalar {
         fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
             let to_ser: [u8; 32] = self.scalar.to_bytes().into();
@@ -229,11 +269,23 @@ pub mod k256_types {
         }
     }
 
+    #[cfg_attr(
+        all(feature = "abi", not(target_arch = "wasm32")),
+        derive(::near_sdk::schemars::JsonSchema)
+    )]
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
     pub struct SerializableAffinePoint {
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "Vec<u8>"), // Affine point may be compressed or decompressed.
+        )]
         pub affine_point: AffinePoint,
     }
 
+    #[cfg_attr(
+        all(feature = "abi", not(target_arch = "wasm32")),
+        derive(::near_sdk::schemars::JsonSchema)
+    )]
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
     pub struct Signature {
         pub big_r: SerializableAffinePoint,
@@ -308,11 +360,22 @@ pub mod ed25519_types {
         }
     }
 
+    #[cfg_attr(
+        all(feature = "abi", not(target_arch = "wasm32")),
+        derive(::near_sdk::schemars::JsonSchema)
+    )]
     #[serde_as]
     #[derive(
         BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
     )]
-    pub struct Signature(#[serde_as(as = "[_; 64]")] [u8; 64]);
+    pub struct Signature(
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32. 
+        )]
+        #[serde_as(as = "[_; 64]")]
+        [u8; 64],
+    );
 
     impl Signature {
         pub fn as_bytes(&self) -> &[u8; 64] {

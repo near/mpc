@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import json
 from typing import Dict, List, Literal, Optional
 
 ProtocolState = Literal["Initializing", "Running", "Resharing"]
@@ -182,7 +181,7 @@ class RunningProtocolState:
             "previously_cancelled_resharing_epoch_id", None
         )
 
-        if cancel_resharing_field != None:
+        if cancel_resharing_field is not None:
             previously_cancelled_resharing_epoch_id = int(cancel_resharing_field)
         else:
             previously_cancelled_resharing_epoch_id = None
@@ -310,7 +309,6 @@ class ResharingProtocolState:
         return " ".join(marker(pid) for pid in all_ids)
 
     def key_transitions_str(self) -> str:
-
         def transition(k: KeyForDomain) -> str:
             domain = k.domain_id
             old_attempt = k.attempt_id
@@ -389,7 +387,6 @@ class InitializingProtocolState:
         )
 
     def domain_transitions_str(self) -> str:
-
         def transition(domain) -> str:
             domain_id = domain.id
 
@@ -425,7 +422,6 @@ class InitializingProtocolState:
 
 
 class ContractState:
-
     def get_running_domains(self) -> List[Domain]:
         if self.state == "Running":
             return self.protocol_state.domains.domains

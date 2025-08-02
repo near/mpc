@@ -11,7 +11,6 @@ import sys
 import time
 import pathlib
 import pytest
-from utils import load_binary_file
 
 from common_lib import contracts
 

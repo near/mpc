@@ -2,7 +2,7 @@ import json
 import base64
 from utils import load_binary_file, requests
 from enum import Enum
-from borsh_construct import Vec, U8, CStruct, U64, Option, U32
+from borsh_construct import Vec, U8, CStruct, U64, Option
 from .constants import MPC_REPO_DIR
 
 COMPILED_CONTRACT_PATH = (
@@ -70,7 +70,6 @@ def load_mpc_contract() -> bytearray:
 
 
 class ConfigV2:
-
     def __init__(self, max_num_requests_to_remove, request_timeout_blocks):
         self.max_num_requests_to_remove = max_num_requests_to_remove
         self.request_timeout_blocks = request_timeout_blocks
@@ -97,7 +96,6 @@ ProposeUpdateArgsV2 = CStruct(
 
 
 class UpdateArgsV2:
-
     def __init__(self, code_path=None, config=None):
         self.code_path = code_path
         self.config = config
@@ -112,7 +110,7 @@ class UpdateArgsV2:
         )
 
     def code(self):
-        if self.code_path == None:
+        if self.code_path is None:
             return None
         if self._code is None:
             self._code = load_binary_file(self.code_path)
