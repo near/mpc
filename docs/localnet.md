@@ -185,7 +185,7 @@ RPC_PORT=3031 BOOT_NODE_PORT=24567 INDEXER_PORT=24568 jq '.network.addr = "0.0.0
 Update Alice's `validator_key.json` to match her `account_id` field to her account.
 
 ```shell
-jq '.account_id = "alice.test.near"' validator_key.json > temp.json && mv temp.json validator_key.json
+jq '.account_id = "alice.test.near"' ~/.near/mpc-alice/validator_key.json > ~/.near/mpc-alice/temp.json && mv ~/.near/mpc-alice/temp.json ~/.near/mpc-alice/validator_key.json
 ```
 
 Create a `config.yaml` for the MPC-indexer:
