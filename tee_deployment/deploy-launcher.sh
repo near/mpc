@@ -59,7 +59,6 @@ COMPOSE_TMP=$(mktemp)
 
 GIT_REV=$(git rev-parse $GIT_REV)
 
-# cp launcher-docker-compose.yaml "$COMPOSE_TMP"
 cp $DOCKER_COMPOSE_FILE_PATH "$COMPOSE_TMP"
 
 subvar() {
