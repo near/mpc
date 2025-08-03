@@ -173,7 +173,7 @@ Fix Alice's genesis file to correspond with the localnet.
 TODO: Why do we get a different genesis file from the mpc-node init command when genesis from localnet is passed as argument?.
 
 ```shell
-cp ~/.near/mpc-localnet/genesis.json cp ~/.near/mpc-alice/genesis.json
+cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-alice/genesis.json
 ```
 
 Update Alice to point to correct port for boot nodes. It is currently pointing to localnet's RPC port. Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
@@ -233,7 +233,7 @@ Fix Bob's genesis file to correspond with the localnet.
 TODO: Why do we get a different genesis file from the mpc-node init command when genesis from localnet is passed as argument?.
 
 ```shell
-cp ~/.near/mpc-localnet/genesis.json cp ~/.near/mpc-bob/genesis.json
+cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-bob/genesis.json
 ```
 
 Update Bob to point to correct port for boot nodes. It is currently pointing to localnet's RPC port. Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
@@ -242,10 +242,10 @@ Update Bob to point to correct port for boot nodes. It is currently pointing to 
 RPC_PORT=3032 BOOT_NODE_PORT=24567 INDEXER_PORT=24569 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .network.boot_nodes = (.network.boot_nodes | sub("localhost:[0-9]+"; "localhost:" + env.BOOT_NODE_PORT)) | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-bob/config.json > ~/.near/mpc-bob/temp.json && mv ~/.near/mpc-bob/temp.json ~/.near/mpc-bob/config.json
 ```
 
-Update Bob's `validator_key.json` to match her `account_id` field to her account.
+Update Bob's `validator_key.json`'s `account_id` field. TODO: Why is it initialized with `test.near`?
 
 ```shell
-jq '.account_id = "bob.test.near"' validator_key.json > temp.json && mv temp.json validator_key.json
+jq '.account_id = "bob.test.near"' ~/.near/mpc-bob/validator_key.json > ~/.near/mpc-bob/temp.json && mv ~/.near/mpc-bob/temp.json ~/.near/mpc-bob/validator_key.json
 ```
 
 Create a `config.yaml` for the MPC-indexer:
