@@ -54,7 +54,6 @@ for var in "${required_env_vars[@]}"; do
   fi
 done
 
-#CLI="/home/thomas/.venvs/myenv/bin/python /home/thomas/code/meta-dstack/dstack/vmm/src/vmm-cli.py --url $VMM_RPC"
 CLI="/mnt/data/barak/deployment/.venv/bin/python /mnt/data/barak/meta-dstack/dstack/vmm/src/vmm-cli.py --url $VMM_RPC"
 
 COMPOSE_TMP=$(mktemp)
