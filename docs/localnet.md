@@ -111,9 +111,7 @@ near contract inspect mpc-contract.test.near network-config mpc-localnet now
 
 Now when the contract has been deployed, the next step is to initialize it.
 
-## 3. Initialize the MPC contract
-
-We'll initialize the MPC contract with two participants. Before we can call the contract, we first need to create accounts for the participants. Let's call them `alice` and `bob`.
+## 3. Create accounts for Alice and Bob
 
 ```shell
 near account create-account fund-myself alice.test.near '10 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
@@ -121,34 +119,6 @@ near account create-account fund-myself alice.test.near '10 NEAR' autogenerate-n
 
 ```shell
 near account create-account fund-myself bob.test.near '10 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
-```
-
-now we can extract their public keys.
-
-```shell
-export ALICE_PUBKEY=$(near account get-public-key from-keychain alice.test.near network-config mpc-localnet)
-echo "Alice pubkey: $ALICE_PUBKEY"
-
-export BOB_PUBKEY=$(near account get-public-key from-keychain bob.test.near network-config mpc-localnet)
-echo "Bob pubkey: $BOB_PUBKEY"
-```
-
-With these set, we can prepare the arguments for the init call.
-
-```shell
-envsubst < docs/init_args_template.json > /tmp/init_args.json
-```
-
-Now, we should be ready to call the `init` function on the contract.
-
-```shell
-near contract call-function as-transaction mpc-contract.test.near init file-args /tmp/init_args.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send
-```
-
-If this succeeded, you should now be able to query the contract state.
-
-```shell
-near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
 ```
 
 ## 4. Start Alice and Bob's MPC nodes
@@ -331,6 +301,40 @@ Since the nodes are generating the P2P private key, we must get the public key f
   ],
   "tee_participant_info": null
 }
+```
+
+## 5. Initialize the MPC contract
+
+We'll initialize the MPC contract with two participants. Before we can call the contract, we first need to create accounts for the participants. Let's call them `alice` and `bob`.
+
+now we can extract their public keys.
+
+TODO: The commands below are wrong. We are extracting the public signer key of Alice and Bob, but using it for the purpose of their public TLS when using it as init argument for the contract which are two different things. We first need to start the node, and have the node generate the TLS/P2P key, and then extract the public key from the web endpoint.
+
+```shell
+export ALICE_PUBKEY=$(curl -s localhost:8081/public_data | jq -r '.near_p2p_public_key')
+echo "Alice pubkey: $ALICE_PUBKEY"
+
+export BOB_PUBKEY=$(curl -s localhost:8082/public_data | jq -r '.near_p2p_public_key')
+echo "Bob pubkey: $BOB_PUBKEY"
+```
+
+With these set, we can prepare the arguments for the init call.
+
+```shell
+envsubst < docs/init_args_template.json > /tmp/init_args.json
+```
+
+Now, we should be ready to call the `init` function on the contract.
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near init file-args /tmp/init_args.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+If this succeeded, you should now be able to query the contract state.
+
+```shell
+near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
 ```
 
 ## Appendix: Further useful command
