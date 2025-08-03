@@ -69,17 +69,6 @@ subvar() {
 echo "Docker compose file:"
 cat "$COMPOSE_TMP"
 
-# if [ -t 0 ]; then
-#   # Only ask for confirmation if running in an interactive terminal
-#   read -p "Continue? [y/N] " -n 1 -r
-#   echo
-
-#   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-#     echo "Deployment cancelled"
-#     exit 1
-#   fi
-# fi
-
 KEY_FLAG=""
 case $SEALING_KEY_TYPE in
   KMS)
