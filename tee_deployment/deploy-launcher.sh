@@ -6,8 +6,6 @@
 
 
 
-#!/bin/bash
-
 # Default .env path
 ENV_FILE=".env"
 
