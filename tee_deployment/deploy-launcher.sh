@@ -119,7 +119,7 @@ $CLI deploy \
   --port tcp:$GUEST_AGENT_ADDR:$DSTACK_AGENT_PORT \
   --port tcp:$SSH_HOST_PORT:$DSTACK_SSH_PORT \
   --port tcp:$MPC_PUBLIC_PORT:$MPC_VM_PORT \
-  --port tcp:$8989:$MPC_DEBUG_PORT \
+  --port tcp:8989:$MPC_DEBUG_PORT \
   --user-config $USER_CONFIG_FILE_PATH \
   --vcpu 8 \
   --memory 64G \
