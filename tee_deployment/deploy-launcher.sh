@@ -43,7 +43,6 @@ required_env_vars=(
   "VMM_RPC"
   "GUEST_AGENT_ADDR"
   "SEALING_KEY_TYPE"
-#  "IMAGE_DOWNLOAD_URL"
 )
 
 for var in "${required_env_vars[@]}"; do
