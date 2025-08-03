@@ -18,7 +18,7 @@ MPC_PUBLIC_PORT=0.0.0.0:4444
 MPC_VM_PORT=4444
 
 # The type of sealing key to use the VM (SGX,KMS) 
-#KMS should only be used for deployment and SGX for production.
+# KMS should only be used for deployment and SGX for production.
 SEALING_KEY_TYPE=KMS
 
 

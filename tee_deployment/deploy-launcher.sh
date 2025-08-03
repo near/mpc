@@ -53,11 +53,12 @@ for var in "${required_env_vars[@]}"; do
   fi
 done
 
-CLI="/mnt/data/barak/deployment/.venv/bin/python /mnt/data/barak/meta-dstack/dstack/vmm/src/vmm-cli.py --url $VMM_RPC"
+basePath="/mnt/data/barak"
+CLI="$basePath/.venv/bin/python $basePath/meta-dstack/dstack/vmm/src/vmm-cli.py --url \$VMM_RPC"
 
 COMPOSE_TMP=$(mktemp)
 
-GIT_REV=$(git rev-parse $GIT_REV)
+#GIT_REV=$(git rev-parse $GIT_REV)
 
 cp $DOCKER_COMPOSE_FILE_PATH "$COMPOSE_TMP"
 
@@ -98,10 +99,7 @@ echo "app-compose.json"
 cat .app-compose.json
 
 # Remove the temporary file as it is no longer needed
-# TODO Uncomment again after testing
-# rm "$COMPOSE_TMP"
-
-
+rm "$COMPOSE_TMP"
 
 
 echo "Deploying $APP_NAME to dstack-vmm..."
