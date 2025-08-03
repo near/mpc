@@ -373,8 +373,7 @@ def main():
 
     logging.info("Quote: %s" % proc.stdout.decode("utf-8").strip())
 
-    # Build the docker command we use to start the app, i.e., mpc node
-    docker_cmd = ["docker", "run"]
+    # Build the docker command we use to start the mpc node
 
     # Load environment variables from the user config file
     # We allow only a limited set of environment variables to be passed to the container.
@@ -503,11 +502,14 @@ def get_manifest_digest(
 def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
     docker_cmd = ["docker", "run"]
 
-    # Manually add required environment variables.
-    # "IMAGE_HASH",  -  Digest of the Docker image - used to verify hash used.
+    # add required environment variables.
+    # "IMAGE_HASH",  -  Digest of the Docker image - used my the MPC node to verify hash used.
     # "LATEST_ALLOWED_HASH_FILE" - Path to the shared digest file
-    docker_cmd += ["--env", f"IMAGE_HASH={image_digest}"]
-    docker_cmd += ["--env", "LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
+    docker_cmd += [
+        "--env",
+        f"IMAGE_HASH={image_digest.split(':')[1] if ':' in image_digest else image_digest}",
+    ]
+    docker_cmd += ["--env", f"LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
 
     for key, value in user_env.items():
         if key in ALLOWED_ENV_VARS:
@@ -551,6 +553,8 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         "shared-volume:/mnt/shared",
         "-v",
         "mpc-data:/data",
+        "--name",
+        "mpc_node",
         "--detach",
         image_digest,
     ]
