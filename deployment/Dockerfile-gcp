@@ -2,7 +2,7 @@ FROM rust:latest AS builder
 RUN apt-get update -y && apt-get install -y --no-install-recommends clang  # needed for rocksdb
 
 WORKDIR /app
-COPY .github .github
+COPY .git .git
 COPY node node
 COPY Cargo.lock Cargo.lock
 COPY Cargo.toml Cargo.toml
