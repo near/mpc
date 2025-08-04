@@ -113,13 +113,17 @@ pub struct ImportKeyshareCmd {
     pub home_dir: String,
 
     /// JSON string containing the keyshare to import
-    #[arg(long,
+    #[arg(
+        long,
         help = "JSON string with the keyshare in format: {\"epoch\":1,\"private_share\":\"...\",\"public_key\":\"...\"}"
     )]
     pub keyshare_json: String,
 
     /// Hex-encoded 16 byte AES key for local storage encryption
-    #[arg(long, help = "Hex-encoded 16 byte AES key for local storage encryption")]
+    #[arg(
+        long,
+        help = "Hex-encoded 16 byte AES key for local storage encryption"
+    )]
     pub local_encryption_key_hex: String,
 }
 
@@ -130,7 +134,10 @@ pub struct ExportKeyshareCmd {
     pub home_dir: String,
 
     /// Hex-encoded 16 byte AES key for local storage encryption
-    #[arg(long, help = "Hex-encoded 16 byte AES key for local storage encryption")]
+    #[arg(
+        long,
+        help = "Hex-encoded 16 byte AES key for local storage encryption"
+    )]
     pub local_encryption_key_hex: String,
 }
 
