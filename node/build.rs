@@ -37,8 +37,4 @@ fn main() {
     println!("cargo:rustc-env=MPC_BUILD={}", build);
     println!("cargo:rustc-env=MPC_COMMIT={}", commit);
     println!("cargo:rustc-env=MPC_RUSTC_VERSION={}", rustc_version);
-    
-    // Re-run if any of these files change
-    println!("cargo:rerun-if-changed=Cargo.toml");
-    println!("cargo:rerun-if-changed=build.rs");
 } 
