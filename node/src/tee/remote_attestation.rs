@@ -235,7 +235,9 @@ where
                         Some(retries) => {
                             error!(?err, "{description} failed after {} retries", retries)
                         }
-                        None => continue,
+                        None => {
+                            error!(?err, "{description} failed and backoff returned None with unlimited retries");
+                        }
                     }
                     return Err(err);
                 }
