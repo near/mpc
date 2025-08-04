@@ -1,12 +1,12 @@
 use crate::indexer::types::{ChainSendTransactionRequest, ProposeJoinArgs};
 use anyhow::{bail, Context};
 use attestation::{
-    attestation::{Attestation, DstackAttestation},
+    attestation::{Attestation, DstackAttestation, EventLog},
     collateral::Collateral,
     measurements::ExpectedMeasurements,
     quote::Quote,
     report_data::ReportData,
-    tcbinfo::TcbInfo,
+    tcbinfo::{DstackTcbInfo, TcbInfo},
 };
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
@@ -93,7 +93,7 @@ impl TeeAuthority {
 
         let client_info_response =
             get_with_backoff(|| client.info(), "dstack client info", None).await?;
-        let tcb_info = TcbInfo::from(client_info_response.tcb_info);
+        let tcb_info = Self::convert_tcb_info(client_info_response.tcb_info);
 
         let quote = get_with_backoff(
             || client.get_quote(report_data.to_bytes().into()),
@@ -153,6 +153,44 @@ impl TeeAuthority {
             get_with_backoff(upload_tdx_quote, "upload tdx quote", Some(1)).await?;
 
         Ok(upload_response.quote_collateral)
+    }
+
+    /// Convert between dstack_sdk EventLog and attestation EventLog.
+    ///
+    /// This helper function will become redundant once the following issue is resolved:
+    /// https://github.com/Dstack-TEE/dstack/issues/271
+    fn convert_event_log(event_log: dstack_sdk::dstack_client::EventLog) -> EventLog {
+        EventLog {
+            imr: event_log.imr,
+            event_type: event_log.event_type,
+            digest: event_log.digest,
+            event: event_log.event,
+            event_payload: event_log.event_payload,
+        }
+    }
+
+    /// Convert between dstack_sdk TcbInfo and attestation TcbInfo.
+    ///
+    /// This helper function will become redundant once the following issue is resolved:
+    /// https://github.com/Dstack-TEE/dstack/issues/271
+    fn convert_tcb_info(tcb_info: dstack_sdk::dstack_client::TcbInfo) -> TcbInfo {
+        let dstack_tcb_info = DstackTcbInfo {
+            mrtd: tcb_info.mrtd,
+            rtmr0: tcb_info.rtmr0,
+            rtmr1: tcb_info.rtmr1,
+            rtmr2: tcb_info.rtmr2,
+            rtmr3: tcb_info.rtmr3,
+            os_image_hash: tcb_info.os_image_hash,
+            compose_hash: tcb_info.compose_hash,
+            device_id: tcb_info.device_id,
+            app_compose: tcb_info.app_compose,
+            event_log: tcb_info
+                .event_log
+                .into_iter()
+                .map(Self::convert_event_log)
+                .collect(),
+        };
+        TcbInfo::from(dstack_tcb_info)
     }
 }
 
