@@ -1,4 +1,5 @@
 mod assets;
+pub mod build_info;
 #[cfg(test)]
 mod async_testing;
 mod background;
@@ -9,7 +10,7 @@ mod db;
 mod indexer;
 mod key_events;
 mod keyshare;
-mod metrics;
+pub mod metrics;
 mod mpc_client;
 mod network;
 mod p2p;

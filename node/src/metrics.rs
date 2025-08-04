@@ -211,11 +211,11 @@ pub static MPC_BUILD_INFO: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| 
 
 /// Initialize the build info metric with current version information
 pub fn init_build_info_metric() {
-    // Use compile-time constants from main.rs
-    let version = crate::MPC_VERSION;
-    let build_time = crate::MPC_BUILD_TIME;
-    let rustc_version = crate::RUSTC_VERSION;
-    let commit = crate::MPC_COMMIT;
+    // Use compile-time constants from build_info module
+    let version = crate::build_info::MPC_VERSION;
+    let build_time = crate::build_info::MPC_BUILD_TIME;
+    let rustc_version = crate::build_info::RUSTC_VERSION;
+    let commit = crate::build_info::MPC_COMMIT;
 
     MPC_BUILD_INFO
         .with_label_values(&[version, build_time, rustc_version, commit])
