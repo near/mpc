@@ -1,3 +1,4 @@
+use derive_more::From;
 use itertools::Itertools;
 use mpc_contract::tee::proposal::{AllowedDockerImageHash, MpcDockerImageHash};
 use std::{future::Future, io, panic, path::PathBuf};
@@ -24,32 +25,9 @@ pub trait AllowedImageHashesStorage {
     ) -> impl Future<Output = Result<(), io::Error>> + Send;
 }
 
+#[derive(From)]
 pub struct AllowedImageHashesFile {
     file_path: PathBuf,
-}
-
-impl AllowedImageHashesFile {
-    pub async fn new(file_path: PathBuf) -> Result<Self, io::Error> {
-        tracing::info!(
-            ?file_path,
-            "Creating file handle to store latest allowed image hash."
-        );
-
-        // Make sure the provided path exists.
-        let _file_handle = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&file_path)
-            .await?;
-
-        tracing::info!(
-            ?file_path,
-            "Successfully created file handle to store latest allowed image hash"
-        );
-
-        Ok(Self { file_path })
-    }
 }
 
 impl AllowedImageHashesStorage for AllowedImageHashesFile {
@@ -57,6 +35,12 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
         &mut self,
         latest_allowed_image_hash: &AllowedDockerImageHash,
     ) -> Result<(), io::Error> {
+        tracing::info!(
+            ?self.file_path,
+            ?latest_allowed_image_hash,
+            "Creating file handle to store latest allowed image hash."
+        );
+
         let mut file_handle = OpenOptions::new()
             .truncate(true)
             .create(true)
@@ -64,9 +48,20 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
             .open(&self.file_path)
             .await?;
 
+        tracing::info!(
+            ?self.file_path,
+            ?latest_allowed_image_hash,
+            "Writing latest allowed image hash to disk."
+        );
         let image_hash = latest_allowed_image_hash.image_hash.as_hex();
         file_handle.write_all(image_hash.as_bytes()).await?;
         file_handle.flush().await?;
+
+        tracing::info!(
+            ?self.file_path,
+            ?latest_allowed_image_hash,
+            "Successfully written latest allowed image hash to disk."
+        );
 
         Ok(())
     }
