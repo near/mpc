@@ -210,7 +210,7 @@ lazy_static! {
     pub static ref MPC_BUILD_INFO: prometheus::IntGaugeVec = prometheus::register_int_gauge_vec!(
         "mpc_node_build_info",
         "Metric whose labels indicate node’s version",
-        &["release", "build", "rustc_version", "commit"],
+        &["release", "build_time", "rustc_version", "commit"],
     )
     .unwrap();
 }
