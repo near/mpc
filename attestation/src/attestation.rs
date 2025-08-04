@@ -21,10 +21,10 @@ pub enum Attestation {
 #[allow(dead_code)]
 #[derive(Constructor)]
 pub struct DstackAttestation {
-    quote: Quote,
-    collateral: Collateral,
-    tcb_info: TcbInfo,
-    expected_measurements: ExpectedMeasurements,
+    pub quote: Quote,
+    pub collateral: Collateral,
+    pub tcb_info: TcbInfo,
+    pub expected_measurements: ExpectedMeasurements,
 }
 
 #[derive(Constructor)]
