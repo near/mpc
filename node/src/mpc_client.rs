@@ -74,6 +74,15 @@ impl MpcClient {
             }
         });
 
+        metrics::MPC_BUILD_INFO.reset();
+        metrics::MPC_BUILD_INFO
+        .with_label_values(&[
+            "aaaaa",
+            "bbbbb",
+            "ccccc",
+        ])
+        .inc();
+    
         let monitor_passive_channels = {
             tracking::spawn(
                 "monitor passive channels",

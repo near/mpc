@@ -205,3 +205,14 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref MPC_BUILD_INFO: prometheus::IntCounterVec =
+        prometheus::register_int_counter_vec!(
+            "mpc_build_info",
+            "Metric whose labels indicate node’s version; see \
+             <https://www.robustperception.io/exposing-the-software-version-to-prometheus>.",
+             &["release", "build", "rustc_version"],
+        )
+        .unwrap();
+}
