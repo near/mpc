@@ -4825,6 +4825,7 @@ dependencies = [
  "clap",
  "curve25519-dalek",
  "deranged",
+ "derive_more 2.0.1",
  "dstack-sdk",
  "flume",
  "futures",
