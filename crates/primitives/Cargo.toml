@@ -2,11 +2,17 @@
 name = "mpc-primitives"
 edition = "2024"
 
+[features]
+abi = ["borsh/unstable__schema", "schemars"]
+
 [dependencies]
 borsh = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
