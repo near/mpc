@@ -15,7 +15,7 @@ fn try_main() -> Result<()> {
     
     // Get git commit hash
     let commit = Command::new("git")
-        .args(&["rev-parse", "HEAD"])
+        .args(["rev-parse", "HEAD"])
         .output()
         .map(|output| {
             String::from_utf8_lossy(&output.stdout)
