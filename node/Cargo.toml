@@ -72,5 +72,6 @@ mockall = { workspace = true }
 rstest = { workspace = true }
 
 [features]
+default = ["tee"]
 tee = []
 network-hardship-simulation = []
