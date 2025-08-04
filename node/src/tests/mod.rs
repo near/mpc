@@ -441,3 +441,27 @@ fn test_build_info_metric_initialization() {
     // If we get here without panicking, the test passes
     // The metric should now be available in Prometheus with the correct values
 }
+
+#[test]
+fn test_build_info_metric_values() {
+    // Test that the build info metric has the correct values
+    crate::metrics::init_build_info_metric();
+    
+    // Get the metric value directly
+    let metric = &crate::metrics::MPC_BUILD_INFO;
+    let version = crate::MPC_VERSION;
+    let build = crate::MPC_BUILD;
+    let rustc_version = crate::RUSTC_VERSION;
+    let commit = crate::MPC_COMMIT;
+    
+    // Check that the metric exists with the correct labels
+    let gauge = metric.with_label_values(&[version, build, rustc_version, commit]);
+    let value = gauge.get();
+    
+    println!("Metric value: {}", value);
+    println!("Expected labels: version={}, build={}, rustc_version={}, commit={}", 
+             version, build, rustc_version, commit);
+    
+    // The value should be 1
+    assert_eq!(value, 1);
+}
