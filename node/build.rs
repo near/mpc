@@ -21,7 +21,7 @@ fn try_main() -> Result<()> {
             String::from_utf8_lossy(&output.stdout)
                 .trim()
                 .chars()
-                .take(8)
+                .take(7)
                 .collect::<String>()
         })
         .unwrap_or_else(|_| "unknown".to_string());
