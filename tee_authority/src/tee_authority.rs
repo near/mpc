@@ -1,4 +1,5 @@
-use crate::{
+use anyhow::{Context, bail};
+use attestation::{
     attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
     measurements::ExpectedMeasurements,
@@ -6,12 +7,10 @@ use crate::{
     report_data::ReportData,
     tcbinfo::TcbInfo,
 };
-use alloc::string::String;
-use anyhow::{Context, bail};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use derive_more::Constructor;
-use dstack_sdk::dstack_client::DstackClient;
+use dstack_sdk_clients::dstack_client::DstackClient;
 use http::status::StatusCode;
 use reqwest::{Url, multipart::Form};
 use serde::Deserialize;
@@ -198,7 +197,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::report_data::ReportDataV1;
+    use attestation::report_data::ReportDataV1;
 
     use super::*;
     use rstest::rstest;

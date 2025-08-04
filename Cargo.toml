@@ -1,5 +1,5 @@
 [workspace]
-members = ["node", "devnet", "attestation", "crates/primitives"]
+members = ["node", "devnet", "attestation", "crates/primitives", "tee_authority"]
 resolver = "2"
 exclude = ["libs", "pytest"]
 
@@ -8,6 +8,9 @@ inherits = "release"
 debug = true
 
 [workspace.dependencies]
+#workspace members
+attestation = { path = "attestation" }
+
 actix = "0.13.0"
 aes-gcm = "0.10.3"
 anyhow = "1.0.92"
@@ -32,7 +35,8 @@ derive_more = { version = "2.0.1", features = [
 ] }
 # Currently needed to include https://github.com/Dstack-TEE/dstack/pull/232
 # TODO(https://github.com/near/mpc/issues/618) Use next release once it's out.
-dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "c5192dac8801ebc4e6780aa4d268f2611e4f0e1b" }
+dstack-sdk-clients = { git = "https://github.com/dsharifi/dstack.git", branch = "dsharifi/no-std-types" }
+dstack-sdk-types = { git = "https://github.com/dsharifi/dstack.git", branch = "dsharifi/no-std-types" }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"

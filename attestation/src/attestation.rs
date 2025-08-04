@@ -4,7 +4,7 @@ use crate::{
 };
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
-use dstack_sdk::dstack_client::EventLog;
+use dstack_sdk_types::dstack::EventLog;
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::env::sha256;

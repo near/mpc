@@ -1,5 +1,5 @@
 [package]
-name = "attestation"
+name = "tee_authority"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,8 +9,11 @@ external-services-tests = []
 
 [dependencies]
 anyhow = { workspace = true }
+attestation = { workspace = true }
+backon = { workspace = true }
 dcap-qvl = { workspace = true }
 derive_more = { workspace = true }
+dstack-sdk-clients = { workspace = true }
 dstack-sdk-types = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
