@@ -11,6 +11,7 @@ use dcap_qvl::{
     verify::{self, VerifiedReport},
 };
 use k256::sha2::{Digest, Sha384};
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
     env::{self, sha256},
     near, PublicKey,
@@ -105,7 +106,7 @@ impl TeeParticipantInfo {
     pub fn verify_docker_image(
         &self,
         allowed_docker_image_hashes: &[MpcDockerImageHash],
-        historical_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_docker_compose_hashes: &[LauncherDockerComposeHash],
         report: VerifiedReport,
         public_key: PublicKey,
     ) -> Result<bool, Error> {
@@ -134,13 +135,10 @@ impl TeeParticipantInfo {
         if !Self::check_app_compose_fields(&tcb_info) {
             return Ok(false);
         }
-        if !Self::check_docker_compose_hash(
-            &tcb_info,
-            allowed_docker_image_hashes,
-            historical_docker_image_hashes,
-        ) {
+        if !Self::check_docker_compose_hash(&tcb_info, allowed_docker_compose_hashes) {
             return Ok(false);
         }
+
         if !Self::check_local_sgx(event_log) {
             return Ok(false);
         }
@@ -245,8 +243,7 @@ impl TeeParticipantInfo {
 
     fn check_docker_compose_hash(
         tcb_info: &Value,
-        allowed_docker_image_hashes: &[MpcDockerImageHash],
-        historical_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
         let compose_yaml = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
             Some(yaml) => yaml,
@@ -261,9 +258,8 @@ impl TeeParticipantInfo {
         let mut compose_yaml_hash_arr = [0u8; 32];
         compose_yaml_hash_arr.copy_from_slice(&compose_yaml_hash);
 
-        allowed_docker_image_hashes
+        allowed_docker_compose_hashes
             .iter()
-            .chain(historical_docker_image_hashes)
             .any(|hash| hash.as_hex() == hex::encode(compose_yaml_hash_arr))
     }
 

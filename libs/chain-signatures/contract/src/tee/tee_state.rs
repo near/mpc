@@ -7,6 +7,7 @@ use crate::{
         tee_participant::TeeParticipantInfo,
     },
 };
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId};
 
 pub enum TeeValidationResult {
@@ -103,6 +104,14 @@ impl TeeState {
 
     pub fn get_historical_hashes(&mut self) -> Vec<MpcDockerImageHash> {
         self.historical_docker_image_hashes.clone()
+    }
+
+    pub fn get_allowed_docker_compose_hashes(&mut self) -> Vec<LauncherDockerComposeHash> {
+        self.allowed_docker_image_hashes
+            .get(env::block_height())
+            .into_iter()
+            .map(|entry| entry.docker_compose_hash)
+            .collect()
     }
 
     pub fn whitelist_tee_proposal(&mut self, tee_proposal: MpcDockerImageHash) {
