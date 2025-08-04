@@ -270,40 +270,20 @@ In the shell where you ran the local near node, you should see the peer count ch
 2025-08-03T14:20:12.183398Z  INFO stats: #  100579 98DQh3yG987rY1pNWKbM4jYjJ5xuFixP4g3MJuVvpiWY Validator | 1 validator 2 peers ⬇ 1.10 kB/s ⬆ 37.4 kB/s 1.60 bps 0 gas/s CPU: 3%, Mem: 2.17 GB
 ```
 
-### Update P2P private keys.
+### 5. Assign the signer and responder keys as subkeys.
 
-Since the nodes are generating the P2P private key, we must get the public key from the web server and update the contract.
+We must delegate the generate signing keys Bob and Alice generated as access keys to their near accounts such that they
+can sign transaction that require authorization on the contract.
 
-```log
-❯ curl localhost:8082/public_data | jq
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100   272  100   272    0     0   454k      0 --:--:-- --:--:-- --:--:--  265k
-{
-  "near_signer_public_key": "ed25519:CCLctWSzoLwRs8nfWDW5skZ2AkXGV5xTu1atQKoN7UM2",
-  "near_p2p_public_key": "ed25519:GP6RJ2Zq3Hfc49vKPuFczuusHQHjsEfjx3jGAigyAR5f",
-  "near_responder_public_keys": [
-    "ed25519:8YGpiQ7oy3tBbKE7FEYjmcdAixedeoUpkH8qD6vvHwks"
-  ],
-  "tee_participant_info": null
-}
-
-…ent-how-to-run-a-local-mpc-network [$!?] via 🦀 v1.86.0 on ☁️  daniel.sharifi@nearone.org
-❯ curl localhost:8081/public_data | jq
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100   272  100   272    0     0   309k      0 --:--:-- --:--:-- --:--:--  265k
-{
-  "near_signer_public_key": "ed25519:CF9fXPp9WWWosqGDietTxgBrnKfkWxzWuUuNtNVG5E5b",
-  "near_p2p_public_key": "ed25519:3NC4hRrJT6aBwt7UJzayb68BKtSFuV8rxN3Y2c8pjPoV",
-  "near_responder_public_keys": [
-    "ed25519:6pyFpXoZ3UsiAmmD1bk78Azg9Kih3QUcEZV1qUFTZb2J"
-  ],
-  "tee_participant_info": null
-}
+```shell
+docs/assign_access_keys.sh alice 8081
 ```
 
-## 5. Initialize the MPC contract
+```shell
+docs/assign_access_keys.sh bob 8082
+```
+
+## 6. Initialize the MPC contract
 
 We'll initialize the MPC contract with two participants. Before we can call the contract, we first need to create accounts for the participants. Let's call them `alice` and `bob`.
 
@@ -338,6 +318,23 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 ```
 
 ## Appendix: Further useful command
+
+### Send a sign request
+
+```shell
+near contract \
+  call-function \
+  as-transaction \
+  mpc-contract.test.near \
+  sign \
+  file-args docs/sign_request_args.json \
+  prepaid-gas '300.0 Tgas' \
+  attached-deposit '100 yoctonear' \
+  sign-as alice.test.near \
+  network-config mpc-localnet \
+  sign-with-keychain \
+  send
+```
 
 ### Cancel a key generation
 
