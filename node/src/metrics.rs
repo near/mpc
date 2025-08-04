@@ -207,11 +207,10 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub static ref MPC_BUILD_INFO: prometheus::IntCounterVec =
-        prometheus::register_int_counter_vec!(
+    pub static ref MPC_BUILD_INFO: prometheus::IntGaugeVec =
+        prometheus::register_int_gauge_vec!(
             "mpc_build_info",
-            "Metric whose labels indicate node’s version; see \
-             <https://www.robustperception.io/exposing-the-software-version-to-prometheus>.",
+            "Metric whose labels indicate node’s version",
              &["release", "build", "rustc_version", "commit"],
         )
         .unwrap();
@@ -227,5 +226,10 @@ pub fn init_build_info_metric() {
     
     MPC_BUILD_INFO
         .with_label_values(&[version, build, rustc_version, commit])
-        .inc();
+        .set(1);
+}
+
+/// Ensure the build info metric is set (can be called multiple times safely)
+pub fn ensure_build_info_metric() {
+    init_build_info_metric();
 }
