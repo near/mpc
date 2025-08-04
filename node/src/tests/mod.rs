@@ -473,7 +473,7 @@ fn test_build_info_metric_values() {
 
     println!("Metric value: {}", value);
     println!(
-        "Expected labels: version={}, build={}, rustc_version={}, commit={}",
+        "Expected labels: version={}, build_time={}, rustc_version={}, commit={}",
         version, build_time, rustc_version, commit
     );
 

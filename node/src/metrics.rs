@@ -204,7 +204,7 @@ pub static MPC_BUILD_INFO: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| 
     prometheus::register_int_gauge_vec!(
         "mpc_node_build_info",
         "Metric whose labels indicate node's version",
-        &["release", "build", "rustc_version", "commit"],
+        &["release", "build_time", "rustc_version", "commit"],
     )
     .unwrap()
 });
