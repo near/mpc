@@ -4750,6 +4750,7 @@ dependencies = [
  "rcgen",
  "reqwest 0.12.15",
  "rocksdb",
+ "rustc_version 0.4.1",
  "rustls",
  "serde",
  "serde_json",
