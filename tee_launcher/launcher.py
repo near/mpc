@@ -500,15 +500,22 @@ def get_manifest_digest(
 
 
 def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
+    # Parse the image hash safely
+    if ":" in image_digest:
+        parts = image_digest.split(":", 1)
+        if len(parts) == 2 and parts[1]:
+            image_hash = parts[1]
+        else:
+            raise ValueError(f"Invalid image_digest format: {image_digest}")
+    else:
+        image_hash = image_digest
+
     docker_cmd = ["docker", "run"]
 
     # add required environment variables.
     # "IMAGE_HASH",  -  Digest of the Docker image - used my the MPC node to verify hash used.
     # "LATEST_ALLOWED_HASH_FILE" - Path to the shared digest file
-    docker_cmd += [
-        "--env",
-        f"IMAGE_HASH={image_digest.split(':')[1] if ':' in image_digest else image_digest}",
-    ]
+    docker_cmd += ["--env", f"IMAGE_HASH={image_hash}"]
     docker_cmd += ["--env", f"LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
 
     for key, value in user_env.items():
