@@ -344,20 +344,6 @@ def main():
     proc = curl_unix_socket_post(
         endpoint="EmitEvent", payload=extend_rtmr3_json, capture_output=True
     )
-    proc = run(
-        [
-            "curl",
-            "--unix-socket",
-            DSTACK_UNIX_SOCKET,
-            "-X",
-            "POST",
-            "http://dstack/EmitEvent",
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            extend_rtmr3_json,
-        ]
-    )
 
     if proc.returncode:
         raise RuntimeError(
