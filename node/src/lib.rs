@@ -1,8 +1,8 @@
 mod assets;
-pub mod build_info;
 #[cfg(test)]
 mod async_testing;
 mod background;
+pub mod build_info;
 pub mod cli;
 mod config;
 mod coordinator;

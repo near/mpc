@@ -1,6 +1,6 @@
 use clap::Parser;
-use mpc_node::cli;
 use mpc_node::build_info::MPC_VERSION_STRING;
+use mpc_node::cli;
 
 fn main() -> anyhow::Result<()> {
     // Handle version flags before parsing CLI
@@ -9,7 +9,7 @@ fn main() -> anyhow::Result<()> {
         println!("{}", *MPC_VERSION_STRING);
         return Ok(());
     }
-    
+
     let cli = cli::Cli::parse();
     mpc_node::tracing::init_logging(cli.log_format);
     // Initialize build info metric

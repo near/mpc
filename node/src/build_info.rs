@@ -10,4 +10,4 @@ pub static MPC_VERSION_STRING: LazyLock<String> = LazyLock::new(|| {
         "mpc-node {}\n(release {}) (build_time {}) (commit {}) (rustc {})",
         MPC_VERSION, MPC_VERSION, MPC_BUILD_TIME, MPC_COMMIT, RUSTC_VERSION,
     )
-}); 
+});

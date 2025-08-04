@@ -130,7 +130,7 @@ pub struct StartCmd {
     pub secret_store_key_hex: String,
     /// If provided, the root keyshare is stored on GCP.
     /// This requires GCP_PROJECT_ID to be set as well.
-    #[arg(long,env("GCP_KEYSHARE_SECRET_ID"))]
+    #[arg(long, env("GCP_KEYSHARE_SECRET_ID"))]
     pub gcp_keyshare_secret_id: Option<String>,
     #[arg(long, env("GCP_PROJECT_ID"))]
     pub gcp_project_id: Option<String>,
@@ -171,7 +171,10 @@ pub struct ImportKeyshareCmd {
     pub keyshare_json: String,
 
     /// Hex-encoded 16 byte AES key for local storage encryption
-    #[arg(long, help = "Hex-encoded 16 byte AES key for local storage encryption")]
+    #[arg(
+        long,
+        help = "Hex-encoded 16 byte AES key for local storage encryption"
+    )]
     pub local_encryption_key_hex: String,
 }
 
@@ -182,7 +185,10 @@ pub struct ExportKeyshareCmd {
     pub home_dir: String,
 
     /// Hex-encoded 16 byte AES key for local storage encryption
-    #[arg(long, help = "Hex-encoded 16 byte AES key for local storage encryption")]
+    #[arg(
+        long,
+        help = "Hex-encoded 16 byte AES key for local storage encryption"
+    )]
     pub local_encryption_key_hex: String,
 }
 

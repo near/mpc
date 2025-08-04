@@ -439,10 +439,10 @@ fn test_build_info_metric() {
 
     // Verify that the version string contains all the expected information
     let version_string = &*crate::build_info::MPC_VERSION_STRING;
-    assert!(version_string.contains(&version));
-    assert!(version_string.contains(&build_time));
-    assert!(version_string.contains(&commit));
-    assert!(version_string.contains(&rustc_version));
+    assert!(version_string.contains(version));
+    assert!(version_string.contains(build_time));
+    assert!(version_string.contains(commit));
+    assert!(version_string.contains(rustc_version));
 }
 
 #[test]
