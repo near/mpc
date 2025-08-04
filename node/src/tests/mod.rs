@@ -450,7 +450,7 @@ fn test_build_info_metric_values() {
     // Get the metric value directly
     let metric = &crate::metrics::MPC_BUILD_INFO;
     let version = crate::MPC_VERSION;
-    let build = crate::MPC_BUILD;
+    let build = crate::MPC_BUILD_TIME;
     let rustc_version = crate::RUSTC_VERSION;
     let commit = crate::MPC_COMMIT;
     

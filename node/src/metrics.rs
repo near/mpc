@@ -220,12 +220,12 @@ lazy_static! {
 pub fn init_build_info_metric() {
     // Use compile-time constants from main.rs
     let version = crate::MPC_VERSION;
-    let build = crate::MPC_BUILD;
+    let build_time = crate::MPC_BUILD_TIME;
     let rustc_version = crate::RUSTC_VERSION;
     let commit = crate::MPC_COMMIT;
     
     MPC_BUILD_INFO
-        .with_label_values(&[version, build, rustc_version, commit])
+        .with_label_values(&[version, build_time, rustc_version, commit])
         .set(1);
 }
 
