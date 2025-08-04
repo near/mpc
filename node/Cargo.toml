@@ -62,7 +62,6 @@ legacy-mpc-contract = { workspace = true }
 mpc-contract = { workspace = true }
 deranged = { workspace = true }
 itertools = { workspace = true }
-derive_more = { workspace = true }
 
 attestation = { path = "../attestation" }
 
