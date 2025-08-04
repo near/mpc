@@ -219,12 +219,13 @@ lazy_static! {
 
 /// Initialize the build info metric with current version information
 pub fn init_build_info_metric() {
-    let version = std::env::var("MPC_VERSION").unwrap_or_else(|_| "unknown".to_string());
-    let build = std::env::var("MPC_BUILD").unwrap_or_else(|_| "unknown".to_string());
-    let rustc_version = std::env::var("MPC_RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string());
-    let commit = std::env::var("MPC_COMMIT").unwrap_or_else(|_| "unknown".to_string());
+    // Use compile-time constants from main.rs
+    let version = crate::MPC_VERSION;
+    let build = crate::MPC_BUILD;
+    let rustc_version = crate::RUSTC_VERSION;
+    let commit = crate::MPC_COMMIT;
     
     MPC_BUILD_INFO
-        .with_label_values(&[&version, &build, &rustc_version, &commit])
+        .with_label_values(&[version, build, rustc_version, commit])
         .inc();
 }

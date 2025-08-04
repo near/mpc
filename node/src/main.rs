@@ -31,10 +31,10 @@ mod tracing;
 mod tracking;
 mod web;
 
-static MPC_VERSION: &str = env!("MPC_VERSION");
-static MPC_BUILD: &str = env!("MPC_BUILD");
-static MPC_COMMIT: &str = env!("MPC_COMMIT");
-static RUSTC_VERSION: &str = env!("MPC_RUSTC_VERSION");
+pub static MPC_VERSION: &str = env!("MPC_VERSION");
+pub static MPC_BUILD: &str = env!("MPC_BUILD");
+pub static MPC_COMMIT: &str = env!("MPC_COMMIT");
+pub static RUSTC_VERSION: &str = env!("MPC_RUSTC_VERSION");
 
 
 

@@ -431,3 +431,13 @@ fn test_build_info_metric() {
     assert!(version_string.contains(&commit));
     assert!(version_string.contains(&rustc_version));
 }
+
+#[test]
+fn test_build_info_metric_initialization() {
+    // Test that the build info metric can be initialized without panicking
+    // This verifies that the compile-time constants are accessible
+    crate::metrics::init_build_info_metric();
+    
+    // If we get here without panicking, the test passes
+    // The metric should now be available in Prometheus with the correct values
+}
