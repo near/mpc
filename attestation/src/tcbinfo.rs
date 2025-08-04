@@ -10,6 +10,9 @@ use crate::attestation::EventLog;
 /// Rust SDK directly would pull in dependencies that are not allowed in smart contract code (like
 /// tokio and mio).
 ///
+/// This helper struct will become redundant once the following issue is resolved:
+/// https://github.com/Dstack-TEE/dstack/issues/271
+///
 /// [1]: https://github.com/Dstack-TEE/dstack/blob/f6b0927cefd94c0e003ae2789c95b78ed86580bf/sdk/rust/src/dstack_client.rs#L168-L192
 #[derive(Serialize, Deserialize)]
 pub struct DstackTcbInfo {
