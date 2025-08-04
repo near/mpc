@@ -83,13 +83,6 @@ impl MpcClient {
         ])
         .inc();
 
-        // .with_label_values(&[
-        //     &mpc_version.version,
-        //     &mpc_version.build,
-        //     &mpc_version.rustc_version,
-        // ])
-        // .inc();
-
         let monitor_passive_channels = {
             tracking::spawn(
                 "monitor passive channels",
