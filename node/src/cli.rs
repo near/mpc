@@ -31,6 +31,9 @@ use std::{
 use tokio::sync::oneshot;
 
 #[derive(Parser, Debug)]
+#[command(name = "mpc-node")]
+#[command(about = "MPC Node for Near Protocol")]
+#[command(version = env!("MPC_VERSION"))] // Use the environment variable
 pub enum Cli {
     Start(StartCmd),
     /// Generates/downloads required files for Near node to run
@@ -86,20 +89,20 @@ pub struct StartCmd {
     pub home_dir: String,
     /// Hex-encoded 16 byte AES key for local storage encryption.
     /// This key should come from a secure secret storage.
-    #[arg(env("MPC_SECRET_STORE_KEY"))]
+    #[arg(long, env("MPC_SECRET_STORE_KEY"))]
     pub secret_store_key_hex: String,
     /// If provided, the root keyshare is stored on GCP.
     /// This requires GCP_PROJECT_ID to be set as well.
-    #[arg(env("GCP_KEYSHARE_SECRET_ID"))]
+    #[arg(long, env("GCP_KEYSHARE_SECRET_ID"))]
     pub gcp_keyshare_secret_id: Option<String>,
-    #[arg(env("GCP_PROJECT_ID"))]
+    #[arg(long, env("GCP_PROJECT_ID"))]
     pub gcp_project_id: Option<String>,
     /// p2p private key for TLS. It must be in the format of "ed25519:...".
-    #[arg(env("MPC_P2P_PRIVATE_KEY"))]
+    #[arg(long, env("MPC_P2P_PRIVATE_KEY"))]
     pub p2p_private_key: SecretKey,
     /// Near account secret key. Must correspond to the my_near_account_id
     /// specified in the config.
-    #[arg(env("MPC_ACCOUNT_SK"))]
+    #[arg(long, env("MPC_ACCOUNT_SK"))]
     pub account_secret_key: SecretKey,
 }
 
@@ -110,13 +113,13 @@ pub struct ImportKeyshareCmd {
     pub home_dir: String,
 
     /// JSON string containing the keyshare to import
-    #[arg(
+    #[arg(long,
         help = "JSON string with the keyshare in format: {\"epoch\":1,\"private_share\":\"...\",\"public_key\":\"...\"}"
     )]
     pub keyshare_json: String,
 
     /// Hex-encoded 16 byte AES key for local storage encryption
-    #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
+    #[arg(long, help = "Hex-encoded 16 byte AES key for local storage encryption")]
     pub local_encryption_key_hex: String,
 }
 
@@ -127,7 +130,7 @@ pub struct ExportKeyshareCmd {
     pub home_dir: String,
 
     /// Hex-encoded 16 byte AES key for local storage encryption
-    #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
+    #[arg(long, help = "Hex-encoded 16 byte AES key for local storage encryption")]
     pub local_encryption_key_hex: String,
 }
 

@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::sync::LazyLock;
 use tracing::init_logging;
 
 mod assets;
@@ -30,7 +31,43 @@ mod tracing;
 mod tracking;
 mod web;
 
+static MPC_VERSION: &str = env!("MPC_VERSION");
+static MPC_BUILD: &str = env!("MPC_BUILD");
+static MPC_COMMIT: &str = env!("MPC_COMMIT");
+static RUSTC_VERSION: &str = env!("MPC_RUSTC_VERSION");
+
+
+
+pub static MPC_VERSION_STRING: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "mpc-node {}\n(release {}) (build {}) (commit {}) (rustc {})",
+        MPC_VERSION,
+        MPC_VERSION,
+        MPC_BUILD,
+        MPC_COMMIT,
+        RUSTC_VERSION,
+    )
+});
+
+
+
 fn main() -> anyhow::Result<()> {
     init_logging();
-    futures::executor::block_on(cli::Cli::parse().run())
+    
+    // Initialize build info metric
+    metrics::init_build_info_metric();
+    
+    // Handle version flags before parsing CLI
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 && (args[1] == "--version" || args[1] == "-V") {
+        println!("{}", *MPC_VERSION_STRING);
+        return Ok(());
+    }
+    
+    // Parse CLI arguments
+    let cli = cli::Cli::parse();
+    futures::executor::block_on(cli.run())
 }
+
+
+

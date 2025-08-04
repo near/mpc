@@ -212,7 +212,19 @@ lazy_static! {
             "mpc_build_info",
             "Metric whose labels indicate node’s version; see \
              <https://www.robustperception.io/exposing-the-software-version-to-prometheus>.",
-             &["release", "build", "rustc_version"],
+             &["release", "build", "rustc_version", "commit"],
         )
         .unwrap();
+}
+
+/// Initialize the build info metric with current version information
+pub fn init_build_info_metric() {
+    let version = std::env::var("MPC_VERSION").unwrap_or_else(|_| "unknown".to_string());
+    let build = std::env::var("MPC_BUILD").unwrap_or_else(|_| "unknown".to_string());
+    let rustc_version = std::env::var("MPC_RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string());
+    let commit = std::env::var("MPC_COMMIT").unwrap_or_else(|_| "unknown".to_string());
+    
+    MPC_BUILD_INFO
+        .with_label_values(&[&version, &build, &rustc_version, &commit])
+        .inc();
 }
