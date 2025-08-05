@@ -1,0 +1,16 @@
+[package]
+name = "mpc-node-operator-cli"
+edition = "2024"
+version = "0.1.0"
+
+[dependencies]
+clap = { workspace = true }
+mpc-types = { workspace = true}
+near-crypto-published = { workspace = true }
+near-jsonrpc-client = { workspace = true }
+near-jsonrpc-primitives = { workspace = true }
+near-primitives = { workspace = true }
+near-sdk = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
