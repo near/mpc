@@ -13,7 +13,7 @@ attestation = { workspace = true }
 backon = { workspace = true }
 dcap-qvl = { workspace = true }
 derive_more = { workspace = true }
-dstack-sdk-clients = { workspace = true }
+dstack-sdk = { workspace = true }
 dstack-sdk-types = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }

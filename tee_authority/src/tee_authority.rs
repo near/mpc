@@ -10,7 +10,7 @@ use attestation::{
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use derive_more::Constructor;
-use dstack_sdk_clients::dstack_client::DstackClient;
+use dstack_sdk::dstack_client::DstackClient;
 use http::status::StatusCode;
 use reqwest::{Url, multipart::Form};
 use serde::Deserialize;

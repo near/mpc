@@ -1,6 +1,6 @@
 use anyhow::{bail, Context};
 use backon::{BackoffBuilder, ExponentialBuilder};
-use dstack_sdk_clients::dstack_client::DstackClient;
+use dstack_sdk::dstack_client::DstackClient;
 use dstack_sdk_types::dstack::TcbInfo;
 use http::status::StatusCode;
 use mpc_contract::tee::tee_participant::TeeParticipantInfo;
