@@ -112,6 +112,12 @@ pub fn spawn_real_indexer(
                 allowed_docker_images_sender,
                 indexer_state.clone(),
             ));
+            actix::spawn(monitor_balance(
+                my_near_account_id.clone(),
+                respond_config.account_id.clone(),
+                indexer_state.client.clone(),
+                indexer_state.view_client.clone(),
+            ));
 
             // below function runs indefinitely and only returns in case of an error.
             #[cfg(feature = "network-hardship-simulation")]
