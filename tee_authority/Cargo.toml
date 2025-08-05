@@ -11,6 +11,7 @@ external-services-tests = []
 anyhow = { workspace = true }
 attestation = { workspace = true }
 backon = { workspace = true }
+derive_more = { workspace = true }
 dstack-sdk = { workspace = true }
 dstack-sdk-types = { workspace = true }
 http = { workspace = true }

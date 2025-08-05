@@ -113,10 +113,9 @@ impl TeeAuthority {
             .timeout(core::time::Duration::from_secs(10))
             .build()
             .context("Failed to build HTTP client")?;
-        let tdx_quote = String::from(tdx_quote);
 
         let upload_tdx_quote = async || {
-            let form = Form::new().text("hex", tdx_quote.clone());
+            let form = Form::new().text("hex", tdx_quote.to_string());
 
             let response = reqwest_client
                 .post(quote_upload_url.clone())
@@ -185,7 +184,12 @@ where
                         Some(retries) => {
                             error!(?err, "{description} failed after {} retries", retries)
                         }
-                        None => continue,
+                        None => {
+                            error!(
+                                ?err,
+                                "{description} failed and backoff returned None with unlimited retries"
+                            );
+                        }
                     }
                     return Err(err);
                 }
