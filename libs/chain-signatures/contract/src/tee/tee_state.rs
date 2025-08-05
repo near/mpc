@@ -19,7 +19,7 @@ pub enum TeeValidationResult {
 #[derive(Debug)]
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
-    pub(crate) historical_docker_image_hashes: Vec<MpcDockerImageHash>,
+    pub(crate) historical_docker_image_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
     pub(crate) tee_participant_info: IterableMap<AccountId, TeeParticipantInfo>,
 }
@@ -102,22 +102,15 @@ impl TeeState {
             .collect()
     }
 
-    pub fn get_historical_hashes(&mut self) -> Vec<MpcDockerImageHash> {
+    pub fn get_historical_hashes(&mut self) -> Vec<LauncherDockerComposeHash> {
         self.historical_docker_image_hashes.clone()
-    }
-
-    pub fn get_allowed_docker_compose_hashes(&mut self) -> Vec<LauncherDockerComposeHash> {
-        self.allowed_docker_image_hashes
-            .get(env::block_height())
-            .into_iter()
-            .map(|entry| entry.docker_compose_hash)
-            .collect()
     }
 
     pub fn whitelist_tee_proposal(&mut self, tee_proposal: MpcDockerImageHash) {
         self.votes.clear_votes();
-        self.historical_docker_image_hashes
-            .push(tee_proposal.clone());
+        self.historical_docker_image_hashes.push(
+            AllowedDockerImageHashes::get_docker_compose_hash(tee_proposal.clone()),
+        );
         self.allowed_docker_image_hashes
             .insert(tee_proposal, env::block_height());
     }
