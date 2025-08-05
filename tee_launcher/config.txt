@@ -20,10 +20,7 @@ MPC_RESPONDER_ID=mpc-responder-2-barak-launch1-cdd0fd949a48.5035bf56abb0.testnet
 # Optional: Extra hosts to add to the container
 EXTRA_HOSTS=mpc-node-0.service.mpc.consul:35.185.233.54,mpc-node-1.service.mpc.consul:34.168.117.59
 
-# needed: Port forwarding - telemetry.
-PORTS=8080:8080
-PORTS=3030:3030
+# needed: Port forwarding (e.g 8080 , 3030 telemetry, 18448 node comunication)
+PORTS=8080:8080,3030:3030,18448:18448
 
-# Optional: Port forwarding
-PORTS=18448:18448
 
