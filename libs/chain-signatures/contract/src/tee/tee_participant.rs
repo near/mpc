@@ -105,8 +105,8 @@ impl TeeParticipantInfo {
     /// expected values.
     pub fn verify_docker_image(
         &self,
-        allowed_docker_image_hashes: &[MpcDockerImageHash],
-        allowed_docker_compose_hashes: &[LauncherDockerComposeHash],
+        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         report: VerifiedReport,
         public_key: PublicKey,
     ) -> Result<bool, Error> {
@@ -135,14 +135,14 @@ impl TeeParticipantInfo {
         if !Self::check_app_compose_fields(&tcb_info) {
             return Ok(false);
         }
-        if !Self::check_docker_compose_hash(&tcb_info, allowed_docker_compose_hashes) {
+        if !Self::check_docker_compose_hash(&tcb_info, allowed_launcher_docker_compose_hashes) {
             return Ok(false);
         }
 
         if !Self::check_local_sgx(event_log) {
             return Ok(false);
         }
-        if !Self::check_mpc_hash(event_log, allowed_docker_image_hashes) {
+        if !Self::check_mpc_hash(event_log, allowed_mpc_docker_image_hashes) {
             return Ok(false);
         }
 
