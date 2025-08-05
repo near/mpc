@@ -9,12 +9,15 @@ Waits for the signature responses. Fails if timeout is reached.
 
 import sys
 import pathlib
-import argparse
+import time
 import pytest
+
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
+from common_lib.constants import TIMEOUT
+from common_lib.shared import metrics
 
 
 @pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
@@ -23,25 +26,26 @@ def test_signature_lifecycle(num_requests, num_respond_access_keys):
         2, 3, num_respond_access_keys, load_mpc_contract()
     )
     cluster.init_cluster(mpc_nodes, 2)
+
+    started = time.time()
+    while True:
+        time.sleep(1.0)
+        assert time.time() - started < TIMEOUT, "Waiting for account balances"
+        # check that the near balance metric works
+        responder_balances = cluster.get_float_metric_value(
+            metrics.FloatMetricName.MPC_NEAR_RESPONDER_BALANCE
+        )
+        print(f"responder_balances: {responder_balances}")
+        if not all([rb and rb > 0 for rb in responder_balances]):
+            continue
+        signer_balances = cluster.get_float_metric_value(
+            metrics.FloatMetricName.MPC_NEAR_SIGNER_BALANCE
+        )
+        print(f"signer_balances: {signer_balances}")
+        if not all([sb and sb > 0 for sb in signer_balances]):
+            continue
+        break
+
     # removing one node should not be a problem.
     mpc_nodes[0].kill(False)
     cluster.send_and_await_signature_requests(num_requests)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--num-requests",
-        type=int,
-        default=10,
-        help="Number of signature requests to make",
-    )
-    parser.add_argument(
-        "--num-respond-access-keys",
-        type=int,
-        default=1,
-        help="Number of access keys to provision for the respond signer account",
-    )
-    args = parser.parse_args()
-
-    test_signature_lifecycle(args.num_requests, args.num_respond_access_keys)

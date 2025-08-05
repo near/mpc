@@ -6,6 +6,7 @@ use super::{IndexerAPI, IndexerState};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
+use crate::indexer::balances::monitor_balance;
 #[cfg(feature = "tee")]
 use crate::indexer::tee::monitor_allowed_docker_images;
 use mpc_contract::state::ProtocolContractState;
@@ -94,10 +95,16 @@ pub fn spawn_real_indexer(
 
             actix::spawn(handle_txn_requests(
                 chain_txn_receiver,
-                my_near_account_id,
+                my_near_account_id.clone(),
                 account_secret_key.clone(),
-                respond_config,
+                respond_config.clone(),
                 indexer_state.clone(),
+            ));
+            actix::spawn(monitor_balance(
+                my_near_account_id.clone(),
+                respond_config.account_id.clone(),
+                indexer_state.client.clone(),
+                indexer_state.view_client.clone(),
             ));
 
             #[cfg(feature = "network-hardship-simulation")]
