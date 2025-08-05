@@ -2,40 +2,15 @@ use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
     quote::Quote, report_data::ReportData, tcbinfo::TcbInfo,
 };
-use alloc::string::String;
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
+use dstack_sdk::dstack_client::EventLog;
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::env::sha256;
-use serde::{Deserialize, Serialize};
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
-
-/// Represents an event log entry in the system.
-///
-/// It was copy-pasted from [the Dstack Rust SDK][1] instead of using it directly because using the
-/// Rust SDK directly would pull in dependencies that are not allowed in smart contract code (like
-/// tokio and mio).
-///
-/// This helper struct will become redundant once the following issue is resolved:
-/// https://github.com/Dstack-TEE/dstack/issues/271
-///
-/// [1]: https://github.com/Dstack-TEE/dstack/blob/f6b0927cefd94c0e003ae2789c95b78ed86580bf/sdk/rust/src/dstack_client.rs#L45-L58
-#[derive(Serialize, Deserialize)]
-pub struct EventLog {
-    /// The index of the IMR (Integrity Measurement Register)
-    pub imr: u32,
-    /// The type of event being logged
-    pub event_type: u32,
-    /// The cryptographic digest of the event
-    pub digest: String,
-    /// The type of event as a string
-    pub event: String,
-    /// The payload data associated with the event
-    pub event_payload: String,
-}
 
 #[allow(clippy::large_enum_variant)]
 pub enum Attestation {
@@ -46,10 +21,10 @@ pub enum Attestation {
 #[allow(dead_code)]
 #[derive(Constructor)]
 pub struct DstackAttestation {
-    pub quote: Quote,
-    pub collateral: Collateral,
-    pub tcb_info: TcbInfo,
-    pub expected_measurements: ExpectedMeasurements,
+    quote: Quote,
+    collateral: Collateral,
+    tcb_info: TcbInfo,
+    expected_measurements: ExpectedMeasurements,
 }
 
 #[derive(Constructor)]

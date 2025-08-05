@@ -36,13 +36,8 @@ use tokio_util::sync::CancellationToken;
 #[cfg(feature = "tee")]
 use {
     crate::tee::{
-        monitor_allowed_image_hashes,
-        remote_attestation::{submit_remote_attestation, DstackTeeAuthorityConfig, TeeAuthority},
-        AllowedImageHashesFile,
-    },
-    attestation::{
-        attestation::Attestation,
-        report_data::{ReportData, ReportDataV1},
+        monitor_allowed_image_hashes, remote_attestation::create_remote_attestation_info,
+        remote_attestation::submit_remote_attestation, AllowedImageHashesFile,
     },
     mpc_contract::tee::proposal::MpcDockerImageHash,
     tracing::info,
@@ -303,26 +298,9 @@ impl StartCmd {
         {
             let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();
             let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
-            let attestation = TeeAuthority::Dstack(DstackTeeAuthorityConfig::default())
-                .generate_attestation(ReportData::V1(ReportDataV1::new(
-                    tls_public_key,
-                    account_public_key,
-                )))
-                .await?;
-            match attestation {
-                Attestation::Dstack(dstack_attestation) => {
-                    report_data_contract = Some(
-                        TeeParticipantInfo::try_from(dstack_attestation).map_err(|e| {
-                            anyhow::anyhow!("Failed to convert attestation: {:?}", e)
-                        })?,
-                    );
-                }
-                Attestation::Local(_) => {
-                    return Err(anyhow::anyhow!(
-                        "Local attestation not supported for TEE participant info"
-                    ));
-                }
-            }
+            let report_data =
+                create_remote_attestation_info(&tls_public_key, &account_public_key).await;
+            report_data_contract = Some(report_data.try_into()?);
         }
         let web_server = start_web_server(
             root_task_handle,
