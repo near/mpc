@@ -293,14 +293,12 @@ dependencies = [
  "anyhow",
  "dcap-qvl",
  "derive_more 2.0.1",
- "dstack-sdk-types",
  "hex",
  "http 1.3.1",
  "k256",
  "mpc-primitives",
  "near-crypto 2.7.0-rc.4",
  "near-sdk",
- "reqwest 0.12.22",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -443,31 +441,6 @@ dependencies = [
  "glob",
  "threadpool",
  "zeroize",
-]
-
-[[package]]
-name = "bon"
-version = "3.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33d9ef19ae5263a138da9a86871eca537478ab0332a7770bac7e3f08b801f89f"
-dependencies = [
- "bon-macros",
- "rustversion",
-]
-
-[[package]]
-name = "bon-macros"
-version = "3.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "577ae008f2ca11ca7641bd44601002ee5ab49ef0af64846ce1ab6057218a5cc1"
-dependencies = [
- "darling 0.21.1",
- "ident_case",
- "prettyplease 0.2.36",
- "proc-macro2",
- "quote",
- "rustversion",
- "syn 2.0.104",
 ]
 
 [[package]]
@@ -812,18 +785,8 @@ version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7f46116c46ff9ab3eb1597a45688b6715c6e628b5c133e288e709a29bcb4ee"
 dependencies = [
- "darling_core 0.20.11",
- "darling_macro 0.20.11",
-]
-
-[[package]]
-name = "darling"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6b136475da5ef7b6ac596c0e956e37bad51b85b987ff3d5e230e964936736b2"
-dependencies = [
- "darling_core 0.21.1",
- "darling_macro 0.21.1",
+ "darling_core",
+ "darling_macro",
 ]
 
 [[package]]
@@ -841,37 +804,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "darling_core"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b44ad32f92b75fb438b04b68547e521a548be8acc339a6dacc4a7121488f53e6"
-dependencies = [
- "fnv",
- "ident_case",
- "proc-macro2",
- "quote",
- "strsim",
- "syn 2.0.104",
-]
-
-[[package]]
 name = "darling_macro"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead"
 dependencies = [
- "darling_core 0.20.11",
- "quote",
- "syn 2.0.104",
-]
-
-[[package]]
-name = "darling_macro"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b5be8a7a562d315a5b92a630c30cec6bcf663e6673f00fbb69cca66a6f521b9"
-dependencies = [
- "darling_core 0.21.1",
+ "darling_core",
  "quote",
  "syn 2.0.104",
 ]
@@ -918,7 +856,6 @@ dependencies = [
  "const-oid",
  "der_derive",
  "flagset",
- "pem-rfc7468",
  "zeroize",
 ]
 
@@ -1069,20 +1006,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95249b50c6c185bee49034bcb378a49dc2b5dff0be90ff6616d31d64febab05d"
 dependencies = [
  "litrs",
-]
-
-[[package]]
-name = "dstack-sdk-types"
-version = "0.1.0"
-source = "git+https://github.com/Dstack-TEE/dstack.git?rev=38eaf934bf3c0d005e9901423ecd10c6d9bff538#38eaf934bf3c0d005e9901423ecd10c6d9bff538"
-dependencies = [
- "anyhow",
- "bon",
- "hex",
- "pkcs8",
- "serde",
- "serde_json",
- "sha2",
 ]
 
 [[package]]
@@ -2377,16 +2300,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
-name = "mime_guess"
-version = "2.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
-dependencies = [
- "mime",
- "unicase",
-]
-
-[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2499,7 +2412,7 @@ dependencies = [
  "convert_case 0.5.0",
  "near-abi-client-impl",
  "near-abi-client-macros",
- "prettyplease 0.1.25",
+ "prettyplease",
  "quote",
  "syn 1.0.109",
 ]
@@ -3061,7 +2974,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f241b1c1269ccdb1b5134c94bd83a527b7181eec71fd8690b90f2dd8d328577d"
 dependencies = [
  "Inflector",
- "darling 0.20.11",
+ "darling",
  "proc-macro2",
  "quote",
  "serde",
@@ -3452,15 +3365,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pem-rfc7468"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88b39c9bfcfc231068454382784bb460aae594343fb030d46e9f50a645418412"
-dependencies = [
- "base64ct",
-]
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3600,16 +3504,6 @@ checksum = "6c8646e95016a7a6c4adea95bafa8a16baab64b583356217f2c85db4a39d9a86"
 dependencies = [
  "proc-macro2",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "prettyplease"
-version = "0.2.36"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff24dfcda44452b9816fff4cd4227e1bb73ff5a2f1bc1105aa92fb8565ce44d2"
-dependencies = [
- "proc-macro2",
- "syn 2.0.104",
 ]
 
 [[package]]
@@ -3867,7 +3761,6 @@ dependencies = [
  "bytes",
  "encoding_rs",
  "futures-core",
- "futures-util",
  "h2 0.4.11",
  "http 1.3.1",
  "http-body 1.0.1",
@@ -3879,7 +3772,6 @@ dependencies = [
  "js-sys",
  "log",
  "mime",
- "mime_guess",
  "native-tls",
  "percent-encoding",
  "pin-project-lite",
@@ -4385,7 +4277,7 @@ version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de90945e6565ce0d9a25098082ed4ee4002e047cb59892c318d66821e14bb30f"
 dependencies = [
- "darling 0.20.11",
+ "darling",
  "proc-macro2",
  "quote",
  "syn 2.0.104",
@@ -5096,12 +4988,6 @@ dependencies = [
  "hex",
  "static_assertions",
 ]
-
-[[package]]
-name = "unicase"
-version = "2.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75b844d17643ee918803943289730bec8aac480150456169e647ed0b576ba539"
 
 [[package]]
 name = "unicode-ident"
