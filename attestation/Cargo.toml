@@ -3,22 +3,16 @@ name = "attestation"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-default = []
-external-services-tests = []
-
 [dependencies]
 anyhow = { workspace = true }
 dcap-qvl = { workspace = true }
 derive_more = { workspace = true }
 dstack-sdk-types = { workspace = true }
 hex = { workspace = true }
-http = { workspace = true }
 k256 = { workspace = true }
 mpc-primitives = { workspace = true }
 near-crypto = { workspace = true }
 near-sdk = { workspace = true }
-reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -27,5 +21,4 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true }
 rstest = { workspace = true }
