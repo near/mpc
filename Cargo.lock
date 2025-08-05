@@ -4796,6 +4796,7 @@ dependencies = [
  "hex",
  "mpc-contract 1.0.1",
  "mpc-contract 2.2.0-rc.1",
+ "mpc-types",
  "near-crypto 0.28.0",
  "near-jsonrpc-client",
  "near-jsonrpc-primitives 0.28.0",
@@ -4876,6 +4877,22 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "x509-parser",
+]
+
+[[package]]
+name = "mpc-node-operator-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mpc-types",
+ "near-crypto 0.28.0",
+ "near-jsonrpc-client",
+ "near-jsonrpc-primitives 0.28.0",
+ "near-primitives 0.28.0",
+ "near-sdk",
+ "rand 0.8.5",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

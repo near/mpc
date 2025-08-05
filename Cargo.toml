@@ -1,5 +1,5 @@
 [workspace]
-members = ["node", "devnet", "attestation", "crates/primitives", "crates/types"]
+members = ["node", "devnet", "attestation", "crates/primitives", "crates/types", "crates/node-operator-cli"]
 resolver = "2"
 exclude = ["libs", "pytest"]
 
@@ -58,6 +58,7 @@ mockall = "0.13.1"
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
+near-crypto-published = {version = "0.28.0", package = "near-crypto"}
 near-sdk = { version = "5.2.1", features = [
     "legacy",
     "unit-testing",

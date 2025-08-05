@@ -5,9 +5,5 @@ edition = "2024"
 [dependencies]
 borsh = { workspace = true }
 serde = { workspace = true }
-near-crypto = { workspace = true}
+near-crypto = { workspace = true }
 mpc-contract = { workspace = true }
-
-
-# [dev-dependencies]
-

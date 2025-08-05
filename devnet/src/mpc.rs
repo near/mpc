@@ -15,7 +15,6 @@ use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_contract::tee::{proposal::MpcDockerImageHash, tee_participant::TeeParticipantInfo};
 use mpc_contract::{
     config::InitConfig,
     primitives::{
@@ -25,8 +24,10 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
+    tee::proposal::MpcDockerImageHash,
     utils::protocol_state_to_string,
 };
+use mpc_types::node_web_server::StaticWebData;
 use near_crypto::SecretKey;
 use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
@@ -36,7 +37,7 @@ use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use near_sdk::{borsh, AccountId};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -209,14 +210,6 @@ impl UpdateMpcNetworkCmd {
     }
 }
 
-#[derive(Clone, Deserialize)]
-pub struct StaticWebData {
-    pub near_signer_public_key: near_crypto::PublicKey,
-    pub near_p2p_public_key: near_crypto::PublicKey,
-    pub near_responder_public_keys: Vec<near_crypto::PublicKey>,
-    pub _tee_participant_info: Option<TeeParticipantInfo>,
-}
-
 impl MpcAddKeysCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         let urls = get_urls(name, &config);
@@ -243,7 +236,7 @@ impl MpcAddKeysCmd {
                 .error_for_status()
                 .expect("code 200");
 
-            let public_data: StaticWebData = response.json::<StaticWebData>().await.unwrap();
+            let public_data: StaticWebData<near_crypto::PublicKey> = response.json().await.unwrap();
 
             let mpc_participant = MpcParticipantSetup {
                 p2p_private_key: participant.p2p_private_key.clone(), // todo: remove this [(#710)](https://github.com/near/mpc/issues/710)

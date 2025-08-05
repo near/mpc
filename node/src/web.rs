@@ -50,7 +50,7 @@ struct WebServerState {
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     /// Receiver for contract state
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
-    static_web_data: StaticWebData,
+    static_web_data: StaticWebData<near_crypto::PublicKey>,
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
@@ -114,7 +114,7 @@ async fn third_party_licenses() -> Html<&'static str> {
 pub fn create_static_web_data(
     secrets_config: &SecretsConfig,
     tee_participant_info: Option<TeeParticipantInfo>,
-) -> StaticWebData {
+) -> StaticWebData<near_crypto::PublicKey> {
     let near_signer_public_key = secrets_config
         .persistent_secrets
         .near_signer_key
@@ -138,7 +138,7 @@ pub fn create_static_web_data(
     }
 }
 
-async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
+async fn public_data(state: State<WebServerState>) -> Json<StaticWebData<near_crypto::PublicKey>> {
     state.static_web_data.clone().into()
 }
 
@@ -152,7 +152,7 @@ pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
     signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
     config: WebUIConfig,
-    static_web_data: StaticWebData,
+    static_web_data: StaticWebData<near_crypto::PublicKey>,
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
