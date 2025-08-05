@@ -63,6 +63,8 @@ mpc-contract = { workspace = true }
 deranged = { workspace = true }
 itertools = { workspace = true }
 
+attestation = { path = "../attestation" }
+
 [dev-dependencies]
 assert_matches = { workspace = true }
 serial_test = { workspace = true }
@@ -73,5 +75,7 @@ mockall = { workspace = true }
 rstest = { workspace = true }
 
 [features]
+default = []
+external-services-tests = []
 tee = []
 network-hardship-simulation = []
