@@ -9,3 +9,4 @@ pub mod measurements;
 pub mod quote;
 pub mod report_data;
 pub mod tcbinfo;
+pub mod tee_authority;

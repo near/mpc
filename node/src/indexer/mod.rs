@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use tokio::sync::{mpsc, watch};
 use types::ChainSendTransactionRequest;
 
+pub mod balances;
 pub mod configs;
 pub mod handler;
 pub mod lib;
