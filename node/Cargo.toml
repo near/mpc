@@ -15,6 +15,7 @@ borsh = { workspace = true }
 threshold-signatures = { workspace = true }
 clap = { workspace = true }
 curve25519-dalek = { workspace = true }
+derive_more = { workspace = true }
 dstack-sdk = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
@@ -26,7 +27,6 @@ hkdf = { workspace = true }
 http = { workspace = true }
 humantime = { workspace = true }
 k256 = { workspace = true }
-lazy_static = { workspace = true }
 lru = { workspace = true }
 near-sdk = { workspace = true }
 prometheus = { workspace = true }

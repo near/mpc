@@ -12,7 +12,7 @@ from common_lib import constants
 from common_lib import signature
 from common_lib.constants import TGAS, TIMEOUT
 from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
-from common_lib.shared.metrics import IntMetricName
+from common_lib.shared.metrics import FloatMetricName, IntMetricName
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
 from common_lib.signature import generate_sign_args
@@ -98,6 +98,11 @@ class MpcCluster:
 
     def mpc_contract_account(self):
         return self.contract_node.account_id()
+
+    def get_float_metric_value(
+        self, metric_name: FloatMetricName
+    ) -> List[Optional[float]]:
+        return [node.get_float_metric_value(metric_name) for node in self.mpc_nodes]
 
     def get_int_metric_value(self, metric_name: IntMetricName) -> List[Optional[int]]:
         return [node.get_int_metric_value(metric_name) for node in self.mpc_nodes]
@@ -475,9 +480,9 @@ class MpcCluster:
             "finality": finality,
         }
         response = self.contract_node.near_node.json_rpc("query", query)
-        assert (
-            "error" not in response
-        ), f"Error fetching contract code: {response['error']}"
+        assert "error" not in response, (
+            f"Error fetching contract code: {response['error']}"
+        )
         code_b64 = response.get("result", {}).get("code_base64", "")
         contract_code = base64.b64decode(code_b64)
         sha256_hash = hashlib.sha256(contract_code).hexdigest()

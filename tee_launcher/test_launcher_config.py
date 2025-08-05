@@ -5,7 +5,6 @@ import tempfile
 from tee_launcher.launcher import parse_env_lines
 
 from tee_launcher.launcher import (
-    parse_env_file,
     build_docker_cmd,
     is_valid_host_entry,
     is_valid_port_mapping,
