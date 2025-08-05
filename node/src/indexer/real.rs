@@ -17,7 +17,6 @@ use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch, Mutex};
-use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "network-hardship-simulation")]
 pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, home_dir: PathBuf) {
@@ -101,13 +100,11 @@ pub fn spawn_real_indexer(
                 respond_config.clone(),
                 indexer_state.clone(),
             ));
-            let monitor_balance_cancellation_token = CancellationToken::new();
             actix::spawn(monitor_balance(
                 my_near_account_id.clone(),
                 respond_config.account_id.clone(),
                 indexer_state.client.clone(),
                 indexer_state.view_client.clone(),
-                monitor_balance_cancellation_token.clone(),
             ));
 
             #[cfg(feature = "network-hardship-simulation")]
@@ -137,7 +134,6 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
 
-            monitor_balance_cancellation_token.cancel();
             if indexer_exit_sender.send(indexer_result).is_err() {
                 tracing::error!("Indexer thread could not send result back to main driver.")
             };
