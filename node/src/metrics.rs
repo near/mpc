@@ -199,3 +199,30 @@ pub static PEERS_INDEXER_HEIGHTS: LazyLock<prometheus::IntGaugeVec> = LazyLock::
     )
     .unwrap()
 });
+
+pub static MPC_BUILD_INFO: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
+    prometheus::register_int_gauge_vec!(
+        "mpc_node_build_info",
+        "Metric whose labels indicate node's version",
+        &["release", "build_time", "rustc_version", "commit"],
+    )
+    .unwrap()
+});
+
+/// Initialize the build info metric with current version information
+pub fn init_build_info_metric() {
+    // Use compile-time constants from build_info module
+    let version = crate::build_info::MPC_VERSION;
+    let build_time = crate::build_info::MPC_BUILD_TIME;
+    let rustc_version = crate::build_info::RUSTC_VERSION;
+    let commit = crate::build_info::MPC_COMMIT;
+
+    MPC_BUILD_INFO
+        .with_label_values(&[version, build_time, rustc_version, commit])
+        .set(1);
+}
+
+/// Ensure the build info metric is set (can be called multiple times safely)
+pub fn ensure_build_info_metric() {
+    init_build_info_metric();
+}

@@ -65,6 +65,8 @@ pub enum LogFormat {
 }
 
 #[derive(Parser, Debug)]
+#[command(name = "mpc-node")]
+#[command(about = "MPC Node for Near Protocol")]
 pub enum CliCommand {
     Start(StartCmd),
     /// Generates/downloads required files for Near node to run
@@ -129,13 +131,13 @@ pub struct StartCmd {
     /// Hex-encoded 16 byte AES key for local storage encryption.
     /// This key should come from a secure secret storage.
     /// TODO(#444): After TEE integration decide on what to do with AES encryption key
-    #[arg(env("MPC_SECRET_STORE_KEY"))]
+    #[arg(long, env("MPC_SECRET_STORE_KEY"))]
     pub secret_store_key_hex: String,
     /// If provided, the root keyshare is stored on GCP.
     /// This requires GCP_PROJECT_ID to be set as well.
-    #[arg(env("GCP_KEYSHARE_SECRET_ID"))]
+    #[arg(long, env("GCP_KEYSHARE_SECRET_ID"))]
     pub gcp_keyshare_secret_id: Option<String>,
-    #[arg(env("GCP_PROJECT_ID"))]
+    #[arg(long, env("GCP_PROJECT_ID"))]
     pub gcp_project_id: Option<String>,
     /// TEE related configuration settings.
     #[command(flatten)]
@@ -168,12 +170,16 @@ pub struct ImportKeyshareCmd {
 
     /// JSON string containing the keyshare to import
     #[arg(
+        long,
         help = "JSON string with the keyshare in format: {\"epoch\":1,\"private_share\":\"...\",\"public_key\":\"...\"}"
     )]
     pub keyshare_json: String,
 
     /// Hex-encoded 16 byte AES key for local storage encryption
-    #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
+    #[arg(
+        long,
+        help = "Hex-encoded 16 byte AES key for local storage encryption"
+    )]
     pub local_encryption_key_hex: String,
 }
 
@@ -184,7 +190,10 @@ pub struct ExportKeyshareCmd {
     pub home_dir: String,
 
     /// Hex-encoded 16 byte AES key for local storage encryption
-    #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
+    #[arg(
+        long,
+        help = "Hex-encoded 16 byte AES key for local storage encryption"
+    )]
     pub local_encryption_key_hex: String,
 }
 

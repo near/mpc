@@ -239,3 +239,12 @@ pub enum PeerMessage {
     Mpc(MpcPeerMessage),
     IndexerHeight(PeerIndexerHeightMessage),
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Version {
+    pub version: String,
+    pub build: String,
+    pub commit: String,
+    #[serde(default)]
+    pub rustc_version: String,
+}

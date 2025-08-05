@@ -79,3 +79,8 @@ default = []
 external-services-tests = []
 tee = []
 network-hardship-simulation = []
+
+[build-dependencies]
+chrono = "0.4"
+anyhow = "1.0.92"
+rustc_version = "0.4"
