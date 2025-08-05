@@ -109,6 +109,13 @@ pub fn spawn_real_indexer(
                 monitor_balance_cancellation_token.clone(),
             ));
 
+            #[cfg(feature = "tee")]
+            actix::spawn(monitor_allowed_docker_images(
+                allowed_docker_images_sender,
+                indexer_state.clone(),
+            ));
+
+            // below function runs indefinitely and only returns in case of an error.
             #[cfg(feature = "network-hardship-simulation")]
             let indexer_result = listen_blocks(
                 stream,
@@ -129,12 +136,6 @@ pub fn spawn_real_indexer(
                 block_update_sender,
             )
             .await;
-
-            #[cfg(feature = "tee")]
-            actix::spawn(monitor_allowed_docker_images(
-                allowed_docker_images_sender,
-                indexer_state.clone(),
-            ));
 
             monitor_balance_cancellation_token.cancel();
             if indexer_exit_sender.send(indexer_result).is_err() {
