@@ -1,5 +1,5 @@
 use crate::config::{PersistentSecrets, RespondConfig};
-use crate::web::StaticWebData;
+use crate::web::create_static_web_data;
 use crate::{
     config::{
         load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
@@ -306,7 +306,7 @@ impl StartCmd {
             root_task_handle,
             signature_debug_request_sender.clone(),
             config.web_ui.clone(),
-            StaticWebData::new(&secrets, report_data_contract.clone()),
+            create_static_web_data(&secrets, report_data_contract.clone()),
             web_contract_receiver,
         )
         .await?;

@@ -1,5 +1,5 @@
 [workspace]
-members = ["node", "devnet", "attestation", "crates/primitives"]
+members = ["node", "devnet", "attestation", "crates/primitives", "crates/types"]
 resolver = "2"
 exclude = ["libs", "pytest"]
 
@@ -8,6 +8,11 @@ inherits = "release"
 debug = true
 
 [workspace.dependencies]
+# workspace members
+mpc-node = { path = "node" }
+mpc-primitives = { path = "crates/primitives" }
+mpc-types = { path = "crates/types" }
+
 actix = "0.13.0"
 aes-gcm = "0.10.3"
 anyhow = "1.0.92"
@@ -50,7 +55,6 @@ k256 = "0.13.4"
 lazy_static = "1.5.0"
 lru = "0.12.5"
 mockall = "0.13.1"
-mpc-primitives = { path = "crates/primitives" }
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
@@ -93,7 +97,6 @@ tracing-subscriber = { version = "0.3.18", features = [
 url = "2"
 x509-parser = "0.16.0"
 
-mpc-node = { path = "node" }
 # MPC Contract
 mpc-contract = { path = "libs/chain-signatures/contract/", features = [
     "dev-utils",

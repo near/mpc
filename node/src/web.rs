@@ -9,8 +9,8 @@ use futures::future::BoxFuture;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use mpc_contract::utils::protocol_state_to_string;
+use mpc_types::node_web_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
-use serde::Serialize;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -111,21 +111,10 @@ async fn third_party_licenses() -> Html<&'static str> {
     Html(include_str!("../../third-party-licenses/licenses.html"))
 }
 
-#[derive(Clone, Serialize)]
-pub struct StaticWebData {
-    pub near_signer_public_key: near_crypto::PublicKey,
-    pub near_p2p_public_key: near_crypto::PublicKey,
-    pub near_responder_public_keys: Vec<near_crypto::PublicKey>,
-    pub tee_participant_info: Option<TeeParticipantInfo>,
-}
-
-struct PublicKeys {
-    near_signer_public_key: near_crypto::PublicKey,
-    near_p2p_public_key: near_crypto::PublicKey,
-    near_responder_public_keys: Vec<near_crypto::PublicKey>,
-}
-
-fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
+pub fn create_static_web_data(
+    secrets_config: &SecretsConfig,
+    tee_participant_info: Option<TeeParticipantInfo>,
+) -> StaticWebData {
     let near_signer_public_key = secrets_config
         .persistent_secrets
         .near_signer_key
@@ -140,22 +129,12 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
         .iter()
         .map(|x| x.public_key())
         .collect();
-    PublicKeys {
+
+    StaticWebData {
         near_signer_public_key,
         near_p2p_public_key,
         near_responder_public_keys,
-    }
-}
-
-impl StaticWebData {
-    pub fn new(value: &SecretsConfig, tee_participant_info: Option<TeeParticipantInfo>) -> Self {
-        let public_keys = get_public_keys(value);
-        Self {
-            near_signer_public_key: public_keys.near_signer_public_key,
-            near_p2p_public_key: public_keys.near_p2p_public_key,
-            near_responder_public_keys: public_keys.near_responder_public_keys,
-            tee_participant_info,
-        }
+        tee_participant_info,
     }
 }
 

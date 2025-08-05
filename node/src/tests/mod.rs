@@ -18,7 +18,7 @@ use crate::keyshare::KeyStorageConfig;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
-use crate::web::{start_web_server, StaticWebData};
+use crate::web::{create_static_web_data, start_web_server};
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_crypto::KeyType::ED25519;
@@ -218,7 +218,7 @@ impl OneNodeTestConfig {
                     root_task_handle,
                     signature_debug_request_sender.clone(),
                     config.web_ui.clone(),
-                    StaticWebData::new(&secrets, None),
+                    create_static_web_data(&secrets, None),
                     web_contract_receiver.clone(),
                 )
                 .await?;

@@ -4842,6 +4842,7 @@ dependencies = [
  "mockall",
  "mpc-contract 1.0.1",
  "mpc-contract 2.2.0-rc.1",
+ "mpc-types",
  "near-client",
  "near-config-utils 2.7.0-rc.4",
  "near-crypto 2.7.0-rc.4",
@@ -4888,6 +4889,16 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "mpc-types"
+version = "0.0.0"
+dependencies = [
+ "borsh",
+ "mpc-contract 2.2.0-rc.1",
+ "near-crypto 2.7.0-rc.4",
+ "serde",
 ]
 
 [[package]]
