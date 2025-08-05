@@ -35,9 +35,7 @@ pub(crate) async fn monitor_balance(
     tracing::info!("starting balance checker",);
     wait_for_full_sync(&client).await;
     const BALANCE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
-    let mut interval = tokio::time::interval(BALANCE_REFRESH_INTERVAL);
     loop {
-        interval.tick().await;
         fetch_and_log_balance(
             "signer",
             signer_account.clone(),
@@ -52,5 +50,6 @@ pub(crate) async fn monitor_balance(
             &metrics::NEAR_RESPONDER_BALANCE,
         )
         .await;
+        tokio::time::sleep(BALANCE_REFRESH_INTERVAL).await;
     }
 }
