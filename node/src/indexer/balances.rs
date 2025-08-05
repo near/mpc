@@ -12,35 +12,38 @@ pub(crate) async fn monitor_balance(
 ) {
     tracing::info!("starting balance checker",);
     const BALANCE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+    let mut interval = tokio::time::interval(BALANCE_REFRESH_INTERVAL);
+    loop {
+        tokio::select! {
+                _ = interval.tick() => {
+                   match get_account_balance(signer_account.clone(), &view_client).await {
+                       Ok(balance) => {
+                           tracing::info!(
+                               block = balance.0, balance = balance.1, "Near signer account balance"
+                           );
+                           metrics::NEAR_SIGNER_BALANCE.set(balance.1);
+                       }
+                       Err(e) => {
+                           tracing::info!("Failed to get balance for {}. Waiting for sync?", e);
+                       }
+                   }
+                   match get_account_balance(responder_account.clone(), &view_client).await {
+                       Ok(balance) => {
+                           tracing::info!(
+                               block = balance.0,
+                               balance = balance.1,
+                               "Near responder account balance",
+                           );
+                           metrics::NEAR_RESPONDER_BALANCE.set(balance.1);
+                       }
 
-    while !cancellation_token.is_cancelled() {
-        match get_account_balance(signer_account.clone(), &view_client).await {
-            Ok(balance) => {
-                tracing::info!(
-                    "block {}, near signer account balance: {}",
-                    balance.0,
-                    balance.1
-                );
-                metrics::NEAR_SIGNER_BALANCE.set(balance.1);
-            }
-            Err(e) => {
-                tracing::info!("Failed to get balance for {}. Waiting for sync?", e);
-            }
-        }
-        match get_account_balance(responder_account.clone(), &view_client).await {
-            Ok(balance) => {
-                tracing::info!(
-                    "block {}, near responder account balance: {}",
-                    balance.0,
-                    balance.1
-                );
-                metrics::NEAR_RESPONDER_BALANCE.set(balance.1);
-            }
+                       Err(e) => {
+                           tracing::info!("Failed to get balance for {}. Waiting for sync?", e);
+                       }
+                   }
 
-            Err(e) => {
-                tracing::info!("Failed to get balance for {}. Waiting for sync?", e);
-            }
+                },
+                _ = cancellation_token.cancelled() => { return;}
         }
-        tokio::time::sleep(BALANCE_REFRESH_INTERVAL).await;
     }
 }

@@ -107,8 +107,12 @@ pub(crate) async fn get_account_balance(
             Ok((response.block_height, balance))
         }
         _ => {
-            tracing::warn!("got unexpected response querying account balance");
-            anyhow::bail!("got unexpected response querying account balance")
+            let msg = format!(
+                "got unexpected response querying account balance: {:?}",
+                response.kind
+            );
+            tracing::warn!(msg);
+            anyhow::bail!(msg)
         }
     }
 }
