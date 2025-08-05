@@ -344,20 +344,6 @@ def main():
     proc = curl_unix_socket_post(
         endpoint="EmitEvent", payload=extend_rtmr3_json, capture_output=True
     )
-    proc = run(
-        [
-            "curl",
-            "--unix-socket",
-            DSTACK_UNIX_SOCKET,
-            "-X",
-            "POST",
-            "http://dstack/EmitEvent",
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            extend_rtmr3_json,
-        ]
-    )
 
     if proc.returncode:
         raise RuntimeError(
@@ -373,8 +359,7 @@ def main():
 
     logging.info("Quote: %s" % proc.stdout.decode("utf-8").strip())
 
-    # Build the docker command we use to start the app, i.e., mpc node
-    docker_cmd = ["docker", "run"]
+    # Build the docker command we use to start the mpc node
 
     # Load environment variables from the user config file
     # We allow only a limited set of environment variables to be passed to the container.
@@ -501,13 +486,23 @@ def get_manifest_digest(
 
 
 def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
+    # Parse the image hash safely
+    if ":" in image_digest:
+        parts = image_digest.split(":", 1)
+        if len(parts) == 2 and parts[1]:
+            image_hash = parts[1]
+        else:
+            raise ValueError(f"Invalid image_digest format: {image_digest}")
+    else:
+        image_hash = image_digest
+
     docker_cmd = ["docker", "run"]
 
-    # Manually add required environment variables.
-    # "IMAGE_HASH",  -  Digest of the Docker image - used to verify hash used.
+    # add required environment variables.
+    # "IMAGE_HASH",  -  Digest of the Docker image - used my the MPC node to verify hash used.
     # "LATEST_ALLOWED_HASH_FILE" - Path to the shared digest file
-    docker_cmd += ["--env", f"IMAGE_HASH={image_digest}"]
-    docker_cmd += ["--env", "LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
+    docker_cmd += ["--env", f"IMAGE_HASH={image_hash}"]
+    docker_cmd += ["--env", f"LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
 
     for key, value in user_env.items():
         if key in ALLOWED_ENV_VARS:
@@ -551,6 +546,8 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         "shared-volume:/mnt/shared",
         "-v",
         "mpc-data:/data",
+        "--name",
+        "mpc_node",
         "--detach",
         image_digest,
     ]
