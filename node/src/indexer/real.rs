@@ -105,6 +105,7 @@ pub fn spawn_real_indexer(
             actix::spawn(monitor_balance(
                 my_near_account_id.clone(),
                 respond_config.account_id.clone(),
+                indexer_state.client.clone(),
                 indexer_state.view_client.clone(),
                 monitor_balance_cancellation_token.clone(),
             ));

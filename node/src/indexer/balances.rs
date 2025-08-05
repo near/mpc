@@ -1,16 +1,21 @@
 use near_sdk::AccountId;
 use tokio_util::sync::CancellationToken;
 
-use crate::{indexer::lib::get_account_balance, metrics};
+use crate::{
+    indexer::lib::{get_account_balance, wait_for_full_sync},
+    metrics,
+};
 
 // function for monitoring signer and responder account balances
 pub(crate) async fn monitor_balance(
     signer_account: AccountId,
     responder_account: AccountId,
+    client: actix::Addr<near_client::ClientActor>,
     view_client: actix::Addr<near_client::ViewClientActor>,
     cancellation_token: CancellationToken,
 ) {
     tracing::info!("starting balance checker",);
+    wait_for_full_sync(&client).await;
     const BALANCE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
     let mut interval = tokio::time::interval(BALANCE_REFRESH_INTERVAL);
     loop {
