@@ -463,6 +463,7 @@ class MpcCluster:
             self.mpc_contract_account(),
             "propose_update",
             args,
+            # TODO: #771 https://github.com/near/mpc/issues/771
             deposit=10574660000000000000000000,
         )
         res = participant.send_txn_and_check_success(tx, timeout=30)
