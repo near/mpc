@@ -12,5 +12,9 @@ near-jsonrpc-primitives = { workspace = true }
 near-primitives = { workspace = true }
 near-sdk = { workspace = true }
 rand = { workspace = true }
+shadow-rs = { workspace = true}
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+
+[build-dependencies]
+shadow-rs = { workspace = true}

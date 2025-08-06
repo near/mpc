@@ -13,8 +13,10 @@ use near_primitives::{
 };
 use near_sdk::AccountId;
 use rand::{RngCore, thread_rng};
+use shadow_rs::shadow;
 use tokio_util::time::FutureExt;
-use url::Url;
+
+shadow!(build);
 
 const TEST_NET_URL: &str = "https://rpc.testnet.near.org";
 const MAIN_NET_URL: &str = "https://rpc.mainnet.near.org";
@@ -29,7 +31,7 @@ const TRANSACTION_TIMEOUT_DURATION: Duration = Duration::from_secs(10);
 /// ACCOUNT_PRIVATE_KEY="ed25519:1111111111111111111111111111111111111111111111111111111111111111" mpc-node-operator-cli --network mainnet --node-web-address "192.168.1.1:23"
 /// ```
 #[derive(Parser, Debug, Clone)]
-#[command(version, about, long_about = None)]
+#[command(version = build::CLAP_LONG_VERSION, about, long_about = None)]
 struct Args {
     #[arg(long)]
     network: Network,
