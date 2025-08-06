@@ -6,7 +6,7 @@ use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::EventLog;
 use k256::sha2::{Digest as _, Sha384};
-use mpc_primitives::hash::MpcDockerImageHash;
+use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::env::sha256;
 
 /// Expected TCB status for a successfully verified TEE quote.
@@ -37,14 +37,16 @@ impl Attestation {
         &self,
         expected_report_data: ReportData,
         timestamp_s: u64,
-        allowed_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
         match self {
             Self::Dstack(dstack_attestation) => self.verify_attestation(
                 dstack_attestation,
                 expected_report_data,
                 timestamp_s,
-                allowed_docker_image_hashes,
+                allowed_mpc_docker_image_hashes,
+                allowed_launcher_docker_compose_hashes,
             ),
             Self::Local(config) => config.verification_result,
         }
@@ -58,7 +60,8 @@ impl Attestation {
         attestation: &DstackAttestation,
         expected_report_data: ReportData,
         timestamp_s: u64,
-        allowed_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
         let quote_bytes = attestation.quote.raw_bytes();
 
@@ -91,9 +94,9 @@ impl Attestation {
                 &attestation.expected_measurements,
             )
             && self.verify_rtmr3(report_data, &attestation.tcb_info)
-            && self.verify_app_compose(&attestation.tcb_info)
+            && self.verify_app_compose(&attestation.tcb_info, allowed_launcher_docker_compose_hashes)
             && self.verify_local_sgx_hash(&attestation.tcb_info, &attestation.expected_measurements)
-            && self.verify_mpc_hash(&attestation.tcb_info, allowed_docker_image_hashes)
+            && self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together.
@@ -216,7 +219,7 @@ impl Attestation {
     /// Verifies app compose configuration and hash. The compose-hash is measured into RTMR3, and
     /// since it's (roughly) a hash of the unmeasured docker_compose_file, this is sufficient to
     /// prove its validity.
-    fn verify_app_compose(&self, tcb_info: &TcbInfo) -> bool {
+    fn verify_app_compose(&self, tcb_info: &TcbInfo, allowed_hashes: &[LauncherDockerComposeHash]) -> bool {
         let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
             Ok(compose) => compose,
             Err(e) => {
@@ -237,6 +240,7 @@ impl Attestation {
             .is_some_and(|event| {
                 Self::validate_app_compose_config(&app_compose)
                     && Self::validate_compose_hash(&event.digest, &docker_compose)
+                    && allowed_hashes.iter().any(|hash| hash.as_hex() == event.digest)
             })
     }
 
@@ -311,7 +315,7 @@ mod tests {
         let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
         assert_eq!(
-            mock_attestation(quote_verification_result).verify(report_data, timestamp_s, &[],),
+            mock_attestation(quote_verification_result).verify(report_data, timestamp_s, &[],&[]),
             expected_quote_verification_result
         );
     }
