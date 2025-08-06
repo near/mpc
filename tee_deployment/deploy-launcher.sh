@@ -7,7 +7,7 @@
 
 
 # Default .env path
-ENV_FILE=".env"
+ENV_FILE="default.env"
 
 # Parse optional --env-file or -e argument
 while [[ "$#" -gt 0 ]]; do

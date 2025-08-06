@@ -23,3 +23,10 @@ EXTRA_HOSTS=mpc-node-0.service.mpc.consul:35.185.233.54,mpc-node-1.service.mpc.c
 # Optional: Port forwarding
 PORTS=18448:18448
 
+# measured resource configuration (defaults shown):
+VCPU=8      # do not change since this is measured  in the contract 
+MEMORY=64G  # do not change since this is measured  in the contract 
+
+# un-measured resource configuration (defaults shown):
+DISK=128G   # allowed to  change
+
