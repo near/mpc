@@ -6,6 +6,7 @@ use crate::{
         quote::{replay_app_compose, replay_rtmr},
     },
 };
+use attestation::attestation::DstackAttestation;
 use dcap_qvl::{
     quote::Quote,
     verify::{self, VerifiedReport},
@@ -84,6 +85,20 @@ pub struct TeeParticipantInfo {
     pub quote_collateral: String,
     /// Dstack event log.
     pub raw_tcb_info: String,
+}
+
+impl TryFrom<DstackAttestation> for TeeParticipantInfo {
+    type Error = Error;
+
+    fn try_from(dstack_attestation: DstackAttestation) -> Result<Self, Self::Error> {
+        Ok(TeeParticipantInfo {
+            tee_quote: dstack_attestation.quote.raw_bytes().into(),
+            quote_collateral: serde_json::to_string(&dstack_attestation.collateral)
+                .map_err(|_| Error::from(InvalidCandidateSet::InvalidParticipantsTeeQuote))?,
+            raw_tcb_info: serde_json::to_string(&dstack_attestation.tcb_info)
+                .map_err(|_| Error::from(InvalidCandidateSet::InvalidParticipantsTeeQuote))?,
+        })
+    }
 }
 
 impl TeeParticipantInfo {
