@@ -94,7 +94,10 @@ impl Attestation {
                 &attestation.expected_measurements,
             )
             && self.verify_rtmr3(report_data, &attestation.tcb_info)
-            && self.verify_app_compose(&attestation.tcb_info, allowed_launcher_docker_compose_hashes)
+            && self.verify_app_compose(
+                &attestation.tcb_info,
+                allowed_launcher_docker_compose_hashes,
+            )
             && self.verify_local_sgx_hash(&attestation.tcb_info, &attestation.expected_measurements)
             && self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
     }
@@ -219,7 +222,11 @@ impl Attestation {
     /// Verifies app compose configuration and hash. The compose-hash is measured into RTMR3, and
     /// since it's (roughly) a hash of the unmeasured docker_compose_file, this is sufficient to
     /// prove its validity.
-    fn verify_app_compose(&self, tcb_info: &TcbInfo, allowed_hashes: &[LauncherDockerComposeHash]) -> bool {
+    fn verify_app_compose(
+        &self,
+        tcb_info: &TcbInfo,
+        allowed_hashes: &[LauncherDockerComposeHash],
+    ) -> bool {
         let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
             Ok(compose) => compose,
             Err(e) => {
@@ -240,7 +247,9 @@ impl Attestation {
             .is_some_and(|event| {
                 Self::validate_app_compose_config(&app_compose)
                     && Self::validate_compose_hash(&event.digest, &docker_compose)
-                    && allowed_hashes.iter().any(|hash| hash.as_hex() == event.digest)
+                    && allowed_hashes
+                        .iter()
+                        .any(|hash| hash.as_hex() == event.digest)
             })
     }
 
@@ -315,7 +324,7 @@ mod tests {
         let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
         assert_eq!(
-            mock_attestation(quote_verification_result).verify(report_data, timestamp_s, &[],&[]),
+            mock_attestation(quote_verification_result).verify(report_data, timestamp_s, &[], &[]),
             expected_quote_verification_result
         );
     }
