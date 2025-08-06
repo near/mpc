@@ -49,7 +49,7 @@ const RTMR2: [u8; 48] = [
     0x39, 0x30, 0x99, 0x23, 0x4a, 0xbc, 0x03, 0x09, 0xf0, 0x39, 0x36, 0xed, 0xeb, 0xf7, 0x4b, 0x1f,
 ];
 
-const RTMR3_INDEX: u64 = 3;
+const RTMR3_INDEX: u8 = 3;
 
 const EXPECTED_LOCAL_SGX_HASH: &str =
     "1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b";
@@ -200,7 +200,7 @@ impl TeeParticipantInfo {
             Some(r) => hex::encode(r.rt_mr3),
             None => return false,
         };
-        let replayed_rtmr3 = replay_rtmr(event_log.to_owned(), RTMR3_INDEX.try_into().unwrap());
+        let replayed_rtmr3 = replay_rtmr(event_log.to_owned(), RTMR3_INDEX);
         expected_rtmr3 == replayed_rtmr3
     }
 
@@ -208,8 +208,9 @@ impl TeeParticipantInfo {
         let expected_compose_hash = event_log
             .iter()
             .find(|e| {
-                e["event"].as_str() == Some("compose-hash")
-                    && e["imr"].as_u64() == Some(RTMR3_INDEX)
+                let is_compose_hash_event = e["event"].as_str() == Some("compose-hash");
+                let is_rtmr3_measurement = e["imr"].as_u64() == Some(RTMR3_INDEX as u64);
+                is_compose_hash_event && is_rtmr3_measurement
             })
             .and_then(|e| e["digest"].as_str());
         let app_compose = tcb_info["app_compose"].as_str();
@@ -292,6 +293,7 @@ impl TeeParticipantInfo {
             .iter()
             .find(|e| e["event"].as_str() == Some("key-provider"))
             .and_then(|e| e["digest"].as_str());
+
         match local_sgx_hash {
             Some(hash) => hash == EXPECTED_LOCAL_SGX_HASH,
             None => false,
@@ -305,8 +307,9 @@ impl TeeParticipantInfo {
         let mpc_node_image_digest = event_log
             .iter()
             .find(|e| {
-                e["event"].as_str() == Some("mpc-image-digest")
-                    && e["imr"].as_u64() == Some(RTMR3_INDEX)
+                let is_mpc_image_event = e["event"].as_str() == Some("mpc-image-digest");
+                let is_rtmr3_measurement = e["imr"].as_u64() == Some(RTMR3_INDEX as u64);
+                is_mpc_image_event && is_rtmr3_measurement
             })
             .and_then(|e| e["digest"].as_str());
 
