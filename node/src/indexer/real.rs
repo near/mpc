@@ -107,6 +107,13 @@ pub fn spawn_real_indexer(
                 indexer_state.view_client.clone(),
             ));
 
+            #[cfg(feature = "tee")]
+            actix::spawn(monitor_allowed_docker_images(
+                allowed_docker_images_sender,
+                indexer_state.clone(),
+            ));
+
+            // below function runs indefinitely and only returns in case of an error.
             #[cfg(feature = "network-hardship-simulation")]
             let indexer_result = listen_blocks(
                 stream,
@@ -127,12 +134,6 @@ pub fn spawn_real_indexer(
                 block_update_sender,
             )
             .await;
-
-            #[cfg(feature = "tee")]
-            actix::spawn(monitor_allowed_docker_images(
-                allowed_docker_images_sender,
-                indexer_state.clone(),
-            ));
 
             if indexer_exit_sender.send(indexer_result).is_err() {
                 tracing::error!("Indexer thread could not send result back to main driver.")
