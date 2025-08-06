@@ -94,12 +94,13 @@ impl Attestation {
                 &attestation.expected_measurements,
             )
             && self.verify_rtmr3(report_data, &attestation.tcb_info)
-            && self.verify_app_compose(
+            && self.verify_app_compose(&attestation.tcb_info)
+            && self.verify_local_sgx_hash(&attestation.tcb_info, &attestation.expected_measurements)
+            && self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
+            && self.verify_launcher_compose_hash(
                 &attestation.tcb_info,
                 allowed_launcher_docker_compose_hashes,
             )
-            && self.verify_local_sgx_hash(&attestation.tcb_info, &attestation.expected_measurements)
-            && self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together.
@@ -222,11 +223,7 @@ impl Attestation {
     /// Verifies app compose configuration and hash. The compose-hash is measured into RTMR3, and
     /// since it's (roughly) a hash of the unmeasured docker_compose_file, this is sufficient to
     /// prove its validity.
-    fn verify_app_compose(
-        &self,
-        tcb_info: &TcbInfo,
-        allowed_hashes: &[LauncherDockerComposeHash],
-    ) -> bool {
+    fn verify_app_compose(&self, tcb_info: &TcbInfo) -> bool {
         let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
             Ok(compose) => compose,
             Err(e) => {
@@ -247,9 +244,6 @@ impl Attestation {
             .is_some_and(|event| {
                 Self::validate_app_compose_config(&app_compose)
                     && Self::validate_compose_hash(&event.digest, &docker_compose)
-                    && allowed_hashes
-                        .iter()
-                        .any(|hash| hash.as_hex() == event.digest)
             })
     }
 
@@ -291,6 +285,16 @@ impl Attestation {
             .find(|e| e.event == "mpc-image-digest")
             .map(|e| &e.digest)
             .is_some_and(|digest| allowed_hashes.iter().any(|hash| hash.as_hex() == *digest))
+    }
+
+    fn verify_launcher_compose_hash(
+        &self,
+        tcb_info: &TcbInfo,
+        allowed_hashes: &[LauncherDockerComposeHash],
+    ) -> bool {
+        allowed_hashes
+            .iter()
+            .any(|hash| hash.as_hex() == tcb_info.compose_hash)
     }
 }
 
