@@ -6,7 +6,7 @@ use mpc_contract::primitives::{
 };
 use near_primitives::action::Action;
 use near_sdk::AccountId;
-use rand::RngCore;
+use rand::{Rng, RngCore};
 use serde::Serialize;
 
 #[derive(Clone)]
@@ -131,9 +131,9 @@ fn make_payload(scheme: SignatureScheme) -> Payload {
             Payload::Ecdsa(Bytes::new(rand::random::<[u8; 32]>().to_vec()).unwrap())
         }
         SignatureScheme::Ed25519 => {
-            let len = rand::random_range(32..=1232);
+            let len = rand::thread_rng().gen_range(32..=1232);
             let mut payload = vec![0; len];
-            rand::rng().fill_bytes(&mut payload);
+            rand::thread_rng().fill_bytes(&mut payload);
             Payload::Eddsa(Bytes::new(payload).unwrap())
         }
     }
