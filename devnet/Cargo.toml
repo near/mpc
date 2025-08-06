@@ -21,6 +21,7 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+near-sdk = { workspace = true }
 
 # TODO: #657 use workspace versions.
 # https://github.com/near/mpc/issues/657 
@@ -28,4 +29,4 @@ near-crypto = "0.28.0"
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
-near-sdk = { version = "5.8.1" }
+
