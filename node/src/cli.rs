@@ -377,8 +377,16 @@ impl Cli {
                     .donwload_genesis_records_url
                     .as_ref()
                     .map(AsRef::as_ref),
-                Some(near_config_utils::DownloadConfigType::RPC),
-                config.download_config_url.as_ref().map(AsRef::as_ref),
+                if config.download_config {
+                    Some(near_config_utils::DownloadConfigType::RPC)
+                } else {
+                    None
+                },
+                if config.download_config {
+                    config.download_config_url.as_ref().map(AsRef::as_ref)
+                } else {
+                    None
+                },
                 config.boot_nodes.as_ref().map(AsRef::as_ref),
                 None,
             ),
