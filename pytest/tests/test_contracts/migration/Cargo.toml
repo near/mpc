@@ -8,7 +8,7 @@ license = "MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
-near-sdk = { version = "5.15.1"}
+near-sdk = { version = "5.15.1", features = ["unit-testing"] }
 borsh = "1.5.0"  
 
 [profile.release]
