@@ -6,11 +6,13 @@ use attestation::{
     report_data::{ReportData, ReportDataV1, ReportDataVersion},
 };
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+use mpc_primitives::hash::MpcDockerImageHash;
 use near_crypto::PublicKey;
 use rstest::rstest;
 use serde_json::{Value, json};
 
-const TCB_INFO_STRING: &str = include_str!("../tests/tcb_info.json");
+const TEST_TCB_INFO_STRING: &str = include_str!("../tests/tcb_info.json");
+const TEST_MPC_IMAGE_DIGEST_HEX: &str = "bcb7a884a6ba0970997335c548b61e2486be6065860219c5f436291d57ce62a8feb2405a63dfbbfca63be8ab6cd9e72a";
 
 fn mock_local_attestation(quote_verification_result: bool) -> Attestation {
     Attestation::Local(LocalAttestation::new(quote_verification_result))
@@ -25,7 +27,7 @@ fn mock_dstack_attestation() -> Attestation {
     let quote: Quote = VALID_QUOTE_HEX.parse().unwrap();
     let collateral = Collateral::try_from_json(create_test_collateral_json()).unwrap();
 
-    let tcb_info: DstackTcbInfo = serde_json::from_str(TCB_INFO_STRING).unwrap();
+    let tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
 
     let expected_measurements = ExpectedMeasurements {
         rtmrs: Measurements {
@@ -103,7 +105,17 @@ fn test_verify_method_signature() {
         .unwrap();
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
     let timestamp_s = 1754405596_u64;
-    let allowed_hashes = &[];
-    let verification_result = attestation.verify(report_data, timestamp_s, allowed_hashes);
+
+    let mpc_image_digest_bytes: [u8; 48] = hex::decode(TEST_MPC_IMAGE_DIGEST_HEX)
+        .unwrap()
+        .try_into()
+        .inspect_err(|e: &Vec<u8>| println!("LENGTH: {:?}", e.len()))
+        .unwrap();
+
+    // TODO: MpcDockerImageHash is 48 bytes, not 32.
+    let allowed_mpc_image_digest = MpcDockerImageHash::from(mpc_image_digest_bytes);
+
+    let verification_result =
+        attestation.verify(report_data, timestamp_s, &[allowed_mpc_image_digest]);
     assert!(verification_result);
 }

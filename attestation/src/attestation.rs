@@ -1,18 +1,13 @@
 use crate::{
-    app_compose::{self, AppCompose},
-    collateral::Collateral,
-    measurements::ExpectedMeasurements,
-    quote::Quote,
-    report_data::ReportData,
-    tcbinfo::TcbInfo,
+    app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
+    quote::Quote, report_data::ReportData, tcbinfo::TcbInfo,
 };
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::EventLog;
-use hex::ToHex;
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::MpcDockerImageHash;
-use near_sdk::{env::sha256, store::key::Sha256};
+use near_sdk::env::sha256;
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -280,6 +275,9 @@ impl Attestation {
             .iter()
             .find(|e| e.event == "mpc-image-digest")
             .map(|e| &e.digest)
-            .is_some_and(|digest| allowed_hashes.iter().any(|hash| hash.as_hex() == *digest))
+            .is_some_and(|digest| {
+                println!("Found digesgt: {:?}", digest);
+                allowed_hashes.iter().any(|hash| hash.as_hex() == *digest)
+            })
     }
 }
