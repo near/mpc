@@ -1,7 +1,3 @@
 use_small_heuristics = "Default"
 reorder_imports = true
 edition = "2024"
-imports_granularity = "Crate"
-normalize_comments = true
-comment_width = 100
-wrap_comments = true
