@@ -31,8 +31,8 @@ container_build_command = [
  # the non-reproducible build inside a reproducible environment becomes reproducible
     "non-reproducible-wasm", 
     "--locked",
-# this should be removed in the future, tracked in #739
-    "--no-abi"
+    "--features", "abi",
+    "--no-embed-abi"
 ]
 
 [dependencies]
@@ -43,7 +43,7 @@ curve25519-dalek = { version = "4.1.3", features = [
 ], default-features = false }
 borsh = "1.5.0"
 derive_more = { version = "2.0.1", features = ["from"] }
-near-sdk = { version = "5.11.0", features = [
+near-sdk = { version = "5.15.1", features = [
     "legacy",
     "unit-testing",
     "unstable",
@@ -65,6 +65,7 @@ k256 = { version = "0.13.4", features = [
 dcap-qvl = { git = "https://github.com/mattlockyer/dcap-qvl", rev = "3caedd8fd0f365841abaf1430ff2922fcb09d9db" }
 
 mpc-primitives = { path = "../../../crates/primitives" }
+attestation = { path = "../../../attestation" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-account-id = "1.1.1"
 thiserror = "1"
@@ -104,3 +105,8 @@ rstest = "0.25.0"
 [features]
 test-utils = ["rand"]
 dev-utils = []
+abi = ["borsh/unstable__schema", "mpc-primitives/abi"]
+# This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
+# But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
+# if it appears under wasm32 target, it will break compilation too.
+__abi-generate = ["near-sdk/__abi-generate"]

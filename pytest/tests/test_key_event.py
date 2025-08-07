@@ -8,7 +8,6 @@ At every step we check that signatures can still be produced.
 
 import pathlib
 import sys
-import time
 
 import pytest
 

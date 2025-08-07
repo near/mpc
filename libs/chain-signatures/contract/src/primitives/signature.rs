@@ -24,8 +24,28 @@ impl Tweak {
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 #[near(serializers=[borsh, json])]
 pub enum Payload {
-    Ecdsa(Bytes<32, 32>),
-    Eddsa(Bytes<32, 1232>),
+    Ecdsa(
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "[u8; 32]"),
+            borsh(schema(with_funcs(
+                declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
+                definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
+            ),))
+        )]
+        Bytes<32, 32>,
+    ),
+    Eddsa(
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "Vec<u8>"),
+            borsh(schema(with_funcs(
+                declaration = "<Vec<u8> as ::borsh::BorshSchema>::declaration",
+                definitions = "<Vec<u8> as ::borsh::BorshSchema>::add_definitions_recursively"
+            ),))
+        )]
+        Bytes<32, 1232>,
+    ),
 }
 
 impl Payload {

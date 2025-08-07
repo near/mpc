@@ -39,13 +39,13 @@ def test_threshold_from_previous_running_state_is_maintained():
     mpc_nodes[3].kill()
 
     # sanity check
-    assert cluster.wait_for_state(
-        "Resharing"
-    ), "State should still be in resharing. 4th node was killed."
+    assert cluster.wait_for_state("Resharing"), (
+        "State should still be in resharing. 4th node was killed."
+    )
 
     cluster.send_and_await_signature_requests(3)
 
     # sanity check
-    assert cluster.wait_for_state(
-        "Resharing"
-    ), "State should still be in resharing. 4th node was killed."
+    assert cluster.wait_for_state("Resharing"), (
+        "State should still be in resharing. 4th node was killed."
+    )
