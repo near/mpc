@@ -100,8 +100,8 @@ impl Attestation {
             )
             && self.verify_rtmr3(report_data, &attestation.tcb_info)
             && self.verify_app_compose(&attestation.tcb_info)
-        // && self.verify_local_sgx_hash(&attestation.tcb_info, &attestation.expected_measurements)
-        // && self.verify_mpc_hash(&attestation.tcb_info, allowed_docker_image_hashes)
+            && self.verify_local_sgx_hash(&attestation.tcb_info, &attestation.expected_measurements)
+            && self.verify_mpc_hash(&attestation.tcb_info, allowed_docker_image_hashes)
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together.
@@ -152,7 +152,6 @@ impl Attestation {
     }
 
     fn replay_app_compose(app_compose: &str) -> [u8; 48] {
-        let app_compose = APP_COMPOSE_STR;
         let sha256_bytes: [u8; 32] = sha256(app_compose.as_bytes()).try_into().unwrap();
 
         // sha384 of custom encoding: [phala_prefix]:[event_name]:[sha256_payload]
@@ -231,16 +230,6 @@ impl Attestation {
             }
         };
 
-        // THIS IS A BUG. Should use APP_COMPOSE INSTEAD for validate_compose_hash.
-        // let docker_compose_file = match serde_yaml::to_string(&app_compose.docker_compose_file) {
-        //     Ok(yaml_string) => yaml_string,
-        //     Err(e) => {
-        //         return false;
-        //     }
-        // };
-
-        // let expected_compose_hash = &tcb_info.compose_hash;
-
         tcb_info
             .event_log
             .iter()
@@ -294,5 +283,3 @@ impl Attestation {
             .is_some_and(|digest| allowed_hashes.iter().any(|hash| hash.as_hex() == *digest))
     }
 }
-
-const APP_COMPOSE_STR: &str = include_str!("../tests/app-compose.json");

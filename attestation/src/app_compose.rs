@@ -123,5 +123,3 @@ mod tests {
         assert_eq!(app_compose.pre_launch_script, None);
     }
 }
-
-const APP_COMPOSE_STR: &str = include_str!("../tests/app-compose.json");
