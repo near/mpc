@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 from common_lib.constants import TGAS
 
@@ -36,7 +37,7 @@ def verify_txs(results, verification_callback, verbose=False):
         )
 
 
-def assert_txn_success(result):
+def assert_txn_success(result: dict[str, Any]):
     assert "result" in result, json.dumps(result, indent=1)
     assert "status" in result["result"], json.dumps(result["result"], indent=1)
     assert "SuccessValue" in result["result"]["status"], json.dumps(

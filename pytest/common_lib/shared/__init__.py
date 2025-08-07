@@ -278,7 +278,6 @@ def start_cluster_with_mpc(
             cluster.contract_node.last_block_hash(),
         )
         txs.append(tx)
-        # cluster.contract_node.send_txn_and_check_success(tx)  # takes time
 
     cluster.contract_node.send_await_check_txs_parallel(
         "create account", txs, assert_txn_success
@@ -310,8 +309,6 @@ def start_cluster_with_mpc(
             cluster.contract_node.last_block_hash(),
         )
         txs.append(tx)
-
-        # cluster.contract_node.send_txn_and_check_success(tx)
 
         mpc_node = MpcNode(
             near_node,

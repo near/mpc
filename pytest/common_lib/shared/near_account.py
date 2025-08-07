@@ -3,6 +3,7 @@ import json
 import pathlib
 import sys
 import time
+from typing import Any, Callable
 
 from key import Key
 
@@ -58,7 +59,10 @@ class NearAccount:
         return tx_hashes
 
     def send_await_check_txs_parallel(
-        self, label: str, txns: list[bytes], verification_callback
+        self,
+        label: str,
+        txns: list[bytes],
+        verification_callback: Callable[[dict[str, Any]], None],
     ):
         tx_hashes = self.send_txs_parallel_ret_hashes(txns, label)
         results = self.await_txs(tx_hashes)

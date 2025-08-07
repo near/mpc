@@ -1,18 +1,16 @@
 import base64
-from enum import verify
 import hashlib
 import json
 import pathlib
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 
-import requests
 
 from common_lib import constants
 from common_lib import signature
-from common_lib.constants import TGAS, TIMEOUT
+from common_lib.constants import TGAS
 from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
+from common_lib.contracts import ContractMethod
 from common_lib.shared.metrics import FloatMetricName, IntMetricName
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
@@ -21,7 +19,7 @@ from common_lib.signature import generate_sign_args
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from transaction import sign_deploy_contract_tx
 
@@ -79,11 +77,23 @@ class MpcCluster:
     def get_int_metric_value_for_node(self, metric_name, node_index):
         return self.mpc_nodes[node_index].metrics.get_int_metric_value(metric_name)
 
-    """
-    Deploy the MPC contract.
-    """
+    def parallel_contract_calls(
+        self,
+        method: ContractMethod,
+        nodes: List[MpcNode],
+        args: dict[str, Any],
+    ):
+        txns = [
+            node.sign_tx(self.mpc_contract_account(), method, args) for node in nodes
+        ]
+        self.contract_node.send_await_check_txs_parallel(
+            method, txns, assert_txn_success
+        )
 
     def deploy_contract(self, contract):
+        """
+        Deploy the MPC contract.
+        """
         last_block_hash = self.contract_node.last_block_hash()
         (key, nonce) = self.contract_node.get_key_and_nonce()
         tx = sign_deploy_contract_tx(key, contract, nonce + 1, last_block_hash)
@@ -246,14 +256,10 @@ class MpcCluster:
             "domains": domains_to_add,
         }
 
-        txns = [
-            node.sign_tx(
-                self.mpc_contract_account(), "vote_add_domains", args, nonce_offset=1
-            )
-            for node in self.get_voters()
-        ]
-        self.contract_node.send_await_check_txs_parallel(
-            "vote add domain(s)", txns, assert_txn_success
+        self.parallel_contract_calls(
+            method=ContractMethod.VOTE_ADD_DOMAINS,
+            nodes=self.get_voters(),
+            args=args,
         )
 
         assert self.wait_for_state("Initializing"), "failed to initialize"
@@ -278,20 +284,18 @@ class MpcCluster:
         state = self.contract_state()
         assert state.is_state("Running"), "Require running state"
 
-        txns = [
-            node.sign_tx(self.mpc_contract_account(), "vote_new_parameters", args)
-            for node in self.get_voters()
-        ]
-        self.contract_node.send_await_check_txs_parallel(
-            "vote new parameters", txns, assert_txn_success
+        self.parallel_contract_calls(
+            method=ContractMethod.VOTE_NEW_PARAMETERS,
+            nodes=self.get_voters(),
+            args=args,
         )
-        txns = [
-            node.sign_tx(self.mpc_contract_account(), "vote_new_parameters", args)
-            for node in new_participants
-            if node not in self.get_voters()
+        added_participants = [
+            node for node in new_participants if node not in self.get_voters()
         ]
-        self.contract_node.send_await_check_txs_parallel(
-            "vote new parameters", txns, assert_txn_success
+        self.parallel_contract_calls(
+            method=ContractMethod.VOTE_NEW_PARAMETERS,
+            nodes=added_participants,
+            args=args,
         )
 
         assert self.wait_for_state("Resharing"), "failed to start resharing"
@@ -300,7 +304,6 @@ class MpcCluster:
             self.update_participant_status()
 
     def get_contract_state(self):
-        # this function is quite slow, about 2 seconds
         cn = self.contract_node
         txn = cn.sign_tx(self.mpc_contract_account(), "state", {})
         res = cn.send_txn_and_check_success(txn)
@@ -375,7 +378,7 @@ class MpcCluster:
         participant = self.mpc_nodes[0]
         tx = participant.sign_tx(
             self.mpc_contract_account(),
-            "propose_update",
+            ContractMethod.PROPOSE_UPDATE,
             args,
             # TODO: #771 https://github.com/near/mpc/issues/771
             deposit=10574660000000000000000000,
@@ -403,10 +406,11 @@ class MpcCluster:
         sha256_hash = hashlib.sha256(contract_code).hexdigest()
         return sha256_hash
 
-    def vote_update(self, node, update_id):
+    def vote_update(self, nodes: List[MpcNode], update_id: int):
         vote_update_args = {"id": update_id}
-        tx = node.sign_tx(self.mpc_contract_account(), "vote_update", vote_update_args)
-        return node.send_txn_and_check_success(tx)
+        self.parallel_contract_calls(
+            method=ContractMethod.VOTE_UPDATE, nodes=nodes, args=vote_update_args
+        )
 
     def assert_is_deployed(self, contract):
         hash_expected = hashlib.sha256(contract).hexdigest()
