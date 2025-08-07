@@ -124,7 +124,7 @@ class MpcCluster:
             assert_contract=False
         )  # do not assert when contract is not initialized
         self.init_contract(threshold=threshold)
-        self.add_domains(domains, ignore_vote_errors=False)
+        self.add_domains(domains)
 
     def define_candidate_set(self, mpc_nodes: List[MpcNode]):
         """
@@ -225,7 +225,6 @@ class MpcCluster:
         self,
         signature_schemes: List[SignatureScheme],
         wait_for_running=True,
-        ignore_vote_errors=False,
     ):
         print(
             f"\033[91m(Vote Domains) Adding domains: \033[93m{signature_schemes}\033[0m"
@@ -253,13 +252,9 @@ class MpcCluster:
             )
             for node in self.get_voters()
         ]
-        try:
-            self.contract_node.send_await_check_txs_parallel(
-                "vote add domain(s)", txns, assert_txn_success
-            )
-        except Exception as err:
-            if not ignore_vote_errors:
-                assert False, err
+        self.contract_node.send_await_check_txs_parallel(
+            "vote add domain(s)", txns, assert_txn_success
+        )
 
         assert self.wait_for_state("Initializing"), "failed to initialize"
         if wait_for_running:

@@ -56,9 +56,7 @@ def test_update_to_current(fetch_contract):
     cluster.define_candidate_set(mpc_nodes)
     cluster.update_participant_status(assert_contract=False)
     cluster.init_contract(threshold=3)
-    cluster.add_domains(
-        signature_schemes=["Secp256k1", "Ed25519"], ignore_vote_errors=True
-    )
+    cluster.add_domains(signature_schemes=["Secp256k1", "Ed25519"])
     cluster.send_and_await_signature_requests(1)
 
     time.sleep(1)
