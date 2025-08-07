@@ -1,4 +1,3 @@
-from concurrent.futures.thread import ThreadPoolExecutor
 import json
 import os
 import pathlib
