@@ -21,7 +21,7 @@ It:
 - A working DStack VMM service (`vmm-server`) accessible at `$VMM_RPC`
 - Docker Compose template (`$DOCKER_COMPOSE_FILE_PATH`)
 - Deployment configuration in `.env`
-- See full CLI documentation here: [vmm-cli-user-guide.md](https://github.com/Dstack-TEE/dstack/blob/master/vmm-cli-user-guide.md)
+- See full CLI documentation here: [vmm-cli-user-guide.md](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md)
 
 ---
 
@@ -31,7 +31,7 @@ Ensure the following files are present in the working directory before running t
 
 - `.env` – contains deployment configuration
 - `$DOCKER_COMPOSE_FILE_PATH` – e.g. `launcher_docker_compose.yaml`
-- `$USER_CONFIG_FILE_PATH` – e.g. `user-config.json`
+- `$USER_CONFIG_FILE_PATH` – e.g. `user-config.conf`
 
 ---
 
@@ -87,7 +87,7 @@ MPC_VM_PORT=4444
 GIT_REV=HEAD
 OS_IMAGE=dstack-dev-0.5.0
 DOCKER_COMPOSE_FILE_PATH=launcher_docker_compose.yaml
-USER_CONFIG_FILE_PATH=user-config.json
+USER_CONFIG_FILE_PATH=user-config.conf
 SEALING_KEY_TYPE=SGX  # or 'KMS'
 ```
 

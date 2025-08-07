@@ -9,16 +9,24 @@
 # Default .env path
 ENV_FILE="default.env"
 
-# Parse optional --env-file or -e argument
+# Parse optional arguments
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     -e|--env-file)
       ENV_FILE="$2"
       shift 2
       ;;
+    -b|--base-path)
+      basePath="$2"
+      shift 2
+      ;;
+    -p|--python-exec)
+      pythonExec="$2"
+      shift 2
+      ;;
     *)
       echo "Unknown option: $1"
-      echo "Usage: $0 [--env-file <path>]"
+      echo "Usage: $0 [--env-file <path>] [--base-path <path>] [--python-exec <path>]"
       exit 1
       ;;
   esac
@@ -53,12 +61,11 @@ for var in "${required_env_vars[@]}"; do
   fi
 done
 
-basePath="/mnt/data/barak"
-CLI="$basePath/.venv/bin/python $basePath/meta-dstack/dstack/vmm/src/vmm-cli.py --url \$VMM_RPC"
+basePath="/mnt/data/barak" #modify this to your base path
+pythonExec="$basePath/.venv/bin/python" #modify this to your python executable path
+CLI="$pythonExec $basePath/meta-dstack/dstack/vmm/src/vmm-cli.py --url \$VMM_RPC"
 
 COMPOSE_TMP=$(mktemp)
-
-#GIT_REV=$(git rev-parse $GIT_REV)
 
 cp $DOCKER_COMPOSE_FILE_PATH "$COMPOSE_TMP"
 
@@ -119,6 +126,6 @@ $CLI deploy \
   --port tcp:$MPC_PUBLIC_PORT:$MPC_VM_PORT \
   --port tcp:8989:$MPC_DEBUG_PORT \
   --user-config $USER_CONFIG_FILE_PATH \
-  --vcpu 8 \
-  --memory 64G \
-  --disk 128G
+  --vcpu $VCPU \
+  --memory $MEMORY \
+  --disk $DISK \
