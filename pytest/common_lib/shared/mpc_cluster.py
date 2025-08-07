@@ -12,7 +12,7 @@ from common_lib import constants
 from common_lib import signature
 from common_lib.constants import TGAS, TIMEOUT
 from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
-from common_lib.shared.metrics import IntMetricName
+from common_lib.shared.metrics import FloatMetricName, IntMetricName
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
 from common_lib.signature import generate_sign_args
@@ -98,6 +98,11 @@ class MpcCluster:
 
     def mpc_contract_account(self):
         return self.contract_node.account_id()
+
+    def get_float_metric_value(
+        self, metric_name: FloatMetricName
+    ) -> List[Optional[float]]:
+        return [node.get_float_metric_value(metric_name) for node in self.mpc_nodes]
 
     def get_int_metric_value(self, metric_name: IntMetricName) -> List[Optional[int]]:
         return [node.get_int_metric_value(metric_name) for node in self.mpc_nodes]
@@ -458,7 +463,8 @@ class MpcCluster:
             self.mpc_contract_account(),
             "propose_update",
             args,
-            deposit=9764820000000000000000000,
+            # TODO: #771 https://github.com/near/mpc/issues/771
+            deposit=10574660000000000000000000,
         )
         res = participant.send_txn_and_check_success(tx, timeout=30)
         return int(

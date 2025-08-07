@@ -5,6 +5,7 @@ WORKDIR /app
 COPY node node
 COPY devnet devnet
 COPY attestation attestation
+COPY tee_authority tee_authority
 COPY crates crates
 COPY Cargo.lock Cargo.lock
 COPY Cargo.toml Cargo.toml

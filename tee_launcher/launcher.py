@@ -499,7 +499,7 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
     docker_cmd = ["docker", "run"]
 
     # add required environment variables.
-    # "IMAGE_HASH",  -  Digest of the Docker image - used by the MPC node to verify hash used.
+    # "IMAGE_HASH",  -  Digest of the Docker image - used my the MPC node to verify hash used.
     # "LATEST_ALLOWED_HASH_FILE" - Path to the shared digest file
     docker_cmd += ["--env", f"IMAGE_HASH={image_hash}"]
     docker_cmd += ["--env", f"LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
