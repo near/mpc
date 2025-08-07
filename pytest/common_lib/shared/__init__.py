@@ -267,6 +267,7 @@ def start_cluster_with_mpc(
 
     (key, nonce) = cluster.contract_node.get_key_and_nonce()
     txs = []
+    mpc_nodes = []
     for near_node, candidate in zip(observers, candidates):
         # add the nodes access key to the list
         nonce += 1
@@ -278,15 +279,6 @@ def start_cluster_with_mpc(
             cluster.contract_node.last_block_hash(),
         )
         txs.append(tx)
-
-    cluster.contract_node.send_await_check_txs_parallel(
-        "create account", txs, assert_txn_success
-    )
-
-    mpc_nodes = []
-    txs = []
-    (key, nonce) = cluster.contract_node.get_key_and_nonce()
-    for near_node, candidate in zip(observers, candidates):
         candidate_account_id = candidate.signer_key.account_id
         pytest_signer_keys = []
         for i in range(0, 5):
@@ -300,6 +292,7 @@ def start_cluster_with_mpc(
             pytest_signer_keys.append(pytest_signer_key)
 
         nonce += 1
+
         # Observer nodes haven't started yet so we use cluster node to send txs
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
