@@ -305,6 +305,7 @@ class MpcCluster:
             self.update_participant_status()
 
     def get_contract_state(self):
+        # this function is quite slow, about 2 seconds
         cn = self.contract_node
         txn = cn.sign_tx(self.mpc_contract_account(), "state", {})
         res = cn.send_txn_and_check_success(txn)

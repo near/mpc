@@ -81,7 +81,7 @@ def start_neard_cluster_with_cleanup(
         "rpc": {
             "polling_config": {
                 "polling_timeout": {"secs": 20, "nanos": 0},
-                "polling_interval": {"secs": 1, "nanos": 0},
+                "polling_interval": {"secs": 0, "nanos": 10000000},
             }
         }
     }
