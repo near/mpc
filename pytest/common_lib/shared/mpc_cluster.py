@@ -380,8 +380,12 @@ class MpcCluster:
             self.mpc_contract_account(),
             ContractMethod.PROPOSE_UPDATE,
             args,
+<<<<<<< HEAD
             # TODO: #771 https://github.com/near/mpc/issues/771
             deposit=10610730000000000000000000,
+=======
+            deposit=9765850000000000000000000,
+>>>>>>> 560750b (increase gas deposit)
         )
         res = participant.send_txn_and_check_success(tx, timeout=30)
         return int(
