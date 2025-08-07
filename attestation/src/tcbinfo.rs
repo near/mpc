@@ -8,7 +8,7 @@ pub struct TcbInfo(DstackTcbInfo);
 
 #[cfg(test)]
 mod tests {
-    use dstack_sdk::dstack_client::TcbInfo as DstackTcbInfo;
+    use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
     use serde_json::Value;
 
     #[test]

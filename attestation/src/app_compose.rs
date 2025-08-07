@@ -1,6 +1,5 @@
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 
 /// Custom deserializer to parse YAML string into YamlValue
@@ -23,13 +22,15 @@ pub struct AppCompose {
     pub runner: String,
     #[serde(deserialize_with = "deserialize_yaml_from_string")]
     pub docker_compose_file: YamlValue,
-    pub docker_config: JsonValue,
+    // TODO: Delete, it's empty anyway.
+    // pub docker_config: JsonValue,
     pub kms_enabled: bool,
     pub tproxy_enabled: Option<bool>,
     pub gateway_enabled: Option<bool>,
     pub public_logs: bool,
     pub public_sysinfo: bool,
-    pub public_tcbinfo: bool,
+    // TODO: Not used, can delete?
+    // pub public_tcbinfo: bool,
     pub local_key_provider_enabled: bool,
     pub key_provider_id: Option<String>,
     pub allowed_envs: Vec<String>,
@@ -102,15 +103,15 @@ mod tests {
             "jupyter-notebook"
         );
 
-        // Test that docker_config was parsed as JSON
-        assert!(app_compose.docker_config.is_object());
-        assert!(app_compose.docker_config.as_object().unwrap().is_empty());
+        // // Test that docker_config was parsed as JSON
+        // assert!(app_compose.docker_config.is_object());
+        // assert!(app_compose.docker_config.as_object().unwrap().is_empty());
 
         assert!(app_compose.kms_enabled);
         assert_eq!(app_compose.tproxy_enabled, Some(true));
         assert!(app_compose.public_logs);
         assert!(app_compose.public_sysinfo);
-        assert!(!app_compose.public_tcbinfo);
+        // assert!(!app_compose.public_tcbinfo);
         assert!(!app_compose.local_key_provider_enabled);
         assert_eq!(app_compose.allowed_envs, Vec::<String>::new());
         assert!(!app_compose.no_instance_id);
@@ -122,3 +123,5 @@ mod tests {
         assert_eq!(app_compose.pre_launch_script, None);
     }
 }
+
+const APP_COMPOSE_STR: &str = include_str!("../tests/app-compose.json");
