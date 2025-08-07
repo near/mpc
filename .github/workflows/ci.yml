@@ -55,7 +55,7 @@ jobs:
         run: |
           CARGO_TARGET_DIR="target/clippy" \
           RUSTFLAGS="-D warnings" \
-          cargo clippy --locked
+          cargo clippy --all-targets --locked
 
       - name: Run Cargo fmt
         run: |
@@ -85,7 +85,7 @@ jobs:
         run: |
           CARGO_TARGET_DIR="target/clippy" \
           RUSTFLAGS="-D warnings" \
-          cargo clippy --features "tee" --locked
+          cargo clippy --all-targets --features "tee" --locked
 
       - name: Run Cargo fmt
         run: |
