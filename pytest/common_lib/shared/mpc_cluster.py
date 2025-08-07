@@ -1,4 +1,5 @@
 import base64
+from enum import verify
 import hashlib
 import json
 import pathlib
@@ -15,6 +16,7 @@ from common_lib.contract_state import ContractState, ProtocolState, SignatureSch
 from common_lib.shared.metrics import FloatMetricName, IntMetricName
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
+from common_lib.shared.transaction_status import assert_txn_success
 from common_lib.signature import generate_sign_args
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -22,39 +24,6 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from typing import List, Optional
 
 from transaction import sign_deploy_contract_tx
-
-
-def verify_txs(results, verification_callback, verbose=False):
-    max_tgas_used = 0
-    total_tgas = 0
-    total_receipts = 0
-    num_txs = 0
-    for res in results:
-        num_txs += 1
-        gas_tx, n_rcpts_tx = extract_tx_costs(res)
-        max_tgas_used = max(max_tgas_used, gas_tx) / TGAS
-        total_tgas += gas_tx / TGAS
-        total_receipts += n_rcpts_tx
-        verification_callback(res)
-    if verbose:
-        print(
-            f"number of txs: {num_txs}\n max gas used (Tgas):{max_tgas_used}\n average receipts: {total_receipts / num_txs}\n average gas used (Tgas): {total_tgas / num_txs}\n"
-        )
-
-
-def extract_tx_costs(res):
-    """
-    returns `total_gas_used`, `num_receipts`
-    """
-    # Extract the gas burnt at transaction level
-    total_gas_used = res["result"]["transaction_outcome"]["outcome"]["gas_burnt"]
-
-    # Add the gas burnt for each receipt
-    num_receipts = 0
-    for receipt in res["result"]["receipts_outcome"]:
-        total_gas_used += receipt["outcome"]["gas_burnt"]
-        num_receipts += 1
-    return total_gas_used, num_receipts
 
 
 class MpcCluster:
@@ -278,18 +247,20 @@ class MpcCluster:
             "domains": domains_to_add,
         }
 
-        for node in self.get_voters():
-            print(f"{node.print()} voting to add domain(s)")
-            tx = node.sign_tx(
+        txns = [
+            node.sign_tx(
                 self.mpc_contract_account(), "vote_add_domains", args, nonce_offset=1
             )
-            try:
-                node.send_txn_and_check_success(tx)
-            except Exception as err:
-                if ignore_vote_errors:
-                    continue
-                else:
-                    assert False, err
+            for node in self.get_voters()
+        ]
+        try:
+            self.contract_node.send_await_check_txs_parallel(
+                "vote add domain(s)", txns, assert_txn_success
+            )
+        except Exception as err:
+            if not ignore_vote_errors:
+                assert False, err
+
         assert self.wait_for_state("Initializing"), "failed to initialize"
         if wait_for_running:
             assert self.wait_for_state("Running"), "failed to run"
@@ -311,15 +282,22 @@ class MpcCluster:
         }
         state = self.contract_state()
         assert state.is_state("Running"), "Require running state"
-        for node in self.get_voters():
-            tx = node.sign_tx(self.mpc_contract_account(), "vote_new_parameters", args)
-            node.send_txn_and_check_success(tx)
-        for node in new_participants:
-            if node not in self.get_voters():
-                tx = node.sign_tx(
-                    self.mpc_contract_account(), "vote_new_parameters", args
-                )
-                node.send_txn_and_check_success(tx)
+
+        txns = [
+            node.sign_tx(self.mpc_contract_account(), "vote_new_parameters", args)
+            for node in self.get_voters()
+        ]
+        self.contract_node.send_await_check_txs_parallel(
+            "vote new parameters", txns, assert_txn_success
+        )
+        txns = [
+            node.sign_tx(self.mpc_contract_account(), "vote_new_parameters", args)
+            for node in new_participants
+            if node not in self.get_voters()
+        ]
+        self.contract_node.send_await_check_txs_parallel(
+            "vote new parameters", txns, assert_txn_success
+        )
 
         assert self.wait_for_state("Resharing"), "failed to start resharing"
         if wait_for_running:
@@ -375,16 +353,6 @@ class MpcCluster:
                 txs.append(tx)
         return txs
 
-    def send_sign_request_txns(self, txs):
-        print(f"\033[91mSending \033[93m{len(txs)}\033[91m sign requests.\033[0m")
-
-        def send_tx(tx):
-            return self.sign_request_node.send_tx(tx)["result"]
-
-        with ThreadPoolExecutor() as executor:
-            tx_hashes = list(executor.map(send_tx, txs))
-        return tx_hashes
-
     def send_and_await_signature_requests(
         self,
         requests_per_domains: int,
@@ -400,62 +368,12 @@ class MpcCluster:
                 - If the indexers fail to observe the signature requests before `constants.TIMEOUT` is reached.
                 - If `sig_verification` raises an AssertionError.
         """
-        tx_hashes, _ = self.generate_and_send_signature_requests(
-            requests_per_domains, add_gas, add_deposit
-        )
-
-        results = self.await_txs_responses(tx_hashes)
-        verify_txs(results, sig_verification)
-
-    def generate_and_send_signature_requests(
-        self,
-        requests_per_domains: int,
-        add_gas: Optional[int] = None,
-        add_deposit: Optional[int] = None,
-    ):
-        """
-        Sends signature requests and returns the transactions and the timestamp they were sent.
-        """
         txs = self.make_sign_request_txns(
             requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
         )
-        return self.send_sign_request_txns(txs), time.time()
-
-    def observe_signature_requests(self, num_requests, started, tx_sent):
-        """
-        Wait for the indexers to observe the signature requests
-        In case num_requests > 1, some txs may not be included due to nonce conflicts
-        """
-        while True:
-            assert time.time() - started < TIMEOUT, "Waiting for mpc indexers"
-            try:
-                indexed_request_count = self.get_int_metric_value(
-                    "mpc_num_signature_requests_indexed"
-                )
-                print("num_signature_requests_indexed:", indexed_request_count)
-                if all(x and x == num_requests for x in indexed_request_count):
-                    tx_indexed = time.time()
-                    print("Indexer latency: ", tx_indexed - tx_sent)
-                    break
-            except requests.exceptions.ConnectionError:
-                pass
-            time.sleep(1)
-
-    def await_txs_responses(self, tx_hashes):
-        """
-        sends signature requests without waiting for the result
-        """
-        for _ in range(20):
-            try:
-                results = []
-                for tx_hash in tx_hashes:
-                    res = self.contract_node.get_tx(tx_hash)
-                    results.append(res)
-                    time.sleep(0.1)
-                return results
-            except Exception as e:
-                print(e)
-            time.sleep(1)
+        self.sign_request_node.send_await_check_txs_parallel(
+            "sign request", txs, sig_verification
+        )
 
     def propose_update(self, args):
         participant = self.mpc_nodes[0]
@@ -481,9 +399,9 @@ class MpcCluster:
             "finality": finality,
         }
         response = self.contract_node.near_node.json_rpc("query", query)
-        assert "error" not in response, (
-            f"Error fetching contract code: {response['error']}"
-        )
+        assert (
+            "error" not in response
+        ), f"Error fetching contract code: {response['error']}"
         code_b64 = response.get("result", {}).get("code_base64", "")
         contract_code = base64.b64decode(code_b64)
         sha256_hash = hashlib.sha256(contract_code).hexdigest()

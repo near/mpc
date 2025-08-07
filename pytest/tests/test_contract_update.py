@@ -13,6 +13,7 @@ import pathlib
 import pytest
 
 from common_lib import contracts
+from common_lib.shared.transaction_status import assert_txn_success, verify_txs
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
@@ -63,10 +64,15 @@ def test_update_to_current(fetch_contract):
     time.sleep(1)
     # introduce some state:
     args = {"prospective_epoch_id": 1, "proposal": cluster.make_threshold_parameters(3)}
-    for node in cluster.mpc_nodes[0:2]:
-        tx = node.sign_tx(cluster.mpc_contract_account(), "vote_new_parameters", args)
-        node.send_txn_and_check_success(tx)
-        cluster.contract_state().print()
+
+    txns = [
+        node.sign_tx(cluster.mpc_contract_account(), "vote_new_parameters", args)
+        for node in cluster.mpc_nodes[0:2]
+    ]
+    cluster.contract_node.send_await_check_txs_parallel(
+        "vote new parameters", txns, assert_txn_success
+    )
+    cluster.contract_state().print()
     new_contract = UpdateArgsV2(COMPILED_CONTRACT_PATH)
     cluster.propose_update(new_contract.borsh_serialize())
     for node in cluster.get_voters()[0:3]:
