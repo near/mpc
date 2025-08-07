@@ -12,8 +12,6 @@ import time
 import pathlib
 import pytest
 
-from common_lib import contracts
-
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import (
@@ -25,15 +23,6 @@ from common_lib.contracts import (
     fetch_testnet_contract,
     load_mpc_contract,
 )
-
-
-def deploy_and_init_v2(domains=["Secp256k1", "Ed25519"]):
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2, 4, 1, contracts.load_mpc_contract()
-    )
-    cluster.init_cluster(participants=mpc_nodes[:2], threshold=2, domains=domains)
-    cluster.contract_state().print()
-    return cluster, mpc_nodes
 
 
 def test_update_from_current():
