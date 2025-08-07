@@ -297,7 +297,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libudev-dev
-          cargo install cargo-near
+          cargo install cargo-near --locked
 
       - name: Setup python
         uses: actions/setup-python@v4
