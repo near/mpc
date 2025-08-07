@@ -20,8 +20,6 @@ use near_sdk::{
 use serde::Deserialize;
 use serde_json::Value;
 
-use serde_yaml::Value as YamlValue;
-
 //git rev-parse HEAD
 //fbdf2e76fb6bd9142277fdd84809de87d86548ef
 // https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
@@ -205,15 +203,18 @@ impl TeeParticipantInfo {
             .iter()
             .find(|e| e["event"].as_str() == Some("compose-hash"))
             .and_then(|e| e["digest"].as_str());
-        let app_compose = tcb_info["app_compose"].as_str();
+        let app_compose = match tcb_info.get("app_compose").and_then(|v| v.as_str()) {
+            Some(compose) => compose,
+            None => return false,
+        };
         match (expected_compose_hash, app_compose) {
-            (Some(expected), Some(app)) => replay_app_compose(app) == expected,
+            (Some(expected), app) => replay_app_compose(app) == expected,
             _ => false,
         }
     }
 
     fn check_app_compose_fields(tcb_info: &Value) -> bool {
-        let compose_str = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
+        let compose_str = match tcb_info.get("app_compose").and_then(|v| v.as_str()) {
             Some(compose) => compose,
             None => return false,
         };
@@ -260,22 +261,30 @@ impl TeeParticipantInfo {
         tcb_info: &Value,
         allowed_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
-        let compose_yaml = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
-            Some(yaml) => yaml,
+        let app_compose_str = match tcb_info.get("app_compose").and_then(|v| v.as_str()) {
+            Some(compose) => compose,
+            None => return false,
+        };
+        let app_compose: Value = match serde_json::from_str(app_compose_str).ok() {
+            Some(compose) => compose,
             None => return false,
         };
 
-        if serde_yaml::from_str::<YamlValue>(compose_yaml).is_err() {
-            return false;
-        }
+        let docker_compose = match app_compose
+            .get("docker_compose_file")
+            .and_then(|v| v.as_str())
+        {
+            Some(compose) => compose,
+            None => return false,
+        };
 
-        let compose_yaml_hash = sha256(compose_yaml.as_bytes());
-        let mut compose_yaml_hash_arr = [0u8; 32];
-        compose_yaml_hash_arr.copy_from_slice(&compose_yaml_hash);
+        let docker_compose_hash = sha256(docker_compose.as_bytes());
+        let mut docker_compose_hash_arr = [0u8; 32];
+        docker_compose_hash_arr.copy_from_slice(&docker_compose_hash);
 
         allowed_docker_compose_hashes
             .iter()
-            .any(|hash| hash.as_hex() == hex::encode(compose_yaml_hash_arr))
+            .any(|hash| hash.as_hex() == hex::encode(docker_compose_hash_arr))
     }
 
     fn check_local_sgx(event_log: &[Value]) -> bool {
