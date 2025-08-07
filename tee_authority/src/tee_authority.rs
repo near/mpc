@@ -1,4 +1,5 @@
-use crate::{
+use anyhow::{Context, bail};
+use attestation::{
     attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
     measurements::ExpectedMeasurements,
@@ -6,8 +7,6 @@ use crate::{
     report_data::ReportData,
     tcbinfo::TcbInfo,
 };
-use alloc::string::String;
-use anyhow::{Context, bail};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use derive_more::Constructor;
@@ -114,10 +113,9 @@ impl TeeAuthority {
             .timeout(core::time::Duration::from_secs(10))
             .build()
             .context("Failed to build HTTP client")?;
-        let tdx_quote = String::from(tdx_quote);
 
         let upload_tdx_quote = async || {
-            let form = Form::new().text("hex", tdx_quote.clone());
+            let form = Form::new().text("hex", tdx_quote.to_string());
 
             let response = reqwest_client
                 .post(quote_upload_url.clone())
@@ -186,7 +184,12 @@ where
                         Some(retries) => {
                             error!(?err, "{description} failed after {} retries", retries)
                         }
-                        None => continue,
+                        None => {
+                            error!(
+                                ?err,
+                                "{description} failed and backoff returned None with unlimited retries"
+                            );
+                        }
                     }
                     return Err(err);
                 }
@@ -198,7 +201,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::report_data::ReportDataV1;
+    use attestation::report_data::ReportDataV1;
 
     use super::*;
     use rstest::rstest;

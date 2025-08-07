@@ -4,7 +4,7 @@ use crate::{
 };
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
-use dstack_sdk::dstack_client::EventLog;
+use dstack_sdk_types::dstack::EventLog;
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::env::sha256;
@@ -21,10 +21,10 @@ pub enum Attestation {
 #[allow(dead_code)]
 #[derive(Constructor)]
 pub struct DstackAttestation {
-    quote: Quote,
-    collateral: Collateral,
-    tcb_info: TcbInfo,
-    expected_measurements: ExpectedMeasurements,
+    pub quote: Quote,
+    pub collateral: Collateral,
+    pub tcb_info: TcbInfo,
+    pub expected_measurements: ExpectedMeasurements,
 }
 
 #[derive(Constructor)]
