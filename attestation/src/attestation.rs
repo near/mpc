@@ -274,8 +274,6 @@ impl Attestation {
 
     /// Verifies local key-provider event digest matches the expected digest.
     fn verify_local_sgx_digest(
-    /// Verifies local key-provider event digest matches the expected digest.
-    fn verify_local_sgx_digest(
         &self,
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
