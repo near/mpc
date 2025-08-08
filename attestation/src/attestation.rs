@@ -12,9 +12,10 @@ use near_sdk::env::sha256;
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
 
-// Defined https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/tdx-attest/src/lib.rs#L28
+// DSTACK_EVENT_TYPE is defined in https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/tdx-attest/src/lib.rs#L28
 // It is the same for all events
 const DSTACK_EVENT_TYPE: u32 = 134217729;
+
 const COMPOSE_HASH_EVENT: &str = "compose-hash";
 const KEY_PROVIDER_EVENT: &str = "key-provider";
 const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
@@ -103,18 +104,38 @@ impl Attestation {
             && self.verify_mpc_hash(&attestation.tcb_info, allowed_docker_image_hashes)
     }
 
-    /// Replays RTMR3 from the event log by hashing all relevant events together.
-    fn replay_rtmr3(event_log: &[EventLog]) -> [u8; 48] {
+    /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all digests
+    /// are correct
+    fn verify_event_log_rtmr3(event_log: &[EventLog], expected_digest: [u8; 48]) -> bool {
         const IMR: u32 = 3;
         let mut digest = [0u8; 48];
 
         let filtered_events = event_log.iter().filter(|e| e.imr == IMR);
 
         for event in filtered_events {
+            if event.event_type != DSTACK_EVENT_TYPE {
+                // this is not strictly necessary
+                return false;
+            }
             let mut hasher = Sha384::new();
             hasher.update(digest);
             match hex::decode(event.digest.as_str()) {
-                Ok(decoded_bytes) => hasher.update(decoded_bytes.as_slice()),
+                Ok(decoded_bytes) => {
+                    let payload_bytes = match hex::decode(&event.event_payload) {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            tracing::error!("Failed to decode hex string for: {:?}", e);
+                            return false;
+                        }
+                    };
+                    let expected_bytes =
+                        Self::event_digest(event.event_type, &event.event, &payload_bytes);
+                    if decoded_bytes != expected_bytes {
+                        return false;
+                    }
+
+                    hasher.update(decoded_bytes.as_slice())
+                }
                 Err(e) => {
                     tracing::error!(
                         "Failed to decode hex digest in event log; skipping invalid event: {:?}",
@@ -126,17 +147,15 @@ impl Attestation {
             digest = hasher.finalize().into();
         }
 
-        digest
+        digest == expected_digest
     }
 
-    fn validate_app_compose_digest(expected_event_digest_hex: &str, app_compose: &str) -> bool {
-        let expected_digest = match hex::decode(expected_event_digest_hex) {
-            Ok(bytes) => match <[u8; 48]>::try_from(bytes.as_slice()) {
+    fn validate_app_compose_payload(expected_event_payload_hex: &str, app_compose: &str) -> bool {
+        let expected_payload = match hex::decode(expected_event_payload_hex) {
+            Ok(bytes) => match <[u8; 32]>::try_from(bytes.as_slice()) {
                 Ok(expected_bytes) => expected_bytes,
                 Err(_) => {
-                    tracing::error!(
-                        "Failed to convert decoded hex to [u8; 48] for compose-hash event"
-                    );
+                    tracing::error!("Failed to convert decoded hex to [u8; 32] for ");
                     return false;
                 }
             },
@@ -151,86 +170,7 @@ impl Attestation {
 
         let app_compose_hash: [u8; 32] = sha256(app_compose.as_bytes()).try_into().unwrap();
 
-        let actual_digest =
-            Self::event_digest(DSTACK_EVENT_TYPE, COMPOSE_HASH_EVENT, &app_compose_hash);
-
-        actual_digest == expected_digest
-    }
-
-    fn validate_local_sgx_digest(expected_event_digest_hex: &str, local_sgx_payload: &str) -> bool {
-        let expected_digest = match hex::decode(expected_event_digest_hex) {
-            Ok(bytes) => match <[u8; 48]>::try_from(bytes.as_slice()) {
-                Ok(expected_bytes) => expected_bytes,
-                Err(_) => {
-                    tracing::error!(
-                        "Failed to convert decoded hex to [u8; 48] for key-provider event"
-                    );
-                    return false;
-                }
-            },
-            Err(e) => {
-                tracing::error!(
-                    "Failed to decode hex string for key-provider event: {:?}",
-                    e
-                );
-                return false;
-            }
-        };
-
-        let local_sgx_digest = match hex::decode(local_sgx_payload) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                tracing::error!(
-                    "Failed to decode hex string for key-provider event: {:?}",
-                    e
-                );
-                return false;
-            }
-        };
-
-        let actual_digest =
-            Self::event_digest(DSTACK_EVENT_TYPE, KEY_PROVIDER_EVENT, &local_sgx_digest);
-
-        actual_digest == expected_digest
-    }
-
-    fn validate_mpc_hash_digest(
-        expected_event_digest_hex: &str,
-        mpc_image_digest_payload: &str,
-    ) -> bool {
-        let expected_digest = match hex::decode(expected_event_digest_hex) {
-            Ok(bytes) => match <[u8; 48]>::try_from(bytes.as_slice()) {
-                Ok(expected_bytes) => expected_bytes,
-                Err(_) => {
-                    tracing::error!(
-                        "Failed to convert decoded hex to [u8; 48] for key-provider event"
-                    );
-                    return false;
-                }
-            },
-            Err(e) => {
-                tracing::error!(
-                    "Failed to decode hex string for key-provider event: {:?}",
-                    e
-                );
-                return false;
-            }
-        };
-
-        let mpc_image_digest = match hex::decode(mpc_image_digest_payload) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                tracing::error!(
-                    "Failed to decode hex string for key-provider event: {:?}",
-                    e
-                );
-                return false;
-            }
-        };
-
-        let actual_digest =
-            Self::event_digest(DSTACK_EVENT_TYPE, MPC_IMAGE_HASH_EVENT, &mpc_image_digest);
-        actual_digest == expected_digest
+        app_compose_hash == expected_payload
     }
 
     /// Verifies TCB status and security advisories.
@@ -284,7 +224,7 @@ impl Attestation {
     /// Verifies RTMR3 by replaying event log.
     fn verify_rtmr3(&self, report_data: &dcap_qvl::quote::TDReport10, tcb_info: &TcbInfo) -> bool {
         tcb_info.rtmr3 == hex::encode(report_data.rt_mr3)
-            && report_data.rt_mr3 == Self::replay_rtmr3(&tcb_info.event_log)
+            && Self::verify_event_log_rtmr3(&tcb_info.event_log, report_data.rt_mr3)
     }
 
     /// Verifies app compose configuration and hash. The compose-hash is measured into RTMR3, and
@@ -305,10 +245,9 @@ impl Attestation {
             .find(|event| event.event == COMPOSE_HASH_EVENT);
         events.iter().len() == 1
             && events.is_some_and(|event| {
-                let expected_event_digest_hex = &event.digest;
                 Self::validate_app_compose_config(&app_compose)
-                    && Self::validate_app_compose_digest(
-                        expected_event_digest_hex,
+                    && Self::validate_app_compose_payload(
+                        &event.event_payload,
                         &tcb_info.app_compose,
                     )
             })
@@ -342,7 +281,6 @@ impl Attestation {
         events.iter().len() == 1
             && events.is_some_and(|event| {
                 event.digest == hex::encode(expected_measurements.local_sgx_hash)
-                    && Self::validate_local_sgx_digest(&event.digest, &event.event_payload)
             })
     }
 
@@ -358,7 +296,6 @@ impl Attestation {
                 allowed_hashes
                     .iter()
                     .any(|hash| hash.as_hex() == *event.event_payload)
-                    && Self::validate_mpc_hash_digest(&event.digest, &event.event_payload)
             })
     }
 
