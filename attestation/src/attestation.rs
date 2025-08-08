@@ -12,8 +12,12 @@ use near_sdk::env::sha256;
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
 
-const COMPOSE_HASH_EVENT_TYPE: u32 = 134217729;
+// Defined https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/tdx-attest/src/lib.rs#L28
+// It is the same for all events
+const DSTACK_EVENT_TYPE: u32 = 134217729;
 const COMPOSE_HASH_EVENT: &str = "compose-hash";
+const KEY_PROVIDER_EVENT: &str = "key-provider";
+const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 
 #[allow(clippy::large_enum_variant)]
 pub enum Attestation {
@@ -145,17 +149,87 @@ impl Attestation {
             }
         };
 
-        let sha256_bytes: [u8; 32] = sha256(app_compose.as_bytes()).try_into().unwrap();
+        let app_compose_hash: [u8; 32] = sha256(app_compose.as_bytes()).try_into().unwrap();
 
-        // sha384 of custom encoding: [phala_prefix]:[event_name]:[sha256_payload]
-        let mut hasher = Sha384::new();
-        hasher.update(COMPOSE_HASH_EVENT_TYPE.to_le_bytes());
-        hasher.update(b":");
-        hasher.update(COMPOSE_HASH_EVENT.as_bytes());
-        hasher.update(b":");
-        hasher.update(sha256_bytes);
-        let actual_digest: [u8; 48] = hasher.finalize().into();
+        let actual_digest =
+            Self::event_digest(DSTACK_EVENT_TYPE, COMPOSE_HASH_EVENT, &app_compose_hash);
 
+        actual_digest == expected_digest
+    }
+
+    fn validate_local_sgx_digest(expected_event_digest_hex: &str, local_sgx_payload: &str) -> bool {
+        let expected_digest = match hex::decode(expected_event_digest_hex) {
+            Ok(bytes) => match <[u8; 48]>::try_from(bytes.as_slice()) {
+                Ok(expected_bytes) => expected_bytes,
+                Err(_) => {
+                    tracing::error!(
+                        "Failed to convert decoded hex to [u8; 48] for key-provider event"
+                    );
+                    return false;
+                }
+            },
+            Err(e) => {
+                tracing::error!(
+                    "Failed to decode hex string for key-provider event: {:?}",
+                    e
+                );
+                return false;
+            }
+        };
+
+        let local_sgx_digest = match hex::decode(local_sgx_payload) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                tracing::error!(
+                    "Failed to decode hex string for key-provider event: {:?}",
+                    e
+                );
+                return false;
+            }
+        };
+
+        let actual_digest =
+            Self::event_digest(DSTACK_EVENT_TYPE, KEY_PROVIDER_EVENT, &local_sgx_digest);
+
+        actual_digest == expected_digest
+    }
+
+    fn validate_mpc_hash_digest(
+        expected_event_digest_hex: &str,
+        mpc_image_digest_payload: &str,
+    ) -> bool {
+        let expected_digest = match hex::decode(expected_event_digest_hex) {
+            Ok(bytes) => match <[u8; 48]>::try_from(bytes.as_slice()) {
+                Ok(expected_bytes) => expected_bytes,
+                Err(_) => {
+                    tracing::error!(
+                        "Failed to convert decoded hex to [u8; 48] for key-provider event"
+                    );
+                    return false;
+                }
+            },
+            Err(e) => {
+                tracing::error!(
+                    "Failed to decode hex string for key-provider event: {:?}",
+                    e
+                );
+                return false;
+            }
+        };
+
+        let mpc_image_digest = match hex::decode(mpc_image_digest_payload) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                tracing::error!(
+                    "Failed to decode hex string for key-provider event: {:?}",
+                    e
+                );
+                return false;
+            }
+        };
+
+        let actual_digest =
+            Self::event_digest(DSTACK_EVENT_TYPE, MPC_IMAGE_HASH_EVENT, &mpc_image_digest);
         actual_digest == expected_digest
     }
 
@@ -225,13 +299,13 @@ impl Attestation {
             }
         };
 
-        tcb_info
+        let events = tcb_info
             .event_log
             .iter()
-            .find(|event| event.event == "compose-hash")
-            .is_some_and(|event| {
+            .find(|event| event.event == COMPOSE_HASH_EVENT);
+        events.iter().len() == 1
+            && events.is_some_and(|event| {
                 let expected_event_digest_hex = &event.digest;
-
                 Self::validate_app_compose_config(&app_compose)
                     && Self::validate_app_compose_digest(
                         expected_event_digest_hex,
@@ -261,21 +335,41 @@ impl Attestation {
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
     ) -> bool {
-        tcb_info
+        let events = tcb_info
             .event_log
             .iter()
-            .find(|event| event.event == "key-provider")
-            .map(|event| &event.digest)
-            .is_some_and(|hash| *hash == hex::encode(expected_measurements.local_sgx_hash))
+            .find(|event| event.event == KEY_PROVIDER_EVENT);
+        events.iter().len() == 1
+            && events.is_some_and(|event| {
+                event.digest == hex::encode(expected_measurements.local_sgx_hash)
+                    && Self::validate_local_sgx_digest(&event.digest, &event.event_payload)
+            })
     }
 
     /// Verifies MPC node image hash is in allowed list.
     fn verify_mpc_hash(&self, tcb_info: &TcbInfo, allowed_hashes: &[MpcDockerImageHash]) -> bool {
-        tcb_info
+        let events = tcb_info
             .event_log
             .iter()
-            .find(|e| e.event == "mpc-image-digest")
-            .map(|e| &e.event_payload)
-            .is_some_and(|digest| allowed_hashes.iter().any(|hash| hash.as_hex() == *digest))
+            .find(|event| event.event == MPC_IMAGE_HASH_EVENT);
+
+        events.iter().len() == 1
+            && events.is_some_and(|event| {
+                allowed_hashes
+                    .iter()
+                    .any(|hash| hash.as_hex() == *event.event_payload)
+                    && Self::validate_mpc_hash_digest(&event.digest, &event.event_payload)
+            })
+    }
+
+    // Implementation taken to match Dstack's https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/cc-eventlog/src/lib.rs#L54
+    fn event_digest(ty: u32, event: &str, payload: &[u8]) -> [u8; 48] {
+        let mut hasher = Sha384::new();
+        hasher.update(ty.to_ne_bytes());
+        hasher.update(b":");
+        hasher.update(event.as_bytes());
+        hasher.update(b":");
+        hasher.update(payload);
+        hasher.finalize().into()
     }
 }
