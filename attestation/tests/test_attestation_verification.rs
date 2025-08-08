@@ -12,7 +12,8 @@ use rstest::rstest;
 use serde_json::{Value, json};
 
 const TEST_TCB_INFO_STRING: &str = include_str!("../tests/tcb_info.json");
-const TEST_MPC_IMAGE_DIGEST_HEX: &str = "bcb7a884a6ba0970997335c548b61e2486be6065860219c5f436291d57ce62a8feb2405a63dfbbfca63be8ab6cd9e72a";
+const TEST_MPC_IMAGE_DIGEST_HEX: &str =
+    "a87f7eb6882446dd714e6d47d9d1b9331cb333f36d3905f172c68adbd06e461f";
 
 fn mock_local_attestation(quote_verification_result: bool) -> Attestation {
     Attestation::Local(LocalAttestation::new(quote_verification_result))
@@ -106,14 +107,8 @@ fn test_verify_method_signature() {
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
     let timestamp_s = 1754405596_u64;
 
-    let mpc_image_digest_bytes: [u8; 48] = hex::decode(TEST_MPC_IMAGE_DIGEST_HEX)
-        .unwrap()
-        .try_into()
-        .inspect_err(|e: &Vec<u8>| println!("LENGTH: {:?}", e.len()))
-        .unwrap();
-
-    // TODO: MpcDockerImageHash is 48 bytes, not 32.
-    let allowed_mpc_image_digest = MpcDockerImageHash::from(mpc_image_digest_bytes);
+    let allowed_mpc_image_digest =
+        MpcDockerImageHash::try_from_hex(TEST_MPC_IMAGE_DIGEST_HEX).unwrap();
 
     let verification_result =
         attestation.verify(report_data, timestamp_s, &[allowed_mpc_image_digest]);

@@ -242,15 +242,13 @@ impl Attestation {
         app_compose.manifest_version == 2
             && app_compose.runner == "docker-compose"
             && !app_compose.kms_enabled
-            // TOOD: do we need this time check?
-            // && app_compose.gateway_enabled == Some(false)
+            && app_compose.gateway_enabled == Some(false)
             && app_compose.public_logs
             && app_compose.public_sysinfo
             && app_compose.local_key_provider_enabled
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
-            // TODO: Do we need this?
-            // && app_compose.secure_time == Some(false)
+            && app_compose.secure_time == Some(true)
             && app_compose.pre_launch_script.is_none()
     }
 
@@ -274,10 +272,7 @@ impl Attestation {
             .event_log
             .iter()
             .find(|e| e.event == "mpc-image-digest")
-            .map(|e| &e.digest)
-            .is_some_and(|digest| {
-                println!("Found digesgt: {:?}", digest);
-                allowed_hashes.iter().any(|hash| hash.as_hex() == *digest)
-            })
+            .map(|e| &e.event_payload)
+            .is_some_and(|digest| allowed_hashes.iter().any(|hash| hash.as_hex() == *digest))
     }
 }

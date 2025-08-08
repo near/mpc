@@ -1,7 +1,9 @@
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::marker::PhantomData;
 use derive_more::{AsRef, Deref, Into};
+use hex::FromHexError;
+use thiserror::Error;
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -43,9 +45,35 @@ impl<T> From<[u8; 32]> for Hash32<T> {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum HexToHashError {
+    #[error("The provided string is not a valid hex.")]
+    InvalidHex(#[from] FromHexError),
+    #[error("The provided hex is not 32 bytes. Got `{provided_length}` bytes instead.")]
+    InvalidLength { provided_length: usize },
+}
+
 impl<T> Hash32<T> {
+    /// Converts the hash to a hexadecimal string representation.
     pub fn as_hex(&self) -> String {
         hex::encode(self.as_ref())
+    }
+
+    /// Attempts to create a [`Hash32`] from a hexadecimal string.
+    ///
+    /// # Errors
+    /// Returns [`HexToHashError::InvalidHex`] if the string contains non-hex characters.
+    /// Returns [`HexToHashError::InvalidLength`] if the decoded bytes are not exactly 32 bytes.
+    pub fn try_from_hex(hex_hash: impl AsRef<[u8]>) -> Result<Self, HexToHashError> {
+        let decoded_hex = hex::decode(hex_hash)?;
+        let bytes: [u8; 32] =
+            decoded_hex
+                .try_into()
+                .map_err(|err: Vec<u8>| HexToHashError::InvalidLength {
+                    provided_length: err.len(),
+                })?;
+
+        Ok(Self::from(bytes))
     }
 }
 
