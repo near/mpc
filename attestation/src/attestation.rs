@@ -102,6 +102,8 @@ impl Attestation {
             && self.verify_app_compose(&attestation.tcb_info)
             && self
                 .verify_local_sgx_digest(&attestation.tcb_info, &attestation.expected_measurements)
+            && self
+                .verify_local_sgx_digest(&attestation.tcb_info, &attestation.expected_measurements)
             && self.verify_mpc_hash(&attestation.tcb_info, allowed_docker_image_hashes)
     }
 
@@ -266,9 +268,12 @@ impl Attestation {
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
             && app_compose.secure_time == Some(true)
+            && app_compose.secure_time == Some(true)
             && app_compose.pre_launch_script.is_none()
     }
 
+    /// Verifies local key-provider event digest matches the expected digest.
+    fn verify_local_sgx_digest(
     /// Verifies local key-provider event digest matches the expected digest.
     fn verify_local_sgx_digest(
         &self,
