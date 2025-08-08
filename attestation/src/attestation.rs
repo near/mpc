@@ -242,18 +242,17 @@ impl Attestation {
             }
         };
 
-        let events = tcb_info
+        let mut events = tcb_info
             .event_log
             .iter()
-            .find(|event| event.event == COMPOSE_HASH_EVENT);
-        events.iter().len() == 1
-            && events.is_some_and(|event| {
-                Self::validate_app_compose_config(&app_compose)
-                    && Self::validate_app_compose_payload(
-                        &event.event_payload,
-                        &tcb_info.app_compose,
-                    )
-            })
+            .filter(|event| event.event == COMPOSE_HASH_EVENT);
+
+        let is_payload_correct = events.next().is_some_and(|event| {
+            Self::validate_app_compose_config(&app_compose)
+                && Self::validate_app_compose_payload(&event.event_payload, &tcb_info.app_compose)
+        });
+        let single_repetition = events.next().is_none();
+        single_repetition && is_payload_correct
     }
 
     /// Validates app compose configuration against expected security requirements.
@@ -278,31 +277,32 @@ impl Attestation {
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
     ) -> bool {
-        let events = tcb_info
+        let mut events = tcb_info
             .event_log
             .iter()
-            .find(|event| event.event == KEY_PROVIDER_EVENT);
-        let event_repetitions = events.iter().len();
-        let is_digest_correct = events.is_some_and(|event| {
+            .filter(|event| event.event == KEY_PROVIDER_EVENT);
+        let is_digest_correct = events.next().is_some_and(|event| {
             event.digest == hex::encode(expected_measurements.local_sgx_event_digest)
         });
-        event_repetitions == 1 && is_digest_correct
+        let single_repetition = events.next().is_none();
+        single_repetition && is_digest_correct
     }
 
     /// Verifies MPC node image hash is in allowed list.
     fn verify_mpc_hash(&self, tcb_info: &TcbInfo, allowed_hashes: &[MpcDockerImageHash]) -> bool {
-        let mpc_image_hash_events = tcb_info
+        let mut mpc_image_hash_events = tcb_info
             .event_log
             .iter()
-            .find(|event| event.event == MPC_IMAGE_HASH_EVENT);
+            .filter(|event| event.event == MPC_IMAGE_HASH_EVENT);
 
-        let event_repetitions = mpc_image_hash_events.iter().len();
-        let is_digest_correct = mpc_image_hash_events.is_some_and(|event| {
+        //
+        let is_digest_correct = mpc_image_hash_events.next().is_some_and(|event| {
             allowed_hashes
                 .iter()
                 .any(|hash| hash.as_hex() == *event.event_payload)
         });
-        event_repetitions == 1 && is_digest_correct
+        let single_repetition = mpc_image_hash_events.next().is_none();
+        single_repetition && is_digest_correct
     }
 
     // Implementation taken to match Dstack's https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/cc-eventlog/src/lib.rs#L54
