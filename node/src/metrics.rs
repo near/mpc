@@ -227,8 +227,3 @@ pub fn init_build_info_metric() {
         .with_label_values(&[version, build_time, rustc_version, commit])
         .set(1);
 }
-
-/// Ensure the build info metric is set (can be called multiple times safely)
-pub fn ensure_build_info_metric() {
-    init_build_info_metric();
-}
