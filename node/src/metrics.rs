@@ -215,7 +215,7 @@ pub fn init_build_info_metric() {
     let version = crate::build_info::MPC_VERSION;
     let build_time = crate::build_info::MPC_BUILD_TIME;
     let rustc_version = crate::build_info::RUSTC_VERSION;
-    let commit = crate::build_info::MPC_COMMIT;
+    let commit = &*crate::build_info::MPC_COMMIT;
 
     MPC_BUILD_INFO
         .with_label_values(&[version, build_time, rustc_version, commit])

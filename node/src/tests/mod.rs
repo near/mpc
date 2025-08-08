@@ -428,13 +428,13 @@ fn test_build_info_metric() {
     // Verify that the environment variables are set
     let version = crate::build_info::MPC_VERSION;
     let build_time = crate::build_info::MPC_BUILD_TIME;
-    let commit = crate::build_info::MPC_COMMIT;
+    let commit = &*crate::build_info::MPC_COMMIT;
     let rustc_version = crate::build_info::RUSTC_VERSION;
 
     // Verify that the version information is not "unknown"
     assert_ne!(version, "unknown", "MPC_VERSION should be set");
     assert_ne!(build_time, "unknown", "MPC_BUILD_TIME should be set");
-    assert_ne!(commit, "unknown", "MPC_COMMIT should be set");
+    assert_ne!(*commit, "unknown", "MPC_COMMIT should be set");
     assert_ne!(rustc_version, "unknown", "MPC_RUSTC_VERSION should be set");
 
     // Verify that the version string contains all the expected information
@@ -465,7 +465,7 @@ fn test_build_info_metric_values() {
     let version = crate::build_info::MPC_VERSION;
     let build_time = crate::build_info::MPC_BUILD_TIME;
     let rustc_version = crate::build_info::RUSTC_VERSION;
-    let commit = crate::build_info::MPC_COMMIT;
+    let commit = &*crate::build_info::MPC_COMMIT;
 
     // Check that the metric exists with the correct labels
     let gauge = metric.with_label_values(&[version, build_time, rustc_version, commit]);
