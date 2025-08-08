@@ -285,7 +285,7 @@ impl TeeParticipantInfo {
     fn check_local_sgx(event_log: &[Value]) -> bool {
         let local_sgx_hash = event_log
             .iter()
-            .find(|e| e["event"].as_str() == Some("local-sgx"))
+            .find(|e| e["event"].as_str() == Some("key-provider"))
             .and_then(|e| e["digest"].as_str());
         match local_sgx_hash {
             Some(hash) => hash == EXPECTED_LOCAL_SGX_HASH,

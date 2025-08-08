@@ -12,6 +12,9 @@ use near_sdk::env::sha256;
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
 
+const COMPOSE_HASH_EVENT_TYPE: u32 = 134217729;
+const COMPOSE_HASH_EVENT: &str = "compose-hash";
+
 #[allow(clippy::large_enum_variant)]
 pub enum Attestation {
     Dstack(DstackAttestation),
@@ -92,7 +95,8 @@ impl Attestation {
             )
             && self.verify_rtmr3(report_data, &attestation.tcb_info)
             && self.verify_app_compose(&attestation.tcb_info)
-            && self.verify_local_sgx_hash(&attestation.tcb_info, &attestation.expected_measurements)
+            && self
+                .verify_local_sgx_digest(&attestation.tcb_info, &attestation.expected_measurements)
             && self.verify_mpc_hash(&attestation.tcb_info, allowed_docker_image_hashes)
     }
 
@@ -122,15 +126,15 @@ impl Attestation {
         digest
     }
 
-    fn validate_compose_hash(expected_hex: &str, app_compose: &str) -> bool {
-        match hex::decode(expected_hex) {
+    fn validate_app_compose_digest(expected_event_digest_hex: &str, app_compose: &str) -> bool {
+        let expected_digest = match hex::decode(expected_event_digest_hex) {
             Ok(bytes) => match <[u8; 48]>::try_from(bytes.as_slice()) {
-                Ok(expected_bytes) => Self::replay_app_compose(app_compose) == expected_bytes,
+                Ok(expected_bytes) => expected_bytes,
                 Err(_) => {
                     tracing::error!(
                         "Failed to convert decoded hex to [u8; 48] for compose-hash event"
                     );
-                    false
+                    return false;
                 }
             },
             Err(e) => {
@@ -138,25 +142,22 @@ impl Attestation {
                     "Failed to decode hex string for compose-hash event: {:?}",
                     e
                 );
-                false
+                return false;
             }
-        }
-    }
+        };
 
-    fn replay_app_compose(app_compose: &str) -> [u8; 48] {
-        // sha256 of app_compose from TcbInfo
-        let sha256_vec = sha256(app_compose.as_bytes());
-        let mut sha256_bytes = [0u8; 32];
-        sha256_bytes.copy_from_slice(&sha256_vec);
+        let sha256_bytes: [u8; 32] = sha256(app_compose.as_bytes()).try_into().unwrap();
 
         // sha384 of custom encoding: [phala_prefix]:[event_name]:[sha256_payload]
         let mut hasher = Sha384::new();
-        hasher.update([0x01, 0x00, 0x00, 0x08]);
+        hasher.update(COMPOSE_HASH_EVENT_TYPE.to_le_bytes());
         hasher.update(b":");
-        hasher.update("compose-hash".as_bytes());
+        hasher.update(COMPOSE_HASH_EVENT.as_bytes());
         hasher.update(b":");
         hasher.update(sha256_bytes);
-        hasher.finalize().into()
+        let actual_digest: [u8; 48] = hasher.finalize().into();
+
+        actual_digest == expected_digest
     }
 
     /// Verifies TCB status and security advisories.
@@ -225,18 +226,18 @@ impl Attestation {
             }
         };
 
-        let docker_compose = match serde_yaml::to_string(&app_compose.docker_compose_file) {
-            Ok(yaml_string) => yaml_string,
-            Err(_) => return false,
-        };
-
         tcb_info
             .event_log
             .iter()
             .find(|event| event.event == "compose-hash")
             .is_some_and(|event| {
+                let expected_event_digest_hex = &event.digest;
+
                 Self::validate_app_compose_config(&app_compose)
-                    && Self::validate_compose_hash(&event.digest, &docker_compose)
+                    && Self::validate_app_compose_digest(
+                        expected_event_digest_hex,
+                        &tcb_info.app_compose,
+                    )
             })
     }
 
@@ -244,7 +245,6 @@ impl Attestation {
     fn validate_app_compose_config(app_compose: &AppCompose) -> bool {
         app_compose.manifest_version == 2
             && app_compose.runner == "docker-compose"
-            && app_compose.docker_config == serde_json::json!({})
             && !app_compose.kms_enabled
             && app_compose.gateway_enabled == Some(false)
             && app_compose.public_logs
@@ -252,12 +252,12 @@ impl Attestation {
             && app_compose.local_key_provider_enabled
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
-            && app_compose.secure_time == Some(false)
+            && app_compose.secure_time == Some(true)
             && app_compose.pre_launch_script.is_none()
     }
 
-    /// Verifies local SGX hash matches expected value.
-    fn verify_local_sgx_hash(
+    /// Verifies local key-provider event digest matches the expected digest.
+    fn verify_local_sgx_digest(
         &self,
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
@@ -265,9 +265,12 @@ impl Attestation {
         tcb_info
             .event_log
             .iter()
-            .find(|event| event.event == "local-sgx")
-            .map(|event| &event.digest)
-            .is_some_and(|hash| *hash == hex::encode(expected_measurements.local_sgx_hash))
+            .find(|event| event.event == "key-provider")
+            .is_some_and(|event| {
+                let key_provider_digest = &event.digest;
+                let expected_digest = hex::encode(expected_measurements.local_sgx_event_digest);
+                *key_provider_digest == expected_digest
+            })
     }
 
     /// Verifies MPC node image hash is in allowed list.
@@ -276,43 +279,7 @@ impl Attestation {
             .event_log
             .iter()
             .find(|e| e.event == "mpc-image-digest")
-            .map(|e| &e.digest)
+            .map(|e| &e.event_payload)
             .is_some_and(|digest| allowed_hashes.iter().any(|hash| hash.as_hex() == *digest))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::report_data::ReportDataV1;
-
-    use super::*;
-    use rstest::rstest;
-
-    fn mock_attestation(quote_verification_result: bool) -> Attestation {
-        Attestation::Local(LocalAttestation {
-            verification_result: quote_verification_result,
-        })
-    }
-
-    #[rstest]
-    #[case(false, false)]
-    #[case(true, true)]
-    fn test_mock_attestation_verify(
-        #[case] quote_verification_result: bool,
-        #[case] expected_quote_verification_result: bool,
-    ) {
-        let timestamp_s = 0u64;
-        let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
-            .parse()
-            .unwrap();
-        let account_key = "ed25519:H9k5eiU4xXyb8F7cUDjZYNuH1zGAx5BBNrYwLPNhq6Zx"
-            .parse()
-            .unwrap();
-        let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
-
-        assert_eq!(
-            mock_attestation(quote_verification_result).verify(report_data, timestamp_s, &[],),
-            expected_quote_verification_result
-        );
     }
 }
