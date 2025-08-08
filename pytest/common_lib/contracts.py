@@ -119,3 +119,10 @@ class UpdateArgsV2:
     def dump_json(self):
         assert self.config is not None
         return self.config.dump_json()
+
+
+class ContractMethod(str, Enum):
+    VOTE_NEW_PARAMETERS = "vote_new_parameters"
+    VOTE_ADD_DOMAINS = "vote_add_domains"
+    PROPOSE_UPDATE = "propose_update"
+    VOTE_UPDATE = "vote_update"
