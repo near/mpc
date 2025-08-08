@@ -100,7 +100,7 @@ const LRU_CAPACITY: usize = 10000;
 impl MeshNetworkClient {
     /// The maximum height difference that we are willing to accept.
     /// This is used to filter out participants that are too far behind in the indexer height.
-    const MAX_HEIGHT_DIFF: u64 = 100;
+    const MAX_HEIGHT_DIFF: u64 = 50;
     fn new(
         transport_sender: Arc<dyn MeshNetworkTransportSender>,
         channels: Arc<Mutex<NetworkTaskChannelManager>>,
