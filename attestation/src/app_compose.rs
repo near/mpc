@@ -33,12 +33,10 @@ pub struct AppCompose {
     pub no_instance_id: bool,
     pub secure_time: Option<bool>,
     pub pre_launch_script: Option<String>,
+    // The following fields that don't have any security implication are omitted:
     //
-    // The following fields that don't have any security implication
-    // so they are omitted from [`AppCompose`]:
-    //
-    // docker_config: JsonValue,
-    // pub public_tcbinfo: bool,
+    // - docker_config: JsonValue,
+    // - public_tcbinfo: bool,
 }
 
 #[cfg(test)]
