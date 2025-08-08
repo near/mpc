@@ -33,7 +33,8 @@ const EXPECTED_RTMR2: [u8; 48] = [
     0x39, 0x30, 0x99, 0x23, 0x4a, 0xbc, 0x03, 0x09, 0xf0, 0x39, 0x36, 0xed, 0xeb, 0xf7, 0x4b, 0x1f,
 ];
 
-const EXPECTED_LOCAL_SGX_HASH: [u8; 48] = [
+/// This is the expected digest, and not the payload for the `local-sgx` event.
+const EXPECTED_LOCAL_SGX_EVENT_DIGEST: [u8; 48] = [
     0x74, 0xca, 0x93, 0x9b, 0x8c, 0x3c, 0x74, 0xaa, 0xb3, 0xc3, 0x09, 0x66, 0xa7, 0x88, 0xf7, 0x74,
     0x39, 0x51, 0xd5, 0x4a, 0x93, 0x6a, 0x71, 0x1d, 0xd0, 0x14, 0x22, 0xf0, 0x03, 0xff, 0x9d, 0xf6,
     0x66, 0x6f, 0x3c, 0xc5, 0x49, 0x75, 0xd2, 0xe4, 0xf3, 0x5c, 0x82, 0x98, 0x65, 0x58, 0x3f, 0x0f,
@@ -59,8 +60,8 @@ pub struct Measurements {
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,
-    /// Expected hash for the local SGX component.
-    pub local_sgx_hash: [u8; 48],
+    /// Expected digest for the local SGX event.
+    pub local_sgx_event_digest: [u8; 48],
     /// Expected version of the report data.
     pub report_data_version: ReportDataVersion,
 }
@@ -81,7 +82,7 @@ impl Default for ExpectedMeasurements {
                 rtmr1: EXPECTED_RTMR1,
                 rtmr2: EXPECTED_RTMR2,
             },
-            local_sgx_hash: EXPECTED_LOCAL_SGX_HASH,
+            local_sgx_event_digest: EXPECTED_LOCAL_SGX_EVENT_DIGEST,
             report_data_version: EXPECTED_REPORT_DATA_VERSION,
         }
     }

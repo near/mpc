@@ -95,7 +95,8 @@ impl Attestation {
             )
             && self.verify_rtmr3(report_data, &attestation.tcb_info)
             && self.verify_app_compose(&attestation.tcb_info)
-            && self.verify_local_sgx_hash(&attestation.tcb_info, &attestation.expected_measurements)
+            && self
+                .verify_local_sgx_digest(&attestation.tcb_info, &attestation.expected_measurements)
             && self.verify_mpc_hash(&attestation.tcb_info, allowed_docker_image_hashes)
     }
 
@@ -255,8 +256,8 @@ impl Attestation {
             && app_compose.pre_launch_script.is_none()
     }
 
-    /// Verifies local key-provider hash matches expected value.
-    fn verify_local_sgx_hash(
+    /// Verifies local key-provider event digest matches the expected digest.
+    fn verify_local_sgx_digest(
         &self,
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
@@ -265,8 +266,11 @@ impl Attestation {
             .event_log
             .iter()
             .find(|event| event.event == "key-provider")
-            .map(|event| &event.digest)
-            .is_some_and(|hash| *hash == hex::encode(expected_measurements.local_sgx_hash))
+            .is_some_and(|event| {
+                let key_provider_digest = &event.digest;
+                let expected_digest = hex::encode(expected_measurements.local_sgx_event_digest);
+                *key_provider_digest == expected_digest
+            })
     }
 
     /// Verifies MPC node image hash is in allowed list.
