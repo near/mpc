@@ -46,8 +46,9 @@ class NearAccount:
     def send_tx(self, txn):
         return self.near_node.send_tx(txn)
 
-    def send_txs_parallel_ret_hashes(self, txns: list[bytes], label: str) -> list[str]:
-        # todo: refactor, use the one from cluster
+    def send_txs_parallel_returning_hashes(
+        self, txns: list[bytes], label: str
+    ) -> list[str]:
         print(f"\033[91mSending \033[93m{len(txns)}\033[91m {label} txs.\033[0m")
 
         def send_tx(tx):
@@ -64,7 +65,7 @@ class NearAccount:
         txns: list[bytes],
         verification_callback: Callable[[dict[str, Any]], None],
     ):
-        tx_hashes = self.send_txs_parallel_ret_hashes(txns, label)
+        tx_hashes = self.send_txs_parallel_returning_hashes(txns, label)
         results = self.await_txs(tx_hashes)
         verify_txs(results, verification_callback)
 
