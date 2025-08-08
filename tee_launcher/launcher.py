@@ -33,14 +33,14 @@ OS_ENV_DOCKER_CONTENT_TRUST = "DOCKER_CONTENT_TRUST"
 DSTACK_USER_CONFIG_FILE = "/tapp/user_config"
 
 # Dstack user config. Read from `DSTACK_USER_CONFIG_FILE`
-DSTACK_USER_CONFIG_LAUNCHER_IMAGE_TAGS = "LAUNCHER_IMAGE_TAGS"
-DSTACK_USER_CONFIG_LAUNCHER_IMAGE_NAME = "LAUNCHER_IMAGE_NAME"
-DSTACK_USER_CONFIG_LAUNCHER_IMAGE_REGISTRY = "LAUNCHER_REGISTRY"
+DSTACK_USER_CONFIG_MPC_IMAGE_TAGS = "MPC_IMAGE_TAGS"
+DSTACK_USER_CONFIG_MPC_IMAGE_NAME = "MPC_IMAGE_NAME"
+DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY = "MPC_REGISTRY"
 
 # Default values for dstack user config file.
-DEFAULT_LAUNCHER_IMAGE_NAME = "nearone/mpc-node-gcp"
-DEFAULT_REGISTRY = "registry.hub.docker.com"
-DEFAULT_LAUNCHER_IMAGE_TAG = "latest"
+DEFAULT_MPC_IMAGE_NAME = "nearone/mpc-node-gcp"
+DEFAULT_MPC_REGISTRY = "registry.hub.docker.com"
+DEFAULT_MPC_IMAGE_TAG = "latest"
 
 # the unix socket to communicate with Dstack
 DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
@@ -207,18 +207,18 @@ def parse_env_file(path: str) -> dict:
 
 def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
     tags_values: list[str] = dstack_config.get(
-        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_TAGS, DEFAULT_LAUNCHER_IMAGE_TAG
+        DSTACK_USER_CONFIG_MPC_IMAGE_TAGS, DEFAULT_MPC_IMAGE_TAG
     ).split(",")
     tags = [tag.strip() for tag in tags_values if tag.strip()]
     logging.info(f"Using tags {tags} to find matching launcher image.")
 
     image_name: str = dstack_config.get(
-        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_NAME, DEFAULT_LAUNCHER_IMAGE_NAME
+        DSTACK_USER_CONFIG_MPC_IMAGE_NAME, DEFAULT_MPC_IMAGE_NAME
     )
     logging.info(f"Using image name {image_name}.")
 
     registry: str = dstack_config.get(
-        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_REGISTRY, DEFAULT_REGISTRY
+        DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY, DEFAULT_MPC_REGISTRY
     )
     logging.info(f"Using registry {registry}.")
 
