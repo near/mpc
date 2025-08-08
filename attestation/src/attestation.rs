@@ -113,14 +113,14 @@ impl Attestation {
         let filtered_events = event_log.iter().filter(|e| e.imr == IMR);
 
         for event in filtered_events {
+            // In Dstack, all events measured in RTMR3 are of type DSTACK_EVENT_TYPE
             if event.event_type != DSTACK_EVENT_TYPE {
-                // this is not strictly necessary
                 return false;
             }
             let mut hasher = Sha384::new();
             hasher.update(digest);
             match hex::decode(event.digest.as_str()) {
-                Ok(decoded_bytes) => {
+                Ok(decoded_digest) => {
                     let payload_bytes = match hex::decode(&event.event_payload) {
                         Ok(bytes) => bytes,
                         Err(e) => {
@@ -128,13 +128,13 @@ impl Attestation {
                             return false;
                         }
                     };
-                    let expected_bytes =
+                    let expected_digest =
                         Self::event_digest(event.event_type, &event.event, &payload_bytes);
-                    if decoded_bytes != expected_bytes {
+                    if decoded_digest != expected_digest {
                         return false;
                     }
 
-                    hasher.update(decoded_bytes.as_slice())
+                    hasher.update(decoded_digest.as_slice())
                 }
                 Err(e) => {
                     tracing::error!(
@@ -278,31 +278,32 @@ impl Attestation {
             .event_log
             .iter()
             .find(|event| event.event == KEY_PROVIDER_EVENT);
-        events.iter().len() == 1
-            && events.is_some_and(|event| {
-                event.digest == hex::encode(expected_measurements.local_sgx_hash)
-            })
+        let event_repetitions = events.iter().len();
+        let is_digest_correct = events
+            .is_some_and(|event| event.digest == hex::encode(expected_measurements.local_sgx_hash));
+        event_repetitions == 1 && is_digest_correct
     }
 
     /// Verifies MPC node image hash is in allowed list.
     fn verify_mpc_hash(&self, tcb_info: &TcbInfo, allowed_hashes: &[MpcDockerImageHash]) -> bool {
-        let events = tcb_info
+        let mpc_image_hash_events = tcb_info
             .event_log
             .iter()
             .find(|event| event.event == MPC_IMAGE_HASH_EVENT);
 
-        events.iter().len() == 1
-            && events.is_some_and(|event| {
-                allowed_hashes
-                    .iter()
-                    .any(|hash| hash.as_hex() == *event.event_payload)
-            })
+        let event_repetitions = mpc_image_hash_events.iter().len();
+        let is_digest_correct = mpc_image_hash_events.is_some_and(|event| {
+            allowed_hashes
+                .iter()
+                .any(|hash| hash.as_hex() == *event.event_payload)
+        });
+        event_repetitions == 1 && is_digest_correct
     }
 
     // Implementation taken to match Dstack's https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/cc-eventlog/src/lib.rs#L54
-    fn event_digest(ty: u32, event: &str, payload: &[u8]) -> [u8; 48] {
+    fn event_digest(event_type: u32, event: &str, payload: &[u8]) -> [u8; 48] {
         let mut hasher = Sha384::new();
-        hasher.update(ty.to_ne_bytes());
+        hasher.update(event_type.to_ne_bytes());
         hasher.update(b":");
         hasher.update(event.as_bytes());
         hasher.update(b":");
