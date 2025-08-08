@@ -233,7 +233,7 @@ impl Attestation {
                 let expected_compose_hash = &event.digest;
 
                 Self::validate_app_compose_config(&app_compose)
-                    && Self::validate_compose_hash(&expected_compose_hash, &tcb_info.app_compose)
+                    && Self::validate_compose_hash(expected_compose_hash, &tcb_info.app_compose)
             })
     }
 
