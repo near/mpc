@@ -33,7 +33,7 @@ use tokio::sync::oneshot;
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
 #[command(about = "MPC Node for Near Protocol")]
-#[command(version = env!("MPC_VERSION"))] // Use the environment variable
+#[command(version = crate::built_info::PKG_VERSION)]
 pub enum Cli {
     Start(StartCmd),
     /// Generates/downloads required files for Near node to run

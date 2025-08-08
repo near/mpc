@@ -412,25 +412,24 @@ fn test_build_info_metric() {
     // Test that the build info metric can be initialized without panicking
     crate::metrics::init_build_info_metric();
 
-    // Verify that the environment variables are set
-    let version = std::env::var("MPC_VERSION").unwrap_or_else(|_| "unknown".to_string());
-    let build_time = std::env::var("MPC_BUILD_TIME").unwrap_or_else(|_| "unknown".to_string());
-    let commit = std::env::var("MPC_COMMIT").unwrap_or_else(|_| "unknown".to_string());
-    let rustc_version =
-        std::env::var("MPC_RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string());
+    // Verify that the built crate information is available
+    let version = crate::built_info::PKG_VERSION;
+    let build_time = crate::built_info::BUILT_TIME_UTC;
+    let commit = crate::built_info::GIT_VERSION.unwrap_or("unknown");
+    let rustc_version = crate::built_info::RUSTC_VERSION;
 
     // Verify that the version information is not "unknown"
-    assert_ne!(version, "unknown", "MPC_VERSION should be set");
-    assert_ne!(build_time, "unknown", "MPC_BUILD_TIME should be set");
-    assert_ne!(commit, "unknown", "MPC_COMMIT should be set");
-    assert_ne!(rustc_version, "unknown", "MPC_RUSTC_VERSION should be set");
+    assert_ne!(version, "unknown", "PKG_VERSION should be set");
+    assert_ne!(build_time, "unknown", "BUILT_TIME_UTC should be set");
+    assert_ne!(commit, "unknown", "GIT_VERSION should be set");
+    assert_ne!(rustc_version, "unknown", "RUSTC_VERSION should be set");
 
     // Verify that the version string contains all the expected information
     let version_string = &*crate::MPC_VERSION_STRING;
-    assert!(version_string.contains(&version));
-    assert!(version_string.contains(&build_time));
-    assert!(version_string.contains(&commit));
-    assert!(version_string.contains(&rustc_version));
+    assert!(version_string.contains(version));
+    assert!(version_string.contains(build_time));
+    assert!(version_string.contains(commit));
+    assert!(version_string.contains(rustc_version));
 }
 
 #[test]
@@ -450,10 +449,10 @@ fn test_build_info_metric_values() {
 
     // Get the metric value directly
     let metric = &crate::metrics::MPC_BUILD_INFO;
-    let version = crate::MPC_VERSION;
-    let build_time = crate::MPC_BUILD_TIME;
-    let rustc_version = crate::RUSTC_VERSION;
-    let commit = crate::MPC_COMMIT;
+    let version = crate::built_info::PKG_VERSION;
+    let build_time = crate::built_info::BUILT_TIME_UTC;
+    let rustc_version = crate::built_info::RUSTC_VERSION;
+    let commit = crate::built_info::GIT_VERSION.unwrap_or("unknown");
 
     // Check that the metric exists with the correct labels
     let gauge = metric.with_label_values(&[version, build_time, rustc_version, commit]);

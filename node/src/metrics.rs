@@ -217,11 +217,11 @@ lazy_static! {
 
 /// Initialize the build info metric with current version information
 pub fn init_build_info_metric() {
-    // Use compile-time constants from main.rs
-    let version = crate::MPC_VERSION;
-    let build_time = crate::MPC_BUILD_TIME;
-    let rustc_version = crate::RUSTC_VERSION;
-    let commit = crate::MPC_COMMIT;
+    // Use compile-time constants from built crate
+    let version = crate::built_info::PKG_VERSION;
+    let build_time = crate::built_info::BUILT_TIME_UTC;
+    let rustc_version = crate::built_info::RUSTC_VERSION;
+    let commit = crate::built_info::GIT_VERSION.unwrap_or("unknown");
 
     MPC_BUILD_INFO
         .with_label_values(&[version, build_time, rustc_version, commit])
