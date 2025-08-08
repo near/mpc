@@ -464,7 +464,7 @@ class MpcCluster:
             "propose_update",
             args,
             # TODO: #771 https://github.com/near/mpc/issues/771
-            deposit=10574660000000000000000000,
+            deposit=10610730000000000000000000,
         )
         res = participant.send_txn_and_check_success(tx, timeout=30)
         return int(
