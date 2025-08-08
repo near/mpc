@@ -125,15 +125,15 @@ impl Attestation {
         digest
     }
 
-    fn validate_compose_hash(expected_hex: &str, app_compose: &str) -> bool {
-        match hex::decode(expected_hex) {
+    fn validate_app_compose_digest(expected_event_digest_hex: &str, app_compose: &str) -> bool {
+        let expected_digest = match hex::decode(expected_event_digest_hex) {
             Ok(bytes) => match <[u8; 48]>::try_from(bytes.as_slice()) {
-                Ok(expected_bytes) => Self::replay_app_compose(app_compose) == expected_bytes,
+                Ok(expected_bytes) => expected_bytes,
                 Err(_) => {
                     tracing::error!(
                         "Failed to convert decoded hex to [u8; 48] for compose-hash event"
                     );
-                    false
+                    return false;
                 }
             },
             Err(e) => {
@@ -141,12 +141,10 @@ impl Attestation {
                     "Failed to decode hex string for compose-hash event: {:?}",
                     e
                 );
-                false
+                return false;
             }
-        }
-    }
+        };
 
-    fn replay_app_compose(app_compose: &str) -> [u8; 48] {
         let sha256_bytes: [u8; 32] = sha256(app_compose.as_bytes()).try_into().unwrap();
 
         // sha384 of custom encoding: [phala_prefix]:[event_name]:[sha256_payload]
@@ -156,7 +154,9 @@ impl Attestation {
         hasher.update(COMPOSE_HASH_EVENT.as_bytes());
         hasher.update(b":");
         hasher.update(sha256_bytes);
-        hasher.finalize().into()
+        let actual_digest: [u8; 48] = hasher.finalize().into();
+
+        actual_digest == expected_digest
     }
 
     /// Verifies TCB status and security advisories.
@@ -230,10 +230,13 @@ impl Attestation {
             .iter()
             .find(|event| event.event == "compose-hash")
             .is_some_and(|event| {
-                let expected_compose_hash = &event.digest;
+                let expected_event_digest_hex = &event.digest;
 
                 Self::validate_app_compose_config(&app_compose)
-                    && Self::validate_compose_hash(expected_compose_hash, &tcb_info.app_compose)
+                    && Self::validate_app_compose_digest(
+                        expected_event_digest_hex,
+                        &tcb_info.app_compose,
+                    )
             })
     }
 
