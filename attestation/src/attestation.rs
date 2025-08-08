@@ -100,7 +100,8 @@ impl Attestation {
             )
             && self.verify_rtmr3(report_data, &attestation.tcb_info)
             && self.verify_app_compose(&attestation.tcb_info)
-            && self.verify_local_sgx_hash(&attestation.tcb_info, &attestation.expected_measurements)
+            && self
+                .verify_local_sgx_digest(&attestation.tcb_info, &attestation.expected_measurements)
             && self.verify_mpc_hash(&attestation.tcb_info, allowed_docker_image_hashes)
     }
 
@@ -268,8 +269,8 @@ impl Attestation {
             && app_compose.pre_launch_script.is_none()
     }
 
-    /// Verifies local key-provider hash matches expected value.
-    fn verify_local_sgx_hash(
+    /// Verifies local key-provider event digest matches the expected digest.
+    fn verify_local_sgx_digest(
         &self,
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
@@ -279,8 +280,9 @@ impl Attestation {
             .iter()
             .find(|event| event.event == KEY_PROVIDER_EVENT);
         let event_repetitions = events.iter().len();
-        let is_digest_correct = events
-            .is_some_and(|event| event.digest == hex::encode(expected_measurements.local_sgx_hash));
+        let is_digest_correct = events.is_some_and(|event| {
+            event.digest == hex::encode(expected_measurements.local_sgx_event_digest)
+        });
         event_repetitions == 1 && is_digest_correct
     }
 

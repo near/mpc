@@ -51,8 +51,8 @@ mod tests {
             "runner": "docker-compose",
             "docker_compose_file": "services:\n  jupyter:\n    image: quay.io/jupyter/base-notebook\n    user: root\n    environment:\n      - GRANT_SUDO=yes\n    ports:\n      - \"8888:8888\"\n    volumes:\n      - /:/host/\n      - /var/run/tappd.sock:/var/run/tappd.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n    logging:\n      driver: journald\n      options:\n        tag: jupyter-notebook\n",
             "docker_config": {},
-            "kms_enabled": true,
-            "tproxy_enabled": true,
+            "kms_enabled": false,
+            "tproxy_enabled": false,
             "public_logs": true,
             "public_sysinfo": true,
             "public_tcbinfo": false,
@@ -102,9 +102,8 @@ mod tests {
             logging["options"]["tag"].as_str().unwrap(),
             "jupyter-notebook"
         );
-
-        assert!(app_compose.kms_enabled);
-        assert_eq!(app_compose.tproxy_enabled, Some(true));
+        assert!(!app_compose.kms_enabled);
+        assert_eq!(app_compose.tproxy_enabled, Some(false));
         assert!(app_compose.public_logs);
         assert!(app_compose.public_sysinfo);
         assert!(!app_compose.local_key_provider_enabled);
