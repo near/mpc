@@ -11,6 +11,7 @@ import pathlib
 from typing import List
 import requests
 
+from common_lib.contract_state import ProtocolState
 from common_lib.shared import MpcCluster, MpcNode, metrics
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -78,7 +79,7 @@ def test_lost_assets():
         presignatures_to_buffer=PRESIGNATURES_TO_BUFFER,
     )
     cluster.init_cluster(participants=mpc_nodes, threshold=2)
-    cluster.wait_for_state("Running")
+    cluster.wait_for_state(ProtocolState.RUNNING)
 
     # Wait for nodes to have assets with everyone else
     wait_for_presignatures_to_buffer(cluster)
@@ -126,7 +127,7 @@ def test_signature_pause_block_ingestion():
         presignatures_to_buffer=PRESIGNATURES_TO_BUFFER,
     )
     cluster.init_cluster(mpc_nodes, 2)
-    cluster.wait_for_state("Running")
+    cluster.wait_for_state(ProtocolState.RUNNING)
 
     # Wait for nodes to have assets with everyone else
     wait_for_presignatures_to_buffer(cluster)

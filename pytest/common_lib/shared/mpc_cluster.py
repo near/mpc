@@ -214,7 +214,7 @@ class MpcCluster:
             args.update(additional_init_args)
         tx = self.contract_node.sign_tx(self.contract_node.account_id(), "init", args)
         self.contract_node.send_txn_and_check_success(tx)
-        assert self.wait_for_state("Running"), "expected running state"
+        assert self.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
     def wait_for_state(self, state: ProtocolState):
         """
@@ -241,7 +241,7 @@ class MpcCluster:
         )
         state = self.contract_state()
         state.print()
-        assert state.is_state("Running"), "require running state"
+        assert state.is_state(ProtocolState.RUNNING), "require running state"
         domains_to_add = []
         next_domain_id = state.protocol_state.next_domain_id()
         for scheme in signature_schemes:
@@ -262,9 +262,9 @@ class MpcCluster:
             args=args,
         )
 
-        assert self.wait_for_state("Initializing"), "failed to initialize"
+        assert self.wait_for_state(ProtocolState.INITIALIZING), "failed to initialize"
         if wait_for_running:
-            assert self.wait_for_state("Running"), "failed to run"
+            assert self.wait_for_state(ProtocolState.RUNNING), "failed to run"
 
     def do_resharing(
         self,
@@ -282,7 +282,7 @@ class MpcCluster:
             "proposal": self.make_threshold_parameters(new_threshold),
         }
         state = self.contract_state()
-        assert state.is_state("Running"), "Require running state"
+        assert state.is_state(ProtocolState.RUNNING), "Require running state"
 
         self.parallel_contract_calls(
             method=ContractMethod.VOTE_NEW_PARAMETERS,
@@ -298,9 +298,11 @@ class MpcCluster:
             args=args,
         )
 
-        assert self.wait_for_state("Resharing"), "failed to start resharing"
+        assert self.wait_for_state(ProtocolState.RESHARING), "failed to start resharing"
         if wait_for_running:
-            assert self.wait_for_state("Running"), "failed to conclude resharing"
+            assert self.wait_for_state(ProtocolState.RUNNING), (
+                "failed to conclude resharing"
+            )
             self.update_participant_status()
 
     def get_contract_state(self):
