@@ -1,12 +1,14 @@
 use alloc::{format, string::String, vec::Vec};
+use borsh::{BorshDeserialize, BorshSerialize};
 use core::str::FromStr;
 use dcap_qvl::quote::Quote as DcapQuote;
 use derive_more::Deref;
 use hex::FromHexError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// TEE Remote Attestation Quote that proves the participant's identity.
-#[derive(Debug, Deref)]
+#[derive(Debug, Deref, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct Quote {
     /// We keep the raw bytes of the quote since they're needed for verification and Phala probably
     /// doesn't provide an easy way to encode it back to the [`DcapQuote`] structure.

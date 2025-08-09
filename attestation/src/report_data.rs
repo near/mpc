@@ -1,5 +1,6 @@
 use derive_more::Constructor;
 use near_crypto::PublicKey;
+use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
 
 /// Number of bytes for the report data.
@@ -9,7 +10,7 @@ const REPORT_DATA_SIZE: usize = 64;
 const BINARY_VERSION_OFFSET: usize = 0;
 const BINARY_VERSION_SIZE: usize = 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u16)]
 pub enum ReportDataVersion {
     V1 = 1,
