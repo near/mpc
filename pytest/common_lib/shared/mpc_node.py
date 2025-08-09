@@ -1,11 +1,13 @@
 import pathlib
 import sys
 import time
+from typing import cast
 
 from key import Key
 from ruamel.yaml import YAML
 
 from common_lib.constants import LISTEN_BLOCKS_FILE, MPC_BINARY_PATH, TIMEOUT
+from common_lib.shared import metrics
 from common_lib.shared.metrics import DictMetricName, FloatMetricName, IntMetricName
 from common_lib.shared.near_account import NearAccount
 
@@ -48,7 +50,7 @@ class MpcNode(NearAccount):
         self.url = url
         self.p2p_public_key = p2p_public_key
         self.status = MpcNode.NodeStatus.IDLE
-        self.participant_id = None
+        self.participant_id: int | None = None
         self.home_dir = self.near_node.node_dir
         self.is_running = False
         self.metrics = MetricsTracker(near_node)
@@ -119,17 +121,17 @@ class MpcNode(NearAccount):
         self.near_node.kill(gentle=gentle)
         self.is_running = False
 
-    def wait_for_connection_count(self, awaited_count):
+    def assert_num_live_connections(self, expected_count: int, timeout: int):
         started = time.time()
         while True:
-            assert time.time() - started < TIMEOUT, "Waiting for connection count"
+            assert time.time() - started < timeout, "Waiting for connection count"
             try:
                 conns = self.metrics.get_metric_all_values(
-                    "mpc_network_live_connections"
+                    metrics.DictMetricName.MPC_NETWORK_LIVE_CONNECTIONS,
                 )
-                print("mpc_network_live_connections", conns)
+                print(metrics.DictMetricName.MPC_NETWORK_LIVE_CONNECTIONS, conns)
                 connection_count = int(sum([int(kv[1]) for kv in conns]))
-                if connection_count == awaited_count:
+                if connection_count == expected_count:
                     break
             except requests.exceptions.ConnectionError:
                 pass
@@ -160,6 +162,14 @@ class MpcNode(NearAccount):
 
     def get_int_metric_value(self, metric: IntMetricName) -> int | None:
         return self.metrics.get_int_metric_value(metric)
+
+    def require_int_metric_value(self, metric_name: IntMetricName) -> int:
+        value: int | None = self.get_int_metric_value(metric_name)
+        if value is None:
+            raise ValueError(
+                f"expected integer values for {metric_name} at node {self.print()}"
+            )
+        return cast(int, value)
 
     def get_peers_block_height_metric_value(self) -> dict[int, int]:
         res = self.metrics.get_metric_all_values(
