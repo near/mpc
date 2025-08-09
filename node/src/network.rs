@@ -122,7 +122,7 @@ impl MeshNetworkClient {
     }
     /// The maximum height difference that we are willing to accept.
     /// This is used to filter out participants that are too far behind in the indexer height.
-    const MAX_HEIGHT_DIFF: u64 = 100;
+    const MAX_HEIGHT_DIFF: u64 = 50;
 
     /// Primary functionality for the MeshNetworkClient: returns a channel for the given
     /// new MPC task. It is expected that the caller is the leader of this MPC task.
