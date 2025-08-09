@@ -2,12 +2,14 @@ use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
     quote::Quote, report_data::ReportData, tcbinfo::TcbInfo,
 };
+use borsh::{BorshDeserialize, BorshSerialize};
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::EventLog;
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::MpcDockerImageHash;
-use near_sdk::env::sha256;
+use near_sdk::{env::sha256, near};
+use serde::{Deserialize, Serialize};
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -21,13 +23,15 @@ const KEY_PROVIDER_EVENT: &str = "key-provider";
 const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 
 #[allow(clippy::large_enum_variant)]
+#[near(serializers=[borsh])]
+#[derive(Serialize, Deserialize)]
 pub enum Attestation {
     Dstack(DstackAttestation),
     Local(LocalAttestation),
 }
 
 #[allow(dead_code)]
-#[derive(Constructor)]
+#[derive(Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct DstackAttestation {
     pub quote: Quote,
     pub collateral: Collateral,
@@ -35,7 +39,8 @@ pub struct DstackAttestation {
     pub expected_measurements: ExpectedMeasurements,
 }
 
-#[derive(Constructor)]
+#[derive(Constructor, Serialize, Deserialize)]
+#[near(serializers=[borsh])]
 pub struct LocalAttestation {
     verification_result: bool,
 }
