@@ -289,13 +289,17 @@ impl TeeParticipantInfo {
     }
 
     fn check_local_sgx(event_log: &[Value]) -> bool {
-        let local_sgx_hash = event_log
+        let local_sgx_digest = event_log
             .iter()
-            .find(|e| e["event"].as_str() == Some("key-provider"))
+            .find(|e| {
+                let is_key_provider_event = e["event"].as_str() == Some("key-provider");
+                let is_rtmr3_measurement = e["imr"].as_u64() == Some(RTMR3_INDEX as u64);
+                is_key_provider_event && is_rtmr3_measurement
+            })
             .and_then(|e| e["digest"].as_str());
 
-        match local_sgx_hash {
-            Some(hash) => hash == EXPECTED_LOCAL_SGX_HASH,
+        match local_sgx_digest {
+            Some(digest) => digest == EXPECTED_LOCAL_SGX_HASH,
             None => false,
         }
     }
