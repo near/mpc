@@ -20,6 +20,8 @@ const COMPOSE_HASH_EVENT: &str = "compose-hash";
 const KEY_PROVIDER_EVENT: &str = "key-provider";
 const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 
+const RTMR3_INDEX: u8 = 3;
+
 #[allow(clippy::large_enum_variant)]
 pub enum Attestation {
     Dstack(DstackAttestation),
@@ -110,10 +112,9 @@ impl Attestation {
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all digests
     /// are correct
     fn verify_event_log_rtmr3(event_log: &[EventLog], expected_digest: [u8; 48]) -> bool {
-        const IMR: u32 = 3;
         let mut digest = [0u8; 48];
 
-        let filtered_events = event_log.iter().filter(|e| e.imr == IMR);
+        let filtered_events = event_log.iter().filter(|e| e.imr == RTMR3_INDEX);
 
         for event in filtered_events {
             // In Dstack, all events measured in RTMR3 are of type DSTACK_EVENT_TYPE
@@ -242,10 +243,9 @@ impl Attestation {
             }
         };
 
-        let mut events = tcb_info
-            .event_log
-            .iter()
-            .filter(|event| event.event == COMPOSE_HASH_EVENT);
+        let mut events = tcb_info.event_log.iter().filter(|event| {
+            event.event == COMPOSE_HASH_EVENT && event.imr as u64 == RTMR3_INDEX as u64
+        });
 
         let payload_is_correct = events.next().is_some_and(|event| {
             Self::validate_app_compose_config(&app_compose)
@@ -277,10 +277,9 @@ impl Attestation {
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
     ) -> bool {
-        let mut events = tcb_info
-            .event_log
-            .iter()
-            .filter(|event| event.event == KEY_PROVIDER_EVENT);
+        let mut events = tcb_info.event_log.iter().filter(|event| {
+            event.event == KEY_PROVIDER_EVENT && event.imr as u64 == RTMR3_INDEX as u64
+        });
         let digest_is_correct = events.next().is_some_and(|event| {
             event.digest == hex::encode(expected_measurements.local_sgx_event_digest)
         });
@@ -290,10 +289,9 @@ impl Attestation {
 
     /// Verifies MPC node image hash is in allowed list.
     fn verify_mpc_hash(&self, tcb_info: &TcbInfo, allowed_hashes: &[MpcDockerImageHash]) -> bool {
-        let mut mpc_image_hash_events = tcb_info
-            .event_log
-            .iter()
-            .filter(|event| event.event == MPC_IMAGE_HASH_EVENT);
+        let mut mpc_image_hash_events = tcb_info.event_log.iter().filter(|event| {
+            event.event == MPC_IMAGE_HASH_EVENT && event.imr as u64 == RTMR3_INDEX as u64
+        });
 
         let digest_is_correct = mpc_image_hash_events.next().is_some_and(|event| {
             allowed_hashes
