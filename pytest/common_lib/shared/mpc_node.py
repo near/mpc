@@ -6,7 +6,7 @@ from typing import cast
 from key import Key
 from ruamel.yaml import YAML
 
-from common_lib.constants import LISTEN_BLOCKS_FILE, MPC_BINARY_PATH, TIMEOUT
+from common_lib.constants import LISTEN_BLOCKS_FILE, MPC_BINARY_PATH
 from common_lib.shared import metrics
 from common_lib.shared.metrics import DictMetricName, FloatMetricName, IntMetricName
 from common_lib.shared.near_account import NearAccount
