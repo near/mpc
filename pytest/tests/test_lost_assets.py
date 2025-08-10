@@ -20,7 +20,7 @@ from common_lib.shared import MpcCluster, metrics
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
-from common_lib.constants import TIMEOUT
+from common_lib.constants import INDEXER_MAX_HEIGHT_DIFF, TIMEOUT
 
 PRESIGNATURES_TO_BUFFER = 8
 
@@ -197,6 +197,7 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
     """
     Expect an initialized cluster of at least 3 nodes running.
     This function tests if the asset cleanup mechanism works if a node is dead.
+    Specifically, it ensures that MPC nodes delete any owned assets involving dead participants (participants without a live connection).
     """
     assert len(lost_assets_cluster.mpc_nodes) == 3, "expected cluster with three nodes"
     contract: ContractState = lost_assets_cluster.contract_state()
@@ -220,7 +221,7 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
     # Assert that node is noticed as offline
     assert_num_live_connections(lost_assets_cluster, node_idxs_alive, 2, TIMEOUT)
 
-    # Wait for alive nodes to clean up assets involving dead node
+    # Ensure alive nodes clean up assets involving dead node (the key behavior we want to test)
     assert_num_offline_online_presignatures(
         lost_assets_cluster,
         node_idxs_alive,
@@ -229,8 +230,13 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
         timeout=TIMEOUT,
     )
 
+    # Ensure the remaining nodes can handle signature requests. (We deplete the buffer here).
+    lost_assets_cluster.send_and_await_signature_requests(PRESIGNATURES_TO_BUFFER * 2)
+
     # Start node 0 again
     lost_assets_cluster.run_nodes([faulty_node_idx])
+
+    # Wait for nodes to connect
     assert_num_live_connections(lost_assets_cluster, node_idxs_alive, 3, TIMEOUT)
 
     # Send some signature requests as a sanity check.
@@ -239,34 +245,39 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
             metrics.IntMetricName.MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE
         )
     )
-    lost_assets_cluster.send_and_await_signature_requests(presignatures_available // 4)
+    lost_assets_cluster.send_and_await_signature_requests(presignatures_available)
 
 
-# requires network network-hardship-simulation
+# Todo: [(#791)](https://github.com/near/mpc/issues/791) requires MPC node binary with enabled network-hardship-simulation feature
 @pytest.mark.no_atexit_cleanup
 def test_cleanup_lagging_node(lost_assets_cluster: MpcCluster):
     """
     This test requires the MPC binary to be compiled with the feature flag "network-hardship-simulation"
     """
+    # Ensure cluster meets needs of this test
     assert len(lost_assets_cluster.mpc_nodes) == 3, "expected cluster with three nodes"
     contract: ContractState = lost_assets_cluster.contract_state()
     assert contract.is_state(ProtocolState.RUNNING), "expect cluster in running state"
     assert len(contract.get_running_domains()) > 0, (
         "expect cluster with at least one domain"
     )
+
     # Wait for nodes to have assets with everyone else
     assert_num_presignatures_available(
         lost_assets_cluster, PRESIGNATURES_TO_BUFFER, TIMEOUT
     )
 
-    # Simulate node 0's indexer falling behind
+    # Disable block ingestion on one of the nodes
     faulty_node_idx = random.randint(0, 2)
     node_idxs_alive = [i for i in range(0, 3) if i != faulty_node_idx]
     lost_assets_cluster.set_block_ingestion([faulty_node_idx], False)
 
-    assert_indexer_lag(lost_assets_cluster, faulty_node_idx, node_idxs_alive, 50)
+    # Ensure the node falls the required number of blocks behind to be considered offline
+    assert_indexer_lag(
+        lost_assets_cluster, faulty_node_idx, node_idxs_alive, INDEXER_MAX_HEIGHT_DIFF
+    )
 
-    # we wait for the other nodes to cleanup
+    # Ensure the asset cleanup mechanism kicks in
     assert_num_offline_online_presignatures(
         lost_assets_cluster,
         node_idxs_alive,
@@ -274,8 +285,8 @@ def test_cleanup_lagging_node(lost_assets_cluster: MpcCluster):
         expected_num_presignatures_offline=0,
         timeout=TIMEOUT,
     )
-
-    lost_assets_cluster.send_and_await_signature_requests(5)
+    # Ensure the nodes can handle signature requests. We deplete their asset stores
+    lost_assets_cluster.send_and_await_signature_requests(2 * PRESIGNATURES_TO_BUFFER)
 
     # re-enable block ingestion, in case any tests run afterwards
     lost_assets_cluster.set_block_ingestion([faulty_node_idx], True)
