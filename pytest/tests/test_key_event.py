@@ -8,14 +8,55 @@ At every step we check that signatures can still be produced.
 
 import pathlib
 import sys
+from typing import List
 
 import pytest
 
-from common_lib.contract_state import ProtocolState
+from common_lib.contract_state import (
+    ContractState,
+    Domain,
+    Keyset,
+    ProtocolState,
+    SignatureScheme,
+)
+from common_lib.shared.mpc_cluster import MpcCluster
+from common_lib.shared.mpc_node import MpcNode
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
+
+
+def assert_key_generation_success(
+    cluster: MpcCluster, domains: List[SignatureScheme]
+) -> Keyset:
+    # Get initial state
+    init_state = cluster.contract_state()
+    assert init_state.is_state(ProtocolState.RUNNING), "Expected running state"
+
+    init_keyset: Keyset | None = init_state.keyset()
+    assert init_keyset != None, "Expected keyset"
+
+    init_domains = init_state.get_running_domains()
+
+    # Add domains
+    added_domains: List[Domain] = cluster.add_domains(domains)
+
+    # Get State after key generation
+    post_contract_state = cluster.contract_state()
+    assert post_contract_state.is_state(ProtocolState.RUNNING), "Expected running state"
+    post_keyset: Keyset | None = post_contract_state.keyset()
+    assert post_keyset != None, "Expected keyset"
+    post_domains: List[Domain] = post_contract_state.get_running_domains()
+
+    # Ensure the correct keys were generated
+    for new_domain in added_domains:
+        assert new_domain in post_domains, "Could not find new domain"
+        assert new_domain not in init_domains, "Expected not having this domain"
+        with pytest.raises(KeyError):
+            init_keyset.get_key(new_domain.id)
+        assert post_keyset.get_key(new_domain.id).key != ""
+    return post_keyset
 
 
 def test_single_domain():
@@ -30,26 +71,34 @@ def test_single_domain():
     Signature requests are sent after each resharing to verify liveness.
     """
     cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 4, 1, load_mpc_contract())
-    mpc_nodes[0].reserve_key_event_attempt(0, 0, 0)
-    mpc_nodes[0].reserve_key_event_attempt(0, 0, 1)
+    cluster.init_cluster_no_domains(participants=mpc_nodes[:2], threshold=2)
+
     # start with 2 nodes
-    cluster.init_cluster(participants=mpc_nodes[:2], threshold=2)
-    assert cluster.contract_state().keyset().keyset[0].attempt_id == 2
+    # test 1: initialize, ensure abort_key_event_instance works for key generation
+    mpc_nodes[0].reserve_key_event_attempt(epoch_id=0, domain_id=0, attempt_id=0)
+    mpc_nodes[0].reserve_key_event_attempt(epoch_id=0, domain_id=0, attempt_id=1)
+    keyset = assert_key_generation_success(
+        cluster=cluster, domains=[SignatureScheme.Secp256k1, SignatureScheme.Ed25519]
+    )
+    assert keyset.get_key(0).attempt_id == 2
+    # sanity check
     cluster.send_and_await_signature_requests(1)
 
-    # two new nodes join, increase threshold
+    # test 2: reshare, increase threshold, increase number of nodes
     cluster.do_resharing(
         new_participants=mpc_nodes[:4], new_threshold=3, prospective_epoch_id=1
     )
     cluster.update_participant_status()
     cluster.send_and_await_signature_requests(1)
 
+    # test 2: reshare, keep threshold, decrease number of nodes
     cluster.do_resharing(
         new_participants=mpc_nodes[1:4], new_threshold=3, prospective_epoch_id=2
     )
 
     cluster.update_participant_status()
     cluster.send_and_await_signature_requests(1)
+    # test 3: reshare, keep threshold, increase number of nodes
     cluster.do_resharing(
         new_participants=mpc_nodes[0:4],
         new_threshold=3,
@@ -62,7 +111,7 @@ def test_single_domain():
     cluster.send_and_await_signature_requests(1)
 
     # test for multiple attemps:
-
+    # test 4: key refresh with aborted attempts, ensure multiple key_event_instances / attempts work
     mpc_nodes[0].reserve_key_event_attempt(4, 0, 0)
     mpc_nodes[0].reserve_key_event_attempt(4, 0, 1)
     cluster.do_resharing(
@@ -109,7 +158,7 @@ def test_multi_domain():
         }
         tx = node.sign_tx(cluster.mpc_contract_account(), "vote_cancel_keygen", args)
         node.send_txn_and_check_success(tx)
-    cluster.wait_for_state(ProtocolState.RUNNING)
+    assert cluster.wait_for_state(ProtocolState.RUNNING), "Failed to start running"
     with pytest.raises(KeyError):
         cluster.contract_state().keyset().get_key(6)
     assert cluster.contract_state().protocol_state.next_domain_id() == 7

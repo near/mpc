@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Optional
 
 
 class ProtocolState(str, Enum):
@@ -9,7 +9,12 @@ class ProtocolState(str, Enum):
     RESHARING = "Resharing"
 
 
-SignatureScheme = Literal["Secp256k1", "Ed25519"]
+# SignatureScheme = Literal["Secp256k1", "Ed25519"]
+
+
+class SignatureScheme(str, Enum):
+    Secp256k1 = "Secp256k1"
+    Ed25519 = "Ed25519"
 
 
 @dataclass

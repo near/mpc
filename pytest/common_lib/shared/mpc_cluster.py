@@ -9,7 +9,12 @@ import time
 from common_lib import constants
 from common_lib import signature
 from common_lib.constants import TGAS
-from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
+from common_lib.contract_state import (
+    ContractState,
+    Domain,
+    ProtocolState,
+    SignatureScheme,
+)
 from common_lib.contracts import ContractMethod
 from common_lib.shared.metrics import FloatMetricName, IntMetricName
 from common_lib.shared.mpc_node import MpcNode
@@ -147,22 +152,39 @@ class MpcCluster:
         )
         return self.secondary_contract_node.near_node.send_tx_and_wait(tx, 20)
 
-    def init_cluster(
+    def init_cluster_no_domains(
         self,
         participants: List[MpcNode],
         threshold: int,
-        domains=["Secp256k1", "Ed25519"],
     ):
         """
         initializes the contract with `participants` and `threshold`.
-        Adds `Secp256k1` to the contract domains.
         """
         self.define_candidate_set(participants)
         self.update_participant_status(
             assert_contract=False
         )  # do not assert when contract is not initialized
         self.init_contract(threshold=threshold)
-        self.add_domains(domains)
+
+    def init_cluster(
+        self,
+        participants: List[MpcNode],
+        threshold: int,
+        signature_schemes: List[SignatureScheme] = [
+            SignatureScheme.Secp256k1,
+            SignatureScheme.Ed25519,
+        ],
+    ):
+        """
+        Initializes the contract with `participants` and `threshold`.
+        Awaits signature generation for schemes in "signature_schemes"
+        """
+        self.define_candidate_set(participants)
+        self.update_participant_status(
+            assert_contract=False
+        )  # do not assert when contract is not initialized
+        self.init_contract(threshold=threshold)
+        self.add_domains(signature_schemes)
 
     def define_candidate_set(self, mpc_nodes: List[MpcNode]):
         """
@@ -246,7 +268,7 @@ class MpcCluster:
 
     def wait_for_state(self, state: ProtocolState):
         """
-        Waits until the contract is in the desired state
+        Waits until the contract is in the desired state or a timeout is reached
         """
         n_attempts = 120
         n = 0
@@ -257,13 +279,14 @@ class MpcCluster:
                 self.contract_state().print()
 
         self.contract_state().print()
-        return n < n_attempts
+        assert n < n_attempts, f"Timed out waiting for state {state}"
+        return True
 
     def add_domains(
         self,
         signature_schemes: List[SignatureScheme],
         wait_for_running=True,
-    ):
+    ) -> List[Domain]:
         print(
             f"\033[91m(Vote Domains) Adding domains: \033[93m{signature_schemes}\033[0m"
         )
@@ -271,6 +294,7 @@ class MpcCluster:
         state.print()
         assert state.is_state(ProtocolState.RUNNING), "require running state"
         domains_to_add = []
+        ret = []
         next_domain_id = state.protocol_state.next_domain_id()
         for scheme in signature_schemes:
             domains_to_add.append(
@@ -279,6 +303,7 @@ class MpcCluster:
                     "scheme": scheme,
                 }
             )
+            ret.append(Domain(id=next_domain_id, scheme=scheme))
             next_domain_id += 1
         args = {
             "domains": domains_to_add,
@@ -293,6 +318,7 @@ class MpcCluster:
         assert self.wait_for_state(ProtocolState.INITIALIZING), "failed to initialize"
         if wait_for_running:
             assert self.wait_for_state(ProtocolState.RUNNING), "failed to run"
+        return ret
 
     def do_resharing(
         self,
