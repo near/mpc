@@ -20,7 +20,7 @@ const COMPOSE_HASH_EVENT: &str = "compose-hash";
 const KEY_PROVIDER_EVENT: &str = "key-provider";
 const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 
-const RTMR3_INDEX: u8 = 3;
+const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
 pub enum Attestation {
@@ -243,9 +243,10 @@ impl Attestation {
             }
         };
 
-        let mut events = tcb_info.event_log.iter().filter(|event| {
-            event.event == COMPOSE_HASH_EVENT && event.imr as u64 == RTMR3_INDEX as u64
-        });
+        let mut events = tcb_info
+            .event_log
+            .iter()
+            .filter(|event| event.event == COMPOSE_HASH_EVENT && event.imr == RTMR3_INDEX);
 
         let payload_is_correct = events.next().is_some_and(|event| {
             Self::validate_app_compose_config(&app_compose)
@@ -277,9 +278,10 @@ impl Attestation {
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
     ) -> bool {
-        let mut events = tcb_info.event_log.iter().filter(|event| {
-            event.event == KEY_PROVIDER_EVENT && event.imr as u64 == RTMR3_INDEX as u64
-        });
+        let mut events = tcb_info
+            .event_log
+            .iter()
+            .filter(|event| event.event == KEY_PROVIDER_EVENT && event.imr == RTMR3_INDEX);
         let digest_is_correct = events.next().is_some_and(|event| {
             event.digest == hex::encode(expected_measurements.local_sgx_event_digest)
         });
@@ -289,9 +291,10 @@ impl Attestation {
 
     /// Verifies MPC node image hash is in allowed list.
     fn verify_mpc_hash(&self, tcb_info: &TcbInfo, allowed_hashes: &[MpcDockerImageHash]) -> bool {
-        let mut mpc_image_hash_events = tcb_info.event_log.iter().filter(|event| {
-            event.event == MPC_IMAGE_HASH_EVENT && event.imr as u64 == RTMR3_INDEX as u64
-        });
+        let mut mpc_image_hash_events = tcb_info
+            .event_log
+            .iter()
+            .filter(|event| event.event == MPC_IMAGE_HASH_EVENT && event.imr == RTMR3_INDEX);
 
         let digest_is_correct = mpc_image_hash_events.next().is_some_and(|event| {
             allowed_hashes
