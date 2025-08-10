@@ -6,7 +6,7 @@ use attestation::{
     report_data::{ReportData, ReportDataV1, ReportDataVersion},
 };
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
-use mpc_primitives::hash::MpcDockerImageHash;
+use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_crypto::PublicKey;
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -14,6 +14,8 @@ use serde_json::{Value, json};
 const TEST_TCB_INFO_STRING: &str = include_str!("../tests/tcb_info.json");
 const TEST_MPC_IMAGE_DIGEST_HEX: &str =
     "a87f7eb6882446dd714e6d47d9d1b9331cb333f36d3905f172c68adbd06e461f";
+const TEST_LAUNCHER_COMPOSE_NORMALIZED_DIGEST_HEX: &str =
+    "12997af6d2ae488b8c09d8a46488a6d48742374675fe964051eca91299182b56";
 
 fn mock_local_attestation(quote_verification_result: bool) -> Attestation {
     Attestation::Local(LocalAttestation::new(quote_verification_result))
@@ -90,7 +92,12 @@ fn test_mock_attestation_verify(
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
     assert_eq!(
-        mock_local_attestation(quote_verification_result).verify(report_data, timestamp_s, &[],),
+        mock_local_attestation(quote_verification_result).verify(
+            report_data,
+            timestamp_s,
+            &[],
+            &[]
+        ),
         expected_quote_verification_result
     );
 }
@@ -110,7 +117,15 @@ fn test_verify_method_signature() {
     let allowed_mpc_image_digest =
         MpcDockerImageHash::try_from_hex(TEST_MPC_IMAGE_DIGEST_HEX).unwrap();
 
-    let verification_result =
-        attestation.verify(report_data, timestamp_s, &[allowed_mpc_image_digest]);
+    let allowed_launcher_compose_digest =
+        LauncherDockerComposeHash::try_from_hex(TEST_LAUNCHER_COMPOSE_NORMALIZED_DIGEST_HEX)
+            .unwrap();
+
+    let verification_result = attestation.verify(
+        report_data,
+        timestamp_s,
+        &[allowed_mpc_image_digest],
+        &[allowed_launcher_compose_digest],
+    );
     assert!(verification_result);
 }
