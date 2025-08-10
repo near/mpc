@@ -123,19 +123,25 @@ class MpcNode(NearAccount):
 
     def assert_num_live_connections(self, expected_count: int, timeout: int):
         started = time.time()
+        last_print = -1.5
         while True:
-            assert time.time() - started < timeout, "Waiting for connection count"
+            elapsed = time.time() - started
+            assert elapsed < timeout, (
+                f"Node {self.print()} did not reach expected connection count before timeout."
+            )
             try:
                 conns = self.metrics.get_metric_all_values(
                     metrics.DictMetricName.MPC_NETWORK_LIVE_CONNECTIONS,
                 )
-                print(metrics.DictMetricName.MPC_NETWORK_LIVE_CONNECTIONS, conns)
                 connection_count = int(sum([int(kv[1]) for kv in conns]))
+                if elapsed - last_print >= 1.5:
+                    print(f"Node {self.print()} connected to {connection_count} nodes.")
+                    last_print = elapsed
                 if connection_count == expected_count:
                     break
             except requests.exceptions.ConnectionError:
                 pass
-            time.sleep(1)
+            time.sleep(0.1)
 
     def reserve_key_event_attempt(self, epoch_id, domain_id, attempt_id):
         file_path = pathlib.Path(self.home_dir)
@@ -164,6 +170,10 @@ class MpcNode(NearAccount):
         return self.metrics.get_int_metric_value(metric)
 
     def require_int_metric_value(self, metric_name: IntMetricName) -> int:
+        """
+        Returns the integer value of metrict `metric_name` for this node.
+        Panics if the received value is None.
+        """
         value: int | None = self.get_int_metric_value(metric_name)
         if value is None:
             raise ValueError(

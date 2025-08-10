@@ -43,7 +43,7 @@ def test_update_from_current():
 def test_update_to_current(fetch_contract):
     current = fetch_contract()
     cluster, mpc_nodes = shared.start_cluster_with_mpc(4, 4, 1, current)
-    cluster.set_active_nodes(mpc_nodes)
+    cluster.define_candidate_set(mpc_nodes)
     cluster.update_participant_status(assert_contract=False)
     cluster.init_contract(threshold=3)
     cluster.add_domains(signature_schemes=["Secp256k1", "Ed25519"])
@@ -54,7 +54,7 @@ def test_update_to_current(fetch_contract):
 
     cluster.parallel_contract_calls(
         method=ContractMethod.VOTE_NEW_PARAMETERS,
-        nodes=cluster.active_mpc_nodes[0:2],
+        nodes=cluster.mpc_nodes[0:2],
         args=args,
     )
     cluster.contract_state().print()

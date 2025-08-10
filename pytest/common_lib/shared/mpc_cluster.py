@@ -11,7 +11,6 @@ from common_lib import signature
 from common_lib.constants import TGAS
 from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
 from common_lib.contracts import ContractMethod
-from common_lib.shared import metrics
 from common_lib.shared.metrics import FloatMetricName, IntMetricName
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
@@ -20,7 +19,7 @@ from common_lib.signature import generate_sign_args
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
-from typing import Any, Dict, List, Optional, Set, cast
+from typing import Any, List, Optional
 
 from transaction import sign_deploy_contract_tx
 
@@ -28,35 +27,38 @@ from transaction import sign_deploy_contract_tx
 class MpcCluster:
     """Helper class"""
 
-    # todo: add description. What does this class hold?
-
     def run_all(self):
         for node in self.nodes:
             node.run()
 
     def kill_all(self):
-        for node in self.active_mpc_nodes:
+        for node in self.mpc_nodes:
             node.kill(False)
 
     def kill_nodes(self, node_idxs: List[int], gentle=True):
+        """
+        Kills nodes with indexes `node_idxs`
+        """
         for node_idx in node_idxs:
-            self.active_mpc_nodes[node_idx].kill(gentle)
+            self.mpc_nodes[node_idx].kill(gentle)
 
     def run_nodes(self, node_idxs: List[int]):
+        """
+        Starts nodes with indexes `node_idxs`
+        """
         for node_idx in node_idxs:
-            self.active_mpc_nodes[node_idx].run()
+            self.mpc_nodes[node_idx].run()
 
     def set_block_ingestion(self, node_idxs: List[int], active: bool):
         for node_idx in node_idxs:
-            self.active_mpc_nodes[node_idx].set_block_ingestion(active)
+            self.mpc_nodes[node_idx].set_block_ingestion(active)
 
     def reset_mpc_data(self, node_idxs: List[int]):
         for node_idx in node_idxs:
-            self.active_mpc_nodes[node_idx].reset_mpc_data()
+            self.mpc_nodes[node_idx].reset_mpc_data()
 
     def __init__(self, main: NearAccount, secondary: NearAccount):
-        # todo: these are only the active nodes. You probably also want to keep track of inactive ones.
-        self.active_mpc_nodes: List[MpcNode] = []
+        self.mpc_nodes: List[MpcNode] = []
         # Note: Refer to signing schemas and key resharing
         self.next_participant_id: int = 0
         # Main account where Chain Signatures contract is deployed
@@ -67,13 +69,13 @@ class MpcCluster:
         self.sign_request_node = secondary
 
     def print_cluster_status(self):
-        status_list = [node.print() for node in self.active_mpc_nodes]
+        status_list = [node.print() for node in self.mpc_nodes]
         print("Cluster status:", " ".join(status_list))
 
     def get_voters(self):
         voters = [
             node
-            for node in self.active_mpc_nodes
+            for node in self.mpc_nodes
             if node.is_running
             and (
                 node.status == MpcNode.NodeStatus.OLD_PARTICIPANT
@@ -89,24 +91,19 @@ class MpcCluster:
     def get_float_metric_value(
         self, metric_name: FloatMetricName
     ) -> List[Optional[float]]:
-        return [
-            node.get_float_metric_value(metric_name) for node in self.active_mpc_nodes
-        ]
+        return [node.get_float_metric_value(metric_name) for node in self.mpc_nodes]
 
     def get_int_metric_value(self, metric_name: IntMetricName) -> List[Optional[int]]:
-        return [
-            node.get_int_metric_value(metric_name) for node in self.active_mpc_nodes
-        ]
+        return [node.get_int_metric_value(metric_name) for node in self.mpc_nodes]
 
     def require_int_metric_values(self, metric_name: IntMetricName) -> List[int]:
-        return [
-            node.require_int_metric_value(metric_name) for node in self.active_mpc_nodes
-        ]
+        """
+        Returns the integer values of the metric `metric_name`. Panics if any of the metrics is None.
+        """
+        return [node.require_int_metric_value(metric_name) for node in self.mpc_nodes]
 
     def get_int_metric_value_for_node(self, metric_name, node_index):
-        return self.active_mpc_nodes[node_index].metrics.get_int_metric_value(
-            metric_name
-        )
+        return self.mpc_nodes[node_index].metrics.get_int_metric_value(metric_name)
 
     def parallel_contract_calls(
         self,
@@ -160,19 +157,19 @@ class MpcCluster:
         initializes the contract with `participants` and `threshold`.
         Adds `Secp256k1` to the contract domains.
         """
-        self.set_active_nodes(participants)
+        self.define_candidate_set(participants)
         self.update_participant_status(
             assert_contract=False
         )  # do not assert when contract is not initialized
         self.init_contract(threshold=threshold)
         self.add_domains(domains)
 
-    def set_active_nodes(self, mpc_nodes: List[MpcNode]):
+    def define_candidate_set(self, mpc_nodes: List[MpcNode]):
         """
         Labels mpc_nodes as a candidate. Any node that is currently a participant but not in `mpc_nodes` will be labeled a `old_participant`
         """
         for node in mpc_nodes:
-            if node not in self.active_mpc_nodes:
+            if node not in self.mpc_nodes:
                 node.participant_id = self.next_participant_id
                 node.status = MpcNode.NodeStatus.NEW_PARTICIPANT
                 print(
@@ -180,12 +177,12 @@ class MpcCluster:
                 )
                 self.next_participant_id += 1
 
-        for node in self.active_mpc_nodes:
+        for node in self.mpc_nodes:
             if node not in mpc_nodes:
                 print(f"MpcCluster: Kicking out node {node.account_id()}")
                 node.participant_id = None
                 node.status = MpcNode.NodeStatus.OLD_PARTICIPANT
-        self.active_mpc_nodes = mpc_nodes
+        self.mpc_nodes = mpc_nodes
         self.print_cluster_status()
 
     def update_participant_status(self, assert_contract=True):
@@ -195,7 +192,7 @@ class MpcCluster:
         if assert_contract is True, then it ensures the set is consistent with the contract
         """
         nodes = []
-        for node in self.active_mpc_nodes:
+        for node in self.mpc_nodes:
             if node.status == MpcNode.NodeStatus.OLD_PARTICIPANT:
                 node.status = MpcNode.NodeStatus.IDLE
             elif node.status == MpcNode.NodeStatus.NEW_PARTICIPANT:
@@ -208,8 +205,8 @@ class MpcCluster:
             contract_state = self.contract_state()
             assert len(
                 contract_state.protocol_state.parameters.participants.participants
-            ) == len(self.active_mpc_nodes)
-            for p in self.active_mpc_nodes:
+            ) == len(self.mpc_nodes)
+            for p in self.mpc_nodes:
                 assert contract_state.protocol_state.parameters.participants.is_participant(
                     p.account_id()
                 )
@@ -230,7 +227,7 @@ class MpcCluster:
                             "url": node.url,
                         },
                     ]
-                    for node in self.active_mpc_nodes
+                    for node in self.mpc_nodes
                 ],
             },
         }
@@ -304,7 +301,7 @@ class MpcCluster:
         prospective_epoch_id: int,
         wait_for_running=True,
     ):
-        self.set_active_nodes(new_participants)
+        self.define_candidate_set(new_participants)
         print(
             f"\033[91m(Vote Resharing) Voting to reshare with new threshold: \033[93m{new_threshold}\033[0m"
         )
@@ -408,7 +405,7 @@ class MpcCluster:
         )
 
     def propose_update(self, args):
-        participant = self.active_mpc_nodes[0]
+        participant = self.mpc_nodes[0]
         tx = participant.sign_tx(
             self.mpc_contract_account(),
             ContractMethod.PROPOSE_UPDATE,
@@ -451,7 +448,7 @@ class MpcCluster:
         assert hash_expected == hash_deployed, "invalid contract deployed"
 
     def get_config(self, node_id=0):
-        node = self.active_mpc_nodes[node_id]
+        node = self.mpc_nodes[node_id]
         tx = node.sign_tx(self.mpc_contract_account(), "config", {})
         res = node.send_txn_and_check_success(tx)
         return json.dumps(
