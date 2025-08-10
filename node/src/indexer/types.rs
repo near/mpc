@@ -149,7 +149,7 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
             ChainSendTransactionRequest::StartReshare(_) => "start_reshare_instance",
             ChainSendTransactionRequest::StartKeygen(_) => "start_keygen_instance",
-            ChainSendTransactionRequest::VoteAbortKeyEvent(_) => "vote_abort_key_event",
+            ChainSendTransactionRequest::VoteAbortKeyEvent(_) => "vote_abort_key_event_instance",
             ChainSendTransactionRequest::VerifyTee() => "verify_tee",
             #[cfg(feature = "tee")]
             ChainSendTransactionRequest::SubmitRemoteAttestation(_) => "submit_remote_attestation",
