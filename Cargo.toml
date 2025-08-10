@@ -22,7 +22,8 @@ borsh = { version = "1.5.1", features = ["derive"] }
 clap = { version = "4.5.20", features = ["derive", "env"] }
 curve25519-dalek = "4.1.3"
 # TODO(#451): Use our own fork or upstream library
-dcap-qvl = { git = "https://github.com/mattlockyer/dcap-qvl", rev = "3caedd8fd0f365841abaf1430ff2922fcb09d9db" }
+# dcap-qvl = { git = "https://github.com/mattlockyer/dcap-qvl", rev = "3caedd8fd0f365841abaf1430ff2922fcb09d9db" }
+dcap-qvl = "0.2.4"
 # Pinned to resolve compilation errors with conflicting implementations of PartialOrd trait
 # See error E0283 with multiple impls satisfying `u128: std::cmp::PartialOrd<_>`
 deranged = "=0.4.0"

@@ -46,7 +46,6 @@ impl Collateral {
             qe_identity: get_str(&v, "qe_identity")?,
             qe_identity_signature: get_hex(&v, "qe_identity_signature")?,
         };
-
         Ok(Self(quote_collateral))
     }
 }
