@@ -254,7 +254,8 @@ impl Attestation {
             .filter(|event| event.event == COMPOSE_HASH_EVENT && event.imr == RTMR3_INDEX);
 
         let payload_is_correct = events.next().is_some_and(|event| {
-            Self::validate_app_compose_config(&app_compose)
+            event.event_payload == tcb_info.compose_hash
+                && Self::validate_app_compose_config(&app_compose)
                 && Self::validate_app_compose_payload(&event.event_payload, &tcb_info.app_compose)
         });
         let single_repetition = events.next().is_none();
@@ -315,9 +316,25 @@ impl Attestation {
         tcb_info: &TcbInfo,
         allowed_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
+        let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
+            Ok(compose) => compose,
+            Err(e) => {
+                tracing::error!("Failed to parse app_compose JSON: {:?}", e);
+                return false;
+            }
+        };
+        // this str will not match the original, unless the original was normalized
+        let launcher_compose_str = match serde_yaml::to_string(&app_compose.docker_compose_file) {
+            Ok(str) => str,
+            Err(e) => {
+                tracing::error!("Failed to convert docker_compose_file to str: {:?}", e);
+                return false;
+            }
+        };
+        let launcher_bytes = sha256(launcher_compose_str.as_bytes());
         allowed_hashes
             .iter()
-            .any(|hash| hash.as_hex() == tcb_info.compose_hash)
+            .any(|hash| hash.as_hex() == hex::encode(&launcher_bytes))
     }
 
     // Implementation taken to match Dstack's https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/cc-eventlog/src/lib.rs#L54
