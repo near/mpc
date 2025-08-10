@@ -48,6 +48,8 @@ const RTMR2: [u8; 48] = [
     0x39, 0x30, 0x99, 0x23, 0x4a, 0xbc, 0x03, 0x09, 0xf0, 0x39, 0x36, 0xed, 0xeb, 0xf7, 0x4b, 0x1f,
 ];
 
+const RTMR3_INDEX: u8 = 3;
+
 const EXPECTED_LOCAL_SGX_HASH: &str =
     "1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b";
 const EXPECTED_REPORT_DATA_VERSION: u16 = 1;
@@ -194,14 +196,18 @@ impl TeeParticipantInfo {
             Some(r) => hex::encode(r.rt_mr3),
             None => return false,
         };
-        let replayed_rtmr3 = replay_rtmr(event_log.to_owned(), 3);
+        let replayed_rtmr3 = replay_rtmr(event_log.to_owned(), RTMR3_INDEX);
         expected_rtmr3 == replayed_rtmr3
     }
 
     fn check_app_compose(event_log: &[Value], tcb_info: &Value) -> bool {
         let expected_compose_hash = event_log
             .iter()
-            .find(|e| e["event"].as_str() == Some("compose-hash"))
+            .find(|e| {
+                let is_compose_hash_event = e["event"].as_str() == Some("compose-hash");
+                let is_rtmr3_measurement = e["imr"].as_u64() == Some(RTMR3_INDEX as u64);
+                is_compose_hash_event && is_rtmr3_measurement
+            })
             .and_then(|e| e["digest"].as_str());
         let app_compose = match tcb_info.get("app_compose").and_then(|v| v.as_str()) {
             Some(compose) => compose,
@@ -288,12 +294,17 @@ impl TeeParticipantInfo {
     }
 
     fn check_local_sgx(event_log: &[Value]) -> bool {
-        let local_sgx_hash = event_log
+        let local_sgx_digest = event_log
             .iter()
-            .find(|e| e["event"].as_str() == Some("local-sgx"))
+            .find(|e| {
+                let is_key_provider_event = e["event"].as_str() == Some("key-provider");
+                let is_rtmr3_measurement = e["imr"].as_u64() == Some(RTMR3_INDEX as u64);
+                is_key_provider_event && is_rtmr3_measurement
+            })
             .and_then(|e| e["digest"].as_str());
-        match local_sgx_hash {
-            Some(hash) => hash == EXPECTED_LOCAL_SGX_HASH,
+
+        match local_sgx_digest {
+            Some(digest) => digest == EXPECTED_LOCAL_SGX_HASH,
             None => false,
         }
     }
@@ -304,7 +315,11 @@ impl TeeParticipantInfo {
     ) -> bool {
         let mpc_node_image_digest = event_log
             .iter()
-            .find(|e| e["event"].as_str() == Some("mpc-image-digest"))
+            .find(|e| {
+                let is_mpc_image_event = e["event"].as_str() == Some("mpc-image-digest");
+                let is_rtmr3_measurement = e["imr"].as_u64() == Some(RTMR3_INDEX as u64);
+                is_mpc_image_event && is_rtmr3_measurement
+            })
             .and_then(|e| e["digest"].as_str());
 
         match mpc_node_image_digest {

@@ -33,9 +33,19 @@ const EXPECTED_RTMR2: [u8; 48] = [
     0x39, 0x30, 0x99, 0x23, 0x4a, 0xbc, 0x03, 0x09, 0xf0, 0x39, 0x36, 0xed, 0xeb, 0xf7, 0x4b, 0x1f,
 ];
 
-const EXPECTED_LOCAL_SGX_HASH: [u8; 32] = [
-    0x1b, 0x7a, 0x49, 0x37, 0x84, 0x03, 0x24, 0x9b, 0x69, 0x86, 0xa9, 0x07, 0x84, 0x4c, 0xab, 0x09,
-    0x21, 0xec, 0xa3, 0x2d, 0xd4, 0x7e, 0x65, 0x7f, 0x3c, 0x10, 0x31, 0x1c, 0xca, 0xec, 0xcf, 0x8b,
+// The `EXPECTED_LOCAL_SGX_EVENT_DIGEST` is the expected SHA-384 digest for the `local-sgx` event,
+// not the event payload.
+//
+// Digest format:
+//   digest = SHA384( event_type + ":" + "key-provider" + ":"+payload) )
+//
+// Payload format: sha256 {"name":"local-sgx", "id": "<mr_enclave of the provider>"}
+
+// This value must match the digest below for the test to pass.
+const EXPECTED_LOCAL_SGX_EVENT_DIGEST: [u8; 48] = [
+    0x74, 0xca, 0x93, 0x9b, 0x8c, 0x3c, 0x74, 0xaa, 0xb3, 0xc3, 0x09, 0x66, 0xa7, 0x88, 0xf7, 0x74,
+    0x39, 0x51, 0xd5, 0x4a, 0x93, 0x6a, 0x71, 0x1d, 0xd0, 0x14, 0x22, 0xf0, 0x03, 0xff, 0x9d, 0xf6,
+    0x66, 0x6f, 0x3c, 0xc5, 0x49, 0x75, 0xd2, 0xe4, 0xf3, 0x5c, 0x82, 0x98, 0x65, 0x58, 0x3f, 0x0f,
 ];
 
 const EXPECTED_REPORT_DATA_VERSION: ReportDataVersion = ReportDataVersion::V1;
@@ -58,8 +68,8 @@ pub struct Measurements {
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,
-    /// Expected hash for the local SGX component.
-    pub local_sgx_hash: [u8; 32],
+    /// Expected digest for the local SGX event.
+    pub local_sgx_event_digest: [u8; 48],
     /// Expected version of the report data.
     pub report_data_version: ReportDataVersion,
 }
@@ -80,7 +90,7 @@ impl Default for ExpectedMeasurements {
                 rtmr1: EXPECTED_RTMR1,
                 rtmr2: EXPECTED_RTMR2,
             },
-            local_sgx_hash: EXPECTED_LOCAL_SGX_HASH,
+            local_sgx_event_digest: EXPECTED_LOCAL_SGX_EVENT_DIGEST,
             report_data_version: EXPECTED_REPORT_DATA_VERSION,
         }
     }

@@ -1,11 +1,14 @@
+from concurrent.futures.thread import ThreadPoolExecutor
 import json
 import pathlib
 import sys
+import time
+from typing import Any, Callable
 
 from key import Key
 
 from common_lib.constants import TGAS
-from common_lib.shared.transaction_status import assert_txn_success
+from common_lib.shared.transaction_status import assert_txn_success, verify_txs
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -43,8 +46,47 @@ class NearAccount:
     def send_tx(self, txn):
         return self.near_node.send_tx(txn)
 
+    def send_txs_parallel_returning_hashes(
+        self, txns: list[bytes], label: str
+    ) -> list[str]:
+        print(f"\033[91mSending \033[93m{len(txns)}\033[91m {label} txs.\033[0m")
+
+        def send_tx(tx):
+            return self.send_tx(tx)["result"]
+
+        with ThreadPoolExecutor() as executor:
+            tx_hashes = list(executor.map(send_tx, txns))
+
+        return tx_hashes
+
+    def send_await_check_txs_parallel(
+        self,
+        label: str,
+        txns: list[bytes],
+        verification_callback: Callable[[dict[str, Any]], None],
+    ):
+        tx_hashes = self.send_txs_parallel_returning_hashes(txns, label)
+        results = self.await_txs(tx_hashes)
+        verify_txs(results, verification_callback)
+
     def get_tx(self, tx_hash):
         return self.near_node.get_tx(tx_hash, self.account_id())
+
+    def await_txs(self, tx_hashes):
+        """
+        sends signature requests without waiting for the result
+        """
+        for _ in range(20):
+            try:
+                results = []
+                for tx_hash in tx_hashes:
+                    res = self.get_tx(tx_hash)
+                    results.append(res)
+                    time.sleep(0.1)
+                return results
+            except Exception as e:
+                print(e)
+            time.sleep(1)
 
     def send_txn_and_check_success(self, txn, timeout=20):
         res = self.near_node.send_tx_and_wait(txn, timeout)

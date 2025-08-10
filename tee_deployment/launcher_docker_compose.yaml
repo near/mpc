@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  launcher:
+    image: barakeinavhnear/launcher:latest  # issue #531: TODO (security): Replace with a specific image digest
+    container_name: launcher
+
+    environment:
+      - DOCKER_CONTENT_TRUST=1
+      - DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d  # nearone/mpc-node-gcp:testnet-release
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - /tapp:/tapp:ro
+      - shared-volume:/mnt/shared:ro
+
+    security_opt:
+      - no-new-privileges:true
+
+    read_only: true
+
+    tmpfs:
+      - /tmp  # Required for many apps to function correctly when root FS is read-only
+
+volumes:
+  shared-volume:
+    name: shared-volume
