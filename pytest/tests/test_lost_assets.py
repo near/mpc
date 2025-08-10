@@ -215,8 +215,8 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
         lost_assets_cluster, PRESIGNATURES_TO_BUFFER, TIMEOUT
     )
 
-    # Stop mpc node 0 and wipe its database. Any assets generated before this point
-    # which included node 0 are now unusable because node 0 has lost its share.
+    # Stop one of the mpc nodes and wipe its database. Any assets generated before this point
+    # which included that node are now unusable because node 0 has lost its share.
     faulty_node_idx = random.randint(0, 2)
     node_idxs_alive = [i for i in range(0, 3) if i != faulty_node_idx]
     lost_assets_cluster.kill_nodes([faulty_node_idx])
@@ -239,7 +239,7 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
 
     # Start node 0 again
     lost_assets_cluster.run_nodes([faulty_node_idx])
-
+    node_idxs_alive.append(faulty_node_idx)
     # Wait for nodes to connect
     assert_num_live_connections(lost_assets_cluster, node_idxs_alive, 3, TIMEOUT)
 
