@@ -46,17 +46,17 @@ def lost_assets_cluster():
 
 
 def assert_num_presignatures_available(
-    cluster: MpcCluster, expected_num_presignatures_available: int, timeout: int
+    cluster: MpcCluster, expected_num_presignatures_available: int, timeout_seconds: int
 ):
     """
     Asserts that the number of presignatures available for each node in the cluster is exactly `expected_num_presignatures_available`.
     Does so by comparing the metric value `MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE` with the expected value.
-    Panics in case any of the metrics is unreachable or does not match the expected value before `timeout` expires.
+    Panics in case any of the metrics is unreachable or does not match the expected value before timeout is reached.
     """
     started = time.time()
     while True:
         elapsed = time.time() - started
-        assert elapsed < timeout, (
+        assert elapsed < timeout_seconds, (
             "Nodes did not reach expected MPC presignature counts (available) before timeout."
         )
         try:
@@ -82,21 +82,20 @@ def assert_num_offline_online_presignatures(
     nodes_idxs_to_verify: List[int],
     expected_num_presignatures_online: int,
     expected_num_presignatures_offline: int,
-    timeout: int,
+    timeout_seconds: int,
 ):
     """
     Asserts that each node with index in `nodes_idxs_to_verify`:
         - owns exactly `expected_num_presignatures_online` with online participants (by comparing the expected value with the metric `MPC_OWNED_NUM_PRESIGNATURES_ONLINE`)
         - owns exactly `expected_num_presignatures_offline` with offline participants (by comparing the expected value with the metric `MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT`)
 
-    Fails in case any of the metrics is not reachable or does not match the expected value before `timout`
-    If `verbose` is True, prints detailed presignature and peer block height information for each node.
+    Fails in case any of the metrics is not reachable or does not match the expected value before `timeout`
     """
     started = time.time()
     last_print = -5
     while True:
         elapsed = time.time() - started
-        assert elapsed < timeout, (
+        assert elapsed < timeout_seconds, (
             "Nodes did not reach expected MPC presignature counts (online | offline) before timeout."
         )
 
@@ -141,14 +140,17 @@ def assert_num_offline_online_presignatures(
 
 
 def assert_num_live_connections(
-    cluster: MpcCluster, node_idxs: List[int], expected_num_connected: int, timeout: int
+    cluster: MpcCluster,
+    node_idxs: List[int],
+    expected_num_connected: int,
+    timeout_seconds: int,
 ):
     """
     Asserts that each node in node_idx is connected to exactly `expected_num_connected` peers.
     """
     for node_idx in node_idxs:
         cluster.mpc_nodes[node_idx].assert_num_live_connections(
-            expected_num_connected, timeout
+            expected_num_connected, timeout_seconds
         )
 
 
@@ -156,21 +158,21 @@ def assert_indexer_lag(
     cluster: MpcCluster,
     faulty_node_idx: int,
     active_node_idxs: List[int],
-    min_lag: int = 10,
-    timeout: int = 120,
+    min_lag_blocks: int = 10,
+    timeout_seconds: int = 120,
 ):
     """
     This function:
         - asserts that the nodes correctly expose the `metrics.IntMetricName.MPC_INDEXER_LATEST_BLOCK_HEIGHT` metric
-        - returns only after the indexer of the node with `faulty_node_idx` lags at least `min_lag` behind every active nodes.
+        - returns only after the indexer of the node with `faulty_node_idx` lags at least `min_lag_blocks` behind every active nodes.
     Raises an exception if the timeout is exceeded or if there is no valid metric
     """
     started = time.time()
     last_print = -5
     while True:
         elapsed = time.time() - started
-        assert elapsed < timeout, (
-            f"Timed out waiting for node {faulty_node_idx} to lag {min_lag} behind {active_node_idxs}."
+        assert elapsed < timeout_seconds, (
+            f"Timed out waiting for node {faulty_node_idx} to lag {min_lag_blocks} behind {active_node_idxs}."
         )
         try:
             block_heights: List[int] = cluster.require_int_metric_values(
@@ -179,13 +181,15 @@ def assert_indexer_lag(
             if elapsed - last_print >= 5:
                 print(f"Block heights: {block_heights}")
                 last_print = elapsed
-            stalled_node_height: int = block_heights[faulty_node_idx]
-            if all(
+            faulty_node_height: int = block_heights[faulty_node_idx]
+            node_considered_stalled = all(
                 [
-                    stalled_node_height + min_lag < block_heights[active_node_idx]
+                    faulty_node_height + min_lag_blocks
+                    <= block_heights[active_node_idx]
                     for active_node_idx in active_node_idxs
                 ]
-            ):
+            )
+            if node_considered_stalled:
                 break
         except requests.exceptions.ConnectionError:
             pass
@@ -227,7 +231,7 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
         node_idxs_alive,
         expected_num_presignatures_online=PRESIGNATURES_TO_BUFFER,
         expected_num_presignatures_offline=0,
-        timeout=TIMEOUT,
+        timeout_seconds=TIMEOUT,
     )
 
     # Ensure the remaining nodes can handle signature requests. (We deplete the buffer here).
@@ -283,7 +287,7 @@ def test_cleanup_lagging_node(lost_assets_cluster: MpcCluster):
         node_idxs_alive,
         expected_num_presignatures_online=PRESIGNATURES_TO_BUFFER,
         expected_num_presignatures_offline=0,
-        timeout=TIMEOUT,
+        timeout_seconds=TIMEOUT,
     )
     # Ensure the nodes can handle signature requests. We deplete their asset stores
     lost_assets_cluster.send_and_await_signature_requests(2 * PRESIGNATURES_TO_BUFFER)
