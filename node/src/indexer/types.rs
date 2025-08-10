@@ -116,7 +116,7 @@ pub struct ChainStartKeygenArgs {
 }
 
 #[derive(Serialize, Debug)]
-pub struct ChainVoteAbortKeyEventArgs {
+pub struct ChainVoteAbortKeyEventInstanceArgs {
     pub key_event_id: KeyEventId,
 }
 
@@ -135,7 +135,7 @@ pub(crate) enum ChainSendTransactionRequest {
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
     StartReshare(ChainStartReshareArgs),
-    VoteAbortKeyEvent(ChainVoteAbortKeyEventArgs),
+    VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
     VerifyTee(),
     #[cfg(feature = "tee")]
     SubmitRemoteAttestation(ProposeJoinArgs),
@@ -149,7 +149,9 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
             ChainSendTransactionRequest::StartReshare(_) => "start_reshare_instance",
             ChainSendTransactionRequest::StartKeygen(_) => "start_keygen_instance",
-            ChainSendTransactionRequest::VoteAbortKeyEvent(_) => "vote_abort_key_event_instance",
+            ChainSendTransactionRequest::VoteAbortKeyEventInstance(_) => {
+                "vote_abort_key_event_instance"
+            }
             ChainSendTransactionRequest::VerifyTee() => "verify_tee",
             #[cfg(feature = "tee")]
             ChainSendTransactionRequest::SubmitRemoteAttestation(_) => "submit_remote_attestation",
@@ -163,7 +165,7 @@ impl ChainSendTransactionRequest {
             | Self::VoteReshared(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
-            | Self::VoteAbortKeyEvent(_)
+            | Self::VoteAbortKeyEventInstance(_)
             | Self::VerifyTee() => 300 * TGAS,
             #[cfg(feature = "tee")]
             Self::SubmitRemoteAttestation(_) => 300 * TGAS,
