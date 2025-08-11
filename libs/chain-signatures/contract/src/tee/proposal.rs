@@ -129,7 +129,8 @@ impl AllowedDockerImageHashes {
         self.allowed_tee_proposals.clone()
     }
 
-    fn get_docker_compose_hash(
+    // Given a docker image hash obtain the launcher docker compose hash
+    pub fn get_docker_compose_hash(
         mpc_docker_image_hash: MpcDockerImageHash,
     ) -> LauncherDockerComposeHash {
         let filled_yaml = format!(

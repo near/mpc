@@ -41,7 +41,17 @@ pub struct AppCompose {
 
 #[cfg(test)]
 mod tests {
+    use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+    use serde_json::Value;
+
     use super::*;
+
+    const TEST_TCB_INFO_STRING: &str = include_str!("../tests/tcb_info.json");
+    const TEST_APP_COMPOSE_STRING: &str = include_str!("../tests/app_compose.json");
+    const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
+        include_str!("../tests/launcher_image_compose.yaml");
+    const TEST_LAUNCHER_IMAGE_COMPOSE_NORMALIZED_STRING: &str =
+        include_str!("../tests/launcher_image_compose_normalized.yaml");
 
     #[test]
     fn test_app_compose_deserialization() {
@@ -115,5 +125,33 @@ mod tests {
         assert_eq!(app_compose.key_provider_id, None);
         assert_eq!(app_compose.secure_time, None);
         assert_eq!(app_compose.pre_launch_script, None);
+    }
+
+    #[test]
+    fn test_app_compose_from_tcb_info() {
+        let dstack_tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
+        let app_compose = dstack_tcb_info.app_compose;
+        assert_eq!(app_compose, TEST_APP_COMPOSE_STRING);
+    }
+
+    #[test]
+    fn test_launcher_compose_normalized_from_app_compose() {
+        let app_compose: AppCompose = serde_json::from_str(TEST_APP_COMPOSE_STRING).unwrap();
+        let launcher_compose = serde_yaml::to_string(&app_compose.docker_compose_file).unwrap();
+        assert_eq!(
+            launcher_compose,
+            TEST_LAUNCHER_IMAGE_COMPOSE_NORMALIZED_STRING
+        );
+    }
+
+    #[test]
+    fn test_launcher_compose_from_app_compose() {
+        let app_compose: Value = serde_json::from_str(TEST_APP_COMPOSE_STRING).unwrap();
+        let launcher_compose = app_compose
+            .get("docker_compose_file")
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(launcher_compose, TEST_LAUNCHER_IMAGE_COMPOSE_STRING);
     }
 }
