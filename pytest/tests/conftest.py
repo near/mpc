@@ -19,13 +19,16 @@ from common_lib import constants, contracts
 
 
 @pytest.fixture(autouse=True, scope="function")
-def run_atexit_cleanup():
+def run_atexit_cleanup(request):
     """
     Runs atexit BEFORE the pytest concludes.
     Without the -s flag, pytest redirects the output of stdout and stderr,
     but closes those pipes BEFORE executing atexit,
     resulting in a failed test in case atexit attempts to write to stdout or stderr.
     """
+    if "no_atexit_cleanup" in request.keywords:
+        yield
+        return
     yield
     atexit._run_exitfuncs()
 

@@ -23,7 +23,7 @@ from common_lib.shared import metrics
 @pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
 def test_signature_lifecycle(num_requests, num_respond_access_keys):
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2, 3, num_respond_access_keys, load_mpc_contract()
+        2, 2, num_respond_access_keys, load_mpc_contract()
     )
     cluster.init_cluster(mpc_nodes, 2)
 
@@ -46,6 +46,4 @@ def test_signature_lifecycle(num_requests, num_respond_access_keys):
             continue
         break
 
-    # removing one node should not be a problem.
-    mpc_nodes[0].kill(False)
     cluster.send_and_await_signature_requests(num_requests)

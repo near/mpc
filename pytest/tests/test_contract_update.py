@@ -12,6 +12,8 @@ import time
 import pathlib
 import pytest
 
+from common_lib.contract_state import ProtocolState
+
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import (
@@ -62,6 +64,6 @@ def test_update_to_current(fetch_contract):
     cluster.vote_update(nodes=cluster.get_voters()[0:3], update_id=0)
     time.sleep(2)
     cluster.assert_is_deployed(new_contract.code())
-    cluster.wait_for_state("Running")
+    cluster.wait_for_state(ProtocolState.RUNNING)
     cluster.contract_state().print()
     cluster.send_and_await_signature_requests(1)

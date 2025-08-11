@@ -17,3 +17,4 @@ class IntMetricName(str, Enum):
 
 class DictMetricName(str, Enum):
     MPC_PEERS_INDEXER_BLOCK_HEIGHTS = "mpc_peers_indexer_block_heights"
+    MPC_NETWORK_LIVE_CONNECTIONS = "mpc_network_live_connections"
