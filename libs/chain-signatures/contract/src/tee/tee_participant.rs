@@ -12,14 +12,13 @@ use dcap_qvl::{
     verify::{self, VerifiedReport},
 };
 use k256::sha2::{Digest, Sha384};
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
     env::{self, sha256},
     near, PublicKey,
 };
 use serde::Deserialize;
 use serde_json::Value;
-
-use serde_yaml::Value as YamlValue;
 
 //git rev-parse HEAD
 //fbdf2e76fb6bd9142277fdd84809de87d86548ef
@@ -121,8 +120,8 @@ impl TeeParticipantInfo {
     /// expected values.
     pub fn verify_docker_image(
         &self,
-        allowed_docker_image_hashes: &[MpcDockerImageHash],
-        historical_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         report: VerifiedReport,
         public_key: PublicKey,
     ) -> Result<bool, Error> {
@@ -151,17 +150,14 @@ impl TeeParticipantInfo {
         if !Self::check_app_compose_fields(&tcb_info) {
             return Ok(false);
         }
-        if !Self::check_docker_compose_hash(
-            &tcb_info,
-            allowed_docker_image_hashes,
-            historical_docker_image_hashes,
-        ) {
+        if !Self::check_docker_compose_hash(&tcb_info, allowed_launcher_docker_compose_hashes) {
             return Ok(false);
         }
+
         if !Self::check_local_sgx(event_log) {
             return Ok(false);
         }
-        if !Self::check_mpc_hash(event_log, allowed_docker_image_hashes) {
+        if !Self::check_mpc_hash(event_log, allowed_mpc_docker_image_hashes) {
             return Ok(false);
         }
 
@@ -213,15 +209,18 @@ impl TeeParticipantInfo {
                 is_compose_hash_event && is_rtmr3_measurement
             })
             .and_then(|e| e["digest"].as_str());
-        let app_compose = tcb_info["app_compose"].as_str();
+        let app_compose = match tcb_info.get("app_compose").and_then(|v| v.as_str()) {
+            Some(compose) => compose,
+            None => return false,
+        };
         match (expected_compose_hash, app_compose) {
-            (Some(expected), Some(app)) => replay_app_compose(app) == expected,
+            (Some(expected), app) => replay_app_compose(app) == expected,
             _ => false,
         }
     }
 
     fn check_app_compose_fields(tcb_info: &Value) -> bool {
-        let compose_str = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
+        let compose_str = match tcb_info.get("app_compose").and_then(|v| v.as_str()) {
             Some(compose) => compose,
             None => return false,
         };
@@ -266,26 +265,32 @@ impl TeeParticipantInfo {
 
     fn check_docker_compose_hash(
         tcb_info: &Value,
-        allowed_docker_image_hashes: &[MpcDockerImageHash],
-        historical_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
-        let compose_yaml = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
-            Some(yaml) => yaml,
+        let app_compose_str = match tcb_info.get("app_compose").and_then(|v| v.as_str()) {
+            Some(compose) => compose,
+            None => return false,
+        };
+        let app_compose: Value = match serde_json::from_str(app_compose_str).ok() {
+            Some(compose) => compose,
             None => return false,
         };
 
-        if serde_yaml::from_str::<YamlValue>(compose_yaml).is_err() {
-            return false;
-        }
+        let docker_compose = match app_compose
+            .get("docker_compose_file")
+            .and_then(|v| v.as_str())
+        {
+            Some(compose) => compose,
+            None => return false,
+        };
 
-        let compose_yaml_hash = sha256(compose_yaml.as_bytes());
-        let mut compose_yaml_hash_arr = [0u8; 32];
-        compose_yaml_hash_arr.copy_from_slice(&compose_yaml_hash);
+        let docker_compose_hash = sha256(docker_compose.as_bytes());
+        let mut docker_compose_hash_arr = [0u8; 32];
+        docker_compose_hash_arr.copy_from_slice(&docker_compose_hash);
 
-        allowed_docker_image_hashes
+        allowed_docker_compose_hashes
             .iter()
-            .chain(historical_docker_image_hashes)
-            .any(|hash| hash.as_hex() == hex::encode(compose_yaml_hash_arr))
+            .any(|hash| hash.as_hex() == hex::encode(docker_compose_hash_arr))
     }
 
     fn check_local_sgx(event_log: &[Value]) -> bool {
