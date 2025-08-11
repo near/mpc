@@ -35,10 +35,32 @@ class MpcCluster:
         for node in self.mpc_nodes:
             node.kill(False)
 
+    def kill_nodes(self, node_idxs: List[int], gentle=True):
+        """
+        Kills nodes with indexes `node_idxs`
+        """
+        for node_idx in node_idxs:
+            self.mpc_nodes[node_idx].kill(gentle)
+
+    def run_nodes(self, node_idxs: List[int]):
+        """
+        Starts nodes with indexes `node_idxs`
+        """
+        for node_idx in node_idxs:
+            self.mpc_nodes[node_idx].run()
+
+    def set_block_ingestion(self, node_idxs: List[int], active: bool):
+        for node_idx in node_idxs:
+            self.mpc_nodes[node_idx].set_block_ingestion(active)
+
+    def reset_mpc_data(self, node_idxs: List[int]):
+        for node_idx in node_idxs:
+            self.mpc_nodes[node_idx].reset_mpc_data()
+
     def __init__(self, main: NearAccount, secondary: NearAccount):
         self.mpc_nodes: List[MpcNode] = []
         # Note: Refer to signing schemas and key resharing
-        self.next_participant_id = 0
+        self.next_participant_id: int = 0
         # Main account where Chain Signatures contract is deployed
         self.contract_node = main
         # In some tests we may need another CS contract.
@@ -73,6 +95,12 @@ class MpcCluster:
 
     def get_int_metric_value(self, metric_name: IntMetricName) -> List[Optional[int]]:
         return [node.get_int_metric_value(metric_name) for node in self.mpc_nodes]
+
+    def require_int_metric_values(self, metric_name: IntMetricName) -> List[int]:
+        """
+        Returns the integer values of the metric `metric_name`. Panics if any of the metrics is None.
+        """
+        return [node.require_int_metric_value(metric_name) for node in self.mpc_nodes]
 
     def get_int_metric_value_for_node(self, metric_name, node_index):
         return self.mpc_nodes[node_index].metrics.get_int_metric_value(metric_name)
@@ -214,7 +242,7 @@ class MpcCluster:
             args.update(additional_init_args)
         tx = self.contract_node.sign_tx(self.contract_node.account_id(), "init", args)
         self.contract_node.send_txn_and_check_success(tx)
-        assert self.wait_for_state("Running"), "expected running state"
+        assert self.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
     def wait_for_state(self, state: ProtocolState):
         """
@@ -241,7 +269,7 @@ class MpcCluster:
         )
         state = self.contract_state()
         state.print()
-        assert state.is_state("Running"), "require running state"
+        assert state.is_state(ProtocolState.RUNNING), "require running state"
         domains_to_add = []
         next_domain_id = state.protocol_state.next_domain_id()
         for scheme in signature_schemes:
@@ -262,9 +290,9 @@ class MpcCluster:
             args=args,
         )
 
-        assert self.wait_for_state("Initializing"), "failed to initialize"
+        assert self.wait_for_state(ProtocolState.INITIALIZING), "failed to initialize"
         if wait_for_running:
-            assert self.wait_for_state("Running"), "failed to run"
+            assert self.wait_for_state(ProtocolState.RUNNING), "failed to run"
 
     def do_resharing(
         self,
@@ -282,7 +310,7 @@ class MpcCluster:
             "proposal": self.make_threshold_parameters(new_threshold),
         }
         state = self.contract_state()
-        assert state.is_state("Running"), "Require running state"
+        assert state.is_state(ProtocolState.RUNNING), "Require running state"
 
         self.parallel_contract_calls(
             method=ContractMethod.VOTE_NEW_PARAMETERS,
@@ -298,9 +326,11 @@ class MpcCluster:
             args=args,
         )
 
-        assert self.wait_for_state("Resharing"), "failed to start resharing"
+        assert self.wait_for_state(ProtocolState.RESHARING), "failed to start resharing"
         if wait_for_running:
-            assert self.wait_for_state("Running"), "failed to conclude resharing"
+            assert self.wait_for_state(ProtocolState.RUNNING), (
+                "failed to conclude resharing"
+            )
             self.update_participant_status()
 
     def get_contract_state(self):
