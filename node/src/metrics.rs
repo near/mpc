@@ -205,3 +205,25 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref MPC_BUILD_INFO: prometheus::IntGaugeVec = prometheus::register_int_gauge_vec!(
+        "mpc_node_build_info",
+        "Metric whose labels indicate node’s version",
+        &["release", "build_time", "rustc_version", "commit"],
+    )
+    .unwrap();
+}
+
+/// Initialize the build info metric with current version information
+pub fn init_build_info_metric() {
+    // Use compile-time constants from built crate
+    let version = crate::built_info::PKG_VERSION;
+    let build_time = crate::built_info::BUILT_TIME_UTC;
+    let rustc_version = crate::built_info::RUSTC_VERSION;
+    let commit = crate::built_info::GIT_VERSION.unwrap_or("unknown");
+
+    MPC_BUILD_INFO
+        .with_label_values(&[version, build_time, rustc_version, commit])
+        .set(1);
+}
