@@ -63,7 +63,8 @@ k256 = { version = "0.13.4", features = [
 # TODO(#451): Verify changes with upstream and integrate in our workspace.
 # The commit under 'rev' is the latest commit at the time it was added.
 # dcap-qvl = { git = "https://github.com/mattlockyer/dcap-qvl", rev = "3caedd8fd0f365841abaf1430ff2922fcb09d9db" }
-dcap-qvl = "0.2.4"
+# this is tag v0.2.4, which contains fixes not present in the version published in crate.io
+dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl", rev = "a395948605edfff37df3c1f17b175ed999cbbb83", features = ["js"] }
 
 mpc-primitives = { path = "../../../crates/primitives" }
 attestation = { path = "../../../attestation" }

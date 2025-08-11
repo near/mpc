@@ -883,8 +883,7 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 [[package]]
 name = "dcap-qvl"
 version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c8049b28b1fe35e94bd52f4c20edf7b80b6eeb378faccdd685d5cd82cbc192e"
+source = "git+https://github.com/Phala-Network/dcap-qvl?rev=a395948605edfff37df3c1f17b175ed999cbbb83#a395948605edfff37df3c1f17b175ed999cbbb83"
 dependencies = [
  "anyhow",
  "asn1_der",
@@ -894,6 +893,7 @@ dependencies = [
  "const-oid",
  "der",
  "futures",
+ "getrandom 0.2.16",
  "hex",
  "log",
  "parity-scale-codec",
@@ -904,9 +904,11 @@ dependencies = [
  "scale-info",
  "serde",
  "serde-human-bytes",
+ "serde-wasm-bindgen",
  "serde_json",
  "tracing",
  "urlencoding",
+ "wasm-bindgen",
  "x509-cert",
 ]
 
@@ -4447,6 +4449,17 @@ checksum = "78ef65cb41f3f9cef63c431193229067e8b98b53c4d4c4ed38a8ca87c4d07676"
 dependencies = [
  "hex",
  "serde",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
 ]
 
 [[package]]
