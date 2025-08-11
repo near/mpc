@@ -381,7 +381,7 @@ impl FakeIndexerCore {
                         let mut contract = contract.lock().await;
                         contract.vote_start_reshare(account_id, start.key_event_id);
                     }
-                    ChainSendTransactionRequest::VoteAbortKeyEvent(abort) => {
+                    ChainSendTransactionRequest::VoteAbortKeyEventInstance(abort) => {
                         let mut contract = contract.lock().await;
                         contract.vote_abort_key_event(account_id, abort.key_event_id);
                     }

@@ -1,6 +1,6 @@
 use crate::indexer::participants::KeyEventIdComparisonResult;
 use crate::indexer::types::{
-    ChainStartKeygenArgs, ChainStartReshareArgs, ChainVoteAbortKeyEventArgs,
+    ChainStartKeygenArgs, ChainStartReshareArgs, ChainVoteAbortKeyEventInstanceArgs,
 };
 use crate::network::MeshNetworkClient;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
@@ -115,7 +115,7 @@ async fn keygen_computation(
                 },
                 Err(err) => {
                     tracing::error!("Key generation attempt {:?} failed: {:?}; sending vote_abort_key_event_instance", key_id, err);
-                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEvent(ChainVoteAbortKeyEventArgs {
+                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs {
                         key_event_id: key_id,
                     })).await?;
                 },
@@ -270,7 +270,7 @@ async fn resharing_computation(
                 },
                 Err(err) => {
                     tracing::error!("Key resharing attempt {:?} failed: {:?}; sending vote_abort_key_event_instance", key_id, err);
-                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEvent(ChainVoteAbortKeyEventArgs {
+                    chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs {
                         key_event_id: key_id,
                     })).await?;
                 },
