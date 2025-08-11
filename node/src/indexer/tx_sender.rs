@@ -123,7 +123,11 @@ async fn observe_tx_result(
             }
         }
         // We don't care. The contract state change will handle this.
-        StartKeygen(_) | StartReshare(_) | VotePk(_) | VoteReshared(_) | VoteAbortKeyEvent(_)
+        StartKeygen(_)
+        | StartReshare(_)
+        | VotePk(_)
+        | VoteReshared(_)
+        | VoteAbortKeyEventInstance(_)
         | VerifyTee() => Ok(ChainTransactionState::Unknown),
         #[cfg(feature = "tee")]
         SubmitRemoteAttestation(_) => Ok(ChainTransactionState::Unknown),

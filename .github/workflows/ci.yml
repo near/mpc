@@ -61,6 +61,36 @@ jobs:
         run: |
           cargo fmt -- --check
 
+  clippy-mpc-node-all-features:
+    name: "MPC Node (all features): clippy and format"
+    runs-on: warp-ubuntu-2204-x64-8x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
+
+      - name: Cache Rust dependencies
+        uses: WarpBuilds/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+
+      - name: Run Clippy fmt
+        run: |
+          CARGO_TARGET_DIR="target/clippy" \
+          RUSTFLAGS="-D warnings" \
+          cargo clippy --all-targets --all-features --locked
+
+      - name: Run Cargo fmt
+        run: |
+          cargo fmt -- --check
+
   clippy-mpc-node-tee:
     name: "MPC Node (TEE): clippy and format"
     runs-on: warp-ubuntu-2204-x64-8x
@@ -297,7 +327,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libudev-dev
-          cargo install cargo-near
+          cargo install cargo-near --locked
 
       - name: Setup python
         uses: actions/setup-python@v4

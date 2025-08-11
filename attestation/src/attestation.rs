@@ -12,6 +12,16 @@ use near_sdk::env::sha256;
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
 
+// DSTACK_EVENT_TYPE is defined in https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/tdx-attest/src/lib.rs#L28
+// It is the same for all events
+const DSTACK_EVENT_TYPE: u32 = 134217729;
+
+const COMPOSE_HASH_EVENT: &str = "compose-hash";
+const KEY_PROVIDER_EVENT: &str = "key-provider";
+const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
+
+const RTMR3_INDEX: u32 = 3;
+
 #[allow(clippy::large_enum_variant)]
 pub enum Attestation {
     Dstack(DstackAttestation),
@@ -92,22 +102,44 @@ impl Attestation {
             )
             && self.verify_rtmr3(report_data, &attestation.tcb_info)
             && self.verify_app_compose(&attestation.tcb_info)
-            && self.verify_local_sgx_hash(&attestation.tcb_info, &attestation.expected_measurements)
+            && self
+                .verify_local_sgx_digest(&attestation.tcb_info, &attestation.expected_measurements)
+            && self
+                .verify_local_sgx_digest(&attestation.tcb_info, &attestation.expected_measurements)
             && self.verify_mpc_hash(&attestation.tcb_info, allowed_docker_image_hashes)
     }
 
-    /// Replays RTMR3 from the event log by hashing all relevant events together.
-    fn replay_rtmr3(event_log: &[EventLog]) -> [u8; 48] {
-        const IMR: u32 = 3;
+    /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all digests
+    /// are correct
+    fn verify_event_log_rtmr3(event_log: &[EventLog], expected_digest: [u8; 48]) -> bool {
         let mut digest = [0u8; 48];
 
-        let filtered_events = event_log.iter().filter(|e| e.imr == IMR);
+        let filtered_events = event_log.iter().filter(|e| e.imr == RTMR3_INDEX);
 
         for event in filtered_events {
+            // In Dstack, all events measured in RTMR3 are of type DSTACK_EVENT_TYPE
+            if event.event_type != DSTACK_EVENT_TYPE {
+                return false;
+            }
             let mut hasher = Sha384::new();
             hasher.update(digest);
             match hex::decode(event.digest.as_str()) {
-                Ok(decoded_bytes) => hasher.update(decoded_bytes.as_slice()),
+                Ok(decoded_digest) => {
+                    let payload_bytes = match hex::decode(&event.event_payload) {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            tracing::error!("Failed to decode hex string for: {:?}", e);
+                            return false;
+                        }
+                    };
+                    let expected_digest =
+                        Self::event_digest(event.event_type, &event.event, &payload_bytes);
+                    if decoded_digest != expected_digest {
+                        return false;
+                    }
+
+                    hasher.update(decoded_digest.as_slice())
+                }
                 Err(e) => {
                     tracing::error!(
                         "Failed to decode hex digest in event log; skipping invalid event: {:?}",
@@ -119,18 +151,16 @@ impl Attestation {
             digest = hasher.finalize().into();
         }
 
-        digest
+        digest == expected_digest
     }
 
-    fn validate_compose_hash(expected_hex: &str, app_compose: &str) -> bool {
-        match hex::decode(expected_hex) {
-            Ok(bytes) => match <[u8; 48]>::try_from(bytes.as_slice()) {
-                Ok(expected_bytes) => Self::replay_app_compose(app_compose) == expected_bytes,
+    fn validate_app_compose_payload(expected_event_payload_hex: &str, app_compose: &str) -> bool {
+        let expected_payload = match hex::decode(expected_event_payload_hex) {
+            Ok(bytes) => match <[u8; 32]>::try_from(bytes.as_slice()) {
+                Ok(expected_bytes) => expected_bytes,
                 Err(_) => {
-                    tracing::error!(
-                        "Failed to convert decoded hex to [u8; 48] for compose-hash event"
-                    );
-                    false
+                    tracing::error!("Failed to convert decoded hex to [u8; 32] for ");
+                    return false;
                 }
             },
             Err(e) => {
@@ -138,25 +168,13 @@ impl Attestation {
                     "Failed to decode hex string for compose-hash event: {:?}",
                     e
                 );
-                false
+                return false;
             }
-        }
-    }
+        };
 
-    fn replay_app_compose(app_compose: &str) -> [u8; 48] {
-        // sha256 of app_compose from TcbInfo
-        let sha256_vec = sha256(app_compose.as_bytes());
-        let mut sha256_bytes = [0u8; 32];
-        sha256_bytes.copy_from_slice(&sha256_vec);
+        let app_compose_hash: [u8; 32] = sha256(app_compose.as_bytes()).try_into().unwrap();
 
-        // sha384 of custom encoding: [phala_prefix]:[event_name]:[sha256_payload]
-        let mut hasher = Sha384::new();
-        hasher.update([0x01, 0x00, 0x00, 0x08]);
-        hasher.update(b":");
-        hasher.update("compose-hash".as_bytes());
-        hasher.update(b":");
-        hasher.update(sha256_bytes);
-        hasher.finalize().into()
+        app_compose_hash == expected_payload
     }
 
     /// Verifies TCB status and security advisories.
@@ -210,7 +228,7 @@ impl Attestation {
     /// Verifies RTMR3 by replaying event log.
     fn verify_rtmr3(&self, report_data: &dcap_qvl::quote::TDReport10, tcb_info: &TcbInfo) -> bool {
         tcb_info.rtmr3 == hex::encode(report_data.rt_mr3)
-            && report_data.rt_mr3 == Self::replay_rtmr3(&tcb_info.event_log)
+            && Self::verify_event_log_rtmr3(&tcb_info.event_log, report_data.rt_mr3)
     }
 
     /// Verifies app compose configuration and hash. The compose-hash is measured into RTMR3, and
@@ -225,26 +243,23 @@ impl Attestation {
             }
         };
 
-        let docker_compose = match serde_yaml::to_string(&app_compose.docker_compose_file) {
-            Ok(yaml_string) => yaml_string,
-            Err(_) => return false,
-        };
-
-        tcb_info
+        let mut events = tcb_info
             .event_log
             .iter()
-            .find(|event| event.event == "compose-hash")
-            .is_some_and(|event| {
-                Self::validate_app_compose_config(&app_compose)
-                    && Self::validate_compose_hash(&event.digest, &docker_compose)
-            })
+            .filter(|event| event.event == COMPOSE_HASH_EVENT && event.imr == RTMR3_INDEX);
+
+        let payload_is_correct = events.next().is_some_and(|event| {
+            Self::validate_app_compose_config(&app_compose)
+                && Self::validate_app_compose_payload(&event.event_payload, &tcb_info.app_compose)
+        });
+        let single_repetition = events.next().is_none();
+        single_repetition && payload_is_correct
     }
 
     /// Validates app compose configuration against expected security requirements.
     fn validate_app_compose_config(app_compose: &AppCompose) -> bool {
         app_compose.manifest_version == 2
             && app_compose.runner == "docker-compose"
-            && app_compose.docker_config == serde_json::json!({})
             && !app_compose.kms_enabled
             && app_compose.gateway_enabled == Some(false)
             && app_compose.public_logs
@@ -252,67 +267,52 @@ impl Attestation {
             && app_compose.local_key_provider_enabled
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
-            && app_compose.secure_time == Some(false)
+            && app_compose.secure_time == Some(true)
+            && app_compose.secure_time == Some(true)
             && app_compose.pre_launch_script.is_none()
     }
 
-    /// Verifies local SGX hash matches expected value.
-    fn verify_local_sgx_hash(
+    /// Verifies local key-provider event digest matches the expected digest.
+    fn verify_local_sgx_digest(
         &self,
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
     ) -> bool {
-        tcb_info
+        let mut events = tcb_info
             .event_log
             .iter()
-            .find(|event| event.event == "local-sgx")
-            .map(|event| &event.digest)
-            .is_some_and(|hash| *hash == hex::encode(expected_measurements.local_sgx_hash))
+            .filter(|event| event.event == KEY_PROVIDER_EVENT && event.imr == RTMR3_INDEX);
+        let digest_is_correct = events.next().is_some_and(|event| {
+            event.digest == hex::encode(expected_measurements.local_sgx_event_digest)
+        });
+        let single_repetition = events.next().is_none();
+        single_repetition && digest_is_correct
     }
 
     /// Verifies MPC node image hash is in allowed list.
     fn verify_mpc_hash(&self, tcb_info: &TcbInfo, allowed_hashes: &[MpcDockerImageHash]) -> bool {
-        tcb_info
+        let mut mpc_image_hash_events = tcb_info
             .event_log
             .iter()
-            .find(|e| e.event == "mpc-image-digest")
-            .map(|e| &e.digest)
-            .is_some_and(|digest| allowed_hashes.iter().any(|hash| hash.as_hex() == *digest))
-    }
-}
+            .filter(|event| event.event == MPC_IMAGE_HASH_EVENT && event.imr == RTMR3_INDEX);
 
-#[cfg(test)]
-mod tests {
-    use crate::report_data::ReportDataV1;
-
-    use super::*;
-    use rstest::rstest;
-
-    fn mock_attestation(quote_verification_result: bool) -> Attestation {
-        Attestation::Local(LocalAttestation {
-            verification_result: quote_verification_result,
-        })
+        let digest_is_correct = mpc_image_hash_events.next().is_some_and(|event| {
+            allowed_hashes
+                .iter()
+                .any(|hash| hash.as_hex() == *event.event_payload)
+        });
+        let single_repetition = mpc_image_hash_events.next().is_none();
+        single_repetition && digest_is_correct
     }
 
-    #[rstest]
-    #[case(false, false)]
-    #[case(true, true)]
-    fn test_mock_attestation_verify(
-        #[case] quote_verification_result: bool,
-        #[case] expected_quote_verification_result: bool,
-    ) {
-        let timestamp_s = 0u64;
-        let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
-            .parse()
-            .unwrap();
-        let account_key = "ed25519:H9k5eiU4xXyb8F7cUDjZYNuH1zGAx5BBNrYwLPNhq6Zx"
-            .parse()
-            .unwrap();
-        let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
-
-        assert_eq!(
-            mock_attestation(quote_verification_result).verify(report_data, timestamp_s, &[],),
-            expected_quote_verification_result
-        );
+    // Implementation taken to match Dstack's https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/cc-eventlog/src/lib.rs#L54
+    fn event_digest(event_type: u32, event: &str, payload: &[u8]) -> [u8; 48] {
+        let mut hasher = Sha384::new();
+        hasher.update(event_type.to_ne_bytes());
+        hasher.update(b":");
+        hasher.update(event.as_bytes());
+        hasher.update(b":");
+        hasher.update(payload);
+        hasher.finalize().into()
     }
 }

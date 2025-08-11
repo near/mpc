@@ -1,7 +1,43 @@
 import json
+from typing import Any
+
+from common_lib.constants import TGAS
 
 
-def assert_txn_success(result):
+def extract_tx_costs(res):
+    """
+    returns `total_gas_used`, `num_receipts`
+    """
+    # Extract the gas burnt at transaction level
+    total_gas_used = res["result"]["transaction_outcome"]["outcome"]["gas_burnt"]
+
+    # Add the gas burnt for each receipt
+    num_receipts = 0
+    for receipt in res["result"]["receipts_outcome"]:
+        total_gas_used += receipt["outcome"]["gas_burnt"]
+        num_receipts += 1
+    return total_gas_used, num_receipts
+
+
+def verify_txs(results, verification_callback, verbose=False):
+    max_tgas_used = 0
+    total_tgas = 0
+    total_receipts = 0
+    num_txs = 0
+    for res in results:
+        num_txs += 1
+        gas_tx, n_rcpts_tx = extract_tx_costs(res)
+        max_tgas_used = max(max_tgas_used, gas_tx) / TGAS
+        total_tgas += gas_tx / TGAS
+        total_receipts += n_rcpts_tx
+        verification_callback(res)
+    if verbose:
+        print(
+            f"number of txs: {num_txs}\n max gas used (Tgas):{max_tgas_used}\n average receipts: {total_receipts / num_txs}\n average gas used (Tgas): {total_tgas / num_txs}\n"
+        )
+
+
+def assert_txn_success(result: dict[str, Any]):
     assert "result" in result, json.dumps(result, indent=1)
     assert "status" in result["result"], json.dumps(result["result"], indent=1)
     assert "SuccessValue" in result["result"]["status"], json.dumps(
