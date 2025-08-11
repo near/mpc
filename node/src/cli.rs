@@ -363,33 +363,35 @@ impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
             CliCommand::Start(start) => start.run().await,
-            CliCommand::Init(config) => near_indexer::init_configs(
-                &config.dir,
-                config.chain_id,
-                None,
-                None,
-                1,
-                false,
-                config.genesis.as_ref().map(AsRef::as_ref),
-                config.download_genesis,
-                config.download_genesis_url.as_ref().map(AsRef::as_ref),
-                config
-                    .donwload_genesis_records_url
-                    .as_ref()
-                    .map(AsRef::as_ref),
-                if config.download_config {
-                    Some(near_config_utils::DownloadConfigType::RPC)
+            CliCommand::Init(config) => {
+                let (download_config_type, download_config_url) = if config.download_config {
+                    (
+                        Some(near_config_utils::DownloadConfigType::RPC),
+                        config.download_config_url.as_ref().map(AsRef::as_ref),
+                    )
                 } else {
-                    None
-                },
-                if config.download_config {
-                    config.download_config_url.as_ref().map(AsRef::as_ref)
-                } else {
-                    None
-                },
-                config.boot_nodes.as_ref().map(AsRef::as_ref),
-                None,
-            ),
+                    (None, None)
+                };
+                near_indexer::init_configs(
+                    &config.dir,
+                    config.chain_id,
+                    None,
+                    None,
+                    1,
+                    false,
+                    config.genesis.as_ref().map(AsRef::as_ref),
+                    config.download_genesis,
+                    config.download_genesis_url.as_ref().map(AsRef::as_ref),
+                    config
+                        .donwload_genesis_records_url
+                        .as_ref()
+                        .map(AsRef::as_ref),
+                    download_config_type,
+                    download_config_url,
+                    config.boot_nodes.as_ref().map(AsRef::as_ref),
+                    None,
+                )
+            }
             CliCommand::ImportKeyshare(cmd) => cmd.run().await,
             CliCommand::ExportKeyshare(cmd) => cmd.run().await,
             CliCommand::GenerateTestConfigs {
