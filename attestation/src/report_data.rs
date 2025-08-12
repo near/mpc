@@ -1,3 +1,4 @@
+use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::Constructor;
 use near_crypto::PublicKey;
 use serde::{Deserialize, Serialize};
@@ -10,7 +11,10 @@ const REPORT_DATA_SIZE: usize = 64;
 const BINARY_VERSION_OFFSET: usize = 0;
 const BINARY_VERSION_SIZE: usize = 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, BorshDeserialize, BorshSerialize,
+)]
+#[borsh(use_discriminant = true)]
 #[repr(u16)]
 pub enum ReportDataVersion {
     V1 = 1,

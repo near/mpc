@@ -8,7 +8,7 @@ use derive_more::Constructor;
 use dstack_sdk_types::dstack::EventLog;
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::MpcDockerImageHash;
-use near_sdk::{env::sha256, near};
+use near_sdk::env::sha256;
 use serde::{Deserialize, Serialize};
 
 /// Expected TCB status for a successfully verified TEE quote.
@@ -23,15 +23,14 @@ const KEY_PROVIDER_EVENT: &str = "key-provider";
 const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 
 #[allow(clippy::large_enum_variant)]
-#[near(serializers=[borsh])]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub enum Attestation {
     Dstack(DstackAttestation),
     Local(LocalAttestation),
 }
 
 #[allow(dead_code)]
-#[derive(Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct DstackAttestation {
     pub quote: Quote,
     pub collateral: Collateral,
@@ -39,8 +38,7 @@ pub struct DstackAttestation {
     pub expected_measurements: ExpectedMeasurements,
 }
 
-#[derive(Constructor, Serialize, Deserialize)]
-#[near(serializers=[borsh])]
+#[derive(Debug, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct LocalAttestation {
     verification_result: bool,
 }

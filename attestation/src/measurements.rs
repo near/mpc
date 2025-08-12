@@ -1,3 +1,4 @@
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
 
@@ -54,7 +55,7 @@ const EXPECTED_LOCAL_SGX_EVENT_DIGEST: [u8; 48] = [
 const EXPECTED_REPORT_DATA_VERSION: ReportDataVersion = ReportDataVersion::V1;
 
 #[serde_as]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct Measurements {
     /// MRTD (Measurement of Root of Trust for Data) - identifies the virtual firmware.
     #[serde_as(as = "Bytes")]
