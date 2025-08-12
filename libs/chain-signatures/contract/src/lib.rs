@@ -558,7 +558,8 @@ impl VersionedMpcContract {
             .tee_state
             .add_participant(account_id.clone(), proposed_tee_participant.clone());
 
-        // Handle storage fees for non-participants
+        // Both participants and non-participants can propose. Non-participants must pay for the
+        // storage they use; participants do not.
         if self.voter_account().is_err() {
             let storage_used = env::storage_usage() - initial_storage;
             let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);

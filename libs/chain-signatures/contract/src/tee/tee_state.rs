@@ -1,14 +1,15 @@
 use crate::{
-    errors::Error, primitives::{key_state::AuthenticatedParticipantId, participants::Participants}, storage_keys::StorageKey, tee::{
+    errors::Error,
+    primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
+    storage_keys::StorageKey,
+    tee::{
         proposal::{AllowedDockerImageHashes, CodeHashesVotes, MpcDockerImageHash},
         quote::TeeQuoteStatus,
         tee_participant::TeeParticipantInfo,
-    }
+    },
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
-use near_sdk::{env, near, store::IterableMap, AccountId};
-
 
 pub enum TeeValidationResult {
     Full,
@@ -39,40 +40,30 @@ impl TeeState {
     /// A shared helper method to verify the TEE quote and Docker image.
     /// This method returns a `Result` with the `TeeQuoteStatus` or an `Error`.
     pub fn verify_tee_participant(
-        &self,
+        &mut self,
         tee_participant_info: &TeeParticipantInfo,
         sign_pk: &PublicKey,
         timestamp_s: u64,
     ) -> Result<TeeQuoteStatus, Error> {
-        // Verify the TEE quote
         let quote_result = tee_participant_info.verify_quote(timestamp_s);
 
-        match quote_result {
-            Ok(verified_report) => {
-                // Validate Docker image after quote verification
-                let allowed_docker_image_hashes = self.get_allowed_hashes();
-                let historical_docker_image_hashes = self.get_historical_hashes();
+        if let Ok(verified_report) = quote_result {
+            let allowed = self.get_allowed_hashes();
+            let historical = self.get_historical_hashes();
+            let docker_valid = tee_participant_info
+                .verify_docker_image(&allowed, &historical, verified_report, sign_pk.clone())
+                .unwrap_or(false);
 
-                let docker_image_valid = tee_participant_info
-                    .verify_docker_image(
-                        allowed_docker_image_hashes.as_slice(),
-                        historical_docker_image_hashes.as_slice(),
-                        verified_report.clone(),
-                        sign_pk.clone(), // Clone sign_pk before passing
-                    )
-                    .unwrap_or(false);
-
-                // If both the quote and Docker image are valid, return Valid
-                if docker_image_valid {
-                    Ok(TeeQuoteStatus::Valid)
-                } else {
-                    Ok(TeeQuoteStatus::Invalid)
-                }
-            }
-            // If verify_quote fails (Err), return Invalid
-            Err(_) => Ok(TeeQuoteStatus::Invalid),
+            Ok(if docker_valid {
+                TeeQuoteStatus::Valid
+            } else {
+                TeeQuoteStatus::Invalid
+            })
+        } else {
+            Ok(TeeQuoteStatus::Invalid)
         }
     }
+
     /// Performs TEE validation on the given participants.
     ///
     /// Returns `TeeValidationResult::Full` if all participants are valid,
@@ -80,7 +71,7 @@ impl TeeState {
     ///
     /// Participants with `TeeQuoteStatus::Valid` or `TeeQuoteStatus::None` are considered valid.
     /// The returned `Participants` preserves participant data and `next_id()`.
-    pub fn validate_tee(&self, participants: &Participants) -> TeeValidationResult {
+    pub fn validate_tee(&mut self, participants: &Participants) -> TeeValidationResult {
         let new_participants: Vec<_> = participants
             .participants()
             .iter()
@@ -119,27 +110,20 @@ impl TeeState {
     /// verification and the Docker image verification. If both validations pass, the participant
     /// is considered to have a valid TEE status. Otherwise, the participant is marked as invalid.
     /// If no TEE information is found, the participant is marked with `TeeQuoteStatus::None`.
-    ///
-    /// # Arguments
-    ///
-    /// * `account_id` - The account ID of the participant whose TEE status is being checked.
-    /// * `sign_pk` - The public key associated with the participant, used to verify the Docker image.
-    ///
-    /// # Returns
-    ///
-    /// * `TeeQuoteStatus::Valid` - If both the TEE quote is valid and the Docker image is verified as valid.
-    /// * `TeeQuoteStatus::Invalid` - If either the TEE quote or Docker image is invalid.
-    /// * `TeeQuoteStatus::None` - If no TEE information is found for the participant.
-    pub fn tee_status(&self, account_id: &AccountId, sign_pk: &PublicKey) -> TeeQuoteStatus {
+    pub fn tee_status(&mut self, account_id: &AccountId, sign_pk: &PublicKey) -> TeeQuoteStatus {
         let now_sec = env::block_timestamp_ms() / 1_000;
 
-        if let Some(tee_participant_info) = self.tee_participant_info.get(account_id) {
-            match self.verify_tee_participant(&tee_participant_info, sign_pk, now_sec) {
-                Ok(status) => status,
-                Err(_) => TeeQuoteStatus::Invalid,
-            }
+        // Get the participant info and clone it to avoid borrow checker issues
+        let tee_participant_info_opt = self.tee_participant_info.get(account_id).cloned();
+
+        if let Some(tee_participant_info) = tee_participant_info_opt {
+            // Now we can mutably borrow self
+            return match self.verify_tee_participant(&tee_participant_info, sign_pk, now_sec) {
+                Ok(status) => status,              // Return the valid status
+                Err(_) => TeeQuoteStatus::Invalid, // If error, return invalid status
+            };
         } else {
-            TeeQuoteStatus::None
+            TeeQuoteStatus::None // If no participant info, return None
         }
     }
 
@@ -159,8 +143,10 @@ impl TeeState {
     ) -> u64 {
         self.votes.vote(code_hash.clone(), participant)
     }
-
+    // Retrieves the current allowed hashes, cleaning up any expired entries.
     pub fn get_allowed_hashes(&mut self) -> Vec<MpcDockerImageHash> {
+        // Clean up expired entries and return the current allowed hashes.
+        // don't remove the get call, as it ensures we only get hashes valid for the current block height
         self.allowed_docker_image_hashes
             .get(env::block_height())
             .into_iter()
