@@ -342,7 +342,6 @@ mod tests {
         // let quote = std::fs::read("../samples/4.bin").expect("quote is not found");
         // println!("{:?}", collateral);
 
-        // let now = 1747699200; // 20 May 2025, 00:00:00 UTC
         let now = 1744217930; // Apr 09 2025 16:58:50 UTC
 
         // get compose hash from events
