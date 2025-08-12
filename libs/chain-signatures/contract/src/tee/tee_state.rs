@@ -1,15 +1,14 @@
 use crate::{
-    primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
-    storage_keys::StorageKey,
-    tee::{
+    errors::Error, primitives::{key_state::AuthenticatedParticipantId, participants::Participants}, storage_keys::StorageKey, tee::{
         proposal::{AllowedDockerImageHashes, CodeHashesVotes, MpcDockerImageHash},
         quote::TeeQuoteStatus,
         tee_participant::TeeParticipantInfo,
-    },
+    }
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::PublicKey;
 use near_sdk::{env, near, store::IterableMap, AccountId};
+
 
 pub enum TeeValidationResult {
     Full,
@@ -31,12 +30,49 @@ impl Default for TeeState {
             allowed_docker_image_hashes: Default::default(),
             historical_docker_image_hashes: Default::default(),
             votes: Default::default(),
+
             tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
         }
     }
 }
-
 impl TeeState {
+    /// A shared helper method to verify the TEE quote and Docker image.
+    /// This method returns a `Result` with the `TeeQuoteStatus` or an `Error`.
+    pub fn verify_tee_participant(
+        &self,
+        tee_participant_info: &TeeParticipantInfo,
+        sign_pk: &PublicKey,
+        timestamp_s: u64,
+    ) -> Result<TeeQuoteStatus, Error> {
+        // Verify the TEE quote
+        let quote_result = tee_participant_info.verify_quote(timestamp_s);
+
+        match quote_result {
+            Ok(verified_report) => {
+                // Validate Docker image after quote verification
+                let allowed_docker_image_hashes = self.get_allowed_hashes();
+                let historical_docker_image_hashes = self.get_historical_hashes();
+
+                let docker_image_valid = tee_participant_info
+                    .verify_docker_image(
+                        allowed_docker_image_hashes.as_slice(),
+                        historical_docker_image_hashes.as_slice(),
+                        verified_report.clone(),
+                        sign_pk.clone(), // Clone sign_pk before passing
+                    )
+                    .unwrap_or(false);
+
+                // If both the quote and Docker image are valid, return Valid
+                if docker_image_valid {
+                    Ok(TeeQuoteStatus::Valid)
+                } else {
+                    Ok(TeeQuoteStatus::Invalid)
+                }
+            }
+            // If verify_quote fails (Err), return Invalid
+            Err(_) => Ok(TeeQuoteStatus::Invalid),
+        }
+    }
     /// Performs TEE validation on the given participants.
     ///
     /// Returns `TeeValidationResult::Full` if all participants are valid,
@@ -101,41 +137,13 @@ impl TeeState {
         let now_sec = env::block_timestamp_ms() / 1_000;
 
         if let Some(tee_participant_info) = self.tee_participant_info.get(account_id) {
-            // Call verify_quote and match on the Result
-            let quote_result = tee_participant_info.verify_quote(now_sec);
-
-            match quote_result {
-                // If the quote is successfully verified, proceed with Docker image validation
-                Ok(verified_report) => {
-                    // Validate Docker image after a successful quote verification
-                    let allowed_docker_image_hashes = self.get_allowed_hashes();
-                    let historical_docker_image_hashes = self.get_historical_hashes();
-
-                    let docker_image_valid = tee_participant_info
-                        .verify_docker_image(
-                            allowed_docker_image_hashes.as_slice(),
-                            historical_docker_image_hashes.as_slice(),
-                            verified_report.clone(), // Clone the verified report for further use
-                            sign_pk.clone(),         // Clone sign_pk before passing
-                        )
-                        .unwrap_or(false);
-
-                    // If both the quote and Docker image are valid, return Valid
-                    if docker_image_valid {
-                        return TeeQuoteStatus::Valid;
-                    } else {
-                        return TeeQuoteStatus::Invalid;
-                    }
-                }
-                // If verify_quote fails (Err), return Invalid
-                Err(_) => {
-                    return TeeQuoteStatus::Invalid;
-                }
+            match self.verify_tee_participant(&tee_participant_info, sign_pk, now_sec) {
+                Ok(status) => status,
+                Err(_) => TeeQuoteStatus::Invalid,
             }
+        } else {
+            TeeQuoteStatus::None
         }
-
-        // If no participant info is found, return None
-        TeeQuoteStatus::None
     }
 
     pub fn add_participant(
