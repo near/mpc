@@ -10,8 +10,8 @@ MPC_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.yaml"
 NEAR_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.json"
 
 initialize_near_node() {
-    ./mpc-node init --dir $1 --chain-id $MPC_ENV --download-genesis --download-config
-    python3 << EOF
+    ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --download-genesis --download-config --boot-nodes "$NEAR_BOOT_NODES"
+    python3 <<EOF
 import json;
 config = json.load(open("$NEAR_NODE_CONFIG_FILE"))
 
@@ -21,7 +21,7 @@ config['store']['load_mem_tries_for_tracked_shards'] = True
 config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
 
 # Track whichever shard the contract account is on.
-config['tracked_shards_config']['Accounts'] = ["$MPC_CONTRACT_ID"]
+config['tracked_shards_config'] = {'Accounts': ["$MPC_CONTRACT_ID"]}
 json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
 EOF
 }
@@ -60,7 +60,7 @@ if [ -r "$NEAR_NODE_CONFIG_FILE" ]; then
     echo "Near node is already initialized"
 else
     echo "Initializing Near node"
-    initialize_near_node $MPC_HOME_DIR && echo "Near node initialized"
+    initialize_near_node "$MPC_HOME_DIR" && echo "Near node initialized"
 fi
 
 # Check and initialize MPC config if needed
@@ -68,7 +68,7 @@ if [ -r "$MPC_NODE_CONFIG_FILE" ]; then
     echo "MPC node is already initialized"
 else
     echo "Initializing MPC node"
-    initialize_mpc_config $MPC_NODE_CONFIG_FILE && echo "MPC node initialized"
+    initialize_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node initialized"
 fi
 
 # Check if MPC_SECRET_STORE_KEY is empty - if so, fetch from GCP Secret Manager
