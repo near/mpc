@@ -118,10 +118,10 @@ impl TeeState {
 
         if let Some(tee_participant_info) = tee_participant_info_opt {
             // Now we can mutably borrow self
-            return match self.verify_tee_participant(&tee_participant_info, sign_pk, now_sec) {
+            match self.verify_tee_participant(&tee_participant_info, sign_pk, now_sec) {
                 Ok(status) => status,              // Return the valid status
                 Err(_) => TeeQuoteStatus::Invalid, // If error, return invalid status
-            };
+            }
         } else {
             TeeQuoteStatus::None // If no participant info, return None
         }
