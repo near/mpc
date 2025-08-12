@@ -85,7 +85,6 @@ impl TeeState {
             .participants()
             .iter()
             .filter(|(account_id, _, participant_info)| {
-                // Access the sign_pk from ParticipantInfo and pass it to tee_status
                 matches!(
                     self.tee_status(account_id, &participant_info.sign_pk),
                     TeeQuoteStatus::Valid | TeeQuoteStatus::None
