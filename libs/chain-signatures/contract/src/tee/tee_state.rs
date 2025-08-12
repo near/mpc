@@ -123,8 +123,6 @@ impl TeeState {
     /// # Arguments
     ///
     /// * `account_id` - The account ID of the participant whose TEE status is being checked.
-    /// * `proposed_tee_participant` - The proposed TEE participant information, which includes
-    ///   data about the participant's TEE quote and Docker image status.
     /// * `sign_pk` - The public key associated with the participant, used to verify the Docker image.
     ///
     /// # Returns
