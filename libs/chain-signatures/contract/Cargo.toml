@@ -60,6 +60,7 @@ k256 = { version = "0.13.4", features = [
     "arithmetic",
     "expose-field",
 ] }
+# TODO(#851): Use upstream library
 dcap-qvl = { git = "https://github.com/gilcu3/dcap-qvl", rev = "287a6e7b00f3a687255e90733e954c979d1df9d5", default-features = false, features=["contract", "std", "report"] }
 mpc-primitives = { path = "../../../crates/primitives" }
 attestation = { path = "../../../attestation" }
