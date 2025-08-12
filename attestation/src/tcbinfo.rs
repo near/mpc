@@ -37,4 +37,23 @@ mod tests {
             "095464785461626c65000100000000000000af96bb93f2b9b84e9462e0ba745642360090800000000000"
         );
     }
+
+    const TEST_TCB_INFO_STRING: &str = include_str!("../tests/tcb_info.json");
+
+    #[test]
+    fn test_tcbinfo_from_deserialization2() {
+        let dstack_tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
+        assert_eq!(dstack_tcb_info.event_log.len(), 28);
+        assert_eq!(dstack_tcb_info.event_log[0].imr, 0);
+        assert_eq!(dstack_tcb_info.event_log[0].event_type, 2147483659);
+        assert_eq!(
+            dstack_tcb_info.event_log[0].digest,
+            "519245d8b6b54b48b57143e6647d41e5e6f3b4ef10a73c95be4d9a9c0f54115b707e7af5e38f7be6852229b18573690d"
+        );
+        assert!(dstack_tcb_info.event_log[0].event.is_empty());
+        assert_eq!(
+            dstack_tcb_info.event_log[0].event_payload,
+            "095464785461626c65000100000000000000af96bb93f2b9b84e9462e0ba745642360090800000000000"
+        );
+    }
 }

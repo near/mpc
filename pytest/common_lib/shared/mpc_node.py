@@ -1,11 +1,13 @@
 import pathlib
 import sys
 import time
+from typing import cast
 
 from key import Key
 from ruamel.yaml import YAML
 
-from common_lib.constants import LISTEN_BLOCKS_FILE, MPC_BINARY_PATH, TIMEOUT
+from common_lib.constants import LISTEN_BLOCKS_FILE, MPC_BINARY_PATH
+from common_lib.shared import metrics
 from common_lib.shared.metrics import DictMetricName, FloatMetricName, IntMetricName
 from common_lib.shared.near_account import NearAccount
 
@@ -48,7 +50,7 @@ class MpcNode(NearAccount):
         self.url = url
         self.p2p_public_key = p2p_public_key
         self.status = MpcNode.NodeStatus.IDLE
-        self.participant_id = None
+        self.participant_id: int | None = None
         self.home_dir = self.near_node.node_dir
         self.is_running = False
         self.metrics = MetricsTracker(near_node)
@@ -119,21 +121,27 @@ class MpcNode(NearAccount):
         self.near_node.kill(gentle=gentle)
         self.is_running = False
 
-    def wait_for_connection_count(self, awaited_count):
+    def assert_num_live_connections(self, expected_count: int, timeout: int):
         started = time.time()
+        last_print = -1.5
         while True:
-            assert time.time() - started < TIMEOUT, "Waiting for connection count"
+            elapsed = time.time() - started
+            assert elapsed < timeout, (
+                f"Node {self.print()} did not reach expected connection count before timeout."
+            )
             try:
                 conns = self.metrics.get_metric_all_values(
-                    "mpc_network_live_connections"
+                    metrics.DictMetricName.MPC_NETWORK_LIVE_CONNECTIONS,
                 )
-                print("mpc_network_live_connections", conns)
                 connection_count = int(sum([int(kv[1]) for kv in conns]))
-                if connection_count == awaited_count:
+                if elapsed - last_print >= 1.5:
+                    print(f"Node {self.print()} connected to {connection_count} nodes.")
+                    last_print = elapsed
+                if connection_count == expected_count:
                     break
             except requests.exceptions.ConnectionError:
                 pass
-            time.sleep(1)
+            time.sleep(0.1)
 
     def reserve_key_event_attempt(self, epoch_id, domain_id, attempt_id):
         file_path = pathlib.Path(self.home_dir)
@@ -160,6 +168,18 @@ class MpcNode(NearAccount):
 
     def get_int_metric_value(self, metric: IntMetricName) -> int | None:
         return self.metrics.get_int_metric_value(metric)
+
+    def require_int_metric_value(self, metric_name: IntMetricName) -> int:
+        """
+        Returns the integer value of metrict `metric_name` for this node.
+        Panics if the received value is None.
+        """
+        value: int | None = self.get_int_metric_value(metric_name)
+        if value is None:
+            raise ValueError(
+                f"expected integer values for {metric_name} at node {self.print()}"
+            )
+        return cast(int, value)
 
     def get_peers_block_height_metric_value(self) -> dict[int, int]:
         res = self.metrics.get_metric_all_values(
