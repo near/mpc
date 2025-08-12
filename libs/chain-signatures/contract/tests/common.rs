@@ -287,23 +287,19 @@ pub async fn init_env_secp256k1(
 pub fn make_key_for_domains(
     schemes: Vec<SignatureScheme>,
 ) -> (Vec<near_crypto::PublicKey>, Vec<SharedSecretKey>) {
-    let mut public_keys = Vec::new();
-    let mut secret_keys = Vec::new();
-    for scheme in schemes {
-        match scheme {
+    schemes
+        .into_iter()
+        .map(|scheme| match scheme {
             SignatureScheme::Secp256k1 => {
                 let (pk, sk) = new_secp256k1();
-                public_keys.push(pk);
-                secret_keys.push(SharedSecretKey::Secp256k1(sk));
+                (pk, SharedSecretKey::Secp256k1(sk))
             }
             SignatureScheme::Ed25519 => {
                 let (pk, sk) = new_ed25519();
-                public_keys.push(pk);
-                secret_keys.push(SharedSecretKey::Ed25519(sk));
+                (pk, SharedSecretKey::Ed25519(sk))
             }
-        }
-    }
-    (public_keys, secret_keys)
+        })
+        .unzip()
 }
 
 pub fn new_ed25519() -> (near_crypto::PublicKey, KeygenOutput) {
