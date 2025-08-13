@@ -52,14 +52,11 @@ impl TeeState {
 
         let allowed = self.get_allowed_hashes();
         let historical = self.get_historical_hashes();
-        let docker_valid = tee_participant_info.verify_docker_image(
-            &allowed,
-            &historical,
-            verified_report,
-            sign_pk,
-        )?;
+        let docker_image_is_valid = tee_participant_info
+            .verify_docker_image(&allowed, &historical, verified_report, sign_pk)
+            .unwrap_or(false);
 
-        Ok(if docker_valid {
+        Ok(if docker_image_is_valid {
             TeeQuoteStatus::Valid
         } else {
             TeeQuoteStatus::Invalid
@@ -103,9 +100,9 @@ impl TeeState {
     pub fn tee_status(&mut self, account_id: &AccountId, sign_pk: &PublicKey) -> TeeQuoteStatus {
         let now_sec = env::block_timestamp_ms() / 1_000;
 
-        let tee_participant_info_opt = self.tee_participant_info.get(account_id).cloned();
+        let tee_participant_info = self.tee_participant_info.get(account_id).cloned();
 
-        if let Some(tee_participant_info) = tee_participant_info_opt {
+        if let Some(tee_participant_info) = tee_participant_info {
             match self.verify_tee_participant(&tee_participant_info, sign_pk, now_sec) {
                 Ok(status) => status,
                 Err(_) => TeeQuoteStatus::Invalid,
