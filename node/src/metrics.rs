@@ -227,3 +227,13 @@ pub fn init_build_info_metric() {
         .with_label_values(&[version, build_time, rustc_version, commit])
         .set(1);
 }
+
+lazy_static! {
+    pub static ref PEERS_INDEXER_HEIGHTS: prometheus::IntGaugeVec =
+        prometheus::register_int_gauge_vec!(
+            "mpc_peers_indexer_block_heights",
+            "Latest known block height of peers",
+            &["participant"]
+        )
+        .unwrap();
+}
