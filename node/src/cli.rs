@@ -115,7 +115,7 @@ pub struct InitConfigArgs {
     #[arg(long)]
     pub download_genesis_url: Option<String>,
     #[arg(long)]
-    pub donwload_genesis_records_url: Option<String>,
+    pub download_genesis_records_url: Option<String>,
     #[arg(long)]
     pub boot_nodes: Option<String>,
 }
@@ -386,7 +386,7 @@ impl Cli {
                     config.download_genesis,
                     config.download_genesis_url.as_ref().map(AsRef::as_ref),
                     config
-                        .donwload_genesis_records_url
+                        .download_genesis_records_url
                         .as_ref()
                         .map(AsRef::as_ref),
                     download_config_type,
