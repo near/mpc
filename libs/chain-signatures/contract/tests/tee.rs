@@ -55,7 +55,8 @@ async fn test_vote_code_hash() -> Result<()> {
     );
 
     // Additional votes - should not change the allowed hashes
-    for _ in 0..4 {
+    const EXTRA_VOTES_TO_TEST_STABILITY: usize = 4;
+    for _ in 0..EXTRA_VOTES_TO_TEST_STABILITY {
         vote_for_hash(&accounts[2], &contract, &mpc_hash).await?;
         // Should still have exactly one hash
         let allowed_hashes = get_allowed_hashes(&contract).await?;
