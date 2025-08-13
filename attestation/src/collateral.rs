@@ -1,4 +1,5 @@
 use alloc::{string::String, vec::Vec};
+use borsh::{BorshDeserialize, BorshSerialize};
 use core::str::FromStr;
 use dcap_qvl::QuoteCollateralV3;
 use derive_more::{Deref, From, Into};
@@ -10,7 +11,7 @@ use thiserror::Error;
 /// Supplemental data for the TEE quote, including Intel certificates to verify it came from genuine
 /// Intel hardware, along with details about the Trusted Computing Base (TCB) versioning, status,
 /// and other relevant info.
-#[derive(From, Deref, Into, Debug, Serialize, Deserialize)]
+#[derive(From, Deref, Into, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[serde(try_from = "Value")]
 pub struct Collateral(QuoteCollateralV3);
 
