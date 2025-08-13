@@ -1238,7 +1238,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "borsh",
- "dcap-qvl",
+ "dcap-qvl 0.2.4 (git+https://github.com/gilcu3/dcap-qvl?rev=5a264b50dbe833b807d4ed6dfff6d9ef838cd024)",
  "derive_more 2.0.1",
  "dstack-sdk-types",
  "hex",
@@ -2528,6 +2528,36 @@ dependencies = [
  "anyhow",
  "asn1_der",
  "base64 0.22.1",
+ "byteorder",
+ "chrono",
+ "const-oid",
+ "der",
+ "futures",
+ "getrandom 0.2.16",
+ "hex",
+ "log",
+ "parity-scale-codec",
+ "pem",
+ "ring",
+ "rustls-webpki 0.102.8",
+ "scale-info",
+ "serde",
+ "serde-human-bytes",
+ "serde_json",
+ "tracing",
+ "urlencoding",
+ "x509-cert",
+]
+
+[[package]]
+name = "dcap-qvl"
+version = "0.2.4"
+source = "git+https://github.com/gilcu3/dcap-qvl?rev=5a264b50dbe833b807d4ed6dfff6d9ef838cd024#5a264b50dbe833b807d4ed6dfff6d9ef838cd024"
+dependencies = [
+ "anyhow",
+ "asn1_der",
+ "base64 0.22.1",
+ "borsh",
  "byteorder",
  "chrono",
  "const-oid",
@@ -4886,7 +4916,7 @@ dependencies = [
  "attestation",
  "borsh",
  "curve25519-dalek",
- "dcap-qvl",
+ "dcap-qvl 0.2.4 (git+https://github.com/gilcu3/dcap-qvl?rev=287a6e7b00f3a687255e90733e954c979d1df9d5)",
  "derive_more 2.0.1",
  "getrandom 0.2.16",
  "hex",
