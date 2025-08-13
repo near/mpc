@@ -123,7 +123,7 @@ impl TeeParticipantInfo {
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         report: VerifiedReport,
-        public_key: PublicKey,
+        public_key: &PublicKey,
     ) -> Result<bool, Error> {
         let quote = Quote::parse(&self.tee_quote)
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
@@ -175,7 +175,7 @@ impl TeeParticipantInfo {
         }
     }
 
-    fn verify_report_data(&self, quote: &Quote, node_signing_public_key: PublicKey) -> bool {
+    fn verify_report_data(&self, quote: &Quote, node_signing_public_key: &PublicKey) -> bool {
         let report_data = match quote.report.as_td10() {
             Some(r) => r.report_data,
             None => return false,
