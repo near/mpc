@@ -14,10 +14,10 @@ pub mod v0_state;
 use crate::errors::Error;
 use crate::storage_keys::StorageKey;
 use crate::tee::proposal::AllowedDockerImageHashes;
+use crate::tee::quote::TeeQuoteStatus;
 use crate::tee::tee_state::TeeState;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
 use crate::v0_state::MpcContractV1;
-use crate::tee::quote::TeeQuoteStatus;
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
