@@ -8,9 +8,10 @@ At every step we check that signatures can still be produced.
 
 import pathlib
 import sys
-import time
 
 import pytest
+
+from common_lib.contract_state import ProtocolState
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
@@ -56,7 +57,7 @@ def test_single_domain():
         wait_for_running=False,
     )
 
-    assert cluster.wait_for_state("Running"), "failed to start running"
+    assert cluster.wait_for_state(ProtocolState.RUNNING), "failed to start running"
     cluster.update_participant_status()
     cluster.send_and_await_signature_requests(1)
 
@@ -90,7 +91,7 @@ def test_multi_domain():
     cluster.add_domains(
         ["Secp256k1", "Ed25519", "Secp256k1", "Ed25519"], wait_for_running=False
     )
-    cluster.wait_for_state("Running")
+    cluster.wait_for_state(ProtocolState.RUNNING)
     ## two new nodes join, increase threshold
     cluster.do_resharing(
         new_participants=mpc_nodes[:4], new_threshold=3, prospective_epoch_id=1
@@ -108,7 +109,7 @@ def test_multi_domain():
         }
         tx = node.sign_tx(cluster.mpc_contract_account(), "vote_cancel_keygen", args)
         node.send_txn_and_check_success(tx)
-    cluster.wait_for_state("Running")
+    cluster.wait_for_state(ProtocolState.RUNNING)
     with pytest.raises(KeyError):
         cluster.contract_state().keyset().get_key(6)
     assert cluster.contract_state().protocol_state.next_domain_id() == 7

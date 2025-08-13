@@ -3,14 +3,14 @@ use core::str::FromStr;
 use dcap_qvl::QuoteCollateralV3;
 use derive_more::{Deref, From, Into};
 use hex::FromHexError;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
 /// Supplemental data for the TEE quote, including Intel certificates to verify it came from genuine
 /// Intel hardware, along with details about the Trusted Computing Base (TCB) versioning, status,
 /// and other relevant info.
-#[derive(From, Deref, Into, Debug, Deserialize)]
+#[derive(From, Deref, Into, Debug, Serialize, Deserialize)]
 #[serde(try_from = "Value")]
 pub struct Collateral(QuoteCollateralV3);
 
@@ -46,7 +46,6 @@ impl Collateral {
             qe_identity: get_str(&v, "qe_identity")?,
             qe_identity_signature: get_hex(&v, "qe_identity_signature")?,
         };
-
         Ok(Self(quote_collateral))
     }
 }

@@ -33,14 +33,14 @@ OS_ENV_DOCKER_CONTENT_TRUST = "DOCKER_CONTENT_TRUST"
 DSTACK_USER_CONFIG_FILE = "/tapp/user_config"
 
 # Dstack user config. Read from `DSTACK_USER_CONFIG_FILE`
-DSTACK_USER_CONFIG_LAUNCHER_IMAGE_TAGS = "LAUNCHER_IMAGE_TAGS"
-DSTACK_USER_CONFIG_LAUNCHER_IMAGE_NAME = "LAUNCHER_IMAGE_NAME"
-DSTACK_USER_CONFIG_LAUNCHER_IMAGE_REGISTRY = "LAUNCHER_REGISTRY"
+DSTACK_USER_CONFIG_MPC_IMAGE_TAGS = "MPC_IMAGE_TAGS"
+DSTACK_USER_CONFIG_MPC_IMAGE_NAME = "MPC_IMAGE_NAME"
+DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY = "MPC_REGISTRY"
 
 # Default values for dstack user config file.
-DEFAULT_LAUNCHER_IMAGE_NAME = "nearone/mpc-node-gcp"
-DEFAULT_REGISTRY = "registry.hub.docker.com"
-DEFAULT_LAUNCHER_IMAGE_TAG = "latest"
+DEFAULT_MPC_IMAGE_NAME = "nearone/mpc-node-gcp"
+DEFAULT_MPC_REGISTRY = "registry.hub.docker.com"
+DEFAULT_MPC_IMAGE_TAG = "latest"
 
 # the unix socket to communicate with Dstack
 DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
@@ -207,18 +207,18 @@ def parse_env_file(path: str) -> dict:
 
 def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
     tags_values: list[str] = dstack_config.get(
-        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_TAGS, DEFAULT_LAUNCHER_IMAGE_TAG
+        DSTACK_USER_CONFIG_MPC_IMAGE_TAGS, DEFAULT_MPC_IMAGE_TAG
     ).split(",")
     tags = [tag.strip() for tag in tags_values if tag.strip()]
     logging.info(f"Using tags {tags} to find matching launcher image.")
 
     image_name: str = dstack_config.get(
-        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_NAME, DEFAULT_LAUNCHER_IMAGE_NAME
+        DSTACK_USER_CONFIG_MPC_IMAGE_NAME, DEFAULT_MPC_IMAGE_NAME
     )
     logging.info(f"Using image name {image_name}.")
 
     registry: str = dstack_config.get(
-        DSTACK_USER_CONFIG_LAUNCHER_IMAGE_REGISTRY, DEFAULT_REGISTRY
+        DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY, DEFAULT_MPC_REGISTRY
     )
     logging.info(f"Using registry {registry}.")
 
@@ -230,7 +230,7 @@ def get_image_digest() -> str:
         logging.info(f"opening image digest file {IMAGE_DIGEST_FILE}.")
         return open(IMAGE_DIGEST_FILE).readline().strip()
     else:
-        logging.info(f"Using default image digest from environment.")
+        logging.info("Using default image digest from environment.")
         return os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
 
 
@@ -269,8 +269,7 @@ def curl_unix_socket_post(
 
 
 def main():
-
-    logging.info(f"start")
+    logging.info("start")
     # We want to globally enable DOCKER_CONTENT_TRUST=1 to ensure integrity of Docker images.
     if os.environ.get(OS_ENV_DOCKER_CONTENT_TRUST, "0") != "1":
         raise RuntimeError(
@@ -291,7 +290,7 @@ def main():
     image_spec = get_image_spec(dstack_config)
     docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
 
-    rpc_request_timzy = int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))
+    int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))
     rpc_request_interval_ms = int(
         os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, "500")
     )
@@ -345,20 +344,6 @@ def main():
     proc = curl_unix_socket_post(
         endpoint="EmitEvent", payload=extend_rtmr3_json, capture_output=True
     )
-    proc = run(
-        [
-            "curl",
-            "--unix-socket",
-            DSTACK_UNIX_SOCKET,
-            "-X",
-            "POST",
-            "http://dstack/EmitEvent",
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            extend_rtmr3_json,
-        ]
-    )
 
     if proc.returncode:
         raise RuntimeError(
@@ -374,8 +359,7 @@ def main():
 
     logging.info("Quote: %s" % proc.stdout.decode("utf-8").strip())
 
-    # Build the docker command we use to start the app, i.e., mpc node
-    docker_cmd = ["docker", "run"]
+    # Build the docker command we use to start the mpc node
 
     # Load environment variables from the user config file
     # We allow only a limited set of environment variables to be passed to the container.
@@ -492,9 +476,9 @@ def get_manifest_digest(
                     config_digest = manifest["config"]["digest"]
                     if config_digest == docker_image.digest:
                         return manifest_resp.headers["Docker-Content-Digest"]
-        except:
+        except RuntimeError as e:
             print(
-                "[Warning] Exceeded number of maximum RPC requests for any given attempt. Will continue in the hopes of finding the matching image hash among remaining tags"
+                f"[Warning] {e}: Exceeded number of maximum RPC requests for any given attempt. Will continue in the hopes of finding the matching image hash among remaining tags"
             )
             # Q: Do we expect all requests to succeed?
 
@@ -502,13 +486,23 @@ def get_manifest_digest(
 
 
 def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
+    # Parse the image hash safely
+    if ":" in image_digest:
+        parts = image_digest.split(":", 1)
+        if len(parts) == 2 and parts[1]:
+            image_hash = parts[1]
+        else:
+            raise ValueError(f"Invalid image_digest format: {image_digest}")
+    else:
+        image_hash = image_digest
+
     docker_cmd = ["docker", "run"]
 
-    # Manually add required environment variables.
-    # "IMAGE_HASH",  -  Digest of the Docker image - used to verify hash used.
+    # add required environment variables.
+    # "IMAGE_HASH",  -  Digest of the Docker image - used my the MPC node to verify hash used.
     # "LATEST_ALLOWED_HASH_FILE" - Path to the shared digest file
-    docker_cmd += ["--env", f"IMAGE_HASH={image_digest}"]
-    docker_cmd += ["--env", "LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
+    docker_cmd += ["--env", f"IMAGE_HASH={image_hash}"]
+    docker_cmd += ["--env", f"LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
 
     for key, value in user_env.items():
         if key in ALLOWED_ENV_VARS:
@@ -552,6 +546,8 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         "shared-volume:/mnt/shared",
         "-v",
         "mpc-data:/data",
+        "--name",
+        "mpc_node",
         "--detach",
         image_digest,
     ]

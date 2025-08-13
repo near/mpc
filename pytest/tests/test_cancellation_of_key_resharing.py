@@ -9,6 +9,7 @@ from common_lib.shared.transaction_status import assert_txn_execution_error
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
 from common_lib.contract_state import (
+    ProtocolState,
     RunningProtocolState,
 )
 
@@ -60,7 +61,7 @@ def test_cancellation_of_key_resharing():
     killed_node.kill()
 
     # Cancel resharing
-    print(f"\033[91mVoting on cancellation of resharing\033[0m")
+    print("\033[91mVoting on cancellation of resharing\033[0m")
 
     # Vote with nodes that were not in the previous running state.
     # These votes should be reject by the contract.
@@ -85,25 +86,25 @@ def test_cancellation_of_key_resharing():
         running_node.send_txn_and_check_success(tx)
 
     # Assert cancellation works.
-    assert cluster.wait_for_state(
-        "Running"
-    ), "Contract should transition to running state after threshold running nodes voted for cancellation."
+    assert cluster.wait_for_state(ProtocolState.RUNNING), (
+        "Contract should transition to running state after threshold running nodes voted for cancellation."
+    )
 
     state = cluster.contract_state()
-    assert isinstance(
-        state.protocol_state, RunningProtocolState
-    ), "State must be running after cancellation"
+    assert isinstance(state.protocol_state, RunningProtocolState), (
+        "State must be running after cancellation"
+    )
 
     # Check that `previously_cancelled_resharing_epoch_id` is set correctly
     previously_cancelled_resharing_epoch_id = (
         state.protocol_state.previously_cancelled_resharing_epoch_id
     )
-    assert isinstance(
-        previously_cancelled_resharing_epoch_id, int
-    ), "`previously_cancelled_resharing_epoch_id` must be set after cancelling a resharing"
-    assert (
-        initial_prospective_epoch_id == previously_cancelled_resharing_epoch_id
-    ), f"Contract stored wrong epoch ID: expected {initial_prospective_epoch_id}, got {previously_cancelled_resharing_epoch_id}"
+    assert isinstance(previously_cancelled_resharing_epoch_id, int), (
+        "`previously_cancelled_resharing_epoch_id` must be set after cancelling a resharing"
+    )
+    assert initial_prospective_epoch_id == previously_cancelled_resharing_epoch_id, (
+        f"Contract stored wrong epoch ID: expected {initial_prospective_epoch_id}, got {previously_cancelled_resharing_epoch_id}"
+    )
 
     # Verify that network can handle signature requests after cancellation
     cluster.send_and_await_signature_requests(3)
@@ -119,17 +120,17 @@ def test_cancellation_of_key_resharing():
     )
 
     state = cluster.contract_state()
-    assert isinstance(
-        state.protocol_state, RunningProtocolState
-    ), "State must be running after completed resharing"
+    assert isinstance(state.protocol_state, RunningProtocolState), (
+        "State must be running after completed resharing"
+    )
 
     # Verify that previously_cancelled_resharing_epoch_id is cleared
     previously_cancelled_resharing_epoch_id = (
         state.protocol_state.previously_cancelled_resharing_epoch_id
     )
-    assert (
-        previously_cancelled_resharing_epoch_id is None
-    ), "`previously_cancelled_resharing_epoch_id` must be None after completing a resharing"
+    assert previously_cancelled_resharing_epoch_id is None, (
+        "`previously_cancelled_resharing_epoch_id` must be None after completing a resharing"
+    )
 
     # Verify that network can handle signature requests after resharing
     cluster.send_and_await_signature_requests(3)

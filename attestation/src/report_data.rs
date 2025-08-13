@@ -11,11 +11,11 @@ const BINARY_VERSION_SIZE: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
-pub enum BinaryVersion {
+pub enum ReportDataVersion {
     V1 = 1,
 }
 
-impl BinaryVersion {
+impl ReportDataVersion {
     pub fn to_be_bytes(self) -> [u8; BINARY_VERSION_SIZE] {
         (self as u16).to_be_bytes()
     }
@@ -54,7 +54,7 @@ impl ReportDataV1 {
         let mut report_data = [0u8; REPORT_DATA_SIZE];
 
         // Copy binary version (2 bytes, big endian)
-        let version_bytes = BinaryVersion::V1.to_be_bytes();
+        let version_bytes = ReportDataVersion::V1.to_be_bytes();
         report_data[BINARY_VERSION_OFFSET..BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE]
             .copy_from_slice(&version_bytes);
 
@@ -95,9 +95,9 @@ pub enum ReportData {
 }
 
 impl ReportData {
-    pub fn version(&self) -> BinaryVersion {
+    pub fn version(&self) -> ReportDataVersion {
         match self {
-            ReportData::V1(_) => BinaryVersion::V1,
+            ReportData::V1(_) => ReportDataVersion::V1,
         }
     }
 
@@ -152,13 +152,13 @@ mod tests {
 
     #[test]
     fn test_binary_version_serialization() {
-        let version = BinaryVersion::V1;
+        let version = ReportDataVersion::V1;
         assert_eq!(version.to_be_bytes(), [0, 1]);
 
-        let parsed = BinaryVersion::from_be_bytes([0, 1]).unwrap();
-        assert_eq!(parsed, BinaryVersion::V1);
+        let parsed = ReportDataVersion::from_be_bytes([0, 1]).unwrap();
+        assert_eq!(parsed, ReportDataVersion::V1);
 
-        assert!(BinaryVersion::from_be_bytes([0, 2]).is_none());
+        assert!(ReportDataVersion::from_be_bytes([0, 2]).is_none());
     }
 
     #[test]
@@ -173,7 +173,7 @@ mod tests {
             }
         }
 
-        assert_eq!(data.version(), BinaryVersion::V1);
+        assert_eq!(data.version(), ReportDataVersion::V1);
     }
 
     #[test]

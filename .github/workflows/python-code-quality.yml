@@ -1,0 +1,27 @@
+name: Python Code Quality
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  ruff-formatter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --diff --verbose --exclude libs/nearcore"
+          src: "."
+
+
+  ruff-linter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: "check --diff --verbose --extend-exclude libs/nearcore"
+          src: "."

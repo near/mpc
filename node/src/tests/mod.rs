@@ -419,3 +419,64 @@ pub async fn request_signature_and_await_response(
         }
     }
 }
+
+#[test]
+fn test_build_info_metric() {
+    // Test that the build info metric can be initialized without panicking
+    crate::metrics::init_build_info_metric();
+
+    // Verify that the built crate information is available
+    let version = crate::built_info::PKG_VERSION;
+    let build_time = crate::built_info::BUILT_TIME_UTC;
+    let commit = crate::built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown");
+    let rustc_version = crate::built_info::RUSTC_VERSION;
+
+    // Verify that the version information is not "unknown"
+    assert_ne!(version, "unknown", "PKG_VERSION should be set");
+    assert_ne!(build_time, "unknown", "BUILT_TIME_UTC should be set");
+    assert_ne!(commit, "unknown", "GIT_COMMIT_HASH_SHORT should be set");
+    assert_ne!(rustc_version, "unknown", "RUSTC_VERSION should be set");
+
+    // Verify that the version string contains all the expected information
+    let version_string = &*crate::MPC_VERSION_STRING;
+    assert!(version_string.contains(version));
+    assert!(version_string.contains(build_time));
+    assert!(version_string.contains(commit));
+    assert!(version_string.contains(rustc_version));
+}
+
+#[test]
+fn test_build_info_metric_initialization() {
+    // Test that the build info metric can be initialized without panicking
+    // This verifies that the compile-time constants are accessible
+    crate::metrics::init_build_info_metric();
+
+    // If we get here without panicking, the test passes
+    // The metric should now be available in Prometheus with the correct values
+}
+
+#[test]
+fn test_build_info_metric_values() {
+    // Test that the build info metric has the correct values
+    crate::metrics::init_build_info_metric();
+
+    // Get the metric value directly
+    let metric = &crate::metrics::MPC_BUILD_INFO;
+    let version = crate::built_info::PKG_VERSION;
+    let build_time = crate::built_info::BUILT_TIME_UTC;
+    let commit = crate::built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown");
+    let rustc_version = crate::built_info::RUSTC_VERSION;
+
+    // Check that the metric exists with the correct labels
+    let gauge = metric.with_label_values(&[version, build_time, commit, rustc_version]);
+    let value = gauge.get();
+
+    println!("Metric value: {}", value);
+    println!(
+        "Expected labels: version={}, build_time={}, commit={}, rustc_version={}",
+        version, build_time, commit, rustc_version
+    );
+
+    // The value should be 1
+    assert_eq!(value, 1);
+}

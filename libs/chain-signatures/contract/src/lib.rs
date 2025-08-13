@@ -548,13 +548,14 @@ impl VersionedMpcContract {
             env::panic_str("expected V2")
         };
 
-        let allowed_docker_image_hashes = mpc_contract.tee_state.get_allowed_hashes();
-        let historical_docker_image_hashes = mpc_contract.tee_state.get_historical_hashes();
+        let allowed_mpc_docker_image_hashes = mpc_contract.tee_state.get_allowed_hashes();
+        let historical_launcher_docker_compose_hashes =
+            mpc_contract.tee_state.get_historical_hashes();
 
         // Verify we are running the correct MPC Docker image
         if !proposed_tee_participant.verify_docker_image(
-            allowed_docker_image_hashes.as_slice(),
-            historical_docker_image_hashes.as_slice(),
+            allowed_mpc_docker_image_hashes.as_slice(),
+            historical_launcher_docker_compose_hashes.as_slice(),
             report,
             sign_pk,
         )? {

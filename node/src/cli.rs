@@ -60,6 +60,9 @@ pub enum LogFormat {
 }
 
 #[derive(Parser, Debug)]
+#[command(name = "mpc-node")]
+#[command(about = "MPC Node for Near Protocol")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 pub enum CliCommand {
     Start(StartCmd),
     /// Generates/downloads required files for Near node to run
@@ -230,7 +233,7 @@ impl StartCmd {
 
             let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
             let image_hash_storage =
-                AllowedImageHashesFile::new(self.tee_config.latest_allowed_hash_file).await?;
+                AllowedImageHashesFile::from(self.tee_config.latest_allowed_hash_file);
 
             tokio::spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
