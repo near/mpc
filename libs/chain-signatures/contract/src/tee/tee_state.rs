@@ -52,9 +52,12 @@ impl TeeState {
 
         let allowed = self.get_allowed_hashes();
         let historical = self.get_historical_hashes();
-        let docker_image_is_valid = tee_participant_info
-            .verify_docker_image(&allowed, &historical, verified_report, sign_pk)
-            .unwrap_or(false);
+        let docker_image_is_valid = tee_participant_info.verify_docker_image(
+            &allowed,
+            &historical,
+            verified_report,
+            sign_pk,
+        )?;
 
         Ok(if docker_image_is_valid {
             TeeQuoteStatus::Valid
