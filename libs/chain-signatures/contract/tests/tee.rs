@@ -1,9 +1,9 @@
 use anyhow::Result;
+use assert_matches::assert_matches;
 use common::{check_call_success, init_env_ed25519, init_env_secp256k1};
 use mpc_contract::state::ProtocolContractState;
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_workspaces::{Account, Contract};
-use std::assert_matches::assert_matches;
 
 pub mod common;
 
