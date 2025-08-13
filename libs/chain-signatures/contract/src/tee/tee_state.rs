@@ -38,7 +38,7 @@ impl Default for TeeState {
 }
 impl TeeState {
     /// Verifies the TEE quote and Docker image
-    pub fn verify_tee_participant(
+    pub(crate) fn verify_tee_participant(
         &mut self,
         tee_participant_info: &TeeParticipantInfo,
         sign_pk: &PublicKey,
@@ -46,24 +46,22 @@ impl TeeState {
     ) -> Result<TeeQuoteStatus, Error> {
         let quote_result = tee_participant_info.verify_quote(timestamp_s);
 
-        if let Ok(verified_report) = quote_result {
-            let allowed = self.get_allowed_hashes();
-            let historical = self.get_historical_hashes();
-            let docker_valid = tee_participant_info.verify_docker_image(
-                &allowed,
-                &historical,
-                verified_report,
-                sign_pk,
-            )?;
+        // Flatten if let Ok(...) using let-else
+        let Ok(verified_report) = quote_result else {
+            return Ok(TeeQuoteStatus::Invalid);
+        };
 
-            Ok(if docker_valid {
-                TeeQuoteStatus::Valid
-            } else {
-                TeeQuoteStatus::Invalid
-            })
+        let allowed = self.get_allowed_hashes();
+        let historical = self.get_historical_hashes();
+        let docker_valid = tee_participant_info
+            .verify_docker_image(&allowed, &historical, verified_report, sign_pk)
+            .unwrap_or(false);
+
+        Ok(if docker_valid {
+            TeeQuoteStatus::Valid
         } else {
-            Ok(TeeQuoteStatus::Invalid)
-        }
+            TeeQuoteStatus::Invalid
+        })
     }
 
     /// Performs TEE validation on the given participants.
