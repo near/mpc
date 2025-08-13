@@ -3,6 +3,7 @@ use common::{check_call_success, init_env_ed25519, init_env_secp256k1};
 use mpc_contract::state::ProtocolContractState;
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_workspaces::{Account, Contract};
+use std::assert_matches::assert_matches;
 
 pub mod common;
 
@@ -35,13 +36,13 @@ async fn test_vote_code_hash() -> Result<()> {
 
     // Initially, there should be no allowed hashes
     assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
-    assert!(get_latest_code_hash(&contract).await.is_err());
+    assert_matches!(get_latest_code_hash(&contract).await, Err(_));
 
     // First vote - should not be enough
     vote_for_hash(&accounts[0], &contract, &mpc_hash).await?;
     assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
     // Should get an error when no code hash is available yet
-    assert!(get_latest_code_hash(&contract).await.is_err());
+    assert_matches!(get_latest_code_hash(&contract).await, Err(_));
 
     // Second vote - should reach threshold
     vote_for_hash(&accounts[1], &contract, &mpc_hash).await?;
@@ -86,7 +87,7 @@ async fn test_vote_code_hash_change_vote() -> Result<()> {
 
     // Initially, there should be no allowed hashes
     assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
-    assert!(get_latest_code_hash(&contract).await.is_err());
+    assert_matches!(get_latest_code_hash(&contract).await, Err(_));
 
     // Initial votes for first hash - reach threshold
     vote_for_hash(&accounts[0], &contract, &first_hash).await?;
