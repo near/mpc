@@ -62,7 +62,7 @@ near-sdk = { version = "5.15.1", features = [
     "unit-testing",
     "unstable",
 ] }
-prometheus = "0.13.4"
+prometheus = {version = "0.13.4", default-features = false }
 rand = "0.8.5"
 rand_xorshift = "0.3"
 rcgen = "0.13.1"
