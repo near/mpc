@@ -15,7 +15,7 @@ initialize_near_node() {
 import json;
 config = json.load(open("$NEAR_NODE_CONFIG_FILE"))
 
-# boot nodes must be filled in or else the node will not have any peers.
+# boot nodes must be filled in or else the node will not be able to discover other nodes.
 config['network']['boot_nodes'] = "${NEAR_BOOT_NODES}"
 config['store']['load_mem_tries_for_tracked_shards'] = True
 config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
