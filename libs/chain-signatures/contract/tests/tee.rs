@@ -33,6 +33,10 @@ async fn test_vote_code_hash() -> Result<()> {
         0x78, 0x90,
     ]);
 
+    // Initially, there should be no allowed hashes
+    assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
+    assert!(get_latest_code_hash(&contract).await.is_err());
+
     // First vote - should not be enough
     vote_for_hash(&accounts[0], &contract, &mpc_hash).await?;
     assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
@@ -79,6 +83,10 @@ async fn test_vote_code_hash_change_vote() -> Result<()> {
         0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
         0xcd, 0xef,
     ]);
+
+    // Initially, there should be no allowed hashes
+    assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
+    assert!(get_latest_code_hash(&contract).await.is_err());
 
     // Initial votes for first hash - reach threshold
     vote_for_hash(&accounts[0], &contract, &first_hash).await?;
