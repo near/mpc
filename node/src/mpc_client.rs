@@ -5,7 +5,7 @@ use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::providers::eddsa::EddsaSignatureProvider;
-use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
+use crate::providers::{EcdsaSignatureProvider, SignatureProvider, CKDProvider};
 use crate::sign_request::{SignRequestStorage, SignatureRequest};
 use crate::signing::queue::{PendingSignatureRequests, CHECK_EACH_SIGNATURE_REQUEST_INTERVAL};
 use crate::tracking::{self, AutoAbortTaskCollection};
@@ -35,6 +35,7 @@ pub struct MpcClient {
     sign_request_store: Arc<SignRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+    ckd_provider: Arc<CKDProvider>,
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
 }
 
@@ -45,6 +46,7 @@ impl MpcClient {
         sign_request_store: Arc<SignRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+        ckd_provider: Arc<CKDProvider>,
         domain_to_scheme: HashMap<DomainId, SignatureScheme>,
     ) -> Self {
         Self {
@@ -53,6 +55,7 @@ impl MpcClient {
             sign_request_store,
             ecdsa_signature_provider,
             eddsa_signature_provider,
+            ckd_provider,
             domain_to_scheme,
         }
     }
@@ -354,6 +357,13 @@ impl MpcClient {
                     .clone()
                     .process_channel(channel)
                     .await?
+            }
+            MpcTaskId::CKDTaskId(_) => {
+                // self.eddsa_signature_provider
+                //     .clone()
+                //     .process_channel(channel)
+                //     .await?
+                todo!()
             }
         }
 

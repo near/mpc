@@ -17,9 +17,10 @@ use crate::network::{
 use crate::p2p::new_tls_mesh_network;
 use crate::primitives::MpcTaskId;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
-use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
+use crate::providers::{CKDProvider, EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::AsyncDroppableRuntime;
 use crate::sign_request::SignRequestStorage;
+use crate::ckd_request::CKDRequestStorage;
 use crate::tracking::{self};
 use crate::web::SignatureDebugRequest;
 use futures::future::BoxFuture;
@@ -540,6 +541,7 @@ impl Coordinator {
                     .await?;
 
                 let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
+                let ckd_request_store = Arc::new(CKDRequestStorage::new(secret_db.clone())?);
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
@@ -574,6 +576,14 @@ impl Coordinator {
                     running_mpc_config.clone().into(),
                     network_client.clone(),
                     sign_request_store.clone(),
+                    eddsa_keyshares.clone(),
+                ));
+
+                let ckd_provider = Arc::new(CKDProvider::new(
+                    config_file.clone().into(),
+                    running_mpc_config.clone().into(),
+                    network_client.clone(),
+                    ckd_request_store.clone(),
                     eddsa_keyshares,
                 ));
 
@@ -583,6 +593,7 @@ impl Coordinator {
                     sign_request_store,
                     ecdsa_signature_provider,
                     eddsa_signature_provider,
+                    ckd_provider,
                     domain_to_scheme,
                 ));
 

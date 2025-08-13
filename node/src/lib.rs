@@ -20,6 +20,7 @@ mod assets;
 #[cfg(test)]
 mod async_testing;
 mod background;
+mod ckd_request;
 pub mod cli;
 mod config;
 mod coordinator;

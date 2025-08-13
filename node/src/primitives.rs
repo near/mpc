@@ -1,5 +1,6 @@
 use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::EcdsaTaskId;
+use crate::providers::ckd::CKDTaskId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use k256::Secp256k1;
@@ -209,6 +210,7 @@ pub struct MpcPeerMessage {
 pub enum MpcTaskId {
     EcdsaTaskId(EcdsaTaskId),
     EddsaTaskId(EddsaTaskId),
+    CKDTaskId(CKDTaskId),
 }
 
 pub fn participants_from_triples(

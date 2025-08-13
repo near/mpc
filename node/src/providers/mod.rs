@@ -8,6 +8,7 @@
 
 pub mod ecdsa;
 pub mod eddsa;
+pub mod ckd;
 
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
@@ -17,6 +18,7 @@ pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
 use std::str::FromStr;
 use std::sync::Arc;
+pub use ckd::CKDProvider;
 
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
 pub trait SignatureProvider {
