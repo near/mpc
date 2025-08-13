@@ -24,8 +24,11 @@ async fn test_tee_verify_no_tee() -> Result<()> {
     Ok(())
 }
 
+/// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
+/// Validates that votes below threshold don't allow hashes, reaching threshold allows them,
+/// and additional votes don't change the allowed state or latest hash.
 #[tokio::test]
-async fn test_vote_code_hash() -> Result<()> {
+async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
     let mpc_hash = MpcDockerImageHash::from([
@@ -71,8 +74,10 @@ async fn test_vote_code_hash() -> Result<()> {
     Ok(())
 }
 
+/// Tests that once a code hash reaches voting threshold and becomes allowed,
+/// it remains in the allowed list even when participants change their votes away from it.
 #[tokio::test]
-async fn test_vote_code_hash_change_vote() -> Result<()> {
+async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
     let first_hash = MpcDockerImageHash::from([
