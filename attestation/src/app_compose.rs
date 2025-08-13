@@ -1,26 +1,58 @@
-use alloc::{string::String, vec::Vec};
+use alloc::{format, string::String, vec::Vec};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 
 /// Custom deserializer to parse YAML string into YamlValue
-fn deserialize_yaml_from_string<'de, D>(deserializer: D) -> Result<YamlValue, D::Error>
+fn serde_deserialize_yaml_from_string<'de, D>(deserializer: D) -> Result<YamlValue, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let yaml_string = String::deserialize(deserializer)?;
+    let yaml_string = <String as Deserialize>::deserialize(deserializer)?;
     serde_yaml::from_str(&yaml_string).map_err(serde::de::Error::custom)
+}
+
+fn borsh_deserialize_yaml_from_string<R: borsh::io::Read>(
+    reader: &mut R,
+) -> ::core::result::Result<YamlValue, borsh::io::Error> {
+    let yaml_string = String::deserialize_reader(reader)?;
+
+    serde_yaml::from_str(&yaml_string).map_err(|e| {
+        borsh::io::Error::new(
+            borsh::io::ErrorKind::InvalidData,
+            format!("Failed to parse YAML: {}", e),
+        )
+    })
+}
+
+fn borsh_serialize_yaml_from_string<W: borsh::io::Write>(
+    yaml_value: &YamlValue,
+    writer: &mut W,
+) -> ::core::result::Result<(), borsh::io::Error> {
+    let yaml_string = serde_yaml::to_string(yaml_value).map_err(|e| {
+        borsh::io::Error::new(
+            borsh::io::ErrorKind::InvalidData,
+            format!("Failed to serialize YAML: {}", e),
+        )
+    })?;
+
+    BorshSerialize::serialize(&yaml_string, writer)
 }
 
 /// Helper struct to deserialize the `app_compose` JSON from TCB info. This is a workaround due to
 /// current limitations in the dstack SDK.
 ///
 /// See: https://github.com/Dstack-TEE/dstack/issues/267
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, BorshSerialize, BorshDeserialize)]
 pub struct AppCompose {
     pub manifest_version: u32,
     pub name: String,
     pub runner: String,
-    #[serde(deserialize_with = "deserialize_yaml_from_string")]
+    #[borsh(
+        deserialize_with = "borsh_deserialize_yaml_from_string",
+        serialize_with = "borsh_serialize_yaml_from_string"
+    )]
+    #[serde(deserialize_with = "serde_deserialize_yaml_from_string")]
     pub docker_compose_file: YamlValue,
     pub kms_enabled: bool,
     pub tproxy_enabled: Option<bool>,
@@ -41,7 +73,17 @@ pub struct AppCompose {
 
 #[cfg(test)]
 mod tests {
+    use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+    use serde_json::Value;
+
     use super::*;
+
+    const TEST_TCB_INFO_STRING: &str = include_str!("../tests/tcb_info.json");
+    const TEST_APP_COMPOSE_STRING: &str = include_str!("../tests/app_compose.json");
+    const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
+        include_str!("../tests/launcher_image_compose.yaml");
+    const TEST_LAUNCHER_IMAGE_COMPOSE_NORMALIZED_STRING: &str =
+        include_str!("../tests/launcher_image_compose_normalized.yaml");
 
     #[test]
     fn test_app_compose_deserialization() {
@@ -115,5 +157,33 @@ mod tests {
         assert_eq!(app_compose.key_provider_id, None);
         assert_eq!(app_compose.secure_time, None);
         assert_eq!(app_compose.pre_launch_script, None);
+    }
+
+    #[test]
+    fn test_app_compose_from_tcb_info() {
+        let dstack_tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
+        let app_compose = dstack_tcb_info.app_compose;
+        assert_eq!(app_compose, TEST_APP_COMPOSE_STRING);
+    }
+
+    #[test]
+    fn test_launcher_compose_normalized_from_app_compose() {
+        let app_compose: AppCompose = serde_json::from_str(TEST_APP_COMPOSE_STRING).unwrap();
+        let launcher_compose = serde_yaml::to_string(&app_compose.docker_compose_file).unwrap();
+        assert_eq!(
+            launcher_compose,
+            TEST_LAUNCHER_IMAGE_COMPOSE_NORMALIZED_STRING
+        );
+    }
+
+    #[test]
+    fn test_launcher_compose_from_app_compose() {
+        let app_compose: Value = serde_json::from_str(TEST_APP_COMPOSE_STRING).unwrap();
+        let launcher_compose = app_compose
+            .get("docker_compose_file")
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(launcher_compose, TEST_LAUNCHER_IMAGE_COMPOSE_STRING);
     }
 }

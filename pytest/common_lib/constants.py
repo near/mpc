@@ -15,3 +15,6 @@ TGAS = 10**12
 GAS_FOR_SIGN_CALL = 10
 # Deposit in Yoctonear required for a sign call.
 SIGNATURE_DEPOSIT = 1
+# maximum block delay an MPC node is allowed to communicated before being labeled offline
+# defined in https://github.com/near/mpc/blob/cf53eadb8a9a5ad73da07efc0e8cb206af6fb48f/node/src/network.rs#L103
+INDEXER_MAX_HEIGHT_DIFF = 50

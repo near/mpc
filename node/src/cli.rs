@@ -60,6 +60,9 @@ pub enum LogFormat {
 }
 
 #[derive(Parser, Debug)]
+#[command(name = "mpc-node")]
+#[command(about = "MPC Node for Near Protocol")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 pub enum CliCommand {
     Start(StartCmd),
     /// Generates/downloads required files for Near node to run

@@ -2,12 +2,14 @@ use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
     quote::Quote, report_data::ReportData, tcbinfo::TcbInfo,
 };
+use borsh::{BorshDeserialize, BorshSerialize};
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::EventLog;
 use k256::sha2::{Digest as _, Sha384};
-use mpc_primitives::hash::MpcDockerImageHash;
+use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::env::sha256;
+use serde::{Deserialize, Serialize};
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -23,13 +25,14 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
+#[derive(Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub enum Attestation {
     Dstack(DstackAttestation),
     Local(LocalAttestation),
 }
 
 #[allow(dead_code)]
-#[derive(Constructor)]
+#[derive(Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct DstackAttestation {
     pub quote: Quote,
     pub collateral: Collateral,
@@ -37,7 +40,7 @@ pub struct DstackAttestation {
     pub expected_measurements: ExpectedMeasurements,
 }
 
-#[derive(Constructor)]
+#[derive(Debug, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct LocalAttestation {
     verification_result: bool,
 }
@@ -47,14 +50,16 @@ impl Attestation {
         &self,
         expected_report_data: ReportData,
         timestamp_s: u64,
-        allowed_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
         match self {
             Self::Dstack(dstack_attestation) => self.verify_attestation(
                 dstack_attestation,
                 expected_report_data,
                 timestamp_s,
-                allowed_docker_image_hashes,
+                allowed_mpc_docker_image_hashes,
+                allowed_launcher_docker_compose_hashes,
             ),
             Self::Local(config) => config.verification_result,
         }
@@ -68,7 +73,8 @@ impl Attestation {
         attestation: &DstackAttestation,
         expected_report_data: ReportData,
         timestamp_s: u64,
-        allowed_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
         let quote_bytes = attestation.quote.raw_bytes();
 
@@ -104,9 +110,11 @@ impl Attestation {
             && self.verify_app_compose(&attestation.tcb_info)
             && self
                 .verify_local_sgx_digest(&attestation.tcb_info, &attestation.expected_measurements)
-            && self
-                .verify_local_sgx_digest(&attestation.tcb_info, &attestation.expected_measurements)
-            && self.verify_mpc_hash(&attestation.tcb_info, allowed_docker_image_hashes)
+            && self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
+            && self.verify_launcher_compose_hash(
+                &attestation.tcb_info,
+                allowed_launcher_docker_compose_hashes,
+            )
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all digests
@@ -249,7 +257,8 @@ impl Attestation {
             .filter(|event| event.event == COMPOSE_HASH_EVENT && event.imr == RTMR3_INDEX);
 
         let payload_is_correct = events.next().is_some_and(|event| {
-            Self::validate_app_compose_config(&app_compose)
+            event.event_payload == tcb_info.compose_hash
+                && Self::validate_app_compose_config(&app_compose)
                 && Self::validate_app_compose_payload(&event.event_payload, &tcb_info.app_compose)
         });
         let single_repetition = events.next().is_none();
@@ -303,6 +312,32 @@ impl Attestation {
         });
         let single_repetition = mpc_image_hash_events.next().is_none();
         single_repetition && digest_is_correct
+    }
+
+    fn verify_launcher_compose_hash(
+        &self,
+        tcb_info: &TcbInfo,
+        allowed_hashes: &[LauncherDockerComposeHash],
+    ) -> bool {
+        let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
+            Ok(compose) => compose,
+            Err(e) => {
+                tracing::error!("Failed to parse app_compose JSON: {:?}", e);
+                return false;
+            }
+        };
+        // this str will not match the original, unless the original was normalized
+        let launcher_compose_str = match serde_yaml::to_string(&app_compose.docker_compose_file) {
+            Ok(str) => str,
+            Err(e) => {
+                tracing::error!("Failed to convert docker_compose_file to str: {:?}", e);
+                return false;
+            }
+        };
+        let launcher_bytes = sha256(launcher_compose_str.as_bytes());
+        allowed_hashes
+            .iter()
+            .any(|hash| hash.as_hex() == hex::encode(&launcher_bytes))
     }
 
     // Implementation taken to match Dstack's https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/cc-eventlog/src/lib.rs#L54

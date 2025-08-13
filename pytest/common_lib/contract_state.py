@@ -1,7 +1,13 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import Dict, List, Literal, Optional
 
-ProtocolState = Literal["Initializing", "Running", "Resharing"]
+
+class ProtocolState(str, Enum):
+    INITIALIZING = "Initializing"
+    RUNNING = "Running"
+    RESHARING = "Resharing"
+
 
 SignatureScheme = Literal["Secp256k1", "Ed25519"]
 
@@ -423,9 +429,9 @@ class InitializingProtocolState:
 
 class ContractState:
     def get_running_domains(self) -> List[Domain]:
-        if self.state == "Running":
+        if self.state == ProtocolState.RUNNING:
             return self.protocol_state.domains.domains
-        elif self.state == "Resharing":
+        elif self.state == ProtocolState.RESHARING:
             return self.protocol_state.previous_running_state.domains.domains
 
         assert False, "expected running state"
@@ -436,15 +442,15 @@ class ContractState:
     def __init__(self, data):
         state, state_data = next(iter(data.items()))
         self.state: ProtocolState = state
-        if self.state == "Running":
+        if self.state == ProtocolState.RUNNING:
             self.protocol_state = RunningProtocolState.from_json(state_data)
-        elif self.state == "Resharing":
+        elif self.state == ProtocolState.RESHARING:
             self.protocol_state = ResharingProtocolState.from_json(state_data)
-        elif self.state == "Initializing":
+        elif self.state == ProtocolState.INITIALIZING:
             self.protocol_state = InitializingProtocolState.from_json(state_data)
 
     def keyset(self) -> Keyset | None:
-        if self.state == "Running":
+        if self.state == ProtocolState.RUNNING:
             return self.protocol_state.keyset
         return None
 

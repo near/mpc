@@ -90,7 +90,7 @@ pub struct ProposedUpdates {
 #[derive(Debug)]
 pub struct TeeState {
     allowed_tee_proposals: crate::tee::proposal::AllowedDockerImageHashes,
-    historical_tee_proposals: Vec<crate::tee::proposal::MpcDockerImageHash>,
+    historical_tee_proposals: Vec<crate::tee::proposal::LauncherDockerComposeHash>,
     votes: crate::tee::proposal::CodeHashesVotes,
 }
 
