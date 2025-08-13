@@ -74,7 +74,7 @@ pub struct Measurements {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,
