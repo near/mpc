@@ -172,7 +172,7 @@ async fn vote_for_hash(
     check_call_success(
         account
             .call(contract.id(), "vote_code_hash")
-            .args_json(&serde_json::json!({"code_hash": hash}))
+            .args_json(serde_json::json!({"code_hash": hash}))
             .transact()
             .await?,
     );
