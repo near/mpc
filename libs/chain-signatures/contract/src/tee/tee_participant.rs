@@ -75,7 +75,7 @@ struct Config {
 }
 
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
 pub struct TeeParticipantInfo {
     /// TEE Remote Attestation Quote that proves the participant's identity.
     pub tee_quote: Vec<u8>,
@@ -85,6 +85,48 @@ pub struct TeeParticipantInfo {
     pub quote_collateral: String,
     /// Dstack event log.
     pub raw_tcb_info: String,
+}
+
+impl std::fmt::Debug for TeeParticipantInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const MAX_BYTES: usize = 2048;
+
+        let truncated_quote = if self.tee_quote.len() > MAX_BYTES {
+            format!(
+                "{:?}... (truncated, total length: {})",
+                &self.tee_quote[..MAX_BYTES],
+                self.tee_quote.len()
+            )
+        } else {
+            format!("{:?}", self.tee_quote)
+        };
+
+        let truncated_collateral = if self.quote_collateral.len() > MAX_BYTES {
+            format!(
+                "{}... (truncated, total length: {})",
+                &self.quote_collateral[..MAX_BYTES],
+                self.quote_collateral.len()
+            )
+        } else {
+            self.quote_collateral.clone()
+        };
+
+        let truncated_tcb_info = if self.raw_tcb_info.len() > MAX_BYTES {
+            format!(
+                "{}... (truncated, total length: {})",
+                &self.raw_tcb_info[..MAX_BYTES],
+                self.raw_tcb_info.len()
+            )
+        } else {
+            self.raw_tcb_info.clone()
+        };
+
+        f.debug_struct("TeeParticipantInfo")
+            .field("tee_quote", &truncated_quote)
+            .field("quote_collateral", &truncated_collateral)
+            .field("raw_tcb_info", &truncated_tcb_info)
+            .finish()
+    }
 }
 
 impl TryFrom<DstackAttestation> for TeeParticipantInfo {
