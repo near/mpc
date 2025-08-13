@@ -22,7 +22,7 @@ borsh = { version = "1.5.1", features = ["derive"] }
 clap = { version = "4.5.20", features = ["derive", "env"] }
 curve25519-dalek = "4.1.3"
 # TODO(#815): Use upstream library
-dcap-qvl = { git = "https://github.com/gilcu3/dcap-qvl", rev = "287a6e7b00f3a687255e90733e954c979d1df9d5", default-features = false, features=["contract", "std", "report"] }
+dcap-qvl = { git = "https://github.com/gilcu3/dcap-qvl", rev = "5a264b50dbe833b807d4ed6dfff6d9ef838cd024", default-features = false, features=["contract", "std", "report"] }
 # Pinned to resolve compilation errors with conflicting implementations of PartialOrd trait
 # See error E0283 with multiple impls satisfying `u128: std::cmp::PartialOrd<_>`
 deranged = "=0.4.0"
@@ -33,9 +33,8 @@ derive_more = { version = "2.0.1", features = [
     "as_ref",
     "constructor",
 ] }
-# Currently needed to include https://github.com/Dstack-TEE/dstack/pull/272
-dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "38eaf934bf3c0d005e9901423ecd10c6d9bff538" }
-dstack-sdk-types = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "38eaf934bf3c0d005e9901423ecd10c6d9bff538" }
+dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "6e2150f2aea957281f101ab5036c3c048fbb0d18" }
+dstack-sdk-types = { features = ["borsh"], git = "https://github.com/Dstack-TEE/dstack.git", rev = "6e2150f2aea957281f101ab5036c3c048fbb0d18" }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"
@@ -62,7 +61,7 @@ near-sdk = { version = "5.15.1", features = [
     "unit-testing",
     "unstable",
 ] }
-prometheus = "0.13.4"
+prometheus = {version = "0.13.4", default-features = false }
 rand = "0.8.5"
 rand_xorshift = "0.3"
 rcgen = "0.13.1"
@@ -73,6 +72,7 @@ rstest = "0.25.0"
 schemars = "0.8.22" # This version needs to be exactly the same as in `near_sdk::schemars`
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
+serde_with = "3.14.0"
 serde_yaml = "0.9.34"
 serial_test = "3.2.0"
 sha3 = "0.10.8"

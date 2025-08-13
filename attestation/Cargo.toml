@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = { workspace = true }
+borsh = { workspace = true }
 dcap-qvl = { workspace = true }
 derive_more = { workspace = true }
 dstack-sdk-types = { workspace = true }
@@ -14,6 +15,7 @@ mpc-primitives = { workspace = true }
 near-crypto = { workspace = true }
 near-sdk = { workspace = true }
 serde = { workspace = true }
+serde_with = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha3 = { workspace = true }

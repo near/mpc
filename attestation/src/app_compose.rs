@@ -1,26 +1,58 @@
-use alloc::{string::String, vec::Vec};
+use alloc::{format, string::String, vec::Vec};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 
 /// Custom deserializer to parse YAML string into YamlValue
-fn deserialize_yaml_from_string<'de, D>(deserializer: D) -> Result<YamlValue, D::Error>
+fn serde_deserialize_yaml_from_string<'de, D>(deserializer: D) -> Result<YamlValue, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let yaml_string = String::deserialize(deserializer)?;
+    let yaml_string = <String as Deserialize>::deserialize(deserializer)?;
     serde_yaml::from_str(&yaml_string).map_err(serde::de::Error::custom)
+}
+
+fn borsh_deserialize_yaml_from_string<R: borsh::io::Read>(
+    reader: &mut R,
+) -> ::core::result::Result<YamlValue, borsh::io::Error> {
+    let yaml_string = String::deserialize_reader(reader)?;
+
+    serde_yaml::from_str(&yaml_string).map_err(|e| {
+        borsh::io::Error::new(
+            borsh::io::ErrorKind::InvalidData,
+            format!("Failed to parse YAML: {}", e),
+        )
+    })
+}
+
+fn borsh_serialize_yaml_from_string<W: borsh::io::Write>(
+    yaml_value: &YamlValue,
+    writer: &mut W,
+) -> ::core::result::Result<(), borsh::io::Error> {
+    let yaml_string = serde_yaml::to_string(yaml_value).map_err(|e| {
+        borsh::io::Error::new(
+            borsh::io::ErrorKind::InvalidData,
+            format!("Failed to serialize YAML: {}", e),
+        )
+    })?;
+
+    BorshSerialize::serialize(&yaml_string, writer)
 }
 
 /// Helper struct to deserialize the `app_compose` JSON from TCB info. This is a workaround due to
 /// current limitations in the dstack SDK.
 ///
 /// See: https://github.com/Dstack-TEE/dstack/issues/267
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, BorshSerialize, BorshDeserialize)]
 pub struct AppCompose {
     pub manifest_version: u32,
     pub name: String,
     pub runner: String,
-    #[serde(deserialize_with = "deserialize_yaml_from_string")]
+    #[borsh(
+        deserialize_with = "borsh_deserialize_yaml_from_string",
+        serialize_with = "borsh_serialize_yaml_from_string"
+    )]
+    #[serde(deserialize_with = "serde_deserialize_yaml_from_string")]
     pub docker_compose_file: YamlValue,
     pub kms_enabled: bool,
     pub tproxy_enabled: Option<bool>,

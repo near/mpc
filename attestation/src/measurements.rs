@@ -1,3 +1,7 @@
+use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{Deserialize, Serialize};
+use serde_with::{Bytes, serde_as};
+
 /// Required measurements for TEE attestation verification (a.k.a. RTMRs checks). These values
 /// define the trusted baseline that TEE environments must match during verification. They
 /// should be updated when the underlying TEE environment changes.
@@ -50,25 +54,32 @@ const EXPECTED_LOCAL_SGX_EVENT_DIGEST: [u8; 48] = [
 
 const EXPECTED_REPORT_DATA_VERSION: ReportDataVersion = ReportDataVersion::V1;
 
-#[derive(Debug, Clone, Copy)]
+#[serde_as]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct Measurements {
     /// MRTD (Measurement of Root of Trust for Data) - identifies the virtual firmware.
+    #[serde_as(as = "Bytes")]
     pub mrtd: [u8; 48],
     /// RTMR0 (Runtime Measurement Register 0) - typically measures the bootloader, virtual
     /// firmware data, and configuration.
+    #[serde_as(as = "Bytes")]
     pub rtmr0: [u8; 48],
     /// RTMR1 (Runtime Measurement Register 1) - typically measures the OS kernel, boot parameters,
     /// and initrd (initial ramdisk).
+    #[serde_as(as = "Bytes")]
     pub rtmr1: [u8; 48],
     /// RTMR2 (Runtime Measurement Register 2) - typically measures the OS application.
+    #[serde_as(as = "Bytes")]
     pub rtmr2: [u8; 48],
 }
 
-#[derive(Debug, Clone, Copy)]
+#[serde_as]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,
     /// Expected digest for the local SGX event.
+    #[serde_as(as = "Bytes")]
     pub local_sgx_event_digest: [u8; 48],
     /// Expected version of the report data.
     pub report_data_version: ReportDataVersion,
