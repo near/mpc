@@ -193,62 +193,63 @@ pub async fn init_with_candidates(
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
     let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
-    let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
-    let threshold = Threshold::new(threshold);
-    let threshold_parameters = ThresholdParameters::new(participants, threshold).unwrap();
-    let init = if !pks.is_empty() {
-        let mut keys = Vec::new();
-        let mut domains = Vec::new();
-        for pk in pks {
-            let domain_id = DomainId(domains.len() as u64 * 2);
-            domains.push(DomainConfig {
-                id: domain_id,
-                scheme: match pk.key_type() {
+    let threshold_parameters = {
+        let threshold = Threshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
+        ThresholdParameters::new(participants, threshold).unwrap()
+    };
+
+    let call_builder = if !pks.is_empty() {
+        let (domains, keys): (Vec<_>, Vec<_>) = pks
+            .into_iter()
+            .enumerate()
+            .map(|(i, pk)| {
+                let domain_id = DomainId((i as u64) * 2);
+                let scheme = match pk.key_type() {
                     KeyType::ED25519 => SignatureScheme::Ed25519,
                     KeyType::SECP256K1 => SignatureScheme::Secp256k1,
-                },
-            });
+                };
+                let key = near_sdk::PublicKey::from_str(&pk.to_string())
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
 
-            let near_publick_key = near_sdk::PublicKey::from_str(&format!("{}", pk)).unwrap();
-            let public_key_extended = near_publick_key.try_into().unwrap();
+                (
+                    DomainConfig {
+                        id: domain_id,
+                        scheme,
+                    },
+                    KeyForDomain {
+                        attempt: AttemptId::new(),
+                        domain_id,
+                        key,
+                    },
+                )
+            })
+            .unzip();
 
-            let key = KeyForDomain {
-                attempt: AttemptId::new(),
-                domain_id,
-                key: public_key_extended,
-            };
-            keys.push(key);
-        }
-        let keyset = Keyset::new(EpochId::new(5), keys);
-        contract
-            .call("init_running")
-            .args_json(serde_json::json!({
-                "domains": domains,
-                "next_domain_id": domains.len() as u64 * 2,
-                "keyset": keyset,
-                "parameters": threshold_parameters,
-            }))
-            .transact()
-            .await
-            .unwrap()
-            .into_result()
-            .unwrap()
+        contract.call("init_running").args_json(serde_json::json!({
+            "domains": domains,
+            "next_domain_id": (domains.len() as u64) * 2,
+            "keyset": Keyset::new(EpochId::new(5), keys),
+            "parameters": threshold_parameters,
+        }))
     } else {
-        contract
-            .call("init")
-            .args_json(serde_json::json!({
-                "parameters": threshold_parameters,
-                "init_config": None::<InitConfig>,
-            }))
-            .transact()
-            .await
-            .unwrap()
-            .into_result()
-            .unwrap()
+        contract.call("init").args_json(serde_json::json!({
+            "parameters": threshold_parameters,
+            "init_config": None::<InitConfig>,
+        }))
     };
+
+    let init = call_builder
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .unwrap();
     dbg!(init);
     (worker, contract, accounts)
 }
+
 pub enum SharedSecretKey {
     Secp256k1(k256::elliptic_curve::SecretKey<k256::Secp256k1>),
     Ed25519(KeygenOutput),
@@ -287,23 +288,19 @@ pub async fn init_env_secp256k1(
 pub fn make_key_for_domains(
     schemes: Vec<SignatureScheme>,
 ) -> (Vec<near_crypto::PublicKey>, Vec<SharedSecretKey>) {
-    let mut public_keys = Vec::new();
-    let mut secret_keys = Vec::new();
-    for scheme in schemes {
-        match scheme {
+    schemes
+        .into_iter()
+        .map(|scheme| match scheme {
             SignatureScheme::Secp256k1 => {
                 let (pk, sk) = new_secp256k1();
-                public_keys.push(pk);
-                secret_keys.push(SharedSecretKey::Secp256k1(sk));
+                (pk, SharedSecretKey::Secp256k1(sk))
             }
             SignatureScheme::Ed25519 => {
                 let (pk, sk) = new_ed25519();
-                public_keys.push(pk);
-                secret_keys.push(SharedSecretKey::Ed25519(sk));
+                (pk, SharedSecretKey::Ed25519(sk))
             }
-        }
-    }
-    (public_keys, secret_keys)
+        })
+        .unzip()
 }
 
 pub fn new_ed25519() -> (near_crypto::PublicKey, KeygenOutput) {
