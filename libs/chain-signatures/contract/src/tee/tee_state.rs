@@ -37,8 +37,7 @@ impl Default for TeeState {
     }
 }
 impl TeeState {
-    /// A shared helper method to verify the TEE quote and Docker image.
-    /// This method returns a `Result` with the `TeeQuoteStatus` or an `Error`.
+    /// Verifies the TEE quote and Docker image
     pub fn verify_tee_participant(
         &mut self,
         tee_participant_info: &TeeParticipantInfo,
@@ -50,9 +49,12 @@ impl TeeState {
         if let Ok(verified_report) = quote_result {
             let allowed = self.get_allowed_hashes();
             let historical = self.get_historical_hashes();
-            let docker_valid = tee_participant_info
-                .verify_docker_image(&allowed, &historical, verified_report, sign_pk.clone())
-                .unwrap_or(false);
+            let docker_valid = tee_participant_info.verify_docker_image(
+                &allowed,
+                &historical,
+                verified_report,
+                sign_pk,
+            )?;
 
             Ok(if docker_valid {
                 TeeQuoteStatus::Valid
@@ -94,18 +96,6 @@ impl TeeState {
         }
     }
 
-    /* /// Maps `account_id` to its `TeeQuoteStatus`. If `account_id` has no TEE information associated to it, then it is mapped to
-    /// `TeeQuoteStatus::None`.
-    pub fn tee_status(&self, account_id: &AccountId) -> TeeQuoteStatus {
-        let now_sec = env::block_timestamp_ms() / 1_000;
-        self.tee_participant_info
-            .get(account_id)
-            .map(|tee_participant_info| {
-                TeeQuoteStatus::from(tee_participant_info.verify_quote(now_sec))
-            })
-            .unwrap_or(TeeQuoteStatus::None)
-    } */
-
     /// Retrieves and validates the TEE status for a participant, combining both the TEE quote
     /// verification and the Docker image verification. If both validations pass, the participant
     /// is considered to have a valid TEE status. Otherwise, the participant is marked as invalid.
@@ -113,17 +103,15 @@ impl TeeState {
     pub fn tee_status(&mut self, account_id: &AccountId, sign_pk: &PublicKey) -> TeeQuoteStatus {
         let now_sec = env::block_timestamp_ms() / 1_000;
 
-        // Get the participant info and clone it to avoid borrow checker issues
         let tee_participant_info_opt = self.tee_participant_info.get(account_id).cloned();
 
         if let Some(tee_participant_info) = tee_participant_info_opt {
-            // Now we can mutably borrow self
             match self.verify_tee_participant(&tee_participant_info, sign_pk, now_sec) {
-                Ok(status) => status,              // Return the valid status
-                Err(_) => TeeQuoteStatus::Invalid, // If error, return invalid status
+                Ok(status) => status,
+                Err(_) => TeeQuoteStatus::Invalid,
             }
         } else {
-            TeeQuoteStatus::None // If no participant info, return None
+            TeeQuoteStatus::None
         }
     }
 
@@ -143,7 +131,7 @@ impl TeeState {
     ) -> u64 {
         self.votes.vote(code_hash.clone(), participant)
     }
-    // Retrieves the current allowed hashes, cleaning up any expired entries.
+    /// Retrieves the current allowed hashes, cleaning up any expired entries.
     pub fn get_allowed_hashes(&mut self) -> Vec<MpcDockerImageHash> {
         // Clean up expired entries and return the current allowed hashes.
         // don't remove the get call, as it ensures we only get hashes valid for the current block height
