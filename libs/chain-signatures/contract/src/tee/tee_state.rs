@@ -46,16 +46,18 @@ impl TeeState {
     ) -> Result<TeeQuoteStatus, Error> {
         let quote_result = tee_participant_info.verify_quote(timestamp_s);
 
-        // Flatten if let Ok(...) using let-else
         let Ok(verified_report) = quote_result else {
             return Ok(TeeQuoteStatus::Invalid);
         };
 
         let allowed = self.get_allowed_hashes();
         let historical = self.get_historical_hashes();
-        let docker_valid = tee_participant_info
-            .verify_docker_image(&allowed, &historical, verified_report, sign_pk)
-            .unwrap_or(false);
+        let docker_valid = tee_participant_info.verify_docker_image(
+            &allowed,
+            &historical,
+            verified_report,
+            sign_pk,
+        )?;
 
         Ok(if docker_valid {
             TeeQuoteStatus::Valid
