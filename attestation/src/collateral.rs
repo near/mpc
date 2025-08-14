@@ -33,12 +33,7 @@ impl Collateral {
 
         fn get_hex(v: &Value, key: &str) -> Result<Vec<u8>, CollateralError> {
             let hex_str = get_str(v, key)?;
-            let hex_str_without_prefix = match hex_str.strip_prefix("0x") {
-                Some(hex_str_without_prefix) => hex_str_without_prefix,
-                // hex_str didn't have any prefix to begin with.
-                None => &hex_str,
-            };
-            hex::decode(hex_str_without_prefix).map_err(|source| CollateralError::HexDecode {
+            hex::decode(hex_str).map_err(|source| CollateralError::HexDecode {
                 field: String::from(key),
                 source,
             })
