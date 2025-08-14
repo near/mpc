@@ -16,7 +16,7 @@ It is designed to run inside a TEE-enabled environment (e.g., Intel TDX) to add 
 
 ## Usage
 
-The launcher script is designed to run inside a confidential TDX VM managed by dstack VMM.
+The launcher script is designed to run inside a confidential TDX VM managed by Dstack VMM.
 
 launcher-docker-compose.yaml — Docker Compose file used to start the launcher and supporting containers.
 config.txt — File containing trusted environment variables used by the launcher and MPC node.
@@ -74,7 +74,7 @@ Note, the image digest used with `docker run` is the output of the `docker image
 docker run --rm dcbd3b8c8ae35d2ba63b25d6b617ce8b7faabb0af96ffa2e35b08a50258ebfa4 cat /app/mpc-node | sha256sum
 ```
 
-Opens: write a script utilizing `vmm-cli.py` from dstack to deploy an mpc node
+Opens: write a script utilizing `vmm-cli.py` from Dstack to deploy an mpc node
 
 - Artifacts to deploy a node
   - Scripts to a) reproducibly build the mpc binary and b) reproducibly build a docker image containing the mpc binary
