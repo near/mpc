@@ -31,7 +31,7 @@ jobs:
           profile-name: "mpc-image-builder"
           file: deployment/Dockerfile-gcp
 
-  docker-build-teee:
+  docker-build-tee:
     name: "Build Docker image TEE enabled"
     runs-on: warp-ubuntu-2204-x64-2x
     timeout-minutes: 60
