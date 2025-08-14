@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// TEE Remote Attestation Quote that proves the participant's identity.
-#[derive(Debug, Deref, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Deref, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct Quote {
     /// We keep the raw bytes of the quote since they're needed for verification and Phala probably
     /// doesn't provide an easy way to encode it back to the [`DcapQuote`] structure.

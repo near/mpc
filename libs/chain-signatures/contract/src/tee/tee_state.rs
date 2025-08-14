@@ -5,8 +5,11 @@ use crate::{
     tee::{
         proposal::{AllowedDockerImageHashes, CodeHashesVotes, MpcDockerImageHash},
         quote::TeeQuoteStatus,
-        tee_participant::TeeParticipantInfo,
     },
+};
+use attestation::{
+    attestation::{Attestation, DstackAttestation},
+    report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
@@ -22,7 +25,7 @@ pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) historical_docker_image_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
-    pub(crate) tee_participant_info: IterableMap<AccountId, TeeParticipantInfo>,
+    pub(crate) participants_attestations: IterableMap<AccountId, DstackAttestation>,
 }
 
 impl Default for TeeState {
@@ -31,41 +34,36 @@ impl Default for TeeState {
             allowed_docker_image_hashes: Default::default(),
             historical_docker_image_hashes: Default::default(),
             votes: Default::default(),
-
-            tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
+            participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestation),
         }
     }
 }
 impl TeeState {
-    /// Verifies the TEE quote and Docker image
+    /// Verifies the TEE quote and Docker image.
     pub(crate) fn verify_tee_participant(
         &mut self,
         account_id: &AccountId,
         sign_pk: &PublicKey,
         timestamp_s: u64,
     ) -> Result<TeeQuoteStatus, Error> {
-        let allowed = self.get_allowed_hashes();
-        let historical = self.get_historical_hashes();
-
-        let tee_participant_info = self.tee_participant_info.get(account_id);
-        let Some(tee_participant_info) = tee_participant_info else {
+        let participant_attestation = self.participants_attestations.get(account_id);
+        let Some(participant_attestation) = participant_attestation else {
             return Ok(TeeQuoteStatus::None);
         };
+        let attestation = Attestation::Dstack(DstackAttestation::new(
+            participant_attestation.quote,
+            participant_attestation.collateral,
+            participant_attestation.tcb_info,
+            participant_attestation.expected_measurements,
+        ));
+        let allowed = self.get_allowed_hashes();
+        let historical = self.get_historical_hashes();
+        let account_key = env::signer_account_pk();
+        let expected_report_data = ReportData::V1(ReportDataV1::new(sign_pk, account_key));
+        let quote_result =
+            attestation.verify(expected_report_data, timestamp_s, &allowed, historical);
 
-        let quote_result = tee_participant_info.verify_quote(timestamp_s);
-
-        let Ok(verified_report) = quote_result else {
-            return Ok(TeeQuoteStatus::Invalid);
-        };
-
-        let docker_image_is_valid = tee_participant_info.verify_docker_image(
-            &allowed,
-            historical,
-            verified_report,
-            sign_pk,
-        )?;
-
-        Ok(if docker_image_is_valid {
+        Ok(if quote_result {
             TeeQuoteStatus::Valid
         } else {
             TeeQuoteStatus::Invalid
@@ -117,9 +115,9 @@ impl TeeState {
     pub fn add_participant(
         &mut self,
         account_id: AccountId,
-        proposed_tee_participant: TeeParticipantInfo,
+        proposed_tee_participant: DstackAttestation,
     ) {
-        self.tee_participant_info
+        self.participants_attestations
             .insert(account_id.clone(), proposed_tee_participant.clone());
     }
 

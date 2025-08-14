@@ -4,7 +4,9 @@ use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
 use serde::{Deserialize, Serialize};
 
 /// Dstack event log, a.k.a. the TCB Info.
-#[derive(Debug, From, Deref, Into, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone, Debug, From, Deref, Into, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
 pub struct TcbInfo(DstackTcbInfo);
 
 #[cfg(test)]

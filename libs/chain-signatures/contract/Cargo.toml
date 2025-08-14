@@ -61,7 +61,7 @@ k256 = { version = "0.13.4", features = [
     "expose-field",
 ] }
 # TODO(#815): Use upstream library
-dcap-qvl = { git = "https://github.com/gilcu3/dcap-qvl", rev = "287a6e7b00f3a687255e90733e954c979d1df9d5", default-features = false, features=["contract", "std", "report"] }
+dcap-qvl = { git = "https://github.com/gilcu3/dcap-qvl", rev = "d25d405eff0a6f5323f80c654ac826f99f64dfc1", default-features = false, features=["contract", "std", "report"] }
 mpc-primitives = { path = "../../../crates/primitives" }
 attestation = { path = "../../../attestation" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }

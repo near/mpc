@@ -11,13 +11,14 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
-use crate::errors::Error;
-use crate::storage_keys::StorageKey;
-use crate::tee::proposal::AllowedDockerImageHashes;
-use crate::tee::quote::TeeQuoteStatus;
-use crate::tee::tee_state::TeeState;
-use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
-use crate::v0_state::MpcContractV1;
+use crate::{
+    errors::Error,
+    storage_keys::StorageKey,
+    tee::{proposal::AllowedDockerImageHashes, quote::TeeQuoteStatus, tee_state::TeeState},
+    update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
+    v0_state::MpcContractV1,
+};
+use attestation::attestation::DstackAttestation;
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -44,10 +45,7 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
-use tee::{
-    proposal::MpcDockerImageHash, quote::get_collateral, tee_participant::TeeParticipantInfo,
-    tee_state::TeeValidationResult,
-};
+use tee::{proposal::MpcDockerImageHash, tee_state::TeeValidationResult};
 
 // Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
@@ -213,7 +211,6 @@ impl MpcContract {
     }
 
     pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
-        // Ensure the protocol is in the Running state
         let ProtocolContractState::Running(state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
@@ -524,14 +521,14 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn propose_join(
         &mut self,
-        #[serializer(borsh)] proposed_tee_participant: TeeParticipantInfo,
+        #[serializer(borsh)] proposed_participant_attestation: DstackAttestation,
         #[serializer(borsh)] sign_pk: PublicKey,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
         log!(
-            "propose_join: signer={}, proposed_tee_participant={:?}",
+            "propose_join: signer={}, proposed_participant_attestation={:?}",
             account_id,
-            proposed_tee_participant,
+            proposed_participant_attestation,
         );
 
         // Save the initial storage usage to know how much to charge the proposer for the storage used
@@ -556,7 +553,7 @@ impl VersionedMpcContract {
         // Add a new proposed participant to the contract state
         mpc_contract
             .tee_state
-            .add_participant(account_id.clone(), proposed_tee_participant.clone());
+            .add_participant(account_id.clone(), proposed_participant_attestation.clone());
 
         // Both participants and non-participants can propose. Non-participants must pay for the
         // storage they use; participants do not.

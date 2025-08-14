@@ -32,11 +32,17 @@ pub enum Attestation {
 }
 
 #[allow(dead_code)]
-#[derive(Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct DstackAttestation {
+    /// TEE Remote Attestation Quote that proves the participant's identity.
     pub quote: Quote,
+    /// Supplemental data for the TEE quote, including Intel certificates to verify it came from
+    /// genuine Intel hardware, along with details about the Trusted Computing Base (TCB)
+    /// versioning, status, and other relevant info.
     pub collateral: Collateral,
+    /// Dstack event log.
     pub tcb_info: TcbInfo,
+    /// Expected measurements for the TEE quote.
     pub expected_measurements: ExpectedMeasurements,
 }
 
