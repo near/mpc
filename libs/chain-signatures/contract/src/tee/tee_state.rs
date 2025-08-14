@@ -54,7 +54,7 @@ impl TeeState {
         let historical = self.get_historical_hashes();
         let docker_image_is_valid = tee_participant_info.verify_docker_image(
             &allowed,
-            &historical,
+            historical,
             verified_report,
             sign_pk,
         )?;
