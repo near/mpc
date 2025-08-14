@@ -142,8 +142,8 @@ impl TeeState {
             .collect()
     }
 
-    pub fn get_historical_hashes(&self) -> Vec<LauncherDockerComposeHash> {
-        self.historical_docker_image_hashes.clone()
+    pub fn get_historical_hashes(&self) -> &Vec<LauncherDockerComposeHash> {
+        &self.historical_docker_image_hashes
     }
 
     pub fn whitelist_tee_proposal(&mut self, tee_proposal: MpcDockerImageHash) {
