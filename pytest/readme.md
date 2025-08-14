@@ -1,6 +1,6 @@
 # How to run the python test
 
-Simply run `exec_pytest.sh` (optinal flag `--verbose` and `--reset-submodules`) or execute the steps below with the current directory at root of the mpc git repo.
+Simply run `exec_pytest.sh` (optional flag `--verbose` and `--reset-submodules`) or execute the steps below with the current directory at root of the mpc git repo.
 
 ## Run tests with pytest
 
@@ -80,7 +80,7 @@ python3 -m black pytest/
 
 For seamless development experience, configure your editor to automatically format code with Black on save. See the [official Black editor integration documentation](https://black.readthedocs.io/en/stable/integrations/editors.html#editor-integration) for setup instructions for your preferred editor.
 
-##### VS Code Setup:
+##### VS Code Setup
 
 Install the Black Formatter extension
 Add these settings to your VS Code settings.json:

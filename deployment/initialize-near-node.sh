@@ -31,5 +31,5 @@ json.dump(config, open('/data/config.json', 'w'), indent=2)
 EOF
 
 # Run the node. The node will catch up via epoch sync, header sync, state sync, and finally block sync.
-# the node is ready when the logs start printing block hashes in the status line.
+# The node is ready when the logs start printing block hashes in the status line.
 neard --home ${HOME_DIR} run
