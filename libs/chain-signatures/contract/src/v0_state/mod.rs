@@ -100,7 +100,7 @@ impl From<TeeState> for crate::TeeState {
             allowed_docker_image_hashes: value.allowed_tee_proposals,
             historical_docker_image_hashes: value.historical_tee_proposals,
             votes: value.votes,
-            tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
+            participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestation),
         }
     }
 }
