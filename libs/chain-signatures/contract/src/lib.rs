@@ -543,11 +543,10 @@ impl VersionedMpcContract {
 
         // Verify the TEE quote and Docker image for the proposed participant
         let timestamp_s = env::block_timestamp_ms() / 1_000;
-        let status = mpc_contract.tee_state.verify_tee_participant(
-            &proposed_tee_participant,
-            &sign_pk,
-            timestamp_s,
-        )?;
+        let status =
+            mpc_contract
+                .tee_state
+                .verify_tee_participant(&account_id, &sign_pk, timestamp_s)?;
 
         if status == TeeQuoteStatus::Invalid {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation

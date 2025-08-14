@@ -40,18 +40,24 @@ impl TeeState {
     /// Verifies the TEE quote and Docker image
     pub(crate) fn verify_tee_participant(
         &mut self,
-        tee_participant_info: &TeeParticipantInfo,
+        account_id: &AccountId,
         sign_pk: &PublicKey,
         timestamp_s: u64,
     ) -> Result<TeeQuoteStatus, Error> {
+        let allowed = self.get_allowed_hashes();
+        let historical = self.get_historical_hashes();
+
+        let tee_participant_info = self.tee_participant_info.get(account_id);
+        let Some(tee_participant_info) = tee_participant_info else {
+            return Ok(TeeQuoteStatus::None);
+        };
+
         let quote_result = tee_participant_info.verify_quote(timestamp_s);
 
         let Ok(verified_report) = quote_result else {
             return Ok(TeeQuoteStatus::Invalid);
         };
 
-        let allowed = self.get_allowed_hashes();
-        let historical = self.get_historical_hashes();
         let docker_image_is_valid = tee_participant_info.verify_docker_image(
             &allowed,
             historical,
@@ -102,16 +108,9 @@ impl TeeState {
     /// If no TEE information is found, the participant is marked with `TeeQuoteStatus::None`.
     pub fn tee_status(&mut self, account_id: &AccountId, sign_pk: &PublicKey) -> TeeQuoteStatus {
         let now_sec = env::block_timestamp_ms() / 1_000;
-
-        let tee_participant_info = self.tee_participant_info.get(account_id).cloned();
-
-        if let Some(tee_participant_info) = tee_participant_info {
-            match self.verify_tee_participant(&tee_participant_info, sign_pk, now_sec) {
-                Ok(status) => status,
-                Err(_) => TeeQuoteStatus::Invalid,
-            }
-        } else {
-            TeeQuoteStatus::None
+        match self.verify_tee_participant(account_id, sign_pk, now_sec) {
+            Ok(status) => status,
+            Err(_) => TeeQuoteStatus::Invalid,
         }
     }
 
