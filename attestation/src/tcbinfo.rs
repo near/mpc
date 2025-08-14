@@ -38,7 +38,7 @@ mod tests {
         );
     }
 
-    const TEST_TCB_INFO_STRING: &str = include_str!("../tests/tcb_info.json");
+    const TEST_TCB_INFO_STRING: &str = include_str!("../tests/assets/tcb_info.json");
 
     #[test]
     fn test_tcbinfo_from_deserialization2() {

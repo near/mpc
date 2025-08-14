@@ -1,9 +1,10 @@
 use serde_yaml::Value as YamlValue;
 
-const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
-    include_str!("../tests/launcher_image_compose.yaml");
-const TEST_LAUNCHER_IMAGE_COMPOSE_NORMALIZED_STRING: &str =
-    include_str!("../tests/launcher_image_compose_normalized.yaml");
+use crate::common::{
+    TEST_LAUNCHER_IMAGE_COMPOSE_NORMALIZED_STRING, TEST_LAUNCHER_IMAGE_COMPOSE_STRING,
+};
+
+pub mod common;
 
 #[test]
 fn test_launcher_compose_normalization() {
