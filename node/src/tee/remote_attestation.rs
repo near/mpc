@@ -51,7 +51,7 @@ const _: () = {
 #[derive(Serialize, Deserialize)]
 pub struct TeeAttestation {
     tcb_info: TcbInfo,
-    tdx_quote: serde_json::Value,
+    tdx_quote: String,
     collateral: serde_json::Value,
 }
 
