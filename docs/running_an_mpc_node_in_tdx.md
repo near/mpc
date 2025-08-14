@@ -141,10 +141,10 @@ TODO: Add some sentence here about providers.
    ```
 
    Several values in the previous file can be modified:
-      - IMAGE_TAG and IMAGE_DIGEST: Find a docker image of the MPC node in
+      - `IMAGE_TAG` and `IMAGE_HASH`: Find a docker image of the MPC node in
       [mpc-node-gcp/tags](https://hub.docker.com/r/nearone/mpc-node-gcp/tags). Images with
       suffix `-tee` are TEE enabled. For the selected image we need the tag `IMAGE_TAG`
-      and the corresponding digest `IMAGE_DIGEST`. The latest image should be `IMAGE_TAG=latest-tee`.
+      and the corresponding digest `IMAGE_HASH`. The latest image should be `IMAGE_TAG=latest-tee`.
       - TODO: comment other parameters
 
    ```yml
@@ -173,14 +173,14 @@ TODO: Add some sentence here about providers.
             - RUST_BACKTRACE=$RUST_BACKTRACE
             - RUST_LOG=$RUST_LOG
             - MPC_RESPONDER_ID=$MPC_RESPONDER_ID
-            - IMAGE_HASH=$IMAGE_DIGEST
+            - IMAGE_HASH=$IMAGE_HASH
             - LATEST_ALLOWED_HASH_FILE=/mnt/shared/image-digest.bin
 
          extra_hosts:
             - "$MPC_NODE_0"
             - "$MPC_NODE_1"
 
-      volumes:
+   volumes:
       mpc-data:
       shared-volume:
    ```
@@ -191,8 +191,6 @@ TODO: Add some sentence here about providers.
    ```bash
    set -a; source vars.env; set +a; envsubst < template.yaml
    ```
-
-   
 
    Copy the modified docker compose file above, and paste it into the vm
    creator.
