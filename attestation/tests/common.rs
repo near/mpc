@@ -7,6 +7,15 @@ pub const TEST_MPC_IMAGE_DIGEST_HEX: &str =
 pub const TEST_LAUNCHER_COMPOSE_NORMALIZED_DIGEST_HEX: &str =
     "12997af6d2ae488b8c09d8a46488a6d48742374675fe964051eca91299182b56";
 
+pub const TEST_APP_COMPOSE_STRING: &str = include_str!("../tests/assets/app_compose.json");
+pub const TEST_APP_COMPOSE_WITH_SERVICES_STRING: &str =
+    include_str!("../tests/assets/app_compose_with_services.json");
+
+pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
+    include_str!("../tests/assets/launcher_image_compose.yaml");
+pub const TEST_LAUNCHER_IMAGE_COMPOSE_NORMALIZED_STRING: &str =
+    include_str!("../tests/assets/launcher_image_compose_normalized.yaml");
+
 pub fn mock_local_attestation(quote_verification_result: bool) -> Attestation {
     Attestation::Local(LocalAttestation::new(quote_verification_result))
 }
