@@ -20,7 +20,7 @@ specific node in the mpc network, which is known as the leader for this specific
 
 ### Testing:
 - **Unit Tests**: Run with `cargo test --release` (`--release` flag is advised for performance reasons).
-- **integration Test** : Located in the `/pytest` directory.
+- **Integration Test** : Located in the `/pytest` directory.
 
 
 ### Compilation:

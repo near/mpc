@@ -1,10 +1,11 @@
 # Multichain Infrastructure Overview
 
-## Environments:
+## Environments
+
 - Mainnet (Production)
 - Testnet (Production)
 
-## Deployment:
+## Deployment
 
 ### Mainnet/Testnet
 #### Please keep in mind that this is a live environment, and any changes you make may also effect our ecosystem partners. Ensure your new changes are rigorously tested, and will not break mainnet/Testnet. This deployment is semi-automated.

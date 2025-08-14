@@ -11,11 +11,12 @@ It is designed to run inside a TEE-enabled environment (e.g., Intel TDX) to add 
 - Pull an MPC docker image.
 - Compares the MPC image digest against expected values
 - Extends RTMR3 with the verified image digest
-- prints remote attestation and quote generation infomation to log
+- prints remote attestation and quote generation information to log
 - Starts the MPC node container with secure mount and network settings
 
-##  usage
-The launcher script is designed to run inside a confidential TDX VM managed by DStack VMM.
+## Usage
+
+The launcher script is designed to run inside a confidential TDX VM managed by dstack VMM.
 
 launcher-docker-compose.yaml — Docker Compose file used to start the launcher and supporting containers.
 config.txt — File containing trusted environment variables used by the launcher and MPC node.
@@ -76,9 +77,8 @@ docker run --rm dcbd3b8c8ae35d2ba63b25d6b617ce8b7faabb0af96ffa2e35b08a50258ebfa4
 Opens: write a script utilizing `vmm-cli.py` from dstack to deploy an mpc node
 
 - Artifacts to deploy a node
-    - Scripts to a) reproducibly build the mpc binary and b) reproducibly build a docker image containing the mpc binary
+  - Scripts to a) reproducibly build the mpc binary and b) reproducibly build a docker image containing the mpc binary
 - Actual upgrade procedure
-    - Write new image hash to /mnt/shared/image-digest
-    - Shut down cvm
-    - Amend LAUNCHER_IMAGE_TAGS if necessary; can be done from host by editing ./meta-dstack/build/run/*/shared/.user-config
-    - 
+  - Write new image hash to /mnt/shared/image-digest
+  - Shut down cvm
+  - Amend LAUNCHER_IMAGE_TAGS if necessary; can be done from host by editing ./meta-dstack/build/run/*/shared/.user-config
