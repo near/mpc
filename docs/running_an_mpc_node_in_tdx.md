@@ -200,11 +200,10 @@ TODO: Add some sentence here about providers.
    as `template.yaml`, then executing the following will create the final docker compose file:
 
    ```bash
-   set -a; source vars.env; set +a; envsubst < template.yaml
+   set -a; source vars.env; set +a; envsubst < template.yaml > app_compose.yaml
    ```
 
-   Copy the modified docker compose file above, and paste it into the vm
-   creator.
+   Upload the `app_compose.yaml` created above to the vm creator.
 
 5. Port forwarding
 
