@@ -1,0 +1,209 @@
+{
+  "mrtd": "c68518a0ebb42136c12b2275164f8c72f25fa9a34392228687ed6e9caeb9c0f1dbd895e9cf475121c029dc47e70e91fd",
+  "rtmr0": "3744b154069500a466f514253b49858299b2e1bdc44e3d557337d81e828bedf6a0410f27d3a18c932e5e49e1c4215737",
+  "rtmr1": "4b66e888c8dfa7a504fc7ca060ab9e2d051233f115d71304085570c7ac71f5a190a3e237d15f0965967a78539ba0d787",
+  "rtmr2": "5a41c9f71ce5655b6ba605fe0d00a0a05add7471acaaa6aa155bce1e04b8204f0fffaec2e6c95ffc1442b37e141127d9",
+  "rtmr3": "47e591f8ee447150812067f7a6458451f9c74a995830815f93146a6d6fdeb7dafd0989eaa63df9b66c78aa1b3ee3a3b0",
+  "os_image_hash": "",
+  "compose_hash": "7e06d8e38e4cd81b01d99ad3138517f8f2d5d989fd7b705fa4ac9b15b58149a9",
+  "device_id": "f61bdbd417b4a1b6519e698e2ea90420c21140702b608c08c72fb51ec52a5fea",
+  "app_compose": "{\n    \"manifest_version\": 2,\n    \"name\": \"launcher_test_app\",\n    \"runner\": \"docker-compose\",\n    \"docker_compose_file\": \"version: '3.8'\\n\\nservices:\\n  launcher:\\n    image: barakeinavnear/launcher@sha256:1ea7571baf18bd052359abd2a1f269e7836f9bad2270eb55fc9475aa327f8d96\\n\\n # isuse #531: TODO (security): Replace with a specific image digest\\n    container_name: launcher\\n\\n    environment:\\n      - DOCKER_CONTENT_TRUST=1\\n      - DEFAULT_IMAGE_DIGEST=sha256:a87f7eb6882446dd714e6d47d9d1b9331cb333f36d3905f172c68adbd06e461f  # nearone/mpc-node-gcp:testnet-release\\n\\n    volumes:\\n      - /var/run/docker.sock:/var/run/docker.sock\\n      - /var/run/dstack.sock:/var/run/dstack.sock\\n      - /tapp:/tapp:ro\\n      - shared-volume:/mnt/shared:ro\\n\\n    security_opt:\\n      - no-new-privileges:true\\n\\n    read_only: true\\n\\n    tmpfs:\\n      - /tmp  # Required for many apps to function correctly when root FS is read-only\\n\\nvolumes:\\n  shared-volume:\\n    name: shared-volume\",\n    \"kms_enabled\": false,\n    \"gateway_enabled\": false,\n    \"local_key_provider_enabled\": true,\n    \"key_provider_id\": \"\",\n    \"public_logs\": true,\n    \"public_sysinfo\": true,\n    \"allowed_envs\": [],\n    \"no_instance_id\": true,\n    \"secure_time\": true\n}",
+  "event_log": [
+    {
+      "imr": 0,
+      "event_type": 2147483659,
+      "digest": "519245d8b6b54b48b57143e6647d41e5e6f3b4ef10a73c95be4d9a9c0f54115b707e7af5e38f7be6852229b18573690d",
+      "event": "",
+      "event_payload": "095464785461626c65000100000000000000af96bb93f2b9b84e9462e0ba745642360090800000000000"
+    },
+    {
+      "imr": 0,
+      "event_type": 2147483658,
+      "digest": "344bc51c980ba621aaa00da3ed7436f7d6e549197dfe699515dfa2c6583d95e6412af21c097d473155875ffd561d6790",
+      "event": "",
+      "event_payload": "2946762858585858585858582d585858582d585858582d585858582d58585858585858585858585829000000c0ff000000000040080000000000"
+    },
+    {
+      "imr": 0,
+      "event_type": 2147483649,
+      "digest": "9dc3a1f80bcec915391dcda5ffbb15e7419f77eab462bbf72b42166fb70d50325e37b36f93537a863769bcf9bedae6fb",
+      "event": "",
+      "event_payload": "61dfe48bca93d211aa0d00e098032b8c0a00000000000000000000000000000053006500630075007200650042006f006f007400"
+    },
+    {
+      "imr": 0,
+      "event_type": 2147483649,
+      "digest": "6f2e3cbc14f9def86980f5f66fd85e99d63e69a73014ed8a5633ce56eca5b64b692108c56110e22acadcef58c3250f1b",
+      "event": "",
+      "event_payload": "61dfe48bca93d211aa0d00e098032b8c0200000000000000000000000000000050004b00"
+    },
+    {
+      "imr": 0,
+      "event_type": 2147483649,
+      "digest": "d607c0efb41c0d757d69bca0615c3a9ac0b1db06c557d992e906c6b7dee40e0e031640c7bfd7bcd35844ef9edeadc6f9",
+      "event": "",
+      "event_payload": "61dfe48bca93d211aa0d00e098032b8c030000000000000000000000000000004b0045004b00"
+    },
+    {
+      "imr": 0,
+      "event_type": 2147483649,
+      "digest": "08a74f8963b337acb6c93682f934496373679dd26af1089cb4eaf0c30cf260a12e814856385ab8843e56a9acea19e127",
+      "event": "",
+      "event_payload": "cbb219d73a3d9645a3bcdad00e67656f0200000000000000000000000000000064006200"
+    },
+    {
+      "imr": 0,
+      "event_type": 2147483649,
+      "digest": "18cc6e01f0c6ea99aa23f8a280423e94ad81d96d0aeb5180504fc0f7a40cb3619dd39bd6a95ec1680a86ed6ab0f9828d",
+      "event": "",
+      "event_payload": "cbb219d73a3d9645a3bcdad00e67656f03000000000000000000000000000000640062007800"
+    },
+    {
+      "imr": 0,
+      "event_type": 4,
+      "digest": "394341b7182cd227c5c6b07ef8000cdfd86136c4292b8e576573ad7ed9ae41019f5818b4b971c9effc60e1ad9f1289f0",
+      "event": "",
+      "event_payload": "00000000"
+    },
+    {
+      "imr": 0,
+      "event_type": 10,
+      "digest": "6dae15170c9fea6455681e3f838941a642ff9001a02a333e9ca8549af1db4ba47f01403e31dabe6e8a0b41ddd38b6d99",
+      "event": "",
+      "event_payload": "414350492044415441"
+    },
+    {
+      "imr": 0,
+      "event_type": 10,
+      "digest": "b3a62232ef6be064cce25a8b92cf55d4a6c099ee7a9c0852ce0c7d572393dae84895c0f59a9db5000f0b34a90c1b1bec",
+      "event": "",
+      "event_payload": "414350492044415441"
+    },
+    {
+      "imr": 0,
+      "event_type": 10,
+      "digest": "b6ed8ff3fca3c308f3f1ec7889054cc900b1c6dad9b14aedd0144d046626c81a5dbae47937f4949bb2d674a0bd699a7b",
+      "event": "",
+      "event_payload": "414350492044415441"
+    },
+    {
+      "imr": 1,
+      "event_type": 2147483651,
+      "digest": "8cc63f85b7793b5c25bd02b8f68508b99fd4a1d59b477e4053dfd91768dfa62822be5ab001b353cbde25eb173a228723",
+      "event": "",
+      "event_payload": "18804e7c000000000094b4000000000000000000000000002a000000000000000403140072f728144ab61e44b8c39ebdd7f893c7040412006b00650072006e0065006c0000007fff0400"
+    },
+    {
+      "imr": 0,
+      "event_type": 2147483650,
+      "digest": "1dd6f7b457ad880d840d41c961283bab688e94e4b59359ea45686581e90feccea3c624b1226113f824f315eb60ae0a7c",
+      "event": "",
+      "event_payload": "61dfe48bca93d211aa0d00e098032b8c0900000000000000020000000000000042006f006f0074004f0072006400650072000000"
+    },
+    {
+      "imr": 0,
+      "event_type": 2147483650,
+      "digest": "23ada07f5261f12f34a0bd8e46760962d6b4d576a416f1fea1c64bc656b1d28eacf7047ae6e967c58fd2a98bfa74c298",
+      "event": "",
+      "event_payload": "61dfe48bca93d211aa0d00e098032b8c08000000000000003e0000000000000042006f006f0074003000300030003000090100002c0055006900410070007000000004071400c9bdb87cebf8344faaea3ee4af6516a10406140021aa2c4614760345836e8ab6f46623317fff0400"
+    },
+    {
+      "imr": 1,
+      "event_type": 2147483655,
+      "digest": "77a0dab2312b4e1e57a84d865a21e5b2ee8d677a21012ada819d0a98988078d3d740f6346bfe0abaa938ca20439a8d71",
+      "event": "",
+      "event_payload": "43616c6c696e6720454649204170706c69636174696f6e2066726f6d20426f6f74204f7074696f6e"
+    },
+    {
+      "imr": 1,
+      "event_type": 4,
+      "digest": "394341b7182cd227c5c6b07ef8000cdfd86136c4292b8e576573ad7ed9ae41019f5818b4b971c9effc60e1ad9f1289f0",
+      "event": "",
+      "event_payload": "00000000"
+    },
+    {
+      "imr": 2,
+      "event_type": 6,
+      "digest": "3a39dd006e06b2e52764221aee49c94bd4ef798317f27968140e6d0823f52b4ee87b2788960e5d119d287d9b62885a10",
+      "event": "",
+      "event_payload": "ed223b8f1a0000004c4f414445445f494d4147453a3a4c6f61644f7074696f6e7300"
+    },
+    {
+      "imr": 2,
+      "event_type": 6,
+      "digest": "f82aa3cc8b76d7bb525184c89c5928fb67fcd8b508c55e3eec4a5e3f6f9d78b2427ae66f1689edeef0e6614e8aa3fe54",
+      "event": "",
+      "event_payload": "ec223b8f0d0000004c696e757820696e6974726400"
+    },
+    {
+      "imr": 1,
+      "event_type": 2147483655,
+      "digest": "214b0bef1379756011344877743fdc2a5382bac6e70362d624ccf3f654407c1b4badf7d8f9295dd3dabdef65b27677e0",
+      "event": "",
+      "event_payload": "4578697420426f6f7420536572766963657320496e766f636174696f6e"
+    },
+    {
+      "imr": 1,
+      "event_type": 2147483655,
+      "digest": "0a2e01c85deae718a530ad8c6d20a84009babe6c8989269e950d8cf440c6e997695e64d455c4174a652cd080f6230b74",
+      "event": "",
+      "event_payload": "4578697420426f6f742053657276696365732052657475726e656420776974682053756363657373"
+    },
+    {
+      "imr": 3,
+      "event_type": 134217729,
+      "digest": "f9974020ef507068183313d0ca808e0d1ca9b2d1ad0c61f5784e7157c362c06536f5ddacdad4451693f48fcc72fff624",
+      "event": "system-preparing",
+      "event_payload": ""
+    },
+    {
+      "imr": 3,
+      "event_type": 134217729,
+      "digest": "507d068c19afb9b4bedf2a4a8854b99f67b57ead2cdfde2008124dfff70701c5d1cf8119048e69529b5547c5f69167b7",
+      "event": "app-id",
+      "event_payload": "7e06d8e38e4cd81b01d99ad3138517f8f2d5d989"
+    },
+    {
+      "imr": 3,
+      "event_type": 134217729,
+      "digest": "1487d60c8aba4acf71730bf970fb4c6a77823f84d9ec60c56d587a922bab7c96830b154ccd927e3ef388e38c3ed5890b",
+      "event": "compose-hash",
+      "event_payload": "7e06d8e38e4cd81b01d99ad3138517f8f2d5d989fd7b705fa4ac9b15b58149a9"
+    },
+    {
+      "imr": 3,
+      "event_type": 134217729,
+      "digest": "305a62e30e8f4ca791946c3ede6755cfacebe02be9101f0bccf2591509a0c8e8095bc83b3d53bfc5d70d6c7cf7813fc5",
+      "event": "instance-id",
+      "event_payload": ""
+    },
+    {
+      "imr": 3,
+      "event_type": 134217729,
+      "digest": "98bd7e6bd3952720b65027fd494834045d06b4a714bf737a06b874638b3ea00ff402f7f583e3e3b05e921c8570433ac6",
+      "event": "boot-mr-done",
+      "event_payload": ""
+    },
+    {
+      "imr": 3,
+      "event_type": 134217729,
+      "digest": "74ca939b8c3c74aab3c30966a788f7743951d54a936a711dd01422f003ff9df6666f3cc54975d2e4f35c829865583f0f",
+      "event": "key-provider",
+      "event_payload": "7b226e616d65223a226c6f63616c2d736778222c226964223a2231623761343933373834303332343962363938366139303738343463616230393231656361333264643437653635376633633130333131636361656363663862227d"
+    },
+    {
+      "imr": 3,
+      "event_type": 134217729,
+      "digest": "1a76b2a80a0be71eae59f80945d876351a7a3fb8e9fd1ff1cede5734aa84ea11fd72b4edfbb6f04e5a85edd114c751bd",
+      "event": "system-ready",
+      "event_payload": ""
+    },
+    {
+      "imr": 3,
+      "event_type": 134217729,
+      "digest": "bcb7a884a6ba0970997335c548b61e2486be6065860219c5f436291d57ce62a8feb2405a63dfbbfca63be8ab6cd9e72a",
+      "event": "mpc-image-digest",
+      "event_payload": "a87f7eb6882446dd714e6d47d9d1b9331cb333f36d3905f172c68adbd06e461f"
+    }
+  ]
+}
