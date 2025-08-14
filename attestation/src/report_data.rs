@@ -34,14 +34,14 @@ impl ReportDataVersion {
 }
 
 #[derive(Debug, Clone, Constructor)]
-pub struct ReportDataV1 {
+pub struct ReportDataV1<PublicKey> {
     tls_public_key: PublicKey,
     account_public_key: PublicKey,
 }
 
 /// report_data_v1: [u8; 64] =
 ///   [version(2 bytes big endian) || sha384(TLS pub key || account pub key) || zero padding]
-impl ReportDataV1 {
+impl<PublicKey> ReportDataV1<PublicKey> {
     /// V1-specific format constants
     const PUBLIC_KEYS_OFFSET: usize = BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE;
     const PUBLIC_KEYS_HASH_SIZE: usize = 48;

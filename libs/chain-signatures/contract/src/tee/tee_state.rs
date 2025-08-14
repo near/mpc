@@ -7,6 +7,10 @@ use crate::{
         tee_participant::TeeParticipantInfo,
     },
 };
+use attestation::{
+    attestation::Attestation,
+    report_data::{ReportData, ReportDataV1},
+};
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId};
 
@@ -21,7 +25,7 @@ pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) historical_docker_image_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
-    pub(crate) tee_participant_info: IterableMap<AccountId, TeeParticipantInfo>,
+    pub(crate) tee_participant_info: IterableMap<AccountId, Attestation>,
 }
 
 impl Default for TeeState {
@@ -68,11 +72,21 @@ impl TeeState {
     /// Maps `account_id` to its `TeeQuoteStatus`. If `account_id` has no TEE information associated to it, then it is mapped to
     /// `TeeQuoteStatus::None`.
     pub fn tee_status(&self, account_id: &AccountId) -> TeeQuoteStatus {
-        let now_sec = env::block_timestamp_ms() / 1_000;
+        let current_block_timestamp = env::block_timestamp_ms() / 1_000;
+        let account_public_key = env::signer_account_pk();
+        let tls_public_key = env::signer_account_pk(); // TODO: Get the TLS key, not account key.
+
+        let report_data = ReportData::V1(ReportDataV1::new(tls_public_key, account_public_key));
+        // let expected_report_data = todo!();
         self.tee_participant_info
             .get(account_id)
             .map(|tee_participant_info| {
-                TeeQuoteStatus::from(tee_participant_info.verify_quote(now_sec))
+                TeeQuoteStatus::from(tee_participant_info.verify(
+                    expected_report_data,
+                    current_block_timestamp,
+                    &allowed_mpc_docker_image_hashes,
+                    &self.allowed_docker_image_hashes,
+                ))
             })
             .unwrap_or(TeeQuoteStatus::None)
     }
