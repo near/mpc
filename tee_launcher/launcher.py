@@ -29,10 +29,10 @@ OS_ENV_VAR_RPC_MAX_ATTEMPTS = "RPC_MAX_RETRIES"
 # MUST be set to 1.
 OS_ENV_DOCKER_CONTENT_TRUST = "DOCKER_CONTENT_TRUST"
 
-# Dstack user configuration flags
+# dstack user configuration flags
 DSTACK_USER_CONFIG_FILE = "/tapp/user_config"
 
-# Dstack user config. Read from `DSTACK_USER_CONFIG_FILE`
+# dstack user config. Read from `DSTACK_USER_CONFIG_FILE`
 DSTACK_USER_CONFIG_MPC_IMAGE_TAGS = "MPC_IMAGE_TAGS"
 DSTACK_USER_CONFIG_MPC_IMAGE_NAME = "MPC_IMAGE_NAME"
 DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY = "MPC_REGISTRY"
@@ -42,7 +42,7 @@ DEFAULT_MPC_IMAGE_NAME = "nearone/mpc-node-gcp"
 DEFAULT_MPC_REGISTRY = "registry.hub.docker.com"
 DEFAULT_MPC_IMAGE_TAG = "latest"
 
-# the unix socket to communicate with Dstack
+# the unix socket to communicate with dstack
 DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
 
 # Example of .user-config file format:

@@ -14,7 +14,7 @@ use tracing::error;
 
 use crate::indexer::types::{ChainSendTransactionRequest, ProposeJoinArgs};
 
-/// Endpoint to contact dstack service.
+/// Endpoint to contact Dstack service.
 /// Set to [`None`] which defaults to `/var/run/dstack.sock`
 const ENDPOINT: Option<&str> = None;
 /// URL for usbmission of tdx quote. Returns collateral to be used for verification.
