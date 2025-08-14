@@ -1,9 +1,9 @@
 use serde_yaml::Value as YamlValue;
 
 const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
-    include_str!("../tests/launcher_image_compose.yaml");
+    include_str!("../tests/assets/launcher_image_compose.yaml");
 const TEST_LAUNCHER_IMAGE_COMPOSE_NORMALIZED_STRING: &str =
-    include_str!("../tests/launcher_image_compose_normalized.yaml");
+    include_str!("../tests/assets/launcher_image_compose_normalized.yaml");
 
 #[test]
 fn test_launcher_compose_normalization() {

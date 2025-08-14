@@ -78,12 +78,12 @@ mod tests {
 
     use super::*;
 
-    const TEST_TCB_INFO_STRING: &str = include_str!("../tests/tcb_info.json");
-    const TEST_APP_COMPOSE_STRING: &str = include_str!("../tests/app_compose.json");
+    const TEST_TCB_INFO_STRING: &str = include_str!("../tests/assets/tcb_info.json");
+    const TEST_APP_COMPOSE_STRING: &str = include_str!("../tests/assets/app_compose.json");
     const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
-        include_str!("../tests/launcher_image_compose.yaml");
+        include_str!("../tests/assets/launcher_image_compose.yaml");
     const TEST_LAUNCHER_IMAGE_COMPOSE_NORMALIZED_STRING: &str =
-        include_str!("../tests/launcher_image_compose_normalized.yaml");
+        include_str!("../tests/assets/launcher_image_compose_normalized.yaml");
 
     #[test]
     fn test_app_compose_deserialization() {
