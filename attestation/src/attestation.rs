@@ -6,6 +6,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::EventLog;
+use hex::ToHex;
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::env::sha256;
@@ -85,6 +86,7 @@ impl Attestation {
             match dcap_qvl::verify::verify(quote_bytes, &attestation.collateral, timestamp_s) {
                 Ok(result) => result,
                 Err(err) => {
+                    println!("TEE quote verification failed: {:?}", err);
                     tracing::error!("TEE quote verification failed: {:?}", err);
                     return false;
                 }
@@ -306,11 +308,17 @@ impl Attestation {
             .filter(|event| event.event == MPC_IMAGE_HASH_EVENT && event.imr == RTMR3_INDEX);
 
         let digest_is_correct = mpc_image_hash_events.next().is_some_and(|event| {
-            allowed_hashes
-                .iter()
-                .any(|hash| hash.as_hex() == *event.event_payload)
+            let hash_in_payload = &event.event_payload;
+            println!("Found image hash: {:?}", hash_in_payload);
+
+            allowed_hashes.iter().any(|hash| {
+                println!("Allowed image hash: {:?}", hash.encode_hex::<String>());
+
+                hash.as_hex() == *hash_in_payload
+            })
         });
         let single_repetition = mpc_image_hash_events.next().is_none();
+
         single_repetition && digest_is_correct
     }
 
