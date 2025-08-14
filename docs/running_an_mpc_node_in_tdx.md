@@ -132,7 +132,7 @@ TODO: Add some sentence here about providers.
    MPC_HOME_DIR=/data
    RUST_BACKTRACE=full
    RUST_LOG=mpc=debug,info
-   NEAR_BOOT_NODES=ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ@116.202.220.238:34567,ed25519:8mzYnfuT5zQYqV99CfYAX6XoRmNxVJ1nAZHXXW4GrFD@34.221.144.70:24567,ed25519:B87Qq34LbWadFx2dq5bwUEtB5KBgr8ZhsoEpAiSP2qVX@142.132.203.80:24567,ed25519:EufXMhFVixgFpg2bBaHGL4Zrks1DDrhAZTQYwbjRTAUX@65.109.25.109:24567,ed25519:HJJde5skATXLA4wGk8P9awvfzaW47tCU2EsRXnMoFRA9@129.150.39.19:24567,ed25519:BavpjuYrnXRFQVWjLdx9vx9vAvanit9NhhcPeM6gjAkE@95.217.198.233:24567,ed25519:81zk9MvvoxB1AzTW721o9m2NeYx3pDFDZyRJUQej65uc@195.14.6.172:24567,ed25519:E4gQXBovauvqxx85TdemezhkDDsAsqEL7ZJ4cp5Cdhsb@129.80.119.109:24567,ed25519:6cWtXFAzqpZ8D7EpLGYBmkw95oKYkzN8i99UcRgsyRMy@164.132.247.155:24567,ed25519:CLnWy9xv2GUqfgepzLwpv4bozj3H3kgzjbVREyS6wcqq@47.242.112.172:24567,ed25519:2NmT9Wy9HGBmH8sTWSq2QfaMk4R8ZHBEhk8ZH4g4f1Qk@65.109.88.175:24567,ed25519:9dhPYd1ArZ6mTMP7nnRzm8JBPwKCaBxiYontS5KfXz5h@34.239.1.54:24567,ed25519:8iiQH4vtqsqWgsm4ypCJQQwqJR3AGp9o7F69YRaCHKxA@141.95.204.11:24567,ed25519:4L97JnFFFVbfE8M3tY9bRtgV5376y5dFH8cSaoBDRWnK@5.199.170.103:24567,ed25519:DGJ91V2wJ8NFpkqZvphtSeM4CBeiLsrHGdinTugiRoFF@52.35.74.212:24567,ed25519:B9LSvCTimoEUtuUvpfu1S54an54uTetVabmkT5dELUCN@91.134.22.129:24567,ed25519:cRGmtzkkSZT6wXNjbthSXMD6dHrEgSeDtiEJAcnLLxH@15.204.213.166:24567,ed25519:49F9yZpbQVefzWegVZYTh18WwFPPcfgvkDmhm7zM5MR4@89.58.28.231:24567,ed25519:GG6ocHjh5R2NGuuoMHrq6baeHnkzXMZGBZDeU2FFin46@136.243.144.110:24567,ed25519:DtZHxPRzMC3zFs1TJmNeGQkRRno1Lj2DqB6yftqd5G9k@142.132.133.160:24567,ed25519:4Fx8rLhGobUPVie1FXQCAxFaMQ3Dg6PYMDdm5keZcKW6@83.125.137.146:24567,ed25519:FyDDouqtzonXp6Ut74fBad1emSJHZzRsGXXnsMQrwhFu@34.76.240.95:24567,ed25519:Au1uTk2LiCuikXVxqxeRRCXgHttZitjaaHbXUuBprBk@213.21.195.14:24567,ed25519:5sGSEFkghhZF2C76orKTjuvFWjVTzDVbvgy9GmbGR8wN@78.159.113.25:24567,ed25519:5XcBVb2P7ihHpDWYMukkKdhazxtGTBmzBien4GeNi5f5@34.168.32.204:24567,ed25519:4X36tLPyP4YybWm9qAwdrtEank1kMTWcejJR69GJCuoa@34.10.160.120:24567,ed25519:9rKGAzoB9ecMhsM1i9Jf95kafBcUAYGW1HtMVe7qkreG@34.79.74.98:24567,ed25519:EwZQ3U62UzFJgb5QxacfMqknCdJBAGsLfEJGczXJ7Rf5@54.213.174.110:24567,ed25519:D6fmZNbcr5oi4WXb8LqNHaweaTDjPLFX5dR1zjut2SPy@136.243.98.125:24567,ed25519:ERLHXppRXQ3QjBNToMpDGuBLosFcwpyMeb37YrfdLHne@65.109.115.104:24567,ed25519:oAKWzuc5wjgxxJMwLThbvyaBNEm6B7oWWKg2f1aShWG@142.132.193.223:24567,ed25519:9yftjQdZiaVJUzDFEiUnsKuK4KE4zs9svk1r1wDuiJKb@148.251.195.69:24567,ed25519:2N3Jom3LP15YsTt9LX5wno68rgaYJ3RHWPRFm2cUDhgM@141.94.242.56:24567,ed25519:BAQFGfXA5sqMfvc4HfrWJpLxGao4r4opcqHo7VAQbNMP7@176.9.0.48:24567
+   NEAR_BOOT_NODES=ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ@116.202.220.238:34567,ed25519:8mzYnfuT5zQYqV99CfYAX6XoRmNxVJ1nAZHXXW4GrFD@34.221.144.70:24567,ed25519:B87Qq34LbWadFx2dq5bwUEtB5KBgr8ZhsoEpAiSP2qVX@142.132.203.80:24567,ed25519:EufXMhFVixgFpg2bBaHGL4Zrks1DDrhAZTQYwbjRTAUX@65.109.25.109:24567,ed25519:HJJde5skATXLA4wGk8P9awvfzaW47tCU2EsRXnMoFRA9@129.150.39.19:24567,ed25519:BavpjuYrnXRFQVWjLdx9vx9vAvanit9NhhcPeM6gjAkE@95.217.198.233:24567,ed25519:81zk9MvvoxB1AzTW721o9m2NeYx3pDFDZyRJUQej65uc@195.14.6.172:24567,ed25519:E4gQXBovauvqxx85TdemezhkDDsAsqEL7ZJ4cp5Cdhsb@129.80.119.109:24567,ed25519:6cWtXFAzqpZ8D7EpLGYBmkw95oKYkzN8i99UcRgsyRMy@164.132.247.155:24567,ed25519:CLnWy9xv2GUqfgepzLwpv4bozj3H3kgzjbVREyS6wcqq@47.242.112.172:24567,ed25519:2NmT9Wy9HGBmH8sTWSq2QfaMk4R8ZHBEhk8ZH4g4f1Qk@65.109.88.175:24567,ed25519:9dhPYd1ArZ6mTMP7nnRzm8JBPwKCaBxiYontS5KfXz5h@34.239.1.54:24567,ed25519:8iiQH4vtqsqWgsm4ypCJQQwqJR3AGp9o7F69YRaCHKxA@141.95.204.11:24567,ed25519:4L97JnFFFVbfE8M3tY9bRtgV5376y5dFH8cSaoBDRWnK@5.199.170.103:24567,ed25519:DGJ91V2wJ8NFpkqZvphtSeM4CBeiLsrHGdinTugiRoFF@52.35.74.212:24567,ed25519:B9LSvCTimoEUtuUvpfu1S54an54uTetVabmkT5dELUCN@91.134.22.129:24567,ed25519:cRGmtzkkSZT6wXNjbthSXMD6dHrEgSeDtiEJAcnLLxH@15.204.213.166:24567
    IMAGE_TAG=main-f81318b-tee
    IMAGE_HASH=5ba283860c0efa3d4c3e08a76a2b77fab4725baad4f48504eac858e04af7fd64
    MPC_RESPONDER_ID=mpc-responder-2-barak-launch1-cdd0fd949a48.5035bf56abb0.testnet
@@ -143,8 +143,19 @@ TODO: Add some sentence here about providers.
    Several values in the previous file can be modified:
       - `IMAGE_TAG` and `IMAGE_HASH`: Find a docker image of the MPC node in
       [mpc-node-gcp/tags](https://hub.docker.com/r/nearone/mpc-node-gcp/tags). Images with
-      suffix `-tee` are TEE enabled. For the selected image we need the tag `IMAGE_TAG`
-      and the corresponding digest `IMAGE_HASH`. The latest image should be `IMAGE_TAG=latest-tee`.
+      suffix `-tee` are TEE enabled. The latest image should be `IMAGE_TAG=latest-tee`. To obtain the `IMAGE-HASH` execute:
+
+      ```bash
+      docker pull nearone/mpc-node-gcp:IMAGE_TAG
+      docker inspect nearone/mpc-node-gcp:IMAGE_TAG | jq .[0].Id
+      ```
+
+      - `NEAR_BOOT_NODES`: can be obtained executing
+
+      ```bash
+      curl -X POST https://rpc.testnet.near.org -H "Content-Type: application/json" -d '{"jsonrpc": "2.0", "method": "network_info","params": [], "id": "dontcare"}'| jq -r '.result.active_peers[] as $active_peer | "\($active_peer.id)@\($active_peer.addr)"' | paste -sd',' -
+      ```
+
       - TODO: comment other parameters
 
    ```yml
