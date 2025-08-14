@@ -1238,7 +1238,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "borsh",
- "dcap-qvl 0.2.4 (git+https://github.com/gilcu3/dcap-qvl?rev=5a264b50dbe833b807d4ed6dfff6d9ef838cd024)",
+ "dcap-qvl",
  "derive_more 2.0.1",
  "dstack-sdk-types",
  "hex",
@@ -2522,37 +2522,8 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "dcap-qvl"
-version = "0.2.4"
-source = "git+https://github.com/gilcu3/dcap-qvl?rev=287a6e7b00f3a687255e90733e954c979d1df9d5#287a6e7b00f3a687255e90733e954c979d1df9d5"
-dependencies = [
- "anyhow",
- "asn1_der",
- "base64 0.22.1",
- "byteorder",
- "chrono",
- "const-oid",
- "der",
- "futures",
- "getrandom 0.2.16",
- "hex",
- "log",
- "parity-scale-codec",
- "pem",
- "ring",
- "rustls-webpki 0.102.8",
- "scale-info",
- "serde",
- "serde-human-bytes",
- "serde_json",
- "tracing",
- "urlencoding",
- "x509-cert",
-]
-
-[[package]]
-name = "dcap-qvl"
-version = "0.2.4"
-source = "git+https://github.com/gilcu3/dcap-qvl?rev=5a264b50dbe833b807d4ed6dfff6d9ef838cd024#5a264b50dbe833b807d4ed6dfff6d9ef838cd024"
+version = "0.3.0"
+source = "git+https://github.com/Phala-Network/dcap-qvl?rev=06ac37d3fd7f9690158d92025666eb3d1e3f1938#06ac37d3fd7f9690158d92025666eb3d1e3f1938"
 dependencies = [
  "anyhow",
  "asn1_der",
@@ -2561,8 +2532,8 @@ dependencies = [
  "byteorder",
  "chrono",
  "const-oid",
+ "dcap-qvl-webpki",
  "der",
- "futures",
  "getrandom 0.2.16",
  "hex",
  "log",
@@ -2574,9 +2545,20 @@ dependencies = [
  "serde",
  "serde-human-bytes",
  "serde_json",
- "tracing",
  "urlencoding",
+ "wasm-bindgen-futures",
  "x509-cert",
+]
+
+[[package]]
+name = "dcap-qvl-webpki"
+version = "0.103.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70ebdcd097c369fe3422cf3978540e0406148435ec0f4d8ecbbf201c746f19c9"
+dependencies = [
+ "ring",
+ "rustls-pki-types",
+ "untrusted",
 ]
 
 [[package]]
@@ -4916,7 +4898,7 @@ dependencies = [
  "attestation",
  "borsh",
  "curve25519-dalek",
- "dcap-qvl 0.2.4 (git+https://github.com/gilcu3/dcap-qvl?rev=287a6e7b00f3a687255e90733e954c979d1df9d5)",
+ "dcap-qvl",
  "derive_more 2.0.1",
  "getrandom 0.2.16",
  "hex",
