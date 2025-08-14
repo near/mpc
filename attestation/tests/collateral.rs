@@ -6,7 +6,7 @@ use serde_json::json;
 
 use crate::common::create_test_collateral_json;
 
-mod common;
+pub mod common;
 
 #[test]
 fn test_collateral_missing_field() {
