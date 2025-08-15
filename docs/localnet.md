@@ -121,7 +121,7 @@ near account create-account fund-myself bob.test.near '10 NEAR' autogenerate-new
 Before we can start the MPC nodes for Alice and Bob, we need to know the public key of our NEAR validator.
 
 ```shell
-export NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | rg public_key | rg -o "ed25519:\w+")
+export NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | jq ".public_key" | rg -o "ed25519:\w+")
 ```
 
 ### Initialize Alice's node
