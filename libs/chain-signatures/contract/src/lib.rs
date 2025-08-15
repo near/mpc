@@ -522,14 +522,14 @@ impl VersionedMpcContract {
 
     #[payable]
     #[handle_result]
-    pub fn propose_join(
+    pub fn submit_participant_info(
         &mut self,
         #[serializer(borsh)] proposed_tee_participant: TeeParticipantInfo,
         #[serializer(borsh)] sign_pk: PublicKey,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
         log!(
-            "propose_join: signer={}, proposed_tee_participant={:?}",
+            "submit_participant_info: signer={}, proposed_tee_participant={:?}",
             account_id,
             proposed_tee_participant,
         );
@@ -542,11 +542,9 @@ impl VersionedMpcContract {
         };
 
         // Verify the TEE quote and Docker image for the proposed participant
-        let timestamp_s = env::block_timestamp_ms() / 1_000;
-        let status =
-            mpc_contract
-                .tee_state
-                .verify_tee_participant(&account_id, &sign_pk, timestamp_s)?;
+        let status = mpc_contract
+            .tee_state
+            .verify_tee_participant_info(&proposed_tee_participant, &sign_pk)?;
 
         if status == TeeQuoteStatus::Invalid {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
