@@ -165,7 +165,7 @@ mod tests {
         let collateral = get_collateral(raw_quote_collateral.to_string()).unwrap();
 
         let quote_string = include_str!("../../../../../attestation/tests/assets/quote.json");
-        let quote: Vec<u8> = serde_json::from_str(&quote_string).unwrap();
+        let quote: Vec<u8> = serde_json::from_str(quote_string).unwrap();
 
         let now = 1755251397; // Fri, 15 Aug 2025 09:49:57 UTC
 
