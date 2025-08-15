@@ -38,7 +38,6 @@ impl Default for TeeState {
 }
 
 impl TeeState {
-    /// Returns either `Valid` or `Invalid`.
     /// May return an error
     pub(crate) fn verify_tee_participant_info(
         &mut self,
