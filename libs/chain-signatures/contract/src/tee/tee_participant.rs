@@ -117,7 +117,7 @@ impl TeeParticipantInfo {
         };
 
         let docker_image_is_valid = self.verify_docker_images(
-            &allowed_mpc_docker_image_hashes,
+            allowed_mpc_docker_image_hashes,
             allowed_launcher_docker_compose_hashes,
             verified_report,
             sign_pk,

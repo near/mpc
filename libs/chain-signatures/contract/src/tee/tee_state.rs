@@ -48,8 +48,8 @@ impl TeeState {
         let allowed_mpc_docker_image_hashes = self.get_allowed_hashes();
         let allowed_launcher_hashes = self.get_allowed_launcher_hashes();
         tee_participant_info.verify(
-            &allowed_mpc_docker_image_hashes,
-            &allowed_launcher_hashes,
+            allowed_mpc_docker_image_hashes.as_slice(),
+            allowed_launcher_hashes.as_slice(),
             sign_pk,
         )
     }
@@ -65,8 +65,8 @@ impl TeeState {
         let tee_participant_info = self.tee_participant_info.get(account_id);
         if let Some(tee_participant_info) = tee_participant_info {
             tee_participant_info.verify(
-                &allowed_mpc_docker_image_hashes,
-                &allowed_launcher_hashes,
+                allowed_mpc_docker_image_hashes.as_slice(),
+                allowed_launcher_hashes.as_slice(),
                 sign_pk,
             )
         } else {
