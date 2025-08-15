@@ -130,7 +130,7 @@ async fn observe_tx_result(
         | VoteAbortKeyEventInstance(_)
         | VerifyTee() => Ok(ChainTransactionState::Unknown),
         #[cfg(feature = "tee")]
-        SubmitRemoteAttestation(_) => Ok(ChainTransactionState::Unknown),
+        SubmitParticipantInfo(_) => Ok(ChainTransactionState::Unknown),
     }
 }
 
