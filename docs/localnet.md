@@ -6,7 +6,7 @@ neard, near CLI, cargo, ripgrep, envsubst, python3-keyring
 
 ### Note about `neard`.
 
-Make sure that your `neard` version has is compatible with the `near` version with the `near-indexer` version
+Make sure that your `neard` version is compatible with the `near` version with the `near-indexer` version
 that is used by the MPC binary defined in the workspace cargo file, `/Cargo.toml`.
 
 ```shell
