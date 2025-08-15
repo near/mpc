@@ -201,8 +201,10 @@ where
 mod tests {
     use super::*;
     use attestation::report_data::ReportDataV1;
-    use hex::ToHex;
     use rstest::rstest;
+
+    #[cfg(feature = "external-services-tests")]
+    use hex::ToHex;
 
     extern crate std;
 
