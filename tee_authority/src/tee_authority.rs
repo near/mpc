@@ -284,7 +284,7 @@ mod tests {
     #[cfg(feature = "external-services-tests")]
     async fn test_upload_quote_for_collateral_with_phala_endpoint() {
         let quote_json = include_str!("../../attestation/tests/assets/quote.json");
-        let quote_hex: String = serde_json::from_str::<Vec<u8>>(&quote_json)
+        let quote_hex: String = serde_json::from_str::<Vec<u8>>(quote_json)
             .expect("Is valid json")
             .encode_hex();
 
