@@ -126,6 +126,7 @@ export NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | jq ".public_key" |
 
 ### Initialize Alice's node
 
+TODO: Use 24567 boot node address here.
 ```shell
 mpc-node init --dir ~/.near/mpc-alice --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030 --download-config-url https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/testnet/rpc/config.json
 ```
