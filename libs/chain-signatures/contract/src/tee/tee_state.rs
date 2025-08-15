@@ -45,27 +45,13 @@ impl TeeState {
         tee_participant_info: &TeeParticipantInfo,
         sign_pk: &PublicKey,
     ) -> Result<TeeQuoteStatus, Error> {
-        let timestamp_s = env::block_timestamp_ms() / 1_000;
-        let quote_result = tee_participant_info.verify_quote(timestamp_s);
-
-        let Ok(verified_report) = quote_result else {
-            return Ok(TeeQuoteStatus::Invalid);
-        };
-
-        let allowed = self.get_allowed_hashes();
-        let historical = self.get_historical_hashes();
-        let docker_image_is_valid = tee_participant_info.verify_docker_image(
-            &allowed,
-            historical,
-            verified_report,
+        let allowed_mpc_docker_image_hashes = self.get_allowed_hashes();
+        let allowed_launcher_hashes = self.get_allowed_launcher_hashes();
+        tee_participant_info.verify(
+            &allowed_mpc_docker_image_hashes,
+            &allowed_launcher_hashes,
             sign_pk,
-        )?;
-
-        Ok(if docker_image_is_valid {
-            TeeQuoteStatus::Valid
-        } else {
-            TeeQuoteStatus::Invalid
-        })
+        )
     }
 
     /// Verifies the TEE quote and Docker image
@@ -74,11 +60,15 @@ impl TeeState {
         account_id: &AccountId,
         sign_pk: &PublicKey,
     ) -> Result<TeeQuoteStatus, Error> {
+        let allowed_mpc_docker_image_hashes = self.get_allowed_hashes();
+        let allowed_launcher_hashes = self.get_allowed_launcher_hashes();
         let tee_participant_info = self.tee_participant_info.get(account_id);
-
         if let Some(tee_participant_info) = tee_participant_info {
-            let tee_participant_info: TeeParticipantInfo = tee_participant_info.clone();
-            self.verify_tee_participant_info(&tee_participant_info, sign_pk)
+            tee_participant_info.verify(
+                &allowed_mpc_docker_image_hashes,
+                &allowed_launcher_hashes,
+                sign_pk,
+            )
         } else {
             Ok(TeeQuoteStatus::None)
         }
@@ -152,7 +142,7 @@ impl TeeState {
             .collect()
     }
 
-    pub fn get_historical_hashes(&self) -> &Vec<LauncherDockerComposeHash> {
+    pub fn get_allowed_launcher_hashes(&self) -> &Vec<LauncherDockerComposeHash> {
         &self.historical_docker_image_hashes
     }
 
