@@ -79,18 +79,17 @@ near account view-account-summary mpc-contract.test.near network-config mpc-loca
 ```
 
 Now it's time to deploy the contract.
-First build the contract from the `libs/chain-singatures` folder with:
+First build the contract from the `libs/chain-singatures/contract` folder with:
 
 ```shell
-cargo build --release --target=wasm32-unknown-unknown
-wasm-opt -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm --enable-bulk-memory
+cargo near build reproducible-wasm
 ```
 
 Now you should have a `mpc_contract.wasm` artifact ready in the target directory.
 Let's add an env variable for it. From the workspace root, run the following:
 
 ```shell
-export MPC_CONTRACT_PATH=$(pwd)/libs/chain-signatures/target/wasm32-unknown-unknown/release/mpc_contract.wasm
+export MPC_CONTRACT_PATH=$(pwd)/libs/chain-signatures/target/near/mpc_contract/mpc_contract.wasm
 ```
 
 Now we can deploy the contract with this command.
