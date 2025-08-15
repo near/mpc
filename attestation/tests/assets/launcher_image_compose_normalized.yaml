@@ -5,7 +5,7 @@ services:
     container_name: launcher
     environment:
     - DOCKER_CONTENT_TRUST=1
-    - DEFAULT_IMAGE_DIGEST=sha256:a87f7eb6882446dd714e6d47d9d1b9331cb333f36d3905f172c68adbd06e461f
+    - DEFAULT_IMAGE_DIGEST=sha256:8d46a34ac16f7bc5f3c6bfe824ef741306fa00df1b098811885b0ecf1408e013
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
     - /var/run/dstack.sock:/var/run/dstack.sock
