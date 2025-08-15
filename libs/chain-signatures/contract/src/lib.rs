@@ -520,6 +520,8 @@ impl VersionedMpcContract {
         }
     }
 
+    /// (Prospective) Participants can submit their tee participant information through this
+    /// endpoint.
     #[payable]
     #[handle_result]
     pub fn submit_participant_info(
@@ -551,7 +553,7 @@ impl VersionedMpcContract {
                 .message("TeeQuoteStatus is invalid".to_string()));
         }
 
-        // Add a new proposed participant to the contract state
+        // Add the participant information to the contract state
         mpc_contract
             .tee_state
             .add_participant(account_id.clone(), proposed_tee_participant.clone());
