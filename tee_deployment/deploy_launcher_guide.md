@@ -1,6 +1,6 @@
-## 🛠 `deploy-launcher.sh` – DStack VM Deployment Script
+## 🛠 `deploy-launcher.sh` – Dstack VM Deployment Script
 
-This script automates the deployment of a **DStack Launcher VM** (`launcher_test_app`) using a templated Docker Compose file and the DStack VMM CLI.
+This script automates the deployment of a **Dstack Launcher VM** (`launcher_test_app`) using a templated Docker Compose file and the Dstack VMM CLI.
 
 > **Note:** This script must be run **from within the server that hosts the VMs** (i.e., where `dstack-vmm` is running).
 
@@ -16,7 +16,7 @@ It:
 ### 📦 Requirements
 
 - Python virtual environment with [`vmm-cli.py`](https://github.com/Dstack-TEE/dstack/blob/master/vmm/src/vmm-cli.py)
-- A working DStack VMM service (`vmm-server`) accessible at `$VMM_RPC`
+- A working Dstack VMM service (`vmm-server`) accessible at `$VMM_RPC`
 - Docker Compose template (`$DOCKER_COMPOSE_FILE_PATH`)
 - Deployment configuration in `.env`
 - See full CLI documentation here: [vmm-cli-user-guide.md](https://github.com/Dstack-TEE/dstack/blob/master/vmm-cli-user-guide.md)
@@ -126,5 +126,4 @@ DISK=128G   # can change
 
 ---
 
-Based on: [Original DStack deploy script](https://github.com/Dstack-TEE/dstack/blob/be9d0476a63e937eda4c13659547a25088393394/kms/dstack-app/deploy-to-vmm.sh)
-
+Based on: [Original Dstack deploy script](https://github.com/Dstack-TEE/dstack/blob/be9d0476a63e937eda4c13659547a25088393394/kms/dstack-app/deploy-to-vmm.sh)

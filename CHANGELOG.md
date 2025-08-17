@@ -2,7 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
 ## [unreleased]
@@ -49,7 +48,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 ### 💼 Other
 
-- [#416](https://github.com/near/mpc/pull/416)(@andrei-near): Fix import keyshare  (#416)
+- [#416](https://github.com/near/mpc/pull/416)(@andrei-near): Fix import keyshare (#416)
 
 
 ### ⚙️ Miscellaneous Tasks
@@ -74,7 +73,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#209](https://github.com/near/mpc/pull/209)(@pbeza): *(audit)* Fix TLS certificate verification (#209)
 
-- [#268](https://github.com/near/mpc/pull/268)(@near-bookrock): Pinned legacy contract dependency to git revistion (#268)
+- [#268](https://github.com/near/mpc/pull/268)(@near-bookrock): Pinned legacy contract dependency to git revision (#268)
 
 - [#328](https://github.com/near/mpc/pull/328)(@near-bookrock): Add pre-computed edwards_point of EdDSA keys to contract state (#328)
 
@@ -123,7 +122,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#347](https://github.com/near/mpc/pull/347)(@near-bookrock): *(eddsa)* Add integration test for EdDSA signature requests (#347)
 
-- [#348](https://github.com/near/mpc/pull/348)(@near-bookrock): Enable EdDSA signature requets in pytests (#348)
+- [#348](https://github.com/near/mpc/pull/348)(@near-bookrock): Enable EdDSA signature requests in pytests (#348)
 
 
 ### ⚙️ Miscellaneous Tasks
