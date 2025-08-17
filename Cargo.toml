@@ -21,10 +21,10 @@ backon = { version = "1.5.1", features = ["tokio-sleep"] }
 borsh = { version = "1.5.1", features = ["derive"] }
 clap = { version = "4.5.20", features = ["derive", "env"] }
 curve25519-dalek = "4.1.3"
-# TODO(#815): Use upstream library
-dcap-qvl = { git = "https://github.com/gilcu3/dcap-qvl", rev = "d25d405eff0a6f5323f80c654ac826f99f64dfc1", default-features = false, features=["contract", "std", "report"] }
+# Latest `master` as per 2025-08-15
+dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl", rev = "06ac37d3fd7f9690158d92025666eb3d1e3f1938", default-features = false, features=["contract", "borsh", "std"] }
 # Pinned to resolve compilation errors with conflicting implementations of PartialOrd trait
-# See error E0283 with multiple impls satisfying `u128: std::cmp::PartialOrd<_>`
+# See error E0283 with multiple implementations satisfying `u128: std::cmp::PartialOrd<_>`
 deranged = "=0.4.0"
 derive_more = { version = "2.0.1", features = [
     "from",
@@ -101,7 +101,7 @@ mpc-node = { path = "node" }
 mpc-contract = { path = "libs/chain-signatures/contract/", features = [
     "dev-utils",
 ] }
-# todo: update once 1.1.0 is pulbished (though the api did not change)
+# TODO: update once 1.1.0 is published (though the API did not change)
 legacy-mpc-contract = { package = "mpc-contract", git = "https://github.com/near/mpc/", rev = "1d4954dff28e8eb988fb7762eff414a602a2b124" }
 
 # NEAR CORE DEPENDENCIES:

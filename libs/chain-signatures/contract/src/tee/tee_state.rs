@@ -38,13 +38,28 @@ impl Default for TeeState {
         }
     }
 }
+
 impl TeeState {
-    /// Verifies the TEE quote and Docker image.
+    /// May return an error
+    pub(crate) fn verify_tee_participant_info(
+        &mut self,
+        tee_participant_info: &TeeParticipantInfo,
+        sign_pk: &PublicKey,
+    ) -> Result<TeeQuoteStatus, Error> {
+        let allowed_mpc_docker_image_hashes = self.get_allowed_hashes();
+        let allowed_launcher_hashes = self.get_allowed_launcher_hashes();
+        tee_participant_info.verify(
+            allowed_mpc_docker_image_hashes.as_slice(),
+            allowed_launcher_hashes.as_slice(),
+            sign_pk,
+        )
+    }
+
+    /// Verifies the TEE quote and Docker image
     pub(crate) fn verify_tee_participant(
         &mut self,
         account_id: &AccountId,
         sign_pk: &PublicKey,
-        timestamp_s: u64,
     ) -> Result<TeeQuoteStatus, Error> {
         let participant_attestation = self.participants_attestations.get(account_id);
         let Some(participant_attestation) = participant_attestation else {
@@ -56,18 +71,24 @@ impl TeeState {
             participant_attestation.tcb_info,
             participant_attestation.expected_measurements,
         ));
-        let allowed = self.get_allowed_hashes();
+        let allowed_mpc_docker_image_hashes = self.get_allowed_hashes();
         let historical = self.get_historical_hashes();
         let account_key = env::signer_account_pk();
         let expected_report_data = ReportData::V1(ReportDataV1::new(sign_pk, account_key));
-        let quote_result =
-            attestation.verify(expected_report_data, timestamp_s, &allowed, historical);
+        let quote_result = attestation.verify(
+            expected_report_data,
+            timestamp_s,
+            &allowed_mpc_docker_image_hashes,
+            historical,
+        );
 
-        Ok(if quote_result {
+        let quote_result = if quote_result {
             TeeQuoteStatus::Valid
         } else {
             TeeQuoteStatus::Invalid
-        })
+        };
+
+        Ok(quote_result)
     }
 
     /// Performs TEE validation on the given participants.
@@ -105,8 +126,7 @@ impl TeeState {
     /// is considered to have a valid TEE status. Otherwise, the participant is marked as invalid.
     /// If no TEE information is found, the participant is marked with `TeeQuoteStatus::None`.
     pub fn tee_status(&mut self, account_id: &AccountId, sign_pk: &PublicKey) -> TeeQuoteStatus {
-        let now_sec = env::block_timestamp_ms() / 1_000;
-        match self.verify_tee_participant(account_id, sign_pk, now_sec) {
+        match self.verify_tee_participant(account_id, sign_pk) {
             Ok(status) => status,
             Err(_) => TeeQuoteStatus::Invalid,
         }
@@ -139,7 +159,7 @@ impl TeeState {
             .collect()
     }
 
-    pub fn get_historical_hashes(&self) -> &Vec<LauncherDockerComposeHash> {
+    pub fn get_allowed_launcher_hashes(&self) -> &Vec<LauncherDockerComposeHash> {
         &self.historical_docker_image_hashes
     }
 

@@ -10,6 +10,7 @@ are currently not applicable to the public, since they rely on a lot of
 our internal-specific setup.
 
 ## Prerequisites
+
 To be able to use the CLI, make sure to first install [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli) and the [google cloud CLI](https://cloud.google.com/sdk/docs/install).
 
 Once installed you need to authenticate yourself with `gcloud` and get application credentials, which can be done using the following commands.
@@ -23,6 +24,7 @@ gcloud auth application-default login
 ```
 
 ## Installation
+
 With the application credentials in place, the next step is to install the CLI.
 
 The CLI can be installed using `cargo install`. Open a terminal in
@@ -35,6 +37,7 @@ cargo install --path .
 Once completed, you should have the `mpc-devnet` command available in your shell.
 
 ## Configuring
+
 Before starting, copy `config.yaml.template` to `config.yaml` and
 edit it:
 * Add any number of RPC nodes; configuring the QPS rate limit it allows,
@@ -104,16 +107,14 @@ mpc-devnet mpc my-test deploy-nomad
 ```
 The docker image to be deployed can be change with the `--docker-image` flag.
 By default, devnet assumes that a legacy docker image is deployed (with node version strictly older than 2.2.0).
-For newer versions, one must pass the `--not-legacy` flag, because they require different terraform varibles (todo: remove the flag [(#710)](https://github.com/near/mpc/issues/710)).
+For newer versions, one must pass the `--not-legacy` flag, because they require different terraform variables (TODO: remove the flag [(#710)](https://github.com/near/mpc/issues/710)).
 
-Both the `deploy-infra` and `deploy-nomad` commands can be repeated as 
-needed.
+Both the `deploy-infra` and `deploy-nomad` commands can be repeated as needed.
 
-The Terraform deployments use the Terraform Workspaces feature, where 
+The Terraform deployments use the Terraform Workspaces feature, where
 the workspace name is the same as the MPC network name. The Terraform
 state is stored in S3, which is why this workspace name needs to be
 unique in the team.
-
 
 Now, wait for the nodes to spin-up and start syncing. Once the `public_data` endpoint is accessible, run
 ```shell
@@ -126,13 +127,12 @@ mpc-devnet mpc my-test init-contract \
   --init-participants 2 --threshold 2
 ```
 
-(todo: [(#710)](https://github.com/near/mpc/issues/710) merge these two steps)
+(TODO: [(#710)](https://github.com/near/mpc/issues/710) merge these two steps)
 
 The `--init-participants` can be fewer than the total number of participants,
 if we wish to have fewer participants join the network at the beginning.
 
 The path of the contract binary can be overridden via `--path`.
-
 
 ### Generating Keys
 
@@ -214,7 +214,7 @@ later, but creating all the machines upfront will save time.
 
 Suppose the network currently has 5 nodes, and the contract was initialized with 4 nodes.
 That means nodes [0, 1, 2, 3] are currently participating in the network. Suppose then we
-want node 4 and 5 to join, node 1 to leave, and also adjust the threshold to 4. We can do this:
+want node 4 and 5 to join, node 1 to leave, and to adjust the threshold to 4. We can do this:
 
 ```shell
 mpc-devnet mpc my-test vote-new-parameters --add 4 --add 5 --remove 1 --set-threshold 4
@@ -228,7 +228,7 @@ contract code for the upgrade):
 ```shell
 mpc-devnet mpc my-test propose-update-contract --path ../libs/chain-signatures/target/wasm32-unknown-unknown/release/mpc_contract.wasm
 ```
-this will print out a command to run for voting for the upgrade:
+This will print out a command to run for voting for the upgrade:
 ```shell
 mpc-devnet mpc my-test vote-update --update-id=0
 ```
@@ -323,7 +323,6 @@ if we want to send a high amount of load.
 
 The `--domain-id` parameter specifies which domain to use for the signature
 requests. This parameter *may* be omitted to test compatibility with the legacy API and *will* be ignored if `--parallel-sign-calls-per-domain` is set.
-
 
 The output should be something like the following:
 ```

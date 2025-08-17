@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 
 /// Helper struct to deserialize the `app_compose` JSON from TCB info. This is a workaround due to
-/// current limitations in the dstack SDK.
+/// current limitations in the Dstack SDK.
 ///
 /// See: https://github.com/Dstack-TEE/dstack/issues/267
 #[derive(Debug, Deserialize, Serialize, BorshSerialize, BorshDeserialize)]
