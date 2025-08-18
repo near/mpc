@@ -11,8 +11,8 @@ use near_crypto::PublicKey;
 use rstest::rstest;
 
 use crate::common::{
-    TEST_LAUNCHER_COMPOSE_NORMALIZED_DIGEST_HEX, TEST_MPC_IMAGE_DIGEST_HEX, TEST_TCB_INFO_STRING,
-    collateral, mock_local_attestation, quote,
+    TEST_LAUNCHER_COMPOSE_DIGEST_HEX, TEST_MPC_IMAGE_DIGEST_HEX, TEST_TCB_INFO_STRING, collateral,
+    mock_local_attestation, quote,
 };
 
 pub mod common;
@@ -110,8 +110,7 @@ fn test_verify_method_signature() {
         MpcDockerImageHash::try_from_hex(TEST_MPC_IMAGE_DIGEST_HEX).unwrap();
 
     let allowed_launcher_compose_digest =
-        LauncherDockerComposeHash::try_from_hex(TEST_LAUNCHER_COMPOSE_NORMALIZED_DIGEST_HEX)
-            .unwrap();
+        LauncherDockerComposeHash::try_from_hex(TEST_LAUNCHER_COMPOSE_DIGEST_HEX).unwrap();
 
     let verification_result = attestation.verify(
         report_data,
