@@ -326,14 +326,7 @@ impl Attestation {
                 return false;
             }
         };
-        // this str will not match the original, unless the original was normalized
-        let launcher_compose_str = match serde_yaml::to_string(&app_compose.docker_compose_file) {
-            Ok(str) => str,
-            Err(e) => {
-                tracing::error!("Failed to convert docker_compose_file to str: {:?}", e);
-                return false;
-            }
-        };
+        let launcher_compose_str = &app_compose.docker_compose_file;
         let launcher_bytes = sha256(launcher_compose_str.as_bytes());
         allowed_hashes
             .iter()

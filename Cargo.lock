@@ -1250,7 +1250,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "serde_yaml",
  "sha3",
  "thiserror 2.0.14",
  "tracing",
