@@ -113,19 +113,19 @@ echo "Deploying $APP_NAME to dstack-vmm..."
 echo "Press enter to continue..."
 read
 
-DSTACK_AGENT_PORT=8090
-DSTACK_SSH_PORT=22
-MPC_DEBUG_PORT=8080
+
 
 $CLI deploy \
   --name $APP_NAME \
   --compose .app-compose.json \
   --image $OS_IMAGE \
-  --port tcp:$GUEST_AGENT_ADDR:$DSTACK_AGENT_PORT \
-  --port tcp:$SSH_HOST_PORT:$DSTACK_SSH_PORT \
-  --port tcp:$MPC_PUBLIC_PORT:$MPC_VM_PORT \
-  --port tcp:8989:$MPC_DEBUG_PORT \
+  --port tcp:$EXTERNAL_DSTACK_AGENT_PORT:$INTERNAL_AGENT_ADDR \
+  --port tcp:$EXTERNAL_SSH_PORT:$INTERNAL_SSH_PORT \
+  --port tcp:$EXTERNAL_MPC_PUBLIC_DEBUG_PORT:$INTERNAL_MPC_PUBLIC_DEBUG_PORT \
+  --port tcp:$EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC:$INTERNAL_MPC_DECENTRALIZED_STATE_SYNC \
+  --port tcp:$EXTERNAL_MPC_LOCAL_DEBUG_PORT:$INTERNAL_MPC_LOCAL_DEBUG_PORT \
+  --port tcp:$EXTERNAL_MPC_MAIN_PORT:$INTERNAL_MPC_MAIN_PORT \
   --user-config $USER_CONFIG_FILE_PATH \
   --vcpu $VCPU \
   --memory $MEMORY \
-  --disk $DISK \
+  --disk $DISK
