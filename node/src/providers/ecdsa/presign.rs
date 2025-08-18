@@ -10,7 +10,6 @@ use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput,
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
-use k256::Secp256k1;
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use serde::{Deserialize, Serialize};
@@ -18,8 +17,8 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::ecdsa::presign::{presign, PresignArguments, PresignOutput};
-use threshold_signatures::ecdsa::triples::TripleGenerationOutput;
+use threshold_signatures::ecdsa::ot_based_ecdsa::{presign::presign, PresignArguments, PresignOutput};
+use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::protocol::Participant;
 
 pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
@@ -182,7 +181,7 @@ impl EcdsaSignatureProvider {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresignOutputWithParticipants {
-    pub presignature: PresignOutput<Secp256k1>,
+    pub presignature: PresignOutput,
     pub participants: Vec<ParticipantId>,
 }
 
@@ -198,17 +197,17 @@ impl HasParticipants for PresignOutputWithParticipants {
 /// and for passive participants.
 pub struct PresignComputation {
     threshold: usize,
-    triple0: TripleGenerationOutput<Secp256k1>,
-    triple1: TripleGenerationOutput<Secp256k1>,
+    triple0: TripleGenerationOutput,
+    triple1: TripleGenerationOutput,
     keygen_out: KeygenOutput,
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<PresignOutput<Secp256k1>> for PresignComputation {
+impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
     async fn compute(
         self,
         channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<PresignOutput<Secp256k1>> {
+    ) -> anyhow::Result<PresignOutput> {
         let cs_participants = channel
             .participants()
             .iter()

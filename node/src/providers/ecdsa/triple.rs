@@ -10,12 +10,11 @@ use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
-use k256::Secp256k1;
 use near_time::Clock;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::ecdsa::triples::TripleGenerationOutput;
+use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::protocol::Participant;
 
 pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
@@ -186,8 +185,8 @@ impl EcdsaSignatureProvider {
 }
 
 pub type PairedTriple = (
-    TripleGenerationOutput<Secp256k1>,
-    TripleGenerationOutput<Secp256k1>,
+    TripleGenerationOutput,
+    TripleGenerationOutput,
 );
 
 impl HasParticipants for PairedTriple {
@@ -222,7 +221,7 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = threshold_signatures::ecdsa::triples::generate_triple_many::<Secp256k1, N>(
+        let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many::<N>(
             &cs_participants,
             me.into(),
             self.threshold,

@@ -1,8 +1,8 @@
-use k256::{AffinePoint, Scalar, Secp256k1};
+use k256::{AffinePoint, Scalar};
 use mpc_contract::state::ProtocolContractState;
 use std::collections::HashMap;
-use threshold_signatures::ecdsa::presign::PresignOutput;
-use threshold_signatures::ecdsa::triples::TripleGenerationOutput;
+use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
+use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
 
 use crate::config::{
@@ -30,8 +30,8 @@ use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
-use threshold_signatures::ecdsa::presign::PresignArguments;
-use threshold_signatures::ecdsa::sign::FullSignature;
+use threshold_signatures::ecdsa::ot_based_ecdsa::PresignArguments;
+use threshold_signatures::ecdsa::FullSignature;
 use threshold_signatures::{ecdsa, eddsa};
 use tokio::time::timeout;
 
@@ -104,14 +104,14 @@ impl TestGenerators {
         run_protocol(protocols).unwrap().into_iter().collect()
     }
 
-    pub fn make_triples(&self) -> HashMap<Participant, TripleGenerationOutput<Secp256k1>> {
-        let mut protocols: Vec<ParticipantAndProtocol<TripleGenerationOutput<Secp256k1>>> =
+    pub fn make_triples(&self) -> HashMap<Participant, TripleGenerationOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<TripleGenerationOutput>> =
             Vec::new();
         for participant in &self.participants {
             protocols.push((
                 *participant,
                 Box::new(
-                    ecdsa::triples::generate_triple::<Secp256k1>(
+                    ecdsa::ot_based_ecdsa::triples::generate_triple(
                         &self.participants,
                         *participant,
                         self.threshold,
@@ -125,16 +125,16 @@ impl TestGenerators {
 
     pub fn make_presignatures(
         &self,
-        triple0s: &HashMap<Participant, TripleGenerationOutput<Secp256k1>>,
-        triple1s: &HashMap<Participant, TripleGenerationOutput<Secp256k1>>,
+        triple0s: &HashMap<Participant, TripleGenerationOutput>,
+        triple1s: &HashMap<Participant, TripleGenerationOutput>,
         keygens: &HashMap<Participant, ecdsa::KeygenOutput>,
-    ) -> HashMap<Participant, PresignOutput<Secp256k1>> {
-        let mut protocols: Vec<ParticipantAndProtocol<PresignOutput<Secp256k1>>> = Vec::new();
+    ) -> HashMap<Participant, PresignOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<PresignOutput>> = Vec::new();
         for participant in &self.participants {
             protocols.push((
                 *participant,
                 Box::new(
-                    ecdsa::presign::presign(
+                    ecdsa::ot_based_ecdsa::presign::presign(
                         &self.participants,
                         *participant,
                         &self.participants,
@@ -155,16 +155,16 @@ impl TestGenerators {
 
     pub fn make_signature(
         &self,
-        presignatures: &HashMap<Participant, PresignOutput<Secp256k1>>,
+        presignatures: &HashMap<Participant, PresignOutput>,
         public_key: AffinePoint,
         msg_hash: Scalar,
-    ) -> FullSignature<Secp256k1> {
-        let mut protocols: Vec<ParticipantAndProtocol<FullSignature<Secp256k1>>> = Vec::new();
+    ) -> FullSignature {
+        let mut protocols: Vec<ParticipantAndProtocol<FullSignature>> = Vec::new();
         for participant in &self.participants {
             protocols.push((
                 *participant,
                 Box::new(
-                    ecdsa::sign::sign(
+                    ecdsa::ot_based_ecdsa::sign::sign(
                         &self.participants,
                         *participant,
                         public_key,

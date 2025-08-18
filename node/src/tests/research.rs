@@ -1,9 +1,9 @@
 use crate::tests::TestGenerators;
 use k256::elliptic_curve::PrimeField;
-use k256::{Scalar, Secp256k1};
+use k256::Scalar;
 use serde::Serialize;
 use std::collections::VecDeque;
-use threshold_signatures::ecdsa::presign::PresignArguments;
+use threshold_signatures::ecdsa::ot_based_ecdsa::PresignArguments;
 use threshold_signatures::protocol::{Participant, Protocol};
 
 #[derive(Debug, Serialize)]
@@ -192,7 +192,7 @@ fn triple_network_research_best_case() {
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            threshold_signatures::ecdsa::triples::generate_triple_many::<Secp256k1, 4>(
+            threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many::<4>(
                 &participants,
                 participants[i],
                 THRESHOLD,
@@ -221,7 +221,7 @@ fn triple_network_research_worst_case() {
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            threshold_signatures::ecdsa::triples::generate_triple_many::<Secp256k1, 4>(
+            threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many::<4>(
                 &participants,
                 participants[i],
                 THRESHOLD,
@@ -256,7 +256,7 @@ fn presignature_network_research_best_case() {
 
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            threshold_signatures::ecdsa::presign::presign(
+            threshold_signatures::ecdsa::ot_based_ecdsa::presign::presign(
                 &participants,
                 participants[i],
                 &participants,
@@ -297,7 +297,7 @@ fn signature_network_research_best_case() {
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
-            threshold_signatures::ecdsa::sign::sign(
+            threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
                 &participants,
                 participants[i],
                 keygens[&participants[i]]
