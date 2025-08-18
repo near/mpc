@@ -17,8 +17,10 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::ecdsa::ot_based_ecdsa::{presign::presign, PresignArguments, PresignOutput};
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
+use threshold_signatures::ecdsa::ot_based_ecdsa::{
+    presign::presign, PresignArguments, PresignOutput,
+};
 use threshold_signatures::protocol::Participant;
 
 pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
@@ -204,10 +206,7 @@ pub struct PresignComputation {
 
 #[async_trait::async_trait]
 impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
-    async fn compute(
-        self,
-        channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<PresignOutput> {
+    async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<PresignOutput> {
         let cs_participants = channel
             .participants()
             .iter()

@@ -1,8 +1,8 @@
 use k256::{AffinePoint, Scalar};
 use mpc_contract::state::ProtocolContractState;
 use std::collections::HashMap;
-use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
+use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
 
 use crate::config::{
@@ -105,8 +105,7 @@ impl TestGenerators {
     }
 
     pub fn make_triples(&self) -> HashMap<Participant, TripleGenerationOutput> {
-        let mut protocols: Vec<ParticipantAndProtocol<TripleGenerationOutput>> =
-            Vec::new();
+        let mut protocols: Vec<ParticipantAndProtocol<TripleGenerationOutput>> = Vec::new();
         for participant in &self.participants {
             protocols.push((
                 *participant,

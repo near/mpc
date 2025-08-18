@@ -184,10 +184,7 @@ impl EcdsaSignatureProvider {
     }
 }
 
-pub type PairedTriple = (
-    TripleGenerationOutput,
-    TripleGenerationOutput,
-);
+pub type PairedTriple = (TripleGenerationOutput, TripleGenerationOutput);
 
 impl HasParticipants for PairedTriple {
     fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
@@ -221,11 +218,9 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many::<N>(
-            &cs_participants,
-            me.into(),
-            self.threshold,
-        )?;
+        let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many::<
+            N,
+        >(&cs_participants, me.into(), self.threshold)?;
         let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
         let triples = run_protocol("many triple gen", channel, protocol).await?;
         metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);

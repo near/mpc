@@ -176,8 +176,7 @@ mod tests {
 
         let message = [1, 2, 3, 4];
         let signer =
-            SigningKey::from_scalar(derived_keygen_output.private_share.to_scalar())
-                .unwrap();
+            SigningKey::from_scalar(derived_keygen_output.private_share.to_scalar()).unwrap();
 
         let signature = signer.sign(OsRng, &message);
         let derived_verifying_key = VerifyingKey::new(derived_public_key);

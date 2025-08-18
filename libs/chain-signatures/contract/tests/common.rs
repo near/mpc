@@ -1,6 +1,5 @@
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
-use threshold_signatures::{frost_ed25519, frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey}};
 use fs2::FileExt;
 use k256::{
     elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint, PrimeField},
@@ -47,6 +46,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use threshold_signatures::eddsa::KeygenOutput;
+use threshold_signatures::{
+    frost_ed25519,
+    frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey},
+};
 
 pub const CONTRACT_FILE_PATH: &str = "../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
