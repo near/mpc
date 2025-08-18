@@ -15,7 +15,7 @@ pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
 /// DEFAULT_IMAGE_DIGEST=sha256:8d46a34ac16f7bc5f3c6bfe824ef741306fa00df1b098811885b0ecf1408e013
 pub const TEST_MPC_IMAGE_DIGEST_HEX: &str =
     "8d46a34ac16f7bc5f3c6bfe824ef741306fa00df1b098811885b0ecf1408e013";
-/// sha256sum attestation/tests/assets/launcher_image_compose_normalized.yaml
+/// sha256sum attestation/tests/assets/launcher_image_compose.yaml
 pub const TEST_LAUNCHER_COMPOSE_DIGEST_HEX: &str =
     "fa7a045b68c905616a360c60ad4119b6bd32b20cd77ebf1ffeeaa63ca47af9c5";
 
