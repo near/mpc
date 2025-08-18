@@ -5,6 +5,8 @@ use mpc_contract::state::ProtocolContractState;
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_workspaces::{Account, Contract};
 
+use crate::common::gen_accounts;
+
 pub mod common;
 
 #[tokio::test]
@@ -149,6 +151,25 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     );
 
     Ok(())
+}
+
+/// Tests that vote_code_hash does not accept votes from a randomly generated
+/// account id that is not in the participant list
+#[tokio::test]
+#[should_panic(
+    expected = "Smart contract panicked: not a voter, Error { repr: Simple(InvalidState(NotParticipant)) }"
+)]
+async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() {
+    let (worker, contract, _accounts, _) = init_env_secp256k1(1).await;
+    let random_account = &gen_accounts(&worker, 1).await.0[0];
+    let hash = MpcDockerImageHash::from([
+        0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
+        0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56,
+        0x78, 0x90,
+    ]);
+    vote_for_hash(random_account, &contract, &hash)
+        .await
+        .unwrap();
 }
 
 async fn get_allowed_hashes(contract: &Contract) -> Result<Vec<MpcDockerImageHash>> {
