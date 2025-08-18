@@ -25,7 +25,7 @@ const PHALA_SUCCESS_STATUS_CODE: StatusCode = StatusCode::OK;
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
 /// Number of bytes for the report data.
-/// report_data: [u8; 64] = [version(2 bytes (big endian)) || sha384(TLS pub key || account public key ) || zero padding]
+/// report_data: [u8; 64] = [version(2 bytes (big endian)) || sha384(TLS pub key) || zero padding]
 const REPORT_DATA_SIZE: usize = 64;
 
 const BINARY_VERSION_OFFSET: usize = 0;

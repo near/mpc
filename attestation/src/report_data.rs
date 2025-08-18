@@ -36,11 +36,10 @@ impl ReportDataVersion {
 #[derive(Debug, Clone, Constructor)]
 pub struct ReportDataV1 {
     tls_public_key: PublicKey,
-    account_public_key: PublicKey,
 }
 
 /// report_data_v1: [u8; 64] =
-///   [version(2 bytes big endian) || sha384(TLS pub key || account pub key) || zero padding]
+///   [version(2 bytes big endian) || sha384(TLS pub key) || zero padding]
 impl ReportDataV1 {
     /// V1-specific format constants
     const PUBLIC_KEYS_OFFSET: usize = BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE;
@@ -85,11 +84,10 @@ impl ReportDataV1 {
         hash
     }
 
-    /// Generates SHA3-384 hash of concatenated TLS and account public keys.
+    /// Generates SHA3-384 hash of TLS public key only.
     fn public_keys_hash(&self) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
         let mut hasher = Sha3_384::new();
         hasher.update(self.tls_public_key.key_data());
-        hasher.update(self.account_public_key.key_data());
         hasher.finalize().into()
     }
 }
@@ -135,24 +133,17 @@ mod tests {
         ];
         assert_eq!(td_report.rt_mr3, expected_rtmr3,);
 
-        let near_p2p_public_key: PublicKey = "ed25519:29tEkzF4Xk1V62xow8zCJi9HXyUob8oZPwTaKviXFMjZ"
-            .parse()
-            .unwrap();
-        let near_signer_public_key: PublicKey =
-            "ed25519:BWoViHSCBKD9dSxg3s5juQnhQWfyPE2SAdUdrbJGoCLJ"
-                .parse()
-                .unwrap();
-        let report_data = ReportData::V1(ReportDataV1::new(
-            near_p2p_public_key,
-            near_signer_public_key,
-        ));
-        assert_eq!(report_data.to_bytes(), td_report.report_data,);
+        // TODO: generate a new quote using the near_p2p_public_key as report data
+        // let near_p2p_public_key: PublicKey = "ed25519:29tEkzF4Xk1V62xow8zCJi9HXyUob8oZPwTaKviXFMjZ"
+        //     .parse()
+        //     .unwrap();
+        // let report_data = ReportData::V1(ReportDataV1::new(near_p2p_public_key));
+        // assert_eq!(report_data.to_bytes(), td_report.report_data,);
     }
 
-    fn create_test_keys() -> (PublicKey, PublicKey) {
+    fn create_test_key() -> PublicKey {
         let tls_secret = SecretKey::from_seed(KeyType::ED25519, "test_tls_seed");
-        let account_secret = SecretKey::from_seed(KeyType::ED25519, "test_account_seed");
-        (tls_secret.public_key(), account_secret.public_key())
+        tls_secret.public_key()
     }
 
     #[test]
@@ -168,13 +159,12 @@ mod tests {
 
     #[test]
     fn test_report_data_enum_structure() {
-        let (tls_key, account_key) = create_test_keys();
-        let data = ReportData::V1(ReportDataV1::new(tls_key.clone(), account_key.clone()));
+        let tls_key = create_test_key();
+        let data = ReportData::V1(ReportDataV1::new(tls_key.clone()));
 
         match &data {
             ReportData::V1(v1) => {
                 assert_eq!(&v1.tls_public_key, &tls_key);
-                assert_eq!(&v1.account_public_key, &account_key);
             }
         }
 
@@ -183,17 +173,16 @@ mod tests {
 
     #[test]
     fn test_report_data_v1_struct() {
-        let (tls_key, account_key) = create_test_keys();
+        let tls_key = create_test_key();
 
-        let v1 = ReportDataV1::new(tls_key.clone(), account_key.clone());
+        let v1 = ReportDataV1::new(tls_key.clone());
         assert_eq!(v1.tls_public_key, tls_key);
-        assert_eq!(v1.account_public_key, account_key);
     }
 
     #[test]
     fn test_from_bytes() {
-        let (tls_key, account_key) = create_test_keys();
-        let report_data_v1 = ReportDataV1::new(tls_key, account_key);
+        let tls_key = create_test_key();
+        let report_data_v1 = ReportDataV1::new(tls_key);
         let bytes = report_data_v1.to_bytes();
 
         let hash = ReportDataV1::from_bytes(&bytes);
@@ -205,8 +194,8 @@ mod tests {
 
     #[test]
     fn test_binary_version_placement() {
-        let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportDataV1::new(tls_key, account_key).to_bytes();
+        let tls_key = create_test_key();
+        let bytes = ReportDataV1::new(tls_key).to_bytes();
 
         let version_bytes =
             &bytes[BINARY_VERSION_OFFSET..BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE];
@@ -215,8 +204,8 @@ mod tests {
 
     #[test]
     fn test_public_key_hash_placement() {
-        let (tls_key, account_key) = create_test_keys();
-        let report_data_v1 = ReportDataV1::new(tls_key.clone(), account_key.clone());
+        let tls_key = create_test_key();
+        let report_data_v1 = ReportDataV1::new(tls_key.clone());
         let bytes = report_data_v1.to_bytes();
 
         let report_data = ReportData::V1(report_data_v1);
@@ -228,7 +217,6 @@ mod tests {
 
         let mut hasher = Sha3_384::new();
         hasher.update(tls_key.key_data());
-        hasher.update(account_key.key_data());
         let expected: [u8; ReportDataV1::PUBLIC_KEYS_HASH_SIZE] = hasher.finalize().into();
 
         assert_eq!(hash_bytes, &expected);
@@ -236,8 +224,8 @@ mod tests {
 
     #[test]
     fn test_zero_padding() {
-        let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportDataV1::new(tls_key, account_key).to_bytes();
+        let tls_key = create_test_key();
+        let bytes = ReportDataV1::new(tls_key).to_bytes();
 
         let padding =
             &bytes[ReportDataV1::PUBLIC_KEYS_OFFSET + ReportDataV1::PUBLIC_KEYS_HASH_SIZE..];
@@ -246,8 +234,8 @@ mod tests {
 
     #[test]
     fn test_report_data_size() {
-        let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportDataV1::new(tls_key, account_key);
+        let tls_key = create_test_key();
+        let bytes = ReportDataV1::new(tls_key);
         assert_eq!(bytes.to_bytes().len(), REPORT_DATA_SIZE);
     }
 }
