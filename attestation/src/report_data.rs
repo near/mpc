@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::Constructor;
-use near_crypto::PublicKey;
+use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
 
@@ -34,22 +34,23 @@ impl ReportDataVersion {
 }
 
 #[derive(Debug, Clone, Constructor)]
-pub struct ReportDataV1 {
-    tls_public_key: PublicKey,
-    account_public_key: PublicKey,
+pub struct ReportDataV1<'a> {
+    tls_public_key: &'a PublicKey,
+    account_public_key: &'a PublicKey,
 }
+
+const PUBLIC_KEYS_HASH_SIZE: usize = 48;
+const PUBLIC_KEYS_OFFSET: usize = BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE;
 
 /// report_data_v1: [u8; 64] =
 ///   [version(2 bytes big endian) || sha384(TLS pub key || account pub key) || zero padding]
-impl ReportDataV1 {
+impl<'a> ReportDataV1<'a> {
     /// V1-specific format constants
-    const PUBLIC_KEYS_OFFSET: usize = BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE;
-    const PUBLIC_KEYS_HASH_SIZE: usize = 48;
 
     // Compile-time assertions for V1 format.
     const _V1_LAYOUT_CHECK: () = {
         assert!(
-            BINARY_VERSION_SIZE + Self::PUBLIC_KEYS_HASH_SIZE <= REPORT_DATA_SIZE,
+            BINARY_VERSION_SIZE + PUBLIC_KEYS_HASH_SIZE <= REPORT_DATA_SIZE,
             "V1: Version and public key must not exceed report data size."
         );
     };
@@ -65,8 +66,7 @@ impl ReportDataV1 {
 
         // Generate and copy hash of public keys
         let public_keys_hash = self.public_keys_hash();
-        report_data
-            [Self::PUBLIC_KEYS_OFFSET..Self::PUBLIC_KEYS_OFFSET + Self::PUBLIC_KEYS_HASH_SIZE]
+        report_data[PUBLIC_KEYS_OFFSET..PUBLIC_KEYS_OFFSET + PUBLIC_KEYS_HASH_SIZE]
             .copy_from_slice(&public_keys_hash);
 
         // Remaining bytes are already zero-padded by default
@@ -75,31 +75,30 @@ impl ReportDataV1 {
 
     /// Parses V1 report data from bytes. Returns the hash of public keys.
     /// Note: This only extracts the hash, not the original public keys.
-    pub fn from_bytes(bytes: &[u8; REPORT_DATA_SIZE]) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
+    pub fn from_bytes(bytes: &[u8; REPORT_DATA_SIZE]) -> [u8; PUBLIC_KEYS_HASH_SIZE] {
         // Extract hash using V1 format
-        let mut hash = [0u8; Self::PUBLIC_KEYS_HASH_SIZE];
+        let mut hash = [0u8; PUBLIC_KEYS_HASH_SIZE];
         hash.copy_from_slice(
-            &bytes
-                [Self::PUBLIC_KEYS_OFFSET..Self::PUBLIC_KEYS_OFFSET + Self::PUBLIC_KEYS_HASH_SIZE],
+            &bytes[PUBLIC_KEYS_OFFSET..PUBLIC_KEYS_OFFSET + PUBLIC_KEYS_HASH_SIZE],
         );
         hash
     }
 
     /// Generates SHA3-384 hash of concatenated TLS and account public keys.
-    fn public_keys_hash(&self) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
+    fn public_keys_hash(&self) -> [u8; PUBLIC_KEYS_HASH_SIZE] {
         let mut hasher = Sha3_384::new();
-        hasher.update(self.tls_public_key.key_data());
-        hasher.update(self.account_public_key.key_data());
+        hasher.update(self.tls_public_key.as_bytes());
+        hasher.update(self.account_public_key.as_bytes());
         hasher.finalize().into()
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum ReportData {
-    V1(ReportDataV1),
+pub enum ReportData<'a> {
+    V1(ReportDataV1<'a>),
 }
 
-impl ReportData {
+impl<'a> ReportData<'a> {
     pub fn version(&self) -> ReportDataVersion {
         match self {
             ReportData::V1(_) => ReportDataVersion::V1,
@@ -143,8 +142,8 @@ mod tests {
                 .parse()
                 .unwrap();
         let report_data = ReportData::V1(ReportDataV1::new(
-            near_p2p_public_key,
-            near_signer_public_key,
+            &near_p2p_public_key,
+            &near_signer_public_key,
         ));
         assert_eq!(report_data.to_bytes(), td_report.report_data,);
     }
@@ -169,7 +168,7 @@ mod tests {
     #[test]
     fn test_report_data_enum_structure() {
         let (tls_key, account_key) = create_test_keys();
-        let data = ReportData::V1(ReportDataV1::new(tls_key.clone(), account_key.clone()));
+        let data = ReportData::V1(ReportDataV1::new(&tls_key, &account_key));
 
         match &data {
             ReportData::V1(v1) => {
@@ -185,7 +184,7 @@ mod tests {
     fn test_report_data_v1_struct() {
         let (tls_key, account_key) = create_test_keys();
 
-        let v1 = ReportDataV1::new(tls_key.clone(), account_key.clone());
+        let v1 = ReportDataV1::new(&tls_key, &account_key);
         assert_eq!(v1.tls_public_key, tls_key);
         assert_eq!(v1.account_public_key, account_key);
     }
@@ -193,7 +192,7 @@ mod tests {
     #[test]
     fn test_from_bytes() {
         let (tls_key, account_key) = create_test_keys();
-        let report_data_v1 = ReportDataV1::new(tls_key, account_key);
+        let report_data_v1 = ReportDataV1::new(&tls_key, &account_key);
         let bytes = report_data_v1.to_bytes();
 
         let hash = ReportDataV1::from_bytes(&bytes);
@@ -206,7 +205,7 @@ mod tests {
     #[test]
     fn test_binary_version_placement() {
         let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportDataV1::new(tls_key, account_key).to_bytes();
+        let bytes = ReportDataV1::new(&tls_key, &account_key).to_bytes();
 
         let version_bytes =
             &bytes[BINARY_VERSION_OFFSET..BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE];
@@ -216,7 +215,7 @@ mod tests {
     #[test]
     fn test_public_key_hash_placement() {
         let (tls_key, account_key) = create_test_keys();
-        let report_data_v1 = ReportDataV1::new(tls_key.clone(), account_key.clone());
+        let report_data_v1 = ReportDataV1::new(&tls_key, &account_key);
         let bytes = report_data_v1.to_bytes();
 
         let report_data = ReportData::V1(report_data_v1);
@@ -237,7 +236,7 @@ mod tests {
     #[test]
     fn test_zero_padding() {
         let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportDataV1::new(tls_key, account_key).to_bytes();
+        let bytes = ReportDataV1::new(&tls_key, &account_key).to_bytes();
 
         let padding =
             &bytes[ReportDataV1::PUBLIC_KEYS_OFFSET + ReportDataV1::PUBLIC_KEYS_HASH_SIZE..];
@@ -247,7 +246,7 @@ mod tests {
     #[test]
     fn test_report_data_size() {
         let (tls_key, account_key) = create_test_keys();
-        let bytes = ReportDataV1::new(tls_key, account_key);
+        let bytes = ReportDataV1::new(&tls_key, &account_key);
         assert_eq!(bytes.to_bytes().len(), REPORT_DATA_SIZE);
     }
 }

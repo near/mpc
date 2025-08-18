@@ -18,7 +18,7 @@ use crate::{
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
     v0_state::MpcContractV1,
 };
-use attestation::attestation::DstackAttestation;
+use attestation::attestation::Attestation;
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -523,14 +523,17 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
-        #[serializer(borsh)] proposed_participant_attestation: DstackAttestation,
-        #[serializer(borsh)] sign_pk: PublicKey,
+        #[serializer(borsh)] proposed_participant_attestation: Attestation,
+        #[serializer(borsh)] tls_public_key: PublicKey,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
+        let account_key = env::signer_account_pk();
+
         log!(
-            "submit_participant_info: signer={}, proposed_tee_participant={:?}",
+            "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
             account_id,
             proposed_participant_attestation,
+            account_key
         );
 
         // Save the initial storage usage to know how much to charge the proposer for the storage used
@@ -543,7 +546,11 @@ impl VersionedMpcContract {
         // Verify the TEE quote and Docker image for the proposed participant
         let status = mpc_contract
             .tee_state
-            .verify_tee_participant_info(&proposed_tee_participant, &sign_pk)?;
+            .verify_proposed_participant_attestation(
+                &proposed_participant_attestation,
+                &tls_public_key,
+                &account_key,
+            )?;
 
         if status == TeeQuoteStatus::Invalid {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation

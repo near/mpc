@@ -2,7 +2,7 @@ use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
     quote::Quote, report_data::ReportData, tcbinfo::TcbInfo,
 };
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::EventLog;
@@ -25,10 +25,25 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub enum Attestation {
     Dstack(DstackAttestation),
     Local(LocalAttestation),
+}
+
+impl BorshSchema for Attestation {
+    fn add_definitions_recursively(
+        _definitions: &mut alloc::collections::btree_map::BTreeMap<
+            borsh::schema::Declaration,
+            borsh::schema::Definition,
+        >,
+    ) {
+        todo!()
+    }
+
+    fn declaration() -> borsh::schema::Declaration {
+        todo!()
+    }
 }
 
 #[allow(dead_code)]
@@ -46,7 +61,7 @@ pub struct DstackAttestation {
     pub expected_measurements: ExpectedMeasurements,
 }
 
-#[derive(Debug, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct LocalAttestation {
     verification_result: bool,
 }

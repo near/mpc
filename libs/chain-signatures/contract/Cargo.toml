@@ -60,7 +60,6 @@ k256 = { version = "0.13.4", features = [
     "arithmetic",
     "expose-field",
 ] }
-dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl", rev = "06ac37d3fd7f9690158d92025666eb3d1e3f1938", default-features = false, features=["contract", "borsh", "std"] }
 mpc-primitives = { path = "../../../crates/primitives" }
 attestation = { path = "../../../attestation" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
