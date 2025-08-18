@@ -1,6 +1,6 @@
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
-use frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey};
+use threshold_signatures::{frost_ed25519, frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey}};
 use fs2::FileExt;
 use k256::{
     elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint, PrimeField},

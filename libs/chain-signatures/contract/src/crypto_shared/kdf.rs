@@ -124,7 +124,7 @@ mod tests {
     use threshold_signatures::eddsa::KeygenOutput;
     use threshold_signatures::frost_core::keys::SigningShare;
     use threshold_signatures::frost_core::VerifyingKey;
-    use threshold_signatures::frost_ed25519::{Ed25519Group, Ed25519Sha512, Group};
+    use threshold_signatures::frost_ed25519::{Ed25519Group, Ed25519Sha512, Group, SigningKey};
 
     pub(crate) fn derive_keygen_output(
         keygen_output: &KeygenOutput,
@@ -176,11 +176,11 @@ mod tests {
 
         let message = [1, 2, 3, 4];
         let signer =
-            frost_ed25519::SigningKey::from_scalar(derived_keygen_output.private_share.to_scalar())
+            SigningKey::from_scalar(derived_keygen_output.private_share.to_scalar())
                 .unwrap();
 
         let signature = signer.sign(OsRng, &message);
-        let derived_verifying_key = frost_ed25519::VerifyingKey::new(derived_public_key);
+        let derived_verifying_key = VerifyingKey::new(derived_public_key);
         derived_verifying_key.verify(&message, &signature).unwrap();
     }
 }
