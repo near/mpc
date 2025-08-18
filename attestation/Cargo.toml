@@ -24,3 +24,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+
+[features]
+abi = ["borsh/unstable__schema"]

@@ -1,5 +1,13 @@
-use alloc::{format, string::String, vec::Vec};
-use borsh::{BorshDeserialize, BorshSerialize};
+use alloc::{
+    collections::btree_map::BTreeMap,
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
+use borsh::{
+    BorshDeserialize, BorshSerialize,
+    schema::{Declaration, Definition},
+};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 
@@ -7,6 +15,10 @@ use serde_yaml::Value as YamlValue;
 /// current limitations in the Dstack SDK.
 ///
 /// See: https://github.com/Dstack-TEE/dstack/issues/267
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 #[derive(Debug, Deserialize, Serialize, BorshSerialize, BorshDeserialize)]
 pub struct AppCompose {
     pub manifest_version: u32,
@@ -14,7 +26,11 @@ pub struct AppCompose {
     pub runner: String,
     #[borsh(
         deserialize_with = "borsh_deserialize_yaml_from_string",
-        serialize_with = "borsh_serialize_yaml_from_string"
+        serialize_with = "borsh_serialize_yaml_from_string",
+        schema(with_funcs(
+            declaration = "borsh_scehma_declarations_yaml",
+            definitions = "borsh_scehma_definitions_yaml"
+        ),)
     )]
     #[serde(deserialize_with = "serde_deserialize_yaml_from_string")]
     pub docker_compose_file: YamlValue,
@@ -69,4 +85,12 @@ fn borsh_serialize_yaml_from_string<W: borsh::io::Write>(
     })?;
 
     BorshSerialize::serialize(&yaml_string, writer)
+}
+
+pub fn borsh_scehma_definitions_yaml(definitions: &mut BTreeMap<Declaration, Definition>) {
+    todo!()
+}
+
+pub fn borsh_scehma_declarations_yaml() -> Declaration {
+    todo!()
 }
