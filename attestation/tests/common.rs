@@ -8,8 +8,6 @@ pub const TEST_APP_COMPOSE_WITH_SERVICES_STRING: &str =
 
 pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
     include_str!("../tests/assets/launcher_image_compose.yaml");
-pub const TEST_LAUNCHER_IMAGE_COMPOSE_NORMALIZED_STRING: &str =
-    include_str!("../tests/assets/launcher_image_compose_normalized.yaml");
 
 /// App compose field corresponds to the `DEFAULT_IMAGE_DIGEST` field in
 /// attestation/tests/assets/launcher_image_compose.yaml
@@ -18,8 +16,8 @@ pub const TEST_LAUNCHER_IMAGE_COMPOSE_NORMALIZED_STRING: &str =
 pub const TEST_MPC_IMAGE_DIGEST_HEX: &str =
     "8d46a34ac16f7bc5f3c6bfe824ef741306fa00df1b098811885b0ecf1408e013";
 /// sha256sum attestation/tests/assets/launcher_image_compose_normalized.yaml
-pub const TEST_LAUNCHER_COMPOSE_NORMALIZED_DIGEST_HEX: &str =
-    "3b1c1ce0387a8f849aa60c903a1764a8d8d89b8d7c417b47b91df1a6fc2a9133";
+pub const TEST_LAUNCHER_COMPOSE_DIGEST_HEX: &str =
+    "fa7a045b68c905616a360c60ad4119b6bd32b20cd77ebf1ffeeaa63ca47af9c5";
 
 pub fn collateral() -> Value {
     let quote_collateral_json_string = include_str!("../tests/assets/collateral.json");
