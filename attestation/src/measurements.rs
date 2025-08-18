@@ -2,6 +2,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
 
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use alloc::string::ToString;
+
 /// Required measurements for TEE attestation verification (a.k.a. RTMRs checks). These values
 /// define the trusted baseline that TEE environments must match during verification. They
 /// should be updated when the underlying TEE environment changes.
@@ -56,6 +59,10 @@ const EXPECTED_REPORT_DATA_VERSION: ReportDataVersion = ReportDataVersion::V1;
 
 #[serde_as]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub struct Measurements {
     /// MRTD (Measurement of Root of Trust for Data) - identifies the virtual firmware.
     #[serde_as(as = "Bytes")]
@@ -75,6 +82,10 @@ pub struct Measurements {
 
 #[serde_as]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,

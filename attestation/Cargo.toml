@@ -23,3 +23,10 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+
+[features]
+abi = [
+    "borsh/unstable__schema",
+    "dcap-qvl/borsh_schema",
+    "dstack-sdk-types/borsh_schema",
+]
