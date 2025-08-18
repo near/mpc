@@ -7,8 +7,15 @@ use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use alloc::string::ToString;
+
 /// TEE Remote Attestation Quote that proves the participant's identity.
 #[derive(Debug, Deref, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub struct Quote {
     /// We keep the raw bytes of the quote since they're needed for verification and Phala probably
     /// doesn't provide an easy way to encode it back to the [`DcapQuote`] structure.
