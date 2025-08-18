@@ -17,7 +17,6 @@ near-sdk = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
 sha3 = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
