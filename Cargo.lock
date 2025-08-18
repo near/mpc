@@ -9430,7 +9430,7 @@ dependencies = [
 [[package]]
 name = "threshold-signatures"
 version = "0.8.0"
-source = "git+https://github.com/near/threshold-signatures?rev=6aab5d9279f4c4f392bf3f80e57dc8b7b23cc9a4#6aab5d9279f4c4f392bf3f80e57dc8b7b23cc9a4"
+source = "git+https://github.com/near/threshold-signatures?rev=5fa4caf74c283ff44f2f61e5f5cba65560e0e3d3#5fa4caf74c283ff44f2f61e5f5cba65560e0e3d3"
 dependencies = [
  "auto_ops",
  "byteorder",
