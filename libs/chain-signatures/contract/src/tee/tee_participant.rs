@@ -3,7 +3,7 @@ use crate::{
     get_collateral,
     tee::{
         proposal::MpcDockerImageHash,
-        quote::{replay_app_compose, replay_rtmr},
+        quote::{replay_app_compose, replay_rtmr, TeeQuoteStatus},
     },
 };
 use attestation::attestation::DstackAttestation;
@@ -103,6 +103,33 @@ impl TryFrom<DstackAttestation> for TeeParticipantInfo {
 
 impl TeeParticipantInfo {
     /// Verifies the TEE quote against the provided collateral.
+    pub(crate) fn verify(
+        &self,
+        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        sign_pk: &PublicKey,
+    ) -> Result<TeeQuoteStatus, Error> {
+        let timestamp_s = env::block_timestamp_ms() / 1_000;
+        let quote_result = self.verify_quote(timestamp_s);
+
+        let Ok(verified_report) = quote_result else {
+            return Ok(TeeQuoteStatus::Invalid);
+        };
+
+        let docker_image_is_valid = self.verify_docker_images(
+            allowed_mpc_docker_image_hashes,
+            allowed_launcher_docker_compose_hashes,
+            verified_report,
+            sign_pk,
+        )?;
+
+        Ok(if docker_image_is_valid {
+            TeeQuoteStatus::Valid
+        } else {
+            TeeQuoteStatus::Invalid
+        })
+    }
+
     pub fn verify_quote(&self, timestamp_s: u64) -> Result<VerifiedReport, Error> {
         let tee_collateral = get_collateral(self.quote_collateral.clone())
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
@@ -118,12 +145,12 @@ impl TeeParticipantInfo {
     /// Checks whether the node is running the expected Docker images (launcher and MPC node) by
     /// verifying report_data, replaying RTMR3, and comparing the relevant event values to the
     /// expected values.
-    pub fn verify_docker_image(
+    pub fn verify_docker_images(
         &self,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         report: VerifiedReport,
-        public_key: PublicKey,
+        public_key: &PublicKey,
     ) -> Result<bool, Error> {
         let quote = Quote::parse(&self.tee_quote)
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
@@ -163,7 +190,10 @@ impl TeeParticipantInfo {
 
         Ok(true)
     }
+}
 
+/// helper methods
+impl TeeParticipantInfo {
     fn verify_static_rtmrs(verified_report: VerifiedReport) -> bool {
         if let Some(td10) = verified_report.report.as_td10() {
             td10.rt_mr0 == RTMR0
@@ -175,7 +205,7 @@ impl TeeParticipantInfo {
         }
     }
 
-    fn verify_report_data(&self, quote: &Quote, node_signing_public_key: PublicKey) -> bool {
+    fn verify_report_data(&self, quote: &Quote, node_signing_public_key: &PublicKey) -> bool {
         let report_data = match quote.report.as_td10() {
             Some(r) => r.report_data,
             None => return false,

@@ -387,9 +387,9 @@ impl FakeIndexerCore {
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
                     #[cfg(feature = "tee")]
-                    ChainSendTransactionRequest::SubmitRemoteAttestation(_tee_attestation) => {
+                    ChainSendTransactionRequest::SubmitParticipantInfo(_participant_info) => {
                         unimplemented!(
-                            "Submitting remote attestation is not implemented for tests yet."
+                            "Submitting participant info is not implemented for tests yet."
                         )
                     }
                 }
