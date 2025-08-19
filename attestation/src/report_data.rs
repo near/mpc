@@ -4,6 +4,9 @@ use near_crypto::PublicKey;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
 
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use alloc::string::ToString;
+
 /// Number of bytes for the report data.
 const REPORT_DATA_SIZE: usize = 64;
 
@@ -16,6 +19,10 @@ const BINARY_VERSION_SIZE: usize = 2;
 )]
 #[borsh(use_discriminant = true)]
 #[repr(u16)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub enum ReportDataVersion {
     V1 = 1,
 }
