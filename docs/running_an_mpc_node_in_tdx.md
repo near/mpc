@@ -36,8 +36,8 @@ several providers to choose from, such as
    servers)
 2. Follow the commands below
 
-   Create a directory with a unique name for installation of dstack. For example
-   your username
+   Create a directory with a unique name for installation of dstack. For
+   example, your username
 
    ```bash
    mkdir /mnt/data/WORKING_DIRECTORY_NAME
@@ -261,7 +261,7 @@ several providers to choose from, such as
 
 Now data of the MPC node deployed can be accessed on your local machine:
 
-1. Go to the VM list in <http://localhost:8090>.  Click on the "View logs button"
+1. Go to the VM list in <http://localhost:8090>. Click on the "View logs button"
 
 2. Wait for the MPC node to start. It will take a few minutes for the near
    indexer to start, before the web endpoint is up
