@@ -5,7 +5,7 @@ mod impls;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TeeError {
-    #[error("Due to previously failed TEE validation, the network is not accepting new signature requests at this point in time. Try again later.")]
+    #[error("Due to previously failed TEE validation, the network is not accepting new requests at this point in time. Try again later.")]
     TeeValidationFailed,
 }
 
@@ -104,6 +104,8 @@ pub enum InvalidParameters {
     InvalidDomainId,
     #[error("Invalid TEE Remote Attestation.")]
     InvalidTeeRemoteAttestation,
+    #[error("Invalid app public key.")]
+    InvalidAppPublicKey,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

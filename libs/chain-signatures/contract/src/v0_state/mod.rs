@@ -143,11 +143,12 @@ impl From<MpcContractV1> for MpcContract {
     fn from(value: MpcContractV1) -> Self {
         Self {
             protocol_state: value.protocol_state.into(),
-            pending_requests: value.pending_requests,
+            pending_signature_requests: value.pending_requests,
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingRequestsV2),
             proposed_updates: value.proposed_updates,
             config: value.config,
             tee_state: crate::TeeState::default(),
-            accept_signature_requests: true,
+            accept_requests: true,
         }
     }
 }

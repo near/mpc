@@ -11,7 +11,9 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
+use crate::crypto_shared::types::CKDResponse;
 use crate::errors::Error;
+use crate::primitives::ckd::{CKDRequest, CKDRequestArgs};
 use crate::storage_keys::StorageKey;
 use crate::tee::proposal::AllowedDockerImageHashes;
 use crate::tee::quote::TeeQuoteStatus;
@@ -52,11 +54,18 @@ use tee::{
 // Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
 
+// Gas required for a CKD request
+const GAS_FOR_CKD_CALL: Gas = Gas::from_tgas(10);
+
 // Register used to receive data id from `promise_await_data`.
 const DATA_ID_REGISTER: u64 = 0;
 
 // Prepaid gas for a `return_signature_and_clean_state_on_success` call
 const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(6);
+
+// Prepaid gas for a `return_ck_and_clean_state_on_success` call
+const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(6);
+
 // Prepaid gas for a `update_config` call
 const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 
@@ -83,11 +92,12 @@ impl Default for VersionedMpcContract {
 #[derive(Debug)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
-    pending_requests: LookupMap<SignatureRequest, YieldIndex>,
+    pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
+    pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
     config: Config,
     tee_state: TeeState,
-    accept_signature_requests: bool,
+    accept_requests: bool,
 }
 
 impl MpcContract {
@@ -102,15 +112,26 @@ impl MpcContract {
         self.protocol_state.threshold()
     }
 
-    /// returns true if the request was already pending
-    fn add_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) -> bool {
-        self.pending_requests
+    /// Returns true if the request was already pending
+    fn add_signature_request(&mut self, request: &SignatureRequest, data_id: CryptoHash) -> bool {
+        self.pending_signature_requests
             .insert(request.clone(), YieldIndex { data_id })
             .is_some()
     }
 
-    fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
-        self.pending_requests.get(request).cloned()
+    fn get_pending_signature_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
+        self.pending_signature_requests.get(request).cloned()
+    }
+
+    /// Returns true if the request was already pending
+    fn add_ckd_request(&mut self, request: &CKDRequest, data_id: CryptoHash) -> bool {
+        self.pending_ckd_requests
+            .insert(request.clone(), YieldIndex { data_id })
+            .is_some()
+    }
+
+    fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
+        self.pending_ckd_requests.get(request).cloned()
     }
 
     pub fn init(parameters: ThresholdParameters, init_config: Option<InitConfig>) -> Self {
@@ -127,11 +148,12 @@ impl MpcContract {
                 Keyset::new(EpochId::new(0), Vec::new()),
                 parameters,
             )),
-            pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingRequestsV2),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingRequestsV2),
             proposed_updates: ProposedUpdates::default(),
             config: Config::from(init_config),
             tee_state: Default::default(),
-            accept_signature_requests: true,
+            accept_requests: true,
         }
     }
 
@@ -330,7 +352,7 @@ impl VersionedMpcContract {
             env::panic_str("expected V2")
         };
 
-        if !mpc_contract.accept_signature_requests {
+        if !mpc_contract.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
@@ -349,8 +371,8 @@ impl VersionedMpcContract {
             .expect("read_register failed")
             .try_into()
             .expect("conversion to CryptoHash failed");
-        if mpc_contract.add_request(&request, return_sig_id) {
-            log!("request already present, overriding callback.")
+        if mpc_contract.add_signature_request(&request, return_sig_id) {
+            log!("signature request already present, overriding callback.")
         }
 
         env::promise_return(promise_index);
@@ -428,6 +450,96 @@ impl VersionedMpcContract {
             .unwrap()
             .0 as u32
     }
+
+    /// To avoid overloading the network with too many requests,
+    /// we ask for a small deposit for each signature request.
+    /// The fee changes based on how busy the network is.
+    #[handle_result]
+    #[payable]
+    pub fn request_app_private_key(&mut self, request: CKDRequestArgs) {
+        log!(
+            "sign: predecessor={:?}, request={:?}",
+            env::predecessor_account_id(),
+            request
+        );
+
+        // Ensure the caller sent a valid CKD request
+        match &request.app_public_key.curve_type() {
+            CurveType::SECP256K1 => {
+                env::panic_str(&InvalidParameters::InvalidAppPublicKey.to_string());
+            }
+            CurveType::ED25519 => {}
+        }
+
+        // Make sure CKD call will not run out of gas doing yield/resume logic
+        if env::prepaid_gas() < GAS_FOR_CKD_CALL {
+            env::panic_str(
+                &InvalidParameters::InsufficientGas
+                    .message(format!(
+                        "Provided: {}, required: {}",
+                        env::prepaid_gas(),
+                        GAS_FOR_CKD_CALL
+                    ))
+                    .to_string(),
+            );
+        }
+
+        let predecessor = env::predecessor_account_id();
+        // Check deposit and refund if required
+        let deposit = env::attached_deposit();
+        match deposit.checked_sub(NearToken::from_yoctonear(1)) {
+            None => {
+                env::panic_str(
+                    &InvalidParameters::InsufficientDeposit
+                        .message(format!(
+                            "Require a deposit of 1 yoctonear, found: {}",
+                            deposit.as_yoctonear(),
+                        ))
+                        .to_string(),
+                );
+            }
+            Some(diff) => {
+                if diff > NearToken::from_yoctonear(0) {
+                    log!("refund excess deposit {diff} to {predecessor}");
+                    Promise::new(predecessor.clone()).transfer(diff);
+                }
+            }
+        }
+
+        // TODO: do we need this here?
+        let Self::V2(mpc_contract) = self else {
+            env::panic_str("expected V2")
+        };
+
+        if !mpc_contract.accept_requests {
+            env::panic_str(&TeeError::TeeValidationFailed.to_string())
+        }
+
+        env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
+
+        let promise_index = env::promise_yield_create(
+            "return_ck_and_clean_state_on_success",
+            &serde_json::to_vec(&(&request,)).unwrap(),
+            RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS,
+            GasWeight(0),
+            DATA_ID_REGISTER,
+        );
+
+        let account_id = env::predecessor_account_id();
+
+        let request = CKDRequest::new(request.app_public_key, account_id);
+
+        // Store the request in the contract's local state
+        let return_ck_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
+            .expect("read_register failed")
+            .try_into()
+            .expect("conversion to CryptoHash failed");
+        if mpc_contract.add_ckd_request(&request, return_ck_id) {
+            log!("request already present, overriding callback.")
+        }
+
+        env::promise_return(promise_index);
+    }
 }
 
 // Node API
@@ -449,7 +561,7 @@ impl VersionedMpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
 
-        if !mpc_contract.accept_signature_requests {
+        if !mpc_contract.accept_requests {
             return Err(TeeError::TeeValidationFailed.into());
         }
 
@@ -511,7 +623,35 @@ impl VersionedMpcContract {
         }
 
         // First get the yield promise of the (potentially timed out) request.
-        if let Some(YieldIndex { data_id }) = mpc_contract.pending_requests.remove(&request) {
+        if let Some(YieldIndex { data_id }) =
+            mpc_contract.pending_signature_requests.remove(&request)
+        {
+            // Finally, resolve the promise. This will have no effect if the request already timed.
+            env::promise_yield_resume(&data_id, &serde_json::to_vec(&response).unwrap());
+            Ok(())
+        } else {
+            Err(InvalidParameters::RequestNotFound.into())
+        }
+    }
+
+    #[handle_result]
+    pub fn respond_ckd(&mut self, request: CKDRequest, response: CKDResponse) -> Result<(), Error> {
+        let signer = env::signer_account_id();
+        log!("respond: signer={}, request={:?}", &signer, &request);
+
+        let Self::V2(mpc_contract) = self else {
+            env::panic_str("expected V2")
+        };
+        if !mpc_contract.protocol_state.is_running_or_resharing() {
+            return Err(InvalidState::ProtocolStateNotRunning.into());
+        }
+
+        if !mpc_contract.accept_requests {
+            return Err(TeeError::TeeValidationFailed.into());
+        }
+
+        // First get the yield promise of the (potentially timed out) request.
+        if let Some(YieldIndex { data_id }) = mpc_contract.pending_ckd_requests.remove(&request) {
             // Finally, resolve the promise. This will have no effect if the request already timed.
             env::promise_yield_resume(&data_id, &serde_json::to_vec(&response).unwrap());
             Ok(())
@@ -895,7 +1035,7 @@ impl VersionedMpcContract {
             .validate_tee(current_params.participants())
         {
             TeeValidationResult::Full => {
-                contract.accept_signature_requests = true;
+                contract.accept_requests = true;
                 log!("All participants have an accepted Tee status");
                 Ok(true)
             }
@@ -904,13 +1044,13 @@ impl VersionedMpcContract {
                 let remaining = new_participants.len();
                 if threshold > remaining {
                     log!("Less than `threshold` participants are left with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.");
-                    contract.accept_signature_requests = false;
+                    contract.accept_requests = false;
                     return Ok(false);
                 }
 
                 // here, we set it to true, because at this point, we have at least `threshold`
                 // number of participants with an accepted Tee status.
-                contract.accept_signature_requests = true;
+                contract.accept_requests = true;
 
                 // do we want to adjust the threshold?
                 //let n_participants_new = new_participants.len();
@@ -993,10 +1133,11 @@ impl VersionedMpcContract {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 domains, keyset, parameters,
             )),
-            pending_requests: LookupMap::new(StorageKey::PendingRequestsV2),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingRequestsV2),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingRequestsV2),
             proposed_updates: Default::default(),
             tee_state: Default::default(),
-            accept_signature_requests: true,
+            accept_requests: true,
         }))
     }
 
@@ -1035,9 +1176,16 @@ impl VersionedMpcContract {
         }
     }
 
-    pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
+    pub fn get_pending_signature_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
         match self {
-            Self::V2(mpc_contract) => mpc_contract.get_pending_request(request),
+            Self::V2(mpc_contract) => mpc_contract.get_pending_signature_request(request),
+            _ => env::panic_str("expected V2"),
+        }
+    }
+
+    pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
+        match self {
+            Self::V2(mpc_contract) => mpc_contract.get_pending_ckd_request(request),
             _ => env::panic_str("expected V2"),
         }
     }
@@ -1068,12 +1216,38 @@ impl VersionedMpcContract {
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
-                mpc_contract.pending_requests.remove(&request);
+                mpc_contract.pending_signature_requests.remove(&request);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     "fail_on_timeout".to_string(),
                     vec![],
                     NearToken::from_near(0),
                     Gas::from_tgas(2),
+                );
+                near_sdk::PromiseOrValue::Promise(promise.as_return())
+            }
+        }
+    }
+
+    /// Upon success, removes the signature from state and returns it.
+    /// If the signature request times out, removes the signature request from state and panics to fail the original transaction
+    #[private]
+    pub fn return_ck_and_clean_state_on_success(
+        &mut self,
+        request: CKDRequest,
+        #[callback_result] signature: Result<SignatureResponse, PromiseError>,
+    ) -> PromiseOrValue<SignatureResponse> {
+        let Self::V2(mpc_contract) = self else {
+            env::panic_str("expected V2")
+        };
+        match signature {
+            Ok(signature) => PromiseOrValue::Value(signature),
+            Err(_) => {
+                mpc_contract.pending_ckd_requests.remove(&request);
+                let promise = Promise::new(env::current_account_id()).function_call(
+                    "fail_on_timeout".to_string(),
+                    vec![],
+                    NearToken::from_near(0),
+                    Gas::from_tgas(2), // TODO: shouldn't this be a constant somewhere?
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
@@ -1205,7 +1379,9 @@ mod tests {
             &request.path,
         );
         contract.sign(request);
-        contract.get_pending_request(&signature_request).unwrap();
+        contract
+            .get_pending_signature_request(&signature_request)
+            .unwrap();
 
         // simulate signature and response to the signing request
         let derivation_path = derive_tweak(&context.predecessor_account_id, &key_path);
@@ -1242,7 +1418,9 @@ mod tests {
                     Ok(signature_response),
                 );
 
-                assert!(contract.get_pending_request(&signature_request).is_none(),);
+                assert!(contract
+                    .get_pending_signature_request(&signature_request)
+                    .is_none(),);
             }
             Err(_) => assert!(!success),
         }
@@ -1286,6 +1464,8 @@ mod tests {
             ),
             PromiseOrValue::Promise(_)
         ));
-        assert!(contract.get_pending_request(&signature_request).is_none());
+        assert!(contract
+            .get_pending_signature_request(&signature_request)
+            .is_none());
     }
 }
