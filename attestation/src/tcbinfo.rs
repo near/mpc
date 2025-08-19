@@ -3,9 +3,14 @@ use derive_more::{Deref, From, Into};
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
 use serde::{Deserialize, Serialize};
 
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use alloc::string::ToString;
+
 /// Dstack event log, a.k.a. the TCB Info.
-#[derive(
-    Clone, Debug, From, Deref, Into, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+#[derive(Debug, From, Deref, Into, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
 )]
 pub struct TcbInfo(DstackTcbInfo);
 

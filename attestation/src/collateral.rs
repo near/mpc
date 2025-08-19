@@ -8,11 +8,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use alloc::string::ToString;
+
 /// Supplemental data for the TEE quote, including Intel certificates to verify it came from genuine
 /// Intel hardware, along with details about the Trusted Computing Base (TCB) versioning, status,
 /// and other relevant info.
-#[derive(
-    From, Deref, Into, Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+#[derive(From, Deref, Into, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
 )]
 #[serde(try_from = "Value")]
 pub struct Collateral(QuoteCollateralV3);

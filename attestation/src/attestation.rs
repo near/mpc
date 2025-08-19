@@ -11,6 +11,9 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::env::sha256;
 use serde::{Deserialize, Serialize};
 
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use alloc::string::ToString;
+
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
 
@@ -25,29 +28,21 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub enum Attestation {
     Dstack(DstackAttestation),
     Local(LocalAttestation),
 }
 
-impl BorshSchema for Attestation {
-    fn add_definitions_recursively(
-        _definitions: &mut alloc::collections::btree_map::BTreeMap<
-            borsh::schema::Declaration,
-            borsh::schema::Definition,
-        >,
-    ) {
-        todo!()
-    }
-
-    fn declaration() -> borsh::schema::Declaration {
-        todo!()
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub struct DstackAttestation {
     /// TEE Remote Attestation Quote that proves the participant's identity.
     pub quote: Quote,
@@ -61,7 +56,11 @@ pub struct DstackAttestation {
     pub expected_measurements: ExpectedMeasurements,
 }
 
-#[derive(Debug, Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub struct LocalAttestation {
     verification_result: bool,
 }
@@ -347,14 +346,7 @@ impl Attestation {
                 return false;
             }
         };
-        // this str will not match the original, unless the original was normalized
-        let launcher_compose_str = match serde_yaml::to_string(&app_compose.docker_compose_file) {
-            Ok(str) => str,
-            Err(e) => {
-                tracing::error!("Failed to convert docker_compose_file to str: {:?}", e);
-                return false;
-            }
-        };
+        let launcher_compose_str = &app_compose.docker_compose_file;
         let launcher_bytes = sha256(launcher_compose_str.as_bytes());
         allowed_hashes
             .iter()
