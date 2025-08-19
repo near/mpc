@@ -12,9 +12,13 @@ expected audience is Near One engineers because it uses internal infrastructure.
 
 ### 1. Provision a TDX server
 
-TODO: Add some sentence here about providers.
+To run the MPC node within a TEE, you need a TDX-enabled server. There are
+several providers to choose from, such as
+[phoenixNap](https://phoenixnap.com/), [OVHcloud](https://www.ovhcloud.com/),
+[openmetal](https://openmetal.io/) and
+[Hivelocity](https://www.hivelocity.net/), to name a few.  
 
-1. SSH to NEAR's tdx dev machine. In this case we will use `TDX_SERVER=91.134.92.20`
+1. SSH to Near's TDX dev machine. In this case we will use `TDX_SERVER=91.134.92.20`
 
    ```bash
    ssh USER_NAME@TDX_SERVER
@@ -28,7 +32,7 @@ TODO: Add some sentence here about providers.
 
 ### 2. Install dstack and start core services
 
-1. Go to the data directory (`/mnt/data/` assuming you are on one of our tdx
+1. Go to the data directory (`/mnt/data/` assuming you are on one of our TDX
    servers)
 2. Follow the commands below
 
@@ -112,7 +116,7 @@ TODO: Add some sentence here about providers.
 2. Click `Deploy a new instance` button on the top left.
 3. Fill in the form
 
-   - name: `mpc_tee_test`  (this parameter can be selected at will)
+   - name: `mpc_tee_test` (this parameter can be selected at will)
    - image: `dstack-dev-0.5.2`
    - 8 CPUs
    - 64GiB Memory
@@ -155,8 +159,6 @@ TODO: Add some sentence here about providers.
       ```bash
       curl -X POST https://rpc.testnet.near.org -H "Content-Type: application/json" -d '{"jsonrpc": "2.0", "method": "network_info","params": [], "id": "dontcare"}'| jq -r '.result.active_peers[] as $active_peer | "\($active_peer.id)@\($active_peer.addr)"' | paste -sd',' -
       ```
-
-      - TODO: comment other parameters
 
    ```yml
    services:
