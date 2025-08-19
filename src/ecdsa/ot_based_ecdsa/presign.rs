@@ -1,9 +1,10 @@
 use super::{PresignArguments, PresignOutput};
 use crate::ecdsa::{ProjectivePoint, Scalar, Secp256K1Sha256};
 use crate::participants::{ParticipantCounter, ParticipantList};
+use crate::protocol::errors::{InitializationError, ProtocolError};
 use crate::protocol::{
     internal::{make_protocol, Comms, SharedChannel},
-    InitializationError, Participant, Protocol, ProtocolError,
+    Participant, Protocol,
 };
 
 type Secp256 = Secp256K1Sha256;

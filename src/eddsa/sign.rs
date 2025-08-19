@@ -2,8 +2,9 @@
 //!  into `cait-sith::Protocol` representation.
 use crate::eddsa::KeygenOutput;
 use crate::participants::{ParticipantCounter, ParticipantList};
+use crate::protocol::errors::{InitializationError, ProtocolError};
 use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
-use crate::protocol::{InitializationError, Participant, Protocol, ProtocolError};
+use crate::protocol::{Participant, Protocol};
 
 use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare};
 use frost_ed25519::*;

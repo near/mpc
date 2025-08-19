@@ -7,8 +7,9 @@ use crate::{
     crypto::proofs::strobe_transcript::TranscriptRng,
     ecdsa::Scalar,
     protocol::{
+        errors::ProtocolError,
         internal::{make_protocol, Comms, PrivateChannel},
-        run_two_party_protocol, Participant, ProtocolError,
+        run_two_party_protocol, Participant,
     },
 };
 
@@ -236,7 +237,9 @@ fn run_random_ot(
 
 #[cfg(test)]
 mod test {
-    use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
+    use crate::{
+        ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot, protocol::errors::ProtocolError,
+    };
 
     use super::*;
 

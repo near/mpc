@@ -3,8 +3,9 @@ use frost_ed25519::{Ed25519Sha512, VerifyingKey};
 
 use crate::eddsa::KeygenOutput;
 use crate::generic_dkg::*;
+use crate::protocol::errors::InitializationError;
 use crate::protocol::internal::{make_protocol, Comms};
-use crate::protocol::{InitializationError, Participant, Protocol};
+use crate::protocol::{Participant, Protocol};
 use futures::FutureExt;
 
 type E = Ed25519Sha512;

@@ -10,7 +10,7 @@ use frost_core::Scalar;
 use serde::Serialize;
 
 use crate::crypto::{ciphersuite::Ciphersuite, polynomials::compute_lagrange_coefficient};
-use crate::protocol::{Participant, ProtocolError};
+use crate::protocol::{errors::ProtocolError, Participant};
 
 /// Represents a sorted list of participants.
 ///

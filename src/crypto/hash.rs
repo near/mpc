@@ -1,3 +1,4 @@
+use crate::protocol::errors::ProtocolError;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -35,12 +36,7 @@ pub fn domain_separate_hash<T: Serialize>(
 }
 
 #[cfg(test)]
-pub(crate) use test::scalar_hash;
-
-use crate::protocol::ProtocolError;
-
-#[cfg(test)]
-mod test {
+pub mod test {
     use elliptic_curve::{ops::Reduce, Curve, CurveArithmetic};
 
     use super::{domain_separate_hash, hash};

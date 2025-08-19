@@ -1214,6 +1214,7 @@ dependencies = [
  "sha3",
  "smol",
  "subtle",
+ "thiserror",
  "zeroize",
 ]
 

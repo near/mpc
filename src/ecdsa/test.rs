@@ -2,12 +2,13 @@ use frost_secp256k1::VerifyingKey;
 use k256::{AffinePoint, Scalar};
 use std::error::Error;
 
-use crate::crypto::hash::scalar_hash;
+use crate::crypto::hash::test::scalar_hash;
 use crate::ecdsa::{
     dkg_ecdsa::{keygen, refresh, reshare},
     FullSignature, KeygenOutput,
 };
-use crate::protocol::{run_protocol, InitializationError, Participant, Protocol};
+use crate::protocol::errors::InitializationError;
+use crate::protocol::{run_protocol, Participant, Protocol};
 
 /// runs distributed keygen
 pub(crate) fn run_keygen(

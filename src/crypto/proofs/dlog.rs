@@ -3,7 +3,7 @@ use crate::{
         ciphersuite::{Ciphersuite, Element},
         proofs::strobe_transcript::TranscriptRng,
     },
-    protocol::ProtocolError,
+    protocol::errors::ProtocolError,
 };
 use frost_core::{serialization::SerializableScalar, Group};
 

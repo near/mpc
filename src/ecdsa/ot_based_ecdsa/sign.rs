@@ -6,8 +6,9 @@ use crate::{
     ecdsa::{x_coordinate, AffinePoint, FullSignature, Scalar, Secp256K1Sha256},
     participants::{ParticipantCounter, ParticipantList},
     protocol::{
+        errors::{InitializationError, ProtocolError},
         internal::{make_protocol, Comms, SharedChannel},
-        InitializationError, Participant, Protocol, ProtocolError,
+        Participant, Protocol,
     },
 };
 
@@ -108,7 +109,7 @@ pub fn sign(
 #[cfg(test)]
 mod test {
     use super::{sign, x_coordinate, FullSignature, PresignOutput};
-    use crate::crypto::hash::scalar_hash;
+    use crate::crypto::hash::test::scalar_hash;
     use crate::{
         ecdsa::Polynomial,
         protocol::{run_protocol, Participant, Protocol},

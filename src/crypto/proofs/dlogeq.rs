@@ -2,7 +2,7 @@ use rand_core::CryptoRngCore;
 
 use crate::{
     crypto::ciphersuite::{Ciphersuite, Element},
-    protocol::ProtocolError,
+    protocol::errors::ProtocolError,
 };
 
 use frost_core::{serialization::SerializableScalar, Group, Scalar};

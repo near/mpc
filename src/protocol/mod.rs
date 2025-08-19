@@ -5,140 +5,18 @@
 //! to deliver messages to and from that protocol, and eventually it will produce
 //! a result, without you having to worry about how many rounds it has, or how
 //! to serialize the emssages it produces.
-use std::{collections::HashMap, error, fmt};
+pub mod echo_broadcast;
+pub mod errors;
+pub(crate) mod internal;
+
+use std::{collections::HashMap, fmt};
 
 use ::serde::{Deserialize, Serialize};
+use errors::ProtocolError;
 
 use crate::crypto::ciphersuite::{BytesOrder, Ciphersuite};
 use frost_core::serialization::SerializableScalar;
 use frost_core::{Identifier, Scalar};
-
-/// Represents an error which can happen when running a protocol.
-#[derive(Debug)]
-pub enum ProtocolError {
-    /// Some assertion in the protocol failed.
-    AssertionFailed(String),
-    /// The ciphersuite does not support DKG.
-    DKGNotSupported,
-    /// When a Polynomial or PolynomialCommitment is Empty
-    EmptyOrZeroCoefficients,
-    /// Could not extract the verification Key from a commitment.
-    ErrorExtractVerificationKey,
-    /// Encoding a certain input has hit an error
-    ErrorEncoding,
-    /// Error in reducing bytes to scalar
-    ErrorReducingBytesToScalar,
-    /// Encounter the Identity EC point when not supposed to
-    IdentityElement,
-    /// The sent commitment hash does not equal the hash of the sent commitment
-    InvalidCommitmentHash,
-    /// The number of arguments are not valid for the polynomial interpolation
-    InvalidInterpolationArguments,
-    /// Incorrect number of commitments.
-    IncorrectNumberOfCommitments,
-    /// The identifier of the signer whose share validation failed.
-    InvalidProofOfKnowledge(Participant),
-    /// The validation of the secret share sent has failed
-    InvalidSecretShare(Participant),
-    /// The signing key is zero
-    MalformedElement,
-    /// Detected malicious participant
-    MaliciousParticipant(Participant),
-    /// The signing key is zero
-    MalformedSigningKey,
-    /// Error in serializing point
-    PointSerialization,
-    /// Encounter Zero Scalar when not supposed to
-    ZeroScalar,
-    /// Some generic error happened.
-    Other(Box<dyn error::Error + Send + Sync>),
-}
-
-impl fmt::Display for ProtocolError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ProtocolError::Other(e) => write!(f, "{e}"),
-            ProtocolError::AssertionFailed(e) => write!(f, "assertion failed {e}"),
-            ProtocolError::DKGNotSupported => write!(f, "the ciphersuite does not support DKG"),
-            ProtocolError::EmptyOrZeroCoefficients => {
-                write!(f, "Found empty polynomials or zero polynomial.")
-            }
-            ProtocolError::ErrorExtractVerificationKey => write!(
-                f,
-                "could not extract the verification Key from the commitment."
-            ),
-            ProtocolError::ErrorEncoding => write!(f, "panicked while encoding an input."),
-            ProtocolError::ErrorReducingBytesToScalar => write!(
-                f,
-                "the given bytes are not mappable to a scalar without modular reduction."
-            ),
-            ProtocolError::IdentityElement => {
-                write!(f, "encoutered the identity element (identity point).")
-            }
-            ProtocolError::InvalidCommitmentHash => {
-                write!(
-                    f,
-                    "the sent commitment_hash does not equals the hash of the commitment"
-                )
-            }
-            ProtocolError::InvalidInterpolationArguments => {
-                write!(
-                    f,
-                    "the provided elements are invalid for polynomial interpolation"
-                )
-            }
-            ProtocolError::IncorrectNumberOfCommitments => {
-                write!(f, "incorrect number of commitments")
-            }
-            ProtocolError::InvalidProofOfKnowledge(p) => write!(
-                f,
-                "the proof of knowledge of participant {p:?} is not valid."
-            ),
-            ProtocolError::InvalidSecretShare(p) => {
-                write!(f, "participant {p:?} sent an invalid secret share.")
-            }
-            ProtocolError::MalformedElement => {
-                write!(f, "the element you are trying to construct is malformed.")
-            }
-            ProtocolError::MaliciousParticipant(p) => {
-                write!(f, "detected a malicious participant {p:?}.")
-            }
-            ProtocolError::MalformedSigningKey => write!(f, "the constructed signing key is null."),
-            ProtocolError::ZeroScalar => write!(f, "encountered a zero scalar."),
-            ProtocolError::PointSerialization => {
-                write!(f, "The group element could not be serialized.")
-            }
-        }
-    }
-}
-
-impl error::Error for ProtocolError {}
-
-impl From<Box<dyn error::Error + Send + Sync>> for ProtocolError {
-    fn from(e: Box<dyn error::Error + Send + Sync>) -> Self {
-        Self::Other(e)
-    }
-}
-
-/// Represents an error which can happen when *initializing* a protocol.
-///
-/// These are related to bad parameters for the protocol, and things like that.
-///
-/// These are usually more recoverable than other protocol errors.
-#[derive(Debug)]
-pub enum InitializationError {
-    BadParameters(String),
-}
-
-impl fmt::Display for InitializationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            InitializationError::BadParameters(s) => write!(f, "bad parameters: {s}"),
-        }
-    }
-}
-
-impl error::Error for InitializationError {}
 
 /// Represents a participant in the protocol.
 ///
@@ -337,6 +215,3 @@ pub(crate) fn run_two_party_protocol<T0: fmt::Debug, T1: fmt::Debug>(
 
     Ok((out0.unwrap(), out1.unwrap()))
 }
-
-pub mod echo_broadcast;
-pub(crate) mod internal;

@@ -1,5 +1,5 @@
 use super::bits::{BitMatrix, BitVector, SquareBitMatrix};
-use crate::protocol::{internal::PrivateChannel, ProtocolError};
+use crate::protocol::{errors::ProtocolError, internal::PrivateChannel};
 
 /// Parameters we need for the correlated OT.
 #[derive(Debug, Clone, Copy)]

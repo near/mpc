@@ -6,7 +6,7 @@ use subtle::{Choice, ConditionallySelectable};
 
 use crate::{
     crypto::proofs::strobe_transcript::TranscriptRng,
-    protocol::{internal::PrivateChannel, ProtocolError},
+    protocol::{errors::ProtocolError, internal::PrivateChannel},
 };
 
 use crate::ecdsa::{Scalar, Secp256K1Sha256};
@@ -130,7 +130,7 @@ mod test {
     use rand_core::RngCore;
 
     use crate::protocol::{
-        internal::make_protocol, run_two_party_protocol, Participant, ProtocolError,
+        errors::ProtocolError, internal::make_protocol, run_two_party_protocol, Participant,
     };
 
     /// Run the multiplicative to additive protocol

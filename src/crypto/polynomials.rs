@@ -4,7 +4,7 @@ use frost_core::{
 use rand_core::CryptoRngCore;
 
 use super::ciphersuite::Ciphersuite;
-use crate::protocol::{Participant, ProtocolError};
+use crate::protocol::{errors::ProtocolError, Participant};
 
 use serde::{Deserialize, Deserializer, Serialize};
 

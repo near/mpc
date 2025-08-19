@@ -5,7 +5,7 @@ use subtle::ConditionallySelectable;
 
 use crate::{
     ecdsa::{CoefficientCommitment, Field, ProjectivePoint, Secp256K1ScalarField},
-    protocol::{internal::PrivateChannel, ProtocolError},
+    protocol::{errors::ProtocolError, internal::PrivateChannel},
 };
 
 use super::bits::{BitMatrix, BitVector, SquareBitMatrix, SEC_PARAM_8};

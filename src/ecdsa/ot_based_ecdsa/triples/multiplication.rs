@@ -3,8 +3,9 @@ use crate::{
     ecdsa::Scalar,
     participants::ParticipantList,
     protocol::{
+        errors::ProtocolError,
         internal::{Comms, PrivateChannel},
-        Participant, ProtocolError,
+        Participant,
     },
 };
 use std::sync::Arc;
@@ -195,7 +196,9 @@ mod test {
     use crate::{
         crypto::hash::hash,
         participants::ParticipantList,
-        protocol::{internal::make_protocol, run_protocol, Participant, Protocol, ProtocolError},
+        protocol::{
+            errors::ProtocolError, internal::make_protocol, run_protocol, Participant, Protocol,
+        },
     };
 
     use super::multiplication;

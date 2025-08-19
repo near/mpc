@@ -4,10 +4,8 @@ use crate::crypto::{
     polynomials::{Polynomial, PolynomialCommitment},
 };
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
-use crate::protocol::{
-    echo_broadcast::do_broadcast, internal::SharedChannel, InitializationError, Participant,
-    ProtocolError,
-};
+use crate::protocol::errors::{InitializationError, ProtocolError};
+use crate::protocol::{echo_broadcast::do_broadcast, internal::SharedChannel, Participant};
 
 use frost_core::keys::{
     CoefficientCommitment, SecretShare, SigningShare, VerifiableSecretSharingCommitment,

@@ -8,8 +8,9 @@ use super::{
 use crate::ecdsa::{Field, Polynomial, ProjectivePoint, Secp256K1ScalarField};
 
 use crate::protocol::{
+    errors::ProtocolError,
     internal::{make_protocol, Comms},
-    run_two_party_protocol, Participant, ProtocolError,
+    run_two_party_protocol, Participant,
 };
 
 /// Create a new triple from scratch.

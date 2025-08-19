@@ -2,10 +2,10 @@ use frost_core::serialization::SerializableScalar;
 use rand_core::OsRng;
 
 use crate::{
-    crypto::proofs::{dlog, dlogeq, strobe_transcript::Transcript},
     crypto::{
         commitment::{commit, Commitment},
         hash::{hash, HashOutput},
+        proofs::{dlog, dlogeq, strobe_transcript::Transcript},
         random::Randomness,
     },
     ecdsa::{
@@ -14,8 +14,9 @@ use crate::{
     },
     participants::{ParticipantCounter, ParticipantList, ParticipantMap},
     protocol::{
+        errors::{InitializationError, ProtocolError},
         internal::{make_protocol, Comms},
-        InitializationError, Participant, Protocol, ProtocolError,
+        Participant, Protocol,
     },
 };
 
@@ -1162,7 +1163,7 @@ mod test {
     use crate::{
         ecdsa::{ot_based_ecdsa::triples::generate_triple, ProjectivePoint},
         participants::ParticipantList,
-        protocol::{run_protocol, Participant, Protocol, ProtocolError},
+        protocol::{errors::ProtocolError, run_protocol, Participant, Protocol},
     };
 
     use super::{generate_triple_many, TripleGenerationOutput, TripleGenerationOutputMany, C};
