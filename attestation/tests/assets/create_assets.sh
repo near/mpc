@@ -42,7 +42,7 @@ jq -c '.tee_participant_info.tee_quote' "$INPUT_FILE" > "$OUTPUT_DIR/quote.json"
 # Extract tcb_info
 jq -r '.tee_participant_info.raw_tcb_info | fromjson' "$INPUT_FILE" > "$OUTPUT_DIR/tcb_info.json"
 
-# Extract launcher_image_compose.yaml. It is whitespace sensitive, and we need it's exact hash
+# Extract launcher_image_compose.yaml. It is whitespace sensitive, and we need its exact hash
 # to match.
 jq -j '.tee_participant_info.raw_tcb_info | fromjson | .app_compose | fromjson | .docker_compose_file' "$INPUT_FILE" > "$OUTPUT_DIR/launcher_image_compose.yaml"
 
