@@ -37,6 +37,8 @@ fn test_app_compose_deserialization() {
 fn test_app_compose_from_tcb_info() {
     let dstack_tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
     let app_compose = dstack_tcb_info.app_compose;
+    println!("APP_COMPOSE:\n{}", app_compose);
+    println!("TEST_APP_COMPOSE_STRING:\n{}", TEST_APP_COMPOSE_STRING);
     assert_eq!(app_compose, TEST_APP_COMPOSE_STRING);
 }
 

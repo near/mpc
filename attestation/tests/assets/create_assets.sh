@@ -31,7 +31,7 @@ echo "Extracting data from '$INPUT_FILE' to '$OUTPUT_DIR'..."
 jq -j '.near_p2p_public_key' "$INPUT_FILE" > "$OUTPUT_DIR/near_p2p_public_key.pub"
 
 # Extract app_compose.json
-jq -r '.tee_participant_info.raw_tcb_info | fromjson | .app_compose | fromjson' "$INPUT_FILE" > "$OUTPUT_DIR/app_compose.json"
+jq -r --indent 4 '.tee_participant_info.raw_tcb_info | fromjson | .app_compose | fromjson' "$INPUT_FILE" > "$OUTPUT_DIR/app_compose.json"
 
 # Extract collateral
 jq -r '.tee_participant_info.quote_collateral | fromjson' "$INPUT_FILE" > "$OUTPUT_DIR/collateral.json"
