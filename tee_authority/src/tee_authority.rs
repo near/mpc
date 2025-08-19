@@ -20,11 +20,6 @@ use tracing::error;
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
 /// Default URL for submission of TDX quote. Returns collateral to be used for verification.
-
-// curl -X POST "https://cloud-api.phala.network/api/v1/attestations/verify" \
-//   -H "Content-Type: multipart/form-data" \
-//   -F "file=@quote.bin"
-
 const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str =
     "https://cloud-api.phala.network/api/v1/attestations/verify";
 
