@@ -174,7 +174,10 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
     };
     let expected = format!("{:?}", InvalidState::NotParticipant);
     let err_str = format!("{:?}", err);
-    assert!(err_str.contains(&expected));
+    assert!(
+        err_str.contains(&expected),
+        "expected failure due to voter not being a participant"
+    );
     Ok(())
 }
 
