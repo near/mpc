@@ -7,10 +7,9 @@
 //! to serialize the emssages it produces.
 use std::{collections::HashMap, error, fmt};
 
-use crate::compat::CSCurve;
 use ::serde::{Deserialize, Serialize};
 
-use crate::generic_dkg::{BytesOrder, Ciphersuite};
+use crate::crypto::ciphersuite::{BytesOrder, Ciphersuite};
 use frost_core::serialization::SerializableScalar;
 use frost_core::{Identifier, Scalar};
 
@@ -21,10 +20,20 @@ pub enum ProtocolError {
     AssertionFailed(String),
     /// The ciphersuite does not support DKG.
     DKGNotSupported,
+    /// When a Polynomial or PolynomialCommitment is Empty
+    EmptyOrZeroCoefficients,
     /// Could not extract the verification Key from a commitment.
     ErrorExtractVerificationKey,
+    /// Encoding a certain input has hit an error
+    ErrorEncoding,
+    /// Error in reducing bytes to scalar
+    ErrorReducingBytesToScalar,
+    /// Encounter the Identity EC point when not supposed to
+    IdentityElement,
     /// The sent commitment hash does not equal the hash of the sent commitment
     InvalidCommitmentHash,
+    /// The number of arguments are not valid for the polynomial interpolation
+    InvalidInterpolationArguments,
     /// Incorrect number of commitments.
     IncorrectNumberOfCommitments,
     /// The identifier of the signer whose share validation failed.
@@ -39,6 +48,8 @@ pub enum ProtocolError {
     MalformedSigningKey,
     /// Error in serializing point
     PointSerialization,
+    /// Encounter Zero Scalar when not supposed to
+    ZeroScalar,
     /// Some generic error happened.
     Other(Box<dyn error::Error + Send + Sync>),
 }
@@ -49,14 +60,31 @@ impl fmt::Display for ProtocolError {
             ProtocolError::Other(e) => write!(f, "{e}"),
             ProtocolError::AssertionFailed(e) => write!(f, "assertion failed {e}"),
             ProtocolError::DKGNotSupported => write!(f, "the ciphersuite does not support DKG"),
+            ProtocolError::EmptyOrZeroCoefficients => {
+                write!(f, "Found empty polynomials or zero polynomial.")
+            }
             ProtocolError::ErrorExtractVerificationKey => write!(
                 f,
                 "could not extract the verification Key from the commitment."
             ),
+            ProtocolError::ErrorEncoding => write!(f, "panicked while encoding an input."),
+            ProtocolError::ErrorReducingBytesToScalar => write!(
+                f,
+                "the given bytes are not mappable to a scalar without modular reduction."
+            ),
+            ProtocolError::IdentityElement => {
+                write!(f, "encoutered the identity element (identity point).")
+            }
             ProtocolError::InvalidCommitmentHash => {
                 write!(
                     f,
                     "the sent commitment_hash does not equals the hash of the commitment"
+                )
+            }
+            ProtocolError::InvalidInterpolationArguments => {
+                write!(
+                    f,
+                    "the provided elements are invalid for polynomial interpolation"
                 )
             }
             ProtocolError::IncorrectNumberOfCommitments => {
@@ -76,6 +104,7 @@ impl fmt::Display for ProtocolError {
                 write!(f, "detected a malicious participant {p:?}.")
             }
             ProtocolError::MalformedSigningKey => write!(f, "the constructed signing key is null."),
+            ProtocolError::ZeroScalar => write!(f, "encountered a zero scalar."),
             ProtocolError::PointSerialization => {
                 write!(f, "The group element could not be serialized.")
             }
@@ -127,13 +156,7 @@ impl Participant {
     }
 
     /// Return the scalar associated with this participant.
-    /// The implementation follows the original cait-sith library
-    pub fn scalar<C: CSCurve>(&self) -> C::Scalar {
-        C::Scalar::from(self.0 as u64 + 1)
-    }
-
-    /// Return the scalar associated with this participant.
-    pub fn generic_scalar<C: Ciphersuite>(&self) -> Scalar<C> {
+    pub fn scalar<C: Ciphersuite>(&self) -> Scalar<C> {
         let mut bytes = [0u8; 32];
         let id = (self.0 as u64) + 1;
 
@@ -150,7 +173,7 @@ impl Participant {
 
     /// Returns a Frost identifier used in the frost library
     pub fn to_identifier<C: Ciphersuite>(&self) -> Identifier<C> {
-        let id = self.generic_scalar::<C>();
+        let id = self.scalar::<C>();
         // creating an identifier as required by the syntax of frost_core
         // cannot panic as the previous line ensures id is neq zero
         Identifier::new(id).unwrap()
@@ -315,4 +338,5 @@ pub(crate) fn run_two_party_protocol<T0: fmt::Debug, T1: fmt::Debug>(
     Ok((out0.unwrap(), out1.unwrap()))
 }
 
+pub mod echo_broadcast;
 pub(crate) mod internal;

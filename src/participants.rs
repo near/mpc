@@ -6,11 +6,11 @@
 
 use std::{collections::HashMap, mem, ops::Index};
 
-use frost_core::{Group, Scalar};
+use frost_core::Scalar;
 use serde::Serialize;
 
-use crate::generic_dkg::Ciphersuite;
-use crate::{compat::CSCurve, protocol::Participant};
+use crate::crypto::{ciphersuite::Ciphersuite, polynomials::compute_lagrange_coefficient};
+use crate::protocol::{Participant, ProtocolError};
 
 /// Represents a sorted list of participants.
 ///
@@ -83,44 +83,16 @@ impl ParticipantList {
     }
 
     /// Get the lagrange coefficient for a participant, relative to this list.
-    /// Use cait-sith library curve type
-    pub fn lagrange<C: CSCurve>(&self, p: Participant) -> C::Scalar {
-        use elliptic_curve::Field;
-
-        let p_scalar = p.scalar::<C>();
-
-        let mut top = C::Scalar::ONE;
-        let mut bot = C::Scalar::ONE;
-        for q in &self.participants {
-            if p == *q {
-                continue;
-            }
-            let q_scalar = q.scalar::<C>();
-            top *= q_scalar;
-            bot *= q_scalar - p_scalar;
-        }
-
-        top * bot.invert().unwrap()
-    }
-
-    /// Get the lagrange coefficient for a participant, relative to this list.
+    /// The lagrange coefficient is evaluated at zero
     /// Use generic frost library types
-    pub fn generic_lagrange<C: Ciphersuite>(&self, p: Participant) -> Scalar<C> {
-        use frost_core::Field;
-        let p_scalar = p.generic_scalar::<C>();
-
-        let mut top = <C::Group as Group>::Field::one();
-        let mut bot = <C::Group as Group>::Field::one();
-        for q in &self.participants {
-            if p == *q {
-                continue;
-            }
-            let q_scalar = q.generic_scalar::<C>();
-            top = top * q_scalar;
-            bot = bot * (q_scalar - p_scalar);
-        }
-        let inverted = <C::Group as Group>::Field::invert(&bot).unwrap();
-        top * inverted
+    pub fn lagrange<C: Ciphersuite>(&self, p: Participant) -> Result<Scalar<C>, ProtocolError> {
+        let p = p.scalar::<C>();
+        let identifiers: Vec<Scalar<C>> = self
+            .participants()
+            .iter()
+            .map(|p| p.scalar::<C>())
+            .collect();
+        Ok(compute_lagrange_coefficient::<C>(&identifiers, &p, None)?.0)
     }
 
     /// Return the intersection of this list with another list.
@@ -136,8 +108,8 @@ impl ParticipantList {
     }
 
     // Returns all the participants in the list
-    pub fn participants(&self) -> Vec<Participant> {
-        self.participants.clone()
+    pub fn participants(&self) -> &[Participant] {
+        self.participants.as_slice()
     }
 }
 
@@ -204,16 +176,20 @@ impl<'a, T> ParticipantMap<'a, T> {
     // Consumes the Map returning only the vector of the unwrapped data
     // If one of the data is still none, then return None
     pub fn into_vec_or_none(self) -> Option<Vec<T>> {
-        let mut vec_data: Vec<T> = Vec::new();
-        for d in self.data {
-            let data = d?;
-            vec_data.push(data)
-        }
-        Some(vec_data)
+        self.data.into_iter().collect::<Option<Vec<_>>>()
+    }
+
+    // Does not consume the map returning only the vector of the unwrapped data
+    // If one of the data is still none, then return None
+    pub fn to_refs_or_none(&self) -> Option<Vec<&T>> {
+        self.data
+            .iter()
+            .map(|opt| opt.as_ref())
+            .collect::<Option<Vec<_>>>()
     }
 }
 
-impl<'a, T> Index<Participant> for ParticipantMap<'a, T> {
+impl<T> Index<Participant> for ParticipantMap<'_, T> {
     type Output = T;
 
     fn index(&self, index: Participant) -> &Self::Output {

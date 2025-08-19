@@ -4,7 +4,7 @@ use crate::eddsa::KeygenOutput;
 use crate::participants::ParticipantList;
 use crate::protocol::{run_protocol, Participant, Protocol};
 
-use crate::crypto::HashOutput;
+use crate::crypto::hash::HashOutput;
 use frost_ed25519::VerifyingKey;
 use rand_core::{OsRng, RngCore};
 use std::error::Error;

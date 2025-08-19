@@ -88,7 +88,7 @@ async fn do_sign_coordinator(
         BTreeMap::new();
 
     let r2_wait_point = chan.next_waitpoint();
-    chan.send_many(r2_wait_point, &signing_package);
+    chan.send_many(r2_wait_point, &signing_package)?;
 
     let vk_package = keygen_output.public_key;
     let key_package = construct_key_package(threshold, &me, &signing_share, &vk_package);
@@ -158,7 +158,7 @@ async fn do_sign_participant(
     // * Send coordinator our commitment.
 
     let commit_waitpoint = chan.next_waitpoint();
-    chan.send_private(commit_waitpoint, coordinator, &commitments);
+    chan.send_private(commit_waitpoint, coordinator, &commitments)?;
 
     // --- Round 2.
     // * Wait for a signing package.
@@ -187,7 +187,7 @@ async fn do_sign_participant(
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 
-    chan.send_private(r2_wait_point, coordinator, &signature_share);
+    chan.send_private(r2_wait_point, coordinator, &signature_share)?;
 
     Ok(None)
 }
@@ -266,8 +266,8 @@ async fn fut_wrapper(
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::crypto::hash;
+mod test {
+    use crate::crypto::hash::hash;
     use crate::participants::ParticipantList;
     use frost_core::{Field, Group};
     use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512, Signature};
@@ -303,7 +303,7 @@ mod tests {
         let threshold = 2;
         let actual_signers = 2;
         let msg = "hello_near";
-        let msg_hash = hash(&msg);
+        let msg_hash = hash(&msg).unwrap();
 
         let key_packages = build_key_packages_with_dealer(max_signers, threshold);
         let coordinators = vec![key_packages[0].0];
@@ -322,7 +322,7 @@ mod tests {
     fn stress() {
         let max_signers = 7;
         let msg = "hello_near";
-        let msg_hash = hash(&msg);
+        let msg_hash = hash(&msg).unwrap();
 
         for min_signers in 2..max_signers {
             for actual_signers in min_signers..=max_signers {
@@ -352,7 +352,7 @@ mod tests {
         let actual_signers = participants.len();
         let threshold = 2;
         let msg = "hello_near";
-        let msg_hash = hash(&msg);
+        let msg_hash = hash(&msg).unwrap();
 
         // test dkg
         let key_packages = run_keygen(&participants, threshold)?;
@@ -378,7 +378,7 @@ mod tests {
         let key_packages1 = run_refresh(&participants, key_packages, threshold)?;
         assert_public_key_invariant(&key_packages1)?;
         let msg = "hello_near_2";
-        let msg_hash = hash(&msg);
+        let msg_hash = hash(&msg).unwrap();
         let data = test_run_signature_protocols(
             &key_packages1,
             actual_signers,
@@ -409,7 +409,7 @@ mod tests {
         )?;
         assert_public_key_invariant(&key_packages2)?;
         let msg = "hello_near_3";
-        let msg_hash = hash(&msg);
+        let msg_hash = hash(&msg).unwrap();
         let coordinators = vec![key_packages2[0].0];
         let data = test_run_signature_protocols(
             &key_packages2,
@@ -475,14 +475,14 @@ mod tests {
         let p_list = ParticipantList::new(&participants).unwrap();
         let mut x = Ed25519ScalarField::zero();
         for (p, share) in participants.iter().zip(shares.iter()) {
-            x += p_list.generic_lagrange::<Ed25519Sha512>(*p) * share;
+            x += p_list.lagrange::<Ed25519Sha512>(*p).unwrap() * share;
         }
         assert_eq!(<Ed25519Group>::generator() * x, pub_key.to_element());
 
         // Sign
         let actual_signers = participants.len();
         let msg = "hello_near";
-        let msg_hash = hash(&msg);
+        let msg_hash = hash(&msg).unwrap();
 
         let coordinators = vec![key_packages[0].0];
         let data = test_run_signature_protocols(
@@ -547,13 +547,13 @@ mod tests {
         let p_list = ParticipantList::new(&participants).unwrap();
         let mut x = Ed25519ScalarField::zero();
         for (p, share) in participants.iter().zip(shares.iter()) {
-            x += p_list.generic_lagrange::<Ed25519Sha512>(*p) * share;
+            x += p_list.lagrange::<Ed25519Sha512>(*p).unwrap() * share;
         }
         assert_eq!(<Ed25519Group>::generator() * x, pub_key.to_element());
 
         // Sign
         let msg = "hello_near";
-        let msg_hash = hash(&msg);
+        let msg_hash = hash(&msg).unwrap();
 
         let data = test_run_signature_protocols(
             &key_packages,

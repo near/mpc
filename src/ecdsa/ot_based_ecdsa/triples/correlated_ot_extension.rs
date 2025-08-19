@@ -40,7 +40,7 @@ pub fn correlated_ot_receiver(
     k0: &SquareBitMatrix,
     k1: &SquareBitMatrix,
     x: &BitMatrix,
-) -> BitMatrix {
+) -> Result<BitMatrix, ProtocolError> {
     assert_eq!(x.height(), params.batch_size);
     // Spec 1
     let t0 = k0.expand_transpose(params.sid, params.batch_size);
@@ -51,18 +51,16 @@ pub fn correlated_ot_receiver(
 
     // Spec 4
     let wait0 = chan.next_waitpoint();
-    chan.send(wait0, &u);
-
-    t0
+    chan.send(wait0, &u)?;
+    Ok(t0)
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ecdsa::triples::batch_random_ot::run_batch_random_ot;
+    use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
     use crate::protocol::internal::{make_protocol, Comms};
     use crate::protocol::{run_two_party_protocol, Participant};
-    use k256::Secp256k1;
     use rand_core::OsRng;
 
     /// Run the correlated OT protocol between two parties.
@@ -94,20 +92,14 @@ mod test {
                     sid: &sid_r,
                     batch_size,
                 };
-                Ok(correlated_ot_receiver(
-                    comms_r.private_channel(r, s),
-                    params,
-                    &k0,
-                    &k1,
-                    &x,
-                ))
+                correlated_ot_receiver(comms_r.private_channel(r, s), params, &k0, &k1, &x)
             }),
         )
     }
 
     #[test]
     fn test_correlated_ot() -> Result<(), ProtocolError> {
-        let ((k0, k1), (delta, k)) = run_batch_random_ot::<Secp256k1>()?;
+        let ((k0, k1), (delta, k)) = run_batch_random_ot()?;
         let batch_size = 256;
         let x = BitMatrix::random(&mut OsRng, batch_size);
         let (q, t) = run_correlated_ot(

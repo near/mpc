@@ -85,16 +85,16 @@ pub async fn reliable_broadcast_send<T>(
     participants: &ParticipantList,
     me: &Participant,
     data: T,
-) -> MessageType<T>
+) -> Result<MessageType<T>, ProtocolError>
 where
     T: Serialize,
 {
     let vote = MessageType::Send(data);
     let sid = participants.index(me);
     // Send vote to all participants but for myself
-    chan.send_many(wait, &(&sid, &vote));
+    chan.send_many(wait, &(&sid, &vote))?;
     // the vote is returned to be taken into consideration as received
-    vote
+    Ok(vote)
 }
 
 /// This reliable broadcast function is the echo-broadcast protocol from the sender side.
@@ -174,7 +174,7 @@ where
                 }
                 vote = MessageType::Echo(data);
                 // upon receiving a send message, echo it
-                chan.send_many(wait, &(&sid, &vote));
+                chan.send_many(wait, &(&sid, &vote))?;
                 finish_send[sid] = true;
 
                 // simulate an echo vote sent by me
@@ -195,7 +195,7 @@ where
                 // for a result, deliver Ready
                 if data_echo[sid].get(&data).unwrap() > echo_t {
                     vote = MessageType::Ready(data);
-                    chan.send_many(wait, &(&sid, &vote));
+                    chan.send_many(wait, &(&sid, &vote))?;
                     // state that the echo phase for session id (sid) is done
                     finish_echo[sid] = true;
 
@@ -248,7 +248,7 @@ where
                 // proceed to amplification of the ready message
                 if data_ready[sid].get(&data).unwrap() > ready_t && !finish_amplification[sid] {
                     vote = MessageType::Ready(data.clone());
-                    chan.send_many(wait, &(&sid, &vote));
+                    chan.send_many(wait, &(&sid, &vote))?;
                     finish_amplification[sid] = true;
 
                     // simulate a ready vote sent by me
@@ -302,7 +302,7 @@ where
     T: Serialize + Clone + DeserializeOwned + PartialEq,
 {
     let wait_broadcast = chan.next_waitpoint();
-    let send_vote = reliable_broadcast_send(chan, wait_broadcast, participants, me, data).await;
+    let send_vote = reliable_broadcast_send(chan, wait_broadcast, participants, me, data).await?;
     let vote_list =
         reliable_broadcast_receive_all(chan, wait_broadcast, participants, me, send_vote).await?;
     Ok(vote_list)
@@ -326,7 +326,7 @@ mod test {
     ) -> Result<Vec<bool>, ProtocolError> {
         let wait_broadcast = chan.next_waitpoint();
         let send_vote =
-            reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, data).await;
+            reliable_broadcast_send(&chan, wait_broadcast, &participants, &me, data).await?;
         let vote_list =
             reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, &me, send_vote)
                 .await?;
@@ -388,9 +388,9 @@ mod test {
 
         for (cnt, p) in participants.others(me).enumerate() {
             if cnt >= participants.len() / 2 {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_false));
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_false))?;
             } else {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_true));
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_true))?;
             }
         }
 
@@ -415,9 +415,9 @@ mod test {
 
         for (cnt, p) in participants.others(me).enumerate() {
             if cnt >= participants.len() / 2 {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_false));
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_false))?;
             } else {
-                chan.send_private(wait_broadcast, p, &(&sid, &vote_true));
+                chan.send_private(wait_broadcast, p, &(&sid, &vote_true))?;
             }
         }
 

@@ -1,69 +1,86 @@
-use elliptic_curve::{Field, Group};
 use rand_core::OsRng;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use subtle::ConditionallySelectable;
 
 use crate::{
-    compat::{CSCurve, SerializablePoint},
-    constants::SECURITY_PARAMETER,
-    protocol::{
-        internal::{make_protocol, PrivateChannel},
-        run_two_party_protocol, Participant, ProtocolError,
-    },
-    serde::encode,
+    ecdsa::{CoefficientCommitment, Field, ProjectivePoint, Secp256K1ScalarField},
+    protocol::{internal::PrivateChannel, ProtocolError},
 };
 
 use super::bits::{BitMatrix, BitVector, SquareBitMatrix, SEC_PARAM_8};
-use crate::protocol::internal::Comms;
+use super::constants::SECURITY_PARAMETER;
 
 const BATCH_RANDOM_OT_HASH: &[u8] = b"Near threshold signatures batch ROT";
 
-fn hash<C: CSCurve>(
+fn hash(
     i: usize,
-    big_x_i: &SerializablePoint<C>,
-    big_y: &SerializablePoint<C>,
-    p: &C::ProjectivePoint,
-) -> BitVector {
+    big_x_i: &CoefficientCommitment,
+    big_y: &CoefficientCommitment,
+    p: &CoefficientCommitment,
+) -> Result<BitVector, ProtocolError> {
     let mut hasher = Sha256::new();
     hasher.update(BATCH_RANDOM_OT_HASH);
     hasher.update((i as u64).to_le_bytes());
-    hasher.update(encode(&big_x_i));
-    hasher.update(encode(&big_y));
-    hasher.update(encode(&SerializablePoint::<C>::from_projective(p)));
+    hasher.update(
+        &big_x_i
+            .serialize()
+            .map_err(|_| ProtocolError::PointSerialization)?,
+    );
+    hasher.update(
+        &big_y
+            .serialize()
+            .map_err(|_| ProtocolError::PointSerialization)?,
+    );
+    hasher.update(
+        &p.serialize()
+            .map_err(|_| ProtocolError::PointSerialization)?,
+    );
 
     let bytes: [u8; 32] = hasher.finalize().into();
     // the hash output is 256 bits
     // it is possible to take the first 128 bits out
     let bytes: [u8; SEC_PARAM_8] = bytes[0..SEC_PARAM_8].try_into().unwrap();
 
-    BitVector::from_bytes(&bytes)
+    Ok(BitVector::from_bytes(&bytes))
 }
 
-type BatchRandomOTOutputSender = (SquareBitMatrix, SquareBitMatrix);
+pub(crate) type BatchRandomOTOutputSender = (SquareBitMatrix, SquareBitMatrix);
 
-pub async fn batch_random_ot_sender<C: CSCurve>(
+pub async fn batch_random_ot_sender(
     mut chan: PrivateChannel,
 ) -> Result<BatchRandomOTOutputSender, ProtocolError> {
     // Spec 1
-    let y = C::Scalar::random(&mut OsRng);
-    let big_y = C::ProjectivePoint::generator() * y;
+    let y = Secp256K1ScalarField::random(&mut OsRng);
+    let big_y = ProjectivePoint::GENERATOR * y;
     let big_z = big_y * y;
 
+    // One way to be able to serialize and send big_y a verifying key out of it
+    // as it contains a private struct SerializableElement
+    let ser_big_y = CoefficientCommitment::new(big_y);
     let wait0 = chan.next_waitpoint();
-    let big_y_affine = SerializablePoint::<C>::from_projective(&big_y);
-    chan.send(wait0, &big_y_affine);
+    chan.send(wait0, &ser_big_y)?;
 
     let tasks = (0..SECURITY_PARAMETER).map(|i| {
         let mut chan = chan.child(i as u64);
         async move {
             let wait0 = chan.next_waitpoint();
-            let big_x_i_affine: SerializablePoint<C> = chan.recv(wait0).await?;
+            let ser_big_x_i: CoefficientCommitment = chan.recv(wait0).await?;
 
-            let y_big_x_i = big_x_i_affine.to_projective() * y;
+            let y_big_x_i = ser_big_x_i.value() * y;
 
-            let big_k0 = hash(i, &big_x_i_affine, &big_y_affine, &y_big_x_i);
-            let big_k1 = hash(i, &big_x_i_affine, &big_y_affine, &(y_big_x_i - big_z));
+            let big_k0 = hash(
+                i,
+                &ser_big_x_i,
+                &ser_big_y,
+                &CoefficientCommitment::new(y_big_x_i),
+            )?;
+            let big_k1 = hash(
+                i,
+                &ser_big_x_i,
+                &ser_big_y,
+                &CoefficientCommitment::new(y_big_x_i - big_z),
+            )?;
 
             Ok::<_, ProtocolError>((big_k0, big_k1))
         }
@@ -75,7 +92,8 @@ pub async fn batch_random_ot_sender<C: CSCurve>(
     Ok((big_k0.try_into().unwrap(), big_k1.try_into().unwrap()))
 }
 
-pub async fn batch_random_ot_sender_many<C: CSCurve, const N: usize>(
+#[allow(dead_code)]
+pub async fn batch_random_ot_sender_many<const N: usize>(
     mut chan: PrivateChannel,
 ) -> Result<Vec<BatchRandomOTOutputSender>, ProtocolError> {
     assert!(N > 0);
@@ -84,8 +102,8 @@ pub async fn batch_random_ot_sender_many<C: CSCurve, const N: usize>(
     let mut yv = vec![];
     for _ in 0..N {
         // Spec 1
-        let y = C::Scalar::random(&mut OsRng);
-        let big_y = C::ProjectivePoint::generator() * y;
+        let y = Secp256K1ScalarField::random(&mut OsRng);
+        let big_y = ProjectivePoint::GENERATOR * y;
         let big_z = big_y * y;
         yv.push(y);
         big_y_v.push(big_y);
@@ -93,33 +111,42 @@ pub async fn batch_random_ot_sender_many<C: CSCurve, const N: usize>(
     }
 
     let wait0 = chan.next_waitpoint();
-    let mut big_y_affine_v = vec![];
-    for big_y in big_y_v.iter() {
-        let big_y_affine = SerializablePoint::<C>::from_projective(big_y);
-        big_y_affine_v.push(big_y_affine);
+    let mut big_y_ser_v = vec![];
+    for big_y_verkey in big_y_v.iter() {
+        big_y_ser_v.push(CoefficientCommitment::new(*big_y_verkey));
     }
-    chan.send(wait0, &big_y_affine_v);
+    chan.send(wait0, &big_y_ser_v)?;
 
     let y_v_arc = Arc::new(yv);
-    let big_y_affine_v_arc = Arc::new(big_y_affine_v);
+    let big_y_verkey_v_arc = Arc::new(big_y_ser_v);
     let big_z_v_arc = Arc::new(big_z_v);
     let tasks = (0..SECURITY_PARAMETER).map(|i| {
         let yv_arc = y_v_arc.clone();
-        let big_y_affine_v_arc = big_y_affine_v_arc.clone();
+        let big_y_verkey_v_arc = big_y_verkey_v_arc.clone();
         let big_z_v_arc = big_z_v_arc.clone();
         let mut chan = chan.child(i as u64);
         async move {
             let wait0 = chan.next_waitpoint();
-            let big_x_i_affine_v: Vec<SerializablePoint<C>> = chan.recv(wait0).await?;
+            let big_x_i_verkey_v: Vec<CoefficientCommitment> = chan.recv(wait0).await?;
 
             let mut ret = vec![];
-            for (j, big_x_i_affine_v_j) in big_x_i_affine_v.iter().enumerate() {
+            for (j, big_x_i_verkey_v_j) in big_x_i_verkey_v.iter().enumerate().take(N) {
                 let y = &yv_arc.as_slice()[j];
-                let big_y_affine = &big_y_affine_v_arc.as_slice()[j];
+                let big_y_verkey = &big_y_verkey_v_arc.as_slice()[j];
                 let big_z = &big_z_v_arc.as_slice()[j];
-                let y_big_x_i = big_x_i_affine_v_j.to_projective() * *y;
-                let big_k0 = hash(i, big_x_i_affine_v_j, big_y_affine, &y_big_x_i);
-                let big_k1 = hash(i, big_x_i_affine_v_j, big_y_affine, &(y_big_x_i - big_z));
+                let y_big_x_i = big_x_i_verkey_v_j.value() * *y;
+                let big_k0 = hash(
+                    i,
+                    big_x_i_verkey_v_j,
+                    big_y_verkey,
+                    &CoefficientCommitment::new(y_big_x_i),
+                )?;
+                let big_k1 = hash(
+                    i,
+                    big_x_i_verkey_v_j,
+                    big_y_verkey,
+                    &CoefficientCommitment::new(y_big_x_i - big_z),
+                )?;
                 ret.push((big_k0, big_k1));
             }
 
@@ -148,21 +175,16 @@ pub async fn batch_random_ot_sender_many<C: CSCurve, const N: usize>(
     Ok(ret)
 }
 
-type BatchRandomOTOutputReceiver = (BitVector, SquareBitMatrix);
+pub(crate) type BatchRandomOTOutputReceiver = (BitVector, SquareBitMatrix);
 
-pub async fn batch_random_ot_receiver<C: CSCurve>(
+pub async fn batch_random_ot_receiver(
     mut chan: PrivateChannel,
 ) -> Result<BatchRandomOTOutputReceiver, ProtocolError> {
     // Step 3
     let wait0 = chan.next_waitpoint();
-    let big_y_affine: SerializablePoint<C> = chan.recv(wait0).await?;
-    let big_y = big_y_affine.to_projective();
-    if bool::from(big_y.is_identity()) {
-        return Err(ProtocolError::AssertionFailed(
-            "Big y in batch random OT was zero.".into(),
-        ));
-    }
-
+    // deserialization prevents receiving the identity
+    let big_y_verkey: CoefficientCommitment = chan.recv(wait0).await?;
+    let big_y = big_y_verkey.value();
     let delta = BitVector::random(&mut OsRng);
 
     let out = delta
@@ -171,48 +193,49 @@ pub async fn batch_random_ot_receiver<C: CSCurve>(
         .map(|(i, d_i)| {
             let mut chan = chan.child(i as u64);
             // Step 4
-            let x_i = C::Scalar::random(&mut OsRng);
-            let mut big_x_i = C::ProjectivePoint::generator() * x_i;
+            let x_i = Secp256K1ScalarField::random(&mut OsRng);
+            let mut big_x_i = ProjectivePoint::GENERATOR * x_i;
             big_x_i.conditional_assign(&(big_x_i + big_y), d_i);
 
             // Step 6
             let wait0 = chan.next_waitpoint();
-            let big_x_i_affine = SerializablePoint::<C>::from_projective(&big_x_i);
-            chan.send(wait0, &big_x_i_affine);
+            let big_x_i_verkey = CoefficientCommitment::new(big_x_i);
+            chan.send(wait0, &big_x_i_verkey)?;
 
             // Step 5
-            hash(i, &big_x_i_affine, &big_y_affine, &(big_y * x_i))
+            hash(
+                i,
+                &big_x_i_verkey,
+                &big_y_verkey,
+                &CoefficientCommitment::new(big_y * x_i),
+            )
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let big_k: BitMatrix = out.into_iter().collect();
     Ok((delta, big_k.try_into().unwrap()))
 }
 
-pub async fn batch_random_ot_receiver_many<C: CSCurve, const N: usize>(
+#[allow(dead_code)]
+pub async fn batch_random_ot_receiver_many<const N: usize>(
     mut chan: PrivateChannel,
 ) -> Result<Vec<BatchRandomOTOutputReceiver>, ProtocolError> {
     assert!(N > 0);
     // Step 3
     let wait0 = chan.next_waitpoint();
-    let big_y_affine_v: Vec<SerializablePoint<C>> = chan.recv(wait0).await?;
+    // deserialization prevents receiving the identity
+    let big_y_verkey_v: Vec<CoefficientCommitment> = chan.recv(wait0).await?;
 
     let mut big_y_v = vec![];
     let mut deltav = vec![];
-    for big_y_affine in big_y_affine_v.iter().take(N) {
-        let big_y = big_y_affine.to_projective();
-        if bool::from(big_y.is_identity()) {
-            return Err(ProtocolError::AssertionFailed(
-                "Big y in batch random OT was zero.".into(),
-            ));
-        }
-
+    for big_y_verkey in big_y_verkey_v.iter() {
+        let big_y = big_y_verkey.value();
         let delta = BitVector::random(&mut OsRng);
         big_y_v.push(big_y);
         deltav.push(delta);
     }
 
     let big_y_v_arc = Arc::new(big_y_v);
-    let big_y_affine_v_arc = Arc::new(big_y_affine_v);
+    let big_y_verkey_v_arc = Arc::new(big_y_verkey_v);
 
     // inner is batch, outer is bits
     let mut choices: Vec<Vec<_>> = Vec::new();
@@ -233,15 +256,15 @@ pub async fn batch_random_ot_receiver_many<C: CSCurve, const N: usize>(
         // clone arcs
         let d_i_v = choicesi.clone();
         let big_y_v_arc = big_y_v_arc.clone();
-        let big_y_affine_v_arc = big_y_affine_v_arc.clone();
+        let big_y_verkey_v_arc = big_y_verkey_v_arc.clone();
         let hashv = {
             let mut x_i_v = Vec::new();
             let mut big_x_i_v = Vec::new();
             for j in 0..N {
                 let d_i = d_i_v[j];
                 // Step 4
-                let x_i = C::Scalar::random(&mut OsRng);
-                let mut big_x_i = C::ProjectivePoint::generator() * x_i;
+                let x_i = Secp256K1ScalarField::random(&mut OsRng);
+                let mut big_x_i = ProjectivePoint::GENERATOR * x_i;
                 big_x_i.conditional_assign(&(big_x_i + big_y_v_arc[j]), d_i);
                 x_i_v.push(x_i);
                 big_x_i_v.push(big_x_i);
@@ -249,21 +272,25 @@ pub async fn batch_random_ot_receiver_many<C: CSCurve, const N: usize>(
             // Step 6
             let wait0 = chan.next_waitpoint();
 
-            let mut big_x_i_affine_v = Vec::new();
-            for big_x_i_v_j in big_x_i_v.iter().take(N) {
-                let big_x_i_affine = SerializablePoint::<C>::from_projective(big_x_i_v_j);
-                big_x_i_affine_v.push(big_x_i_affine);
+            let mut big_x_i_verkey_v = Vec::new();
+            for big_x_i_verkey in big_x_i_v.iter() {
+                big_x_i_verkey_v.push(CoefficientCommitment::new(*big_x_i_verkey));
             }
-            chan.send(wait0, &big_x_i_affine_v);
+            chan.send(wait0, &big_x_i_verkey_v)?;
 
             // Step 5
             let mut hashv = Vec::new();
             for j in 0..N {
-                let big_x_i_affine = big_x_i_affine_v[j];
-                let big_y_affine = big_y_affine_v_arc[j];
+                let big_x_i_verkey = big_x_i_verkey_v[j];
+                let big_y_verkey = big_y_verkey_v_arc[j];
                 let big_y = big_y_v_arc[j];
                 let x_i = x_i_v[j];
-                hashv.push(hash(i, &big_x_i_affine, &big_y_affine, &(big_y * x_i)));
+                hashv.push(hash(
+                    i,
+                    &big_x_i_verkey,
+                    &big_y_verkey,
+                    &CoefficientCommitment::new(big_y * x_i),
+                )?);
             }
             hashv
         };
@@ -292,66 +319,18 @@ pub async fn batch_random_ot_receiver_many<C: CSCurve, const N: usize>(
     Ok(ret)
 }
 
-/// Run the batch random OT protocol between two parties.
-#[allow(dead_code)]
-pub(crate) fn run_batch_random_ot<C: CSCurve>(
-) -> Result<(BatchRandomOTOutputSender, BatchRandomOTOutputReceiver), ProtocolError> {
-    let s = Participant::from(0u32);
-    let r = Participant::from(1u32);
-    let comms_s = Comms::new();
-    let comms_r = Comms::new();
-
-    run_two_party_protocol(
-        s,
-        r,
-        &mut make_protocol(
-            comms_s.clone(),
-            batch_random_ot_sender::<C>(comms_s.private_channel(s, r)),
-        ),
-        &mut make_protocol(
-            comms_r.clone(),
-            batch_random_ot_receiver::<C>(comms_r.private_channel(r, s)),
-        ),
-    )
-}
-
-/// Run the batch random OT many protocol between two parties.
-#[allow(dead_code)]
-pub(crate) fn run_batch_random_ot_many<C: CSCurve, const N: usize>() -> Result<
-    (
-        Vec<BatchRandomOTOutputSender>,
-        Vec<BatchRandomOTOutputReceiver>,
-    ),
-    ProtocolError,
-> {
-    let s = Participant::from(0u32);
-    let r = Participant::from(1u32);
-    let comms_s = Comms::new();
-    let comms_r = Comms::new();
-
-    run_two_party_protocol(
-        s,
-        r,
-        &mut make_protocol(
-            comms_s.clone(),
-            batch_random_ot_sender_many::<C, N>(comms_s.private_channel(s, r)),
-        ),
-        &mut make_protocol(
-            comms_r.clone(),
-            batch_random_ot_receiver_many::<C, N>(comms_r.private_channel(r, s)),
-        ),
-    )
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
-
-    use k256::Secp256k1;
+    use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
+    use crate::protocol::{
+        internal::{make_protocol, Comms},
+        run_two_party_protocol, Participant,
+    };
 
     #[test]
     fn test_batch_random_ot() {
-        let res = run_batch_random_ot::<Secp256k1>();
+        let res = run_batch_random_ot();
         assert!(res.is_ok());
         let ((k0, k1), (delta, k_delta)) = res.unwrap();
 
@@ -370,10 +349,37 @@ mod test {
         }
     }
 
+    /// Run the batch random OT many protocol between two parties.
+    fn run_batch_random_ot_many<const N: usize>() -> Result<
+        (
+            Vec<BatchRandomOTOutputSender>,
+            Vec<BatchRandomOTOutputReceiver>,
+        ),
+        ProtocolError,
+    > {
+        let s = Participant::from(0u32);
+        let r = Participant::from(1u32);
+        let comms_s = Comms::new();
+        let comms_r = Comms::new();
+
+        run_two_party_protocol(
+            s,
+            r,
+            &mut make_protocol(
+                comms_s.clone(),
+                batch_random_ot_sender_many::<N>(comms_s.private_channel(s, r)),
+            ),
+            &mut make_protocol(
+                comms_r.clone(),
+                batch_random_ot_receiver_many::<N>(comms_r.private_channel(r, s)),
+            ),
+        )
+    }
+
     #[test]
     fn test_batch_random_ot_many() {
         const N: usize = 10;
-        let res = run_batch_random_ot_many::<Secp256k1, N>();
+        let res = run_batch_random_ot_many::<N>();
         assert!(res.is_ok());
         let (a, b) = res.unwrap();
         for i in 0..N {

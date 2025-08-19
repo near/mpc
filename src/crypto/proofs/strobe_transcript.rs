@@ -1,6 +1,6 @@
 use zeroize::Zeroize;
 
-use crate::proofs::strobe::Strobe128;
+use super::strobe::Strobe128;
 
 pub const MERLIN_PROTOCOL_LABEL: &[u8] = b"Mini-Merlin";
 

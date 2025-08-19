@@ -42,7 +42,6 @@
 //! This is why we have to take great care that the identifiers a protocol will produce
 //! are deterministic, even in the presence of concurrent tasks.
 use super::{Action, MessageData, Participant, Protocol, ProtocolError};
-use crate::serde::{decode, encode_with_tag};
 use futures::future::BoxFuture;
 use futures::task::noop_waker;
 use futures::{FutureExt, StreamExt};
@@ -54,7 +53,16 @@ use std::task::Context;
 use std::{collections::HashMap, error, future::Future, sync::Arc};
 
 /// The domain for our use of sha here.
-const DOMAIN: &[u8] = b"Near threshold signatures  channel tags";
+const DOMAIN: &[u8] = b"Near threshold signatures channel tags";
+
+/// Encode an arbitrary serializable with a tag.
+fn encode_with_tag<T: Serialize>(tag: &[u8], val: &T) -> Result<Vec<u8>, ProtocolError> {
+    // Matches rmp_serde's internal default.
+    let mut out = Vec::with_capacity(128);
+    out.extend_from_slice(tag);
+    rmp_serde::encode::write(&mut out, val).map_err(|_| ProtocolError::ErrorEncoding)?;
+    Ok(out)
+}
 
 /// Represents a unique tag for a channel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
@@ -295,17 +303,28 @@ impl Comms {
     }
 
     /// (Indicate that you want to) send a message to everybody else.
-    fn send_many<T: Serialize>(&self, header: MessageHeader, data: &T) {
+    fn send_many<T: Serialize>(
+        &self,
+        header: MessageHeader,
+        data: &T,
+    ) -> Result<(), ProtocolError> {
         let header_bytes = header.to_bytes();
-        let message_data = encode_with_tag(&header_bytes, data);
+        let message_data = encode_with_tag(&header_bytes, data)?;
         self.send_raw(Message::Many(message_data));
+        Ok(())
     }
 
     /// (Indicate that you want to) send a message privately to someone.
-    fn send_private<T: Serialize>(&self, header: MessageHeader, to: Participant, data: &T) {
+    fn send_private<T: Serialize>(
+        &self,
+        header: MessageHeader,
+        to: Participant,
+        data: &T,
+    ) -> Result<(), ProtocolError> {
         let header_bytes = header.to_bytes();
-        let message_data = encode_with_tag(&header_bytes, data);
+        let message_data = encode_with_tag(&header_bytes, data)?;
         self.send_raw(Message::Private(to, message_data));
+        Ok(())
     }
 
     async fn recv<T: DeserializeOwned>(
@@ -314,7 +333,7 @@ impl Comms {
     ) -> Result<(Participant, T), ProtocolError> {
         let (from, data) = self.incoming.pop(header).await;
         let decoded: Result<T, Box<dyn error::Error + Send + Sync>> =
-            decode(&data[MessageHeader::LEN..]).map_err(|e| e.into());
+            rmp_serde::decode::from_slice(&data[MessageHeader::LEN..]).map_err(|e| e.into());
         Ok((from, decoded?))
     }
 
@@ -346,14 +365,25 @@ impl SharedChannel {
         self.header.next_waitpoint()
     }
 
-    pub fn send_many<T: Serialize>(&self, waitpoint: Waitpoint, data: &T) {
+    pub fn send_many<T: Serialize>(
+        &self,
+        waitpoint: Waitpoint,
+        data: &T,
+    ) -> Result<(), ProtocolError> {
         self.comms
-            .send_many(self.header.with_waitpoint(waitpoint), data);
+            .send_many(self.header.with_waitpoint(waitpoint), data)?;
+        Ok(())
     }
 
-    pub fn send_private<T: Serialize>(&self, waitpoint: Waitpoint, to: Participant, data: &T) {
+    pub fn send_private<T: Serialize>(
+        &self,
+        waitpoint: Waitpoint,
+        to: Participant,
+        data: &T,
+    ) -> Result<(), ProtocolError> {
         self.comms
-            .send_private(self.header.with_waitpoint(waitpoint), to, data);
+            .send_private(self.header.with_waitpoint(waitpoint), to, data)?;
+        Ok(())
     }
 
     pub async fn recv<T: DeserializeOwned>(
@@ -394,9 +424,10 @@ impl PrivateChannel {
         self.header.next_waitpoint()
     }
 
-    pub fn send<T: Serialize>(&self, waitpoint: Waitpoint, data: &T) {
+    pub fn send<T: Serialize>(&self, waitpoint: Waitpoint, data: &T) -> Result<(), ProtocolError> {
         self.comms
-            .send_private(self.header.with_waitpoint(waitpoint), self.to, data);
+            .send_private(self.header.with_waitpoint(waitpoint), self.to, data)?;
+        Ok(())
     }
 
     pub async fn recv<T: DeserializeOwned>(

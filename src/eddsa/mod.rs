@@ -1,5 +1,10 @@
-//! This module serves as a wrapper for Frost protocol.
-use crate::generic_dkg::{BytesOrder, Ciphersuite, ScalarSerializationFormat};
+//! This module serves as a wrapper for Ed25519 scheme.
+pub mod dkg_ed25519;
+pub mod sign;
+#[cfg(test)]
+mod test;
+
+use crate::crypto::ciphersuite::{BytesOrder, Ciphersuite, ScalarSerializationFormat};
 use frost_ed25519::keys::SigningShare;
 use frost_ed25519::{Ed25519Sha512, VerifyingKey};
 
@@ -25,8 +30,3 @@ impl ScalarSerializationFormat for Ed25519Sha512 {
 }
 
 impl Ciphersuite for Ed25519Sha512 {}
-
-pub mod dkg_ed25519;
-pub mod sign;
-#[cfg(test)]
-mod test;
