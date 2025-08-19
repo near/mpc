@@ -2,6 +2,7 @@ use anyhow::{bail, Context};
 use attestation::{
     attestation::{Attestation, DstackAttestation},
     collateral::Collateral,
+    measurements::ExpectedMeasurements,
     quote::Quote,
 };
 use backon::{BackoffBuilder, ExponentialBuilder};
@@ -12,8 +13,10 @@ use near_crypto::PublicKey;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
-use std::str::FromStr;
-use std::{future::Future, time::Duration};
+use std::{
+    str::FromStr,
+    {future::Future, time::Duration},
+};
 use tokio::sync::mpsc;
 use tracing::error;
 
