@@ -1228,19 +1228,19 @@ impl VersionedMpcContract {
         }
     }
 
-    /// Upon success, removes the signature from state and returns it.
-    /// If the signature request times out, removes the signature request from state and panics to fail the original transaction
+    /// Upon success, removes the confidential key from state and returns it.
+    /// If the ckd request times out, removes the ckd request from state and panics to fail the original transaction
     #[private]
     pub fn return_ck_and_clean_state_on_success(
         &mut self,
         request: CKDRequest,
-        #[callback_result] signature: Result<SignatureResponse, PromiseError>,
-    ) -> PromiseOrValue<SignatureResponse> {
+        #[callback_result] ck: Result<CKDResponse, PromiseError>,
+    ) -> PromiseOrValue<CKDResponse> {
         let Self::V2(mpc_contract) = self else {
             env::panic_str("expected V2")
         };
-        match signature {
-            Ok(signature) => PromiseOrValue::Value(signature),
+        match ck {
+            Ok(ck) => PromiseOrValue::Value(ck),
             Err(_) => {
                 mpc_contract.pending_ckd_requests.remove(&request);
                 let promise = Promise::new(env::current_account_id()).function_call(
@@ -1300,7 +1300,7 @@ impl VersionedMpcContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto_shared::k256_types;
+    use crate::crypto_shared::{ed25519_types, k256_types};
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         signature::{Payload, Tweak},
@@ -1467,5 +1467,36 @@ mod tests {
         assert!(contract
             .get_pending_signature_request(&signature_request)
             .is_none());
+    }
+
+    #[test]
+    fn test_ckd_simple() {
+        let (context, mut contract, _secret_key) = basic_setup();
+        let app_public_key: near_sdk::PublicKey =
+            "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+                .parse()
+                .unwrap();
+        let request = CKDRequestArgs {
+            app_public_key: app_public_key.clone(),
+        };
+        let ckd_request = CKDRequest::new(app_public_key, context.predecessor_account_id);
+        contract.request_app_private_key(request);
+        contract.get_pending_ckd_request(&ckd_request).unwrap();
+
+        // TODO: for this test I think it is not useful to actually simulate the ckd process
+        // Simulate confidential key derivation and response
+        let ckd_response = CKDResponse::Ed25519 {
+            signature: ed25519_types::Signature::new([0; 64]),
+        };
+
+        match contract.respond_ckd(ckd_request.clone(), ckd_response.clone()) {
+            Ok(_) => {
+                contract
+                    .return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(ckd_response));
+
+                assert!(contract.get_pending_ckd_request(&ckd_request).is_none(),);
+            }
+            Err(_) => panic!("respond_ckd should not fail"),
+        }
     }
 }
