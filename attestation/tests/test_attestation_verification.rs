@@ -81,7 +81,7 @@ fn test_mock_attestation_verify(
     let account_key = "ed25519:H9k5eiU4xXyb8F7cUDjZYNuH1zGAx5BBNrYwLPNhq6Zx"
         .parse()
         .unwrap();
-    let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+    let report_data = ReportData::V1(ReportDataV1::new(&tls_key, &account_key));
 
     assert_eq!(
         mock_local_attestation(quote_verification_result).verify(
@@ -103,7 +103,7 @@ fn test_verify_method_signature() {
     let account_key: PublicKey = "ed25519:12DQBRudYdYpwirjPFXnwxCJKNUjuiW18zFqmDVez7We"
         .parse()
         .unwrap();
-    let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+    let report_data = ReportData::V1(ReportDataV1::new(&tls_key, &account_key));
     let timestamp_s = 1755186041_u64;
 
     let allowed_mpc_image_digest =

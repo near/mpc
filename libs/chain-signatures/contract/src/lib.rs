@@ -18,6 +18,7 @@ use crate::tee::quote::TeeQuoteStatus;
 use crate::tee::tee_state::TeeState;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
 use crate::v0_state::MpcContractV1;
+use attestation::report_data::ReportData;
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -433,6 +434,11 @@ impl VersionedMpcContract {
 // Node API
 #[near_bindgen]
 impl VersionedMpcContract {
+    #[handle_result]
+    pub fn test<'a>(&mut self, public_key: ReportData<'static>) -> Result<(), Error> {
+        Ok(())
+    }
+
     #[handle_result]
     pub fn respond(
         &mut self,
