@@ -51,9 +51,7 @@ const PUBLIC_KEYS_OFFSET: usize = BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE;
 
 /// report_data_v1: [u8; 64] =
 ///   [version(2 bytes big endian) || sha384(TLS pub key || account pub key) || zero padding]
-impl<'a> ReportDataV1<'a> {
-    /// V1-specific format constants
-
+impl ReportDataV1<'_> {
     // Compile-time assertions for V1 format.
     const _V1_LAYOUT_CHECK: () = {
         assert!(
@@ -105,7 +103,7 @@ pub enum ReportData<'a> {
     V1(ReportDataV1<'a>),
 }
 
-impl<'a> ReportData<'a> {
+impl ReportData<'_> {
     pub fn version(&self) -> ReportDataVersion {
         match self {
             ReportData::V1(_) => ReportDataVersion::V1,
