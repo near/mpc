@@ -18,7 +18,8 @@ use crate::indexer::types::{ChainSendTransactionRequest, SubmitParticipantInfoAr
 /// Set to [`None`] which defaults to `/var/run/dstack.sock`
 const ENDPOINT: Option<&str> = None;
 /// URL for usbmission of tdx quote. Returns collateral to be used for verification.
-const PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
+const PHALA_TDX_QUOTE_UPLOAD_URL: &str =
+    "https://cloud-api.phala.network/api/v1/attestations/verify";
 /// Expected HTTP [`StatusCode`] for a successful submission.
 const PHALA_SUCCESS_STATUS_CODE: StatusCode = StatusCode::OK;
 /// The maximum duration to wait for retrying request to Phala's endpoint, [`PHALA_TDX_QUOTE_UPLOAD_URL`].
