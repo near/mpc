@@ -1198,7 +1198,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "borsh",
- "dcap-qvl",
+ "dcap-qvl 0.3.0 (git+https://github.com/Phala-Network/dcap-qvl?rev=3d4f1bb57b104b1701c8bafacfdcf6e03a2bbcad)",
  "derive_more 2.0.1",
  "dstack-sdk-types",
  "hex",
@@ -1210,7 +1210,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "serde_yaml",
  "sha3",
  "thiserror 2.0.14",
  "tracing",
@@ -2511,6 +2510,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "dcap-qvl"
+version = "0.3.0"
+source = "git+https://github.com/Phala-Network/dcap-qvl?rev=3d4f1bb57b104b1701c8bafacfdcf6e03a2bbcad#3d4f1bb57b104b1701c8bafacfdcf6e03a2bbcad"
+dependencies = [
+ "anyhow",
+ "asn1_der",
+ "base64 0.22.1",
+ "borsh",
+ "byteorder",
+ "chrono",
+ "const-oid",
+ "dcap-qvl-webpki",
+ "der",
+ "getrandom 0.2.16",
+ "hex",
+ "log",
+ "parity-scale-codec",
+ "pem",
+ "ring",
+ "rustls-webpki 0.102.8",
+ "scale-info",
+ "serde",
+ "serde-human-bytes",
+ "serde_json",
+ "urlencoding",
+ "wasm-bindgen-futures",
+ "x509-cert",
+]
+
+[[package]]
 name = "dcap-qvl-webpki"
 version = "0.103.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2755,7 +2784,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 [[package]]
 name = "dstack-sdk"
 version = "0.1.0"
-source = "git+https://github.com/Dstack-TEE/dstack.git?rev=6e2150f2aea957281f101ab5036c3c048fbb0d18#6e2150f2aea957281f101ab5036c3c048fbb0d18"
+source = "git+https://github.com/Dstack-TEE/dstack.git?rev=04de4e422bb06f075b4215b2cfc410f5d7ac7aed#04de4e422bb06f075b4215b2cfc410f5d7ac7aed"
 dependencies = [
  "alloy",
  "anyhow",
@@ -2774,7 +2803,7 @@ dependencies = [
 [[package]]
 name = "dstack-sdk-types"
 version = "0.1.0"
-source = "git+https://github.com/Dstack-TEE/dstack.git?rev=6e2150f2aea957281f101ab5036c3c048fbb0d18#6e2150f2aea957281f101ab5036c3c048fbb0d18"
+source = "git+https://github.com/Dstack-TEE/dstack.git?rev=04de4e422bb06f075b4215b2cfc410f5d7ac7aed#04de4e422bb06f075b4215b2cfc410f5d7ac7aed"
 dependencies = [
  "anyhow",
  "bon",
@@ -4794,7 +4823,7 @@ dependencies = [
  "attestation",
  "borsh",
  "curve25519-dalek",
- "dcap-qvl",
+ "dcap-qvl 0.3.0 (git+https://github.com/Phala-Network/dcap-qvl?rev=06ac37d3fd7f9690158d92025666eb3d1e3f1938)",
  "derive_more 2.0.1",
  "getrandom 0.2.16",
  "hex",
