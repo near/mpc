@@ -4922,6 +4922,7 @@ name = "mpc-devnet"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "attestation",
  "borsh",
  "clap",
  "flume",
@@ -4952,6 +4953,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "async-trait",
+ "attestation",
  "axum 0.7.9",
  "backon",
  "borsh",

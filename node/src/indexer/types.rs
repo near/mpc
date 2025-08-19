@@ -1,15 +1,13 @@
 use crate::sign_request::SignatureRequest;
 use anyhow::Context;
+use attestation::attestation::Attestation;
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
 use legacy_mpc_contract;
-use mpc_contract::{
-    primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak},
-    tee::tee_participant::TeeParticipantInfo,
-};
+use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak};
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
@@ -122,7 +120,7 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubmitParticipantInfoArgs {
-    pub proposed_tee_participant: TeeParticipantInfo,
+    pub proposed_tee_participant: Attestation,
     pub sign_pk: PublicKey,
 }
 

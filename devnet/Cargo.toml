@@ -6,6 +6,7 @@ license = "MIT"
 
 [dependencies]
 anyhow = { workspace = true }
+attestation = { workspace = true }
 borsh = { workspace = true }
 clap = { workspace = true }
 flume = { workspace = true }

@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use alloc::string::ToString;
 
 /// Dstack event log, a.k.a. the TCB Info.
-#[derive(Debug, From, Deref, Into, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone, Debug, From, Deref, Into, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)

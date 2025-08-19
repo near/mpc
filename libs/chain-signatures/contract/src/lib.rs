@@ -560,7 +560,7 @@ impl VersionedMpcContract {
         // Add the participant information to the contract state
         mpc_contract
             .tee_state
-            .add_participant(account_id.clone(), proposed_participant_attestation.clone());
+            .add_participant(account_id.clone(), proposed_participant_attestation);
 
         // Both participants and non-participants can propose. Non-participants must pay for the
         // storage they use; participants do not.
