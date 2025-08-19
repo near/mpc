@@ -59,7 +59,7 @@ pub enum TeeAuthority {
 impl TeeAuthority {
     pub async fn generate_attestation(
         &self,
-        report_data: ReportData,
+        report_data: ReportData<'_>,
     ) -> anyhow::Result<Attestation> {
         match self {
             TeeAuthority::Local(config) => Ok(Attestation::Local(LocalAttestation::new(
@@ -74,7 +74,7 @@ impl TeeAuthority {
     async fn generate_dstack_attestation(
         &self,
         config: &DstackTeeAuthorityConfig,
-        report_data: ReportData,
+        report_data: ReportData<'_>,
     ) -> anyhow::Result<Attestation> {
         let client = DstackClient::new(Some(config.dstack_endpoint.as_str()));
 

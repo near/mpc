@@ -189,7 +189,7 @@ impl TryFrom<TeeAttestation> for Attestation {
             quote,
             collateral,
             value.tcb_info.into(),
-            expected_measurements,
+            ExpectedMeasurements::default(),
         )))
     }
 }
