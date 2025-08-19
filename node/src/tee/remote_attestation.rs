@@ -97,10 +97,7 @@ where
 ///
 /// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
 /// from generating the attestation.
-pub async fn create_remote_attestation_info(
-    tls_public_key: &PublicKey,
-    account_public_key: &PublicKey,
-) -> TeeAttestation {
+pub async fn create_remote_attestation_info(tls_public_key: &PublicKey) -> TeeAttestation {
     let client = DstackClient::new(ENDPOINT);
 
     let client_info_response = get_with_backoff(|| client.info(), "dstack client info").await;
@@ -115,10 +112,11 @@ pub async fn create_remote_attestation_info(
             .copy_from_slice(&byte_representation);
 
         // Copy hash
-        let mut hasher = Sha3_384::new();
-        hasher.update(tls_public_key.key_data());
-        hasher.update(account_public_key.key_data());
-        let public_keys_hash: [u8; PUBLIC_KEYS_SIZE] = hasher.finalize().into();
+        let public_keys_hash: [u8; PUBLIC_KEYS_SIZE] = {
+            let mut hasher = Sha3_384::new();
+            hasher.update(tls_public_key.key_data());
+            hasher.finalize().into()
+        };
         report_data[PUBLIC_KEYS_OFFSET..][..PUBLIC_KEYS_SIZE].copy_from_slice(&public_keys_hash);
 
         report_data
