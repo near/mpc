@@ -219,9 +219,8 @@ impl Attestation {
         expected: &ReportData,
         actual: &dcap_qvl::quote::TDReport10,
     ) -> bool {
-        // Check if sha384(tls_public_key || account_public_key) matches the hash in
-        // report_data. This check effectively proves that both tls_public_key and
-        // account_public_key were included in the quote's report_data by an app running
+        // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
+        // proves that tls_public_key was included in the quote's report_data by an app running
         // inside a TDX enclave.
         expected.to_bytes() == actual.report_data
     }
