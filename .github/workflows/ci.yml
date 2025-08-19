@@ -10,7 +10,7 @@ on:
   merge_group:
 
 jobs:
-  docker-build: 
+  docker-build:
     name: "Build Docker image"
     runs-on: warp-ubuntu-2204-x64-2x
     timeout-minutes: 60
@@ -23,13 +23,34 @@ jobs:
 
       - name: Initialize submodules
         run: git submodule update --init --recursive
-      
+
       - name: Build MPC Docker image
         uses: Warpbuilds/build-push-action@v6
         with:
           context: .
           profile-name: "mpc-image-builder"
           file: deployment/Dockerfile-gcp
+
+  docker-build-tee:
+    name: "Build Docker image TEE enabled"
+    runs-on: warp-ubuntu-2204-x64-2x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
+
+      - name: Build MPC Docker image
+        uses: Warpbuilds/build-push-action@v6
+        with:
+          context: .
+          profile-name: "mpc-image-builder"
+          file: deployment/Dockerfile-tee-gcp
 
   clippy-mpc-node:
     name: "MPC Node: clippy and format"
@@ -212,7 +233,7 @@ jobs:
         run: |
           cargo install wasm-opt --locked
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
-      
+
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked --features "tee"
 
@@ -266,7 +287,7 @@ jobs:
         run: |
           cargo install wasm-opt --locked
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
-      
+
       - name: Run contract tests
         run: |
           cd libs/chain-signatures
@@ -285,7 +306,7 @@ jobs:
 
       - name: Initialize submodules
         run: git submodule update --init --recursive
-      
+
       - name: Cache Rust dependencies
         uses: WarpBuilds/rust-cache@v2
         with:
