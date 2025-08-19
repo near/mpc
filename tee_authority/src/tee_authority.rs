@@ -20,7 +20,8 @@ use tracing::error;
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
 /// Default URL for submission of TDX quote. Returns collateral to be used for verification.
-const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
+const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str =
+    "https://cloud-api.phala.network/api/v1/attestations/verify";
 
 /// Default path for dstack Unix socket endpoint.
 const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
