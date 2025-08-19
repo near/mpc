@@ -12,7 +12,7 @@ use rstest::rstest;
 
 use crate::common::{
     TEST_LAUNCHER_COMPOSE_DIGEST_HEX, TEST_MPC_IMAGE_DIGEST_HEX, TEST_TCB_INFO_STRING, collateral,
-    mock_local_attestation, quote,
+    mock_local_attestation, p2p_tls_key, quote,
 };
 
 pub mod common;
@@ -78,10 +78,7 @@ fn test_mock_attestation_verify(
     let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
         .parse()
         .unwrap();
-    let account_key = "ed25519:H9k5eiU4xXyb8F7cUDjZYNuH1zGAx5BBNrYwLPNhq6Zx"
-        .parse()
-        .unwrap();
-    let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+    let report_data = ReportData::V1(ReportDataV1::new(tls_key));
 
     assert_eq!(
         mock_local_attestation(quote_verification_result).verify(
@@ -97,13 +94,9 @@ fn test_mock_attestation_verify(
 #[test]
 fn test_verify_method_signature() {
     let attestation = mock_dstack_attestation();
-    let tls_key: PublicKey = "ed25519:A1tot8yhhqdfHyNQXSCzi8fRwtmwR7TA5eRmohEUcbS8"
-        .parse()
-        .unwrap();
-    let account_key: PublicKey = "ed25519:12DQBRudYdYpwirjPFXnwxCJKNUjuiW18zFqmDVez7We"
-        .parse()
-        .unwrap();
-    let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+    let tls_key: PublicKey = p2p_tls_key();
+
+    let report_data = ReportData::V1(ReportDataV1::new(tls_key));
     let timestamp_s = 1755186041_u64;
 
     let allowed_mpc_image_digest =
