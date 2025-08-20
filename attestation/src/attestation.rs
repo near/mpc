@@ -28,7 +28,7 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -38,7 +38,7 @@ pub enum Attestation {
     Local(LocalAttestation),
 }
 
-#[derive(Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -50,7 +50,7 @@ pub struct DstackAttestation {
     pub expected_measurements: ExpectedMeasurements,
 }
 
-#[derive(Debug, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)

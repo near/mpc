@@ -19,10 +19,10 @@ use crate::{
     web::start_web_server,
 };
 use anyhow::{anyhow, Context};
+use attestation::attestation::Attestation;
 use clap::{Parser, ValueEnum};
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
-use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
@@ -296,7 +296,7 @@ impl StartCmd {
         let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
 
         #[allow(unused_mut, unused_assignments)]
-        let mut report_data_contract: Option<TeeParticipantInfo> = None;
+        let mut report_data_contract: Option<Attestation> = None;
         #[cfg(feature = "tee")]
         {
             let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();
