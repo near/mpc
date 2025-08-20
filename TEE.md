@@ -19,7 +19,7 @@ In order to protect the network from the worst case scenario (complete loss of f
 
 
 ## Disaster Recovery
-Distaster recovery is a plan intended to prevent a permanent loss of the signing quorum.
+Disaster recovery is a plan intended to prevent a permanent loss of the signing quorum.
 As long as the secret shares of the MPC nodes are securely backed-up outside of the TEE environment in which the node is running, it is highly likely that the network will be able to recover from otherwise catastrophic events.
 
 Therefore, the disaster recovery plan aims at establishing a secure mechanism allowing to back-up the secret shares held by the nodes. It encompasses two steps:
