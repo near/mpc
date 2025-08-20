@@ -190,7 +190,7 @@ impl TryFrom<TeeAttestation> for Attestation {
         Ok(Attestation::Dstack(DstackAttestation::new(
             quote,
             collateral,
-            value.tcb_info.into(),
+            value.tcb_info,
             ExpectedMeasurements::default(),
         )))
     }

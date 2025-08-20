@@ -5,7 +5,6 @@ use attestation::{
     measurements::ExpectedMeasurements,
     quote::Quote,
     report_data::ReportData,
-    tcbinfo::TcbInfo,
 };
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
@@ -81,7 +80,7 @@ impl TeeAuthority {
 
         let client_info_response =
             get_with_backoff(|| client.info(), "dstack client info", None).await?;
-        let tcb_info = TcbInfo::from(client_info_response.tcb_info);
+        let tcb_info = client_info_response.tcb_info;
 
         let quote = get_with_backoff(
             || client.get_quote(report_data.to_bytes().into()),
