@@ -20,7 +20,8 @@ use tracing::error;
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
 /// Default URL for submission of TDX quote. Returns collateral to be used for verification.
-const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
+const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str =
+    "https://cloud-api.phala.network/api/v1/attestations/verify";
 
 /// Default path for dstack Unix socket endpoint.
 const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
@@ -264,10 +265,7 @@ mod tests {
         let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
             .parse()
             .unwrap();
-        let account_key = "ed25519:H9k5eiU4xXyb8F7cUDjZYNuH1zGAx5BBNrYwLPNhq6Zx"
-            .parse()
-            .unwrap();
-        let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+        let report_data = ReportData::V1(ReportDataV1::new(tls_key));
 
         let authority =
             TeeAuthority::Local(LocalTeeAuthorityConfig::new(quote_verification_result));
