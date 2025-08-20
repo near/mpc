@@ -7,8 +7,18 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TeeQuoteStatus {
+    /// No TEE information was found for this participant.
+    /// This indicates the participant is not running in a TEE environment
+    /// or has not provided TEE attestation data.
     None,
+
+    /// TEE quote and Docker image verification both passed successfully.
+    /// The participant is considered to have a valid, verified TEE status.
     Valid,
+
+    /// TEE verification failed - either the quote verification failed,
+    /// the Docker image verification failed, or both validations failed.
+    /// The participant should not be trusted for TEE-dependent operations.
     Invalid,
 }
 
@@ -342,7 +352,7 @@ mod tests {
         // let quote = std::fs::read("../samples/4.bin").expect("quote is not found");
         // println!("{:?}", collateral);
 
-        let now = 1747699200; // 20 May 2025, 00:00:00 UTC
+        let now = 1744217930; // Apr 09 2025 16:58:50 UTC
 
         // get compose hash from events
         let expected_compose_hash = event_log

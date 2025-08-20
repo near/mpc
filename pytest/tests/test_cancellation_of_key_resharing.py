@@ -9,6 +9,7 @@ from common_lib.shared.transaction_status import assert_txn_execution_error
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
 from common_lib.contract_state import (
+    ProtocolState,
     RunningProtocolState,
 )
 
@@ -85,7 +86,7 @@ def test_cancellation_of_key_resharing():
         running_node.send_txn_and_check_success(tx)
 
     # Assert cancellation works.
-    assert cluster.wait_for_state("Running"), (
+    assert cluster.wait_for_state(ProtocolState.RUNNING), (
         "Contract should transition to running state after threshold running nodes voted for cancellation."
     )
 

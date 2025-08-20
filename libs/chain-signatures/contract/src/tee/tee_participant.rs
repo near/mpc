@@ -6,19 +6,19 @@ use crate::{
         quote::{replay_app_compose, replay_rtmr},
     },
 };
+use attestation::attestation::DstackAttestation;
 use dcap_qvl::{
     quote::Quote,
     verify::{self, VerifiedReport},
 };
 use k256::sha2::{Digest, Sha384};
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
     env::{self, sha256},
     near, PublicKey,
 };
 use serde::Deserialize;
 use serde_json::Value;
-
-use serde_yaml::Value as YamlValue;
 
 //git rev-parse HEAD
 //fbdf2e76fb6bd9142277fdd84809de87d86548ef
@@ -47,6 +47,8 @@ const RTMR2: [u8; 48] = [
     0xe1, 0xc7, 0x81, 0x3b, 0x4a, 0xba, 0xb4, 0x52, 0x57, 0x03, 0x30, 0xdd, 0xeb, 0xab, 0xf9, 0x39,
     0x39, 0x30, 0x99, 0x23, 0x4a, 0xbc, 0x03, 0x09, 0xf0, 0x39, 0x36, 0xed, 0xeb, 0xf7, 0x4b, 0x1f,
 ];
+
+const RTMR3_INDEX: u8 = 3;
 
 const EXPECTED_LOCAL_SGX_HASH: &str =
     "1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b";
@@ -85,6 +87,20 @@ pub struct TeeParticipantInfo {
     pub raw_tcb_info: String,
 }
 
+impl TryFrom<DstackAttestation> for TeeParticipantInfo {
+    type Error = Error;
+
+    fn try_from(dstack_attestation: DstackAttestation) -> Result<Self, Self::Error> {
+        Ok(TeeParticipantInfo {
+            tee_quote: dstack_attestation.quote.raw_bytes().into(),
+            quote_collateral: serde_json::to_string(&dstack_attestation.collateral)
+                .map_err(|_| Error::from(InvalidCandidateSet::InvalidParticipantsTeeQuote))?,
+            raw_tcb_info: serde_json::to_string(&dstack_attestation.tcb_info)
+                .map_err(|_| Error::from(InvalidCandidateSet::InvalidParticipantsTeeQuote))?,
+        })
+    }
+}
+
 impl TeeParticipantInfo {
     /// Verifies the TEE quote against the provided collateral.
     pub fn verify_quote(&self, timestamp_s: u64) -> Result<VerifiedReport, Error> {
@@ -104,10 +120,10 @@ impl TeeParticipantInfo {
     /// expected values.
     pub fn verify_docker_image(
         &self,
-        allowed_docker_image_hashes: &[MpcDockerImageHash],
-        historical_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         report: VerifiedReport,
-        public_key: PublicKey,
+        public_key: &PublicKey,
     ) -> Result<bool, Error> {
         let quote = Quote::parse(&self.tee_quote)
             .map_err(|_| Into::<Error>::into(InvalidCandidateSet::InvalidParticipantsTeeQuote))?;
@@ -134,17 +150,14 @@ impl TeeParticipantInfo {
         if !Self::check_app_compose_fields(&tcb_info) {
             return Ok(false);
         }
-        if !Self::check_docker_compose_hash(
-            &tcb_info,
-            allowed_docker_image_hashes,
-            historical_docker_image_hashes,
-        ) {
+        if !Self::check_docker_compose_hash(&tcb_info, allowed_launcher_docker_compose_hashes) {
             return Ok(false);
         }
+
         if !Self::check_local_sgx(event_log) {
             return Ok(false);
         }
-        if !Self::check_mpc_hash(event_log, allowed_docker_image_hashes) {
+        if !Self::check_mpc_hash(event_log, allowed_mpc_docker_image_hashes) {
             return Ok(false);
         }
 
@@ -162,7 +175,7 @@ impl TeeParticipantInfo {
         }
     }
 
-    fn verify_report_data(&self, quote: &Quote, node_signing_public_key: PublicKey) -> bool {
+    fn verify_report_data(&self, quote: &Quote, node_signing_public_key: &PublicKey) -> bool {
         let report_data = match quote.report.as_td10() {
             Some(r) => r.report_data,
             None => return false,
@@ -183,24 +196,31 @@ impl TeeParticipantInfo {
             Some(r) => hex::encode(r.rt_mr3),
             None => return false,
         };
-        let replayed_rtmr3 = replay_rtmr(event_log.to_owned(), 3);
+        let replayed_rtmr3 = replay_rtmr(event_log.to_owned(), RTMR3_INDEX);
         expected_rtmr3 == replayed_rtmr3
     }
 
     fn check_app_compose(event_log: &[Value], tcb_info: &Value) -> bool {
         let expected_compose_hash = event_log
             .iter()
-            .find(|e| e["event"].as_str() == Some("compose-hash"))
+            .find(|e| {
+                let is_compose_hash_event = e["event"].as_str() == Some("compose-hash");
+                let is_rtmr3_measurement = e["imr"].as_u64() == Some(RTMR3_INDEX as u64);
+                is_compose_hash_event && is_rtmr3_measurement
+            })
             .and_then(|e| e["digest"].as_str());
-        let app_compose = tcb_info["app_compose"].as_str();
+        let app_compose = match tcb_info.get("app_compose").and_then(|v| v.as_str()) {
+            Some(compose) => compose,
+            None => return false,
+        };
         match (expected_compose_hash, app_compose) {
-            (Some(expected), Some(app)) => replay_app_compose(app) == expected,
+            (Some(expected), app) => replay_app_compose(app) == expected,
             _ => false,
         }
     }
 
     fn check_app_compose_fields(tcb_info: &Value) -> bool {
-        let compose_str = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
+        let compose_str = match tcb_info.get("app_compose").and_then(|v| v.as_str()) {
             Some(compose) => compose,
             None => return false,
         };
@@ -245,35 +265,46 @@ impl TeeParticipantInfo {
 
     fn check_docker_compose_hash(
         tcb_info: &Value,
-        allowed_docker_image_hashes: &[MpcDockerImageHash],
-        historical_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
-        let compose_yaml = match tcb_info.get("docker_compose_file").and_then(|v| v.as_str()) {
-            Some(yaml) => yaml,
+        let app_compose_str = match tcb_info.get("app_compose").and_then(|v| v.as_str()) {
+            Some(compose) => compose,
+            None => return false,
+        };
+        let app_compose: Value = match serde_json::from_str(app_compose_str).ok() {
+            Some(compose) => compose,
             None => return false,
         };
 
-        if serde_yaml::from_str::<YamlValue>(compose_yaml).is_err() {
-            return false;
-        }
+        let docker_compose = match app_compose
+            .get("docker_compose_file")
+            .and_then(|v| v.as_str())
+        {
+            Some(compose) => compose,
+            None => return false,
+        };
 
-        let compose_yaml_hash = sha256(compose_yaml.as_bytes());
-        let mut compose_yaml_hash_arr = [0u8; 32];
-        compose_yaml_hash_arr.copy_from_slice(&compose_yaml_hash);
+        let docker_compose_hash = sha256(docker_compose.as_bytes());
+        let mut docker_compose_hash_arr = [0u8; 32];
+        docker_compose_hash_arr.copy_from_slice(&docker_compose_hash);
 
-        allowed_docker_image_hashes
+        allowed_docker_compose_hashes
             .iter()
-            .chain(historical_docker_image_hashes)
-            .any(|hash| hash.as_hex() == hex::encode(compose_yaml_hash_arr))
+            .any(|hash| hash.as_hex() == hex::encode(docker_compose_hash_arr))
     }
 
     fn check_local_sgx(event_log: &[Value]) -> bool {
-        let local_sgx_hash = event_log
+        let local_sgx_digest = event_log
             .iter()
-            .find(|e| e["event"].as_str() == Some("local-sgx"))
+            .find(|e| {
+                let is_key_provider_event = e["event"].as_str() == Some("key-provider");
+                let is_rtmr3_measurement = e["imr"].as_u64() == Some(RTMR3_INDEX as u64);
+                is_key_provider_event && is_rtmr3_measurement
+            })
             .and_then(|e| e["digest"].as_str());
-        match local_sgx_hash {
-            Some(hash) => hash == EXPECTED_LOCAL_SGX_HASH,
+
+        match local_sgx_digest {
+            Some(digest) => digest == EXPECTED_LOCAL_SGX_HASH,
             None => false,
         }
     }
@@ -284,7 +315,11 @@ impl TeeParticipantInfo {
     ) -> bool {
         let mpc_node_image_digest = event_log
             .iter()
-            .find(|e| e["event"].as_str() == Some("mpc-image-digest"))
+            .find(|e| {
+                let is_mpc_image_event = e["event"].as_str() == Some("mpc-image-digest");
+                let is_rtmr3_measurement = e["imr"].as_u64() == Some(RTMR3_INDEX as u64);
+                is_mpc_image_event && is_rtmr3_measurement
+            })
             .and_then(|e| e["digest"].as_str());
 
         match mpc_node_image_digest {

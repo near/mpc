@@ -14,6 +14,7 @@ pub mod v0_state;
 use crate::errors::Error;
 use crate::storage_keys::StorageKey;
 use crate::tee::proposal::AllowedDockerImageHashes;
+use crate::tee::quote::TeeQuoteStatus;
 use crate::tee::tee_state::TeeState;
 use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
 use crate::v0_state::MpcContractV1;
@@ -536,30 +537,20 @@ impl VersionedMpcContract {
         // Save the initial storage usage to know how much to charge the proposer for the storage used
         let initial_storage = env::storage_usage();
 
-        // Verify the TEE quote before adding the proposed participant to the contract state
-        let timestamp_s = env::block_timestamp_ms() / 1_000;
-        let report = proposed_tee_participant
-            .verify_quote(timestamp_s)
-            .map_err(|err| {
-                InvalidParameters::InvalidTeeRemoteAttestation.message(err.to_string())
-            })?;
-
         let Self::V2(mpc_contract) = self else {
             env::panic_str("expected V2")
         };
 
-        let allowed_docker_image_hashes = mpc_contract.tee_state.get_allowed_hashes();
-        let historical_docker_image_hashes = mpc_contract.tee_state.get_historical_hashes();
+        // Verify the TEE quote and Docker image for the proposed participant
+        let timestamp_s = env::block_timestamp_ms() / 1_000;
+        let status =
+            mpc_contract
+                .tee_state
+                .verify_tee_participant(&account_id, &sign_pk, timestamp_s)?;
 
-        // Verify we are running the correct MPC Docker image
-        if !proposed_tee_participant.verify_docker_image(
-            allowed_docker_image_hashes.as_slice(),
-            historical_docker_image_hashes.as_slice(),
-            report,
-            sign_pk,
-        )? {
+        if status == TeeQuoteStatus::Invalid {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
-                .message("RTMR3 does not match expected value".to_string()));
+                .message("TeeQuoteStatus is invalid".to_string()));
         }
 
         // Add a new proposed participant to the contract state

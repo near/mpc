@@ -6,6 +6,7 @@ use super::{IndexerAPI, IndexerState};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
+use crate::indexer::balances::monitor_balance;
 #[cfg(feature = "tee")]
 use crate::indexer::tee::monitor_allowed_docker_images;
 use mpc_contract::state::ProtocolContractState;
@@ -94,12 +95,25 @@ pub fn spawn_real_indexer(
 
             actix::spawn(handle_txn_requests(
                 chain_txn_receiver,
-                my_near_account_id,
+                my_near_account_id.clone(),
                 account_secret_key.clone(),
-                respond_config,
+                respond_config.clone(),
+                indexer_state.clone(),
+            ));
+            actix::spawn(monitor_balance(
+                my_near_account_id.clone(),
+                respond_config.account_id.clone(),
+                indexer_state.client.clone(),
+                indexer_state.view_client.clone(),
+            ));
+
+            #[cfg(feature = "tee")]
+            actix::spawn(monitor_allowed_docker_images(
+                allowed_docker_images_sender,
                 indexer_state.clone(),
             ));
 
+            // below function runs indefinitely and only returns in case of an error.
             #[cfg(feature = "network-hardship-simulation")]
             let indexer_result = listen_blocks(
                 stream,
@@ -120,12 +134,6 @@ pub fn spawn_real_indexer(
                 block_update_sender,
             )
             .await;
-
-            #[cfg(feature = "tee")]
-            actix::spawn(monitor_allowed_docker_images(
-                allowed_docker_images_sender,
-                indexer_state.clone(),
-            ));
 
             if indexer_exit_sender.send(indexer_result).is_err() {
                 tracing::error!("Indexer thread could not send result back to main driver.")

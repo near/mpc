@@ -1,6 +1,7 @@
 use anyhow::{bail, Context};
 use backon::{BackoffBuilder, ExponentialBuilder};
-use dstack_sdk::dstack_client::{DstackClient, TcbInfo};
+use dstack_sdk::dstack_client::DstackClient;
+use dstack_sdk_types::dstack::TcbInfo;
 use http::status::StatusCode;
 use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use near_crypto::PublicKey;
@@ -11,9 +12,9 @@ use std::{future::Future, time::Duration};
 use tokio::sync::mpsc;
 use tracing::error;
 
-use crate::indexer::types::{ChainSendTransactionRequest, ProposeJoinArgs};
+use crate::indexer::types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs};
 
-/// Endpoint to contact dstack service.
+/// Endpoint to contact Dstack service.
 /// Set to [`None`] which defaults to `/var/run/dstack.sock`
 const ENDPOINT: Option<&str> = None;
 /// URL for usbmission of tdx quote. Returns collateral to be used for verification.
@@ -190,13 +191,13 @@ pub async fn submit_remote_attestation(
     report_data_contract: TeeParticipantInfo,
     account_public_key: PublicKey,
 ) -> anyhow::Result<()> {
-    let propose_join_args = ProposeJoinArgs {
+    let propose_join_args = SubmitParticipantInfoArgs {
         proposed_tee_participant: report_data_contract,
         sign_pk: account_public_key,
     };
 
     tx_sender
-        .send(ChainSendTransactionRequest::SubmitRemoteAttestation(
+        .send(ChainSendTransactionRequest::SubmitParticipantInfo(
             propose_join_args,
         ))
         .await

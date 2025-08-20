@@ -43,7 +43,7 @@ curve25519-dalek = { version = "4.1.3", features = [
 ], default-features = false }
 borsh = "1.5.0"
 derive_more = { version = "2.0.1", features = ["from"] }
-near-sdk = { version = "5.11.0", features = [
+near-sdk = { version = "5.15.1", features = [
     "legacy",
     "unit-testing",
     "unstable",
@@ -60,11 +60,10 @@ k256 = { version = "0.13.4", features = [
     "arithmetic",
     "expose-field",
 ] }
-# TODO(#451): Verify changes with upstream and integrate in our workspace.
-# The commit under 'rev' is the latest commit at the time it was added.
-dcap-qvl = { git = "https://github.com/mattlockyer/dcap-qvl", rev = "3caedd8fd0f365841abaf1430ff2922fcb09d9db" }
-
+# TODO(#815): Use upstream library
+dcap-qvl = { git = "https://github.com/gilcu3/dcap-qvl", rev = "287a6e7b00f3a687255e90733e954c979d1df9d5", default-features = false, features=["contract", "std", "report"] }
 mpc-primitives = { path = "../../../crates/primitives" }
+attestation = { path = "../../../attestation" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-account-id = "1.1.1"
 thiserror = "1"

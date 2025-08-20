@@ -14,6 +14,7 @@ from common_lib.constants import NEAR_BASE, MPC_BINARY_PATH
 from common_lib.shared.mpc_cluster import MpcCluster
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
+from common_lib.shared.transaction_status import assert_txn_success
 from common_lib.shared.yaml_safeloader import SafeLoaderIgnoreUnknown
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -79,7 +80,7 @@ def start_neard_cluster_with_cleanup(
         "rpc": {
             "polling_config": {
                 "polling_timeout": {"secs": 20, "nanos": 0},
-                "polling_interval": {"secs": 1, "nanos": 0},
+                "polling_interval": {"secs": 0, "nanos": 10000000},
             }
         }
     }
@@ -264,10 +265,11 @@ def start_cluster_with_mpc(
     )
 
     (key, nonce) = cluster.contract_node.get_key_and_nonce()
-    nonce += 1
+    txs = []
     mpc_nodes = []
     for near_node, candidate in zip(observers, candidates):
         # add the nodes access key to the list
+        nonce += 1
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
             candidate.responder_keys[0].account_id,
@@ -275,10 +277,8 @@ def start_cluster_with_mpc(
             nonce,
             cluster.contract_node.last_block_hash(),
         )
-        cluster.contract_node.send_txn_and_check_success(tx)
-
+        txs.append(tx)
         candidate_account_id = candidate.signer_key.account_id
-
         pytest_signer_keys = []
         for i in range(0, 5):
             # We add a signing key for pytest functions
@@ -291,6 +291,7 @@ def start_cluster_with_mpc(
             pytest_signer_keys.append(pytest_signer_key)
 
         nonce += 1
+
         # Observer nodes haven't started yet so we use cluster node to send txs
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
@@ -299,8 +300,7 @@ def start_cluster_with_mpc(
             nonce,
             cluster.contract_node.last_block_hash(),
         )
-        nonce += 1
-        cluster.contract_node.send_txn_and_check_success(tx)
+        txs.append(tx)
 
         mpc_node = MpcNode(
             near_node,
@@ -309,9 +309,12 @@ def start_cluster_with_mpc(
             candidate.p2p_public_key,
             pytest_signer_keys,
         )
-        cluster.contract_node.send_txn_and_check_success(tx)
         mpc_node.set_block_ingestion(True)
         mpc_nodes.append(mpc_node)
+
+    cluster.contract_node.send_await_check_txs_parallel(
+        "create account", txs, assert_txn_success
+    )
 
     # Deploy the mpc contract
     cluster.deploy_contract(contract)
