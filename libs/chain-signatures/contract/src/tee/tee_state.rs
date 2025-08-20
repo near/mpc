@@ -5,8 +5,11 @@ use crate::{
     tee::{
         proposal::{AllowedDockerImageHashes, CodeHashesVotes, MpcDockerImageHash},
         quote::TeeQuoteStatus,
-        tee_participant::TeeParticipantInfo,
     },
+};
+use attestation::{
+    attestation::Attestation,
+    report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
@@ -20,57 +23,87 @@ pub enum TeeValidationResult {
 #[derive(Debug)]
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
-    pub(crate) historical_docker_image_hashes: Vec<LauncherDockerComposeHash>,
+    pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
-    pub(crate) tee_participant_info: IterableMap<AccountId, TeeParticipantInfo>,
+    pub(crate) participants_attestations: IterableMap<AccountId, Attestation>,
 }
 
 impl Default for TeeState {
     fn default() -> Self {
         Self {
             allowed_docker_image_hashes: Default::default(),
-            historical_docker_image_hashes: Default::default(),
+            allowed_launcher_compose_hashes: Default::default(),
             votes: Default::default(),
-
-            tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
+            participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestation),
         }
     }
 }
 
 impl TeeState {
+    fn current_time_seconds() -> u64 {
+        let current_time_milliseconds = env::block_timestamp_ms();
+        current_time_milliseconds / 1_000
+    }
+
     /// May return an error
-    pub(crate) fn verify_tee_participant_info(
+    pub(crate) fn verify_proposed_participant_attestation(
         &mut self,
-        tee_participant_info: &TeeParticipantInfo,
-        sign_pk: &PublicKey,
+        tee_participant_info: &Attestation,
+        tls_public_key: PublicKey,
     ) -> Result<TeeQuoteStatus, Error> {
         let allowed_mpc_docker_image_hashes = self.get_allowed_hashes();
-        let allowed_launcher_hashes = self.get_allowed_launcher_hashes();
-        tee_participant_info.verify(
-            allowed_mpc_docker_image_hashes.as_slice(),
-            allowed_launcher_hashes.as_slice(),
-            sign_pk,
-        )
+        let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
+        let time_stamp_seconds = Self::current_time_seconds();
+
+        let expected_report_data = ReportData::V1(ReportDataV1::from(tls_public_key));
+
+        let quote_result = tee_participant_info.verify(
+            expected_report_data,
+            time_stamp_seconds,
+            &allowed_mpc_docker_image_hashes,
+            allowed_launcher_compose_hashes,
+        );
+
+        let quote_result = if quote_result {
+            TeeQuoteStatus::Valid
+        } else {
+            TeeQuoteStatus::Invalid
+        };
+
+        Ok(quote_result)
     }
 
     /// Verifies the TEE quote and Docker image
     pub(crate) fn verify_tee_participant(
         &mut self,
         account_id: &AccountId,
-        sign_pk: &PublicKey,
+        tls_public_key: PublicKey,
     ) -> Result<TeeQuoteStatus, Error> {
         let allowed_mpc_docker_image_hashes = self.get_allowed_hashes();
-        let allowed_launcher_hashes = self.get_allowed_launcher_hashes();
-        let tee_participant_info = self.tee_participant_info.get(account_id);
-        if let Some(tee_participant_info) = tee_participant_info {
-            tee_participant_info.verify(
-                allowed_mpc_docker_image_hashes.as_slice(),
-                allowed_launcher_hashes.as_slice(),
-                sign_pk,
-            )
+        let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
+
+        let participant_attestation = self.participants_attestations.get(account_id);
+        let Some(participant_attestation) = participant_attestation else {
+            return Ok(TeeQuoteStatus::None);
+        };
+
+        let expected_report_data = ReportData::V1(ReportDataV1::from(tls_public_key));
+        let time_stamp_seconds = Self::current_time_seconds();
+
+        let quote_result = participant_attestation.verify(
+            expected_report_data,
+            time_stamp_seconds,
+            &allowed_mpc_docker_image_hashes,
+            allowed_launcher_compose_hashes,
+        );
+
+        let quote_result = if quote_result {
+            TeeQuoteStatus::Valid
         } else {
-            Ok(TeeQuoteStatus::None)
-        }
+            TeeQuoteStatus::Invalid
+        };
+
+        Ok(quote_result)
     }
 
     /// Performs TEE validation on the given participants.
@@ -85,8 +118,10 @@ impl TeeState {
             .participants()
             .iter()
             .filter(|(account_id, _, participant_info)| {
+                let tls_public_key = participant_info.sign_pk.clone();
+
                 matches!(
-                    self.tee_status(account_id, &participant_info.sign_pk),
+                    self.tee_status(account_id, tls_public_key),
                     TeeQuoteStatus::Valid | TeeQuoteStatus::None
                 )
             })
@@ -107,8 +142,12 @@ impl TeeState {
     /// verification and the Docker image verification. If both validations pass, the participant
     /// is considered to have a valid TEE status. Otherwise, the participant is marked as invalid.
     /// If no TEE information is found, the participant is marked with `TeeQuoteStatus::None`.
-    pub fn tee_status(&mut self, account_id: &AccountId, sign_pk: &PublicKey) -> TeeQuoteStatus {
-        match self.verify_tee_participant(account_id, sign_pk) {
+    pub fn tee_status(
+        &mut self,
+        account_id: &AccountId,
+        tls_public_key: PublicKey,
+    ) -> TeeQuoteStatus {
+        match self.verify_tee_participant(account_id, tls_public_key) {
             Ok(status) => status,
             Err(_) => TeeQuoteStatus::Invalid,
         }
@@ -117,10 +156,10 @@ impl TeeState {
     pub fn add_participant(
         &mut self,
         account_id: AccountId,
-        proposed_tee_participant: TeeParticipantInfo,
+        proposed_tee_participant: Attestation,
     ) {
-        self.tee_participant_info
-            .insert(account_id.clone(), proposed_tee_participant.clone());
+        self.participants_attestations
+            .insert(account_id, proposed_tee_participant);
     }
 
     pub fn vote(
@@ -141,13 +180,9 @@ impl TeeState {
             .collect()
     }
 
-    pub fn get_allowed_launcher_hashes(&self) -> &Vec<LauncherDockerComposeHash> {
-        &self.historical_docker_image_hashes
-    }
-
     pub fn whitelist_tee_proposal(&mut self, tee_proposal: MpcDockerImageHash) {
         self.votes.clear_votes();
-        self.historical_docker_image_hashes.push(
+        self.allowed_launcher_compose_hashes.push(
             AllowedDockerImageHashes::get_docker_compose_hash(tee_proposal.clone()),
         );
         self.allowed_docker_image_hashes

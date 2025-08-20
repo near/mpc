@@ -196,7 +196,7 @@ These functions require the caller to be a participant or candidate.
 | `vote_cancel_keygen(next_domain_id: u64)`                                           | For Initializing state only. Votes to cancel the key generation (identified by the next_domain_id) and revert to the Running state.                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
 | `propose_update(args: ProposeUpdateArgs)`                                           | Proposes an update to the contract, requiring an attached deposit.                                                                                                                                                                      | `Result<UpdateId, Error>` | TBD             | TBD                |
 | `vote_update(id: UpdateId)`                                                         | Votes on a proposed update. If the threshold is met, the update is executed.                                                                                                                                                            | `Result<bool, Error>`     | TBD             | TBD                |
-| `propose_join(proposed_tee_participant: TeeParticipantInfo, signer_pk: PublicKey)` | Submits the tee participant info for a potential candidate. c.f. TEE section | `Result<(), Error>` | TBD | TBD |
+| `propose_join(proposed_tee_participant: DstackAttestation, signer_pk: PublicKey)`   | Submits the tee participant info for a potential candidate. c.f. TEE section | `Result<(), Error>` | TBD | TBD |
 
 ### Developer API
 
@@ -238,15 +238,17 @@ The MPC nodes will eventually run inside a Trusted Execution Environments (TEE).
 Participants that run their node inside a TEE will have to submit the following TEE related data to the contract:
 
 ```rust
-pub struct TeeParticipantInfo {
+pub struct DstackAttestation {
     /// TEE Remote Attestation Quote that proves the participant's identity.
-    pub tee_quote: Vec<u8>,
+    pub quote: Quote,
     /// Supplemental data for the TEE quote, including Intel certificates to verify it came from
     /// genuine Intel hardware, along with details about the Trusted Computing Base (TCB)
     /// versioning, status, and other relevant info.
-    pub quote_collateral: String,
+    pub collateral: Collateral,
     /// Dstack event log.
-    pub raw_tcb_info: String,
+    pub tcb_info: TcbInfo,
+    /// Expected measurements for the TEE quote.
+    pub expected_measurements: ExpectedMeasurements,
 }
 ```
 

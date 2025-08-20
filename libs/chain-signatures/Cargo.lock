@@ -252,7 +252,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "borsh",
- "dcap-qvl 0.3.0 (git+https://github.com/Phala-Network/dcap-qvl?rev=3d4f1bb57b104b1701c8bafacfdcf6e03a2bbcad)",
+ "dcap-qvl",
  "derive_more 2.0.1",
  "dstack-sdk-types",
  "hex",
@@ -422,7 +422,7 @@ checksum = "a660ebdea4d4d3ec7788cfc9c035b66efb66028b9b97bf6cde7023ccc8e77e28"
 dependencies = [
  "darling 0.21.2",
  "ident_case",
- "prettyplease 0.2.36",
+ "prettyplease 0.2.37",
  "proc-macro2",
  "quote",
  "rustversion",
@@ -833,36 +833,6 @@ dependencies = [
  "darling_core 0.21.2",
  "quote",
  "syn 2.0.106",
-]
-
-[[package]]
-name = "dcap-qvl"
-version = "0.3.0"
-source = "git+https://github.com/Phala-Network/dcap-qvl?rev=06ac37d3fd7f9690158d92025666eb3d1e3f1938#06ac37d3fd7f9690158d92025666eb3d1e3f1938"
-dependencies = [
- "anyhow",
- "asn1_der",
- "base64 0.22.1",
- "borsh",
- "byteorder",
- "chrono",
- "const-oid",
- "dcap-qvl-webpki",
- "der",
- "getrandom 0.2.16",
- "hex",
- "log",
- "parity-scale-codec",
- "pem",
- "ring",
- "rustls-webpki 0.102.8",
- "scale-info",
- "serde",
- "serde-human-bytes",
- "serde_json",
- "urlencoding",
- "wasm-bindgen-futures",
- "x509-cert",
 ]
 
 [[package]]
@@ -2333,7 +2303,6 @@ dependencies = [
  "base64 0.21.7",
  "borsh",
  "curve25519-dalek",
- "dcap-qvl 0.3.0 (git+https://github.com/Phala-Network/dcap-qvl?rev=06ac37d3fd7f9690158d92025666eb3d1e3f1938)",
  "derive_more 2.0.1",
  "digest",
  "ecdsa",
@@ -2945,9 +2914,9 @@ source = "git+https://github.com/near/nearcore?tag=2.7.0-rc.4#b7b72efa10273cf7c3
 
 [[package]]
 name = "near-sdk"
-version = "5.16.0"
+version = "5.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f792eccea52135288c847e22c0ba3bb118bb1de822599edeb875e274fddff59e"
+checksum = "a241826c1e10492edc565c459348d4aa11b34894e80e728701100774804dc822"
 dependencies = [
  "base64 0.22.1",
  "borsh",
@@ -2972,9 +2941,9 @@ dependencies = [
 
 [[package]]
 name = "near-sdk-macros"
-version = "5.16.0"
+version = "5.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20b8f485c78fa4f8f92ef0e21c6e8ed18ebbaa47a9a988c0570d8abd5af3770c"
+checksum = "342a02ae7157177772eab936069ccd7b7a535f86317c5af92e795a990cba75b6"
 dependencies = [
  "Inflector",
  "darling 0.20.11",
@@ -3012,9 +2981,9 @@ source = "git+https://github.com/near/nearcore?tag=2.7.0-rc.4#b7b72efa10273cf7c3
 
 [[package]]
 name = "near-sys"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7d8e0ba9994e4d54cb4b301cd5fa9f2defcb69851148103512b9640a7e91572"
+checksum = "e64e114297f37c94aa20df6a6f92822a1b41da76b4961298caf08ba80b7779b2"
 
 [[package]]
 name = "near-time"
@@ -3505,9 +3474,9 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.2.36"
+version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff24dfcda44452b9816fff4cd4227e1bb73ff5a2f1bc1105aa92fb8565ce44d2"
+checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
  "syn 2.0.106",
@@ -4178,9 +4147,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.142"
+version = "1.0.143"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "030fedb782600dcbd6f02d479bf0d817ac3bb40d644745b769d6a96bc3afc5a7"
+checksum = "d401abef1d108fbd9cbaebc3e46611f4b1021f714a0597a71f41ee463f5f4a5a"
 dependencies = [
  "indexmap 2.10.0",
  "itoa",
@@ -4734,9 +4703,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09b3661f17e86524eccd4371ab0429194e0d7c008abb45f7a7495b1719463c71"
+checksum = "bfa5fdc3bce6191a1dbc8c02d5c8bffcf557bafa17c124c5264a458f1b0613fa"
 dependencies = [
  "tinyvec_macros",
 ]

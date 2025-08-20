@@ -45,6 +45,30 @@ pub struct ReportDataV1 {
     tls_public_key: PublicKey,
 }
 
+// TODO: #880 https://github.com/near/mpc/issues/880
+impl From<near_sdk::PublicKey> for ReportDataV1 {
+    fn from(near_sdk_public_key: near_sdk::PublicKey) -> Self {
+        let key_bytes = &near_sdk_public_key.as_bytes()[1..]; // Skip curve type byte
+
+        let tls_public_key = match near_sdk_public_key.curve_type() {
+            near_sdk::CurveType::ED25519 => {
+                let key_content: [u8; 32] = key_bytes
+                    .try_into()
+                    .expect("ED25519 key should be 32 bytes");
+                PublicKey::ED25519(near_crypto::ED25519PublicKey::from(key_content))
+            }
+            near_sdk::CurveType::SECP256K1 => {
+                let key_content: [u8; 64] = key_bytes
+                    .try_into()
+                    .expect("SECP256K1 key should be 64 bytes");
+                PublicKey::SECP256K1(near_crypto::Secp256K1PublicKey::from(key_content))
+            }
+        };
+
+        ReportDataV1 { tls_public_key }
+    }
+}
+
 /// report_data_v1: [u8; 64] =
 ///   [version(2 bytes big endian) || sha384(TLS pub key) || zero padding]
 impl ReportDataV1 {

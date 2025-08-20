@@ -1,15 +1,13 @@
 use crate::sign_request::SignatureRequest;
 use anyhow::Context;
+use attestation::attestation::Attestation;
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
 use legacy_mpc_contract;
-use mpc_contract::{
-    primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak},
-    tee::tee_participant::TeeParticipantInfo,
-};
+use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak};
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
@@ -122,7 +120,7 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubmitParticipantInfoArgs {
-    pub proposed_tee_participant: TeeParticipantInfo,
+    pub proposed_tee_participant: Attestation,
     pub sign_pk: PublicKey,
 }
 
@@ -137,8 +135,14 @@ pub(crate) enum ChainSendTransactionRequest {
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
     VerifyTee(),
+    // Boxed as this variant is big, 2168 bytes.
+    // Big discrepancies in variant sizes will lead to memory fragmentation
+    // due to rust's memory layout for enums.
+    //
+    // For more info see clippy lint:
+    // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
     #[cfg(feature = "tee")]
-    SubmitParticipantInfo(SubmitParticipantInfoArgs),
+    SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
 }
 
 impl ChainSendTransactionRequest {
