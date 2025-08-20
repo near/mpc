@@ -135,6 +135,12 @@ pub(crate) enum ChainSendTransactionRequest {
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
     VerifyTee(),
+    // Boxed as this variant is big, 2168 bytes.
+    // Big discrepancies in variant sizes will lead to memory fragmentation
+    // due to rust's memory layout for enums.
+    //
+    // For more info see clippy lint:
+    // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
     #[cfg(feature = "tee")]
     SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
 }
