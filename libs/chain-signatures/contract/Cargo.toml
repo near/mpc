@@ -60,7 +60,6 @@ k256 = { version = "0.13.4", features = [
     "arithmetic",
     "expose-field",
 ] }
-dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl", rev = "06ac37d3fd7f9690158d92025666eb3d1e3f1938", default-features = false, features=["contract", "borsh", "std"] }
 mpc-primitives = { path = "../../../crates/primitives" }
 attestation = { path = "../../../attestation" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
@@ -92,17 +91,14 @@ digest = "0.10.7"
 near-crypto = "0.26.0"
 near-workspaces = "0.18"
 near-primitives = "=0.29.2" # not entirely clear why this is needed but otherwise tests don't compile
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "52109e54c4c574b44fe3e29378b2cb5ca8b1bb63", features = [
-    "k256",
-] }
-frost-ed25519 = "2.1.0"
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "5fd9fe7d45db3b653d300d393b95719f6fc219b3"}
 fs2 = "0.4"
 rstest = "0.25.0"
 
 [features]
 test-utils = ["rand"]
 dev-utils = []
-abi = ["borsh/unstable__schema", "mpc-primitives/abi"]
+abi = ["borsh/unstable__schema", "mpc-primitives/abi", "attestation/abi"]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
 # if it appears under wasm32 target, it will break compilation too.

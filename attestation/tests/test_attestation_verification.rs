@@ -2,7 +2,6 @@ use attestation::{
     attestation::{Attestation, DstackAttestation},
     collateral::Collateral,
     measurements::{ExpectedMeasurements, Measurements},
-    quote::Quote,
     report_data::{ReportData, ReportDataV1, ReportDataVersion},
 };
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
@@ -18,8 +17,7 @@ use crate::common::{
 pub mod common;
 
 fn mock_dstack_attestation() -> Attestation {
-    let quote_bytes = quote();
-    let quote: Quote = Quote::new(quote_bytes).expect("Is valid quote");
+    let quote = quote();
     let collateral = Collateral::try_from_json(collateral()).unwrap();
 
     let tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();

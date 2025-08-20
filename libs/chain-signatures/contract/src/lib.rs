@@ -12,14 +12,15 @@ pub mod utils;
 pub mod v0_state;
 
 use crate::crypto_shared::types::CKDResponse;
-use crate::errors::{Error, RequestError};
-use crate::primitives::ckd::{CKDRequest, CKDRequestArgs};
-use crate::storage_keys::StorageKey;
-use crate::tee::proposal::AllowedDockerImageHashes;
-use crate::tee::quote::TeeQuoteStatus;
-use crate::tee::tee_state::TeeState;
-use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
-use crate::v0_state::MpcContractV1;
+use crate::{
+    errors::{Error, RequestError},
+    primitives::ckd::{CKDRequest, CKDRequestArgs},
+    storage_keys::StorageKey,
+    tee::{proposal::AllowedDockerImageHashes, quote::TeeQuoteStatus, tee_state::TeeState},
+    update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
+    v0_state::MpcContractV1,
+};
+use attestation::attestation::Attestation;
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -46,10 +47,7 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
-use tee::{
-    proposal::MpcDockerImageHash, quote::get_collateral, tee_participant::TeeParticipantInfo,
-    tee_state::TeeValidationResult,
-};
+use tee::{proposal::MpcDockerImageHash, tee_state::TeeValidationResult};
 
 // Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
@@ -235,7 +233,6 @@ impl MpcContract {
     }
 
     pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
-        // Ensure the protocol is in the Running state
         let ProtocolContractState::Running(state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
@@ -663,14 +660,17 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
-        #[serializer(borsh)] proposed_tee_participant: TeeParticipantInfo,
-        #[serializer(borsh)] sign_pk: PublicKey,
+        #[serializer(borsh)] proposed_participant_attestation: Attestation,
+        #[serializer(borsh)] tls_public_key: PublicKey,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
+        let account_key = env::signer_account_pk();
+
         log!(
-            "submit_participant_info: signer={}, proposed_tee_participant={:?}",
+            "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
             account_id,
-            proposed_tee_participant,
+            proposed_participant_attestation,
+            account_key
         );
 
         // Save the initial storage usage to know how much to charge the proposer for the storage used
@@ -683,7 +683,10 @@ impl VersionedMpcContract {
         // Verify the TEE quote and Docker image for the proposed participant
         let status = mpc_contract
             .tee_state
-            .verify_tee_participant_info(&proposed_tee_participant, &sign_pk)?;
+            .verify_proposed_participant_attestation(
+                &proposed_participant_attestation,
+                tls_public_key,
+            )?;
 
         if status == TeeQuoteStatus::Invalid {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
@@ -693,7 +696,7 @@ impl VersionedMpcContract {
         // Add the participant information to the contract state
         mpc_contract
             .tee_state
-            .add_participant(account_id.clone(), proposed_tee_participant.clone());
+            .add_participant(account_id.clone(), proposed_participant_attestation);
 
         // Both participants and non-participants can propose. Non-participants must pay for the
         // storage they use; participants do not.

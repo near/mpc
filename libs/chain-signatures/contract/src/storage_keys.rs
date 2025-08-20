@@ -14,5 +14,5 @@ pub enum StorageKey {
     PendingRequestsV2,
     ProposedUpdatesEntriesV2,
     ProposedUpdatesVotesV2,
-    TeeParticipantInfo,
+    TeeParticipantAttestation,
 }

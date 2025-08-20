@@ -1,4 +1,7 @@
-use attestation::attestation::{Attestation, LocalAttestation};
+use attestation::{
+    attestation::{Attestation, LocalAttestation},
+    quote::QuoteBytes,
+};
 use near_crypto::PublicKey;
 use serde_json::Value;
 
@@ -26,7 +29,7 @@ pub fn collateral() -> Value {
         .expect("Quote collateral file is a valid json.")
 }
 
-pub fn quote() -> Vec<u8> {
+pub fn quote() -> QuoteBytes {
     let quote_collateral_json_string = include_str!("../tests/assets/quote.json");
     serde_json::from_str(quote_collateral_json_string)
         .expect("Quote collateral file is a valid json.")

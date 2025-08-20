@@ -1,6 +1,6 @@
 use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
-    quote::Quote, report_data::ReportData,
+    quote::QuoteBytes, report_data::ReportData,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use dcap_qvl::verify::VerifiedReport;
@@ -28,7 +28,7 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -38,19 +38,19 @@ pub enum Attestation {
     Local(LocalAttestation),
 }
 
-#[derive(Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
 pub struct DstackAttestation {
-    pub quote: Quote,
+    pub quote: QuoteBytes,
     pub collateral: Collateral,
     pub tcb_info: TcbInfo,
     pub expected_measurements: ExpectedMeasurements,
 }
 
-#[derive(Debug, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -90,19 +90,17 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
-        let quote_bytes = attestation.quote.raw_bytes();
-
-        // TODO(#451): We rely on a forked dcap_qvl crate that has some questionable code changes
-        // that could be critical from a security perspective (commented out code section that
-        // checks TCB validity time)
-        let verification_result =
-            match dcap_qvl::verify::verify(quote_bytes, &attestation.collateral, timestamp_s) {
-                Ok(result) => result,
-                Err(err) => {
-                    tracing::error!("TEE quote verification failed: {:?}", err);
-                    return false;
-                }
-            };
+        let verification_result = match dcap_qvl::verify::verify(
+            &attestation.quote,
+            &attestation.collateral,
+            timestamp_s,
+        ) {
+            Ok(result) => result,
+            Err(err) => {
+                tracing::error!("TEE quote verification failed: {:?}", err);
+                return false;
+            }
+        };
 
         let Some(report_data) = verification_result.report.as_td10() else {
             tracing::error!(
