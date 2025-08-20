@@ -1499,4 +1499,28 @@ mod tests {
             Err(_) => panic!("respond_ckd should not fail"),
         }
     }
+
+    #[test]
+    fn test_ckd_timeout() {
+        let (context, mut contract, _secret_key) = basic_setup();
+        let app_public_key: near_sdk::PublicKey =
+            "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+                .parse()
+                .unwrap();
+        let request = CKDRequestArgs {
+            app_public_key: app_public_key.clone(),
+        };
+        let ckd_request = CKDRequest::new(app_public_key, context.predecessor_account_id);
+        contract.request_app_private_key(request);
+        assert!(matches!(
+            contract.return_ck_and_clean_state_on_success(
+                ckd_request.clone(),
+                Err(PromiseError::Failed)
+            ),
+            PromiseOrValue::Promise(_)
+        ));
+        assert!(contract
+            .get_pending_ckd_request(&ckd_request)
+            .is_none());
+    }
 }

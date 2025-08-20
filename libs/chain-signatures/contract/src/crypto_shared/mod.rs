@@ -7,11 +7,12 @@ pub use types::{
     ed25519_types,
     k256_types::{self, SerializableScalar},
     SignatureResponse,
+    CKDResponse,
 };
 
-// Our wasm runtime doesn't support good syncronous entropy.
+// Our wasm runtime doesn't support good synchronous entropy.
 // We could use something VRF + pseudorandom here, but someone would likely shoot themselves in the foot with it.
-// Our crypto libraries should definately panic, because they normally expect randomness to be private
+// Our crypto libraries should definitely panic, because they normally expect randomness to be private
 #[cfg(target_arch = "wasm32")]
 use getrandom::{register_custom_getrandom, Error};
 #[cfg(target_arch = "wasm32")]

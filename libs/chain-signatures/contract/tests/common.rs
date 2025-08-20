@@ -9,15 +9,10 @@ use k256::{
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
-        SerializableScalar, SignatureResponse,
+        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature, CKDResponse, SerializableScalar, SignatureResponse
     },
     primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-        participants::{ParticipantInfo, Participants},
-        signature::{Bytes, SignatureRequest, Tweak},
-        thresholds::{Threshold, ThresholdParameters},
+        ckd::CKDRequest, domain::{DomainConfig, DomainId, SignatureScheme}, key_state::{AttemptId, EpochId, KeyForDomain, Keyset}, participants::{ParticipantInfo, Participants}, signature::{Bytes, SignatureRequest, Tweak}, thresholds::{Threshold, ThresholdParameters}
     },
     update::UpdateId,
 };
@@ -461,6 +456,13 @@ pub fn create_response_ed25519(
     (payload, respond_req, signature_response)
 }
 
+pub fn create_response_ckd(
+    app_id: &AccountId,
+    signing_key: &KeygenOutput,
+) -> (CKDRequest, CKDResponse) {
+    todo!()
+}
+
 pub async fn sign_and_validate(
     request: &SignRequestArgs,
     respond: Option<(&SignatureRequest, &SignatureResponse)>,
@@ -507,6 +509,14 @@ pub async fn sign_and_validate(
     }
 
     Ok(())
+}
+
+pub async fn derive_confidential_key(
+    request: &CKDRequest,
+    respond: Option<(&CKDRequest, &CKDResponse)>,
+    contract: &Contract,
+) -> anyhow::Result<()> {
+    todo!()
 }
 
 pub async fn vote_update_till_completion(
