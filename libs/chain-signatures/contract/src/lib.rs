@@ -1300,7 +1300,7 @@ impl VersionedMpcContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto_shared::k256_types;
+    use crate::crypto_shared::k256_types::{self, SerializableAffinePoint};
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         signature::{Payload, Tweak},
@@ -1484,8 +1484,8 @@ mod tests {
         contract.get_pending_ckd_request(&ckd_request).unwrap();
 
         let response = CKDResponse {
-            big_y: AffinePoint::GENERATOR,
-            big_c: AffinePoint::GENERATOR,
+            big_y: SerializableAffinePoint{affine_point: AffinePoint::GENERATOR},
+            big_c: SerializableAffinePoint{affine_point: AffinePoint::GENERATOR},
         };
 
         match contract.respond_ckd(ckd_request.clone(), response.clone()) {

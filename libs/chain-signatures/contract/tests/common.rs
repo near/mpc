@@ -541,8 +541,8 @@ pub fn create_response_ckd(
     let big_c = big_s + app_pk * y;
 
     let response = CKDResponse {
-        big_y: big_y.to_affine(),
-        big_c: big_c.to_affine(),
+        big_y: SerializableAffinePoint{affine_point: big_y.to_affine()},
+        big_c: SerializableAffinePoint{affine_point: big_c.to_affine()},
     };
     (request, response)
 }

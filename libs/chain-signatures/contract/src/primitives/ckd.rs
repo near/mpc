@@ -1,5 +1,6 @@
 use near_sdk::{near, AccountId};
 
+// TODO: do we need the Default trait here?
 #[derive(Clone, Debug)]
 #[near(serializers=[json])]
 pub struct CKDRequestArgs {

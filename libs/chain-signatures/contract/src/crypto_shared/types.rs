@@ -28,8 +28,8 @@ pub enum SignatureResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "scheme")]
 pub struct CKDResponse {
-    pub big_y: AffinePoint,
-    pub big_c: AffinePoint,
+    pub big_y: k256_types::SerializableAffinePoint,
+    pub big_c: k256_types::SerializableAffinePoint,
 }
 
 #[cfg_attr(
