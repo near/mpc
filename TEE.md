@@ -22,14 +22,14 @@ In order to protect the network from the worst case scenario (complete loss of f
 Disaster recovery is a plan intended to prevent a permanent loss of the signing quorum.
 As long as the secret shares of the MPC nodes are securely backed-up outside of the TEE environment in which the node is running, it is highly likely that the network will be able to recover from otherwise catastrophic events.
 
-Therefore, the disaster recovery plan aims at establishing a secure mechanism allowing to back-up the secret shares held by the nodes. It encompasses two steps:
+Therefore, the disaster recovery plan aims at establishing a secure mechanism allowing to back up the secret shares held by the nodes. It encompasses two steps:
 1. (Back-up Generation): export the private keys from the TEE in a secure manner.
 2. (Recovery): when required, securely import the private keys into the node.
 
 ### Back-up mechanism:
-At a high-level, the back-up mechanism works like this:
+At a high-level, the back up mechanism works like this:
 
-1. The node running inside the TEE and the back-up recipient must agree on a key used to encrypt the secrets.
+1. The node running inside the TEE and the backup recipient must agree on a key used to encrypt the secrets.
 2. The node encrypts the sensitive secret shares with the derived key.
 3. The node exports the encrypted secret shares.
 
@@ -38,36 +38,36 @@ A pair-wise key establishment scheme can be leveraged to establish a symmetric k
 
 _Note: This key exchange protocol is on Curve25519, which is different from the Edwards curve used by NEAR._
 
-The key establishment scheme requires that the node as well as the back-up recipient have *mutually authenticated Curve25519 public keys*. The NEAR blockchain can be leveraged for this, more specifically:
-- the node operator whitelists a NEAR-account associated to the back-up recipient in the MPC smart contract.
-- the back-up recipient submits a public key (Curve25519) to the MPC smart contract. The smart contract only accepts it if the account has been whitelisted by the node operator.
+The key establishment scheme requires that the node as well as the backup recipient have *mutually authenticated Curve25519 public keys*. The NEAR blockchain can be leveraged for this, more specifically:
+- the node operator whitelists a NEAR-account associated to the backup recipient in the MPC smart contract.
+- the backup recipient submits a public key (Curve25519) to the MPC smart contract. The smart contract only accepts it if the account has been whitelisted by the node operator.
 - the node submits a public key (Curve25519) to the MPC smart contract. The smart contract only accepts it if the public key submitting this transaction is an access key of the node operator's account.
 
-_Note: Curve25519 and edwards25519 are [birationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically use NEAR account keys. But it seems cleaner if we just have the node and the back-up recipient generate dedicated keys for this._
+_Note: Curve25519 and edwards25519 are [birationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically use NEAR account keys. But it seems cleaner if we just have the node and the backup recipient generate dedicated keys for this._
 
 #### Encrypting the secret
-The node running inside the TEE monitors the contract and can derive an encryption key using its secret key and the public key submitted by the back-up recipient.
+The node running inside the TEE monitors the contract and can derive an encryption key using its secret key and the public key submitted by the backup recipient.
 
 #### Exporting the encrypted secret
-The back-up service triggers the export of the back-up through a call to the smart contract or a dedicated web-endpoint.
+The back up service triggers the export of the backup through a call to the smart contract or a dedicated web-endpoint.
 The node returns the encrypted key either:
 - as a response to a request to its web-endpoint;
 - by printing its hex-value to the logs;
 - or through some other mechanism (@Barak, are there alternatives?)
 
-The back-up mechanism can then decrypt the received ciphertext to verify the received shares, before storing the encrypted shares in a secure database.
+The back up mechanism can then decrypt the received ciphertext to verify the received shares, before storing the encrypted shares in a secure database.
 
 ### Restoration Mechanism:
 #### Encryption Key Agreement & Encrypting the secret 
 Same as above, just reversed roles.
 
 #### Importing the encrypted secret into the node
-The back-up service (triggered by the node operator or a smart-contract state change), posts the data to an endpoint of the node.
+The back up service (triggered by the node operator or a smart-contract state change), posts the data to an endpoint of the node.
 
 ### Notes:
 - keep the web-endpoint private. Should we use a new webserver for that, on a different port?
 - instead of relying on web-endpoints, could we use TLS keys & connect via network, or connect via unix sockets?
-- for the hard-launch, the back-up service will need to run inside a TEE and must pass attestation verification on the contract.
+- for the hard-launch, the back up service will need to run inside a TEE and must pass attestation verification on the contract.
 
 
 ## Materials:
