@@ -3,7 +3,7 @@ use attestation::{
     attestation::{Attestation, DstackAttestation},
     collateral::Collateral,
     measurements::ExpectedMeasurements,
-    quote::Quote,
+    quote::QuoteBytes,
 };
 use backon::{BackoffBuilder, ExponentialBuilder};
 use dstack_sdk::dstack_client::DstackClient;
@@ -178,10 +178,9 @@ impl TryFrom<TeeAttestation> for Attestation {
     type Error = anyhow::Error;
 
     fn try_from(value: TeeAttestation) -> Result<Self, Self::Error> {
-        let quote = Quote::new(
-            hex::decode(value.tdx_quote)
-                .context("Failed to decode tee quote. Expected it to be in hex format.")?,
-        )?;
+        let quote: QuoteBytes = hex::decode(value.tdx_quote)
+            .context("Failed to decode tee quote. Expected it to be in hex format.")?
+            .into();
         let collateral = Collateral::from_str(
             &serde_json::to_string(&value.collateral)
                 .context("Failed to serialize quote collateral back to JSON string.")?,
