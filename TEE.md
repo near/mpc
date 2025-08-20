@@ -13,7 +13,7 @@ This is a good moment to remind the reader that threshold crypotgrapy requires `
 
 Therefore, Near-One will roll-out their TEE implementation in two phases:
 - Soft Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of the TEE.
-- Hard Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of inside a different TEE.
+- Hard Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up inside a different TEE.
 
 In order to protect the network from the worst case scenario (complete loss of funds due to loss of key shares or an incapacitated network), a disaster recovery plan is prepared.
 
