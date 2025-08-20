@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
+use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::{Deref, From, Into};
 use serde::{Deserialize, Serialize};
 
