@@ -11,7 +11,7 @@ TEEs provide their security guarantees by restricting how anything outside of th
 
 This is a good moment to remind the reader that threshold cryptography requires threshold operational nodes. Anything less than that, and the protocol stalls, in which case, no funds can be moved.
 
-Therefore, Near-One will roll-out their TEE implementation in two phases:
+Therefore, Near-One will roll-out its TEE implementation in two phases:
 - Soft Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of the TEE.
 - Hard Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up inside a different TEE.
 
