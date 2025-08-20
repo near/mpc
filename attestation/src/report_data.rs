@@ -122,15 +122,16 @@ impl ReportData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{quote::Quote, report_data::ReportData};
+    use crate::report_data::ReportData;
     use alloc::vec::Vec;
+    use dcap_qvl::quote::Quote;
     use near_crypto::{KeyType, SecretKey};
 
     #[test]
     fn test_from_str_valid() {
         let valid_quote_json_vec = include_str!("../tests/assets/quote.json");
         let valid_quote: Vec<u8> = serde_json::from_str(valid_quote_json_vec).unwrap();
-        let quote: Quote = Quote::new(valid_quote).unwrap();
+        let quote = Quote::parse(&valid_quote).unwrap();
 
         let td_report = quote.report.as_td10().expect("Should be a TD 1.0 report");
 
