@@ -27,7 +27,7 @@ Therefore, the disaster recovery plan aims at establishing a secure mechanism al
 2. (Recovery): when required, securely import the private keys into the node.
 
 ### Back-up mechanism:
-On a high-level, the back-up mechanism works like this:
+At a high-level, the back-up mechanism works like this:
 
 1. The node running inside the TEE and the back-up recipient must agree on a key used to encrypt the secrets.
 2. The node encrypts the sensitive secret shares with the derived key.
