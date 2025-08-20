@@ -55,9 +55,7 @@ The node returns the encrypted key either:
 - by printing its hex-value to the logs;
 - or through some other mechanism (@Barak, are there alternatives?)
 
-The back-up mechanism can then decrypt the received ciphertext and store the secret somewhere safe.
-
-_Todo: improve this section with more details. It is vague._
+The back-up mechanism can then decrypt the received ciphertext to verify the received shares, before storing the encrypted shares in a secure database.
 
 ### Restoration Mechanism:
 #### Encryption Key Agreement & Encrypting the secret 
