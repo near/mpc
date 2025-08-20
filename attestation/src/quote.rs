@@ -1,8 +1,10 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 use derive_more::{Deref, From, Into};
 use serde::{Deserialize, Serialize};
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use alloc::string::ToString;
 
 #[derive(
     Debug,
@@ -18,6 +20,9 @@ use serde::{Deserialize, Serialize};
     Eq,
     PartialOrd,
     Ord,
-    BorshSchema,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
 )]
 pub struct QuoteBytes(Vec<u8>);
