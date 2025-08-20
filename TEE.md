@@ -1,7 +1,7 @@
 # TEE Integration
 
 ## Overview
-A trusted execution environment (TEE) is an environment isolated from the operating system. It provides security guarantees about confidentiality and integrity of the code and memory executed inside.
+A trusted execution environment (TEE) is an environment isolated from the operating system. TEEs provide security guarantees about confidentiality and integrity of the code and memory executed inside them.
 
 For the MPC network, the security guarantees provided by TEEs are attractive for two reasons:
 1. They relax the threat models (e.g. honest-but-curious instead of malicious adversaries). This allows the adoption of significantly more efficient MPC protocols.
