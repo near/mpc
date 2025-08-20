@@ -605,9 +605,27 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             proposal,
         );
+
+        // Validate TEE status of all prospective participants
+        // Only allow participants with Valid or None TEE status
         match self {
             Self::V2(mpc_contract) => {
-                mpc_contract.vote_new_parameters(prospective_epoch_id, &proposal)
+                let validation_result =
+                    mpc_contract.tee_state.validate_tee(proposal.participants());
+                let final_proposal = match validation_result {
+                    TeeValidationResult::Full => proposal,
+                    TeeValidationResult::Partial(valid_participants) => {
+                        if valid_participants.len() == 0 {
+                            return Err(InvalidParameters::InvalidTeeRemoteAttestation.message(
+                                "No participants with valid TEE status found".to_string(),
+                            ));
+                        }
+                        ThresholdParameters::new(valid_participants, proposal.threshold().clone())
+                            .map_err(|e| InvalidParameters::MalformedPayload.message(e.to_string()))?
+                    }
+                };
+
+                mpc_contract.vote_new_parameters(prospective_epoch_id, &final_proposal)
             }
             _ => env::panic_str("expected V2"),
         }
