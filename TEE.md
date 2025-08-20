@@ -27,7 +27,7 @@ Therefore, the disaster recovery plan aims at establishing a secure mechanism al
 2. (Recovery): when required, securely import the private keys into the node.
 
 ### Back-up mechanism:
-At a high-level, the back up mechanism works like this:
+At a high-level, the backup mechanism works like this:
 
 1. The node running inside the TEE and the backup recipient must agree on a key used to encrypt the secrets.
 2. The node encrypts the sensitive secret shares with the derived key.
@@ -49,25 +49,25 @@ _Note: Curve25519 and edwards25519 are [birationally equivalent](https://crypto.
 The node running inside the TEE monitors the contract and can derive an encryption key using its secret key and the public key submitted by the backup recipient.
 
 #### Exporting the encrypted secret
-The back up service triggers the export of the backup through a call to the smart contract or a dedicated web-endpoint.
+The backup service triggers the export of the backup through a call to the smart contract or a dedicated web-endpoint.
 The node returns the encrypted key either:
 - as a response to a request to its web-endpoint;
 - by printing its hex-value to the logs;
 - or through some other mechanism (@Barak, are there alternatives?)
 
-The back up mechanism can then decrypt the received ciphertext to verify the received shares, before storing the encrypted shares in a secure database.
+The backup mechanism can then decrypt the received ciphertext to verify the received shares, before storing the encrypted shares in a secure database.
 
 ### Restoration Mechanism:
 #### Encryption Key Agreement & Encrypting the secret 
 Same as above, just reversed roles.
 
 #### Importing the encrypted secret into the node
-The back up service (triggered by the node operator or a smart-contract state change), posts the data to an endpoint of the node.
+The backup service (triggered by the node operator or a smart-contract state change), posts the data to an endpoint of the node.
 
 ### Notes:
 - keep the web-endpoint private. Should we use a new webserver for that, on a different port?
 - instead of relying on web-endpoints, could we use TLS keys & connect via network, or connect via unix sockets?
-- for the hard-launch, the back up service will need to run inside a TEE and must pass attestation verification on the contract.
+- for the hard-launch, the backup service will need to run inside a TEE and must pass attestation verification on the contract.
 
 
 ## Materials:
