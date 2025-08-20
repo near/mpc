@@ -78,5 +78,6 @@ rstest = { workspace = true }
 built = { version = "0.8", features = ["git2", "chrono"] }
 
 [features]
+default = ["tee"]
 tee = []
 network-hardship-simulation = []
