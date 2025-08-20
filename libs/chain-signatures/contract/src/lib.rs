@@ -606,8 +606,6 @@ impl VersionedMpcContract {
             proposal,
         );
 
-        // Validate TEE status of all prospective participants
-        // Only allow participants with Valid or None TEE status
         match self {
             Self::V2(mpc_contract) => {
                 let validation_result =
