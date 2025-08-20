@@ -465,10 +465,8 @@ impl VersionedMpcContract {
 
         // Ensure the caller sent a valid CKD request
         match &request.app_public_key.curve_type() {
-            CurveType::SECP256K1 => {
-                env::panic_str(&InvalidParameters::InvalidAppPublicKey.to_string());
-            }
-            CurveType::ED25519 => {}
+            CurveType::SECP256K1 => {}
+            CurveType::ED25519 => env::panic_str(&InvalidParameters::InvalidAppPublicKey.to_string())
         }
 
         // Make sure CKD call will not run out of gas doing yield/resume logic
@@ -1299,7 +1297,7 @@ impl VersionedMpcContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto_shared::{ed25519_types, k256_types};
+    use crate::crypto_shared::k256_types;
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         signature::{Payload, Tweak},
@@ -1472,7 +1470,7 @@ mod tests {
     fn test_ckd_simple() {
         let (context, mut contract, _secret_key) = basic_setup();
         let app_public_key: near_sdk::PublicKey =
-            "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+            "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd"
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
@@ -1482,16 +1480,15 @@ mod tests {
         contract.request_app_private_key(request);
         contract.get_pending_ckd_request(&ckd_request).unwrap();
 
-        // TODO: for this test I think it is not useful to actually simulate the ckd process
-        // Simulate confidential key derivation and response
-        let ckd_response = CKDResponse::Ed25519 {
-            signature: ed25519_types::Signature::new([0; 64]),
+        let response = CKDResponse {
+            big_y: AffinePoint::GENERATOR,
+            big_c: AffinePoint::GENERATOR,
         };
 
-        match contract.respond_ckd(ckd_request.clone(), ckd_response.clone()) {
+        match contract.respond_ckd(ckd_request.clone(), response.clone()) {
             Ok(_) => {
                 contract
-                    .return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(ckd_response));
+                    .return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(response));
 
                 assert!(contract.get_pending_ckd_request(&ckd_request).is_none(),);
             }
@@ -1503,7 +1500,7 @@ mod tests {
     fn test_ckd_timeout() {
         let (context, mut contract, _secret_key) = basic_setup();
         let app_public_key: near_sdk::PublicKey =
-            "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+            "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd"
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {

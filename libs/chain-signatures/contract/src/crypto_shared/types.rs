@@ -27,8 +27,9 @@ pub enum SignatureResponse {
 )]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "scheme")]
-pub enum CKDResponse {
-    Ed25519 { signature: ed25519_types::Signature },
+pub struct CKDResponse {
+    pub big_y: AffinePoint,
+    pub big_c: AffinePoint,
 }
 
 #[cfg_attr(
@@ -431,7 +432,7 @@ mod test {
 
     /// Tests the serialization and deserialization of [`PublicKeyExtended`] works.
     #[rstest]
-    #[case("secp256k1:qMoRgcoXai4mBPsdbHi1wfyxF9TdbPCF4qSDQTRP3TfescSRoUdSx6nmeQoN3aiwGzwMyGXAb1gUjBTv5AY8DXj")]
+    #[case("secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd")]
     #[case("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")]
     fn test_serialization_of_public_key_extended(#[case] near_public_key: near_sdk::PublicKey) {
         let public_key_extended = PublicKeyExtended::try_from(near_public_key).unwrap();
