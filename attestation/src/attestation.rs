@@ -1,11 +1,11 @@
 use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
-    quote::Quote, report_data::ReportData, tcbinfo::TcbInfo,
+    quote::Quote, report_data::ReportData,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
-use dstack_sdk_types::dstack::EventLog;
+use dstack_sdk_types::dstack::{EventLog, TcbInfo};
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::env::sha256;

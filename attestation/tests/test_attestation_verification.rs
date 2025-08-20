@@ -62,7 +62,7 @@ fn mock_dstack_attestation() -> Attestation {
     Attestation::Dstack(DstackAttestation::new(
         quote,
         collateral,
-        tcb_info.into(),
+        tcb_info,
         expected_measurements,
     ))
 }
