@@ -28,7 +28,7 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -38,25 +38,19 @@ pub enum Attestation {
     Local(LocalAttestation),
 }
 
-#[derive(Clone, Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
 pub struct DstackAttestation {
-    /// TEE Remote Attestation Quote that proves the participant's identity.
     pub quote: Quote,
-    /// Supplemental data for the TEE quote, including Intel certificates to verify it came from
-    /// genuine Intel hardware, along with details about the Trusted Computing Base (TCB)
-    /// versioning, status, and other relevant info.
     pub collateral: Collateral,
-    /// Dstack event log.
     pub tcb_info: TcbInfo,
-    /// Expected measurements for the TEE quote.
     pub expected_measurements: ExpectedMeasurements,
 }
 
-#[derive(Clone, Debug, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -225,9 +219,8 @@ impl Attestation {
         expected: &ReportData,
         actual: &dcap_qvl::quote::TDReport10,
     ) -> bool {
-        // Check if sha384(tls_public_key || account_public_key) matches the hash in
-        // report_data. This check effectively proves that both tls_public_key and
-        // account_public_key were included in the quote's report_data by an app running
+        // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
+        // proves that tls_public_key was included in the quote's report_data by an app running
         // inside a TDX enclave.
         expected.to_bytes() == actual.report_data
     }

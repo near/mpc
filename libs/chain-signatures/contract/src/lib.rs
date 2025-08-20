@@ -548,8 +548,7 @@ impl VersionedMpcContract {
             .tee_state
             .verify_proposed_participant_attestation(
                 &proposed_participant_attestation,
-                &tls_public_key,
-                &account_key,
+                tls_public_key,
             )?;
 
         if status == TeeQuoteStatus::Invalid {

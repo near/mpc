@@ -11,7 +11,7 @@ use thiserror::Error;
 use alloc::string::ToString;
 
 /// TEE Remote Attestation Quote that proves the participant's identity.
-#[derive(Clone, Debug, Deref, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Deref, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)

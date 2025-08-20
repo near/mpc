@@ -49,14 +49,13 @@ impl TeeState {
     pub(crate) fn verify_proposed_participant_attestation(
         &mut self,
         tee_participant_info: &Attestation,
-        tls_public_key: &PublicKey,
-        account_key: &PublicKey,
+        tls_public_key: PublicKey,
     ) -> Result<TeeQuoteStatus, Error> {
         let allowed_mpc_docker_image_hashes = self.get_allowed_hashes();
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
         let time_stamp_seconds = Self::current_time_seconds();
 
-        let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key, account_key));
+        let expected_report_data = ReportData::V1(ReportDataV1::from(tls_public_key));
 
         let quote_result = tee_participant_info.verify(
             expected_report_data,
@@ -78,8 +77,7 @@ impl TeeState {
     pub(crate) fn verify_tee_participant(
         &mut self,
         account_id: &AccountId,
-        account_key: &PublicKey,
-        sign_pk: &PublicKey,
+        tls_public_key: PublicKey,
     ) -> Result<TeeQuoteStatus, Error> {
         let allowed_mpc_docker_image_hashes = self.get_allowed_hashes();
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
@@ -89,7 +87,7 @@ impl TeeState {
             return Ok(TeeQuoteStatus::None);
         };
 
-        let expected_report_data = ReportData::V1(ReportDataV1::new(sign_pk, account_key));
+        let expected_report_data = ReportData::V1(ReportDataV1::from(tls_public_key));
         let time_stamp_seconds = Self::current_time_seconds();
 
         let quote_result = participant_attestation.verify(
@@ -120,12 +118,10 @@ impl TeeState {
             .participants()
             .iter()
             .filter(|(account_id, _, participant_info)| {
-                let tls_public_key = &participant_info.sign_pk;
-                // TODO: We need the account key as part of the state.
-                let account_key = tls_public_key;
+                let tls_public_key = participant_info.sign_pk.clone();
 
                 matches!(
-                    self.tee_status(account_id, tls_public_key, account_key),
+                    self.tee_status(account_id, tls_public_key),
                     TeeQuoteStatus::Valid | TeeQuoteStatus::None
                 )
             })
@@ -149,10 +145,9 @@ impl TeeState {
     pub fn tee_status(
         &mut self,
         account_id: &AccountId,
-        account_key: &PublicKey,
-        tls_public_key: &PublicKey,
+        tls_public_key: PublicKey,
     ) -> TeeQuoteStatus {
-        match self.verify_tee_participant(account_id, account_key, tls_public_key) {
+        match self.verify_tee_participant(account_id, tls_public_key) {
             Ok(status) => status,
             Err(_) => TeeQuoteStatus::Invalid,
         }
