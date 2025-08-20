@@ -8,4 +8,3 @@ pub mod collateral;
 pub mod measurements;
 pub mod quote;
 pub mod report_data;
-pub mod tcbinfo;

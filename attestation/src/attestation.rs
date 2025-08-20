@@ -1,15 +1,18 @@
 use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
-    quote::Quote, report_data::ReportData, tcbinfo::TcbInfo,
+    quote::Quote, report_data::ReportData,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
-use dstack_sdk_types::dstack::EventLog;
+use dstack_sdk_types::dstack::{EventLog, TcbInfo};
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::env::sha256;
 use serde::{Deserialize, Serialize};
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use alloc::string::ToString;
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -26,13 +29,20 @@ const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub enum Attestation {
     Dstack(DstackAttestation),
     Local(LocalAttestation),
 }
 
-#[allow(dead_code)]
 #[derive(Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub struct DstackAttestation {
     pub quote: Quote,
     pub collateral: Collateral,
@@ -41,6 +51,10 @@ pub struct DstackAttestation {
 }
 
 #[derive(Debug, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub struct LocalAttestation {
     verification_result: bool,
 }
@@ -205,9 +219,8 @@ impl Attestation {
         expected: &ReportData,
         actual: &dcap_qvl::quote::TDReport10,
     ) -> bool {
-        // Check if sha384(tls_public_key || account_public_key) matches the hash in
-        // report_data. This check effectively proves that both tls_public_key and
-        // account_public_key were included in the quote's report_data by an app running
+        // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
+        // proves that tls_public_key was included in the quote's report_data by an app running
         // inside a TDX enclave.
         expected.to_bytes() == actual.report_data
     }
@@ -326,14 +339,7 @@ impl Attestation {
                 return false;
             }
         };
-        // this str will not match the original, unless the original was normalized
-        let launcher_compose_str = match serde_yaml::to_string(&app_compose.docker_compose_file) {
-            Ok(str) => str,
-            Err(e) => {
-                tracing::error!("Failed to convert docker_compose_file to str: {:?}", e);
-                return false;
-            }
-        };
+        let launcher_compose_str = &app_compose.docker_compose_file;
         let launcher_bytes = sha256(launcher_compose_str.as_bytes());
         allowed_hashes
             .iter()

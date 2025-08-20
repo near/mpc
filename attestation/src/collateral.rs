@@ -8,10 +8,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use alloc::string::ToString;
+
 /// Supplemental data for the TEE quote, including Intel certificates to verify it came from genuine
 /// Intel hardware, along with details about the Trusted Computing Base (TCB) versioning, status,
 /// and other relevant info.
 #[derive(From, Deref, Into, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 #[serde(try_from = "Value")]
 pub struct Collateral(QuoteCollateralV3);
 
@@ -46,6 +53,9 @@ impl Collateral {
             qe_identity_issuer_chain: get_str(&v, "qe_identity_issuer_chain")?,
             qe_identity: get_str(&v, "qe_identity")?,
             qe_identity_signature: get_hex(&v, "qe_identity_signature")?,
+            pck_crl_issuer_chain: get_str(&v, "pck_crl_issuer_chain")?,
+            root_ca_crl: get_hex(&v, "root_ca_crl")?,
+            pck_crl: get_hex(&v, "pck_crl")?,
         };
         Ok(Self(quote_collateral))
     }

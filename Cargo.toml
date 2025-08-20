@@ -21,8 +21,8 @@ backon = { version = "1.5.1", features = ["tokio-sleep"] }
 borsh = { version = "1.5.1", features = ["derive"] }
 clap = { version = "4.5.20", features = ["derive", "env"] }
 curve25519-dalek = "4.1.3"
-# TODO(#815): Use upstream library
-dcap-qvl = { git = "https://github.com/gilcu3/dcap-qvl", rev = "5a264b50dbe833b807d4ed6dfff6d9ef838cd024", default-features = false, features=["contract", "std", "report"] }
+# Latest `master` as per 2025-08-18
+dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl", rev = "3d4f1bb57b104b1701c8bafacfdcf6e03a2bbcad", default-features = false, features=["contract", "borsh", "std"] }
 # Pinned to resolve compilation errors with conflicting implementations of PartialOrd trait
 # See error E0283 with multiple implementations satisfying `u128: std::cmp::PartialOrd<_>`
 deranged = "=0.4.0"
@@ -33,8 +33,10 @@ derive_more = { version = "2.0.1", features = [
     "as_ref",
     "constructor",
 ] }
-dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "6e2150f2aea957281f101ab5036c3c048fbb0d18" }
-dstack-sdk-types = { features = ["borsh"], git = "https://github.com/Dstack-TEE/dstack.git", rev = "6e2150f2aea957281f101ab5036c3c048fbb0d18" }
+# Latest `master` as per 2025-08-18
+dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "04de4e422bb06f075b4215b2cfc410f5d7ac7aed" }
+# Latest `master` as per 2025-08-18
+dstack-sdk-types = { features = ["borsh"], git = "https://github.com/Dstack-TEE/dstack.git", rev = "04de4e422bb06f075b4215b2cfc410f5d7ac7aed" }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"
