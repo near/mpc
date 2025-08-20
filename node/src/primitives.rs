@@ -2,10 +2,9 @@ use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::EcdsaTaskId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
-use k256::Secp256k1;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
-use threshold_signatures::ecdsa::triples::TripleGenerationOutput;
+use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::protocol::Participant;
 
 /// A unique ID representing a resource (e.g., a triple/presignature/signature, or a channel).
@@ -212,8 +211,8 @@ pub enum MpcTaskId {
 }
 
 pub fn participants_from_triples(
-    triple0: &TripleGenerationOutput<Secp256k1>,
-    triple1: &TripleGenerationOutput<Secp256k1>,
+    triple0: &TripleGenerationOutput,
+    triple1: &TripleGenerationOutput,
 ) -> Vec<ParticipantId> {
     triple0
         .1
