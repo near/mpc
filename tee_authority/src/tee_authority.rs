@@ -3,7 +3,7 @@ use attestation::{
     attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
     measurements::ExpectedMeasurements,
-    quote::Quote,
+    quote::QuoteBytes,
     report_data::ReportData,
 };
 use backon::{BackoffBuilder, ExponentialBuilder};
@@ -93,7 +93,8 @@ impl TeeAuthority {
         let collateral = self
             .upload_quote_for_collateral(&config.quote_upload_url, &quote)
             .await?;
-        let quote: Quote = quote.parse()?;
+
+        let quote: QuoteBytes = hex::decode(quote)?.into();
 
         Ok(Attestation::Dstack(DstackAttestation::new(
             quote,
