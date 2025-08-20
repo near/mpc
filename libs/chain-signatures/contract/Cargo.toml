@@ -92,10 +92,7 @@ digest = "0.10.7"
 near-crypto = "0.26.0"
 near-workspaces = "0.18"
 near-primitives = "=0.29.2" # not entirely clear why this is needed but otherwise tests don't compile
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "52109e54c4c574b44fe3e29378b2cb5ca8b1bb63", features = [
-    "k256",
-] }
-frost-ed25519 = "2.1.0"
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "5fd9fe7d45db3b653d300d393b95719f6fc219b3"}
 fs2 = "0.4"
 rstest = "0.25.0"
 

@@ -21,11 +21,11 @@ use crate::tracking;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
-use k256::{AffinePoint, EncodedPoint, Secp256k1};
+use k256::{AffinePoint, EncodedPoint};
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
-use threshold_signatures::ecdsa::sign::FullSignature;
+use threshold_signatures::ecdsa::FullSignature;
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
@@ -136,7 +136,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
     type PublicKey = VerifyingKey;
     type SecretShare = SigningShare;
     type KeygenOutput = KeygenOutput;
-    type Signature = FullSignature<Secp256k1>;
+    type Signature = FullSignature;
     type TaskId = EcdsaTaskId;
 
     async fn make_signature(
