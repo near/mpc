@@ -49,7 +49,7 @@ fi
 
 required_env_vars=(
   "VMM_RPC"
-  "GUEST_AGENT_ADDR"
+  "INTERNAL_AGENT_ADDR"
   "SEALING_KEY_TYPE"
 )
 
@@ -61,9 +61,18 @@ for var in "${required_env_vars[@]}"; do
   fi
 done
 
-basePath="/mnt/data/barak" #modify this to your base path
-pythonExec="$basePath/.venv/bin/python" #modify this to your python executable path
+# Default basePath if not provided via CLI
+if [ -z "$basePath" ]; then
+  basePath="/mnt/data/barak" # parent folder of meta-dstack
+fi
+
+# Default pythonExec if not provided via CLI
+if [ -z "$pythonExec" ]; then
+  pythonExec="$basePath/.venv/bin/python"
+fi
+
 CLI="$pythonExec $basePath/meta-dstack/dstack/vmm/src/vmm-cli.py --url \$VMM_RPC"
+
 
 COMPOSE_TMP=$(mktemp)
 
@@ -113,6 +122,10 @@ echo "Deploying $APP_NAME to dstack-vmm..."
 echo "Press enter to continue..."
 read
 
+# SSH ports (only for dev images) - can't be changed
+INTERNAL_SSH_PORT=22
+# Address of the dstack guest agent service inside the CVM - can't be changed
+INTERNAL_AGENT_ADDR=8090
 
 
 $CLI deploy \
