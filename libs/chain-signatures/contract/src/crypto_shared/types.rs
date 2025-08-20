@@ -319,10 +319,7 @@ pub mod k256_types {
 
 pub mod ed25519_types {
     use super::*;
-    use curve25519_dalek::EdwardsPoint;
     use curve25519_dalek::Scalar;
-
-    pub type PublicKey = EdwardsPoint;
 
     // Is there a better way to force a borsh serialization?
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
