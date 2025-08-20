@@ -41,7 +41,7 @@ _Note: This key exchange protocol is on Curve25519, which is different from the 
 The key establishment scheme requires that the node as well as the back-up recipient have *mutually authenticated Curve25519 public keys*. The NEAR blockchain can be leveraged for this, more specifically:
 - the node operator whitelists a NEAR-account associated to the back-up recipient in the MPC smart contract.
 - the back-up recipient submits a public key (Curve25519) to the MPC smart contract. The smart contract only accepts it if the account has been whitelisted by the node operator.
-- the node submits a public key (Curve25519) to the MPC smart contract. The smart contract only accepts it if the public key submitting this transaction is an access key of the node operators account.
+- the node submits a public key (Curve25519) to the MPC smart contract. The smart contract only accepts it if the public key submitting this transaction is an access key of the node operator's account.
 
 _Note: Curve25519 and edwards25519 are [birationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically use NEAR account keys. But it seems cleaner if we just have the node and the back-up recipient generate dedicated keys for this._
 
