@@ -1,8 +1,7 @@
 use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
-    report_data::ReportData,
+    quote::QuoteBytes, report_data::ReportData,
 };
-use alloc::vec::Vec;
 use borsh::{BorshDeserialize, BorshSerialize};
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
@@ -45,7 +44,7 @@ pub enum Attestation {
     derive(borsh::BorshSchema)
 )]
 pub struct DstackAttestation {
-    pub quote: Vec<u8>,
+    pub quote: QuoteBytes,
     pub collateral: Collateral,
     pub tcb_info: TcbInfo,
     pub expected_measurements: ExpectedMeasurements,

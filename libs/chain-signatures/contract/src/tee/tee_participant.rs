@@ -92,7 +92,7 @@ impl TryFrom<DstackAttestation> for TeeParticipantInfo {
 
     fn try_from(dstack_attestation: DstackAttestation) -> Result<Self, Self::Error> {
         Ok(TeeParticipantInfo {
-            tee_quote: dstack_attestation.quote,
+            tee_quote: dstack_attestation.quote.into(),
             quote_collateral: serde_json::to_string(&dstack_attestation.collateral)
                 .map_err(|_| Error::from(InvalidCandidateSet::InvalidParticipantsTeeQuote))?,
             raw_tcb_info: serde_json::to_string(&dstack_attestation.tcb_info)

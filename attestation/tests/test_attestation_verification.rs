@@ -17,7 +17,7 @@ use crate::common::{
 pub mod common;
 
 fn mock_dstack_attestation() -> Attestation {
-    let quote: Vec<u8> = quote();
+    let quote = quote();
     let collateral = Collateral::try_from_json(collateral()).unwrap();
 
     let tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
