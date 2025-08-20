@@ -43,7 +43,7 @@ The key establishment scheme requires that the node as well as the back-up recip
 - the back-up recipient submits a public key (Curve25519) to the MPC smart contract. The smart contract only accepts it if the account has been whitelisted by the node operator.
 - the node submits a public key (Curve25519) to the MPC smart contract. The smart contract only accepts it if the public key submitting this transaction is an access key of the node operators account.
 
-_Note: Curve25519 and Edwards curve are [birationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically use NEAR account keys. But it seems cleaner if we just have the node and the back-up recipient generate dedicated keys for this._
+_Note: Curve25519 and edwards25519 are [birationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically use NEAR account keys. But it seems cleaner if we just have the node and the back-up recipient generate dedicated keys for this._
 
 #### Encrypting the secret
 The node running inside the TEE monitors the contract and can derive an encryption key using its secret key and the public key submitted by the back-up recipient.
