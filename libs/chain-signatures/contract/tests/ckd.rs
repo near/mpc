@@ -90,7 +90,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
+async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     let (worker, contract, _, sks) = init_env_secp256k1(1).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
@@ -137,7 +137,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
     let returned_resp: CKDResponse = execution.json()?;
     assert_eq!(
         returned_resp, respond_resp,
-        "Returned signature request does not match"
+        "Returned ckd request does not match"
     );
 
     let new_balance = alice.view_account().await?.balance;
@@ -162,7 +162,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
+async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
     let (worker, contract, _, _) = init_env_secp256k1(1).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
@@ -215,7 +215,7 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
+async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     let (worker, contract, _, sks) = init_env_secp256k1(1).await;
     let alice = worker.dev_create_account().await?;
     let sk = match &sks[0] {
