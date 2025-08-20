@@ -3,7 +3,9 @@
 ## Overview
 A trusted execution environment (TEE) is an environment isolated from the operating system. It provides security guarantees about confidentiality and integrity of the code and memory executed inside.
 
-For the MPC network, the security guarantees provided by TEEs are attractive mainly because they allow the use of more relaxed threat models, unlocking performant MPC protocols.
+For the MPC network, the security guarantees provided by TEEs are attractive for two reasons:
+1. They relax the threat models (e.g. honest-but-curious instead of malicious adversaries). This allows the adoption of significantly more efficient MPC protocols.
+2. They help enforce backward secrecy. Since TEEs can guarantee that former nodes never gain lasting possession of plaintext secret-shares, collusion attacks after departure become infeasible.
 
 TEEs provide their security guarantees by restricting how anything outside of the TEE can interact with the code running inside the TEE. This is great to protect against malicious actors, but it also restricts the honest actors. It has to be expected that debugging and handling of emergencies will become much more difficult compared to running an MPC node outside of a TEE.
 
