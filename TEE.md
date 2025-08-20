@@ -12,8 +12,8 @@ TEEs provide their security guarantees by restricting how anything outside of th
 This is a good moment to remind the reader that threshold crypotgrapy requires `threshold` operational nodes. - anything less than that, and the protocol finds itself incapacitated, not able to move any funds.
 
 Therefore, Near-One will roll-out their TEE implementation in two phases:
-- Soft Launch: node operators are invited to try out and run their node inside a TEE. This will happen in a coordinated manner.
-- Hard Launch: node operators will be required to run their node inside a TEE.
+- Soft Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of the TEE.
+- Hard Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of inside a different TEE.
 
 In order to protect the network from the worst case scenario (complete loss of funds due to loss of key shares or an incapacitated network), a disaster recovery plan is prepared.
 
