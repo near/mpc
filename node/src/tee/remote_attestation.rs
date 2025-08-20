@@ -208,7 +208,7 @@ pub async fn submit_remote_attestation(
 
     tx_sender
         .send(ChainSendTransactionRequest::SubmitParticipantInfo(
-            propose_join_args,
+            Box::new(propose_join_args),
         ))
         .await
         .context("Failed to send remote attestation transaction. Channel is closed.")

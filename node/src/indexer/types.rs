@@ -136,7 +136,7 @@ pub(crate) enum ChainSendTransactionRequest {
     VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
     VerifyTee(),
     #[cfg(feature = "tee")]
-    SubmitParticipantInfo(SubmitParticipantInfoArgs),
+    SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
 }
 
 impl ChainSendTransactionRequest {
