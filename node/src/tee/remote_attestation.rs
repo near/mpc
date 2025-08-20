@@ -26,14 +26,15 @@ use crate::indexer::types::{ChainSendTransactionRequest, SubmitParticipantInfoAr
 /// Set to [`None`] which defaults to `/var/run/dstack.sock`
 const ENDPOINT: Option<&str> = None;
 /// URL for usbmission of tdx quote. Returns collateral to be used for verification.
-const PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
+const PHALA_TDX_QUOTE_UPLOAD_URL: &str =
+    "https://cloud-api.phala.network/api/v1/attestations/verify";
 /// Expected HTTP [`StatusCode`] for a successful submission.
 const PHALA_SUCCESS_STATUS_CODE: StatusCode = StatusCode::OK;
 /// The maximum duration to wait for retrying request to Phala's endpoint, [`PHALA_TDX_QUOTE_UPLOAD_URL`].
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
 /// Number of bytes for the report data.
-/// report_data: [u8; 64] = [version(2 bytes (big endian)) || sha384(TLS pub key || account public key ) || zero padding]
+/// report_data: [u8; 64] = [version(2 bytes (big endian)) || sha384(TLS pub key) || zero padding]
 const REPORT_DATA_SIZE: usize = 64;
 
 const BINARY_VERSION_OFFSET: usize = 0;
@@ -105,10 +106,7 @@ where
 ///
 /// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
 /// from generating the attestation.
-pub async fn create_remote_attestation_info(
-    tls_public_key: &PublicKey,
-    account_public_key: &PublicKey,
-) -> TeeAttestation {
+pub async fn create_remote_attestation_info(tls_public_key: &PublicKey) -> TeeAttestation {
     let client = DstackClient::new(ENDPOINT);
 
     let client_info_response = get_with_backoff(|| client.info(), "dstack client info").await;
@@ -123,10 +121,11 @@ pub async fn create_remote_attestation_info(
             .copy_from_slice(&byte_representation);
 
         // Copy hash
-        let mut hasher = Sha3_384::new();
-        hasher.update(tls_public_key.key_data());
-        hasher.update(account_public_key.key_data());
-        let public_keys_hash: [u8; PUBLIC_KEYS_SIZE] = hasher.finalize().into();
+        let public_keys_hash: [u8; PUBLIC_KEYS_SIZE] = {
+            let mut hasher = Sha3_384::new();
+            hasher.update(tls_public_key.key_data());
+            hasher.finalize().into()
+        };
         report_data[PUBLIC_KEYS_OFFSET..][..PUBLIC_KEYS_SIZE].copy_from_slice(&public_keys_hash);
 
         report_data
