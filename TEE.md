@@ -59,12 +59,10 @@ The back-up mechanism can then decrypt the received ciphertext to verify the rec
 
 ### Restoration Mechanism:
 #### Encryption Key Agreement & Encrypting the secret 
-Same as above, just reversed roles
+Same as above, just reversed roles.
 
 #### Importing the encrypted secret into the node
-Similar to above, but reversed roles. The node makes a web request to the back-up service. (@Barak is this possible?)
-_Todo: improve this section with more details. It is vague._
-
+The back-up service (triggered by the node operator or a smart-contract state change), posts the data to an endpoint of the node.
 
 ### Notes:
 - keep the web-endpoint private. Should we use a new webserver for that, on a different port?
