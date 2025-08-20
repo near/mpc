@@ -9,10 +9,16 @@ use k256::{
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature, CKDResponse, SerializableScalar, SignatureResponse
+        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
+        CKDResponse, SerializableScalar, SignatureResponse,
     },
     primitives::{
-        ckd::CKDRequest, domain::{DomainConfig, DomainId, SignatureScheme}, key_state::{AttemptId, EpochId, KeyForDomain, Keyset}, participants::{ParticipantInfo, Participants}, signature::{Bytes, SignatureRequest, Tweak}, thresholds::{Threshold, ThresholdParameters}
+        ckd::{CKDRequest, CKDRequestArgs},
+        domain::{DomainConfig, DomainId, SignatureScheme},
+        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        participants::{ParticipantInfo, Participants},
+        signature::{Bytes, SignatureRequest, Tweak},
+        thresholds::{Threshold, ThresholdParameters},
     },
     update::UpdateId,
 };
@@ -456,13 +462,6 @@ pub fn create_response_ed25519(
     (payload, respond_req, signature_response)
 }
 
-pub fn create_response_ckd(
-    app_id: &AccountId,
-    signing_key: &KeygenOutput,
-) -> (CKDRequest, CKDResponse) {
-    todo!()
-}
-
 pub async fn sign_and_validate(
     request: &SignRequestArgs,
     respond: Option<(&SignatureRequest, &SignatureResponse)>,
@@ -511,12 +510,66 @@ pub async fn sign_and_validate(
     Ok(())
 }
 
-pub async fn derive_confidential_key(
-    request: &CKDRequest,
+pub fn create_response_ckd(
+    account_id: &AccountId,
+    app_public_key: near_sdk::PublicKey,
+    _signing_key: &KeygenOutput,
+) -> (CKDRequest, CKDResponse) {
+    // TODO: generate a proper response
+    let request = CKDRequest::new(app_public_key, account_id.clone());
+    let response = CKDResponse::Ed25519 {
+        signature: ed25519_types::Signature::new([0; 64]),
+    };
+    (request, response)
+}
+
+pub async fn derive_confidential_key_and_validate(
+    account: Account,
+    request: &CKDRequestArgs,
     respond: Option<(&CKDRequest, &CKDResponse)>,
     contract: &Contract,
 ) -> anyhow::Result<()> {
-    todo!()
+    let status = account
+        .call(contract.id(), "request_app_private_key")
+        .args_json(serde_json::json!({
+            "request": request,
+        }))
+        .deposit(NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact_async()
+        .await?;
+    dbg!(&status);
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    if let Some((respond_req, respond_resp)) = respond {
+        assert!(account.id() == &respond_req.app_id);
+        // Call `respond_ckd` as if we are the MPC network itself.
+        let respond = contract
+            .call("respond_ckd")
+            .args_json(serde_json::json!({
+                "request": respond_req,
+                "response": respond_resp
+            }))
+            .max_gas()
+            .transact()
+            .await?;
+        dbg!(&respond);
+    }
+
+    let execution = status.await?;
+    dbg!(&execution);
+    let execution = execution.into_result()?;
+
+    // Finally wait the result:
+    let returned_resp: CKDResponse = execution.json()?;
+    if let Some((_, respond_resp)) = respond {
+        assert_eq!(
+            &returned_resp, respond_resp,
+            "Returned ckd request does not match"
+        );
+    }
+
+    Ok(())
 }
 
 pub async fn vote_update_till_completion(

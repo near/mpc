@@ -12,7 +12,7 @@ pub mod utils;
 pub mod v0_state;
 
 use crate::crypto_shared::types::CKDResponse;
-use crate::errors::Error;
+use crate::errors::{Error, RequestError};
 use crate::primitives::ckd::{CKDRequest, CKDRequestArgs};
 use crate::storage_keys::StorageKey;
 use crate::tee::proposal::AllowedDockerImageHashes;
@@ -28,7 +28,7 @@ use crypto_shared::{
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
 use errors::{
-    DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, SignError, TeeError,
+    DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::{sec1::ToEncodedPoint, PrimeField};
 use near_sdk::{
@@ -458,7 +458,7 @@ impl VersionedMpcContract {
     #[payable]
     pub fn request_app_private_key(&mut self, request: CKDRequestArgs) {
         log!(
-            "sign: predecessor={:?}, request={:?}",
+            "request_app_private_key: predecessor={:?}, request={:?}",
             env::predecessor_account_id(),
             request
         );
@@ -517,6 +517,9 @@ impl VersionedMpcContract {
 
         env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
 
+        let app_id = env::predecessor_account_id();
+        let request = CKDRequest::new(request.app_public_key, app_id);
+
         let promise_index = env::promise_yield_create(
             "return_ck_and_clean_state_on_success",
             &serde_json::to_vec(&(&request,)).unwrap(),
@@ -524,10 +527,6 @@ impl VersionedMpcContract {
             GasWeight(0),
             DATA_ID_REGISTER,
         );
-
-        let account_id = env::predecessor_account_id();
-
-        let request = CKDRequest::new(request.app_public_key, account_id);
 
         // Store the request in the contract's local state
         let return_ck_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
@@ -637,7 +636,7 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn respond_ckd(&mut self, request: CKDRequest, response: CKDResponse) -> Result<(), Error> {
         let signer = env::signer_account_id();
-        log!("respond: signer={}, request={:?}", &signer, &request);
+        log!("respond_ckd: signer={}, request={:?}", &signer, &request);
 
         let Self::V2(mpc_contract) = self else {
             env::panic_str("expected V2")
@@ -1257,7 +1256,7 @@ impl VersionedMpcContract {
     #[private]
     pub fn fail_on_timeout(&self) {
         // To stay consistent with the old version of the timeout error
-        env::panic_str(&SignError::Timeout.to_string());
+        env::panic_str(&RequestError::Timeout.to_string());
     }
 
     #[private]
@@ -1519,8 +1518,6 @@ mod tests {
             ),
             PromiseOrValue::Promise(_)
         ));
-        assert!(contract
-            .get_pending_ckd_request(&ckd_request)
-            .is_none());
+        assert!(contract.get_pending_ckd_request(&ckd_request).is_none());
     }
 }

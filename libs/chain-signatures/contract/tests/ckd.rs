@@ -1,15 +1,278 @@
 pub mod common;
-use common::{
-    candidates, create_response_ckd, init, init_env_ed25519, derive_confidential_key,
-};
-use mpc_contract::{
-    config::InitConfig,
-    crypto_shared::CKDResponse,
-    errors,
-    primitives::{
-        participants::Participants,
-        ckd::CKDRequestArgs,
-        thresholds::{Threshold, ThresholdParameters},
-    },
-};
-use near_workspaces::types::NearToken;
+use common::{create_response_ckd, derive_confidential_key_and_validate, init_env_ed25519};
+use mpc_contract::{crypto_shared::CKDResponse, errors, primitives::ckd::CKDRequestArgs};
+use near_sdk::AccountId;
+use near_workspaces::{network::Sandbox, result::Execution, types::NearToken, Account, Worker};
+
+async fn create_account_given_id(
+    worker: &Worker<Sandbox>,
+    account_id: AccountId,
+) -> Result<Execution<Account>, near_workspaces::error::Error> {
+    let (_, sk) = worker.generate_dev_account_credentials();
+    worker.create_root_account_subaccount(account_id, sk).await
+}
+
+#[tokio::test]
+async fn test_contract_ckd_request() -> anyhow::Result<()> {
+    let (worker, contract, _, sks) = init_env_ed25519(1).await;
+    let sk = match &sks[0] {
+        common::SharedSecretKey::Secp256k1(_) => unreachable!(),
+        common::SharedSecretKey::Ed25519(sk) => sk,
+    };
+
+    let account_ids: [AccountId; 4] = [
+        "this_is_an_app".parse().unwrap(),
+        "another".parse().unwrap(),
+        "a_better_one".parse().unwrap(),
+        "a_fake_one".parse().unwrap(),
+    ];
+
+    let app_public_key: near_sdk::PublicKey =
+        "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+            .parse()
+            .unwrap();
+
+    for account_id in account_ids {
+        let account = create_account_given_id(&worker, account_id.clone())
+            .await
+            .unwrap()
+            .unwrap();
+
+        println!("submitting: {account_id}");
+
+        let (respond_req, respond_resp) =
+            create_response_ckd(account.id(), app_public_key.clone(), sk);
+
+        let request = CKDRequestArgs {
+            app_public_key: app_public_key.clone(),
+        };
+
+        derive_confidential_key_and_validate(
+            account,
+            &request,
+            Some((&respond_req, &respond_resp)),
+            &contract,
+        )
+        .await?;
+    }
+
+    // check duplicate requests
+    let account_id: AccountId = "duplicate".parse().unwrap();
+    let account = create_account_given_id(&worker, account_id.clone())
+        .await
+        .unwrap()
+        .unwrap();
+    let (respond_req, respond_resp) = create_response_ckd(account.id(), app_public_key.clone(), sk);
+    let request = CKDRequestArgs { app_public_key };
+    derive_confidential_key_and_validate(
+        account.clone(),
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+    )
+    .await?;
+    derive_confidential_key_and_validate(
+        account.clone(),
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+    )
+    .await?;
+
+    // Check that a ckd with no response from MPC network properly errors out:
+    let err = derive_confidential_key_and_validate(account, &request, None, &contract)
+        .await
+        .expect_err("should have failed with timeout");
+    assert!(err
+        .to_string()
+        .contains(&errors::RequestError::Timeout.to_string()));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
+    let (worker, contract, _, sks) = init_env_ed25519(1).await;
+    let alice = worker.dev_create_account().await?;
+    let balance = alice.view_account().await?.balance;
+    let contract_balance = contract.view_account().await?.balance;
+    let sk = match &sks[0] {
+        common::SharedSecretKey::Secp256k1(_) => unreachable!(),
+        common::SharedSecretKey::Ed25519(sk) => sk,
+    };
+    let app_public_key: near_sdk::PublicKey =
+        "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+            .parse()
+            .unwrap();
+
+    let (respond_req, respond_resp) = create_response_ckd(alice.id(), app_public_key.clone(), sk);
+    let request = CKDRequestArgs { app_public_key };
+
+    let status = alice
+        .call(contract.id(), "request_app_private_key")
+        .args_json(serde_json::json!({
+            "request": request,
+        }))
+        .deposit(NearToken::from_near(1))
+        .max_gas()
+        .transact_async()
+        .await?;
+    dbg!(&status);
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    // Call `respond_ckd` as if we are the MPC network itself.
+    let respond = contract
+        .call("respond_ckd")
+        .args_json(serde_json::json!({
+            "request": respond_req,
+            "response": respond_resp
+        }))
+        .max_gas()
+        .transact()
+        .await?;
+    dbg!(&respond);
+
+    let execution = status.await?;
+    dbg!(&execution);
+
+    let execution = execution.into_result()?;
+
+    // Finally wait the result:
+    let returned_resp: CKDResponse = execution.json()?;
+    assert_eq!(
+        returned_resp, respond_resp,
+        "Returned signature request does not match"
+    );
+
+    let new_balance = alice.view_account().await?.balance;
+    let new_contract_balance = contract.view_account().await?.balance;
+    assert!(
+        balance.as_millinear() - new_balance.as_millinear() < 10,
+        "refund should happen"
+    );
+    println!(
+        "{} {} {} {}",
+        balance.as_millinear(),
+        new_balance.as_millinear(),
+        contract_balance.as_millinear(),
+        new_contract_balance.as_millinear(),
+    );
+    assert!(
+        contract_balance.as_millinear() - new_contract_balance.as_millinear() < 20,
+        "respond should take less than 0.02 NEAR"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
+    let (worker, contract, _, _) = init_env_ed25519(1).await;
+    let alice = worker.dev_create_account().await?;
+    let balance = alice.view_account().await?.balance;
+    let contract_balance = contract.view_account().await?.balance;
+    let app_public_key: near_sdk::PublicKey =
+        "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+            .parse()
+            .unwrap();
+    let request = CKDRequestArgs { app_public_key };
+
+    let status = alice
+        .call(contract.id(), "request_app_private_key")
+        .args_json(serde_json::json!({
+            "request": request,
+        }))
+        .deposit(NearToken::from_near(1))
+        .max_gas()
+        .transact_async()
+        .await?;
+    dbg!(&status);
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    // we do not respond, ckd will fail due to timeout
+    let execution = status.await;
+    dbg!(&execution);
+    let err = execution
+        .unwrap()
+        .into_result()
+        .expect_err("should have failed with timeout");
+    assert!(err
+        .to_string()
+        .contains(&errors::RequestError::Timeout.to_string()));
+
+    let new_balance = alice.view_account().await?.balance;
+    let new_contract_balance = contract.view_account().await?.balance;
+    println!(
+        "{} {} {} {}",
+        balance.as_millinear(),
+        new_balance.as_millinear(),
+        contract_balance.as_yoctonear(),
+        new_contract_balance.as_yoctonear(),
+    );
+    assert!(
+        balance.as_millinear() - new_balance.as_millinear() < 10,
+        "refund should happen"
+    );
+    assert!(
+        contract_balance.as_millinear() - new_contract_balance.as_millinear() <= 1,
+        "refund transfer should take less than 0.001 NEAR"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
+    let (worker, contract, _, sks) = init_env_ed25519(1).await;
+    let alice = worker.dev_create_account().await?;
+    let sk = match &sks[0] {
+        common::SharedSecretKey::Secp256k1(_) => unreachable!(),
+        common::SharedSecretKey::Ed25519(sk) => sk,
+    };
+    let app_public_key: near_sdk::PublicKey =
+        "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+            .parse()
+            .unwrap();
+    let request = CKDRequestArgs {
+        app_public_key: app_public_key.clone(),
+    };
+
+    let status = contract
+        .call("request_app_private_key")
+        .args_json(serde_json::json!({
+            "request": request,
+        }))
+        .max_gas()
+        .transact_async()
+        .await?;
+    dbg!(&status);
+
+    let (respond_req, respond_resp) = create_response_ckd(alice.id(), app_public_key, sk);
+    // Responding to the request should fail with missing request because the deposit is too low,
+    // so the request should have never made it into the request queue and subsequently the MPC network.
+    let respond = contract
+        .call("respond_ckd")
+        .args_json(serde_json::json!({
+            "request": respond_req,
+            "response": respond_resp
+        }))
+        .max_gas()
+        .transact()
+        .await?;
+    dbg!(&respond);
+    assert!(respond
+        .into_result()
+        .unwrap_err()
+        .to_string()
+        .contains(&errors::InvalidParameters::RequestNotFound.to_string()));
+
+    let execution = status.await?;
+    dbg!(&execution);
+    assert!(execution
+        .into_result()
+        .unwrap_err()
+        .to_string()
+        .contains(&errors::InvalidParameters::InsufficientDeposit.to_string()));
+
+    Ok(())
+}

@@ -10,9 +10,13 @@ pub enum TeeError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum SignError {
-    #[error("Signature request has timed out.")]
+pub enum RequestError {
+    #[error("Request has timed out.")]
     Timeout,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SignError {
     #[error("Signature request has already been submitted. Please try again later.")]
     PayloadCollision,
     #[error(
