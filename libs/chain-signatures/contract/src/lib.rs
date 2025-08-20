@@ -463,7 +463,9 @@ impl VersionedMpcContract {
         // Ensure the caller sent a valid CKD request
         match &request.app_public_key.curve_type() {
             CurveType::SECP256K1 => {}
-            CurveType::ED25519 => env::panic_str(&InvalidParameters::InvalidAppPublicKey.to_string())
+            CurveType::ED25519 => {
+                env::panic_str(&InvalidParameters::InvalidAppPublicKey.to_string())
+            }
         }
 
         // Make sure CKD call will not run out of gas doing yield/resume logic
@@ -1484,14 +1486,17 @@ mod tests {
         contract.get_pending_ckd_request(&ckd_request).unwrap();
 
         let response = CKDResponse {
-            big_y: SerializableAffinePoint{affine_point: AffinePoint::GENERATOR},
-            big_c: SerializableAffinePoint{affine_point: AffinePoint::GENERATOR},
+            big_y: SerializableAffinePoint {
+                affine_point: AffinePoint::GENERATOR,
+            },
+            big_c: SerializableAffinePoint {
+                affine_point: AffinePoint::GENERATOR,
+            },
         };
 
         match contract.respond_ckd(ckd_request.clone(), response.clone()) {
             Ok(_) => {
-                contract
-                    .return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(response));
+                contract.return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(response));
 
                 assert!(contract.get_pending_ckd_request(&ckd_request).is_none(),);
             }

@@ -2,11 +2,20 @@ use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
 use k256::{
-    elliptic_curve::{hash2curve::{ExpandMsgXof, GroupDigest}, point::DecompressPoint as _, scalar::FromUintUnchecked, sec1::ToEncodedPoint, PrimeField}, AffinePoint, FieldBytes, ProjectivePoint, Scalar, Secp256k1};
+    elliptic_curve::{
+        hash2curve::{ExpandMsgXof, GroupDigest},
+        point::DecompressPoint as _,
+        scalar::FromUintUnchecked,
+        sec1::ToEncodedPoint,
+        PrimeField,
+    },
+    AffinePoint, FieldBytes, ProjectivePoint, Scalar, Secp256k1,
+};
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature, near_public_key_to_affine_point, CKDResponse, SerializableScalar, SignatureResponse
+        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
+        near_public_key_to_affine_point, CKDResponse, SerializableScalar, SignatureResponse,
     },
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
@@ -43,7 +52,10 @@ use std::{
     sync::OnceLock,
     time::{SystemTime, UNIX_EPOCH},
 };
-use threshold_signatures::{eddsa::KeygenOutput, frost_secp256k1::{Secp256K1Sha256,Ciphersuite}};
+use threshold_signatures::{
+    eddsa::KeygenOutput,
+    frost_secp256k1::{Ciphersuite, Secp256K1Sha256},
+};
 use threshold_signatures::{
     frost_ed25519,
     frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey},
@@ -510,10 +522,9 @@ pub async fn sign_and_validate(
     Ok(())
 }
 
-pub fn example_secp256k1_point() -> PublicKey{
+pub fn example_secp256k1_point() -> PublicKey {
     "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap()
 }
-
 
 // based on https://github.com/near/threshold-signatures/blob/eb04be447bc3385000a71adfcfc930e44819bff1/src/confidential_key_derivation/ckd.rs
 fn hash2curve(app_id: &[u8]) -> ProjectivePoint {
@@ -541,8 +552,12 @@ pub fn create_response_ckd(
     let big_c = big_s + app_pk * y;
 
     let response = CKDResponse {
-        big_y: SerializableAffinePoint{affine_point: big_y.to_affine()},
-        big_c: SerializableAffinePoint{affine_point: big_c.to_affine()},
+        big_y: SerializableAffinePoint {
+            affine_point: big_y.to_affine(),
+        },
+        big_c: SerializableAffinePoint {
+            affine_point: big_c.to_affine(),
+        },
     };
     (request, response)
 }
