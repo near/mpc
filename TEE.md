@@ -9,7 +9,7 @@ For the MPC network, the security guarantees provided by TEEs are attractive for
 
 TEEs provide their security guarantees by restricting how anything outside of the TEE can interact with the code running inside the TEE. This is great to protect against malicious actors, but it also restricts the honest actors. It has to be expected that debugging and handling of emergencies will become much more difficult compared to running an MPC node outside of a TEE.
 
-This is a good moment to remind the reader that threshold crypotgrapy requires `threshold` operational nodes. - anything less than that, and the protocol finds itself incapacitated, not able to move any funds.
+This is a good moment to remind the reader that threshold cryptography requires threshold operational nodes. Anything less than that, and the protocol stalls, in which case, no funds can be moved.
 
 Therefore, Near-One will roll-out their TEE implementation in two phases:
 - Soft Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of the TEE.
