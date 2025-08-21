@@ -108,11 +108,12 @@ impl TeeState {
 
     /// Performs TEE validation on the given participants.
     ///
-    /// Returns `TeeValidationResult::Full` if all participants are valid,
-    /// or `TeeValidationResult::Partial` with the subset of valid participants otherwise.
+    /// Returns [`TeeValidationResult::Full`] if all participants are valid, or
+    /// [`TeeValidationResult::Partial`] with the subset of valid participants otherwise.
     ///
-    /// Participants with `TeeQuoteStatus::Valid` or `TeeQuoteStatus::None` are considered valid.
-    /// The returned `Participants` preserves participant data and `next_id()`.
+    /// Participants with [`TeeQuoteStatus::Valid`] or [`TeeQuoteStatus::None`] are considered
+    /// valid. The returned [`Participants`] preserves participant data and
+    /// [`Participants::next_id()`].
     pub fn validate_tee(&mut self, participants: &Participants) -> TeeValidationResult {
         let new_participants: Vec<_> = participants
             .participants()
@@ -171,8 +172,8 @@ impl TeeState {
     }
     /// Retrieves the current allowed hashes, cleaning up any expired entries.
     pub fn get_allowed_hashes(&mut self) -> Vec<MpcDockerImageHash> {
-        // Clean up expired entries and return the current allowed hashes.
-        // don't remove the get call, as it ensures we only get hashes valid for the current block height
+        // Clean up expired entries and return the current allowed hashes. Don't remove the get
+        // call, as it ensures we only get hashes valid for the current block height.
         self.allowed_docker_image_hashes
             .get(env::block_height())
             .into_iter()
