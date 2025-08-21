@@ -5,11 +5,11 @@ A trusted execution environment (TEE) is an environment isolated from the operat
 
 For the MPC network, the security guarantees provided by TEEs are attractive for two reasons:
 1. They relax the threat models (e.g. honest-but-curious instead of malicious adversaries). This allows the adoption of significantly more efficient MPC protocols.
-2. They help enforce backward secrecy. Since TEEs can guarantee that former nodes never gain lasting possession of plaintext secret-shares, collusion attacks after departure become infeasible.
+2. They help enforce backward secrecy. Since TEEs can guarantee that former nodes never gain lasting possession of plain text secret-shares, collusion attacks after departure become infeasible.
 
 TEEs provide their security guarantees by restricting how anything outside of the TEE can interact with the code running inside the TEE. This is great to protect against malicious actors, but it also restricts the honest actors. It has to be expected that debugging and handling of emergencies will become much more difficult compared to running an MPC node outside of a TEE.
 
-This is a good moment to remind the reader that threshold cryptography requires threshold operational nodes. Anything less than that, and the protocol stalls, in which case, no funds can be moved.
+In the context of threshold cryptography, this poses the risk of losing a "signing quorum". If too few nodes remain operational, the protocol grinds to halt, in which case, no funds can be moved.
 
 Therefore, Near-One will roll-out its TEE implementation in two phases:
 - Soft Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of the TEE.
@@ -23,7 +23,7 @@ As long as the secret shares of the MPC nodes are securely backed-up outside of 
 
 ### Backup service
 The backup service has two responsibilities:
-1. _Backup:_ Securely fetch the secret shares of the current keyset from the MPC node it must back up and store the secrets in a secure manner.
+1. _Backup:_ Securely fetch the secret shares of the current key set from the MPC node it must back up and store the secrets in a secure manner.
 2. _Recovery:_ Securely provide the backup shares to the MPC node if required.
 
 For the hard-launch, the backup service must run inside a TEE.
@@ -38,14 +38,14 @@ Node and service will each submit a public key to the contract that is then used
 Currently, the MPC network allows three protocol states:
 - `Initializing` for generating new key shares
 - `Running` when handling signature request
-- `Resharing` when the network is resharing their secret keys for a change of the participant set, or for a change in the cryptographic threshold
+- `Resharing` when the network is resharing their secret keys for a change of the participant set, or for a change of the cryptography threshold
 
 Until now, when a node operator wanted to switch their machine, they needed to do so through a `Resharing` - they had to leave the network and then re-join.
-Unfortunately, it may not be possible to use the same mechanism for recovering from disaster, as by definiton, a disaster implies that the network lost it signing quorum and thus, its agency.
+Unfortunately, it may not be possible to use the same mechanism for recovering from disaster, as by definition, a disaster implies that the network lost it signing quorum and thus, its agency.
 To account for this, a fourth protocol state must be introduced: `Recovery`.
 
 The purpose of this state is to:
-- allow participants to change their participant information (e.g. tls keys, ip addresse, and anything other than their account id);
+- allow participants to change their participant information (e.g. TLS keys, IP address, and anything other than their account id);
 - allow a node to activate the Recovery mechanism and request the back-up share from the backup service.
 
 This protocol state may:
@@ -66,30 +66,30 @@ _Note: In this document, the term node operator refers to a person operating a n
 The node already contains logic that allows mutual authentication via TLS. That logic sits in [`node/src/p2p.rs`](https://github.com/near/mpc/blob/b89d1084bcbd2fdc777140a4dda38de616b810ef/node/src/p2p.rs#L119). This implementation version would re-use the existing logic.
 
 #### Backup service workflow
-##### Onboarding
+##### On boarding
 1. The backup service generates a NEAR account public key and a TLS key.
 2. The node operator adds the NEAR account public key as an access key to their account and grants it access to necessary contract methods (_todo: list of methods_).
 3. The backup service submits their [todo: specify with TEE] information to the MPC smart contract.
 
 ##### Monitoring 
 The backup service periodically fetches the current protocol state from the contract.
-It compares the keyset of the current `Running` protocol state with the secret shares it has possession of.
-If there is a discrepancy, then the Backup service requests a new copy of the keyshares from the MPC node following the process outlined under [Backup](#backup).
+It compares the key set of the current `Running` protocol state with the secret shares it has possession of.
+If there is a discrepancy, then the Backup service requests a new copy of the key shares from the MPC node following the process outlined under [Backup](#backup).
 If the contract is in `Recovery` state, then the backup service follows the protocol outlined under [Recovery](#recovery)
 
 ##### Backup 
 1. The backup service looks up the details of its MPC node in the set of participants of the `Running` protocol state.
 2. The backup service establishes a p2p connection with the node with mutual TLS authentication.
-3. The backup service waits for the node to send the keyshares, stores them securely and then closes the connection.
+3. The backup service waits for the node to send the key shares, stores them securely and then closes the connection.
 
 ##### Recovery
 1. The backup service looks up the details of its MPC node in the set of prospective participants of the `Recovery` protocol state.
 2. the backup service establishes a p2p connection with the node with mutual TLS authentication.
-3. The backup service sends the keyshares to the node.
+3. The backup service sends the key shares to the node.
 4. The backup service sends a confirmation to the MPC smart contract.
 
 #### MPC node workflow
-##### Onboarding
+##### On boarding
 1. The MPC node generates a NEAR account public key and a TLS key.
 2. The node operator adds the NEAR account public key as an access key to their account and grants it access to the necessary contract methods (_todo: list of methods_).
 3. The MPC node monitors the MPC smart contract:
@@ -114,15 +114,15 @@ The node follows this protocol when the protocol state is in `Recovery`:
     - _note: This case means that the node is about to be de-commissioned. The node must shut down now, because otherwise, it will itself request a "Recovery" state once the contract resumes "Running"_
 
 - **If** the account ID of the node operator is in the set of current participants **and** the TLS key of the participant info matches the one in the set of "recovering" participants:  
-    - **If** the node is not in possession of keyshares, they wait for the backup service to provide them.
-    - Once in possession of keyshares, the node calls `conclude_recover()`, which resumes the protocol in the `Running` state.
+    - **If** the node is not in possession of key shares, they wait for the backup service to provide them.
+    - Once in possession of key shares, the node calls `conclude_recover()`, which resumes the protocol in the `Running` state.
 
 ##### Backup:
-The MPC node listenes for any connection attempts by the backup service.
+The MPC node listens for any connection attempts by the backup service.
 If it receives one, it checks the credentials sent by the p2p connection with the credentials stored in the contract.
 
 
-### Version 2: web-endpint and ephemeral keys:
+### Version 2: web-endpoint and ephemeral keys:
 Instead of establishing p2p connections, it is possible to leverage the web-endpoint already exposed by the node.
 The endpoints are currently unprotected, so an authentication mechanism would need to be implemented.
 Furthermore, the node and the backup service must be able to agree on a key for encrypting the secrets during transit.
@@ -136,11 +136,11 @@ The key establishment scheme requires that the node as well as the backup servic
 
 _Note: The curious reader might ask why this protocol does not simply use the NEAR public/private key pairs associated to the MPC node and the backup service. The reason for this is is twofold:_
 - _those keys are meant for signature generation._
-- _While it is true that Curve25519 used in X25519 and edwards25519 used by the NEAR blockchain are [birationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically convert the NEAR account keys and use them for `X25519`, it is generally advised to use one key per application. This also allows us to use ephemeral keys, as opposed to static keys for the encryption. Which is desirable._
+- _While it is true that Curve25519 used in X25519 and edwards25519 used by the NEAR blockchain are [bi rationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically convert the NEAR account keys and use them for `X25519`, it is generally advised to use one key per application. This also allows us to use ephemeral keys, as opposed to static keys for the encryption. Which is desirable._
 
 
 #### Node
-The **MPC node** will expose a web endpont over which the backup service can submit requests. These endpoints require some sort of authentication using the published public keys _(todo: yet to be specified)_.
+The **MPC node** will expose a web endpoint over which the backup service can submit requests. These endpoints require some sort of authentication using the published public keys _(todo: yet to be specified)_.
 The exposed endpoints are:
 - GET /shares_backup - with an authentication header
     - Returns the encrypted shares, if a valid backup service is registered.
@@ -148,7 +148,7 @@ The exposed endpoints are:
     - Posts encrypted shares to a new node.
 
 
-## Todos
+## Todo
 - it is advised that the node operator grants access only to specific contract methods for the backup service and the node.
 - define attestation for backup service
 - contract changing state from Running --> Recovery --> Running might be missed by some nodes. Need a way to update participant set while in Running state. In that case, nodes will need to re-establish p2p connections and purge their assets to avoid timing out requests. While it is possible to force nodes to do this synchronously, the effort for this is quite high and it is probably unnecessary.
