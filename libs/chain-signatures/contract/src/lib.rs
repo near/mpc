@@ -67,6 +67,9 @@ const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(6);
 // Prepaid gas for a `update_config` call
 const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 
+// Prepaid gas for a `fail_on_timeout` call
+const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
+
 /// Store two version of the MPC contract for migration and backward compatibility purposes.
 /// Note: Probably, you don't need to change this struct.
 #[near_bindgen]
@@ -503,7 +506,6 @@ impl VersionedMpcContract {
             }
         }
 
-        // TODO: do we need this here?
         let Self::V2(mpc_contract) = self else {
             env::panic_str("expected V2")
         };
@@ -1223,7 +1225,7 @@ impl VersionedMpcContract {
                     "fail_on_timeout".to_string(),
                     vec![],
                     NearToken::from_near(0),
-                    Gas::from_tgas(2),
+                    FAIL_ON_TIMEOUT_GAS,
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
@@ -1249,7 +1251,7 @@ impl VersionedMpcContract {
                     "fail_on_timeout".to_string(),
                     vec![],
                     NearToken::from_near(0),
-                    Gas::from_tgas(2), // TODO: shouldn't this be a constant somewhere?
+                    FAIL_ON_TIMEOUT_GAS,
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
