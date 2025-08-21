@@ -1,7 +1,8 @@
 use rand_core::CryptoRngCore;
-use rmp_serde::encode::Error;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+use crate::protocol::errors::ProtocolError;
 
 use super::random::Randomness;
 
@@ -20,17 +21,17 @@ pub struct Commitment([u8; COMMIT_LEN]);
 impl Commitment {
     /// Computes the commitment using a randomizer as follows
     /// SHA256(COMMIT_LABEL || randomness || START_LABEL || msgpack(value))
-    fn compute<T: Serialize>(val: &T, r: &Randomness) -> Result<Self, Error> {
+    fn compute<T: Serialize>(val: &T, r: &Randomness) -> Result<Self, ProtocolError> {
         let mut hasher = Sha256::new();
         hasher.update(COMMIT_LABEL);
         hasher.update(r.as_ref());
         hasher.update(START_LABEL);
-        rmp_serde::encode::write(&mut hasher, val)?;
+        rmp_serde::encode::write(&mut hasher, val).map_err(|_| ProtocolError::ErrorEncoding)?;
         Ok(Commitment(hasher.finalize().into()))
     }
 
     /// Check that a value and a randomizer match this commitment.
-    pub fn check<T: Serialize>(&self, val: &T, r: &Randomness) -> Result<bool, Error> {
+    pub fn check<T: Serialize>(&self, val: &T, r: &Randomness) -> Result<bool, ProtocolError> {
         let actual = Self::compute(val, r)?;
         Ok(*self == actual)
     }
@@ -46,7 +47,7 @@ impl Commitment {
 pub fn commit<T: Serialize, R: CryptoRngCore>(
     rng: &mut R,
     val: &T,
-) -> Result<(Commitment, Randomness), Error> {
+) -> Result<(Commitment, Randomness), ProtocolError> {
     let r = Randomness::random(rng);
     let c = Commitment::compute(val, &r)?;
     Ok((c, r))

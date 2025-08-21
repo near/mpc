@@ -21,7 +21,7 @@
 //! The tricky part is coordinating which round messages belong to.
 //! The basic idea here is to use *waitpoints*. Each waitpoint represents a distinct point
 //! in the protocol. This is sort of like rounds, except that waitpoints don't necessarily
-//! have to follow eachother sequentially. For example, you can send on waitpoint A,
+//! have to follow each other sequentially. For example, you can send on waitpoint A,
 //! and then on waitpoint B, without first waiting to receive messages from waitpoint A.
 //! This kind of decomposition can lead to better performance, and better matches what the
 //! dependencies between messages in the protocol actually are.
