@@ -14,7 +14,7 @@ use crate::mpc_client::MpcClient;
 use crate::network::{
     run_network_client, MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel,
 };
-use crate::p2p::new_tls_mesh_network;
+use crate::p2p::mesh::new_tls_mesh_network;
 use crate::primitives::MpcTaskId;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};

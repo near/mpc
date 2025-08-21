@@ -244,7 +244,7 @@ impl PersistentSecrets {
             std::fs::create_dir_all(home_dir)?;
         }
         let p2p_secret = {
-            let (secret_key, _public_key) = p2p::keygen::generate_keypair()?;
+            let (secret_key, _public_key) = p2p::keys::generate_keypair()?;
             SecretKey::ED25519(secret_key)
         };
         let near_signer_key = SecretKey::from_random(near_crypto::KeyType::ED25519);

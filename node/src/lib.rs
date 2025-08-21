@@ -30,7 +30,7 @@ mod keyshare;
 pub mod metrics;
 mod mpc_client;
 mod network;
-mod p2p;
+pub mod p2p;
 pub mod primitives;
 mod protocol;
 mod protocol_version;
