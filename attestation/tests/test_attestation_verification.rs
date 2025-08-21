@@ -6,7 +6,7 @@ use attestation::{
 };
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
-use near_crypto::PublicKey;
+use near_sdk::PublicKey;
 use rstest::rstest;
 
 use crate::common::{

@@ -55,7 +55,7 @@ impl TeeState {
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
         let time_stamp_seconds = Self::current_time_seconds();
 
-        let expected_report_data = ReportData::V1(ReportDataV1::from(tls_public_key));
+        let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
 
         let quote_result = tee_participant_info.verify(
             expected_report_data,
@@ -87,7 +87,7 @@ impl TeeState {
             return Ok(TeeQuoteStatus::None);
         };
 
-        let expected_report_data = ReportData::V1(ReportDataV1::from(tls_public_key));
+        let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
         let time_stamp_seconds = Self::current_time_seconds();
 
         let quote_result = participant_attestation.verify(
