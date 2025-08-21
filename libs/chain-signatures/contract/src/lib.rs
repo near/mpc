@@ -267,7 +267,6 @@ impl VersionedMpcContract {
     /// `key_version` must be less than or equal to the value at `latest_key_version`
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each signature request.
-    /// The fee changes based on how busy the network is.
     #[handle_result]
     #[payable]
     pub fn sign(&mut self, request: SignRequestArgs) {
@@ -453,7 +452,6 @@ impl VersionedMpcContract {
 
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each ckd request.
-    /// The fee changes based on how busy the network is.
     #[handle_result]
     #[payable]
     pub fn request_app_private_key(&mut self, request: CKDRequestArgs) {
