@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use crate::primitives::ParticipantId;
+use std::collections::HashMap;
 
 /// Maps public keys to participant IDs. Used to identify incoming connections.
 #[derive(Default)]

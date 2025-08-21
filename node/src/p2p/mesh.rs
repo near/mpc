@@ -5,8 +5,9 @@ use crate::network::handshake::p2p_handshake;
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::p2p::certificate::{configure_tls, verify_peer_identity};
 use crate::p2p::conn::Packet;
-use crate::p2p::conn::{PersistentConnection, TlsConnection};
+use crate::p2p::conn::TlsConnection;
 use crate::p2p::participants::ParticipantIdentities;
+use crate::p2p::persistent_conn::PersistentConnection;
 use crate::primitives::{
     IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
     PeerMessage,
@@ -92,6 +93,7 @@ pub async fn new_tls_mesh_network(
                 participant.id,
                 participant_identities.clone(),
                 connectivities.get(participant.id)?,
+                p2p_handshake,
             )?),
         );
     }

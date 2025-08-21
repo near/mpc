@@ -1,4 +1,4 @@
-use super::constants::{PKCS8_HEADER, PKCS8_MIDDLE};
+use crate::p2p::constants::{PKCS8_HEADER, PKCS8_MIDDLE};
 use rustls::pki_types::PrivatePkcs8KeyDer;
 
 /// Generates an ED25519 keypair, returning the pem-encoded private key and the

@@ -1,30 +1,29 @@
-use crate::network::conn::{ConnectionVersion, NodeConnectivity};
-use crate::network::handshake::p2p_handshake;
 use crate::p2p::certificate::verify_peer_identity;
+use crate::p2p::participants::ParticipantIdentities;
 use crate::primitives::{IndexerHeightMessage, MpcMessage, ParticipantId};
 use crate::tracking::{self, AutoAbortTask};
 use anyhow::Context;
-use borsh::{BorshDeserialize, BorshSerialize};
 use rustls::ClientConfig;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use super::participants::ParticipantIdentities;
-
-/// A retrying connection that will automatically reconnect if the TCP
-/// connection is broken.
-pub(crate) struct PersistentConnection {
-    target_participant_id: ParticipantId,
-    connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
-    // The task that loops to connect to the target. When `PersistentConnection`
-    // is dropped, this task is aborted. The task owns any active connection,
-    // so dropping it also frees any connection currently alive.
-    _task: AutoAbortTask<()>,
-}
+///// A retrying connection that will automatically reconnect if the TCP
+///// connection is broken.
+//pub(crate) struct PersistentConnection {
+//    target_participant_id: ParticipantId,
+//    connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
+//    // The task that loops to connect to the target. When `PersistentConnection`
+//    // is dropped, this task is aborted. The task owns any active connection,
+//    // so dropping it also frees any connection currently alive.
+//    _task: AutoAbortTask<()>,
+//}
 
 /// State for a single TLS/TCP connection to one participant. We only ever send
 /// messages through this connection, so there is nothing to handle receiving.
@@ -54,12 +53,12 @@ impl Drop for DropToCancel {
     }
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
-pub(crate) enum Packet {
-    Ping,
-    MpcMessage(MpcMessage),
-    IndexerHeight(IndexerHeightMessage),
-}
+//#[derive(BorshSerialize, BorshDeserialize)]
+//pub(crate) enum Packet {
+//    Ping,
+//    MpcMessage(MpcMessage),
+//    IndexerHeight(IndexerHeightMessage),
+//}
 
 impl TlsConnection {
     /// Both sides of the connection must complete handshake within this time, or else
@@ -68,12 +67,22 @@ impl TlsConnection {
 
     /// Makes a TLS/TCP connection to the given address, authenticating the
     /// other side as the given participant.
-    async fn new(
+    pub async fn new<F>(
         client_config: Arc<ClientConfig>,
         target_address: &str,
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
-    ) -> anyhow::Result<TlsConnection> {
+        handshake_fn: F,
+    ) -> anyhow::Result<TlsConnection>
+    where
+        F: for<'a> Fn(
+                &'a mut tokio_rustls::client::TlsStream<TcpStream>,
+                Duration,
+            ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'a>>
+            + Send
+            + Sync
+            + 'static,
+    {
         let conn = TcpStream::connect(target_address)
             .await
             .context("TCP connect")?;
@@ -93,9 +102,13 @@ impl TlsConnection {
         }
 
         info!("Performing P2P handshake with: {:?}", target_address);
-        p2p_handshake(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
+        // todo: pass handshake function as a callback
+        handshake_fn(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
             .await
             .context("p2p handshake")?;
+        //p2p_handshake(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
+        //    .await
+        //    .context("p2p handshake")?;
 
         let (sender, mut receiver) = mpsc::unbounded_channel::<Packet>();
         let closed = CancellationToken::new();
@@ -154,100 +167,18 @@ impl TlsConnection {
         })
     }
 
-    async fn wait_for_close(&self) {
+    pub async fn wait_for_close(&self) {
         self.closed.cancelled().await;
     }
 
-    fn send_mpc_message(&self, msg: MpcMessage) -> anyhow::Result<()> {
+    pub fn send_mpc_message(&self, msg: MpcMessage) -> anyhow::Result<()> {
         self.sender.send(Packet::MpcMessage(msg))?;
         Ok(())
     }
 
-    fn send_indexer_height(&self, msg: IndexerHeightMessage) -> anyhow::Result<()> {
+    pub fn send_indexer_height(&self, msg: IndexerHeightMessage) -> anyhow::Result<()> {
         self.sender.send(Packet::IndexerHeight(msg))?;
         Ok(())
-    }
-}
-
-impl PersistentConnection {
-    const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
-
-    /// Sends a message over the connection. If the connection was reset, fail.
-    pub(crate) fn send_mpc_message(
-        &self,
-        expected_version: ConnectionVersion,
-        msg: MpcMessage,
-    ) -> anyhow::Result<()> {
-        self.connectivity
-            .outgoing_connection_asserting(expected_version)
-            .with_context(|| format!("Cannot send MPC message to {}", self.target_participant_id))?
-            .send_mpc_message(msg)
-            .with_context(|| {
-                format!("Cannot send MPC message to {}", self.target_participant_id)
-            })?;
-        Ok(())
-    }
-
-    /// Sends a message over the connection. This is done on a best-effort basis.
-    pub(crate) fn send_indexer_height(&self, height: IndexerHeightMessage) {
-        if let Some(conn) = self.connectivity.any_outgoing_connection() {
-            let _ = conn.send_indexer_height(height);
-        }
-    }
-
-    pub fn new(
-        client_config: Arc<ClientConfig>,
-        my_id: ParticipantId,
-        target_address: String,
-        target_participant_id: ParticipantId,
-        participant_identities: Arc<ParticipantIdentities>,
-        connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
-    ) -> anyhow::Result<PersistentConnection> {
-        let connectivity_clone = connectivity.clone();
-        let task = tracking::spawn(
-            &format!("Persistent connection to {}", target_participant_id),
-            async move {
-                loop {
-                    let new_conn = match TlsConnection::new(
-                        client_config.clone(),
-                        &target_address,
-                        target_participant_id,
-                        &participant_identities,
-                    )
-                    .await
-                    {
-                        Ok(new_conn) => {
-                            tracing::info!(
-                                "Outgoing {} --> {} connected",
-                                my_id,
-                                target_participant_id
-                            );
-                            new_conn
-                        }
-                        Err(e) => {
-                            tracing::info!(
-                                "Could not connect to {}, retrying: {}, me {}",
-                                target_participant_id,
-                                e,
-                                my_id
-                            );
-                            // Don't immediately retry, to avoid spamming the network with
-                            // connection attempts.
-                            tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
-                            continue;
-                        }
-                    };
-                    let new_conn = Arc::new(new_conn);
-                    connectivity.set_outgoing_connection(&new_conn);
-                    new_conn.wait_for_close().await;
-                }
-            },
-        );
-        Ok(PersistentConnection {
-            target_participant_id,
-            connectivity: connectivity_clone,
-            _task: task,
-        })
     }
 }
 
