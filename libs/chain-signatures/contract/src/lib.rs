@@ -117,7 +117,7 @@ impl MpcContract {
             .is_some()
     }
 
-    fn get_pending_signature_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
+    fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
         self.pending_signature_requests.get(request).cloned()
     }
 
@@ -1178,9 +1178,9 @@ impl VersionedMpcContract {
         }
     }
 
-    pub fn get_pending_signature_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
+    pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
         match self {
-            Self::V2(mpc_contract) => mpc_contract.get_pending_signature_request(request),
+            Self::V2(mpc_contract) => mpc_contract.get_pending_request(request),
             _ => env::panic_str("expected V2"),
         }
     }
@@ -1382,7 +1382,7 @@ mod tests {
         );
         contract.sign(request);
         contract
-            .get_pending_signature_request(&signature_request)
+            .get_pending_request(&signature_request)
             .unwrap();
 
         // simulate signature and response to the signing request
@@ -1421,7 +1421,7 @@ mod tests {
                 );
 
                 assert!(contract
-                    .get_pending_signature_request(&signature_request)
+                    .get_pending_request(&signature_request)
                     .is_none(),);
             }
             Err(_) => assert!(!success),
@@ -1467,7 +1467,7 @@ mod tests {
             PromiseOrValue::Promise(_)
         ));
         assert!(contract
-            .get_pending_signature_request(&signature_request)
+            .get_pending_request(&signature_request)
             .is_none());
     }
 
