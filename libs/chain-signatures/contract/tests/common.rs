@@ -1,4 +1,3 @@
-pub use attestation::test_utils::mock_dstack_attestation;
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;

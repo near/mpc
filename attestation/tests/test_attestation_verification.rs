@@ -1,12 +1,12 @@
-use attestation::report_data::{ReportData, ReportDataV1};
+use attestation::{
+    report_data::{ReportData, ReportDataV1},
+    test_utils::{mock_dstack_attestation, mock_local_attestation},
+};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::PublicKey;
 use rstest::rstest;
 
-use crate::common::{
-    TEST_LAUNCHER_COMPOSE_DIGEST_HEX, TEST_MPC_IMAGE_DIGEST_HEX, mock_dstack_attestation,
-    mock_local_attestation, p2p_tls_key,
-};
+use crate::common::{TEST_LAUNCHER_COMPOSE_DIGEST_HEX, TEST_MPC_IMAGE_DIGEST_HEX, p2p_tls_key};
 
 pub mod common;
 

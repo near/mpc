@@ -1,11 +1,11 @@
 use anyhow::Result;
 use assert_matches::assert_matches;
-use common::{check_call_success, init_env_ed25519, init_env_secp256k1, mock_dstack_attestation};
+use attestation::test_utils::{mock_dstack_attestation, p2p_tls_key};
+use common::{check_call_success, init_env_ed25519, init_env_secp256k1};
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
-use std::str::FromStr;
 
 use crate::common::gen_accounts;
 
@@ -243,13 +243,12 @@ async fn test_propose_join_with_invalid_tee_participant() -> Result<()> {
     let attestation = mock_dstack_attestation();
 
     // Create a valid ed25519 public key for signing
-    let sign_pk = PublicKey::from_str("ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847")
-        .expect("Valid public key");
+    let tls_key: PublicKey = p2p_tls_key();
 
     // Test that invalid TEE participant data is properly rejected
     let result = accounts[0]
         .call(contract.id(), "submit_participant_info")
-        .args_borsh((attestation.clone(), sign_pk.clone()))
+        .args_borsh((attestation.clone(), tls_key.clone()))
         .max_gas()
         .transact()
         .await?;
