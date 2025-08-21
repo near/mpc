@@ -144,7 +144,7 @@ impl From<MpcContractV1> for MpcContract {
         Self {
             protocol_state: value.protocol_state.into(),
             pending_signature_requests: value.pending_requests,
-            pending_ckd_requests: LookupMap::new(StorageKey::PendingRequestsV2),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             proposed_updates: value.proposed_updates,
             config: value.config,
             tee_state: crate::TeeState::default(),

@@ -11,8 +11,9 @@ pub enum StorageKey {
     _DeprecatedProposedUpdatesEntries,
     _DeprecatedRequestsByTimestamp,
     /// Pending requests.
-    PendingRequestsV2,
+    PendingSignatureRequestsV2,
     ProposedUpdatesEntriesV2,
     ProposedUpdatesVotesV2,
     TeeParticipantAttestation,
+    PendingCKDRequestsV2,
 }
