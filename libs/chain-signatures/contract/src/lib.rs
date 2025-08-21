@@ -610,20 +610,16 @@ impl VersionedMpcContract {
             Self::V2(mpc_contract) => {
                 let validation_result =
                     mpc_contract.tee_state.validate_tee(proposal.participants());
-                let final_proposal = match validation_result {
-                    TeeValidationResult::Full => proposal,
-                    TeeValidationResult::Partial(valid_participants) => {
-                        if valid_participants.len() == 0 {
-                            return Err(InvalidParameters::InvalidTeeRemoteAttestation.message(
-                                "No participants with valid TEE status found".to_string(),
-                            ));
-                        }
-                        ThresholdParameters::new(valid_participants, proposal.threshold().clone())
-                            .map_err(|e| InvalidParameters::MalformedPayload.message(e.to_string()))?
+                match validation_result {
+                    TeeValidationResult::Full => {
+                        mpc_contract.vote_new_parameters(prospective_epoch_id, &proposal)
                     }
-                };
-
-                mpc_contract.vote_new_parameters(prospective_epoch_id, &final_proposal)
+                    TeeValidationResult::Partial(_) => {
+                        Err(InvalidParameters::InvalidTeeRemoteAttestation.message(
+                            "One or more participants have invalid TEE status".to_string(),
+                        ))
+                    }
+                }
             }
             _ => env::panic_str("expected V2"),
         }
