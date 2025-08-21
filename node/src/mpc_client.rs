@@ -355,6 +355,9 @@ impl MpcClient {
                     .process_channel(channel)
                     .await?
             }
+            MpcTaskId::CKDTaskId(_) => {
+                todo!()
+            }
         }
 
         Ok(())
