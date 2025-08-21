@@ -616,11 +616,12 @@ impl VersionedMpcContract {
                     TeeValidationResult::Full => {
                         mpc_contract.vote_new_parameters(prospective_epoch_id, &proposal)
                     }
-                    TeeValidationResult::Partial(_) => {
-                        Err(InvalidParameters::InvalidTeeRemoteAttestation.message(
-                            "One or more participants have invalid TEE status".to_string(),
-                        ))
-                    }
+                    TeeValidationResult::Partial(invalid_participants) => Err(
+                        InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
+                            "The following participants have invalid TEE status: {:?}",
+                            invalid_participants
+                        )),
+                    ),
                 }
             }
             _ => env::panic_str("expected V2"),
@@ -914,7 +915,7 @@ impl VersionedMpcContract {
         {
             TeeValidationResult::Full => {
                 contract.accept_signature_requests = true;
-                log!("All participants have an accepted Tee status");
+                log!("All participants have an accepted TEE status");
                 Ok(true)
             }
             TeeValidationResult::Partial(new_participants) => {
@@ -1431,7 +1432,7 @@ mod tests {
         );
     }
 
-    /// Test that [`VersionedMpcContract::vote_new_parameters`]  succeeds with mixed TEE statuses:
+    /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds with mixed TEE statuses:
     /// some [`TeeQuoteStatus::Valid`], some [`TeeQuoteStatus::None`]. This tests a realistic
     /// scenario where some participants have submitted valid attestations (resulting in
     /// [`TeeQuoteStatus::Valid`] TEE status) while others haven't submitted any attestation
@@ -1480,7 +1481,7 @@ mod tests {
         let result = submit_attestation(&mut contract, &participants, participant_index, false);
         assert!(
             result.is_err(),
-            "submit_participant_info should fail with invalid attestation"
+            "Invalid attestation should be rejected by submit_participant_info"
         );
 
         if let Err(error) = result {
