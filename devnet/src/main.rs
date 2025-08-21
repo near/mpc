@@ -1,3 +1,8 @@
+// TODO: remove this allow lint once `near_crypto` is removed
+// from devnet crate.
+// https://github.com/near/mpc/issues/915
+#![allow(clippy::disallowed_types)]
+
 use clap::Parser;
 use cli::Cli;
 
