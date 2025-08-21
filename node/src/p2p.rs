@@ -411,7 +411,7 @@ pub async fn new_tls_mesh_network(
         }
         participant_identities
             .key_to_participant_id
-            .insert(participant.p2p_public_key.clone(), participant.id);
+            .insert(participant.p2p_public_key, participant.id);
     }
     let participant_identities = Arc::new(participant_identities);
     for participant in &config.participants.participants {

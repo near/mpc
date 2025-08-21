@@ -126,7 +126,7 @@ pub async fn create_remote_attestation_info(tls_public_key: &VerifyingKey) -> Te
         // Copy hash
         let public_keys_hash: [u8; PUBLIC_KEYS_SIZE] = {
             let mut hasher = Sha3_384::new();
-            hasher.update(&tls_public_key.as_bytes());
+            hasher.update(tls_public_key.as_bytes());
             hasher.finalize().into()
         };
         report_data[PUBLIC_KEYS_OFFSET..][..PUBLIC_KEYS_SIZE].copy_from_slice(&public_keys_hash);
