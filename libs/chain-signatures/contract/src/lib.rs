@@ -1381,9 +1381,7 @@ mod tests {
             &request.path,
         );
         contract.sign(request);
-        contract
-            .get_pending_request(&signature_request)
-            .unwrap();
+        contract.get_pending_request(&signature_request).unwrap();
 
         // simulate signature and response to the signing request
         let derivation_path = derive_tweak(&context.predecessor_account_id, &key_path);
@@ -1420,9 +1418,7 @@ mod tests {
                     Ok(signature_response),
                 );
 
-                assert!(contract
-                    .get_pending_request(&signature_request)
-                    .is_none(),);
+                assert!(contract.get_pending_request(&signature_request).is_none(),);
             }
             Err(_) => assert!(!success),
         }
@@ -1466,9 +1462,7 @@ mod tests {
             ),
             PromiseOrValue::Promise(_)
         ));
-        assert!(contract
-            .get_pending_request(&signature_request)
-            .is_none());
+        assert!(contract.get_pending_request(&signature_request).is_none());
     }
 
     #[test]
