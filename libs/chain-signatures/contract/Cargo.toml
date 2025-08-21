@@ -60,10 +60,8 @@ k256 = { version = "0.13.4", features = [
     "arithmetic",
     "expose-field",
 ] }
-# TODO(#815): Use upstream library
-dcap-qvl = { git = "https://github.com/gilcu3/dcap-qvl", rev = "287a6e7b00f3a687255e90733e954c979d1df9d5", default-features = false, features=["contract", "std", "report"] }
 mpc-primitives = { path = "../../../crates/primitives" }
-attestation = { path = "../../../attestation" }
+attestation = { path = "../../../attestation", features = ["test-utils"] }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-account-id = "1.1.1"
 thiserror = "1"
@@ -82,6 +80,7 @@ tokio = { version = "1", features = ["full"] }
 sha2 = "0.10.8"
 reqwest = { version = "0.11", features = ["json"] }
 base64 = "0.21"
+dstack-sdk-types = { features = ["borsh"], git = "https://github.com/Dstack-TEE/dstack.git", rev = "04de4e422bb06f075b4215b2cfc410f5d7ac7aed" }
 
 # crypto dependencies
 ed25519-dalek = { version = "2.1.1", features = ["serde", "digest"] }
@@ -93,17 +92,14 @@ digest = "0.10.7"
 near-crypto = "0.26.0"
 near-workspaces = "0.18"
 near-primitives = "=0.29.2" # not entirely clear why this is needed but otherwise tests don't compile
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "52109e54c4c574b44fe3e29378b2cb5ca8b1bb63", features = [
-    "k256",
-] }
-frost-ed25519 = "2.1.0"
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "5fd9fe7d45db3b653d300d393b95719f6fc219b3"}
 fs2 = "0.4"
 rstest = "0.25.0"
 
 [features]
 test-utils = ["rand"]
 dev-utils = []
-abi = ["borsh/unstable__schema", "mpc-primitives/abi"]
+abi = ["borsh/unstable__schema", "mpc-primitives/abi", "attestation/abi"]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
 # if it appears under wasm32 target, it will break compilation too.

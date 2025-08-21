@@ -11,12 +11,14 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
-use crate::errors::Error;
-use crate::storage_keys::StorageKey;
-use crate::tee::proposal::AllowedDockerImageHashes;
-use crate::tee::tee_state::TeeState;
-use crate::update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId};
-use crate::v0_state::MpcContractV1;
+use crate::{
+    errors::Error,
+    storage_keys::StorageKey,
+    tee::{proposal::AllowedDockerImageHashes, quote::TeeQuoteStatus, tee_state::TeeState},
+    update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
+    v0_state::MpcContractV1,
+};
+use attestation::attestation::Attestation;
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -43,10 +45,7 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
-use tee::{
-    proposal::MpcDockerImageHash, quote::get_collateral, tee_participant::TeeParticipantInfo,
-    tee_state::TeeValidationResult,
-};
+use tee::{proposal::MpcDockerImageHash, tee_state::TeeValidationResult};
 
 // Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
@@ -212,7 +211,6 @@ impl MpcContract {
     }
 
     pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
-        // Ensure the protocol is in the Running state
         let ProtocolContractState::Running(state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
@@ -519,54 +517,49 @@ impl VersionedMpcContract {
         }
     }
 
+    /// (Prospective) Participants can submit their tee participant information through this
+    /// endpoint.
     #[payable]
     #[handle_result]
-    pub fn propose_join(
+    pub fn submit_participant_info(
         &mut self,
-        #[serializer(borsh)] proposed_tee_participant: TeeParticipantInfo,
-        #[serializer(borsh)] sign_pk: PublicKey,
+        #[serializer(borsh)] proposed_participant_attestation: Attestation,
+        #[serializer(borsh)] tls_public_key: PublicKey,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
+        let account_key = env::signer_account_pk();
+
         log!(
-            "propose_join: signer={}, proposed_tee_participant={:?}",
+            "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
             account_id,
-            proposed_tee_participant,
+            proposed_participant_attestation,
+            account_key
         );
 
         // Save the initial storage usage to know how much to charge the proposer for the storage used
         let initial_storage = env::storage_usage();
 
-        // Verify the TEE quote before adding the proposed participant to the contract state
-        let timestamp_s = env::block_timestamp_ms() / 1_000;
-        let report = proposed_tee_participant
-            .verify_quote(timestamp_s)
-            .map_err(|err| {
-                InvalidParameters::InvalidTeeRemoteAttestation.message(err.to_string())
-            })?;
-
         let Self::V2(mpc_contract) = self else {
             env::panic_str("expected V2")
         };
 
-        let allowed_mpc_docker_image_hashes = mpc_contract.tee_state.get_allowed_hashes();
-        let historical_launcher_docker_compose_hashes =
-            mpc_contract.tee_state.get_historical_hashes();
+        // Verify the TEE quote and Docker image for the proposed participant
+        let status = mpc_contract
+            .tee_state
+            .verify_proposed_participant_attestation(
+                &proposed_participant_attestation,
+                tls_public_key,
+            )?;
 
-        // Verify we are running the correct MPC Docker image
-        if !proposed_tee_participant.verify_docker_image(
-            allowed_mpc_docker_image_hashes.as_slice(),
-            historical_launcher_docker_compose_hashes.as_slice(),
-            report,
-            sign_pk,
-        )? {
+        if status == TeeQuoteStatus::Invalid {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
-                .message("RTMR3 does not match expected value".to_string()));
+                .message("TeeQuoteStatus is invalid".to_string()));
         }
 
-        // Add a new proposed participant to the contract state
+        // Add the participant information to the contract state
         mpc_contract
             .tee_state
-            .add_participant(account_id.clone(), proposed_tee_participant.clone());
+            .add_participant(account_id.clone(), proposed_participant_attestation);
 
         // Both participants and non-participants can propose. Non-participants must pay for the
         // storage they use; participants do not.

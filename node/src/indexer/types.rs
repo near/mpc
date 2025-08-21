@@ -1,19 +1,17 @@
 use crate::sign_request::SignatureRequest;
 use anyhow::Context;
+use attestation::attestation::Attestation;
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
 use legacy_mpc_contract;
-use mpc_contract::{
-    primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak},
-    tee::tee_participant::TeeParticipantInfo,
-};
+use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak};
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
-use threshold_signatures::ecdsa::sign::FullSignature;
+use threshold_signatures::ecdsa::FullSignature;
 use threshold_signatures::frost_ed25519;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 
@@ -121,8 +119,8 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ProposeJoinArgs {
-    pub proposed_tee_participant: TeeParticipantInfo,
+pub struct SubmitParticipantInfoArgs {
+    pub proposed_tee_participant: Attestation,
     pub sign_pk: PublicKey,
 }
 
@@ -137,8 +135,14 @@ pub(crate) enum ChainSendTransactionRequest {
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
     VerifyTee(),
+    // Boxed as this variant is big, 2168 bytes.
+    // Big discrepancies in variant sizes will lead to memory fragmentation
+    // due to rust's memory layout for enums.
+    //
+    // For more info see clippy lint:
+    // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
     #[cfg(feature = "tee")]
-    SubmitRemoteAttestation(ProposeJoinArgs),
+    SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
 }
 
 impl ChainSendTransactionRequest {
@@ -154,7 +158,7 @@ impl ChainSendTransactionRequest {
             }
             ChainSendTransactionRequest::VerifyTee() => "verify_tee",
             #[cfg(feature = "tee")]
-            ChainSendTransactionRequest::SubmitRemoteAttestation(_) => "submit_remote_attestation",
+            ChainSendTransactionRequest::SubmitParticipantInfo(_) => "submit_participant_info",
         }
     }
 
@@ -168,7 +172,7 @@ impl ChainSendTransactionRequest {
             | Self::VoteAbortKeyEventInstance(_)
             | Self::VerifyTee() => 300 * TGAS,
             #[cfg(feature = "tee")]
-            Self::SubmitRemoteAttestation(_) => 300 * TGAS,
+            Self::SubmitParticipantInfo(_) => 300 * TGAS,
         }
     }
 }
@@ -177,7 +181,7 @@ impl ChainRespondArgs {
     /// WARNING: this function assumes the input full signature is valid and comes from an authentic response
     pub fn new_ecdsa(
         request: &SignatureRequest,
-        response: &FullSignature<Secp256k1>,
+        response: &FullSignature,
         public_key: &VerifyingKey,
     ) -> anyhow::Result<Self> {
         let recovery_id = Self::brute_force_recovery_id(
@@ -221,7 +225,7 @@ impl ChainRespondArgs {
     /// Brute forces the recovery id to find a recovery_id that matches the public key
     pub(crate) fn brute_force_recovery_id(
         expected_pk: &AffinePoint,
-        signature: &FullSignature<Secp256k1>,
+        signature: &FullSignature,
         msg_hash: &[u8; 32],
     ) -> anyhow::Result<u8> {
         let partial_signature = k256::ecdsa::Signature::from_scalars(
@@ -248,7 +252,7 @@ mod recovery_id_tests {
     use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
     use k256::AffinePoint;
     use rand::rngs::OsRng;
-    use threshold_signatures::ecdsa::sign::FullSignature;
+    use threshold_signatures::ecdsa::FullSignature;
 
     #[test]
     fn test_brute_force_recovery_id() {
