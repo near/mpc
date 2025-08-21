@@ -10,7 +10,6 @@ pub enum StorageKey {
     /// Proposed updates to the contract code and config.
     _DeprecatedProposedUpdatesEntries,
     _DeprecatedRequestsByTimestamp,
-    /// Pending requests.
     PendingSignatureRequestsV2,
     ProposedUpdatesEntriesV2,
     ProposedUpdatesVotesV2,
