@@ -1204,7 +1204,6 @@ dependencies = [
  "hex",
  "k256",
  "mpc-primitives",
- "near-crypto 2.7.0-rc.4",
  "near-sdk",
  "rstest",
  "serde",
