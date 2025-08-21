@@ -438,11 +438,12 @@ impl VersionedMpcContract {
         derived_public_key.map_err(|_| PublicKeyError::DerivedKeyConversionFailed.into())
     }
 
-    /// Key versions refer new versions of the root key that we may choose to generate on cohort changes
-    /// Older key versions will always work but newer key versions were never held by older signers
-    /// Newer key versions may also add new security features, like only existing within a secure enclave.
-    /// The signature_scheme parameter specifies which signature scheme we're querying the latest version
-    /// for. The default is Secp256k1. The default is **NOT** to query across all signature schemes.
+    /// Key versions refer new versions of the root key that we may choose to generate on cohort
+    /// changes Older key versions will always work but newer key versions were never held by
+    /// older signers Newer key versions may also add new security features, like only existing
+    /// within a secure enclave. The signature_scheme parameter specifies which signature scheme
+    /// we're querying the latest version for. The default is Secp256k1. The default is **NOT**
+    /// to query across all signature schemes.
     pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
         self.state()
             .most_recent_domain_for_signature_scheme(signature_scheme.unwrap_or_default())
@@ -675,7 +676,8 @@ impl VersionedMpcContract {
             account_key
         );
 
-        // Save the initial storage usage to know how much to charge the proposer for the storage used
+        // Save the initial storage usage to know how much to charge the proposer for the storage
+        // used
         let initial_storage = env::storage_usage();
 
         let Self::V2(mpc_contract) = self else {
@@ -744,9 +746,22 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             proposal,
         );
+
         match self {
             Self::V2(mpc_contract) => {
-                mpc_contract.vote_new_parameters(prospective_epoch_id, &proposal)
+                let validation_result =
+                    mpc_contract.tee_state.validate_tee(proposal.participants());
+                match validation_result {
+                    TeeValidationResult::Full => {
+                        mpc_contract.vote_new_parameters(prospective_epoch_id, &proposal)
+                    }
+                    TeeValidationResult::Partial(invalid_participants) => Err(
+                        InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
+                            "The following participants have invalid TEE status: {:?}",
+                            invalid_participants
+                        )),
+                    ),
+                }
             }
             _ => env::panic_str("expected V2"),
         }
@@ -786,9 +801,9 @@ impl VersionedMpcContract {
     ///
     /// The effect of this method is either:
     ///  - Returns error (which aborts with no changes), if there is no active key generation
-    ///    attempt (including if the attempt timed out), if the signer is not a participant,
-    ///    or if the key_event_id corresponds to a different domain, different epoch, or different
-    ///    attempt from the current key generation attempt.
+    ///    attempt (including if the attempt timed out), if the signer is not a participant, or if
+    ///    the key_event_id corresponds to a different domain, different epoch, or different attempt
+    ///    from the current key generation attempt.
     ///  - Returns Ok(()), with one of the following changes:
     ///    - A vote has been collected but we don't have enough votes yet.
     ///    - This vote is for a public key that disagrees from an earlier voted public key, causing
@@ -832,10 +847,10 @@ impl VersionedMpcContract {
     /// Casts a vote for the successful resharing of the attempt identified by `key_event_id`.
     ///
     /// The effect of this method is either:
-    ///  - Returns error (which aborts with no changes), if there is no active key resharing
-    ///    attempt (including if the attempt timed out), if the signer is not a participant,
-    ///    or if the key_event_id corresponds to a different domain, different epoch, or different
-    ///    attempt from the current key resharing attempt.
+    ///  - Returns error (which aborts with no changes), if there is no active key resharing attempt
+    ///    (including if the attempt timed out), if the signer is not a participant, or if the
+    ///    key_event_id corresponds to a different domain, different epoch, or different attempt
+    ///    from the current key resharing attempt.
     ///  - Returns Ok(()), with one of the following changes:
     ///    - A vote has been collected but we don't have enough votes yet.
     ///    - Everyone has now voted; the state transitions into resharing the key for the next
@@ -946,9 +961,10 @@ impl VersionedMpcContract {
 
     /// Vote for a proposed update given the [`UpdateId`] of the update.
     ///
-    /// Returns Ok(true) if the amount of voters surpassed the threshold and the update was executed.
-    /// Returns Ok(false) if the amount of voters did not surpass the threshold. Returns Err if the update
-    /// was not found or if the voter is not a participant in the protocol.
+    /// Returns Ok(true) if the amount of voters surpassed the threshold and the update was
+    /// executed. Returns Ok(false) if the amount of voters did not surpass the threshold.
+    /// Returns Err if the update was not found or if the voter is not a participant in the
+    /// protocol.
     #[handle_result]
     pub fn vote_update(&mut self, id: UpdateId) -> Result<bool, Error> {
         log!(
@@ -1205,7 +1221,8 @@ impl VersionedMpcContract {
     }
 
     /// Upon success, removes the signature from state and returns it.
-    /// If the signature request times out, removes the signature request from state and panics to fail the original transaction
+    /// If the signature request times out, removes the signature request from state and panics to
+    /// fail the original transaction
     #[private]
     pub fn return_signature_and_clean_state_on_success(
         &mut self,
@@ -1231,7 +1248,8 @@ impl VersionedMpcContract {
     }
 
     /// Upon success, removes the confidential key from state and returns it.
-    /// If the ckd request times out, removes the ckd request from state and panics to fail the original transaction
+    /// If the ckd request times out, removes the ckd request from state and panics to fail the
+    /// original transaction
     #[private]
     pub fn return_ck_and_clean_state_on_success(
         &mut self,
@@ -1305,16 +1323,18 @@ mod tests {
     use crate::crypto_shared::k256_types::{self, SerializableAffinePoint};
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
+        participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
     };
+    use attestation::attestation::{Attestation, LocalAttestation};
     use k256::{
         self,
         ecdsa::SigningKey,
         elliptic_curve::point::DecompactPoint,
         {elliptic_curve, AffinePoint, Secp256k1},
     };
-    use near_sdk::{test_utils::VMContextBuilder, testing_env, VMContext};
+    use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::{rngs::OsRng, RngCore};
 
@@ -1330,7 +1350,8 @@ mod tests {
         testing_env!(context.clone());
         let secret_key = SigningKey::random(&mut OsRng);
         let encoded_point = secret_key.verifying_key().to_encoded_point(false);
-        // The first byte of the binary representation of `EncodedPoint` is the tag, so we take the rest 64 bytes
+        // The first byte of the binary representation of `EncodedPoint` is the tag, so we take the
+        // rest 64 bytes
         let public_key_data = encoded_point.as_bytes()[1..].to_vec();
         let domain_id = DomainId::legacy_ecdsa_id();
         let domains = vec![DomainConfig {
@@ -1518,5 +1539,199 @@ mod tests {
             PromiseOrValue::Promise(_)
         ));
         assert!(contract.get_pending_ckd_request(&ckd_request).is_none());
+    }
+
+    fn setup_tee_test_contract(
+        num_participants: usize,
+        threshold_value: u64,
+    ) -> (VersionedMpcContract, Participants, AccountId) {
+        let participants = primitives::test_utils::gen_participants(num_participants);
+        let first_participant_id = participants.participants()[0].0.clone();
+
+        let context = VMContextBuilder::new()
+            .signer_account_id(first_participant_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build();
+        testing_env!(context);
+
+        let threshold = Threshold::new(threshold_value);
+        let parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
+        let contract = VersionedMpcContract::init(parameters, None).unwrap();
+
+        (contract, participants, first_participant_id)
+    }
+
+    fn submit_attestation(
+        contract: &mut VersionedMpcContract,
+        participants: &Participants,
+        participant_index: usize,
+        is_valid: bool,
+    ) -> Result<(), crate::errors::Error> {
+        let participants_list = participants.participants();
+        let (account_id, _, participant_info) = &participants_list[participant_index];
+        let attestation = Attestation::Local(LocalAttestation::new(is_valid));
+        let tls_public_key = participant_info.sign_pk.clone();
+
+        let participant_context = VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build();
+        testing_env!(participant_context);
+
+        contract.submit_participant_info(attestation, tls_public_key)
+    }
+
+    fn submit_valid_attestations(
+        contract: &mut VersionedMpcContract,
+        participants: &Participants,
+        participant_indices: &[usize],
+    ) {
+        for &participant_index in participant_indices {
+            let result = submit_attestation(contract, participants, participant_index, true);
+            assert!(
+                result.is_ok(),
+                "submit_participant_info should succeed with valid attestation for participant {}",
+                participant_index
+            );
+        }
+    }
+
+    /// Sets up the voting context and calls [`VersionedMpcContract::vote_new_parameters`] with the
+    /// given parameters.
+    fn setup_voting_context_and_vote(
+        contract: &mut VersionedMpcContract,
+        first_participant_id: &AccountId,
+        participants: Participants,
+        threshold: Threshold,
+    ) -> Result<(), crate::errors::Error> {
+        let voting_context = VMContextBuilder::new()
+            .signer_account_id(first_participant_id.clone())
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .build();
+        testing_env!(voting_context);
+
+        let proposal = ThresholdParameters::new(participants, threshold).unwrap();
+        contract.vote_new_parameters(EpochId::new(1), proposal)
+    }
+
+    /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds when all participants have
+    /// default TEE status ([`TeeQuoteStatus::None`]). This tests the basic scenario where no
+    /// participants have submitted attestation information, and all have the default TEE status
+    /// of [`TeeQuoteStatus::None`], which is considered acceptable.
+    #[test]
+    fn test_vote_new_parameters_succeeds_with_default_tee_status() {
+        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
+        let threshold = Threshold::new(2);
+
+        // No attestations submitted - all participants have default TEE status None
+        let result = setup_voting_context_and_vote(
+            &mut contract,
+            &first_participant_id,
+            participants,
+            threshold,
+        );
+        assert!(
+            result.is_ok(),
+            "Should succeed when all participants have default TEE status None"
+        );
+    }
+
+    /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds when all participants
+    /// submit valid TEE attestations. This tests the scenario where all participants successfully
+    /// submit valid attestations through [`VersionedMpcContract::submit_participant_info`],
+    /// resulting in [`TeeQuoteStatus::Valid`] TEE status for all participants.
+    #[test]
+    fn test_vote_new_parameters_succeeds_when_all_participants_have_valid_tee() {
+        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
+        let threshold = Threshold::new(2);
+
+        // Submit valid attestations for all participants
+        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+
+        // This should succeed because all participants now have valid TEE status
+        let result = setup_voting_context_and_vote(
+            &mut contract,
+            &first_participant_id,
+            participants,
+            threshold,
+        );
+        assert!(
+            result.is_ok(),
+            "Should succeed when all participants have valid TEE status"
+        );
+    }
+
+    /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds with mixed TEE statuses:
+    /// some [`TeeQuoteStatus::Valid`], some [`TeeQuoteStatus::None`]. This tests a realistic
+    /// scenario where some participants have submitted valid attestations (resulting in
+    /// [`TeeQuoteStatus::Valid`] TEE status) while others haven't submitted any attestation
+    /// info (resulting in [`TeeQuoteStatus::None`] TEE status). Both statuses are acceptable
+    /// for TEE validation.
+    #[test]
+    fn test_vote_new_parameters_succeeds_with_mixed_valid_and_none_tee_status() {
+        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(4, 3);
+        let threshold = Threshold::new(3);
+
+        // Submit valid attestations for first 3 participants, leave the 4th without attestation
+        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+
+        // This should succeed because:
+        // - 3 participants have Valid TEE status (from successful attestations)
+        // - 1 participant has None TEE status (no attestation submitted)
+        // - Both Valid and None are allowed by the TEE validation
+        let result = setup_voting_context_and_vote(
+            &mut contract,
+            &first_participant_id,
+            participants,
+            threshold,
+        );
+        assert!(
+            result.is_ok(),
+            "Should succeed when participants have Valid or None TEE status"
+        );
+    }
+
+    /// Test that attempts to submit invalid attestations are rejected by
+    /// [`VersionedMpcContract::submit_participant_info`]. This test demonstrates that
+    /// participants cannot have Invalid TEE status because the contract proactively rejects
+    /// invalid attestations at submission time. The 4th participant tries to submit an invalid
+    /// attestation but is rejected, leaving them with [`TeeQuoteStatus::None`] status, which
+    /// combined with valid participants still allows successful voting.
+    #[test]
+    fn test_vote_new_parameters_succeeds_after_invalid_attestation_rejected() {
+        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(4, 3);
+        let threshold = Threshold::new(3);
+
+        // Submit valid attestations for first 3 participants
+        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+
+        // Try to submit invalid attestation for the 4th participant
+        let participant_index = 3;
+        let result = submit_attestation(&mut contract, &participants, participant_index, false);
+        assert!(
+            result.is_err(),
+            "Invalid attestation should be rejected by submit_participant_info"
+        );
+
+        if let Err(error) = result {
+            let error_string = error.to_string();
+            assert!(
+                error_string.contains("TeeQuoteStatus is invalid"),
+                "Error should mention invalid TEE status, got: {}",
+                error_string
+            );
+        }
+
+        // This should succeed because:
+        // - 3 participants have Valid TEE status (from successful attestations)
+        // - 1 participant has None TEE status (invalid attestation was rejected)
+        // - Both Valid and None are allowed by the TEE validation
+        let result = setup_voting_context_and_vote(
+            &mut contract,
+            &first_participant_id,
+            participants,
+            threshold,
+        );
+        assert!(result.is_ok(), "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)");
     }
 }
