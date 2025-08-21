@@ -1,21 +1,21 @@
 # TEE Integration
 
 ## Overview
-A trusted execution environment (TEE) is an environment isolated from the operating system. TEEs provide security guarantees about confidentiality and integrity of the code and memory executed inside them.
+A **t**rusted **e**xecution **e**nvironment (TEE) is an environment isolated from the operating system. A TEE provides security guarantees about confidentiality and integrity of the code and memory executed inside it.
 
-For the MPC network, the security guarantees provided by TEEs are attractive for two reasons:
-1. They relax the threat models (e.g. honest-but-curious instead of malicious adversaries). This allows the adoption of significantly more efficient MPC protocols.
-2. They help enforce backward secrecy. Since TEEs can guarantee that former nodes never gain lasting possession of plain text secret-shares, collusion attacks after departure become infeasible.
+The security guarantees provided by TEEs are attractive to the MPC network for two reasons:
+1. They help enforce backward secrecy. Since TEEs can guarantee that former nodes never gain lasting possession of plain text secret-shares, collusion attacks after departure become infeasible.
+2. They allow to relax the threat models (e.g. honest-but-curious instead of malicious adversaries). This allows the adoption of significantly more efficient MPC protocols.
 
 TEEs provide their security guarantees by restricting how anything outside of the TEE can interact with the code running inside the TEE. This is great to protect against malicious actors, but it also restricts the honest actors. It has to be expected that debugging and handling of emergencies will become much more difficult compared to running an MPC node outside of a TEE.
 
-In the context of threshold cryptography, this poses the risk of losing a "signing quorum". If too few nodes remain operational, the protocol grinds to halt, in which case, no funds can be moved.
+In the context of threshold cryptography, this poses the risk of losing the "signing quorum". If too few nodes remain operational, the protocol grinds to halt, in which case, no funds can be moved.
 
 Therefore, Near-One will roll-out its TEE implementation in two phases:
 - Soft Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of the TEE.
 - Hard Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up inside a different TEE.
 
-In order to protect the network from the worst case scenario (complete loss of funds due to loss of key shares or an incapacitated network), a disaster recovery plan is prepared.
+In order to protect the network from the worst case scenario (permanent loss of the signing quorum), a disaster recovery plan is prepared.
 
 ## Disaster Recovery on a high-level
 Disaster recovery is a plan intended to prevent a permanent loss of the signing quorum.
@@ -28,7 +28,7 @@ The backup service has two responsibilities:
 
 For the hard-launch, the backup service must run inside a TEE.
 
-The backup service is operating a NEAR light-client node, s.t. it has a current view of the NEAR blockchain.
+The backup service needs a current view of the MPC smart contract on the NEAR blockchin. For that reason, it will be operating a NEAR light-client node.
 
 ### Contract
 The MPC contract is used for authenticating the backup service and the MPC node.
@@ -41,7 +41,7 @@ Currently, the MPC network allows three protocol states:
 - `Resharing` when the network is resharing their secret keys for a change of the participant set, or for a change of the cryptography threshold
 
 Until now, when a node operator wanted to switch their machine, they needed to do so through a `Resharing` - they had to leave the network and then re-join.
-Unfortunately, it may not be possible to use the same mechanism for recovering from disaster, as by definition, a disaster implies that the network lost it signing quorum and thus, its agency.
+Unfortunately, it may not be possible to use the same mechanism for recovering from disaster, as by definition, a disaster implies that the network lost it signing quorum and thus, its ability to execute a resharing.
 To account for this, a fourth protocol state must be introduced: `Recovery`.
 
 The purpose of this state is to:
@@ -49,22 +49,19 @@ The purpose of this state is to:
 - allow a node to activate the Recovery mechanism and request the back-up share from the backup service.
 
 This protocol state may:
-- only be entered from a `Running` state. (_note: we might be able to also allow entering it from a `Recovery` state, but that requires a bit more syncrhonicity and might not be strictly necessary_).
+- only be entered from a `Running` state. (_note: we might be able to also allow entering it from a `Recovery` state. But this adds complexity and is not necessary._)
 - resume in a `Resharing` state under the same conditions under which the `Resharing` state could be resumed from a `Running` state.
-- not resume in a state different to `Recovery`, `Running` or `Resharing`.
+- not resume in a state different to `Running` or `Resharing`.
 
 Unlike the `Resharing` state, entering this state does not require `threshold` votes, but rather, a single vote is sufficient. However, the `AccountId` of all participants must be preserved. Only secondary participant details may be changed.
 
 In a first iteration, it is okay if signature requests are not accepted while the protocol is in `Recovery` state.
 
-_Note: It remains to be decided if it should change the design to allowe repeatedly entering the `Recovery` state, for the case where multiple nodes want to recover simultaneously. Since in general, the contract is not expected to spend too much time in this state (4-12 blockc max), serializing this operation should not be an issue. But parallelizing it might not be too hard either._
-
 ## Implementation Details
-
 _Note: In this document, the term node operator refers to a person operating a node that is acting as a participant in the MPC network. That person has a unique `AccountId` (an account on the NEAR blockchain) associated to its node. Without loss of generality, we assume that a node operator only operates a single node and that their `AccountId` serves as a unique identifier for the node as well as the operator._
 
 ### Version 1: Establish TCP p2p connection
-The node already contains logic that allows mutual authentication via TLS. That logic sits in [`node/src/p2p.rs`](https://github.com/near/mpc/blob/b89d1084bcbd2fdc777140a4dda38de616b810ef/node/src/p2p.rs#L119). This implementation version would re-use the existing logic.
+The node already contains logic that allows mutual authentication via TLS. That logic sits in [`node/src/p2p.rs`](https://github.com/near/mpc/blob/b89d1084bcbd2fdc777140a4dda38de616b810ef/node/src/p2p.rs#L119). This implementation would re-use the existing logic.
 
 #### Backup service workflow
 ##### Onboarding
