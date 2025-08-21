@@ -10,7 +10,6 @@ use dstack_sdk::dstack_client::DstackClient;
 use dstack_sdk_types::dstack::TcbInfo;
 use ed25519_dalek::VerifyingKey;
 use http::status::StatusCode;
-use near_sdk::PublicKey;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
