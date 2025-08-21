@@ -3,6 +3,7 @@ use super::participants::ContractState;
 use super::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use super::IndexerAPI;
 use crate::config::ParticipantsConfig;
+use crate::providers::PublicKeyConversion;
 use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
@@ -19,8 +20,7 @@ use mpc_contract::state::{
     initializing::InitializingContractState, key_event::tests::Environment, key_event::KeyEvent,
     resharing::ResharingContractState, running::RunningContractState, ProtocolContractState,
 };
-use near_crypto::PublicKey;
-use near_sdk::AccountId;
+use near_sdk::{AccountId, PublicKey};
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};
@@ -109,8 +109,7 @@ impl FakeMpcContractState {
         });
     }
 
-    pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, pk: PublicKey) {
-        let near_sdk_pk: near_sdk::PublicKey = pk.to_string().parse().unwrap();
+    pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, near_sdk_pk: PublicKey) {
         let contract_extended_pk = near_sdk_pk.try_into().unwrap();
 
         match &mut self.state {
@@ -224,7 +223,7 @@ fn participants_config_to_threshold_parameters(
             .insert_with_id(
                 info.near_account_id,
                 ParticipantInfo {
-                    sign_pk: info.p2p_public_key.to_string().parse().unwrap(),
+                    sign_pk: info.p2p_public_key.to_near_sdk_public_key().unwrap(),
                     url: format!("http://{}:{}", info.address, info.port),
                 },
                 ParticipantId(info.id.raw()),

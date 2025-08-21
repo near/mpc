@@ -285,7 +285,7 @@ pub fn convert_participant_infos(
 
 #[cfg(test)]
 mod tests {
-    use crate::indexer::participants::convert_participant_infos;
+    use crate::{indexer::participants::convert_participant_infos, providers::PublicKeyConversion};
     use mpc_contract::primitives::{
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -373,7 +373,8 @@ mod tests {
         for (i, p) in converted.participants.iter().enumerate() {
             assert!(p.near_account_id == account_ids[i]);
             assert!(
-                p.p2p_public_key.to_string() == String::from(&account_id_to_pk[&account_ids[i]])
+                p.p2p_public_key.to_near_sdk_public_key().unwrap()
+                    == account_id_to_pk[&account_ids[i]]
             );
             let expected = chain_infos
                 .participants()
