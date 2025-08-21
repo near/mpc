@@ -73,13 +73,18 @@ Note that an Ecdsa payload is subsequently represented as a Scalar on curve Secp
 
 ### Submitting a confidential key derivation (ckd) request
 
-Users can submit a ckd request to the MPC network via the `request_app_private_key` endpoint of this contract. Note that a **deposit of 1 yoctonear is required** to prevent abuse by malicious frontends.
+Users can submit a ckd request to the MPC network via the
+`request_app_private_key` endpoint of this contract. Note that a **deposit of 1
+yoctonear is required** to prevent abuse by malicious frontends.
 
 The ckd request takes the following arguments:
 
-- `app_public_key` TODO:
+- `"app_public_key": "secp256k1:<base58 encoded point in curve>"`
 
-Submitting a ckd request costs approximately 7 Tgas, but the contract requires that at least 10 Tgas are attached to the transaction.
+Note that `app_public_key` represents a valid point on curve Secp256k1.
+
+Submitting a ckd request costs approximately 7 Tgas, but the contract requires
+that at least 10 Tgas are attached to the transaction.
 
 #### Example
 
@@ -88,9 +93,7 @@ _ckd request_
 ```Json
 {
   "request": {
-    "app_public_key": {
-      TODO:
-    }
+    "app_public_key": "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd"
   }
 }
 ```
