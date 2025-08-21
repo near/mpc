@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::Constructor;
-use near_crypto::PublicKey;
+use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
 
@@ -94,7 +94,9 @@ impl ReportDataV1 {
     /// Generates SHA3-384 hash of TLS public key only.
     fn public_keys_hash(&self) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
         let mut hasher = Sha3_384::new();
-        hasher.update(self.tls_public_key.key_data());
+        // Skip first byte as it is used for identifier for the curve type.
+        let key_data = &self.tls_public_key.as_bytes()[1..];
+        hasher.update(key_data);
         hasher.finalize().into()
     }
 }
@@ -125,7 +127,7 @@ mod tests {
     use crate::report_data::ReportData;
     use alloc::vec::Vec;
     use dcap_qvl::quote::Quote;
-    use near_crypto::{KeyType, SecretKey};
+    use near_sdk::PublicKey;
 
     #[test]
     fn test_from_str_valid() {
@@ -144,8 +146,9 @@ mod tests {
     }
 
     fn create_test_key() -> PublicKey {
-        let tls_secret = SecretKey::from_seed(KeyType::ED25519, "test_tls_seed");
-        tls_secret.public_key()
+        "secp256k1:qMoRgcoXai4mBPsdbHi1wfyxF9TdbPCF4qSDQTRP3TfescSRoUdSx6nmeQoN3aiwGzwMyGXAb1gUjBTv5AY8DXj"
+            .parse()
+            .unwrap()
     }
 
     #[test]
@@ -218,7 +221,9 @@ mod tests {
         assert_ne!(hash_bytes, &[0u8; ReportDataV1::PUBLIC_KEYS_HASH_SIZE]);
 
         let mut hasher = Sha3_384::new();
-        hasher.update(tls_key.key_data());
+        // Skip first byte as it is used for identifier for the curve type.
+        let key_data = &tls_key.as_bytes()[1..];
+        hasher.update(key_data);
         let expected: [u8; ReportDataV1::PUBLIC_KEYS_HASH_SIZE] = hasher.finalize().into();
 
         assert_eq!(hash_bytes, &expected);

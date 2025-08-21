@@ -6,6 +6,7 @@ license = "MIT"
 
 [dependencies]
 anyhow = { workspace = true }
+attestation = { workspace = true }
 borsh = { workspace = true }
 clap = { workspace = true }
 flume = { workspace = true }
@@ -29,4 +30,3 @@ near-crypto = "0.28.0"
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
-

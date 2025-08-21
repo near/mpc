@@ -1,14 +1,22 @@
 use anyhow::{bail, Context};
+use attestation::{
+    attestation::{Attestation, DstackAttestation},
+    collateral::Collateral,
+    measurements::ExpectedMeasurements,
+    quote::QuoteBytes,
+};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use dstack_sdk::dstack_client::DstackClient;
 use dstack_sdk_types::dstack::TcbInfo;
 use http::status::StatusCode;
-use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use near_crypto::PublicKey;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
-use std::{future::Future, time::Duration};
+use std::{
+    str::FromStr,
+    {future::Future, time::Duration},
+};
 use tokio::sync::mpsc;
 use tracing::error;
 
@@ -166,28 +174,30 @@ pub async fn create_remote_attestation_info(tls_public_key: &PublicKey) -> TeeAt
     }
 }
 
-impl TryFrom<TeeAttestation> for TeeParticipantInfo {
+impl TryFrom<TeeAttestation> for Attestation {
     type Error = anyhow::Error;
 
     fn try_from(value: TeeAttestation) -> Result<Self, Self::Error> {
-        let tee_quote = hex::decode(value.tdx_quote)
-            .context("Failed to decode tee quote. Expected it to be in hex format.")?;
-        let quote_collateral = serde_json::to_string(&value.collateral)
-            .context("Failed to serialize quote collateral back to JSON string.")?;
-        let raw_tcb_info =
-            serde_json::to_string(&value.tcb_info).context("Failed to serialize tcb info")?;
+        let quote: QuoteBytes = hex::decode(value.tdx_quote)
+            .context("Failed to decode tee quote. Expected it to be in hex format.")?
+            .into();
+        let collateral = Collateral::from_str(
+            &serde_json::to_string(&value.collateral)
+                .context("Failed to serialize quote collateral back to JSON string.")?,
+        )?;
 
-        Ok(Self {
-            tee_quote,
-            quote_collateral,
-            raw_tcb_info,
-        })
+        Ok(Attestation::Dstack(DstackAttestation::new(
+            quote,
+            collateral,
+            value.tcb_info,
+            ExpectedMeasurements::default(),
+        )))
     }
 }
 
 pub async fn submit_remote_attestation(
     tx_sender: mpsc::Sender<ChainSendTransactionRequest>,
-    report_data_contract: TeeParticipantInfo,
+    report_data_contract: Attestation,
     account_public_key: PublicKey,
 ) -> anyhow::Result<()> {
     let propose_join_args = SubmitParticipantInfoArgs {
@@ -197,7 +207,7 @@ pub async fn submit_remote_attestation(
 
     tx_sender
         .send(ChainSendTransactionRequest::SubmitParticipantInfo(
-            propose_join_args,
+            Box::new(propose_join_args),
         ))
         .await
         .context("Failed to send remote attestation transaction. Channel is closed.")

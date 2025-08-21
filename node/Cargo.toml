@@ -9,6 +9,7 @@ actix = { workspace = true }
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+attestation = { workspace = true }
 axum = { workspace = true }
 backon = { workspace = true }
 borsh = { workspace = true }

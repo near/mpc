@@ -14,8 +14,9 @@ use crate::rpc::NearRpcClients;
 use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
+use attestation::attestation::Attestation;
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_contract::tee::{proposal::MpcDockerImageHash, tee_participant::TeeParticipantInfo};
+use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
     config::InitConfig,
     primitives::{
@@ -214,7 +215,7 @@ pub struct StaticWebData {
     pub near_signer_public_key: near_crypto::PublicKey,
     pub near_p2p_public_key: near_crypto::PublicKey,
     pub near_responder_public_keys: Vec<near_crypto::PublicKey>,
-    pub _tee_participant_info: Option<TeeParticipantInfo>,
+    pub _tee_participant_info: Option<Attestation>,
 }
 
 impl MpcAddKeysCmd {

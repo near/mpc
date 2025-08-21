@@ -1,5 +1,6 @@
 use crate::config::{SecretsConfig, WebUIConfig};
 use crate::tracking::TaskHandle;
+use attestation::attestation::Attestation;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Response, StatusCode};
@@ -7,7 +8,6 @@ use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
 use futures::future::BoxFuture;
 use mpc_contract::state::ProtocolContractState;
-use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use mpc_contract::utils::protocol_state_to_string;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
@@ -119,7 +119,7 @@ pub struct StaticWebData {
     pub near_signer_public_key: near_crypto::PublicKey,
     pub near_p2p_public_key: near_crypto::PublicKey,
     pub near_responder_public_keys: Vec<near_crypto::PublicKey>,
-    pub tee_participant_info: Option<TeeParticipantInfo>,
+    pub tee_participant_info: Option<Attestation>,
 }
 
 struct PublicKeys {
@@ -151,7 +151,7 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
 }
 
 impl StaticWebData {
-    pub fn new(value: &SecretsConfig, tee_participant_info: Option<TeeParticipantInfo>) -> Self {
+    pub fn new(value: &SecretsConfig, tee_participant_info: Option<Attestation>) -> Self {
         let public_keys = get_public_keys(value);
         Self {
             near_signer_public_key: public_keys.near_signer_public_key,

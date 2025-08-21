@@ -2,7 +2,7 @@ use attestation::{
     attestation::{Attestation, LocalAttestation},
     quote::QuoteBytes,
 };
-use near_crypto::PublicKey;
+use near_sdk::PublicKey;
 use serde_json::Value;
 
 pub const TEST_TCB_INFO_STRING: &str = include_str!("../tests/assets/tcb_info.json");
