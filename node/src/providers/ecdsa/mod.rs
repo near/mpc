@@ -264,7 +264,7 @@ impl PublicKeyConversion for VerifyingKey {
 
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
         match public_key.curve_type() {
-            CurveType::ED25519 => {
+            CurveType::SECP256K1 => {
                 // Skip first byte as it represents the curve type.
                 let key_data: [u8; 64] = public_key.as_bytes()[1..]
                     .try_into()
