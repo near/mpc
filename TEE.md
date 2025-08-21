@@ -161,7 +161,7 @@ flowchart TD
 
 ##### Backup:
 The MPC node listens for any connection attempts by the backup service.
-If it receives one, it checks the credentials sent by the p2p connection with the credentials stored in the contract.
+If it receives one, it compares the credentials sent by the p2p connection against the credentials stored in the contract.
 
 
 ### Version 2: web-endpoint and ephemeral keys:
