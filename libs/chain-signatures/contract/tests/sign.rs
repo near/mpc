@@ -62,7 +62,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
         .expect_err("should have failed with timeout");
     assert!(err
         .to_string()
-        .contains(&errors::SignError::Timeout.to_string()));
+        .contains(&errors::RequestError::Timeout.to_string()));
 
     Ok(())
 }
@@ -182,7 +182,7 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
         .expect_err("should have failed with timeout");
     assert!(err
         .to_string()
-        .contains(&errors::SignError::Timeout.to_string()));
+        .contains(&errors::RequestError::Timeout.to_string()));
 
     let new_balance = alice.view_account().await?.balance;
     let new_contract_balance = contract.view_account().await?.balance;
@@ -423,7 +423,7 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
         .expect_err("should have failed with timeout");
     assert!(err
         .to_string()
-        .contains(&errors::SignError::Timeout.to_string()));
+        .contains(&errors::RequestError::Timeout.to_string()));
 
     Ok(())
 }
