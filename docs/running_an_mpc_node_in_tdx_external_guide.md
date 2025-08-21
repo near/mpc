@@ -73,8 +73,11 @@ Make sure to follow the 3 steps below in order to have a working TDX machine wit
    Note \- you won’t need to enable or run KMS and TProxy (gateway).  
    
 
-[#894](https://github.com/near/mpc/issues/894) 
-TBD  : We need to choose a specific github commit and use the reproducible build script  in order to  generate the OS image. [https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file\#reproducible-build-the-guest-image](https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image)  
+
+[#693](https://github.com/near/mpc/issues/693) 
+[#635](https://github.com/near/mpc/issues/635) 
+
+TBD  [#894](https://github.com/near/mpc/issues/894)  : We need to choose a specific github commit and use the reproducible build script  in order to  generate the OS image. [https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file\#reproducible-build-the-guest-image](https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image)  
 Or we can choose a specific dstack image like 0.52
 
 3. Setup local gramine-sealing-key-provider (see details [below](#setting-up-local-gramine-sealing-key-provider:)).  
@@ -363,6 +366,9 @@ Main steps are:
 The following steps allow you to inspect the code that was used to build the docker image: Assuming you want to vote for a docker image hash of Sha256:xyz… 
 1.  Download the MPC code from \<TBD\>  [#907](https://github.com/near/mpc/issues/907)
 2.  Compile it using the reproduce build script \<TBD\>  [#907](https://github.com/near/mpc/issues/907)
+[#693](https://github.com/near/mpc/issues/693) 
+[#635](https://github.com/near/mpc/issues/635) 
+
 3.  Dockerize it using the script \<TBD\>   [#907](https://github.com/near/mpc/issues/907)
 4.  Make sure the image hash you get is Sha256:xyz…  
 5.  Do your own self do diligence on the code/binary   
