@@ -90,8 +90,7 @@ If the contract is in `Recovery` state, then the backup service follows the prot
 ##### Onboarding
 1. The MPC node generates a NEAR account public key and a TLS key.
 2. The node operator adds the NEAR account public key as an access key to their account and grants it access to the necessary contract methods (_todo: list of methods_).
-3. The MPC node monitors the MPC smart contract:
-
+3. The MPC node monitors the MPC smart contract.
     - **If** the account ID of their node operator is **not** in the set of current participants:  
         - Submit their information to `submit_participant_info`.  
         - Wait to be included in the protocol via a `resharing`.  
@@ -101,19 +100,64 @@ If the contract is in `Recovery` state, then the backup service follows the prot
         - Engage normally with the protocol.  
         
     - **If** the account ID of their node operator **is** in the set of current participants, **but** the TLS key of the participant info does **not** match theirs:  
-        - Submit their information to `submit_participant_recovery_info`.  
+        - Submit their information to `submit_participant_recovery_info`. 
         - This puts the protocol in `Recovery` mode (c.f. also the [contract](#contract) section).
+```mermaid
+flowchart TB
+    subgraph Onboarding
+        B[MPC node generates NEAR account and TLS key]
+        C[Operator adds access key and grants required methods]
 
+        D[MPC node checks  current contract state.]
+        E{Is operator AccountId in current participant set?}
+        EN[Call submit_participant_info]
+        ENA[Wait for protocol to enter Resharing]
+        EY{Does TLS key match participant info?}
+        EYY[Call submit_participant_recovery_info]
+        EYYA[Participate in protocol as a normal participant]
+        EYN[Call submit_participant_recovery_info]
+        EYNA[enter Recovery mode]
+
+        B --> C --> D --> E
+        E -- "No" --> EN --> ENA
+        E -- "Yes" --> EY
+        EY -- "Yes" --> EYY --> EYYA
+        EY -- "No" --> EYN --> EYNA
+    end
+```
 ##### Recovery Protocol
 The node follows this protocol when the protocol state is in `Recovery`:
 
-- **If** the account ID of the node operator is in the set of current participants **but** the TLS key of the participant info does **not** match the one in the set of "recovering" participants:  
-    - the node shuts down.
-    - _note: This case means that the node is about to be de-commissioned. The node must shut down now, because otherwise, it will itself request a "Recovery" state once the contract resumes "Running"_
+- **If** this nodes account ID matches the account ID of the recovering node:
+    - **If** this node is the recovering node (matches the TLS key):
+        - They wait for the backup service to provide the keyshares.
+        - Once in possession of key shares, the node calls `conclude_recovery()`, which resumes the protocol in the `Running` state.
+    - **Else** they shut down (_note: This case means that the node is about to be de-commissioned. The node must shut down now, because otherwise, it will itself request a "Recovery" state once the contract resumes `Running`_).
+- **Else** they wait for the protocol to resume `Running`
+```mermaid 
+flowchart TD
+    subgraph Recovery_Protocol
+        S[Protocol state = Recovery]
 
-- **If** the account ID of the node operator is in the set of current participants **and** the TLS key of the participant info matches the one in the set of "recovering" participants:  
-    - **If** the node is not in possession of key shares, they wait for the backup service to provide them.
-    - Once in possession of key shares, the node calls `conclude_recover()`, which resumes the protocol in the `Running` state.
+        A{Does this node's AccountId match the recovering node?}
+        B{Does this node's TLS key match the recovering TLS key?}
+
+        W[Wait for backup to provide keyshares]
+        C[Call conclude_recovery]
+        R[Protocol resumes Running]
+
+        SD[Shut down node]
+
+        WR[Wait for protocol to resume Running]
+
+        S --> A
+        A -- Yes --> B
+        B -- Yes --> W --> C --> R
+        B -- No --> SD
+        A -- No --> WR
+    end
+```
+
 
 ##### Backup:
 The MPC node listens for any connection attempts by the backup service.
