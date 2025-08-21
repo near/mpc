@@ -66,7 +66,7 @@ _Note: In this document, the term node operator refers to a person operating a n
 The node already contains logic that allows mutual authentication via TLS. That logic sits in [`node/src/p2p.rs`](https://github.com/near/mpc/blob/b89d1084bcbd2fdc777140a4dda38de616b810ef/node/src/p2p.rs#L119). This implementation version would re-use the existing logic.
 
 #### Backup service workflow
-##### On boarding
+##### Onboarding
 1. The backup service generates a NEAR account public key and a TLS key.
 2. The node operator adds the NEAR account public key as an access key to their account and grants it access to necessary contract methods (_todo: list of methods_).
 3. The backup service submits their [todo: specify with TEE] information to the MPC smart contract.
@@ -89,7 +89,7 @@ If the contract is in `Recovery` state, then the backup service follows the prot
 4. The backup service sends a confirmation to the MPC smart contract.
 
 #### MPC node workflow
-##### On boarding
+##### Onboarding
 1. The MPC node generates a NEAR account public key and a TLS key.
 2. The node operator adds the NEAR account public key as an access key to their account and grants it access to the necessary contract methods (_todo: list of methods_).
 3. The MPC node monitors the MPC smart contract:
@@ -136,7 +136,7 @@ The key establishment scheme requires that the node as well as the backup servic
 
 _Note: The curious reader might ask why this protocol does not simply use the NEAR public/private key pairs associated to the MPC node and the backup service. The reason for this is is twofold:_
 - _those keys are meant for signature generation._
-- _While it is true that Curve25519 used in X25519 and edwards25519 used by the NEAR blockchain are [bi rationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically convert the NEAR account keys and use them for `X25519`, it is generally advised to use one key per application. This also allows us to use ephemeral keys, as opposed to static keys for the encryption. Which is desirable._
+- _While it is true that Curve25519 used in X25519 and edwards25519 used by the NEAR blockchain are [birationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically convert the NEAR account keys and use them for `X25519`, it is generally advised to use one key per application. This also allows us to use ephemeral keys, as opposed to static keys for the encryption. Which is desirable._
 
 
 #### Node
