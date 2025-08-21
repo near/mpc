@@ -49,14 +49,15 @@ The purpose of this state is to:
 - allow a node to activate the Recovery mechanism and request the back-up share from the backup service.
 
 This protocol state may:
-- only be entered from `Running` or `Recovery` states.
-- resume in a `Running` state, only if all participants have a valid key share of the current epoch.
+- only be entered from a `Running` state. (_note: we might be able to also allow entering it from a `Recovery` state, but that requires a bit more syncrhonicity and might not be strictly necessary_).
 - resume in a `Resharing` state under the same conditions under which the `Resharing` state could be resumed from a `Running` state.
 - not resume in a state different to `Recovery`, `Running` or `Resharing`.
 
 Unlike the `Resharing` state, entering this state does not require `threshold` votes, but rather, a single vote is sufficient. However, the `AccountId` of all participants must be preserved. Only secondary participant details may be changed.
 
 In a first iteration, it is okay if signature requests are not accepted while the protocol is in `Recovery` state.
+
+_Note: It remains to be decided if it should change the design to allowe repeatedly entering the `Recovery` state, for the case where multiple nodes want to recover simultaneously. Since in general, the contract is not expected to spend too much time in this state (4-12 blockc max), serializing this operation should not be an issue. But parallelizing it might not be too hard either._
 
 ## Implementation Details
 
