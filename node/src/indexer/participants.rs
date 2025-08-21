@@ -10,7 +10,6 @@ use mpc_contract::primitives::{
 };
 use mpc_contract::state::{key_event::KeyEvent, ProtocolContractState};
 use std::collections::BTreeSet;
-use std::str::FromStr;
 use std::sync::Arc;
 use url::Url;
 
@@ -261,8 +260,13 @@ pub fn convert_participant_infos(
         // near_crypto::PublicKey used by the mpc nodes. For some reason near_sdk has an
         // impl TryFrom<near_sdk::PublicKey> for near_crypto::PublicKey but it's test-only.
         // For lack of better option we use this to-string from-string conversion instead.
-        let Ok(p2p_public_key) = near_crypto::PublicKey::from_str(&String::from(&info.sign_pk))
-        else {
+        let public_key_bytes = info
+            .sign_pk
+            .as_bytes()
+            .try_into()
+            .with_context(|| format!("Invalid public key length for peer: {:?}", info.url))?;
+
+        let Ok(p2p_public_key) = ed25519_dalek::VerifyingKey::from_bytes(public_key_bytes) else {
             anyhow::bail!("invalid participant public key {:?}", info.sign_pk);
         };
         converted.push(ParticipantInfo {

@@ -13,6 +13,7 @@ use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize};
+use ed25519_dalek::VerifyingKey;
 use rustls::pki_types::PrivatePkcs8KeyDer;
 use rustls::server::WebPkiClientVerifier;
 use rustls::{ClientConfig, CommonState, ServerConfig};
@@ -26,7 +27,6 @@ use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use x509_parser::prelude::{FromDer, X509Certificate};
-use x509_parser::public_key::PublicKey;
 
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
@@ -46,7 +46,7 @@ pub struct TlsMeshReceiver {
 /// Maps public keys to participant IDs. Used to identify incoming connections.
 #[derive(Default)]
 struct ParticipantIdentities {
-    key_to_participant_id: HashMap<near_crypto::PublicKey, ParticipantId>,
+    key_to_participant_id: HashMap<VerifyingKey, ParticipantId>,
 }
 
 /// A retrying connection that will automatically reconnect if the TCP
@@ -295,21 +295,33 @@ MFECAQEwBQYDK2VwBCIEIGkMPQEb0GXxgFXbgojLebmHnCUpS3QYqJrYcfyFqHtW
 gSEAAbdC8KDpDZPqZalKndJm2N6EXn+cNxIb2gRa21P5mcs=
 -----END PRIVATE KEY-----";
 
-const PKCS8_HEADER: [u8; 16] = [
+const PUBLIC_KEY_SIZE: usize = 32;
+const PRIVATE_KEY_SIZE: usize = 32;
+const PKCS8_HEADER_SIZE: usize = 16;
+const PKCS8_MIDDLE_SIZE: usize = 3;
+
+const PKCS8_HEADER: [u8; PKCS8_HEADER_SIZE] = [
     0x30, 0x51, 0x02, 0x01, 0x01, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
 ];
 
-const PKCS8_MIDDLE: [u8; 3] = [0x81, 0x21, 0x00];
+const PKCS8_MIDDLE: [u8; PKCS8_MIDDLE_SIZE] = [0x81, 0x21, 0x00];
 
 /// Converts an ED25519 secret key to a keypair that can be used in TLS.
 fn raw_ed25519_secret_key_to_keypair(
-    key: &near_crypto::ED25519SecretKey,
+    key: &ed25519_dalek::SigningKey,
 ) -> anyhow::Result<rcgen::KeyPair> {
-    let mut pkcs8_encoded = Vec::with_capacity(16 + 32 + 3 + 32);
+    let private_key_bytes: &[u8; PRIVATE_KEY_SIZE] = key.as_bytes();
+
+    let verifying_key = key.verifying_key();
+    let public_key_bytes: &[u8; PUBLIC_KEY_SIZE] = verifying_key.as_bytes();
+
+    let mut pkcs8_encoded = Vec::with_capacity(
+        PKCS8_HEADER_SIZE + PRIVATE_KEY_SIZE + PKCS8_MIDDLE_SIZE + PUBLIC_KEY_SIZE,
+    );
     pkcs8_encoded.extend_from_slice(&PKCS8_HEADER);
-    pkcs8_encoded.extend_from_slice(&key.0[..32]);
+    pkcs8_encoded.extend_from_slice(private_key_bytes);
     pkcs8_encoded.extend_from_slice(&PKCS8_MIDDLE);
-    pkcs8_encoded.extend_from_slice(&key.0[32..]);
+    pkcs8_encoded.extend_from_slice(public_key_bytes);
     let private_key = PrivatePkcs8KeyDer::from(pkcs8_encoded.as_slice());
     let keypair = rcgen::KeyPair::try_from(&private_key)?;
     Ok(keypair)
@@ -322,7 +334,7 @@ fn raw_ed25519_secret_key_to_keypair(
 /// certificate that presents a public key that matches the expected participant
 /// being connected to.
 fn configure_tls(
-    p2p_private_key: &near_crypto::ED25519SecretKey,
+    p2p_private_key: &ed25519_dalek::SigningKey,
 ) -> anyhow::Result<(Arc<ServerConfig>, Arc<ClientConfig>)> {
     // The issuer is a dummy certificate authority that every node trusts.
     let issuer_signer = rcgen::KeyPair::from_pem(DUMMY_ISSUER_PRIVATE_KEY)?;
@@ -365,7 +377,7 @@ fn configure_tls(
 /// Creates a mesh network using TLS over TCP for communication.
 pub async fn new_tls_mesh_network(
     config: &MpcConfig,
-    p2p_private_key: &near_crypto::ED25519SecretKey,
+    p2p_private_key: &ed25519_dalek::SigningKey,
 ) -> anyhow::Result<(
     impl MeshNetworkTransportSender,
     impl MeshNetworkTransportReceiver,
@@ -536,22 +548,26 @@ fn verify_peer_identity(
     let Ok(public_key) = cert.1.public_key().parsed() else {
         anyhow::bail!("Connection with invalid public key");
     };
-    // The library doesn't recognize ED25519 keys, but that's fine, we'll compare the raw
+
+    // The x509_parser library doesn't recognize ED25519 keys, but that's fine, we'll compare the raw
     // bytes directly.
-    let PublicKey::Unknown(public_key_data) = public_key else {
+    let x509_parser::public_key::PublicKey::Unknown(public_key_data) = public_key else {
         anyhow::bail!(
             "Connection with unexpected public key type: {:?}",
             public_key
         );
     };
-    let public_key = near_crypto::ED25519PublicKey(
-        public_key_data
-            .try_into()
-            .context("Connection with public key of unexpected length")?,
-    );
+
+    let public_key_bytes = public_key_data
+        .try_into()
+        .context("Connection with public key of unexpected length")?;
+
+    let public_key = VerifyingKey::from_bytes(public_key_bytes)
+        .context("Connection with invalid public key.")?;
+
     let Some(peer_id) = participant_identities
         .key_to_participant_id
-        .get(&near_crypto::PublicKey::ED25519(public_key))
+        .get(&public_key)
     else {
         anyhow::bail!("Connection with unknown public key");
     };
@@ -615,40 +631,13 @@ impl MeshNetworkTransportReceiver for TlsMeshReceiver {
 }
 
 pub mod keygen {
-    use crate::p2p::{PKCS8_HEADER, PKCS8_MIDDLE};
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
 
     /// Generates an ED25519 keypair, returning the pem-encoded private key and the
     /// hex-encoded public key.
-    pub fn generate_keypair(
-    ) -> anyhow::Result<(near_crypto::ED25519SecretKey, near_crypto::ED25519PublicKey)> {
-        let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
-        Ok((
-            keypair_to_raw_ed25519_secret_key(&key_pair)?,
-            near_crypto::ED25519PublicKey(key_pair.public_key_raw().try_into()?),
-        ))
-    }
-
-    /// Converts a keypair to an ED25519 secret key, asserting that it is the
-    /// exact kind of keypair we expect.
-    pub fn keypair_to_raw_ed25519_secret_key(
-        keypair: &rcgen::KeyPair,
-    ) -> anyhow::Result<near_crypto::ED25519SecretKey> {
-        let pkcs8_encoded = keypair.serialize_der();
-        if pkcs8_encoded.len() != 16 + 32 + 3 + 32 {
-            anyhow::bail!("Invalid PKCS8 length");
-        }
-        if pkcs8_encoded[..16] != PKCS8_HEADER {
-            anyhow::bail!("Invalid PKCS8 header");
-        }
-        if pkcs8_encoded[16 + 32..16 + 32 + 3] != PKCS8_MIDDLE {
-            anyhow::bail!("Invalid PKCS8 middle");
-        }
-
-        let mut key = [0u8; 64];
-        key[..32].copy_from_slice(&pkcs8_encoded[16..16 + 32]);
-        key[32..].copy_from_slice(&pkcs8_encoded[16 + 32 + 3..]);
-
-        Ok(near_crypto::ED25519SecretKey(key))
+    pub fn generate_keypair() -> SigningKey {
+        SigningKey::generate(&mut OsRng)
     }
 }
 
@@ -656,7 +645,7 @@ pub mod testing {
     use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
     use crate::p2p::keygen::generate_keypair;
     use crate::primitives::ParticipantId;
-    use near_crypto::{ED25519PublicKey, ED25519SecretKey};
+    use ed25519_dalek::SigningKey;
     use near_sdk::AccountId;
 
     /// A unique seed for each integration test to avoid port conflicts during testing.
@@ -700,18 +689,18 @@ pub mod testing {
         // collide on the same port.
         port_seed: PortSeed,
         // Supply `Some` value here if you want to use pre-existing p2p key pairs
-        p2p_keypairs: Option<Vec<(ED25519SecretKey, ED25519PublicKey)>>,
-    ) -> anyhow::Result<Vec<(MpcConfig, ED25519SecretKey)>> {
+        p2p_keypairs: Option<Vec<SigningKey>>,
+    ) -> anyhow::Result<Vec<(MpcConfig, SigningKey)>> {
         let p2p_keypairs = if let Some(p2p_keypairs) = p2p_keypairs {
             p2p_keypairs
         } else {
             participant_accounts
                 .iter()
                 .map(|_account_id| generate_keypair())
-                .collect::<Result<Vec<_>, _>>()?
+                .collect::<Vec<_>>()
         };
         let mut participants = Vec::new();
-        for (i, (participant_account, (_p2p_secret_key, p2p_public_key))) in participant_accounts
+        for (i, (participant_account, p2p_signing_key)) in participant_accounts
             .iter()
             .zip(p2p_keypairs.iter())
             .enumerate()
@@ -720,13 +709,13 @@ pub mod testing {
                 id: ParticipantId::from_raw(rand::random()),
                 address: "127.0.0.1".to_string(),
                 port: port_seed.p2p_port(i),
-                p2p_public_key: near_crypto::PublicKey::ED25519(p2p_public_key.clone()),
+                p2p_public_key: p2p_signing_key.verifying_key(),
                 near_account_id: participant_account.clone(),
             });
         }
 
         let mut configs = Vec::new();
-        for (i, keypair) in p2p_keypairs.into_iter().enumerate() {
+        for (i, singing_key) in p2p_keypairs.into_iter().enumerate() {
             let participants = ParticipantsConfig {
                 threshold: threshold as u64,
                 participants: participants.clone(),
@@ -736,7 +725,7 @@ pub mod testing {
                 my_participant_id: participants.participants[i].id,
                 participants,
             };
-            configs.push((mpc_config, keypair.0));
+            configs.push((mpc_config, singing_key));
         }
 
         Ok(configs)
@@ -748,8 +737,6 @@ mod tests {
     use crate::cli::LogFormat;
     use crate::config::MpcConfig;
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-    use crate::p2p::keygen::{generate_keypair, keypair_to_raw_ed25519_secret_key};
-    use crate::p2p::raw_ed25519_secret_key_to_keypair;
     use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
     use crate::primitives::{
         ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
@@ -762,14 +749,6 @@ mod tests {
     use rand::Rng;
     use std::time::Duration;
     use tokio::time::timeout;
-
-    #[test]
-    fn test_pkcs8_ed25519_encoding() {
-        let (private_key, _) = generate_keypair().unwrap();
-        let keypair = raw_ed25519_secret_key_to_keypair(&private_key).unwrap();
-        let private_key2 = keypair_to_raw_ed25519_secret_key(&keypair).unwrap();
-        assert_eq!(private_key, private_key2);
-    }
 
     #[tokio::test]
     async fn test_basic_tls_mesh_network() {

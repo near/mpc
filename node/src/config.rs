@@ -1,7 +1,7 @@
 use crate::p2p;
 use crate::primitives::ParticipantId;
 use anyhow::Context;
-use near_crypto::{PublicKey, SecretKey};
+use ed25519_dalek::SigningKey;
 use near_indexer_primitives::types::{AccountId, Finality};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
@@ -176,7 +176,7 @@ pub struct ParticipantInfo {
     pub address: String,
     pub port: u16,
     /// Public key that corresponds to this P2P peer's private key.
-    pub p2p_public_key: PublicKey,
+    pub p2p_public_key: ed25519_dalek::VerifyingKey,
     pub near_account_id: AccountId,
 }
 
@@ -216,9 +216,9 @@ impl SecretsConfig {
 /// from outside.
 #[derive(Clone, Debug, Serialize, serde::Deserialize)]
 pub struct PersistentSecrets {
-    pub p2p_private_key: SecretKey,
-    pub near_signer_key: SecretKey,
-    pub near_responder_keys: Vec<SecretKey>,
+    pub p2p_private_key: SigningKey,
+    pub near_signer_key: SigningKey,
+    pub near_responder_keys: Vec<SigningKey>,
 }
 
 impl PersistentSecrets {
@@ -243,14 +243,11 @@ impl PersistentSecrets {
         if !home_dir.exists() {
             std::fs::create_dir_all(home_dir)?;
         }
-        let p2p_secret = {
-            let (secret_key, _public_key) = p2p::keygen::generate_keypair()?;
-            SecretKey::ED25519(secret_key)
-        };
-        let near_signer_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
+        let p2p_secret = p2p::keygen::generate_keypair();
+        let near_signer_key = p2p::keygen::generate_keypair();
 
         let near_responder_keys = (0..number_of_responder_keys)
-            .map(|_| SecretKey::from_random(near_crypto::KeyType::ED25519))
+            .map(|_| p2p::keygen::generate_keypair())
             .collect::<Vec<_>>();
 
         let secrets = PersistentSecrets {
@@ -289,11 +286,6 @@ impl PersistentSecrets {
         if secrets.near_responder_keys.len() != number_of_responder_keys {
             tracing::warn!("Number of responder keys in secrets.json does not match number of responder keys specified.")
         }
-        anyhow::ensure!(matches!(secrets.p2p_private_key, SecretKey::ED25519(_)));
-        anyhow::ensure!(matches!(secrets.near_signer_key, SecretKey::ED25519(_)));
-        for key in &secrets.near_responder_keys {
-            anyhow::ensure!(matches!(key, SecretKey::ED25519(_)));
-        }
 
         Ok(secrets)
     }
@@ -308,7 +300,7 @@ pub struct RespondConfig {
     pub account_id: AccountId,
     /// In production it is recommended to provide 50+ distinct access keys
     /// to minimize incidence of nonce conflicts under heavy load.
-    pub access_keys: Vec<SecretKey>,
+    pub access_keys: Vec<SigningKey>,
 }
 
 impl RespondConfig {

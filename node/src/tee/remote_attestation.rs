@@ -8,8 +8,9 @@ use attestation::{
 use backon::{BackoffBuilder, ExponentialBuilder};
 use dstack_sdk::dstack_client::DstackClient;
 use dstack_sdk_types::dstack::TcbInfo;
+use ed25519_dalek::VerifyingKey;
 use http::status::StatusCode;
-use near_crypto::PublicKey;
+use near_sdk::PublicKey;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
@@ -20,7 +21,10 @@ use std::{
 use tokio::sync::mpsc;
 use tracing::error;
 
-use crate::indexer::types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs};
+use crate::{
+    indexer::types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
+    providers::PublicKeyConversion,
+};
 
 /// Endpoint to contact Dstack service.
 /// Set to [`None`] which defaults to `/var/run/dstack.sock`
@@ -106,7 +110,7 @@ where
 ///
 /// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
 /// from generating the attestation.
-pub async fn create_remote_attestation_info(tls_public_key: &PublicKey) -> TeeAttestation {
+pub async fn create_remote_attestation_info(tls_public_key: &VerifyingKey) -> TeeAttestation {
     let client = DstackClient::new(ENDPOINT);
 
     let client_info_response = get_with_backoff(|| client.info(), "dstack client info").await;
@@ -123,7 +127,7 @@ pub async fn create_remote_attestation_info(tls_public_key: &PublicKey) -> TeeAt
         // Copy hash
         let public_keys_hash: [u8; PUBLIC_KEYS_SIZE] = {
             let mut hasher = Sha3_384::new();
-            hasher.update(tls_public_key.key_data());
+            hasher.update(&tls_public_key.as_bytes());
             hasher.finalize().into()
         };
         report_data[PUBLIC_KEYS_OFFSET..][..PUBLIC_KEYS_SIZE].copy_from_slice(&public_keys_hash);
@@ -198,11 +202,13 @@ impl TryFrom<TeeAttestation> for Attestation {
 pub async fn submit_remote_attestation(
     tx_sender: mpsc::Sender<ChainSendTransactionRequest>,
     report_data_contract: Attestation,
-    account_public_key: PublicKey,
+    account_public_key: VerifyingKey,
 ) -> anyhow::Result<()> {
+    let near_sdk_public_key = account_public_key.to_near_sdk_public_key()?;
+
     let propose_join_args = SubmitParticipantInfoArgs {
         proposed_tee_participant: report_data_contract,
-        sign_pk: account_public_key,
+        sign_pk: near_sdk_public_key,
     };
 
     tx_sender
