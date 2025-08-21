@@ -150,7 +150,7 @@ impl MpcContract {
                 parameters,
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
-            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: ProposedUpdates::default(),
             config: Config::from(init_config),
             tee_state: Default::default(),
@@ -452,7 +452,7 @@ impl VersionedMpcContract {
     }
 
     /// To avoid overloading the network with too many requests,
-    /// we ask for a small deposit for each signature request.
+    /// we ask for a small deposit for each ckd request.
     /// The fee changes based on how busy the network is.
     #[handle_result]
     #[payable]
@@ -1138,7 +1138,7 @@ impl VersionedMpcContract {
                 domains, keyset, parameters,
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
-            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: Default::default(),
             tee_state: Default::default(),
             accept_requests: true,
