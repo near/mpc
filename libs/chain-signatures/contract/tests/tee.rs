@@ -1,9 +1,12 @@
 use anyhow::Result;
 use assert_matches::assert_matches;
+use attestation::attestation::Attestation;
 use common::{check_call_success, init_env_ed25519, init_env_secp256k1};
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
+use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
+use test_utils::attestation::{mock_dstack_attestation, p2p_tls_key};
 
 use crate::common::gen_accounts;
 
@@ -230,4 +233,83 @@ async fn get_participants(contract: &Contract) -> Result<usize> {
     Ok(running.parameters.participants().len())
 }
 
-// todo [#514](https://github.com/near/mpc/issues/514)
+/// Helper function to set up contract with approved MPC hash.
+async fn setup_contract_with_approved_hash(
+    contract: &Contract,
+    accounts: &[Account],
+) -> Result<()> {
+    let mpc_hash = MpcDockerImageHash::from([
+        0xc2, 0x29, 0x01, 0xe5, 0x2c, 0xfa, 0x91, 0xb2, 0xe7, 0x1e, 0xb8, 0x69, 0x4a, 0xc9, 0x55,
+        0x80, 0x65, 0xc6, 0xe3, 0xb1, 0x37, 0x83, 0xd9, 0xe3, 0xd3, 0x6b, 0x79, 0x2d, 0x93, 0xce,
+        0x15, 0x3b,
+    ]);
+    vote_for_hash(&accounts[0], contract, &mpc_hash).await?;
+    vote_for_hash(&accounts[1], contract, &mpc_hash).await?;
+    Ok(())
+}
+
+/// Helper function to set up test environment with attestation and TLS key.
+async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, PublicKey)> {
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let attestation = mock_dstack_attestation();
+    let tls_key = p2p_tls_key();
+    Ok((contract, accounts, attestation, tls_key))
+}
+
+/// Helper function to submit participant info.
+async fn submit_participant_info(
+    account: &Account,
+    contract: &Contract,
+    attestation: &Attestation,
+    tls_key: &PublicKey,
+) -> Result<bool> {
+    let result = account
+        .call(contract.id(), "submit_participant_info")
+        .args_borsh((attestation.clone(), tls_key.clone()))
+        .max_gas()
+        .transact()
+        .await?;
+    Ok(result.is_success())
+}
+
+/// Tests that TEE attestation fails when no MPC hash is approved yet.
+#[tokio::test]
+async fn test_tee_attestation_fails_without_approved_hash() -> Result<()> {
+    let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
+    let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
+    assert!(!success);
+    Ok(())
+}
+
+/// Tests that TEE attestation succeeds with valid TLS key and approved MPC hash.
+#[tokio::test]
+async fn test_tee_attestation_succeeds_with_valid_key() -> Result<()> {
+    let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
+
+    setup_contract_with_approved_hash(&contract, &accounts).await?;
+
+    let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
+    assert!(success);
+
+    Ok(())
+}
+
+/// Tests that TEE attestation fails when TLS key doesn't match the one in report data.
+#[tokio::test]
+async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
+    let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
+
+    setup_contract_with_approved_hash(&contract, &accounts).await?;
+
+    // Create invalid TLS key by flipping the last bit
+    let mut invalid_tls_key_bytes = tls_key.as_bytes().to_vec();
+    let last_byte_idx = invalid_tls_key_bytes.len() - 1;
+    invalid_tls_key_bytes[last_byte_idx] ^= 0x01;
+    let invalid_tls_key = PublicKey::try_from(invalid_tls_key_bytes)?;
+
+    let success =
+        submit_participant_info(&accounts[0], &contract, &attestation, &invalid_tls_key).await?;
+    assert!(!success);
+
+    Ok(())
+}
