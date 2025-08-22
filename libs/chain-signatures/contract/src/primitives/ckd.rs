@@ -1,10 +1,12 @@
 use near_sdk::{near, AccountId};
 
-// TODO: do we need the Default trait here?
+use crate::primitives::domain::DomainId;
+
 #[derive(Clone, Debug)]
 #[near(serializers=[json])]
 pub struct CKDRequestArgs {
     pub app_public_key: near_sdk::PublicKey,
+    pub domain_id: DomainId,
 }
 
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]

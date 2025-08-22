@@ -460,6 +460,21 @@ impl VersionedMpcContract {
             request
         );
 
+        let Ok(public_key) = self.public_key(Some(request.domain_id)) else {
+            env::panic_str(
+                &InvalidParameters::DomainNotFound
+                    .message(format!(
+                        "No key was found for the provided domain_id {:?}.",
+                        request.domain_id,
+                    ))
+                    .to_string(),
+            );
+        };
+
+        if CurveType::SECP256K1 != public_key.curve_type(){
+            env::panic_str(&InvalidParameters::InvalidDomainId.to_string())
+        }
+
         // Ensure the caller sent a valid CKD request
         match &request.app_public_key.curve_type() {
             CurveType::SECP256K1 => {}
@@ -1491,6 +1506,7 @@ mod tests {
                 .unwrap();
         let request = CKDRequestArgs {
             app_public_key: app_public_key.clone(),
+            domain_id: DomainId::default(),
         };
         let ckd_request = CKDRequest::new(app_public_key, context.predecessor_account_id);
         contract.request_app_private_key(request);
@@ -1524,6 +1540,7 @@ mod tests {
                 .unwrap();
         let request = CKDRequestArgs {
             app_public_key: app_public_key.clone(),
+            domain_id: DomainId::default(),
         };
         let ckd_request = CKDRequest::new(app_public_key, context.predecessor_account_id);
         contract.request_app_private_key(request);
