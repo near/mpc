@@ -10,6 +10,7 @@ use legacy_mpc_contract;
 use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak};
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
+use near_sdk::AccountId;
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::FullSignature;
 use threshold_signatures::frost_ed25519;
@@ -49,7 +50,29 @@ impl ChainSignatureRequest {
     }
 }
 
+/* The format in which the chain contract expects
+ * to receive the details of the original ckd request.
+ */
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ChainCKDRequest {
+    pub app_public_key: near_sdk::PublicKey,
+    pub app_id: AccountId,
+    pub domain_id: DomainId,
+}
+
+impl ChainCKDRequest {
+    pub fn new(app_public_key: near_sdk::PublicKey, app_id: AccountId, domain_id: DomainId) -> Self {
+        ChainCKDRequest {
+            app_public_key,
+            app_id,
+            domain_id,
+        }
+    }
+}
+
 pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
+pub type ChainCKDResponse = mpc_contract::crypto_shared::CKDResponse;
+
 pub use mpc_contract::crypto_shared::k256_types;
 use mpc_contract::crypto_shared::{ed25519_types, SignatureResponse};
 use mpc_contract::primitives::signature::Payload;
@@ -75,13 +98,24 @@ fn k256_signature_response(
  * that the signature matches the requested key and payload.
  */
 #[derive(Serialize, Debug, Deserialize, Clone)]
-pub struct ChainRespondArgs {
+pub struct ChainSignatureRespondArgs {
     pub request: ChainSignatureRequest,
     response: ChainSignatureResponse,
 }
 
+/* These arguments are passed to the `respond_ckd` function of the
+ * chain contract. It takes both the details of the
+ * original request and the completed ckd.
+ */
+#[derive(Serialize, Debug, Deserialize, Clone)]
+pub struct ChainCKDRespondArgs {
+    pub request: ChainCKDRequest,
+    response: ChainCKDResponse,
+}
+
+
 #[derive(Serialize, Debug)]
-pub struct ChainGetPendingRequestArgs {
+pub struct ChainGetPendingSignatureRequestArgs {
     pub request: ChainSignatureRequest,
 }
 
@@ -128,7 +162,7 @@ pub struct SubmitParticipantInfoArgs {
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
 pub(crate) enum ChainSendTransactionRequest {
-    Respond(ChainRespondArgs),
+    Respond(ChainSignatureRespondArgs),
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
@@ -177,7 +211,7 @@ impl ChainSendTransactionRequest {
     }
 }
 
-impl ChainRespondArgs {
+impl ChainSignatureRespondArgs {
     /// WARNING: this function assumes the input full signature is valid and comes from an authentic response
     pub fn new_ecdsa(
         request: &SignatureRequest,
@@ -192,7 +226,7 @@ impl ChainRespondArgs {
                 .as_ecdsa()
                 .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
         )?;
-        Ok(ChainRespondArgs {
+        Ok(ChainSignatureRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
                 request.payload.clone(),
@@ -210,7 +244,7 @@ impl ChainRespondArgs {
             .serialize()?
             .try_into()
             .map_err(|_| anyhow::anyhow!("Response is not 64 bytes"))?;
-        Ok(ChainRespondArgs {
+        Ok(ChainSignatureRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
                 request.payload.clone(),
@@ -247,7 +281,7 @@ impl ChainRespondArgs {
 
 #[cfg(test)]
 mod recovery_id_tests {
-    use crate::indexer::types::ChainRespondArgs;
+    use crate::indexer::types::ChainSignatureRespondArgs;
     use k256::ecdsa::{RecoveryId, SigningKey};
     use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
     use k256::AffinePoint;
@@ -279,7 +313,7 @@ mod recovery_id_tests {
                         s: *s.as_ref(),
                     };
 
-                    let tested_recid = ChainRespondArgs::brute_force_recovery_id(
+                    let tested_recid = ChainSignatureRespondArgs::brute_force_recovery_id(
                         signing_key.verifying_key().as_affine(),
                         &full_sig,
                         &prehash,

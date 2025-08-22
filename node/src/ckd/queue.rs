@@ -1,7 +1,7 @@
 use super::debug::{CompletedCKDRequest, CompletedCKDRequests};
 use crate::ckd::metrics;
 use crate::ckd_request::{CKDId, CKDRequest};
-use crate::indexer::types::ChainRespondArgs;
+use crate::indexer::types::ChainCKDRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::queue::NetworkAPIForRequests;
 use crate::recent_blocks_tracker::{BlockViewLite, CheckBlockResult, RecentBlocksTracker};
@@ -163,7 +163,7 @@ pub struct CKDComputationProgress {
     pub attempts: u64,
     /// The computed response, if any. This is used to prevent unnecessary recomputation,
     /// if all that's needed is to submit the response to chain.
-    pub computed_response: Option<ChainRespondArgs>,
+    pub computed_response: Option<ChainCKDRespondArgs>,
     /// The time and when the last response was submitted to chain.
     /// This is used to delay the next retry as well as debugging.
     pub last_response_submission: Option<near_time::Instant>,
@@ -480,6 +480,7 @@ mod tests {
                     id: CryptoHash(rand::random()),
                     receipt_id: CryptoHash(rand::random()),
                     app_public_key: "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap(),
+                    app_id: "test.near".parse().unwrap(),
                     domain_id: DomainId::legacy_ecdsa_id(),
             };
             let leader_selection_order =

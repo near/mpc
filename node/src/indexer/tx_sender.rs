@@ -1,5 +1,5 @@
 use super::tx_signer::{TransactionSigner, TransactionSigners};
-use super::types::ChainGetPendingRequestArgs;
+use super::types::ChainGetPendingSignatureRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
 use crate::config::RespondConfig;
@@ -87,7 +87,7 @@ async fn observe_tx_result(
             // Confirm whether the respond call succeeded by checking whether the
             // pending signature request still exists in the contract state
             let get_pending_request_args: Vec<u8> =
-                serde_json::to_string(&ChainGetPendingRequestArgs {
+                serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
                     request: respond_args.request.clone(),
                 })
                 .unwrap()

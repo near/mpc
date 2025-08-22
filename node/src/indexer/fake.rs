@@ -1,8 +1,10 @@
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::participants::ContractState;
-use super::types::{ChainRespondArgs, ChainSendTransactionRequest};
+use super::types::{ChainSignatureRespondArgs, ChainSendTransactionRequest};
 use super::IndexerAPI;
 use crate::config::ParticipantsConfig;
+use crate::indexer::handler::CKDRequestFromChain;
+use crate::indexer::types::ChainCKDRespondArgs;
 use crate::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::sign_request::SignatureId;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
@@ -246,6 +248,8 @@ struct FakeIndexerCore {
     txn_receiver: mpsc::UnboundedReceiver<(ChainSendTransactionRequest, AccountId)>,
     /// Receives signature requests from the FakeIndexerManager.
     signature_request_receiver: mpsc::UnboundedReceiver<SignatureRequestFromChain>,
+    /// Receives ckd requests from the FakeIndexerManager.
+    ckd_request_receiver: mpsc::UnboundedReceiver<CKDRequestFromChain>,
     /// Broadcasts the contract state to each node.
     state_change_sender: broadcast::Sender<ContractState>,
     /// Broadcasts block updates to each node.
@@ -254,7 +258,12 @@ struct FakeIndexerCore {
     /// When the core receives signature response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
     /// code.
-    sign_response_sender: mpsc::UnboundedSender<ChainRespondArgs>,
+    signature_response_sender: mpsc::UnboundedSender<ChainSignatureRespondArgs>,
+
+    /// When the core receives ckd response txns, it processes them by sending them through
+    /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
+    /// code.
+    ckd_response_sender: mpsc::UnboundedSender<ChainCKDRespondArgs>,
 
     /// How long to wait before generating the next block.
     block_time: std::time::Duration,
@@ -342,10 +351,36 @@ impl FakeIndexerCore {
                     .insert(signature_request.request.payload.clone(), signature_id);
             }
 
+            let mut ckd_requests = Vec::new();
+            loop {
+                match self.ckd_request_receiver.try_recv() {
+                    Ok(request) => {
+                        ckd_requests.push(request);
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        return;
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => {
+                        break;
+                    }
+                }
+            }
+
+            for ckd_request in &ckd_requests {
+                let mut contract = contract.lock().await;
+                let ckd_id = ckd_request.ckd_id;
+                todo!();
+                // contract
+                //     .pending_ckds
+                //     .insert(ckd_request.request.app_id.clone(), ckd_id);
+            }
+
             let mut block_update = ChainBlockUpdate {
                 block: block.to_block_view(),
                 signature_requests,
                 completed_signatures: Vec::new(),
+                ckd_requests,
+                completed_ckds: Vec::new(),
             };
             contract.lock().await.env.set_block_height(block.height());
             for (txn, account_id) in transactions_to_process {
@@ -359,7 +394,7 @@ impl FakeIndexerCore {
                         let signature_id =
                             contract.pending_signatures.remove(&respond.request.payload);
                         if let Some(signature_id) = signature_id {
-                            self.sign_response_sender.send(respond.clone()).unwrap();
+                            self.signature_response_sender.send(respond.clone()).unwrap();
                             block_update.completed_signatures.push(signature_id);
                         } else {
                             tracing::warn!(
@@ -417,9 +452,15 @@ pub struct FakeIndexerManager {
 
     /// Collects signature responses from the core. When the core processes signature
     /// response transactions, it sends them to this receiver. See `next_response()`.
-    response_receiver: mpsc::UnboundedReceiver<ChainRespondArgs>,
+    signature_response_receiver: mpsc::UnboundedReceiver<ChainSignatureRespondArgs>,
     /// Used to send signature requests to the core.
     signature_request_sender: mpsc::UnboundedSender<SignatureRequestFromChain>,
+
+    /// Collects signature responses from the core. When the core processes signature
+    /// response transactions, it sends them to this receiver. See `next_response()`.
+    ckd_response_receiver: mpsc::UnboundedReceiver<ChainCKDRespondArgs>,
+    /// Used to send signature requests to the core.
+    ckd_request_sender: mpsc::UnboundedSender<CKDRequestFromChain>,
 
     /// Allows nodes to be disabled during tests. See `disable()`.
     node_disabler: HashMap<AccountId, NodeDisabler>,
@@ -566,17 +607,21 @@ impl FakeIndexerManager {
         let (state_change_sender, _) = broadcast::channel(1000);
         let (block_update_sender, _) = broadcast::channel(1000);
         let (signature_request_sender, signature_request_receiver) = mpsc::unbounded_channel();
-        let (sign_response_sender, response_receiver) = mpsc::unbounded_channel();
+        let (signature_response_sender, signature_response_receiver) = mpsc::unbounded_channel();
+        let (ckd_request_sender, ckd_request_receiver) = mpsc::unbounded_channel();
+        let (ckd_response_sender, ckd_response_receiver) = mpsc::unbounded_channel();
         let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
         let core = FakeIndexerCore {
             clock: clock.clone(),
             txn_delay_blocks,
             signature_request_receiver,
+            ckd_request_receiver,
             contract: contract.clone(),
             txn_receiver,
             state_change_sender: state_change_sender.clone(),
             block_update_sender: block_update_sender.clone(),
-            sign_response_sender,
+            signature_response_sender,
+            ckd_response_sender,
             block_time,
         };
         let core_task = AutoAbortTask::from(tokio::spawn(async move { core.run().await }));
@@ -585,8 +630,10 @@ impl FakeIndexerManager {
             core_state_change_sender: state_change_sender,
             core_block_update_sender: block_update_sender,
             _core_task: core_task,
-            response_receiver,
+            signature_response_receiver,
+            ckd_response_receiver,
             signature_request_sender,
+            ckd_request_sender,
             node_disabler: HashMap::new(),
             indexer_pauser: HashMap::new(),
             contract,
@@ -594,8 +641,8 @@ impl FakeIndexerManager {
     }
 
     /// Waits for the next signature response submitted by any node.
-    pub async fn next_response(&mut self) -> ChainRespondArgs {
-        self.response_receiver.recv().await.unwrap()
+    pub async fn next_response(&mut self) -> ChainSignatureRespondArgs {
+        self.signature_response_receiver.recv().await.unwrap()
     }
 
     /// Sends a signature request to the fake blockchain.

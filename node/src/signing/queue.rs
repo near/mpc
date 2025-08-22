@@ -1,5 +1,5 @@
 use super::debug::{CompletedSignatureRequest, CompletedSignatureRequests};
-use crate::indexer::types::ChainRespondArgs;
+use crate::indexer::types::ChainSignatureRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::queue::NetworkAPIForRequests;
 use crate::recent_blocks_tracker::{BlockViewLite, CheckBlockResult, RecentBlocksTracker};
@@ -163,7 +163,7 @@ pub struct SignatureComputationProgress {
     pub attempts: u64,
     /// The computed response, if any. This is used to prevent unnecessary recomputation,
     /// if all that's needed is to submit the response to chain.
-    pub computed_response: Option<ChainRespondArgs>,
+    pub computed_response: Option<ChainSignatureRespondArgs>,
     /// The time and when the last response was submitted to chain.
     /// This is used to delay the next retry as well as debugging.
     pub last_response_submission: Option<near_time::Instant>,
