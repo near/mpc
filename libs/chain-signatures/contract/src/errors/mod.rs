@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::primitives::key_state::EpochId;
+use crate::primitives::{domain::DomainId, key_state::EpochId};
 mod impls;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -95,8 +95,8 @@ pub enum InvalidParameters {
     ParticipantAlreadyInSet,
     #[error("Participant id already used.")]
     ParticipantAlreadyUsed,
-    #[error("The provided domain was not found.")]
-    DomainNotFound,
+    #[error("The provided domain ID, {provided}, was not found.")]
+    DomainNotFound { provided: DomainId },
     #[error("Provided Epoch Id, {provided}, does not match expected, {expected}.")]
     EpochMismatch {
         provided: EpochId,
