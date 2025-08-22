@@ -1,14 +1,12 @@
 use anyhow::Result;
 use assert_matches::assert_matches;
-use attestation::{
-    attestation::Attestation,
-    test_utils::{mock_dstack_attestation, p2p_tls_key},
-};
+use attestation::attestation::Attestation;
 use common::{check_call_success, init_env_ed25519, init_env_secp256k1};
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
+use test_utils::attestation::{mock_dstack_attestation, p2p_tls_key};
 
 use crate::common::gen_accounts;
 

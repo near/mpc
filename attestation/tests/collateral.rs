@@ -1,9 +1,7 @@
 use std::str::FromStr;
 
-use attestation::{
-    collateral::{Collateral, CollateralError},
-    test_utils::collateral,
-};
+use attestation::collateral::{Collateral, CollateralError};
+use test_utils::attestation::collateral;
 use dcap_qvl::QuoteCollateralV3;
 use serde_json::json;
 

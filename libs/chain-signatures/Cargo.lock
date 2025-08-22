@@ -2328,6 +2328,7 @@ dependencies = [
  "sha2",
  "sha3",
  "signature",
+ "test-utils",
  "thiserror 1.0.69",
  "threshold-signatures",
  "tokio",
@@ -4500,6 +4501,16 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "test-utils"
+version = "0.1.0"
+dependencies = [
+ "attestation",
+ "dstack-sdk-types",
+ "near-sdk",
+ "serde_json",
 ]
 
 [[package]]

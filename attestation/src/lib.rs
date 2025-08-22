@@ -8,6 +8,3 @@ pub mod collateral;
 pub mod measurements;
 pub mod quote;
 pub mod report_data;
-
-#[cfg(feature = "test-utils")]
-pub mod test_utils;
