@@ -31,8 +31,7 @@ use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
     primitives::signature::{Payload, SignRequestArgs},
 };
-use near_crypto::KeyType;
-use near_sdk::{log, PublicKey};
+use near_sdk::{log, CurveType, PublicKey};
 use near_workspaces::{
     network::Sandbox,
     result::ExecutionFinalResult,
@@ -202,7 +201,7 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
-    pks: Vec<near_crypto::PublicKey>,
+    pks: Vec<near_sdk::PublicKey>,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
     let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
@@ -217,14 +216,11 @@ pub async fn init_with_candidates(
             .enumerate()
             .map(|(i, pk)| {
                 let domain_id = DomainId((i as u64) * 2);
-                let scheme = match pk.key_type() {
-                    KeyType::ED25519 => SignatureScheme::Ed25519,
-                    KeyType::SECP256K1 => SignatureScheme::Secp256k1,
+                let scheme = match pk.curve_type() {
+                    CurveType::ED25519 => SignatureScheme::Ed25519,
+                    CurveType::SECP256K1 => SignatureScheme::Secp256k1,
                 };
-                let key = near_sdk::PublicKey::from_str(&pk.to_string())
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
+                let key = pk.try_into().unwrap();
 
                 (
                     DomainConfig {
@@ -269,18 +265,17 @@ pub enum SharedSecretKey {
 }
 
 pub fn new_secp256k1() -> (
-    near_crypto::PublicKey,
+    near_sdk::PublicKey,
     k256::elliptic_curve::SecretKey<k256::Secp256k1>,
 ) {
-    let sk = k256::SecretKey::random(&mut rand::thread_rng());
-    let pk = sk.public_key();
-    let pk = near_crypto::PublicKey::SECP256K1(
-        near_crypto::Secp256K1PublicKey::try_from(
-            &pk.as_affine().to_encoded_point(false).as_bytes()[1..65],
-        )
-        .unwrap(),
-    );
-    (pk, sk)
+    let secret_key = k256::SecretKey::random(&mut rand::thread_rng());
+    let public_key = secret_key.public_key();
+
+    let compressed_key = public_key.as_affine().to_encoded_point(false).as_bytes()[1..65].to_vec();
+
+    let public_key = near_sdk::PublicKey::from_parts(CurveType::SECP256K1, compressed_key).unwrap();
+
+    (public_key, secret_key)
 }
 
 pub async fn init_env_secp256k1(
@@ -300,7 +295,7 @@ pub async fn init_env_secp256k1(
 
 pub fn make_key_for_domains(
     schemes: Vec<SignatureScheme>,
-) -> (Vec<near_crypto::PublicKey>, Vec<SharedSecretKey>) {
+) -> (Vec<near_sdk::PublicKey>, Vec<SharedSecretKey>) {
     schemes
         .into_iter()
         .map(|scheme| match scheme {
@@ -316,7 +311,7 @@ pub fn make_key_for_domains(
         .unzip()
 }
 
-pub fn new_ed25519() -> (near_crypto::PublicKey, KeygenOutput) {
+pub fn new_ed25519() -> (near_sdk::PublicKey, KeygenOutput) {
     let scalar = curve25519_dalek::Scalar::random(&mut OsRng);
     let private_share = SigningShare::new(scalar);
     let public_key_element = Ed25519Group::generator() * scalar;
@@ -327,9 +322,8 @@ pub fn new_ed25519() -> (near_crypto::PublicKey, KeygenOutput) {
         public_key,
     };
 
-    let pk = near_crypto::PublicKey::ED25519(near_crypto::ED25519PublicKey::from(
-        public_key.to_element().compress().to_bytes(),
-    ));
+    let compressed_key = public_key.to_element().compress().as_bytes().to_vec();
+    let pk = near_sdk::PublicKey::from_parts(CurveType::ED25519, compressed_key).unwrap();
 
     (pk, keygen_output)
 }
