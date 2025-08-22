@@ -124,27 +124,6 @@ impl SignatureProvider for EddsaSignatureProvider {
     }
 }
 
-// impl PublicKeyConversion for VerifyingKey {
-//     fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey> {
-//         let data = self.serialize()?;
-//         let data: [u8; 32] = data
-//             .try_into()
-//             .or_else(|_| anyhow::bail!("Serialized public key is not 32 bytes."))?;
-//         Ok(near_crypto::PublicKey::ED25519(
-//             near_crypto::ED25519PublicKey::from(data),
-//         ))
-//     }
-
-//     fn from_near_crypto(public_key: &near_crypto::PublicKey) -> anyhow::Result<Self> {
-//         match public_key {
-//             near_crypto::PublicKey::ED25519(key) => {
-//                 Ok(VerifyingKey::deserialize(key.0.as_slice())?)
-//             }
-//             _ => anyhow::bail!("Unsupported public key type"),
-//         }
-//     }
-// }
-
 impl PublicKeyConversion for VerifyingKey {
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let data = self.serialize()?;
