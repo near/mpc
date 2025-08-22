@@ -210,10 +210,7 @@ impl QueuedCKDRequest {
             .collect()
     }
 
-    fn leader_selection_hash(
-        participant_id: &ParticipantId,
-        ckd_request_id: CryptoHash,
-    ) -> u64 {
+    fn leader_selection_hash(participant_id: &ParticipantId, ckd_request_id: CryptoHash) -> u64 {
         let mut h = Sha256::new();
         h.update(participant_id.raw().to_le_bytes());
         h.update(ckd_request_id.0);
@@ -481,6 +478,8 @@ mod tests {
                     receipt_id: CryptoHash(rand::random()),
                     app_public_key: "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap(),
                     app_id: "test.near".parse().unwrap(),
+                    entropy: [0; 32],
+                    timestamp_nanosec: 0,
                     domain_id: DomainId::legacy_ecdsa_id(),
             };
             let leader_selection_order =

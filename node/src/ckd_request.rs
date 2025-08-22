@@ -17,6 +17,8 @@ pub struct CKDRequest {
     pub receipt_id: CryptoHash,
     pub app_public_key: PublicKey,
     pub app_id: AccountId,
+    pub entropy: [u8; 32],
+    pub timestamp_nanosec: u64,
     pub domain_id: DomainId,
 }
 
@@ -57,6 +59,8 @@ impl CKDRequestStorage {
     /// This behavior is necessary because a peer might initiate computation for a ckd
     /// request before our indexer has caught up to the request. We need proof of the request
     /// from on-chain in order to participate in the computation.
+    // TODO: remove when ckd provider is implemented
+    #[allow(dead_code)]
     pub async fn get(&self, id: CKDId) -> Result<CKDRequest, anyhow::Error> {
         let key = borsh::to_vec(&id)?;
         let mut rx = self.add_sender.subscribe();

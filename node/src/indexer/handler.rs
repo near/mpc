@@ -1,4 +1,4 @@
-use crate::ckd_request::{self, CKDId};
+use crate::ckd_request::CKDId;
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::recent_blocks_tracker::BlockViewLite;
@@ -172,9 +172,7 @@ async fn handle_message(
                     timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
                 });
                 metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
-            } else if let Some(ckd_id) =
-                maybe_get_ckd_completion(&receipt, mpc_contract_id)
-            {
+            } else if let Some(ckd_id) = maybe_get_ckd_completion(&receipt, mpc_contract_id) {
                 completed_ckds.push(ckd_id);
                 metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
             }
@@ -301,8 +299,6 @@ fn maybe_get_signature_completion(
     Some(receipt.receipt_id)
 }
 
-
-
 fn maybe_get_ckd_args(
     receipt: &ReceiptView,
     execution_outcome: &ExecutionOutcomeWithIdView,
@@ -333,7 +329,6 @@ fn maybe_get_ckd_args(
         return None;
     }
     tracing::debug!(target: "mpc", "found `request_app_private_key` function call");
-    
 
     let ckd_args = match serde_json::from_slice::<'_, CKDRequestArgs>(args) {
         Ok(parsed) => parsed,
@@ -343,7 +338,7 @@ fn maybe_get_ckd_args(
         }
     };
 
-    let ckd_request = CKDRequest{
+    let ckd_request = CKDRequest {
         app_public_key: ckd_args.app_public_key,
         app_id: receipt.predecessor_id.clone(),
     };
@@ -361,17 +356,12 @@ fn maybe_get_ckd_args(
         CKDArgs {
             app_public_key: ckd_request.app_public_key,
             app_id: ckd_request.app_id,
-            // TODO: this must exist in the contract
-            //domain_id: ckd_request.domain_id,
-            domain_id: DomainId(0)
+            domain_id: ckd_args.domain_id, // TODO: should come from CKDRequest
         },
     ))
 }
 
-fn maybe_get_ckd_completion(
-    receipt: &ReceiptView,
-    mpc_contract_id: &AccountId,
-) -> Option<CKDId> {
+fn maybe_get_ckd_completion(receipt: &ReceiptView, mpc_contract_id: &AccountId) -> Option<CKDId> {
     if &receipt.receiver_id != mpc_contract_id {
         return None;
     };

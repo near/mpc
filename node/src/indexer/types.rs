@@ -1,4 +1,4 @@
-use crate::sign_request::SignatureRequest;
+use crate::{ckd_request::CKDRequest, sign_request::SignatureRequest};
 use anyhow::Context;
 use attestation::attestation::Attestation;
 use k256::{
@@ -7,7 +7,10 @@ use k256::{
     AffinePoint, Scalar, Secp256k1,
 };
 use legacy_mpc_contract;
-use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak};
+use mpc_contract::{
+    crypto_shared::CKDResponse,
+    primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak},
+};
 use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
 use near_sdk::AccountId;
@@ -61,7 +64,11 @@ pub struct ChainCKDRequest {
 }
 
 impl ChainCKDRequest {
-    pub fn new(app_public_key: near_sdk::PublicKey, app_id: AccountId, domain_id: DomainId) -> Self {
+    pub fn new(
+        app_public_key: near_sdk::PublicKey,
+        app_id: AccountId,
+        domain_id: DomainId,
+    ) -> Self {
         ChainCKDRequest {
             app_public_key,
             app_id,
@@ -113,10 +120,14 @@ pub struct ChainCKDRespondArgs {
     response: ChainCKDResponse,
 }
 
-
 #[derive(Serialize, Debug)]
 pub struct ChainGetPendingSignatureRequestArgs {
     pub request: ChainSignatureRequest,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChainGetPendingCKDRequestArgs {
+    pub request: ChainCKDRequest,
 }
 
 #[derive(Serialize, Debug)]
@@ -163,6 +174,7 @@ pub struct SubmitParticipantInfoArgs {
 #[serde(untagged)]
 pub(crate) enum ChainSendTransactionRequest {
     Respond(ChainSignatureRespondArgs),
+    CKDRespond(ChainCKDRespondArgs),
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
@@ -183,6 +195,7 @@ impl ChainSendTransactionRequest {
     pub fn method(&self) -> &'static str {
         match self {
             ChainSendTransactionRequest::Respond(_) => "respond",
+            ChainSendTransactionRequest::CKDRespond(_) => "respond_ckd",
             ChainSendTransactionRequest::VotePk(_) => "vote_pk",
             ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
             ChainSendTransactionRequest::StartReshare(_) => "start_reshare_instance",
@@ -199,12 +212,13 @@ impl ChainSendTransactionRequest {
     pub fn gas_required(&self) -> Gas {
         match self {
             Self::Respond(_)
+            | Self::CKDRespond(_)
             | Self::VotePk(_)
             | Self::VoteReshared(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)
-            | Self::VerifyTee() => 300 * TGAS,
+            | Self::VerifyTee() => 300 * TGAS, // TODO: is here where we put the maximum gas?
             #[cfg(feature = "tee")]
             Self::SubmitParticipantInfo(_) => 300 * TGAS,
         }
@@ -279,6 +293,19 @@ impl ChainSignatureRespondArgs {
     }
 }
 
+impl ChainCKDRespondArgs {
+    pub fn new_ckd(request: &CKDRequest, response: &CKDResponse) -> anyhow::Result<Self> {
+        Ok(ChainCKDRespondArgs {
+            request: ChainCKDRequest::new(
+                request.app_public_key.clone(),
+                request.app_id.clone(),
+                request.domain_id,
+            ),
+            response: response.clone(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod recovery_id_tests {
     use crate::indexer::types::ChainSignatureRespondArgs;
@@ -302,8 +329,8 @@ mod recovery_id_tests {
                 Ok((signature, recid)) => {
                     let (r, s) = signature.split_scalars();
 
-                    // create a full signature
-                    // any big_r creation works here as we only need it's x coordinate during bruteforce (big_r.x())
+                    // Create a full signature
+                    // any big_r creation works here as we only need its x coordinate during brute force (big_r.x())
 
                     let r_bytes = r.to_repr();
                     let hypothetical_big_r = AffinePoint::decompress(&r_bytes, 0.into()).unwrap();

@@ -1,6 +1,6 @@
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::participants::ContractState;
-use super::types::{ChainSignatureRespondArgs, ChainSendTransactionRequest};
+use super::types::{ChainSendTransactionRequest, ChainSignatureRespondArgs};
 use super::IndexerAPI;
 use crate::config::ParticipantsConfig;
 use crate::indexer::handler::CKDRequestFromChain;
@@ -34,6 +34,7 @@ pub struct FakeMpcContractState {
     config: Config,
     env: Environment,
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
+    pub pending_ckds: BTreeMap<AccountId, SignatureId>,
 }
 
 impl FakeMpcContractState {
@@ -48,6 +49,7 @@ impl FakeMpcContractState {
             config,
             env,
             pending_signatures: BTreeMap::new(),
+            pending_ckds: BTreeMap::new(),
         }
     }
 
@@ -369,10 +371,9 @@ impl FakeIndexerCore {
             for ckd_request in &ckd_requests {
                 let mut contract = contract.lock().await;
                 let ckd_id = ckd_request.ckd_id;
-                todo!();
-                // contract
-                //     .pending_ckds
-                //     .insert(ckd_request.request.app_id.clone(), ckd_id);
+                contract
+                    .pending_ckds
+                    .insert(ckd_request.request.app_id.clone(), ckd_id);
             }
 
             let mut block_update = ChainBlockUpdate {
@@ -394,12 +395,27 @@ impl FakeIndexerCore {
                         let signature_id =
                             contract.pending_signatures.remove(&respond.request.payload);
                         if let Some(signature_id) = signature_id {
-                            self.signature_response_sender.send(respond.clone()).unwrap();
+                            self.signature_response_sender
+                                .send(respond.clone())
+                                .unwrap();
                             block_update.completed_signatures.push(signature_id);
                         } else {
                             tracing::warn!(
                                 "Ignoring respond transaction for unknown (possibly already-responded-to) signature: {:?}",
                                 respond.request.payload
+                            );
+                        }
+                    }
+                    ChainSendTransactionRequest::CKDRespond(respond) => {
+                        let mut contract = contract.lock().await;
+                        let ckd_id = contract.pending_ckds.remove(&respond.request.app_id);
+                        if let Some(ckd_id) = ckd_id {
+                            self.ckd_response_sender.send(respond.clone()).unwrap();
+                            block_update.completed_ckds.push(ckd_id);
+                        } else {
+                            tracing::warn!(
+                                "Ignoring respond_ckd transaction for unknown (possibly already-responded-to) ckd: {:?}",
+                                respond.request.app_id
                             );
                         }
                     }
@@ -579,7 +595,7 @@ impl FakeIndexerOneNode {
                 }
             }
         }));
-        let monitor_signature_requests = AutoAbortTask::from(tokio::spawn(async move {
+        let monitor_requests = AutoAbortTask::from(tokio::spawn(async move {
             loop {
                 let request = block_update_receiver.recv().await.unwrap();
                 indexer_suspended
@@ -595,7 +611,7 @@ impl FakeIndexerOneNode {
             }
         }));
         monitor_state_changes.await.unwrap();
-        monitor_signature_requests.await.unwrap();
+        monitor_requests.await.unwrap();
         forward_txn_requests.await.unwrap();
     }
 }
@@ -645,9 +661,19 @@ impl FakeIndexerManager {
         self.signature_response_receiver.recv().await.unwrap()
     }
 
+    /// Waits for the next ckd response submitted by any node.
+    pub async fn next_response_ckd(&mut self) -> ChainCKDRespondArgs {
+        self.ckd_response_receiver.recv().await.unwrap()
+    }
+
     /// Sends a signature request to the fake blockchain.
     pub fn request_signature(&self, request: SignatureRequestFromChain) {
         self.signature_request_sender.send(request).unwrap();
+    }
+
+    /// Sends a ckd request to the fake blockchain.
+    pub fn request_ckd(&self, request: CKDRequestFromChain) {
+        self.ckd_request_sender.send(request).unwrap();
     }
 
     /// Adds a new node to the fake indexer. Returns the API for the node, a task that

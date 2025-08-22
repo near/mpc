@@ -549,13 +549,13 @@ impl Coordinator {
                 let mut ckd_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
 
-                // TODO: here need to populate ckd_keyshares as well, but currently
-                // they cannot be identified
+                // TODO: temporarily allow any secp256k1 key to be used both for ECDSA and CKD
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
                         KeyshareData::Secp256k1(data) => {
-                            ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                            ecdsa_keyshares.insert(keyshare.key_id.domain_id, data.clone());
+                            ckd_keyshares.insert(keyshare.key_id.domain_id, data);
                             domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
                         }
                         KeyshareData::Ed25519(data) => {

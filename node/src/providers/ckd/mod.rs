@@ -1,10 +1,19 @@
 use std::{collections::HashMap, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_contract::primitives::domain::DomainId;
+use k256::AffinePoint;
+use mpc_contract::{
+    crypto_shared::{k256_types, CKDResponse},
+    primitives::domain::DomainId,
+};
 use threshold_signatures::ecdsa::KeygenOutput;
 
-use crate::{ckd_request::{CKDId, CKDRequestStorage}, config::{ConfigFile, MpcConfig}, network::MeshNetworkClient, primitives::MpcTaskId};
+use crate::{
+    ckd_request::{CKDId, CKDRequestStorage},
+    config::{ConfigFile, MpcConfig},
+    network::{MeshNetworkClient, NetworkTaskChannel},
+    primitives::MpcTaskId,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum CKDTaskId {
@@ -17,8 +26,8 @@ impl From<CKDTaskId> for MpcTaskId {
     }
 }
 
-
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct CKDProvider {
     config: Arc<ConfigFile>,
     mpc_config: Arc<MpcConfig>,
@@ -26,7 +35,6 @@ pub struct CKDProvider {
     sign_request_store: Arc<CKDRequestStorage>,
     keyshares: HashMap<DomainId, KeygenOutput>,
 }
-
 
 impl CKDProvider {
     pub fn new(
@@ -43,5 +51,23 @@ impl CKDProvider {
             sign_request_store,
             keyshares,
         }
+    }
+
+    pub async fn make_ckd(self: Arc<Self>, _id: CKDId) -> anyhow::Result<CKDResponse> {
+        Ok(CKDResponse {
+            big_c: k256_types::SerializableAffinePoint {
+                affine_point: AffinePoint::GENERATOR,
+            },
+            big_y: k256_types::SerializableAffinePoint {
+                affine_point: AffinePoint::GENERATOR,
+            },
+        })
+    }
+
+    pub async fn process_channel(
+        self: Arc<Self>,
+        _channel: NetworkTaskChannel,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 }

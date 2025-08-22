@@ -30,7 +30,6 @@ pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLoc
     .unwrap()
 });
 
-
 pub static MPC_CKD_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     near_o11y::metrics::try_create_histogram(
         "near_mpc_ckd_time_elapsed",
@@ -38,7 +37,6 @@ pub static MPC_CKD_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new
     )
     .unwrap()
 });
-
 
 pub static MPC_OWNED_NUM_TRIPLES_AVAILABLE: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(
@@ -118,7 +116,6 @@ pub static MPC_NUM_CKD_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> = Lazy
     .unwrap()
 });
 
-
 pub static MPC_NUM_SIGN_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_num_signature_responses_indexed",
@@ -145,7 +142,6 @@ pub static MPC_NUM_SIGNATURE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVe
         .unwrap()
     });
 
-
 pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(
@@ -165,7 +161,6 @@ pub static MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED: LazyLock<prometheus::IntCount
         .unwrap()
     });
 
-
 pub static MPC_NUM_PASSIVE_CKD_REQUESTS_RECEIVED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
@@ -184,8 +179,6 @@ pub static MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED: LazyLock<prometheus::
         .unwrap()
     });
 
-
-
 pub static MPC_NUM_PASSIVE_CKD_REQUESTS_LOOKUP_SUCCEEDED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
@@ -194,7 +187,6 @@ pub static MPC_NUM_PASSIVE_CKD_REQUESTS_LOOKUP_SUCCEEDED: LazyLock<prometheus::I
         )
         .unwrap()
     });
-
 
 pub static MPC_OUTGOING_TRANSACTION_OUTCOMES: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
