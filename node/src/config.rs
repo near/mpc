@@ -214,7 +214,7 @@ impl SecretsConfig {
 /// Secrets that are stored on disk. They are generated on the first run.
 /// The idea is when using a TEE, it's safer to generate them inside enclave, rather than provide it
 /// from outside.
-#[derive(Clone, Debug, Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistentSecrets {
     pub p2p_private_key: SigningKey,
     pub near_signer_key: SigningKey,
@@ -329,29 +329,33 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
     }
 }
 
-#[test]
-fn test_secret_gen() -> anyhow::Result<()> {
-    use tempfile::TempDir;
-    let temp_dir = TempDir::new()?;
-    let home_dir = temp_dir.path();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_secret_gen() -> anyhow::Result<()> {
+        use tempfile::TempDir;
+        let temp_dir = TempDir::new()?;
+        let temp_dir_path = temp_dir.path();
 
-    assert!(PersistentSecrets::maybe_get_existing(home_dir)?.is_none());
+        assert!(PersistentSecrets::maybe_get_existing(temp_dir_path)?.is_none());
 
-    let expected_secrets = PersistentSecrets::generate_or_get_existing(home_dir, 1)?;
+        let expected_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path, 1)?;
 
-    // check that the key will not be overwritten
-    assert!(PersistentSecrets::generate_or_get_existing(home_dir, 4242).is_ok());
+        // check that the key will not be overwritten
+        assert!(PersistentSecrets::generate_or_get_existing(temp_dir_path, 4242).is_ok());
 
-    let actual_secrets = PersistentSecrets::generate_or_get_existing(home_dir, 424)?;
+        let actual_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path, 424)?;
 
-    assert_eq!(
-        actual_secrets.p2p_private_key,
-        expected_secrets.p2p_private_key
-    );
-    assert_eq!(
-        actual_secrets.near_signer_key,
-        expected_secrets.near_signer_key
-    );
+        assert_eq!(
+            actual_secrets.p2p_private_key,
+            expected_secrets.p2p_private_key
+        );
+        assert_eq!(
+            actual_secrets.near_signer_key,
+            expected_secrets.near_signer_key
+        );
 
-    Ok(())
+        Ok(())
+    }
 }
