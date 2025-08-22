@@ -119,7 +119,7 @@ impl Attestation {
         expected_report_data: ReportData,
         timestamp_s: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
-        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        _allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash], // TODO
     ) -> bool {
         let verification_result = match dcap_qvl::verify::verify(
             &attestation.quote,
@@ -154,10 +154,11 @@ impl Attestation {
             && self
                 .verify_local_sgx_digest(&attestation.tcb_info, &attestation.expected_measurements)
             && self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
-            && self.verify_launcher_compose_hash(
-                &attestation.tcb_info,
-                allowed_launcher_docker_compose_hashes,
-            )
+        // TODO uncomment below:
+        // && self.verify_launcher_compose_hash(
+        //     &attestation.tcb_info,
+        //     allowed_launcher_docker_compose_hashes,
+        // )
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all

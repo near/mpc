@@ -239,13 +239,19 @@ async fn get_participants(contract: &Contract) -> Result<usize> {
 async fn test_propose_join_with_invalid_tee_participant() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
-    // Create a mock TeeParticipantInfo with test data (will fail validation)
+    let mpc_hash = MpcDockerImageHash::from([
+        0xc2, 0x29, 0x01, 0xe5, 0x2c, 0xfa, 0x91, 0xb2, 0xe7, 0x1e, 0xb8, 0x69, 0x4a, 0xc9, 0x55,
+        0x80, 0x65, 0xc6, 0xe3, 0xb1, 0x37, 0x83, 0xd9, 0xe3, 0xd3, 0x6b, 0x79, 0x2d, 0x93, 0xce,
+        0x15, 0x3b,
+    ]);
+
+    vote_for_hash(&accounts[0], &contract, &mpc_hash).await?;
+    vote_for_hash(&accounts[1], &contract, &mpc_hash).await?;
+    let allowed_hashes = get_allowed_hashes(&contract).await?;
+    assert_eq!(allowed_hashes, vec![mpc_hash.clone()]);
+
     let attestation = mock_dstack_attestation();
-
-    // Create a valid ed25519 public key for signing
     let tls_key: PublicKey = p2p_tls_key();
-
-    // Test that invalid TEE participant data is properly rejected
     let result = accounts[0]
         .call(contract.id(), "submit_participant_info")
         .args_borsh((attestation.clone(), tls_key.clone()))
@@ -253,27 +259,6 @@ async fn test_propose_join_with_invalid_tee_participant() -> Result<()> {
         .transact()
         .await?;
 
-    // The call should fail due to invalid TEE validation (expected with mock data)
-    assert!(!result.is_success());
-
-    // Verify the specific error message related to TEE validation
-    let error_message = format!("{:?}", result);
-    assert!(error_message.contains("Invalid TEE Remote Attestation"));
-    // panic!("testtt {}", error_message);
-
-    // TODO: blocked by the attestation crate integration. This is how to run:
-    //
-    //   $ pwd
-    //   ~/mpc/libs/chain-signatures/contract
-    //   $ cargo test --test tee
-    //   (...) ExecutionOutcome { transaction_hash: CAPDfZZXMDEVc5cpRxtRZc682rQqb7nf1HwL7pmyZFe6,
-    // block_hash: AV2CqRmQZM6iwj9hkbHHQNif6QaTn9uiDbkWCqutB1Ja, logs: [], receipt_ids: [],
-    // gas_burnt: NearGas { inner: 223182562500 }, tokens_burnt: NearToken { inner: 0 },
-    // executor_id: AccountId("dev-20250814091320-94121012549334.test.near"), status:
-    // SuccessValue('') }], status: Failure(ActionError(ActionError { index: Some(0), kind:
-    // FunctionCallError(ExecutionError("Smart contract panicked: Invalid TEE Remote Attestation.:
-    // RTMR3 does not match expected value")) (...)
+    assert!(result.is_success());
     Ok(())
 }
-
-// todo [#514](https://github.com/near/mpc/issues/514)

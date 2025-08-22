@@ -130,6 +130,7 @@ impl AllowedDockerImageHashes {
     }
 
     // Given a docker image hash obtain the launcher docker compose hash
+    // TODO something is off here
     pub fn get_docker_compose_hash(
         mpc_docker_image_hash: MpcDockerImageHash,
     ) -> LauncherDockerComposeHash {

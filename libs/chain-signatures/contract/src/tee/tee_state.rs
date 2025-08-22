@@ -45,7 +45,7 @@ impl TeeState {
         current_time_milliseconds / 1_000
     }
 
-    /// May return an error
+    /// May return an error // TODO not true
     pub(crate) fn verify_proposed_participant_attestation(
         &mut self,
         tee_participant_info: &Attestation,
@@ -170,6 +170,7 @@ impl TeeState {
     ) -> u64 {
         self.votes.vote(code_hash.clone(), participant)
     }
+
     /// Retrieves the current allowed hashes, cleaning up any expired entries.
     pub fn get_allowed_hashes(&mut self) -> Vec<MpcDockerImageHash> {
         // Clean up expired entries and return the current allowed hashes. Don't remove the get
