@@ -420,7 +420,6 @@ def request_until_success(
             continue
         else:
             return manifest_resp
-        
 
     raise RuntimeError(
         f"Failed to get succesful response from {url} after {rpc_max_attempts} attempts."
