@@ -44,11 +44,11 @@ use storage_keys::StorageKey;
 use v0_state::MpcContractV0;
 
 // Gas required for a sign request
-const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(10);
+const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(15);
 // Register used to receive data id from `promise_await_data`.
 const DATA_ID_REGISTER: u64 = 0;
 // Prepaid gas for a `return_signature_and_clean_state_on_success` call
-const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(6);
+const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(7);
 // Prepaid gas for a `update_config` call
 const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 // Maximum time after which TEE MPC nodes must be upgraded to the latest version

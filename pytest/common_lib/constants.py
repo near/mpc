@@ -10,6 +10,6 @@ SHORT_TIMEOUT = 10
 NEAR_BASE = 10**24
 TGAS = 10**12
 # Tgas required by the contract for a sign call.
-GAS_FOR_SIGN_CALL = 10
+GAS_FOR_SIGN_CALL = 15
 # Deposit in Yoctonear required for a sign call.
 SIGNATURE_DEPOSIT = 1
