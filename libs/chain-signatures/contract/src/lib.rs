@@ -471,7 +471,7 @@ impl VersionedMpcContract {
             );
         };
 
-        if CurveType::SECP256K1 != public_key.curve_type(){
+        if CurveType::SECP256K1 != public_key.curve_type() {
             env::panic_str(&InvalidParameters::InvalidDomainId.to_string())
         }
 
