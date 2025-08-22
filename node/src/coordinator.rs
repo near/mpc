@@ -1,3 +1,4 @@
+use crate::ckd_request::CKDRequestStorage;
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig, SecretsConfig};
 use crate::db::{DBCol, SecretDB, EPOCH_ID_KEY};
 use crate::indexer::handler::ChainBlockUpdate;
@@ -540,6 +541,7 @@ impl Coordinator {
                     .await?;
 
                 let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
+                let ckd_request_store = Arc::new(CKDRequestStorage::new(secret_db.clone())?);
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
@@ -581,6 +583,7 @@ impl Coordinator {
                     config_file.clone().into(),
                     network_client,
                     sign_request_store,
+                    ckd_request_store,
                     ecdsa_signature_provider,
                     eddsa_signature_provider,
                     domain_to_scheme,

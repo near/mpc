@@ -1,3 +1,4 @@
+use crate::ckd_request::CKDRequestStorage;
 use crate::config::ConfigFile;
 use crate::indexer::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use crate::indexer::types::{ChainRespondArgs, ChainSendTransactionRequest};
@@ -33,6 +34,7 @@ pub struct MpcClient {
     config: Arc<ConfigFile>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
+    ckd_request_store: Arc<CKDRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
@@ -43,6 +45,7 @@ impl MpcClient {
         config: Arc<ConfigFile>,
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
+        ckd_request_store: Arc<CKDRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         domain_to_scheme: HashMap<DomainId, SignatureScheme>,
@@ -51,6 +54,7 @@ impl MpcClient {
             config,
             client,
             sign_request_store,
+            ckd_request_store,
             ecdsa_signature_provider,
             eddsa_signature_provider,
             domain_to_scheme,

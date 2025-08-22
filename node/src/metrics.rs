@@ -174,6 +174,14 @@ pub static SIGN_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> = LazyL
     .unwrap()
 });
 
+pub static CKD_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "ckd_request_channel_failed",
+        "failed to send on channel in ckd_request_channel",
+    )
+    .unwrap()
+});
+
 pub static NETWORK_LIVE_CONNECTIONS: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
     prometheus::register_int_gauge_vec!(
         "mpc_network_live_connections",
