@@ -20,6 +20,7 @@ mod assets;
 #[cfg(test)]
 mod async_testing;
 mod background;
+pub mod ckd;
 mod ckd_request;
 pub mod cli;
 mod config;
@@ -36,6 +37,8 @@ pub mod primitives;
 mod protocol;
 mod protocol_version;
 mod providers;
+pub mod queue;
+pub mod recent_blocks_tracker;
 mod runtime;
 mod sign_request;
 pub mod signing;

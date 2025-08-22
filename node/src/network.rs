@@ -3,7 +3,7 @@ pub mod conn;
 pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
-pub mod signing;
+pub mod requests;
 
 use crate::metrics;
 use crate::primitives::{

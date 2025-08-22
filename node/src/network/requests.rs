@@ -1,9 +1,9 @@
 use super::MeshNetworkClient;
 use crate::primitives::ParticipantId;
-use crate::signing::queue::NetworkAPIForSigning;
+use crate::queue::NetworkAPIForRequests;
 use std::collections::{HashMap, HashSet};
 
-impl NetworkAPIForSigning for MeshNetworkClient {
+impl NetworkAPIForRequests for MeshNetworkClient {
     fn alive_participants(&self) -> HashSet<ParticipantId> {
         self.all_alive_participant_ids().into_iter().collect()
     }

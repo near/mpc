@@ -17,6 +17,7 @@ use crate::network::{
 };
 use crate::p2p::new_tls_mesh_network;
 use crate::primitives::MpcTaskId;
+use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::AsyncDroppableRuntime;
@@ -545,8 +546,11 @@ impl Coordinator {
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
+                let mut ckd_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
 
+                // TODO: here need to populate ckd_keyshares as well, but currently
+                // they cannot be identified
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
@@ -579,6 +583,14 @@ impl Coordinator {
                     eddsa_keyshares,
                 ));
 
+                let ckd_provider = Arc::new(CKDProvider::new(
+                    config_file.clone().into(),
+                    running_mpc_config.clone().into(),
+                    network_client.clone(),
+                    ckd_request_store.clone(),
+                    ckd_keyshares,
+                ));
+
                 let mpc_client = Arc::new(MpcClient::new(
                     config_file.clone().into(),
                     network_client,
@@ -586,6 +598,7 @@ impl Coordinator {
                     ckd_request_store,
                     ecdsa_signature_provider,
                     eddsa_signature_provider,
+                    ckd_provider,
                     domain_to_scheme,
                 ));
 

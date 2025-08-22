@@ -1,5 +1,6 @@
 use crate::db::{DBCol, SecretDB};
 use crate::metrics;
+use mpc_contract::primitives::domain::DomainId;
 use near_indexer_primitives::CryptoHash;
 use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,7 @@ pub struct CKDRequest {
     /// The receipt that generated the ckd request, which can be used to look up on chain.
     pub receipt_id: CryptoHash,
     pub app_public_key: PublicKey,
+    pub domain_id: DomainId,
 }
 
 pub struct CKDRequestStorage {

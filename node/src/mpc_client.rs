@@ -1,3 +1,4 @@
+use crate::ckd::queue::PendingCKDRequests;
 use crate::ckd_request::CKDRequestStorage;
 use crate::config::ConfigFile;
 use crate::indexer::handler::{ChainBlockUpdate, SignatureRequestFromChain};
@@ -5,6 +6,7 @@ use crate::indexer::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
+use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::sign_request::{SignRequestStorage, SignatureRequest};
@@ -37,6 +39,7 @@ pub struct MpcClient {
     ckd_request_store: Arc<CKDRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+    ckd_provider: Arc<CKDProvider>,
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
 }
 
@@ -48,6 +51,7 @@ impl MpcClient {
         ckd_request_store: Arc<CKDRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+        ckd_provider: Arc<CKDProvider>,
         domain_to_scheme: HashMap<DomainId, SignatureScheme>,
     ) -> Self {
         Self {
@@ -57,6 +61,7 @@ impl MpcClient {
             ckd_request_store,
             ecdsa_signature_provider,
             eddsa_signature_provider,
+            ckd_provider,
             domain_to_scheme,
         }
     }
@@ -158,6 +163,12 @@ impl MpcClient {
             self.client.my_participant_id(),
             self.client.clone(),
         );
+        let mut pending_ckds = PendingCKDRequests::new(
+            Clock::real(),
+            self.client.all_participant_ids(),
+            self.client.my_participant_id(),
+            self.client.clone(),
+        );
 
         let start_time = Clock::real().now();
         loop {
@@ -218,9 +229,8 @@ impl MpcClient {
                                 debug_request.respond(debug_output);
                             }
                             DebugRequestKind::RecentCKD => {
-                                todo!();
-                                // let debug_output = format!("{:?}", pending_ckd);
-                                // debug_request.respond(debug_output);
+                                let debug_output = format!("{:?}", pending_ckds);
+                                debug_request.respond(debug_output);
                             }
                         }
                     }
@@ -365,6 +375,7 @@ impl MpcClient {
                     .await?
             }
             MpcTaskId::CKDTaskId(_) => {
+                /// To be added once the provider is implemented
                 todo!()
             }
         }
