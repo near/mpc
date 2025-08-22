@@ -232,11 +232,9 @@ async fn get_participants(contract: &Contract) -> Result<usize> {
     Ok(running.parameters.participants().len())
 }
 
-/// Tests the `propose_join` endpoint functionality including TEE validation and storage cost
-/// handling. Validates that the endpoint properly rejects invalid TEE participants (expected with
-/// mock data).
+/// Tests the `submit_participant_info` endpoint functionality including TEE validation.
 #[tokio::test]
-async fn test_propose_join_with_invalid_tee_participant() -> Result<()> {
+async fn test_submit_participant_info_succeeds_with_valid_tee_attestation() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
     let mpc_hash = MpcDockerImageHash::from([

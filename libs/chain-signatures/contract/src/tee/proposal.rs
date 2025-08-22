@@ -130,29 +130,12 @@ impl AllowedDockerImageHashes {
     }
 
     // Given a docker image hash obtain the launcher docker compose hash
-    // TODO something is off here
     pub fn get_docker_compose_hash(
         mpc_docker_image_hash: MpcDockerImageHash,
     ) -> LauncherDockerComposeHash {
-        let filled_yaml = format!(
-            r#"version: "3.8"
-
-services:
-web:
-image: barakeinavnear/launcher:latest
-container_name: launcher
-environment:
-  - DOCKER_CONTENT_TRUST=1
-  - DEFAULT_IMAGE_DIGEST=sha256:{}
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock
-  - /var/run/dstack.sock:/var/run/dstack.sock
-  - /tapp:/tapp:ro
-  - /var/lib/docker/volumes/shared-volume/_data:/mnt/shared:ro
-"#,
+        let filled_yaml = format!("version: '3.8'\n\nservices:\n  launcher:\n    image: barakeinavnear/launcher@sha256:1ea7571baf18bd052359abd2a1f269e7836f9bad2270eb55fc9475aa327f8d96\n\n # isuse #531: TODO (security): Replace with a specific image digest\n    container_name: launcher\n\n    environment:\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:{}\n\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\n\n    security_opt:\n      - no-new-privileges:true\n\n    read_only: true\n\n    tmpfs:\n      - /tmp\n\nvolumes:\n  shared-volume:\n    name: shared-volume",
             mpc_docker_image_hash.as_hex()
         );
-
         let hash = sha256(filled_yaml.as_bytes());
         assert!(
             hash.len() == 32,
