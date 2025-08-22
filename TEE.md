@@ -15,10 +15,10 @@ Therefore, Near-One will roll-out its TEE implementation in two phases:
 - Soft Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of the TEE.
 - Hard Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up inside a different TEE.
 
-In order to protect the network from the worst case scenario (permanent loss of the signing quorum), a disaster recovery plan is prepared.
+In order to protect the network from the worst case scenario (permanent loss of the signing quorum), a disaster recovery system is to be deployed.
 
 ## Disaster Recovery on a high-level
-Disaster recovery is a plan intended to prevent a permanent loss of the signing quorum.
+The purpose of the disaster recovery system is to prevent a permanent loss of the signing quorum.
 As long as the secret shares of the MPC nodes are securely backed-up outside of the TEE environment in which the node is running, it is highly likely that the network will be able to recover from otherwise catastrophic failures. Therefore, each operator of an MPC node will be required to operate their own **backup service**. This service is separate from the MPC node and should run on a different machine.
 
 ### Backup service
