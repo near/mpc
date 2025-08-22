@@ -54,7 +54,7 @@ pub struct DstackAttestation {
 
 impl fmt::Debug for DstackAttestation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        const MAX_BYTES: usize = 4096;
+        const MAX_BYTES: usize = 2048;
 
         fn truncate_debug<T: fmt::Debug>(value: &T, max_bytes: usize) -> String {
             let debug_str = format!("{:?}", value);
