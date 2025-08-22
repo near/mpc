@@ -70,6 +70,9 @@ const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 // Prepaid gas for a `fail_on_timeout` call
 const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
 
+// Confidential Key Derivation only supports secp256k1
+const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
+
 /// Store two version of the MPC contract for migration and backward compatibility purposes.
 /// Note: Probably, you don't need to change this struct.
 #[near_bindgen]
@@ -279,12 +282,10 @@ impl VersionedMpcContract {
         let request: SignRequest = request.try_into().unwrap();
         let Ok(public_key) = self.public_key(Some(request.domain_id)) else {
             env::panic_str(
-                &InvalidParameters::DomainNotFound
-                    .message(format!(
-                        "No key was found for the provided domain_id {:?}.",
-                        request.domain_id,
-                    ))
-                    .to_string(),
+                &InvalidParameters::DomainNotFound {
+                    provided: request.domain_id,
+                }
+                .to_string(),
             );
         };
 
@@ -460,12 +461,29 @@ impl VersionedMpcContract {
             request
         );
 
-        // Ensure the caller sent a valid CKD request
-        match &request.app_public_key.curve_type() {
-            CurveType::SECP256K1 => {}
-            CurveType::ED25519 => {
-                env::panic_str(&InvalidParameters::InvalidAppPublicKey.to_string())
-            }
+        let Ok(public_key) = self.public_key(Some(request.domain_id)) else {
+            env::panic_str(
+                &InvalidParameters::DomainNotFound {
+                    provided: request.domain_id,
+                }
+                .to_string(),
+            );
+        };
+
+        if public_key.curve_type() != CDK_SUPPORTED_SIGNATURE_CURVE {
+            env::panic_str(
+                &InvalidParameters::InvalidDomainId
+                    .message("Provided domain ID key type is not secp256k1")
+                    .to_string(),
+            )
+        }
+
+        if request.app_public_key.curve_type() != CDK_SUPPORTED_SIGNATURE_CURVE {
+            env::panic_str(
+                &InvalidParameters::InvalidDomainId
+                    .message("Provided app public key type is not secp256k1")
+                    .to_string(),
+            )
         }
 
         // Make sure CKD call will not run out of gas doing yield/resume logic
@@ -1491,6 +1509,7 @@ mod tests {
                 .unwrap();
         let request = CKDRequestArgs {
             app_public_key: app_public_key.clone(),
+            domain_id: DomainId::default(),
         };
         let ckd_request = CKDRequest::new(app_public_key, context.predecessor_account_id);
         contract.request_app_private_key(request);
@@ -1524,6 +1543,7 @@ mod tests {
                 .unwrap();
         let request = CKDRequestArgs {
             app_public_key: app_public_key.clone(),
+            domain_id: DomainId::default(),
         };
         let ckd_request = CKDRequest::new(app_public_key, context.predecessor_account_id);
         contract.request_app_private_key(request);
