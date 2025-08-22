@@ -355,8 +355,6 @@ impl VersionedMpcContract {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
-        env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
-
         let promise_index = env::promise_yield_create(
             "return_signature_and_clean_state_on_success",
             &serde_json::to_vec(&(&request,)).unwrap(),
