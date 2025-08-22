@@ -368,8 +368,7 @@ impl Attestation {
                 return false;
             }
         };
-        let launcher_compose_str = app_compose.docker_compose_file.clone();
-        let launcher_bytes = sha256(launcher_compose_str.as_bytes());
+        let launcher_bytes = sha256(app_compose.docker_compose_file.as_bytes());
         allowed_hashes
             .iter()
             .any(|hash| hash.as_hex() == hex::encode(&launcher_bytes))
