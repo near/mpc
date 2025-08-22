@@ -6,7 +6,6 @@ import sys
 from typing import List, Optional, Tuple, cast
 import typing
 
-import base58
 import yaml
 from nacl.signing import SigningKey
 
@@ -33,18 +32,6 @@ from key import Key
 
 dot_near = pathlib.Path.home() / ".near"
 SECRETS_JSON = "secrets.json"
-
-
-# Output is deserializable into the rust type near_crypto::SecretKey
-def serialize_key(key: Key):
-    full_key = bytes(key.decoded_sk())
-    return "ed25519:" + base58.b58encode(full_key).decode("ascii")
-
-
-def deserialize_key(account_id: str, key: str) -> Key:
-    assert key.startswith("ed25519:")
-    signing_key = SigningKey(base58.b58decode(key.split(":")[1].encode("ascii"))[:32])
-    return Key.from_keypair(account_id, signing_key)
 
 
 def sign_create_account_with_multiple_access_keys_tx(
@@ -182,13 +169,12 @@ def generate_mpc_configs(
         secrets_file_path = os.path.join(dot_near, str(idx), SECRETS_JSON)
         with open(secrets_file_path) as file:
             participant_secrets = json.load(file)
-        signer_key = deserialize_key(
-            near_account,
-            participant_secrets["near_signer_key"],
+        signer_key = Key.from_keypair(
+            near_account, participant_secrets["near_signer_key"]
         )
         responder_keys = []
         for key in participant_secrets["near_responder_keys"]:
-            responder_keys.append(deserialize_key(responder_account_id, key))
+            responder_keys.append(Key.from_keypair(responder_account_id, key))
 
         candidates.append(
             Candidate(
@@ -204,7 +190,6 @@ def generate_mpc_configs(
 def adjust_indexing_shard(near_node: LocalNode):
     """Set the node to track all shards in config.json (any non-empty list for 'tracked_shards' will make the node observe all shards)."""
     path = os.path.join(near_node.node_dir, "config.json")
-
     with open(path, "r+") as f:
         config = json.load(f)
         config["tracked_shards_config"] = "AllShards"
