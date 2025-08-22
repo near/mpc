@@ -11,7 +11,7 @@ TIMEOUT = 60
 SHORT_TIMEOUT = 10
 NEAR_BASE = 10**24
 TGAS = 10**12
-# Tgas required by the contract for a sign call.
+# Tgas required by the contract for a sign call. If this needs modification, ENSURE THE CONSTANT IN THE CONTRACT AND THE TX-BENCH TOOL ALSO GETS ADJUSTED!
 GAS_FOR_SIGN_CALL = 15
 # Deposit in Yoctonear required for a sign call.
 SIGNATURE_DEPOSIT = 1
