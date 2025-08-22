@@ -2,16 +2,23 @@ use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
 use k256::{
-    elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint, PrimeField},
-    AffinePoint, FieldBytes, Scalar, Secp256k1,
+    elliptic_curve::{
+        hash2curve::{ExpandMsgXof, GroupDigest},
+        point::DecompressPoint as _,
+        scalar::FromUintUnchecked,
+        sec1::ToEncodedPoint,
+        PrimeField,
+    },
+    AffinePoint, FieldBytes, ProjectivePoint, Scalar, Secp256k1,
 };
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
         derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
-        SerializableScalar, SignatureResponse,
+        near_public_key_to_affine_point, CKDResponse, SerializableScalar, SignatureResponse,
     },
     primitives::{
+        ckd::{CKDRequest, CKDRequestArgs},
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
@@ -24,8 +31,7 @@ use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
     primitives::signature::{Payload, SignRequestArgs},
 };
-use near_crypto::KeyType;
-use near_sdk::log;
+use near_sdk::{log, CurveType, PublicKey};
 use near_workspaces::{
     network::Sandbox,
     result::ExecutionFinalResult,
@@ -45,7 +51,10 @@ use std::{
     sync::OnceLock,
     time::{SystemTime, UNIX_EPOCH},
 };
-use threshold_signatures::eddsa::KeygenOutput;
+use threshold_signatures::{
+    eddsa::KeygenOutput,
+    frost_secp256k1::{Ciphersuite, Secp256K1Sha256},
+};
 use threshold_signatures::{
     frost_ed25519,
     frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey},
@@ -192,7 +201,7 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
-    pks: Vec<near_crypto::PublicKey>,
+    pks: Vec<near_sdk::PublicKey>,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
     let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
@@ -207,14 +216,11 @@ pub async fn init_with_candidates(
             .enumerate()
             .map(|(i, pk)| {
                 let domain_id = DomainId((i as u64) * 2);
-                let scheme = match pk.key_type() {
-                    KeyType::ED25519 => SignatureScheme::Ed25519,
-                    KeyType::SECP256K1 => SignatureScheme::Secp256k1,
+                let scheme = match pk.curve_type() {
+                    CurveType::ED25519 => SignatureScheme::Ed25519,
+                    CurveType::SECP256K1 => SignatureScheme::Secp256k1,
                 };
-                let key = near_sdk::PublicKey::from_str(&pk.to_string())
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
+                let key = pk.try_into().unwrap();
 
                 (
                     DomainConfig {
@@ -259,18 +265,17 @@ pub enum SharedSecretKey {
 }
 
 pub fn new_secp256k1() -> (
-    near_crypto::PublicKey,
+    near_sdk::PublicKey,
     k256::elliptic_curve::SecretKey<k256::Secp256k1>,
 ) {
-    let sk = k256::SecretKey::random(&mut rand::thread_rng());
-    let pk = sk.public_key();
-    let pk = near_crypto::PublicKey::SECP256K1(
-        near_crypto::Secp256K1PublicKey::try_from(
-            &pk.as_affine().to_encoded_point(false).as_bytes()[1..65],
-        )
-        .unwrap(),
-    );
-    (pk, sk)
+    let secret_key = k256::SecretKey::random(&mut rand::thread_rng());
+    let public_key = secret_key.public_key();
+
+    let compressed_key = public_key.as_affine().to_encoded_point(false).as_bytes()[1..65].to_vec();
+
+    let public_key = near_sdk::PublicKey::from_parts(CurveType::SECP256K1, compressed_key).unwrap();
+
+    (public_key, secret_key)
 }
 
 pub async fn init_env_secp256k1(
@@ -290,7 +295,7 @@ pub async fn init_env_secp256k1(
 
 pub fn make_key_for_domains(
     schemes: Vec<SignatureScheme>,
-) -> (Vec<near_crypto::PublicKey>, Vec<SharedSecretKey>) {
+) -> (Vec<near_sdk::PublicKey>, Vec<SharedSecretKey>) {
     schemes
         .into_iter()
         .map(|scheme| match scheme {
@@ -306,7 +311,7 @@ pub fn make_key_for_domains(
         .unzip()
 }
 
-pub fn new_ed25519() -> (near_crypto::PublicKey, KeygenOutput) {
+pub fn new_ed25519() -> (near_sdk::PublicKey, KeygenOutput) {
     let scalar = curve25519_dalek::Scalar::random(&mut OsRng);
     let private_share = SigningShare::new(scalar);
     let public_key_element = Ed25519Group::generator() * scalar;
@@ -317,9 +322,8 @@ pub fn new_ed25519() -> (near_crypto::PublicKey, KeygenOutput) {
         public_key,
     };
 
-    let pk = near_crypto::PublicKey::ED25519(near_crypto::ED25519PublicKey::from(
-        public_key.to_element().compress().to_bytes(),
-    ));
+    let compressed_key = public_key.to_element().compress().as_bytes().to_vec();
+    let pk = near_sdk::PublicKey::from_parts(CurveType::ED25519, compressed_key).unwrap();
 
     (pk, keygen_output)
 }
@@ -506,6 +510,95 @@ pub async fn sign_and_validate(
         assert_eq!(
             &returned_resp, respond_resp,
             "Returned signature request does not match"
+        );
+    }
+
+    Ok(())
+}
+
+pub fn example_secp256k1_point() -> PublicKey {
+    "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap()
+}
+
+// based on https://github.com/near/threshold-signatures/blob/eb04be447bc3385000a71adfcfc930e44819bff1/src/confidential_key_derivation/ckd.rs
+fn hash2curve(app_id: &[u8]) -> ProjectivePoint {
+    const DOMAIN: &[u8] = b"NEAR CURVE_XOF:SHAKE-256_SSWU_RO_";
+    <Secp256k1 as GroupDigest>::hash_from_bytes::<ExpandMsgXof<sha3::Shake256>>(
+        &[app_id],
+        &[DOMAIN],
+    )
+    .unwrap()
+}
+
+/// Derives a confidential key following https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation.md
+pub fn create_response_ckd(
+    account_id: &AccountId,
+    app_public_key: near_sdk::PublicKey,
+    signing_key: &ecdsa::elliptic_curve::SecretKey<k256::Secp256k1>,
+) -> (CKDRequest, CKDResponse) {
+    let request = CKDRequest::new(app_public_key.clone(), account_id.clone());
+
+    let app_id = account_id.as_bytes();
+    let app_pk = near_public_key_to_affine_point(app_public_key);
+    let msk = k256::Scalar::from_uint_unchecked(signing_key.as_scalar_primitive().to_uint());
+    let big_s = hash2curve(app_id) * msk;
+    let (y, big_y) = Secp256K1Sha256::generate_nonce(&mut OsRng);
+    let big_c = big_s + app_pk * y;
+
+    let response = CKDResponse {
+        big_y: SerializableAffinePoint {
+            affine_point: big_y.to_affine(),
+        },
+        big_c: SerializableAffinePoint {
+            affine_point: big_c.to_affine(),
+        },
+    };
+    (request, response)
+}
+
+pub async fn derive_confidential_key_and_validate(
+    account: Account,
+    request: &CKDRequestArgs,
+    respond: Option<(&CKDRequest, &CKDResponse)>,
+    contract: &Contract,
+) -> anyhow::Result<()> {
+    let status = account
+        .call(contract.id(), "request_app_private_key")
+        .args_json(serde_json::json!({
+            "request": request,
+        }))
+        .deposit(NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact_async()
+        .await?;
+    dbg!(&status);
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    if let Some((respond_req, respond_resp)) = respond {
+        assert!(account.id() == &respond_req.app_id);
+        // Call `respond_ckd` as if we are the MPC network itself.
+        let respond = contract
+            .call("respond_ckd")
+            .args_json(serde_json::json!({
+                "request": respond_req,
+                "response": respond_resp
+            }))
+            .max_gas()
+            .transact()
+            .await?;
+        dbg!(&respond);
+    }
+
+    let execution = status.await?;
+    dbg!(&execution);
+    let execution = execution.into_result()?;
+
+    // Finally wait the result:
+    let returned_resp: CKDResponse = execution.json()?;
+    if let Some((_, respond_resp)) = respond {
+        assert_eq!(
+            &returned_resp, respond_resp,
+            "Returned ckd request does not match"
         );
     }
 
