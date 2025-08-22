@@ -292,7 +292,7 @@ def main():
 
     int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))
     rpc_request_interval_ms = int(
-        os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, "500")
+        os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, "1000")
     )
     rpc_request_interval_secs = rpc_request_interval_ms / 1000.0
     rpc_max_attempts = int(os.environ.get(OS_ENV_VAR_RPC_MAX_ATTEMPTS, "20"))
@@ -399,12 +399,19 @@ def request_until_success(
         - Prints a warning with the response content on each failure.
     """
     for attempt in range(1, rpc_max_attempts + 1):
-        # we sleep at the beginning, to ensure that we respect the timeout. Performance is not a priority in this case.
+        # Ensure that we respect the backoff time. Performance is not a priority in this case.
         time.sleep(rpc_request_interval_secs)
         rpc_request_interval_secs = min(max(rpc_request_interval_secs, 1.0) * 1.5, 60.0)
-        manifest_resp = requests.get(
-            url, headers=headers, timeout=rpc_request_timeout_secs
-        )
+        try:
+            manifest_resp = requests.get(
+                url, headers=headers, timeout=rpc_request_timeout_secs
+            )
+        except requests.exceptions.Timeout:
+            print(
+                f"[Warning] Attempt {attempt}/{rpc_max_attempts}: Failed to fetch {url} for headers {headers}. "
+                f"Status: Timeout"
+            )
+            continue
         if manifest_resp.status_code != 200:
             print(
                 f"[Warning] Attempt {attempt}/{rpc_max_attempts}: Failed to fetch {url} for headers {headers}. "
@@ -413,6 +420,7 @@ def request_until_success(
             continue
         else:
             return manifest_resp
+        
 
     raise RuntimeError(
         f"Failed to get succesful response from {url} after {rpc_max_attempts} attempts."
