@@ -10,7 +10,7 @@ use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::sign_request::{SignRequestStorage, SignatureRequest};
 use crate::signing::queue::{PendingSignatureRequests, CHECK_EACH_SIGNATURE_REQUEST_INTERVAL};
 use crate::tracking::{self, AutoAbortTaskCollection};
-use crate::web::{SignatureDebugRequest, SignatureDebugRequestKind};
+use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_contract::crypto_shared::derive_tweak;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
@@ -70,7 +70,7 @@ impl MpcClient {
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
-        signature_debug_receiver: tokio::sync::broadcast::Receiver<SignatureDebugRequest>,
+        debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) -> anyhow::Result<()> {
         let client = self.client.clone();
         let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
@@ -94,7 +94,7 @@ impl MpcClient {
                 self.clone().monitor_block_updates(
                     block_update_receiver,
                     chain_txn_sender,
-                    signature_debug_receiver,
+                    debug_receiver,
                 ),
             )
         };
@@ -149,7 +149,7 @@ impl MpcClient {
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
-        mut signature_debug_receiver: tokio::sync::broadcast::Receiver<SignatureDebugRequest>,
+        mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures = PendingSignatureRequests::new(
@@ -206,16 +206,21 @@ impl MpcClient {
                         &block_update.block,
                     );
                 }
-                debug_request = signature_debug_receiver.recv() => {
+                debug_request = debug_receiver.recv() => {
                     if let Ok(debug_request) = debug_request {
                         match debug_request.kind {
-                            SignatureDebugRequestKind::RecentBlocks => {
+                            DebugRequestKind::RecentBlocks => {
                                 let debug_output = pending_signatures.debug_print_recent_blocks();
                                 debug_request.respond(debug_output);
                             }
-                            SignatureDebugRequestKind::RecentSignatures => {
+                            DebugRequestKind::RecentSignatures => {
                                 let debug_output = format!("{:?}", pending_signatures);
                                 debug_request.respond(debug_output);
+                            }
+                            DebugRequestKind::RecentCKD => {
+                                todo!();
+                                // let debug_output = format!("{:?}", pending_ckd);
+                                // debug_request.respond(debug_output);
                             }
                         }
                     }

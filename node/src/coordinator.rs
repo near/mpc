@@ -22,7 +22,7 @@ use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::AsyncDroppableRuntime;
 use crate::sign_request::SignRequestStorage;
 use crate::tracking::{self};
-use crate::web::SignatureDebugRequest;
+use crate::web::DebugRequest;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -60,7 +60,7 @@ pub struct Coordinator {
     pub currently_running_job_name: Arc<Mutex<String>>,
 
     /// For debug UI to send us debug requests.
-    pub signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
+    pub debug_request_sender: broadcast::Sender<DebugRequest>,
 }
 
 type StopFn = Box<dyn Fn(&ContractState) -> bool + Send>;
@@ -230,7 +230,7 @@ impl Coordinator {
                                     .clone()
                                     .lock_owned()
                                     .await,
-                                self.signature_debug_request_sender.subscribe(),
+                                self.debug_request_sender.subscribe(),
                                 key_event_receiver,
                             ),
                         )?,
@@ -379,7 +379,7 @@ impl Coordinator {
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
-        signature_debug_request_receiver: broadcast::Receiver<SignatureDebugRequest>,
+        debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
@@ -594,7 +594,7 @@ impl Coordinator {
                         running_network_receiver,
                         block_update_receiver,
                         chain_txn_sender,
-                        signature_debug_request_receiver,
+                        debug_request_receiver,
                     )
                     .await?;
 
