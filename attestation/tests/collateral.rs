@@ -1,9 +1,9 @@
 use std::str::FromStr;
 
 use attestation::collateral::{Collateral, CollateralError};
-use test_utils::attestation::collateral;
 use dcap_qvl::QuoteCollateralV3;
 use serde_json::json;
+use test_utils::attestation::collateral;
 
 #[test]
 fn test_collateral_missing_field() {
