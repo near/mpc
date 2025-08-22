@@ -1,6 +1,10 @@
 pub mod common;
 use common::{create_response_ckd, derive_confidential_key_and_validate, init_env_secp256k1};
-use mpc_contract::{crypto_shared::CKDResponse, errors, primitives::ckd::CKDRequestArgs};
+use mpc_contract::{
+    crypto_shared::CKDResponse,
+    errors,
+    primitives::{ckd::CKDRequestArgs, domain::DomainId},
+};
 use near_sdk::AccountId;
 use near_workspaces::{network::Sandbox, result::Execution, types::NearToken, Account, Worker};
 
@@ -44,6 +48,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
         let request = CKDRequestArgs {
             app_public_key: app_public_key.clone(),
+            domain_id: DomainId::default(),
         };
 
         derive_confidential_key_and_validate(
@@ -62,7 +67,10 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         .unwrap()
         .unwrap();
     let (respond_req, respond_resp) = create_response_ckd(account.id(), app_public_key.clone(), sk);
-    let request = CKDRequestArgs { app_public_key };
+    let request = CKDRequestArgs {
+        app_public_key,
+        domain_id: DomainId::default(),
+    };
     derive_confidential_key_and_validate(
         account.clone(),
         &request,
@@ -102,7 +110,10 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
 
     let (respond_req, respond_resp) = create_response_ckd(alice.id(), app_public_key.clone(), sk);
-    let request = CKDRequestArgs { app_public_key };
+    let request = CKDRequestArgs {
+        app_public_key,
+        domain_id: DomainId::default(),
+    };
 
     let status = alice
         .call(contract.id(), "request_app_private_key")
@@ -168,7 +179,10 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
     let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
-    let request = CKDRequestArgs { app_public_key };
+    let request = CKDRequestArgs {
+        app_public_key,
+        domain_id: DomainId::default(),
+    };
 
     let status = alice
         .call(contract.id(), "request_app_private_key")
@@ -225,6 +239,7 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
     let request = CKDRequestArgs {
         app_public_key: app_public_key.clone(),
+        domain_id: DomainId::default(),
     };
 
     let status = contract

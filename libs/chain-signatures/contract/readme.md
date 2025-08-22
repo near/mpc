@@ -80,6 +80,7 @@ yoctonear is required** to prevent abuse by malicious frontends.
 The ckd request takes the following arguments:
 
 - `"app_public_key": "secp256k1:<base58 encoded point in curve>"`
+- `domain_id` (integer): identifies the master key to use for deriving the ckd, and must correspond to secp256k1.
 
 Note that `app_public_key` represents a valid point on curve Secp256k1.
 
@@ -93,7 +94,8 @@ _ckd request_
 ```Json
 {
   "request": {
-    "app_public_key": "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd"
+    "app_public_key": "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd",
+    "domain_id": 3
   }
 }
 ```
