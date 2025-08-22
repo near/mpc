@@ -35,7 +35,14 @@ dot_near = pathlib.Path.home() / ".near"
 SECRETS_JSON = "secrets.json"
 
 
-def deserialize_key(account_id: str, key_bytes: List[int]) -> Key:
+# Output is deserializable into the rust type near_sdk::SecretKey
+def serialize_key(key: bytes) -> str:
+    key_bytes = bytes(key)
+    return "ed25519:" + base58.b58encode(key_bytes).decode("ascii")
+
+
+def deserialize_key(account_id: str, key: List[int]) -> Key:
+    key_bytes = bytes(key)
     signing_key = SigningKey(key_bytes)
     return Key.from_keypair(account_id, signing_key)
 
@@ -169,6 +176,8 @@ def generate_mpc_configs(
     ):
         near_account = participant["near_account_id"]
         p2p_public_key = participant["p2p_public_key"]
+        p2p_public_key_near_sdk_representation = serialize_key(p2p_public_key)
+
         my_addr = participant["address"]
         my_port = participant["port"]
 
@@ -187,7 +196,7 @@ def generate_mpc_configs(
             Candidate(
                 signer_key=signer_key,
                 responder_keys=responder_keys,
-                p2p_public_key=p2p_public_key,
+                p2p_public_key=p2p_public_key_near_sdk_representation,
                 url=f"http://{my_addr}:{my_port}",
             )
         )
