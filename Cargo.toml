@@ -1,5 +1,5 @@
 [workspace]
-members = ["node", "devnet", "attestation", "crates/primitives", "tee_authority", "test-utils"]
+members = ["node", "devnet", "attestation", "crates/primitives", "tee_authority", "test_utils"]
 resolver = "2"
 exclude = ["libs", "pytest"]
 
@@ -10,7 +10,7 @@ debug = true
 [workspace.dependencies]
 #workspace members
 attestation = { path = "attestation" }
-test-utils = { path = "test-utils" }
+test_utils = { path = "test_utils" }
 
 actix = "0.13.0"
 aes-gcm = "0.10.3"

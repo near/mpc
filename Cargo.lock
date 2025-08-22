@@ -1210,7 +1210,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha3",
- "test-utils",
+ "test_utils",
  "thiserror 2.0.16",
  "tracing",
 ]
@@ -9319,6 +9319,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "test_utils",
  "tokio",
  "tracing",
 ]
@@ -9352,7 +9353,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
-name = "test-utils"
+name = "test_utils"
 version = "0.1.0"
 dependencies = [
  "attestation",

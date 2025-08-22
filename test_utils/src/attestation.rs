@@ -18,9 +18,9 @@ pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
     include_str!("../assets/launcher_image_compose.yaml");
 
 /// App compose field corresponds to the `DEFAULT_IMAGE_DIGEST` field in
-/// test-utils/assets/launcher_image_compose.yaml
+/// test_utils/assets/launcher_image_compose.yaml
 pub const TEST_MPC_IMAGE_DIGEST_HEX: &str = include_str!("../assets/mpc_image_digest.txt");
-/// sha256sum test-utils/assets/launcher_image_compose.yaml
+/// sha256sum test_utils/assets/launcher_image_compose.yaml
 pub const TEST_LAUNCHER_COMPOSE_DIGEST_HEX: &str =
     "9f9f570c2b84cb56d537abb6a4ab4b3cc93a6a84da4e2c21bddba8963726fdaa";
 

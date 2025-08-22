@@ -2328,7 +2328,7 @@ dependencies = [
  "sha2",
  "sha3",
  "signature",
- "test-utils",
+ "test_utils",
  "thiserror 1.0.69",
  "threshold-signatures",
  "tokio",
@@ -4504,7 +4504,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-utils"
+name = "test_utils"
 version = "0.1.0"
 dependencies = [
  "attestation",
