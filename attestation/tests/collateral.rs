@@ -3,10 +3,7 @@ use std::str::FromStr;
 use attestation::collateral::{Collateral, CollateralError};
 use dcap_qvl::QuoteCollateralV3;
 use serde_json::json;
-
-use crate::common::collateral;
-
-pub mod common;
+use test_utils::attestation::collateral;
 
 #[test]
 fn test_collateral_missing_field() {
