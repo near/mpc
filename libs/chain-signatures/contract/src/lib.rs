@@ -511,8 +511,6 @@ impl VersionedMpcContract {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
-        env::log_str(&serde_json::to_string(&near_sdk::env::random_seed_array()).unwrap());
-
         let app_id = env::predecessor_account_id();
         let request = CKDRequest::new(request.app_public_key, app_id);
 
