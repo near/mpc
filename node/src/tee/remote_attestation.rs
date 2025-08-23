@@ -33,7 +33,8 @@ const PHALA_TDX_QUOTE_UPLOAD_URL: &str =
     "https://cloud-api.phala.network/api/v1/attestations/verify";
 /// Expected HTTP [`StatusCode`] for a successful submission.
 const PHALA_SUCCESS_STATUS_CODE: StatusCode = StatusCode::OK;
-/// The maximum duration to wait for retrying request to Phala's endpoint, [`PHALA_TDX_QUOTE_UPLOAD_URL`].
+/// The maximum duration to wait for retrying request to Phala's endpoint,
+/// [`PHALA_TDX_QUOTE_UPLOAD_URL`].
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
 /// Number of bytes for the report data.
@@ -104,8 +105,8 @@ where
     }
 }
 
-/// Generates a [`TeeAttestation`] for this node, which can be used to send to the contract to prove that
-/// the node is running in a `TEE` context.
+/// Generates a [`TeeAttestation`] for this node, which can be used to send to the contract to prove
+/// that the node is running in a `TEE` context.
 ///
 /// Returns an [`anyhow::Error`] if a non-transient error occurs, that prevents the node
 /// from generating the attestation.

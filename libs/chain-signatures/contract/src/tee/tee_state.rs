@@ -45,32 +45,24 @@ impl TeeState {
         current_time_milliseconds / 1_000
     }
 
-    /// May return an error
     pub(crate) fn verify_proposed_participant_attestation(
         &mut self,
-        tee_participant_info: &Attestation,
+        attestation: &Attestation,
         tls_public_key: PublicKey,
-    ) -> Result<TeeQuoteStatus, Error> {
-        let allowed_mpc_docker_image_hashes = self.get_allowed_hashes();
-        let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
-        let time_stamp_seconds = Self::current_time_seconds();
-
+    ) -> TeeQuoteStatus {
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
-
-        let quote_result = tee_participant_info.verify(
+        let is_valid = attestation.verify(
             expected_report_data,
-            time_stamp_seconds,
-            &allowed_mpc_docker_image_hashes,
-            allowed_launcher_compose_hashes,
+            Self::current_time_seconds(),
+            &self.get_allowed_hashes(),
+            &self.allowed_launcher_compose_hashes,
         );
 
-        let quote_result = if quote_result {
+        if is_valid {
             TeeQuoteStatus::Valid
         } else {
             TeeQuoteStatus::Invalid
-        };
-
-        Ok(quote_result)
+        }
     }
 
     /// Verifies the TEE quote and Docker image
@@ -170,6 +162,7 @@ impl TeeState {
     ) -> u64 {
         self.votes.vote(code_hash.clone(), participant)
     }
+
     /// Retrieves the current allowed hashes, cleaning up any expired entries.
     pub fn get_allowed_hashes(&mut self) -> Vec<MpcDockerImageHash> {
         // Clean up expired entries and return the current allowed hashes. Don't remove the get
