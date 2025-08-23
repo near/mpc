@@ -630,23 +630,12 @@ impl MeshNetworkTransportReceiver for TlsMeshReceiver {
     }
 }
 
-pub mod keygen {
-    use ed25519_dalek::SigningKey;
-    use rand::rngs::OsRng;
-
-    /// Generates an ED25519 keypair, returning the pem-encoded private key and the
-    /// hex-encoded public key.
-    pub fn generate_keypair() -> SigningKey {
-        SigningKey::generate(&mut OsRng)
-    }
-}
-
 pub mod testing {
     use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
-    use crate::p2p::keygen::generate_keypair;
     use crate::primitives::ParticipantId;
     use ed25519_dalek::SigningKey;
     use near_sdk::AccountId;
+    use rand::rngs::OsRng;
 
     /// A unique seed for each integration test to avoid port conflicts during testing.
     #[derive(Copy, Clone)]
@@ -696,7 +685,7 @@ pub mod testing {
         } else {
             participant_accounts
                 .iter()
-                .map(|_account_id| generate_keypair())
+                .map(|_account_id| SigningKey::generate(&mut OsRng))
                 .collect::<Vec<_>>()
         };
         let mut participants = Vec::new();

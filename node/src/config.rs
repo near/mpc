@@ -1,4 +1,3 @@
-use crate::p2p;
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
@@ -243,11 +242,13 @@ impl PersistentSecrets {
         if !home_dir.exists() {
             std::fs::create_dir_all(home_dir)?;
         }
-        let p2p_secret = p2p::keygen::generate_keypair();
-        let near_signer_key = p2p::keygen::generate_keypair();
+
+        let mut os_rng = rand::rngs::OsRng;
+        let p2p_secret = SigningKey::generate(&mut os_rng);
+        let near_signer_key = SigningKey::generate(&mut os_rng);
 
         let near_responder_keys = (0..number_of_responder_keys)
-            .map(|_| p2p::keygen::generate_keypair())
+            .map(|_| SigningKey::generate(&mut os_rng))
             .collect::<Vec<_>>();
 
         let secrets = PersistentSecrets {
