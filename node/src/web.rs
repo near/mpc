@@ -6,14 +6,12 @@ use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
-use ed25519_dalek::{pkcs8::EncodePublicKey, VerifyingKey};
+use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
-use k256::pkcs8::LineEnding;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
-use serde::Serializer;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -119,39 +117,10 @@ async fn third_party_licenses() -> Html<&'static str> {
 
 #[derive(Clone, Serialize)]
 pub struct StaticWebData {
-    #[serde(serialize_with = "serialize_verifying_key_as_pem")]
     pub near_signer_public_key: VerifyingKey,
-    #[serde(serialize_with = "serialize_verifying_key_as_pem")]
     pub near_p2p_public_key: VerifyingKey,
-    #[serde(serialize_with = "serialize_verifying_key_vec_as_pem")]
     pub near_responder_public_keys: Vec<VerifyingKey>,
     pub tee_participant_info: Option<Attestation>,
-}
-
-fn serialize_verifying_key_as_pem<S>(key: &VerifyingKey, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let pem = key
-        .to_public_key_pem(LineEnding::default())
-        .map_err(serde::ser::Error::custom)?;
-    serializer.serialize_str(&pem)
-}
-
-fn serialize_verifying_key_vec_as_pem<S>(
-    keys: &[VerifyingKey],
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let pem_keys: Result<Vec<String>, _> = keys
-        .iter()
-        .map(|key| key.to_public_key_pem(LineEnding::default()))
-        .collect();
-
-    let pem_keys = pem_keys.map_err(serde::ser::Error::custom)?;
-    pem_keys.serialize(serializer)
 }
 
 struct PublicKeys {
