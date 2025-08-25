@@ -212,7 +212,6 @@ impl MpcContract {
             // Spawn cleanup promise only if this completed a resharing
             if should_cleanup {
                 // Spawn a promise to clean up TEE information for non-participants
-                // This ensures the resharing concludes even if cleanup fails
                 let promise = Promise::new(env::current_account_id()).function_call(
                     "clean_tee_status".to_string(),
                     vec![],
