@@ -16,7 +16,8 @@ It:
 ### 📦 Requirements
 
 - A working Dstack setup and Dstack VMM service (`vmm-server`) accessible at `$VMM_RPC`
-- Python installed
+- Python 3.6 or higher installed
+- Required Python packages (cryptography, eth_keys, eth_utils)
 - `vmm-cli.py` should be located under meta-dstack/dstack/vmm/src/vmm-cli.py
 - Docker Compose template (`$DOCKER_COMPOSE_FILE_PATH`)
 - Deployment configuration in `*.env` file
