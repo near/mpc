@@ -3,8 +3,10 @@ use crate::ckd::metrics;
 use crate::ckd_request::{CKDId, CKDRequest};
 use crate::indexer::types::ChainCKDRespondArgs;
 use crate::primitives::ParticipantId;
-use crate::queue::NetworkAPIForRequests;
-use crate::recent_blocks_tracker::{BlockViewLite, CheckBlockResult, RecentBlocksTracker};
+use crate::requests::queue::NetworkAPIForRequests;
+use crate::requests::recent_blocks_tracker::{
+    BlockViewLite, CheckBlockResult, RecentBlocksTracker,
+};
 use k256::sha2::Sha256;
 use near_indexer_primitives::types::NumBlocks;
 use near_indexer_primitives::CryptoHash;
@@ -453,7 +455,7 @@ mod tests {
     use crate::ckd_request::CKDRequest;
     use crate::cli::LogFormat;
     use crate::primitives::ParticipantId;
-    use crate::recent_blocks_tracker::tests::TestBlockMaker;
+    use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
     use crate::tests::TestGenerators;
     use crate::tracing::init_logging;
     use mpc_contract::primitives::domain::DomainId;

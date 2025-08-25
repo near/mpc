@@ -1,8 +1,10 @@
 use super::debug::{CompletedSignatureRequest, CompletedSignatureRequests};
 use crate::indexer::types::ChainSignatureRespondArgs;
 use crate::primitives::ParticipantId;
-use crate::queue::NetworkAPIForRequests;
-use crate::recent_blocks_tracker::{BlockViewLite, CheckBlockResult, RecentBlocksTracker};
+use crate::requests::queue::NetworkAPIForRequests;
+use crate::requests::recent_blocks_tracker::{
+    BlockViewLite, CheckBlockResult, RecentBlocksTracker,
+};
 use crate::sign_request::{SignatureId, SignatureRequest};
 use crate::signing::metrics;
 use k256::sha2::Sha256;
@@ -452,7 +454,7 @@ mod tests {
     use super::{NetworkAPIForRequests, PendingSignatureRequests, QueuedSignatureRequest};
     use crate::cli::LogFormat;
     use crate::primitives::ParticipantId;
-    use crate::recent_blocks_tracker::tests::TestBlockMaker;
+    use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
     use crate::sign_request::SignatureRequest;
     use crate::signing::queue::{
         CHECK_EACH_SIGNATURE_REQUEST_INTERVAL, MAX_ATTEMPTS_PER_SIGNATURE_AS_LEADER,

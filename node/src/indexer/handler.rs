@@ -1,7 +1,7 @@
 use crate::ckd_request::CKDId;
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
-use crate::recent_blocks_tracker::BlockViewLite;
+use crate::requests::recent_blocks_tracker::BlockViewLite;
 use crate::sign_request::SignatureId;
 use anyhow::Context;
 use futures::StreamExt;
