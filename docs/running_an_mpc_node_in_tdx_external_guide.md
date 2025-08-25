@@ -83,6 +83,15 @@ Or we can choose a specific dstack image like 0.52
 3. Setup local gramine-sealing-key-provider (see details [below](#setting-up-local-gramine-sealing-key-provider:)).  
    
 
+### Dstack Configuration
+In this section we describe specific Dstack configuration changes needed for deploying the MPC node in Dstack.
+
+In vmm.toml: 
+
+- Update `cvm.port_mapping.range` to include port number **24567**  
+- In the `[cvm]` section add: `max_disk_size = 1000`
+
+
 ### Setting up local gramine-sealing-key-provider: {#setting-up-local-gramine-sealing-key-provider:}
 
 In our solution we are using the gramine-sealing-key-provider that is running in an SGX enclave in order to generate a key (based on the TDX measurements and SGX enclaves hardware sealing key) that is used to encrypt the CVM’s file system.  
