@@ -3,9 +3,8 @@ use attestation::{
     attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
     measurements::ExpectedMeasurements,
-    quote::Quote,
+    quote::QuoteBytes,
     report_data::ReportData,
-    tcbinfo::TcbInfo,
 };
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
@@ -20,7 +19,8 @@ use tracing::error;
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
 /// Default URL for submission of TDX quote. Returns collateral to be used for verification.
-const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str = "https://proof.t16z.com/api/upload";
+const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str =
+    "https://cloud-api.phala.network/api/v1/attestations/verify";
 
 /// Default path for dstack Unix socket endpoint.
 const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
@@ -80,7 +80,7 @@ impl TeeAuthority {
 
         let client_info_response =
             get_with_backoff(|| client.info(), "dstack client info", None).await?;
-        let tcb_info = TcbInfo::from(client_info_response.tcb_info);
+        let tcb_info = client_info_response.tcb_info;
 
         let quote = get_with_backoff(
             || client.get_quote(report_data.to_bytes().into()),
@@ -93,7 +93,8 @@ impl TeeAuthority {
         let collateral = self
             .upload_quote_for_collateral(&config.quote_upload_url, &quote)
             .await?;
-        let quote: Quote = quote.parse()?;
+
+        let quote: QuoteBytes = hex::decode(quote)?.into();
 
         Ok(Attestation::Dstack(DstackAttestation::new(
             quote,
@@ -206,6 +207,9 @@ mod tests {
     #[cfg(feature = "external-services-tests")]
     use hex::ToHex;
 
+    #[cfg(feature = "external-services-tests")]
+    use test_utils::attestation::quote;
+
     extern crate std;
 
     #[test]
@@ -264,10 +268,7 @@ mod tests {
         let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
             .parse()
             .unwrap();
-        let account_key = "ed25519:H9k5eiU4xXyb8F7cUDjZYNuH1zGAx5BBNrYwLPNhq6Zx"
-            .parse()
-            .unwrap();
-        let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+        let report_data = ReportData::V1(ReportDataV1::new(tls_key));
 
         let authority =
             TeeAuthority::Local(LocalTeeAuthorityConfig::new(quote_verification_result));
@@ -285,10 +286,12 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "external-services-tests")]
     async fn test_upload_quote_for_collateral_with_phala_endpoint() {
-        let quote_json = include_str!("../../attestation/tests/assets/quote.json");
-        let quote_hex: String = serde_json::from_str::<Vec<u8>>(quote_json)
-            .expect("Is valid json")
-            .encode_hex();
+        let quote_data = quote();
+        let quote_hex: String = serde_json::from_str::<Vec<u8>>(
+            &serde_json::to_string(&quote_data).expect("Valid quote data"),
+        )
+        .expect("Is valid json")
+        .encode_hex();
 
         let tee_authority = TeeAuthority::Dstack(DstackTeeAuthorityConfig::default());
         let config = DstackTeeAuthorityConfig::default();

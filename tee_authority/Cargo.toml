@@ -14,6 +14,7 @@ backon = { workspace = true }
 derive_more = { workspace = true }
 dstack-sdk = { workspace = true }
 dstack-sdk-types = { workspace = true }
+hex = { workspace = true }
 http = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
@@ -24,3 +25,4 @@ hex = { workspace = true }
 tokio = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
+test_utils = { workspace = true }

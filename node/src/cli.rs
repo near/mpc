@@ -19,10 +19,10 @@ use crate::{
     web::start_web_server,
 };
 use anyhow::{anyhow, Context};
+use attestation::attestation::Attestation;
 use clap::{Parser, ValueEnum};
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
-use mpc_contract::tee::tee_participant::TeeParticipantInfo;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
@@ -115,7 +115,7 @@ pub struct InitConfigArgs {
     #[arg(long)]
     pub download_genesis_url: Option<String>,
     #[arg(long)]
-    pub donwload_genesis_records_url: Option<String>,
+    pub download_genesis_records_url: Option<String>,
     #[arg(long)]
     pub boot_nodes: Option<String>,
 }
@@ -296,13 +296,11 @@ impl StartCmd {
         let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
 
         #[allow(unused_mut, unused_assignments)]
-        let mut report_data_contract: Option<TeeParticipantInfo> = None;
+        let mut report_data_contract: Option<Attestation> = None;
         #[cfg(feature = "tee")]
         {
             let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();
-            let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
-            let report_data =
-                create_remote_attestation_info(&tls_public_key, &account_public_key).await;
+            let report_data = create_remote_attestation_info(&tls_public_key).await;
             report_data_contract = Some(report_data.try_into()?);
         }
         let web_server = start_web_server(
@@ -366,25 +364,35 @@ impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
             CliCommand::Start(start) => start.run().await,
-            CliCommand::Init(config) => near_indexer::init_configs(
-                &config.dir,
-                config.chain_id,
-                None,
-                None,
-                1,
-                false,
-                config.genesis.as_ref().map(AsRef::as_ref),
-                config.download_genesis,
-                config.download_genesis_url.as_ref().map(AsRef::as_ref),
-                config
-                    .donwload_genesis_records_url
-                    .as_ref()
-                    .map(AsRef::as_ref),
-                Some(near_config_utils::DownloadConfigType::RPC),
-                config.download_config_url.as_ref().map(AsRef::as_ref),
-                config.boot_nodes.as_ref().map(AsRef::as_ref),
-                None,
-            ),
+            CliCommand::Init(config) => {
+                let (download_config_type, download_config_url) = if config.download_config {
+                    (
+                        Some(near_config_utils::DownloadConfigType::RPC),
+                        config.download_config_url.as_ref().map(AsRef::as_ref),
+                    )
+                } else {
+                    (None, None)
+                };
+                near_indexer::init_configs(
+                    &config.dir,
+                    config.chain_id,
+                    None,
+                    None,
+                    1,
+                    false,
+                    config.genesis.as_ref().map(AsRef::as_ref),
+                    config.download_genesis,
+                    config.download_genesis_url.as_ref().map(AsRef::as_ref),
+                    config
+                        .download_genesis_records_url
+                        .as_ref()
+                        .map(AsRef::as_ref),
+                    download_config_type,
+                    download_config_url,
+                    config.boot_nodes.as_ref().map(AsRef::as_ref),
+                    None,
+                )
+            }
             CliCommand::ImportKeyshare(cmd) => cmd.run().await,
             CliCommand::ExportKeyshare(cmd) => cmd.run().await,
             CliCommand::GenerateTestConfigs {

@@ -1,18 +1,22 @@
 use std::borrow::Cow;
 
-use crate::primitives::key_state::EpochId;
+use crate::primitives::{domain::DomainId, key_state::EpochId};
 mod impls;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TeeError {
-    #[error("Due to previously failed TEE validation, the network is not accepting new signature requests at this point in time. Try again later.")]
+    #[error("Due to previously failed TEE validation, the network is not accepting new requests at this point in time. Try again later.")]
     TeeValidationFailed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum SignError {
-    #[error("Signature request has timed out.")]
+pub enum RequestError {
+    #[error("Request has timed out.")]
     Timeout,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SignError {
     #[error("Signature request has already been submitted. Please try again later.")]
     PayloadCollision,
     #[error(
@@ -91,8 +95,8 @@ pub enum InvalidParameters {
     ParticipantAlreadyInSet,
     #[error("Participant id already used.")]
     ParticipantAlreadyUsed,
-    #[error("The provided domain was not found.")]
-    DomainNotFound,
+    #[error("The provided domain ID, {provided}, was not found.")]
+    DomainNotFound { provided: DomainId },
     #[error("Provided Epoch Id, {provided}, does not match expected, {expected}.")]
     EpochMismatch {
         provided: EpochId,
@@ -104,6 +108,8 @@ pub enum InvalidParameters {
     InvalidDomainId,
     #[error("Invalid TEE Remote Attestation.")]
     InvalidTeeRemoteAttestation,
+    #[error("Invalid app public key.")]
+    InvalidAppPublicKey,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

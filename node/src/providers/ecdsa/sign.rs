@@ -10,12 +10,12 @@ use crate::providers::ecdsa::{
 use crate::sign_request::SignatureId;
 use anyhow::Context;
 use k256::elliptic_curve::PrimeField;
-use k256::{Scalar, Secp256k1};
+use k256::Scalar;
 use mpc_contract::primitives::signature::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::ecdsa::presign::PresignOutput;
-use threshold_signatures::ecdsa::sign::FullSignature;
+use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
+use threshold_signatures::ecdsa::FullSignature;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::protocol::Participant;
 use tokio::time::timeout;
@@ -24,7 +24,7 @@ impl EcdsaSignatureProvider {
     pub(super) async fn make_signature_leader(
         self: Arc<Self>,
         id: SignatureId,
-    ) -> anyhow::Result<(FullSignature<Secp256k1>, VerifyingKey)> {
+    ) -> anyhow::Result<(FullSignature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
         let domain_data = self.domain_data(sign_request.domain)?;
         let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
@@ -98,18 +98,18 @@ impl EcdsaSignatureProvider {
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_out: KeygenOutput,
-    pub presign_out: PresignOutput<Secp256k1>,
+    pub presign_out: PresignOutput,
     pub msg_hash: [u8; 32],
     pub tweak: Tweak,
     pub entropy: [u8; 32],
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, VerifyingKey)> for SignComputation {
+impl MpcLeaderCentricComputation<(FullSignature, VerifyingKey)> for SignComputation {
     async fn compute(
         self,
         channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<(FullSignature<Secp256k1>, VerifyingKey)> {
+    ) -> anyhow::Result<(FullSignature, VerifyingKey)> {
         let cs_participants = channel
             .participants()
             .iter()
@@ -149,7 +149,7 @@ impl MpcLeaderCentricComputation<(FullSignature<Secp256k1>, VerifyingKey)> for S
             sigma: (sigma + tweak * k) * inverted_delta,
         };
 
-        let protocol = threshold_signatures::ecdsa::sign::sign(
+        let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
             &cs_participants,
             me.into(),
             public_key,

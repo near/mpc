@@ -1,0 +1,15 @@
+{
+    "manifest_version": 2,
+    "name": "launcher_test_app",
+    "runner": "docker-compose",
+    "docker_compose_file": "version: '3.8'\n\nservices:\n  launcher:\n    image: barakeinavnear/launcher@sha256:1ea7571baf18bd052359abd2a1f269e7836f9bad2270eb55fc9475aa327f8d96\n\n # isuse #531: TODO (security): Replace with a specific image digest\n    container_name: launcher\n\n    environment:\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:c22901e52cfa91b2e71eb8694ac9558065c6e3b13783d9e3d36b792d93ce153b\n\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\n\n    security_opt:\n      - no-new-privileges:true\n\n    read_only: true\n\n    tmpfs:\n      - /tmp\n\nvolumes:\n  shared-volume:\n    name: shared-volume",
+    "kms_enabled": false,
+    "gateway_enabled": false,
+    "local_key_provider_enabled": true,
+    "key_provider_id": "",
+    "public_logs": true,
+    "public_sysinfo": true,
+    "allowed_envs": [],
+    "no_instance_id": true,
+    "secure_time": true
+}

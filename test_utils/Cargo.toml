@@ -1,0 +1,10 @@
+[package]
+name = "test_utils"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+attestation = { workspace = true }
+dstack-sdk-types = { workspace = true }
+near-sdk = { workspace = true }
+serde_json = { workspace = true }

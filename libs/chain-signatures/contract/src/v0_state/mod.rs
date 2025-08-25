@@ -98,9 +98,9 @@ impl From<TeeState> for crate::TeeState {
     fn from(value: TeeState) -> Self {
         Self {
             allowed_docker_image_hashes: value.allowed_tee_proposals,
-            historical_docker_image_hashes: value.historical_tee_proposals,
+            allowed_launcher_compose_hashes: value.historical_tee_proposals,
             votes: value.votes,
-            tee_participant_info: IterableMap::new(StorageKey::TeeParticipantInfo),
+            participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestation),
         }
     }
 }
@@ -143,11 +143,12 @@ impl From<MpcContractV1> for MpcContract {
     fn from(value: MpcContractV1) -> Self {
         Self {
             protocol_state: value.protocol_state.into(),
-            pending_requests: value.pending_requests,
+            pending_signature_requests: value.pending_requests,
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: value.proposed_updates,
             config: value.config,
             tee_state: crate::TeeState::default(),
-            accept_signature_requests: true,
+            accept_requests: true,
         }
     }
 }

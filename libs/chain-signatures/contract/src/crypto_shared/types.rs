@@ -1,14 +1,15 @@
+pub mod serializable;
+
 use std::fmt::Display;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use curve25519_dalek::EdwardsPoint;
 use k256::{
     elliptic_curve::{group::GroupEncoding, CurveArithmetic, PrimeField},
     AffinePoint, Secp256k1,
 };
-use near_sdk::near;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use serializable::SerializableEdwardsPoint;
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -23,10 +24,21 @@ pub enum SignatureResponse {
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::near_sdk::schemars::JsonSchema)
+)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "scheme")]
+pub struct CKDResponse {
+    pub big_y: k256_types::SerializableAffinePoint,
+    pub big_c: k256_types::SerializableAffinePoint,
+}
+
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
     derive(::near_sdk::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum PublicKeyExtended {
     Secp256k1 {
         near_public_key: near_sdk::PublicKey,
@@ -36,15 +48,7 @@ pub enum PublicKeyExtended {
         /// Serialized compressed Edwards-y point.
         near_public_key_compressed: near_sdk::PublicKey,
         /// Decompressed Edwards point used for curve arithmetic operations.
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "[u8; 32]"),
-            borsh(schema(with_funcs(
-                declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
-                definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
-            ),))
-        )]
-        edwards_point: EdwardsPoint,
+        edwards_point: SerializableEdwardsPoint,
     },
 }
 
@@ -91,7 +95,7 @@ impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
                     .ok_or(PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?
                     .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
 
-                let edwards_point = curve25519_dalek::EdwardsPoint::from_bytes(public_key_bytes)
+                let edwards_point = SerializableEdwardsPoint::from_bytes(public_key_bytes)
                     .into_option()
                     .ok_or(PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint)?;
 
@@ -115,103 +119,6 @@ impl AsRef<near_sdk::PublicKey> for PublicKeyExtended {
                 near_public_key_compressed,
                 ..
             } => near_public_key_compressed,
-        }
-    }
-}
-
-/// Module that adds implementation of [`BorshSerialize`] and [`BorshDeserialize`] for
-/// [`PublicKeyExtended`].
-mod serialize {
-    use super::*;
-
-    #[near(serializers=[borsh, json])]
-    #[derive(Debug, PartialEq, Eq, Clone)]
-    enum PublicKeyExtendedHelper {
-        Secp256k1 {
-            near_public_key: near_sdk::PublicKey,
-        },
-        Ed25519 {
-            near_public_key_compressed: near_sdk::PublicKey,
-            edwards_point: SerializableEdwardsPoint,
-        },
-    }
-
-    impl BorshSerialize for PublicKeyExtended {
-        fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-            let serializable_helper_representation = match self.clone() {
-                PublicKeyExtended::Secp256k1 { near_public_key } => {
-                    PublicKeyExtendedHelper::Secp256k1 { near_public_key }
-                }
-                PublicKeyExtended::Ed25519 {
-                    near_public_key_compressed,
-                    edwards_point,
-                } => PublicKeyExtendedHelper::Ed25519 {
-                    near_public_key_compressed,
-                    edwards_point: SerializableEdwardsPoint(edwards_point),
-                },
-            };
-            BorshSerialize::serialize(&serializable_helper_representation, writer)
-        }
-    }
-
-    impl BorshDeserialize for PublicKeyExtended {
-        fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
-            let deserializable_helper_representation: PublicKeyExtendedHelper =
-                BorshDeserialize::deserialize_reader(reader)?;
-
-            let public_key_extended = match deserializable_helper_representation {
-                PublicKeyExtendedHelper::Secp256k1 { near_public_key } => {
-                    PublicKeyExtended::Secp256k1 { near_public_key }
-                }
-                PublicKeyExtendedHelper::Ed25519 {
-                    near_public_key_compressed,
-                    edwards_point,
-                } => PublicKeyExtended::Ed25519 {
-                    near_public_key_compressed,
-                    edwards_point: edwards_point.0,
-                },
-            };
-
-            Ok(public_key_extended)
-        }
-    }
-
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema),
-        derive(::borsh::BorshSchema)
-    )]
-    #[derive(Debug, PartialEq, Serialize, Deserialize, Eq, Clone, Copy)]
-    pub struct SerializableEdwardsPoint(
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "[u8; 32]"),
-            borsh(schema(with_funcs(
-                declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
-                definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
-            ),))
-        )]
-        EdwardsPoint,
-    );
-
-    impl BorshSerialize for SerializableEdwardsPoint {
-        fn serialize<W: std::io::prelude::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-            let bytes = self.0.to_bytes();
-            BorshSerialize::serialize(&bytes, writer)
-        }
-    }
-
-    impl BorshDeserialize for SerializableEdwardsPoint {
-        fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
-            let bytes: [u8; 32] = BorshDeserialize::deserialize_reader(reader)?;
-
-            EdwardsPoint::from_bytes(&bytes)
-                .into_option()
-                .ok_or(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "The provided bytes is not a valid edwards point.",
-                ))
-                .map(SerializableEdwardsPoint)
         }
     }
 }
@@ -418,7 +325,7 @@ mod test {
 
     /// Tests the serialization and deserialization of [`PublicKeyExtended`] works.
     #[rstest]
-    #[case("secp256k1:qMoRgcoXai4mBPsdbHi1wfyxF9TdbPCF4qSDQTRP3TfescSRoUdSx6nmeQoN3aiwGzwMyGXAb1gUjBTv5AY8DXj")]
+    #[case("secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd")]
     #[case("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")]
     fn test_serialization_of_public_key_extended(#[case] near_public_key: near_sdk::PublicKey) {
         let public_key_extended = PublicKeyExtended::try_from(near_public_key).unwrap();

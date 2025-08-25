@@ -1,11 +1,13 @@
 use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
-    quote::Quote, report_data::ReportData, tcbinfo::TcbInfo,
+    quote::QuoteBytes, report_data::ReportData,
 };
+use alloc::{format, string::String};
 use borsh::{BorshDeserialize, BorshSerialize};
+use core::fmt;
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
-use dstack_sdk_types::dstack::EventLog;
+use dstack_sdk_types::dstack::{EventLog, TcbInfo};
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::env::sha256;
@@ -28,7 +30,7 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -38,19 +40,48 @@ pub enum Attestation {
     Local(LocalAttestation),
 }
 
-#[derive(Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
 pub struct DstackAttestation {
-    pub quote: Quote,
+    pub quote: QuoteBytes,
     pub collateral: Collateral,
     pub tcb_info: TcbInfo,
     pub expected_measurements: ExpectedMeasurements,
 }
 
-#[derive(Debug, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+impl fmt::Debug for DstackAttestation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const MAX_BYTES: usize = 2048;
+
+        fn truncate_debug<T: fmt::Debug>(value: &T, max_bytes: usize) -> String {
+            let debug_str = format!("{:?}", value);
+            if debug_str.len() <= max_bytes {
+                debug_str
+            } else {
+                format!(
+                    "{}... (truncated {} bytes)",
+                    &debug_str[..max_bytes],
+                    debug_str.len() - max_bytes
+                )
+            }
+        }
+
+        f.debug_struct("DstackAttestation")
+            .field("quote", &truncate_debug(&self.quote, MAX_BYTES))
+            .field("collateral", &truncate_debug(&self.collateral, MAX_BYTES))
+            .field("tcb_info", &truncate_debug(&self.tcb_info, MAX_BYTES))
+            .field(
+                "expected_measurements",
+                &truncate_debug(&self.expected_measurements, MAX_BYTES),
+            )
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -90,19 +121,17 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
-        let quote_bytes = attestation.quote.raw_bytes();
-
-        // TODO(#451): We rely on a forked dcap_qvl crate that has some questionable code changes
-        // that could be critical from a security perspective (commented out code section that
-        // checks TCB validity time)
-        let verification_result =
-            match dcap_qvl::verify::verify(quote_bytes, &attestation.collateral, timestamp_s) {
-                Ok(result) => result,
-                Err(err) => {
-                    tracing::error!("TEE quote verification failed: {:?}", err);
-                    return false;
-                }
-            };
+        let verification_result = match dcap_qvl::verify::verify(
+            &attestation.quote,
+            &attestation.collateral,
+            timestamp_s,
+        ) {
+            Ok(result) => result,
+            Err(err) => {
+                tracing::error!("TEE quote verification failed: {:?}", err);
+                return false;
+            }
+        };
 
         let Some(report_data) = verification_result.report.as_td10() else {
             tracing::error!(
@@ -131,8 +160,8 @@ impl Attestation {
             )
     }
 
-    /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all digests
-    /// are correct
+    /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
+    /// digests are correct
     fn verify_event_log_rtmr3(event_log: &[EventLog], expected_digest: [u8; 48]) -> bool {
         let mut digest = [0u8; 48];
 
@@ -219,9 +248,8 @@ impl Attestation {
         expected: &ReportData,
         actual: &dcap_qvl::quote::TDReport10,
     ) -> bool {
-        // Check if sha384(tls_public_key || account_public_key) matches the hash in
-        // report_data. This check effectively proves that both tls_public_key and
-        // account_public_key were included in the quote's report_data by an app running
+        // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
+        // proves that tls_public_key was included in the quote's report_data by an app running
         // inside a TDX enclave.
         expected.to_bytes() == actual.report_data
     }
@@ -340,8 +368,7 @@ impl Attestation {
                 return false;
             }
         };
-        let launcher_compose_str = &app_compose.docker_compose_file;
-        let launcher_bytes = sha256(launcher_compose_str.as_bytes());
+        let launcher_bytes = sha256(app_compose.docker_compose_file.as_bytes());
         allowed_hashes
             .iter()
             .any(|hash| hash.as_hex() == hex::encode(&launcher_bytes))
