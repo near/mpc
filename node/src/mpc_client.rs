@@ -1,5 +1,3 @@
-use crate::ckd::queue::PendingCKDRequests;
-use crate::storage::CKDRequestStorage;
 use crate::config::ConfigFile;
 use crate::indexer::handler::{CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain};
 use crate::indexer::types::{
@@ -11,11 +9,12 @@ use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
+use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
+use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
-use crate::types::SignatureRequest;
-use crate::signing::queue::{PendingSignatureRequests, CHECK_EACH_SIGNATURE_REQUEST_INTERVAL};
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::CKDRequest;
+use crate::types::SignatureRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_contract::crypto_shared::derive_tweak;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -164,13 +163,14 @@ impl MpcClient {
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
-        let mut pending_signatures = PendingSignatureRequests::new(
-            Clock::real(),
-            self.client.all_participant_ids(),
-            self.client.my_participant_id(),
-            self.client.clone(),
-        );
-        let mut pending_ckds = PendingCKDRequests::new(
+        let mut pending_signatures =
+            PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
+                Clock::real(),
+                self.client.all_participant_ids(),
+                self.client.my_participant_id(),
+                self.client.clone(),
+            );
+        let mut pending_ckds = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
             Clock::real(),
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
@@ -180,7 +180,7 @@ impl MpcClient {
         let start_time = Clock::real().now();
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(CHECK_EACH_SIGNATURE_REQUEST_INTERVAL.unsigned_abs()) => {
+                _ = tokio::time::sleep(CHECK_EACH_REQUEST_INTERVAL.unsigned_abs()) => {
                 }
                 block_update = block_update_receiver.recv() => {
                     let Some(block_update) = block_update else {
@@ -284,7 +284,7 @@ impl MpcClient {
             if start_time.elapsed() < INITIAL_STARTUP_SIGNATURE_PROCESSING_DELAY {
                 continue;
             }
-            let signature_attempts = pending_signatures.get_signatures_to_attempt();
+            let signature_attempts = pending_signatures.get_requests_to_attempt();
 
             for signature_attempt in signature_attempts {
                 let this = self.clone();
@@ -379,7 +379,7 @@ impl MpcClient {
                 );
             }
 
-            let ckd_attempts = pending_ckds.get_ckds_to_attempt();
+            let ckd_attempts = pending_ckds.get_requests_to_attempt();
 
             for ckd_attempt in ckd_attempts {
                 let this = self.clone();

@@ -1,10 +1,9 @@
 use crate::db::{DBCol, SecretDB};
 use crate::metrics;
+use crate::types::{CKDId, CKDRequest};
 use crate::types::{SignatureId, SignatureRequest};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use crate::types::{CKDId, CKDRequest};
-
 
 pub struct SignRequestStorage {
     db: Arc<SecretDB>,
@@ -65,8 +64,6 @@ impl SignRequestStorage {
         Ok(serde_json::from_slice(&request_ser)?)
     }
 }
-
-
 
 pub struct CKDRequestStorage {
     db: Arc<SecretDB>,

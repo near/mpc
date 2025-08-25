@@ -1,4 +1,4 @@
-use crate::{types::SignatureRequest, types::CKDRequest};
+use crate::{types::CKDRequest, types::SignatureRequest};
 use anyhow::Context;
 use attestation::attestation::Attestation;
 use k256::{
@@ -99,6 +99,8 @@ fn k256_signature_response(
     Ok(ChainSignatureResponse::Secp256k1(k256_signature))
 }
 
+pub trait ChainRespondArgs {}
+
 /* These arguments are passed to the `respond` function of the
  * chain signatures contract. It takes both the details of the
  * original request and the completed signature, then verifies
@@ -110,6 +112,8 @@ pub struct ChainSignatureRespondArgs {
     response: ChainSignatureResponse,
 }
 
+impl ChainRespondArgs for ChainSignatureRespondArgs {}
+
 /* These arguments are passed to the `respond_ckd` function of the
  * chain contract. It takes both the details of the
  * original request and the completed ckd.
@@ -119,6 +123,8 @@ pub struct ChainCKDRespondArgs {
     pub request: ChainCKDRequest,
     response: ChainCKDResponse,
 }
+
+impl ChainRespondArgs for ChainCKDRespondArgs {}
 
 #[derive(Serialize, Debug)]
 pub struct ChainGetPendingSignatureRequestArgs {
