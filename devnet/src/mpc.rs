@@ -39,7 +39,6 @@ use near_primitives::views::QueryRequest;
 use near_sdk::{borsh, AccountId, CurveType};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 use std::sync::Arc;
 
 impl ListMpcCmd {
@@ -106,7 +105,7 @@ async fn update_mpc_network(
         accounts
             .account_mut(&account_id)
             .set_mpc_participant(MpcParticipantSetup {
-                p2p_private_key: p2p_private_key,
+                p2p_private_key,
                 responding_account_id: funded_accounts[i * 2 + 1].clone(),
                 p2p_public_key: Some(p2p_public_key),
             });
@@ -407,11 +406,10 @@ struct InitV2Args {
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
     let mpc_setup = account.get_mpc_participant().unwrap();
-    let p2p_public_key_bytes: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH] = mpc_setup
+    let p2p_public_key_bytes: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH] = *mpc_setup
         .p2p_public_key
         .expect("P2P key is required for all nodes")
-        .as_bytes()
-        .clone();
+        .as_bytes();
 
     let near_sdk_public_key =
         near_sdk::PublicKey::from_parts(CurveType::ED25519, p2p_public_key_bytes.to_vec())

@@ -16,6 +16,7 @@ pub struct NearAccount {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum NearAccountKind {
     /// Account that is only used for funding other accounts.
     FundingAccount,
