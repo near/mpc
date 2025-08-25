@@ -48,14 +48,6 @@ pub enum PublicKeyExtended {
         /// Serialized compressed Edwards-y point.
         near_public_key_compressed: near_sdk::PublicKey,
         /// Decompressed Edwards point used for curve arithmetic operations.
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "[u8; 32]"),
-            borsh(schema(with_funcs(
-                declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
-                definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
-            ),))
-        )]
         edwards_point: SerializableEdwardsPoint,
     },
 }
