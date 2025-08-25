@@ -30,6 +30,37 @@ For the hard-launch, the backup service must run inside a TEE.
 
 The backup service needs a current view of the MPC smart contract on the NEAR blockchin. For that reason, it will be operating a NEAR node.
 
+```mermaid
+---
+title: Backup system
+---
+flowchart TD
+
+    SC("
+      **Smart contract**
+      _Source of truth for
+      protocol state and
+      node information._
+    ");
+
+    MPC("
+      **MPC node**
+      _Contains sensitive
+      key shares_.
+    ");
+
+    BS("
+      **Backup service**
+      _Contains backups
+     of sensitive key shares_.
+    ");
+
+    BS -->| 1\. read MPC node Public Key and address| SC;
+    BS --> |2\. request encrypted key share| MPC;
+    MPC -->|3\. read backup service Public Key | SC;
+    MPC -->|4\. send encrypted key shares | BS;
+```
+
 ### Contract
 The MPC contract is used for authenticating the backup service and the MPC node.
 The node and service will each submit a public key to the contract that is then used for mutual authentication during backup generation and recovery processes.
