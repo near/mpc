@@ -240,8 +240,8 @@ fn maybe_get_request_args_premise<'a>(
     };
 
     let expected_method_name = match request_type {
-        RequestType::CKD => "sign",
-        RequestType::Signature => "request_app_private_key",
+        RequestType::CKD => "request_app_private_key",
+        RequestType::Signature => "sign",
     };
 
     if method_name != expected_method_name {
@@ -362,7 +362,7 @@ fn maybe_get_request_completion(
         return None;
     };
     let expected_method_name = match request_type {
-        RequestType::CKD => "return_ckd_and_clean_state_on_success",
+        RequestType::CKD => "return_ck_and_clean_state_on_success",
         RequestType::Signature => "return_signature_and_clean_state_on_success",
     };
 
