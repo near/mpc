@@ -70,6 +70,9 @@ const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 // Prepaid gas for a `fail_on_timeout` call
 const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
 
+// Prepaid gas for a `clean_tee_status` call
+const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(5);
+
 // Confidential Key Derivation only supports secp256k1
 const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
 
@@ -199,7 +202,26 @@ impl MpcContract {
                 })?;
 
         if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
+            // Check if this is completing a resharing (not initial keygen)
+            // We can tell because resharing happens when there are existing participants with TEE data
+            let should_cleanup = !self.tee_state.participants_attestations.is_empty();
+
+            // Key generation/resharing has concluded, transition to new state
             self.protocol_state = new_state;
+
+            // Spawn cleanup promise only if this completed a resharing
+            if should_cleanup {
+                // Spawn a promise to clean up TEE information for non-participants
+                // This ensures the resharing concludes even if cleanup fails
+                let promise = Promise::new(env::current_account_id()).function_call(
+                    "clean_tee_status".to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    CLEAN_TEE_STATUS_GAS,
+                );
+
+                promise.as_return();
+            }
         }
 
         Ok(())
@@ -261,6 +283,20 @@ impl MpcContract {
             .last()
             .expect("there must be at least one allowed code hash")
             .clone()
+    }
+
+    /// Private endpoint to clean up TEE information for non-participants after resharing.
+    /// This can only be called by the contract itself via a promise.
+    pub fn clean_tee_status(&mut self) {
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                // If not in running state, don't clean up
+                return;
+            }
+        };
+
+        self.tee_state.clean_non_participants(participants);
     }
 }
 
@@ -1103,6 +1139,16 @@ impl VersionedMpcContract {
 
                 Ok(false)
             }
+        }
+    }
+
+    /// Private endpoint to clean up TEE information for non-participants after resharing.
+    /// This can only be called by the contract itself via a promise.
+    #[private]
+    pub fn clean_tee_status(&mut self) {
+        match self {
+            Self::V2(contract) => contract.clean_tee_status(),
+            _ => env::panic_str("expected V2"),
         }
     }
 }

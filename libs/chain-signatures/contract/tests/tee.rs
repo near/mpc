@@ -313,3 +313,42 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
 
     Ok(())
 }
+
+/// Tests the TEE cleanup endpoint directly to ensure access control
+#[tokio::test]
+async fn test_tee_cleanup_endpoint_access_control() -> Result<()> {
+    use serde_json::json;
+
+    let (worker, contract, _accounts, _) = init_env_secp256k1(1).await;
+
+    // Create a new account that's not the contract
+    let external_account = worker.dev_create_account().await?;
+
+    // Try to call clean_tee_status from external account - should fail
+    let result = external_account
+        .call(contract.id(), "clean_tee_status")
+        .args_json(json!({}))
+        .transact()
+        .await?;
+
+    // The call should fail because it's not from the contract itself
+    assert!(
+        !result.is_success(),
+        "External account should not be able to call clean_tee_status"
+    );
+
+    // Verify the error message indicates unauthorized access
+    match result.into_result() {
+        Err(failure) => {
+            let error_msg = format!("{:?}", failure);
+            assert!(
+                error_msg.contains("Method clean_tee_status is private"),
+                "Error should indicate private method access: {}",
+                error_msg
+            );
+        }
+        Ok(_) => panic!("Call should have failed"),
+    }
+
+    Ok(())
+}
