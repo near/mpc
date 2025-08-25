@@ -53,13 +53,13 @@ pub async fn keygen_computation_inner(
         SignatureScheme::Secp256k1 => {
             let keyshare =
                 EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.to_near_public_key()?;
+            let public_key = keyshare.public_key.to_near_sdk_public_key()?;
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
         SignatureScheme::Ed25519 => {
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.to_near_public_key()?;
+            let public_key = keyshare.public_key.to_near_sdk_public_key()?;
             (KeyshareData::Ed25519(keyshare), public_key)
         }
     };
@@ -182,7 +182,8 @@ async fn resharing_computation_inner(
 
     let keyshare_data = match domain.scheme {
         SignatureScheme::Secp256k1 => {
-            let public_key = frost_secp256k1::VerifyingKey::from_near_sdk(near_public_key)?;
+            let public_key =
+                frost_secp256k1::VerifyingKey::from_near_sdk_public_key(near_public_key)?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Secp256k1(data) => Ok(data.private_share),
@@ -200,7 +201,8 @@ async fn resharing_computation_inner(
             KeyshareData::Secp256k1(res)
         }
         SignatureScheme::Ed25519 => {
-            let public_key = frost_ed25519::VerifyingKey::from_near_sdk(near_public_key)?;
+            let public_key =
+                frost_ed25519::VerifyingKey::from_near_sdk_public_key(near_public_key)?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Ed25519(data) => Ok(data.private_share),

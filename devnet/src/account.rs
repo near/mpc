@@ -16,8 +16,9 @@ use crate::contracts::ActionCall;
 use crate::queries;
 use crate::rpc::NearRpcClients;
 use crate::types::{ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind};
+use ed25519_dalek::{ed25519::signature::rand_core::OsRng, SigningKey, VerifyingKey};
 use futures::FutureExt;
-use near_crypto::{InMemorySigner, PublicKey, SecretKey, Signer};
+use near_crypto::{ED25519SecretKey, InMemorySigner, SecretKey, Signer};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::send_tx::SignedTransaction;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
@@ -28,7 +29,7 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::types::Finality;
 use near_primitives::types::{BlockReference, FunctionArgs};
 use near_primitives::views::{CallResult, QueryRequest, TxExecutionStatus};
-use near_sdk::AccountId;
+use near_sdk::{AccountId, CurveType};
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -82,7 +83,7 @@ pub struct OperatingAccessKey {
     recent_block_hash: CryptoHash,
     client: Arc<NearRpcClients>,
     signer: Signer,
-    secret_key: SecretKey,
+    signing_key: SigningKey,
 }
 
 /// Returns {prefix}{random string}{suffix}.
@@ -100,13 +101,16 @@ pub fn make_random_account_name(prefix: &str, suffix: &str) -> AccountId {
 impl OperatingAccessKey {
     pub fn new(
         account_id: AccountId,
-        secret_key: SecretKey,
+        signing_key: SigningKey,
         recent_block_hash: CryptoHash,
         client: Arc<NearRpcClients>,
     ) -> Self {
+        let near_crypto_secret_key: SecretKey =
+            SecretKey::ED25519(ED25519SecretKey(signing_key.to_keypair_bytes()));
+
         let signer = Signer::InMemory(InMemorySigner::from_secret_key(
             account_id.clone(),
-            secret_key.clone(),
+            near_crypto_secret_key.clone(),
         ));
         Self {
             account_id,
@@ -114,7 +118,7 @@ impl OperatingAccessKey {
             recent_block_hash,
             client,
             signer,
-            secret_key,
+            signing_key,
         }
     }
 
@@ -164,7 +168,7 @@ impl OperatingAccessKey {
     pub async fn create_account(
         &mut self,
         new_account_prefix: &str,
-        secret_key: SecretKey,
+        signing_key: SigningKey,
         amount: u128,
     ) -> NearAccount {
         let new_account_id =
@@ -173,13 +177,19 @@ impl OperatingAccessKey {
             "[{}] Creating account {} with {} NEAR",
             self.account_id, new_account_id, amount,
         );
+
+        let verifying_key = signing_key.verifying_key();
+        let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
+        #[allow(clippy::disallowed_methods)]
+        let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
+
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::create_account(
                 self.next_nonce().await,
                 self.account_id.clone(),
                 new_account_id.clone(),
                 amount,
-                secret_key.public_key(),
+                near_core_public_key,
                 &self.signer,
                 self.recent_block_hash,
             ),
@@ -188,17 +198,23 @@ impl OperatingAccessKey {
         self.client.submit(request).await.unwrap();
         NearAccount {
             account_id: new_account_id,
-            access_keys: vec![secret_key],
+            access_keys: vec![signing_key],
             kind: NearAccountKind::Normal,
         }
     }
 
     /// Adds the given access key to this account.
-    pub async fn add_access_key(&mut self, key: PublicKey) {
+    pub async fn add_access_key(&mut self, verifying_key: VerifyingKey) {
         println!(
-            "[{}] Adding access key {} to account {}",
-            self.account_id, key, self.account_id,
+            "[{}] Adding access key {:?} to account {}",
+            self.account_id, verifying_key, self.account_id,
         );
+
+        let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
+        #[allow(clippy::disallowed_methods)]
+        let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
+
+        #[allow(clippy::disallowed_methods)]
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::from_actions(
                 self.next_nonce().await,
@@ -210,7 +226,7 @@ impl OperatingAccessKey {
                         nonce: 0,
                         permission: near_primitives::account::AccessKeyPermission::FullAccess,
                     },
-                    public_key: key,
+                    public_key: near_core_public_key,
                 }))],
                 self.recent_block_hash,
                 0,
@@ -275,13 +291,13 @@ impl OperatingAccessKey {
         )
     }
 
-    pub fn secret_key(&self) -> SecretKey {
-        self.secret_key.clone()
+    pub fn secret_key(&self) -> SigningKey {
+        self.signing_key.clone()
     }
 }
 
 impl OperatingAccount {
-    pub async fn add_access_key(&mut self, new_key: PublicKey) {
+    pub async fn add_access_key(&mut self, new_key: VerifyingKey) {
         let key = self.keys.first().unwrap().clone();
         let mut key = key.lock().await;
         key.add_access_key(new_key).await;
@@ -303,9 +319,11 @@ impl OperatingAccount {
                 let key = key.clone();
                 async move {
                     let mut key = key.lock().await;
-                    let new_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
-                    key.add_access_key(new_key.public_key()).await;
-                    new_key
+                    let new_signing_key = SigningKey::generate(&mut OsRng);
+                    let verifying_key = new_signing_key.verifying_key();
+
+                    key.add_access_key(verifying_key).await;
+                    new_signing_key
                 }
             });
             let new_keys = futures::future::join_all(futs).await;
@@ -453,7 +471,7 @@ impl OperatingAccounts {
         amount: u128,
         funding_account: &AccountId,
     ) -> AccountId {
-        let secret_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
+        let secret_key = SigningKey::generate(&mut OsRng);
         let new_account = self.accounts.get(funding_account).unwrap().keys[0]
             .lock()
             .await
@@ -489,10 +507,17 @@ impl OperatingAccounts {
     /// Creates a new account from the Testnet faucet, using it as a funding account to create or
     /// refill other accounts.
     pub async fn create_funding_account_from_faucet(&mut self, new_account_id: &AccountId) {
-        let secret_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
+        let secret_key = SigningKey::generate(&mut OsRng);
+
+        let verifying_key = secret_key.verifying_key();
+        let verifying_key_bytes = verifying_key.as_bytes().clone().to_vec();
+        #[allow(clippy::disallowed_methods)]
+        let near_sdk_public_key =
+            near_sdk::PublicKey::from_parts(CurveType::ED25519, verifying_key_bytes).unwrap();
+
         let mut data = std::collections::HashMap::new();
         data.insert("newAccountId", new_account_id.to_string());
-        data.insert("newAccountPublicKey", secret_key.public_key().to_string());
+        data.insert("newAccountPublicKey", String::from(&near_sdk_public_key));
         let result = reqwest::Client::new()
             .post("https://helper.nearprotocol.com/account")
             .json(&data)

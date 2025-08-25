@@ -299,7 +299,7 @@ impl StartCmd {
         let mut report_data_contract: Option<Attestation> = None;
         #[cfg(feature = "tee")]
         {
-            let tls_public_key = secrets.persistent_secrets.p2p_private_key.public_key();
+            let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
             let report_data = create_remote_attestation_info(&tls_public_key).await;
             report_data_contract = Some(report_data.try_into()?);
         }
@@ -336,7 +336,7 @@ impl StartCmd {
         // submit remote attestation
         #[cfg(feature = "tee")]
         {
-            let account_public_key = secrets.persistent_secrets.near_signer_key.public_key();
+            let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key();
 
             submit_remote_attestation(
                 indexer_api.txn_sender.clone(),
@@ -442,16 +442,7 @@ impl Cli {
                     &subdir,
                     desired_responder_keys_per_participant,
                 )
-                .map(|secret| {
-                    (
-                        secret.p2p_private_key.unwrap_as_ed25519().clone(),
-                        secret
-                            .p2p_private_key
-                            .public_key()
-                            .unwrap_as_ed25519()
-                            .clone(),
-                    )
-                })
+                .map(|secret| secret.p2p_private_key)
             })
             .collect::<Result<Vec<_>, _>>()?;
         let configs = generate_test_p2p_configs(

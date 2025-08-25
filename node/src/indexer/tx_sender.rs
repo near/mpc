@@ -4,9 +4,9 @@ use super::ChainSendTransactionRequest;
 use super::IndexerState;
 use crate::config::RespondConfig;
 use crate::metrics;
+use ed25519_dalek::SigningKey;
 use legacy_mpc_contract;
 use near_client::Query;
-use near_crypto::SecretKey;
 use near_indexer_primitives::types::Gas;
 use near_indexer_primitives::types::{BlockReference, Finality};
 use near_indexer_primitives::views::{QueryRequest, QueryResponseKind};
@@ -43,7 +43,7 @@ async fn submit_tx(
     let tx_hash = transaction.get_hash();
     tracing::info!(
         target = "mpc",
-        "sending tx {:?} with ak={} nonce={}",
+        "sending tx {:?} with ak={:?} nonce={}",
         tx_hash,
         tx_signer.public_key(),
         transaction.transaction.nonce(),
@@ -200,7 +200,7 @@ async fn ensure_send_transaction(
 pub(crate) async fn handle_txn_requests(
     mut receiver: mpsc::Receiver<ChainSendTransactionRequest>,
     owner_account_id: AccountId,
-    owner_secret_key: SecretKey,
+    owner_secret_key: SigningKey,
     config: RespondConfig,
     indexer_state: Arc<IndexerState>,
 ) {

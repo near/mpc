@@ -8,8 +8,8 @@ use k256::{
 };
 use legacy_mpc_contract;
 use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak};
-use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
+use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::FullSignature;
 use threshold_signatures::frost_ed25519;

@@ -2,6 +2,7 @@ use super::IndexerState;
 use crate::config::{ParticipantInfo, ParticipantsConfig};
 use crate::indexer::lib::{get_mpc_contract_state, wait_for_full_sync};
 use crate::primitives::ParticipantId;
+use crate::providers::PublicKeyConversion;
 use anyhow::Context;
 use mpc_contract::primitives::{
     domain::DomainConfig,
@@ -10,7 +11,6 @@ use mpc_contract::primitives::{
 };
 use mpc_contract::state::{key_event::KeyEvent, ProtocolContractState};
 use std::collections::BTreeSet;
-use std::str::FromStr;
 use std::sync::Arc;
 use url::Url;
 
@@ -257,14 +257,11 @@ pub fn convert_participant_infos(
         let Some(port) = port_override.or(url.port_or_known_default()) else {
             anyhow::bail!("no port found in participant url {}", info.url);
         };
-        // Here we need to turn the near_sdk::PublicKey used in the smart contract into a
-        // near_crypto::PublicKey used by the mpc nodes. For some reason near_sdk has an
-        // impl TryFrom<near_sdk::PublicKey> for near_crypto::PublicKey but it's test-only.
-        // For lack of better option we use this to-string from-string conversion instead.
-        let Ok(p2p_public_key) = near_crypto::PublicKey::from_str(&String::from(&info.sign_pk))
-        else {
-            anyhow::bail!("invalid participant public key {:?}", info.sign_pk);
-        };
+
+        let p2p_public_key =
+            ed25519_dalek::VerifyingKey::from_near_sdk_public_key(&info.sign_pk)
+                .with_context(|| format!("Invalid public key length for peer: {:?}", info.url))?;
+
         converted.push(ParticipantInfo {
             id: ParticipantId::from_raw(id.get()),
             address: address.to_string(),
@@ -281,7 +278,7 @@ pub fn convert_participant_infos(
 
 #[cfg(test)]
 mod tests {
-    use crate::indexer::participants::convert_participant_infos;
+    use crate::{indexer::participants::convert_participant_infos, providers::PublicKeyConversion};
     use mpc_contract::primitives::{
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -369,7 +366,8 @@ mod tests {
         for (i, p) in converted.participants.iter().enumerate() {
             assert!(p.near_account_id == account_ids[i]);
             assert!(
-                p.p2p_public_key.to_string() == String::from(&account_id_to_pk[&account_ids[i]])
+                p.p2p_public_key.to_near_sdk_public_key().unwrap()
+                    == account_id_to_pk[&account_ids[i]]
             );
             let expected = chain_infos
                 .participants()
