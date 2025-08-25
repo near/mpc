@@ -2,6 +2,7 @@ use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::requests::recent_blocks_tracker::BlockViewLite;
 use crate::types::CKDId;
+use crate::types::RequestType;
 use crate::types::SignatureId;
 use anyhow::Context;
 use futures::StreamExt;
@@ -9,6 +10,7 @@ use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
 use near_indexer_primitives::types::AccountId;
+use near_indexer_primitives::types::FunctionArgs;
 use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
@@ -156,7 +158,7 @@ async fn handle_message(
                 });
                 metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
             } else if let Some(signature_id) =
-                maybe_get_signature_completion(&receipt, mpc_contract_id)
+                maybe_get_request_completion(&receipt, mpc_contract_id, RequestType::Signature)
             {
                 completed_signatures.push(signature_id);
                 metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
@@ -172,7 +174,9 @@ async fn handle_message(
                     timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
                 });
                 metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
-            } else if let Some(ckd_id) = maybe_get_ckd_completion(&receipt, mpc_contract_id) {
+            } else if let Some(ckd_id) =
+                maybe_get_request_completion(&receipt, mpc_contract_id, RequestType::CKD)
+            {
                 completed_ckds.push(ckd_id);
                 metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
             }
@@ -207,11 +211,12 @@ async fn handle_message(
     Ok(())
 }
 
-fn maybe_get_sign_args(
-    receipt: &ReceiptView,
-    execution_outcome: &ExecutionOutcomeWithIdView,
-    mpc_contract_id: &AccountId,
-) -> Option<(SignatureId, SignArgs)> {
+fn maybe_get_request_args_premise<'a>(
+    receipt: &'a ReceiptView,
+    execution_outcome: &'a ExecutionOutcomeWithIdView,
+    mpc_contract_id: &'a AccountId,
+    request_type: RequestType,
+) -> Option<(CryptoHash, &'a FunctionArgs)> {
     let outcome = &execution_outcome.outcome;
     if &outcome.executor_id != mpc_contract_id {
         return None;
@@ -233,10 +238,31 @@ fn maybe_get_sign_args(
     else {
         return None;
     };
-    if method_name != "sign" {
+
+    let expected_method_name = match request_type {
+        RequestType::CKD => "sign",
+        RequestType::Signature => "request_app_private_key",
+    };
+
+    if method_name != expected_method_name {
         return None;
     }
-    tracing::debug!(target: "mpc", "found `sign` function call");
+    tracing::debug!(target: "mpc", "found `{}` function call", expected_method_name);
+
+    Some((next_receipt_id, args))
+}
+
+fn maybe_get_sign_args(
+    receipt: &ReceiptView,
+    execution_outcome: &ExecutionOutcomeWithIdView,
+    mpc_contract_id: &AccountId,
+) -> Option<(SignatureId, SignArgs)> {
+    let (next_receipt_id, args) = maybe_get_request_args_premise(
+        receipt,
+        execution_outcome,
+        mpc_contract_id,
+        RequestType::Signature,
+    )?;
 
     let sign_args = match serde_json::from_slice::<'_, UnvalidatedSignArgs>(args) {
         Ok(parsed) => parsed,
@@ -272,63 +298,17 @@ fn maybe_get_sign_args(
     ))
 }
 
-fn maybe_get_signature_completion(
-    receipt: &ReceiptView,
-    mpc_contract_id: &AccountId,
-) -> Option<SignatureId> {
-    if &receipt.receiver_id != mpc_contract_id {
-        return None;
-    };
-    let ReceiptEnumView::Action { ref actions, .. } = receipt.receipt else {
-        return None;
-    };
-    if actions.len() != 1 {
-        return None;
-    }
-    let ActionView::FunctionCall {
-        ref method_name, ..
-    } = actions[0]
-    else {
-        return None;
-    };
-    if method_name != "return_signature_and_clean_state_on_success" {
-        return None;
-    }
-    tracing::debug!(target: "mpc", "found `return_signature_and_clean_state_on_success` function call");
-
-    Some(receipt.receipt_id)
-}
-
 fn maybe_get_ckd_args(
     receipt: &ReceiptView,
     execution_outcome: &ExecutionOutcomeWithIdView,
     mpc_contract_id: &AccountId,
 ) -> Option<(CKDId, CKDArgs)> {
-    let outcome = &execution_outcome.outcome;
-    if &outcome.executor_id != mpc_contract_id {
-        return None;
-    }
-    let ExecutionStatusView::SuccessReceiptId(next_receipt_id) = outcome.status else {
-        return None;
-    };
-    let ReceiptEnumView::Action { ref actions, .. } = receipt.receipt else {
-        return None;
-    };
-    if actions.len() != 1 {
-        return None;
-    }
-    let ActionView::FunctionCall {
-        ref method_name,
-        ref args,
-        ..
-    } = actions[0]
-    else {
-        return None;
-    };
-    if method_name != "request_app_private_key" {
-        return None;
-    }
-    tracing::debug!(target: "mpc", "found `request_app_private_key` function call");
+    let (next_receipt_id, args) = maybe_get_request_args_premise(
+        receipt,
+        execution_outcome,
+        mpc_contract_id,
+        RequestType::CKD,
+    )?;
 
     let ckd_args = match serde_json::from_slice::<'_, CKDRequestArgs>(args) {
         Ok(parsed) => parsed,
@@ -361,7 +341,11 @@ fn maybe_get_ckd_args(
     ))
 }
 
-fn maybe_get_ckd_completion(receipt: &ReceiptView, mpc_contract_id: &AccountId) -> Option<CKDId> {
+fn maybe_get_request_completion(
+    receipt: &ReceiptView,
+    mpc_contract_id: &AccountId,
+    request_type: RequestType,
+) -> Option<CKDId> {
     if &receipt.receiver_id != mpc_contract_id {
         return None;
     };
@@ -377,10 +361,15 @@ fn maybe_get_ckd_completion(receipt: &ReceiptView, mpc_contract_id: &AccountId) 
     else {
         return None;
     };
-    if method_name != "return_ckd_and_clean_state_on_success" {
+    let expected_method_name = match request_type {
+        RequestType::CKD => "return_ckd_and_clean_state_on_success",
+        RequestType::Signature => "return_signature_and_clean_state_on_success",
+    };
+
+    if method_name != expected_method_name {
         return None;
     }
-    tracing::debug!(target: "mpc", "found `return_ckd_and_clean_state_on_success` function call");
+    tracing::debug!(target: "mpc", "found `{}` function call", expected_method_name);
 
     Some(receipt.receipt_id)
 }
