@@ -16,8 +16,7 @@ use crate::contracts::ActionCall;
 use crate::queries;
 use crate::rpc::NearRpcClients;
 use crate::types::{ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind};
-use ed25519_dalek::ed25519::signature::rand_core::OsRng;
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use ed25519_dalek::{ed25519::signature::rand_core::OsRng, SigningKey, VerifyingKey};
 use futures::FutureExt;
 use near_crypto::{ED25519SecretKey, InMemorySigner, SecretKey, Signer};
 use near_jsonrpc_client::methods;
@@ -321,7 +320,7 @@ impl OperatingAccount {
                 let key = key.clone();
                 async move {
                     let mut key = key.lock().await;
-                    let new_signing_key = ed25519_dalek::SigningKey::generate(&mut OsRng);
+                    let new_signing_key = SigningKey::generate(&mut OsRng);
                     let verifying_key = new_signing_key.verifying_key();
 
                     key.add_access_key(verifying_key).await;
@@ -473,7 +472,7 @@ impl OperatingAccounts {
         amount: u128,
         funding_account: &AccountId,
     ) -> AccountId {
-        let secret_key = ed25519_dalek::SigningKey::generate(&mut OsRng);
+        let secret_key = SigningKey::generate(&mut OsRng);
         let new_account = self.accounts.get(funding_account).unwrap().keys[0]
             .lock()
             .await
@@ -509,7 +508,7 @@ impl OperatingAccounts {
     /// Creates a new account from the Testnet faucet, using it as a funding account to create or
     /// refill other accounts.
     pub async fn create_funding_account_from_faucet(&mut self, new_account_id: &AccountId) {
-        let secret_key = ed25519_dalek::SigningKey::generate(&mut OsRng);
+        let secret_key = SigningKey::generate(&mut OsRng);
 
         let verifying_key = secret_key.verifying_key();
         let verifying_key_bytes = verifying_key.as_bytes().clone().to_vec();
