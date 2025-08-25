@@ -79,7 +79,7 @@ done
 
 # Default basePath if not provided via CLI
 if [ -z "$basePath" ]; then
-  basePath="/mnt/data/barak" # parent folder of meta-dstack
+  basePath="./" # parent folder of meta-dstack
 fi
 
 # Default pythonExec if not provided via CLI
