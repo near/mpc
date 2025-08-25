@@ -13,6 +13,7 @@ use attestation::{
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
+use std::collections::HashSet;
 
 pub enum TeeValidationResult {
     Full,
@@ -186,7 +187,7 @@ impl TeeState {
     /// Removes TEE information for accounts that are not in the provided participants list.
     /// This is used to clean up storage after resharing concludes.
     pub fn clean_non_participants(&mut self, participants: &Participants) {
-        let participant_accounts: std::collections::HashSet<AccountId> = participants
+        let participant_accounts: HashSet<AccountId> = participants
             .participants()
             .iter()
             .map(|(account_id, _, _)| account_id.clone())
@@ -212,7 +213,8 @@ mod tests {
     use super::*;
     use crate::primitives::participants::{ParticipantInfo, Participants};
     use attestation::attestation::LocalAttestation;
-    use near_sdk::AccountId;
+    use attestation::attestation::{Attestation, Attestation::Local};
+    use near_sdk::{AccountId, PublicKey};
     use std::str::FromStr;
 
     #[test]
@@ -229,10 +231,8 @@ mod tests {
         // Create participant info (dummy data)
         let participant_info = ParticipantInfo {
             url: "http://example.com".to_string(),
-            sign_pk: near_sdk::PublicKey::from_str(
-                "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp",
-            )
-            .unwrap(),
+            sign_pk: PublicKey::from_str("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")
+                .unwrap(),
         };
 
         // Add participants
@@ -248,7 +248,7 @@ mod tests {
 
         // Add TEE information for all accounts including non-participant
         let attestation = LocalAttestation::new(true);
-        let local_attestation = attestation::attestation::Attestation::Local(attestation);
+        let local_attestation = Attestation::Local(attestation);
 
         tee_state.add_participant(account1.clone(), local_attestation.clone());
         tee_state.add_participant(account2.clone(), local_attestation.clone());
