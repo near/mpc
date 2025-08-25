@@ -222,9 +222,10 @@ The exposed endpoints are:
 
 
 ## Todo
-- it is advised that the node operator grants access only to specific contract methods for the backup service and the node.
-- define attestation for backup service
-- contract changing state from Running --> Recovery --> Running might be missed by some nodes. Need a way to update participant set while in Running state. In that case, nodes will need to re-establish p2p connections and purge their assets to avoid timing out requests. While it is possible to force nodes to do this synchronously, the effort for this is quite high and it is probably unnecessary.
+c.f. [(#949)](https://github.com/near/mpc/issues/949)
+- it is advised that the node operator grants access only to specific contract methods for the backup service and the node: [(#946)](https://github.com/near/mpc/issues/946)
+- define attestation for backup service [(#947)](https://github.com/near/mpc/issues/947)
+- contract changing state from Running --> Recovery --> Running might be missed by some nodes. Need a way to update participant set while in Running state. In that case, nodes will need to re-establish p2p connections and purge their assets to avoid timing out requests. While it is possible to force nodes to do this synchronously, the effort for this is quite high and it is probably unnecessary. [(#948)](https://github.com/near/mpc/issues/948)
 
 
 ## Materials:
