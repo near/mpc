@@ -16,6 +16,8 @@ use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use attestation::attestation::Attestation;
 use borsh::{BorshDeserialize, BorshSerialize};
+use ed25519_dalek::ed25519::signature::rand_core::OsRng;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
     config::InitConfig,
@@ -28,14 +30,13 @@ use mpc_contract::{
     state::ProtocolContractState,
     utils::protocol_state_to_string,
 };
-use near_crypto::SecretKey;
 use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
-use near_sdk::{borsh, AccountId};
+use near_sdk::{borsh, AccountId, CurveType};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -100,13 +101,14 @@ async fn update_mpc_network(
 
     for i in mpc_setup.participants.len()..desired_num_participants {
         let account_id = funded_accounts[i * 2].clone();
-        let p2p_private_key = SecretKey::from_random(near_crypto::KeyType::ED25519);
+        let p2p_private_key = SigningKey::generate(&mut OsRng);
+        let p2p_public_key = p2p_private_key.verifying_key();
         accounts
             .account_mut(&account_id)
             .set_mpc_participant(MpcParticipantSetup {
-                p2p_private_key: p2p_private_key.clone(),
+                p2p_private_key: p2p_private_key,
                 responding_account_id: funded_accounts[i * 2 + 1].clone(),
-                p2p_public_key: Some(p2p_private_key.public_key()),
+                p2p_public_key: Some(p2p_public_key),
             });
         mpc_setup.participants.push(account_id);
     }
@@ -212,9 +214,9 @@ impl UpdateMpcNetworkCmd {
 
 #[derive(Clone, Deserialize)]
 pub struct StaticWebData {
-    pub near_signer_public_key: near_crypto::PublicKey,
-    pub near_p2p_public_key: near_crypto::PublicKey,
-    pub near_responder_public_keys: Vec<near_crypto::PublicKey>,
+    pub near_signer_public_key: VerifyingKey,
+    pub near_p2p_public_key: VerifyingKey,
+    pub near_responder_public_keys: Vec<VerifyingKey>,
     pub _tee_participant_info: Option<Attestation>,
 }
 
@@ -405,16 +407,18 @@ struct InitV2Args {
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
     let mpc_setup = account.get_mpc_participant().unwrap();
+    let p2p_public_key_bytes: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH] = mpc_setup
+        .p2p_public_key
+        .expect("P2P key is required for all nodes")
+        .as_bytes()
+        .clone();
+
+    let near_sdk_public_key =
+        near_sdk::PublicKey::from_parts(CurveType::ED25519, p2p_public_key_bytes.to_vec())
+            .expect("P2P key is valid.");
 
     ParticipantInfo {
-        sign_pk: near_sdk::PublicKey::from_str(
-            &mpc_setup
-                .p2p_public_key
-                .clone()
-                .expect("require public key")
-                .to_string(),
-        )
-        .unwrap(),
+        sign_pk: near_sdk_public_key,
         url: format!("http://mpc-node-{}.service.mpc.consul:3000", index),
     }
 }
