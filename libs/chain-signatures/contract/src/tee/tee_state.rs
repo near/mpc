@@ -182,4 +182,98 @@ impl TeeState {
         self.allowed_docker_image_hashes
             .insert(tee_proposal, env::block_height());
     }
+
+    /// Removes TEE information for accounts that are not in the provided participants list.
+    /// This is used to clean up storage after resharing concludes.
+    pub fn clean_non_participants(&mut self, participants: &Participants) {
+        let participant_accounts: std::collections::HashSet<AccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+
+        // Collect accounts to remove (can't remove while iterating)
+        let accounts_to_remove: Vec<AccountId> = self
+            .participants_attestations
+            .keys()
+            .filter(|account_id| !participant_accounts.contains(*account_id))
+            .cloned()
+            .collect();
+
+        // Remove non-participant TEE information
+        for account_id in accounts_to_remove {
+            self.participants_attestations.remove(&account_id);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::primitives::participants::{ParticipantInfo, Participants};
+    use attestation::attestation::LocalAttestation;
+    use near_sdk::AccountId;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_clean_non_participants() {
+        let mut tee_state = TeeState::default();
+
+        // Create some test participants
+        let mut participants = Participants::new();
+        let account1: AccountId = "alice.near".parse().unwrap();
+        let account2: AccountId = "bob.near".parse().unwrap();
+        let account3: AccountId = "charlie.near".parse().unwrap();
+        let non_participant: AccountId = "dave.near".parse().unwrap();
+
+        // Create participant info (dummy data)
+        let participant_info = ParticipantInfo {
+            url: "http://example.com".to_string(),
+            sign_pk: near_sdk::PublicKey::from_str(
+                "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp",
+            )
+            .unwrap(),
+        };
+
+        // Add participants
+        participants
+            .insert(account1.clone(), participant_info.clone())
+            .unwrap();
+        participants
+            .insert(account2.clone(), participant_info.clone())
+            .unwrap();
+        participants
+            .insert(account3.clone(), participant_info)
+            .unwrap();
+
+        // Add TEE information for all accounts including non-participant
+        let attestation = LocalAttestation::new(true);
+        let local_attestation = attestation::attestation::Attestation::Local(attestation);
+
+        tee_state.add_participant(account1.clone(), local_attestation.clone());
+        tee_state.add_participant(account2.clone(), local_attestation.clone());
+        tee_state.add_participant(account3.clone(), local_attestation.clone());
+        tee_state.add_participant(non_participant.clone(), local_attestation.clone());
+
+        // Verify all 4 accounts have TEE info initially
+        assert_eq!(tee_state.participants_attestations.len(), 4);
+        assert!(tee_state.participants_attestations.contains_key(&account1));
+        assert!(tee_state.participants_attestations.contains_key(&account2));
+        assert!(tee_state.participants_attestations.contains_key(&account3));
+        assert!(tee_state
+            .participants_attestations
+            .contains_key(&non_participant));
+
+        // Clean non-participants
+        tee_state.clean_non_participants(&participants);
+
+        // Verify only participants remain
+        assert_eq!(tee_state.participants_attestations.len(), 3);
+        assert!(tee_state.participants_attestations.contains_key(&account1));
+        assert!(tee_state.participants_attestations.contains_key(&account2));
+        assert!(tee_state.participants_attestations.contains_key(&account3));
+        assert!(!tee_state
+            .participants_attestations
+            .contains_key(&non_participant));
+    }
 }

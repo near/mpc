@@ -313,3 +313,59 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
 
     Ok(())
 }
+
+/// Tests the TEE cleanup endpoint directly to ensure access control
+#[tokio::test]
+async fn test_tee_cleanup_endpoint_access_control() -> Result<()> {
+    use serde_json::json;
+
+    let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    // Setup contract with approved hash first
+    setup_contract_with_approved_hash(&contract, &accounts).await?;
+
+    // Submit TEE info for some accounts
+    let tls_key = p2p_tls_key();
+    let attestation = mock_dstack_attestation();
+
+    // Submit for first account
+    let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
+    assert!(success, "Failed to submit TEE info for participant");
+
+    // Create a new account that's not the contract
+    let external_account = worker.dev_create_account().await?;
+
+    // Try to call clean_tee_status from external account - should fail
+    let result = external_account
+        .call(contract.id(), "clean_tee_status")
+        .args_json(json!({
+            "participants": [accounts[0].id()]
+        }))
+        .transact()
+        .await?;
+
+    // The call should fail because it's not from the contract itself
+    assert!(
+        !result.is_success(),
+        "External account should not be able to call clean_tee_status"
+    );
+
+    // Verify the error message indicates unauthorized access
+    match result.into_result() {
+        Err(failure) => {
+            let error_msg = format!("{:?}", failure);
+            assert!(
+                error_msg.contains("clean_tee_status can only be called by the contract itself"),
+                "Error should indicate unauthorized access: {}",
+                error_msg
+            );
+            println!(
+                "✅ Access control working - external call properly rejected with correct message"
+            );
+        }
+        Ok(_) => panic!("Call should have failed"),
+    }
+
+    println!("✅ TEE cleanup endpoint access control verified");
+    Ok(())
+}
