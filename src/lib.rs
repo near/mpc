@@ -5,6 +5,7 @@ mod participants;
 
 pub mod protocol;
 
+pub mod confidential_key_derivation;
 pub mod ecdsa;
 pub mod eddsa;
 
