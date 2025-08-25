@@ -13,7 +13,7 @@ use serde::{Deserializer, Serializer};
 pub mod serialize_access_keys {
     use super::*;
 
-    pub fn serialize<S>(keys: &Vec<SigningKey>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(keys: &[SigningKey], serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
