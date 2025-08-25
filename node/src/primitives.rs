@@ -1,3 +1,4 @@
+use crate::providers::ckd::CKDTaskId;
 use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::EcdsaTaskId;
 use anyhow::Context;
@@ -208,6 +209,7 @@ pub struct MpcPeerMessage {
 pub enum MpcTaskId {
     EcdsaTaskId(EcdsaTaskId),
     EddsaTaskId(EddsaTaskId),
+    CKDTaskId(CKDTaskId),
 }
 
 pub fn participants_from_triples(
