@@ -49,7 +49,7 @@ The purpose of this state is to:
 - allow a node to activate the Recovery mechanism and request the back-up share from the backup service.
 
 This protocol state may:
-- only be entered from a `Running` state. (_note: we might be able to also allow entering it from a `Recovery` state. But this adds complexity and is not necessary._)
+- only be entered from a `Running` state. (_note: we might be able to also allow re-entering it from a `Recovery` state. But this adds complexity and is not necessary._)
 - resume in a `Resharing` state under the same conditions under which the `Resharing` state could be resumed from a `Running` state.
 - not resume in a state different to `Running` or `Resharing`.
 
