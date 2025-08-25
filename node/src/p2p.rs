@@ -14,9 +14,8 @@ use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::VerifyingKey;
-use rustls::pki_types::PrivatePkcs8KeyDer;
-use rustls::server::WebPkiClientVerifier;
-use rustls::{ClientConfig, CommonState, ServerConfig};
+use mpc_tls;
+use rustls::{ClientConfig, CommonState};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
@@ -26,7 +25,6 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use x509_parser::prelude::{FromDer, X509Certificate};
 
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
@@ -285,95 +283,6 @@ impl PersistentConnection {
     }
 }
 
-/// We hardcode a dummy private key used for signing certificates. This is
-/// fine because we're not relying on a certificate authority to verify
-/// public keys; rather the public keys come from the contract on chain.
-/// Still, TLS requires us to have signed certificates, so this is just to
-/// satisfy the TLS protocol.
-const DUMMY_ISSUER_PRIVATE_KEY: &str = "-----BEGIN PRIVATE KEY-----
-MFECAQEwBQYDK2VwBCIEIGkMPQEb0GXxgFXbgojLebmHnCUpS3QYqJrYcfyFqHtW
-gSEAAbdC8KDpDZPqZalKndJm2N6EXn+cNxIb2gRa21P5mcs=
------END PRIVATE KEY-----";
-
-const PUBLIC_KEY_SIZE: usize = 32;
-const PRIVATE_KEY_SIZE: usize = 32;
-const PKCS8_HEADER_SIZE: usize = 16;
-const PKCS8_MIDDLE_SIZE: usize = 3;
-
-const PKCS8_HEADER: [u8; PKCS8_HEADER_SIZE] = [
-    0x30, 0x51, 0x02, 0x01, 0x01, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
-];
-
-const PKCS8_MIDDLE: [u8; PKCS8_MIDDLE_SIZE] = [0x81, 0x21, 0x00];
-
-/// Converts an ED25519 secret key to a keypair that can be used in TLS.
-fn raw_ed25519_secret_key_to_keypair(
-    key: &ed25519_dalek::SigningKey,
-) -> anyhow::Result<rcgen::KeyPair> {
-    let private_key_bytes: &[u8; PRIVATE_KEY_SIZE] = key.as_bytes();
-
-    let verifying_key = key.verifying_key();
-    let public_key_bytes: &[u8; PUBLIC_KEY_SIZE] = verifying_key.as_bytes();
-
-    let mut pkcs8_encoded = Vec::with_capacity(
-        PKCS8_HEADER_SIZE + PRIVATE_KEY_SIZE + PKCS8_MIDDLE_SIZE + PUBLIC_KEY_SIZE,
-    );
-    pkcs8_encoded.extend_from_slice(&PKCS8_HEADER);
-    pkcs8_encoded.extend_from_slice(private_key_bytes);
-    pkcs8_encoded.extend_from_slice(&PKCS8_MIDDLE);
-    pkcs8_encoded.extend_from_slice(public_key_bytes);
-    let private_key = PrivatePkcs8KeyDer::from(pkcs8_encoded.as_slice());
-    let keypair = rcgen::KeyPair::try_from(&private_key)?;
-    Ok(keypair)
-}
-
-/// Configures TLS server and client to properly perform TLS handshakes.
-/// On the server side it expects a client to provide a certificate that
-/// presents a public key that matches one of the participants in the MPC
-/// network. On the client side it expects the server to present a
-/// certificate that presents a public key that matches the expected participant
-/// being connected to.
-fn configure_tls(
-    p2p_private_key: &ed25519_dalek::SigningKey,
-) -> anyhow::Result<(Arc<ServerConfig>, Arc<ClientConfig>)> {
-    // The issuer is a dummy certificate authority that every node trusts.
-    let issuer_signer = rcgen::KeyPair::from_pem(DUMMY_ISSUER_PRIVATE_KEY)?;
-    let issuer_cert =
-        rcgen::CertificateParams::new(vec!["root".to_string()])?.self_signed(&issuer_signer)?;
-
-    // This is the keypair that is secret to this node, used in P2P handshakes.
-    let p2p_key = raw_ed25519_secret_key_to_keypair(p2p_private_key)?;
-    let p2p_key_der =
-        rustls::pki_types::PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(p2p_key.serialize_der()));
-
-    let p2p_cert = rcgen::CertificateParams::new(vec!["dummy".to_string()])?.signed_by(
-        &p2p_key,
-        &issuer_cert,
-        &issuer_signer,
-    )?;
-
-    // Use a single trusted issuer.
-    let mut root_cert_store = rustls::RootCertStore::empty();
-    root_cert_store.add(issuer_cert.der().clone())?;
-
-    let client_verifier =
-        WebPkiClientVerifier::builder(Arc::new(root_cert_store.clone())).build()?;
-
-    let server_config =
-        rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
-            .with_client_cert_verifier(client_verifier)
-            .with_single_cert(vec![p2p_cert.der().clone()], p2p_key_der.clone_key())?;
-    // As a client, we verify that the server has a valid certificate signed by the
-    // dummy issuer (this is required by rustls). When making the connection we also
-    // check that the server has the right public key.
-    let client_config =
-        rustls::ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
-            .with_root_certificates(root_cert_store)
-            .with_client_auth_cert(vec![p2p_cert.der().clone()], p2p_key_der.clone_key())?;
-
-    Ok((server_config.into(), client_config.into()))
-}
-
 /// Creates a mesh network using TLS over TCP for communication.
 pub async fn new_tls_mesh_network(
     config: &MpcConfig,
@@ -382,7 +291,7 @@ pub async fn new_tls_mesh_network(
     impl MeshNetworkTransportSender,
     impl MeshNetworkTransportReceiver,
 )> {
-    let (server_config, client_config) = configure_tls(p2p_private_key)?;
+    let (server_config, client_config) = mpc_tls::tls::configure_tls(p2p_private_key)?;
 
     let my_port = config
         .participants
@@ -536,35 +445,7 @@ fn verify_peer_identity(
     conn: &CommonState,
     participant_identities: &ParticipantIdentities,
 ) -> anyhow::Result<ParticipantId> {
-    let Some(certs) = conn.peer_certificates() else {
-        anyhow::bail!("Connection without peer identity");
-    };
-    if certs.len() != 1 {
-        anyhow::bail!("Connection with unexpected number of certificates");
-    };
-    let Ok(cert) = X509Certificate::from_der(&certs[0]) else {
-        anyhow::bail!("Connection with invalid certificate");
-    };
-    let Ok(public_key) = cert.1.public_key().parsed() else {
-        anyhow::bail!("Connection with invalid public key");
-    };
-
-    // The x509_parser library doesn't recognize ED25519 keys, but that's fine, we'll compare the raw
-    // bytes directly.
-    let x509_parser::public_key::PublicKey::Unknown(public_key_data) = public_key else {
-        anyhow::bail!(
-            "Connection with unexpected public key type: {:?}",
-            public_key
-        );
-    };
-
-    let public_key_bytes = public_key_data
-        .try_into()
-        .context("Connection with public key of unexpected length")?;
-
-    let public_key = VerifyingKey::from_bytes(public_key_bytes)
-        .context("Connection with invalid public key.")?;
-
+    let public_key = mpc_tls::tls::extract_public_key(conn)?;
     let Some(peer_id) = participant_identities
         .key_to_participant_id
         .get(&public_key)

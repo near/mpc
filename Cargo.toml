@@ -1,5 +1,5 @@
 [workspace]
-members = ["node", "devnet", "attestation", "crates/primitives", "tee_authority", "test_utils"]
+members = ["node", "devnet", "attestation", "crates/primitives", "tee_authority", "test_utils", "crates/tls"]
 resolver = "2"
 exclude = ["libs", "pytest"]
 
@@ -58,6 +58,7 @@ lazy_static = "1.5.0"
 lru = "0.12.5"
 mockall = "0.13.1"
 mpc-primitives = { path = "crates/primitives" }
+mpc-tls = { path = "crates/tls" }
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
@@ -71,7 +72,7 @@ rand = "0.8.5"
 rand_xorshift = "0.3"
 rcgen = "0.13.1"
 rocksdb = "0.21.0"
-rustls = { version = "0.23.23", default-features = false }
+rustls = { version = "0.23.31", default-features = false , features=["std"] }
 reqwest = { version = "0.12.9", features = ["multipart"] }
 rstest = "0.25.0"
 schemars = "0.8.22" # This version needs to be exactly the same as in `near_sdk::schemars`

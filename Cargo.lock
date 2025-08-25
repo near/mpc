@@ -4903,6 +4903,7 @@ dependencies = [
  "mockall",
  "mpc-contract 1.0.1",
  "mpc-contract 2.2.0-rc.1",
+ "mpc-tls",
  "near-client",
  "near-config-utils 2.7.0",
  "near-crypto 2.7.0",
@@ -4950,6 +4951,17 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.16",
+]
+
+[[package]]
+name = "mpc-tls"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "ed25519-dalek",
+ "rcgen",
+ "rustls",
+ "x509-parser",
 ]
 
 [[package]]
