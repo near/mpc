@@ -212,8 +212,7 @@ impl TeeState {
 mod tests {
     use super::*;
     use crate::primitives::participants::{ParticipantInfo, Participants};
-    use attestation::attestation::LocalAttestation;
-    use attestation::attestation::{Attestation, Attestation::Local};
+    use attestation::attestation::{Attestation, LocalAttestation};
     use near_sdk::{AccountId, PublicKey};
     use std::str::FromStr;
 

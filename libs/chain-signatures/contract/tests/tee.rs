@@ -319,18 +319,7 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
 async fn test_tee_cleanup_endpoint_access_control() -> Result<()> {
     use serde_json::json;
 
-    let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
-
-    // Setup contract with approved hash first
-    setup_contract_with_approved_hash(&contract, &accounts).await?;
-
-    // Submit TEE info for some accounts
-    let tls_key = p2p_tls_key();
-    let attestation = mock_dstack_attestation();
-
-    // Submit for first account
-    let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
-    assert!(success, "Failed to submit TEE info for participant");
+    let (worker, contract, _accounts, _) = init_env_secp256k1(1).await;
 
     // Create a new account that's not the contract
     let external_account = worker.dev_create_account().await?;
@@ -338,9 +327,7 @@ async fn test_tee_cleanup_endpoint_access_control() -> Result<()> {
     // Try to call clean_tee_status from external account - should fail
     let result = external_account
         .call(contract.id(), "clean_tee_status")
-        .args_json(json!({
-            "participants": [accounts[0].id()]
-        }))
+        .args_json(json!({}))
         .transact()
         .await?;
 
@@ -359,13 +346,9 @@ async fn test_tee_cleanup_endpoint_access_control() -> Result<()> {
                 "Error should indicate private method access: {}",
                 error_msg
             );
-            println!(
-                "✅ Access control working - external call properly rejected with #[private] attribute"
-            );
         }
         Ok(_) => panic!("Call should have failed"),
     }
 
-    println!("✅ TEE cleanup endpoint access control verified");
     Ok(())
 }
