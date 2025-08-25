@@ -206,6 +206,11 @@ impl TeeState {
             self.participants_attestations.remove(&account_id);
         }
     }
+
+    /// Returns the list of accounts that currently have TEE attestations stored.
+    pub fn get_tee_participants(&self) -> Vec<AccountId> {
+        self.participants_attestations.keys().cloned().collect()
+    }
 }
 
 #[cfg(test)]

@@ -2,10 +2,13 @@ use anyhow::Result;
 use assert_matches::assert_matches;
 use attestation::attestation::Attestation;
 use common::{check_call_success, init_env_ed25519, init_env_secp256k1};
-use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
+use mpc_contract::{
+    tee::proposal::AllowedDockerImageHashes,
+    {errors::InvalidState, state::ProtocolContractState},
+};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
-use near_workspaces::{Account, Contract};
+use near_workspaces::{Account, AccountId, Contract};
 use test_utils::attestation::{mock_dstack_attestation, p2p_tls_key};
 
 use crate::common::gen_accounts;
@@ -272,6 +275,17 @@ async fn submit_participant_info(
     Ok(result.is_success())
 }
 
+/// Helper function to get TEE participants from contract.
+async fn get_tee_participants(contract: &Contract) -> Result<Vec<AccountId>> {
+    Ok(contract
+        .call("get_tee_participants")
+        .args_json(serde_json::json!({}))
+        .max_gas()
+        .transact()
+        .await?
+        .json()?)
+}
+
 /// Tests that TEE attestation fails when no MPC hash is approved yet.
 #[tokio::test]
 async fn test_tee_attestation_fails_without_approved_hash() -> Result<()> {
@@ -314,11 +328,9 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
     Ok(())
 }
 
-/// Tests the TEE cleanup endpoint directly to ensure access control
+/// Tests that external accounts cannot call the private clean_tee_status method.
 #[tokio::test]
-async fn test_tee_cleanup_endpoint_access_control() -> Result<()> {
-    use serde_json::json;
-
+async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     let (worker, contract, _accounts, _) = init_env_secp256k1(1).await;
 
     // Create a new account that's not the contract
@@ -327,7 +339,7 @@ async fn test_tee_cleanup_endpoint_access_control() -> Result<()> {
     // Try to call clean_tee_status from external account - should fail
     let result = external_account
         .call(contract.id(), "clean_tee_status")
-        .args_json(json!({}))
+        .args_json(serde_json::json!({}))
         .transact()
         .await?;
 
@@ -349,6 +361,65 @@ async fn test_tee_cleanup_endpoint_access_control() -> Result<()> {
         }
         Ok(_) => panic!("Call should have failed"),
     }
+
+    Ok(())
+}
+
+/// Tests that clean_tee_status succeeds when contract calls itself.
+#[tokio::test]
+async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
+    let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    // Initially should have no TEE participants
+    assert_eq!(get_tee_participants(&contract).await?.len(), 0);
+
+    // Setup contract with approved hash and submit TEE info for current participants
+    setup_contract_with_approved_hash(&contract, &accounts).await?;
+    let tls_key = p2p_tls_key();
+    let attestation = mock_dstack_attestation();
+
+    for account in &accounts {
+        submit_participant_info(account, &contract, &attestation, &tls_key).await?;
+    }
+
+    // Verify current participants have TEE data
+    assert_eq!(get_tee_participants(&contract).await?.len(), accounts.len());
+
+    // Create additional accounts (non-participants) and submit TEE info for them
+    const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
+    let additional_accounts = gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await.0;
+    for account in &additional_accounts {
+        submit_participant_info(account, &contract, &attestation, &tls_key).await?;
+    }
+
+    // Verify we have TEE data for all accounts before cleanup
+    let tee_participants_before = get_tee_participants(&contract).await?;
+    assert_eq!(
+        tee_participants_before.len(),
+        accounts.len() + additional_accounts.len(),
+        "Should have TEE data for all participants and additional accounts before cleanup"
+    );
+
+    // Contract should be able to call clean_tee_status on itself
+    let result = contract
+        .as_account()
+        .call(contract.id(), "clean_tee_status")
+        .args_json(serde_json::json!({}))
+        .transact()
+        .await?;
+
+    assert!(
+        result.is_success(),
+        "Contract should be able to call clean_tee_status on itself"
+    );
+
+    // Verify cleanup worked: only current participants should have TEE data
+    let tee_participants_after = get_tee_participants(&contract).await?;
+    assert_eq!(
+        tee_participants_after.len(),
+        accounts.len(),
+        "Should only have TEE data for current participants after cleanup"
+    );
 
     Ok(())
 }
