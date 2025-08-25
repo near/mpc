@@ -86,7 +86,7 @@ This protocol state may:
 
 Unlike the `Resharing` state, entering this state does not require `threshold` votes, but rather, a single vote is sufficient. However, the `AccountId` of all participants must be preserved. Only secondary participant details may be changed.
 
-In a first iteration, it is okay if signature requests are not accepted while the protocol is in `Recovery` state.
+In the first iteration of the implementation, it is okay if signature requests are not accepted while the protocol is in the `Recovery` state.
 
 ## Implementation Details
 _Note: In this document, the term node operator refers to a person operating a node that is acting as a participant in the MPC network. That person has a unique `AccountId` (an account on the NEAR blockchain) associated to its node. Without loss of generality, we assume that a node operator only operates a single node and that their `AccountId` serves as a unique identifier for the node as well as the operator._
