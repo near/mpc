@@ -7,10 +7,82 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use serde::de;
+use serde::{Deserializer, Serializer};
+
+pub mod serialize_access_keys {
+    use super::*;
+
+    pub fn serialize<S>(keys: &Vec<SigningKey>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let hex_strings: Vec<String> = keys.iter().map(|key| hex::encode(key.as_bytes())).collect();
+        hex_strings.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<SigningKey>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let hex_strings: Vec<String> = Vec::deserialize(deserializer)?;
+        hex_strings
+            .into_iter()
+            .map(|hex_str| {
+                let bytes = hex::decode(hex_str).map_err(de::Error::custom)?;
+                SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
+            })
+            .collect()
+    }
+}
+
+pub mod serialize_p2p_public_key {
+    use anyhow::Context;
+
+    use super::*;
+
+    pub fn serialize<S>(key_opt: &Option<VerifyingKey>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let hex_option = key_opt.as_ref().map(|key| hex::encode(key.as_bytes()));
+        hex_option.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<VerifyingKey>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let hex_option: Option<String> = Option::deserialize(deserializer)?;
+        match hex_option {
+            Some(hex_str) => {
+                let bytes: [u8; 32] = hex::decode(hex_str)
+                    .map_err(de::Error::custom)?
+                    .try_into()
+                    .map_err(|provided_bytes: Vec<u8>| {
+                        let error_message = format!(
+                            "Provided bytes is not 32 bytes. Actual length {:?}",
+                            provided_bytes.len()
+                        );
+
+                        de::Error::custom(error_message)
+                    })?;
+
+                VerifyingKey::from_bytes(&bytes)
+                    .context("Failed to create verifying key from deserialized bytes.")
+                    .map_err(de::Error::custom)
+                    .map(Some)
+            }
+            None => Ok(None),
+        }
+    }
+}
+
 /// Locally stored Near account information.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NearAccount {
     pub account_id: AccountId,
+    #[serde(with = "serialize_access_keys")]
     pub access_keys: Vec<SigningKey>,
     pub kind: NearAccountKind,
 }
@@ -34,6 +106,7 @@ pub struct MpcParticipantSetup {
     pub p2p_private_key: SigningKey, // todo: this can eventually be removed [(#710)](https://github.com/near/mpc/issues/710)
     /// The account this participant uses to respond to signature requests.
     pub responding_account_id: AccountId,
+    #[serde(with = "serialize_p2p_public_key")]
     pub p2p_public_key: Option<VerifyingKey>, // todo: this can eventually be made non-optional [(#710)](https://github.com/near/mpc/issues/710)
 }
 
