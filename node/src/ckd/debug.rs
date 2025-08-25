@@ -1,5 +1,5 @@
 use super::queue::{CKDComputationProgress, PendingCKDRequests, QueuedCKDRequest};
-use crate::ckd_request::CKDRequest;
+use crate::types::CKDRequest;
 use crate::primitives::ParticipantId;
 use near_indexer_primitives::types::{BlockHeight, NumBlocks};
 use std::collections::{BinaryHeap, HashSet};
@@ -202,7 +202,7 @@ impl Debug for PendingCKDRequests {
 mod tests {
     use super::CompletedCKDRequest;
     use crate::ckd::debug::CompletedCKDRequests;
-    use crate::ckd_request::CKDRequest;
+    use crate::types::CKDRequest;
     use mpc_contract::primitives::domain::DomainId;
     use near_indexer_primitives::CryptoHash;
     use rand::seq::SliceRandom;

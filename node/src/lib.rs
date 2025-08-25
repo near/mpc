@@ -21,7 +21,6 @@ mod assets;
 mod async_testing;
 mod background;
 pub mod ckd;
-mod ckd_request;
 pub mod cli;
 mod config;
 mod coordinator;
@@ -39,10 +38,11 @@ mod protocol_version;
 mod providers;
 pub mod requests;
 mod runtime;
-mod sign_request;
+mod storage;
 pub mod signing;
 pub mod tracing;
 mod tracking;
+pub mod types;
 pub mod web;
 
 #[cfg(feature = "tee")]

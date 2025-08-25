@@ -9,10 +9,11 @@ use mpc_contract::{
 use threshold_signatures::ecdsa::KeygenOutput;
 
 use crate::{
-    ckd_request::{CKDId, CKDRequestStorage},
+    storage::CKDRequestStorage,
     config::{ConfigFile, MpcConfig},
     network::{MeshNetworkClient, NetworkTaskChannel},
     primitives::MpcTaskId,
+    types::CKDId,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]

@@ -2,7 +2,7 @@ use super::queue::{
     PendingSignatureRequests, QueuedSignatureRequest, SignatureComputationProgress,
 };
 use crate::primitives::ParticipantId;
-use crate::sign_request::SignatureRequest;
+use crate::types::SignatureRequest;
 use near_indexer_primitives::types::{BlockHeight, NumBlocks};
 use std::collections::{BinaryHeap, HashSet};
 use std::fmt::Debug;
@@ -203,7 +203,7 @@ impl Debug for PendingSignatureRequests {
 #[cfg(test)]
 mod tests {
     use super::CompletedSignatureRequest;
-    use crate::sign_request::SignatureRequest;
+    use crate::types::SignatureRequest;
     use crate::signing::debug::CompletedSignatureRequests;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::signature::{Payload, Tweak};

@@ -1,6 +1,6 @@
 use super::debug::{CompletedCKDRequest, CompletedCKDRequests};
 use crate::ckd::metrics;
-use crate::ckd_request::{CKDId, CKDRequest};
+use crate::types::{CKDId, CKDRequest};
 use crate::indexer::types::ChainCKDRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::queue::NetworkAPIForRequests;
@@ -452,7 +452,7 @@ mod tests {
         CHECK_EACH_CKD_REQUEST_INTERVAL, MAX_ATTEMPTS_PER_CKD_AS_LEADER,
         MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE,
     };
-    use crate::ckd_request::CKDRequest;
+    use crate::types::CKDRequest;
     use crate::cli::LogFormat;
     use crate::primitives::ParticipantId;
     use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;

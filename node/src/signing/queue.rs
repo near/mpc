@@ -5,7 +5,7 @@ use crate::requests::queue::NetworkAPIForRequests;
 use crate::requests::recent_blocks_tracker::{
     BlockViewLite, CheckBlockResult, RecentBlocksTracker,
 };
-use crate::sign_request::{SignatureId, SignatureRequest};
+use crate::types::{SignatureId, SignatureRequest};
 use crate::signing::metrics;
 use k256::sha2::Sha256;
 use near_indexer_primitives::types::NumBlocks;
@@ -455,7 +455,7 @@ mod tests {
     use crate::cli::LogFormat;
     use crate::primitives::ParticipantId;
     use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
-    use crate::sign_request::SignatureRequest;
+    use crate::types::SignatureRequest;
     use crate::signing::queue::{
         CHECK_EACH_SIGNATURE_REQUEST_INTERVAL, MAX_ATTEMPTS_PER_SIGNATURE_AS_LEADER,
         MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE,

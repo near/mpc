@@ -1,8 +1,8 @@
-use crate::ckd_request::CKDId;
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::requests::recent_blocks_tracker::BlockViewLite;
-use crate::sign_request::SignatureId;
+use crate::types::SignatureId;
+use crate::types::CKDId;
 use anyhow::Context;
 use futures::StreamExt;
 use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};

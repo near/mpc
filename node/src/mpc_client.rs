@@ -1,5 +1,5 @@
 use crate::ckd::queue::PendingCKDRequests;
-use crate::ckd_request::{CKDRequest, CKDRequestStorage};
+use crate::storage::CKDRequestStorage;
 use crate::config::ConfigFile;
 use crate::indexer::handler::{CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain};
 use crate::indexer::types::{
@@ -11,9 +11,11 @@ use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
-use crate::sign_request::{SignRequestStorage, SignatureRequest};
+use crate::storage::SignRequestStorage;
+use crate::types::SignatureRequest;
 use crate::signing::queue::{PendingSignatureRequests, CHECK_EACH_SIGNATURE_REQUEST_INTERVAL};
 use crate::tracking::{self, AutoAbortTaskCollection};
+use crate::types::CKDRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_contract::crypto_shared::derive_tweak;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
