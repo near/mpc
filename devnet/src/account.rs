@@ -183,7 +183,6 @@ impl OperatingAccessKey {
         #[allow(clippy::disallowed_methods)]
         let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
 
-        #[allow(clippy::disallowed_methods)]
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::create_account(
                 self.next_nonce().await,
