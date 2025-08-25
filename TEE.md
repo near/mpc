@@ -19,7 +19,7 @@ In order to protect the network from the worst case scenario (permanent loss of 
 
 ## Disaster Recovery on a high-level
 The purpose of the disaster recovery system is to prevent a permanent loss of the signing quorum.
-As long as the secret shares of the MPC nodes are securely backed-up outside of the TEE environment in which the node is running, it is highly likely that the network will be able to recover from otherwise catastrophic failures. Therefore, each operator of an MPC node will be required to operate their own **backup service**. This service is separate from the MPC node and should run on a different machine.
+As long as the secret shares of the MPC nodes are securely backed-up outside of the TEE's in which the nodes are running, it is highly likely that the network will be able to recover from otherwise catastrophic failures. Therefore, each operator of an MPC node will be required to operate their own **backup service**. This service is separate from the MPC node and should run on a different machine.
 
 ### Backup service
 The backup service has two responsibilities:
