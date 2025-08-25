@@ -1,5 +1,5 @@
-## mpc
-This repository contains the code for the Near mpc node. It is a rewrite of [Near mpc](https://github.com/near/mpc_old).
+## MPC
+This repository contains the code for the Near MPC node. It is a rewrite of [Near MPC](https://github.com/near/mpc_old).
 
 ### Dependencies and submodules
 - **Nearcore Node**: This repository depends on the nearcore node, included as a submodule in the `/libs` directory.
@@ -7,10 +7,10 @@ This repository contains the code for the Near mpc node. It is a rewrite of [Nea
 
 ### How it works
 
-There are two main parts of the binary: NEAR indexer and mpc signing:
+There are two main parts of the binary: NEAR indexer and MPC signing:
 - NEAR Indexer: this is a NEAR node that tracks the shard where the signing smart contract is on. For mainnet, it is `v1.signer`.
 The indexer tracks incoming requests by looking at successful calls to the `sign` function. Each request is hashed and gets mapped to a
-specific node in the mpc network, which is known as the leader for this specific request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, there is a secondary leader who can initiate the signing
+specific node in the MPC network, which is known as the leader for this specific request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, there is a secondary leader who can initiate the signing
 - MPC signing: A threshold ecdsa implementation based on [cait-sith](https://cronokirby.com/Posts/Some-Bits-about-Cait-Sith). Each node does the following:
   * Participates in Beaver triple generation in the background. Each node both initiates triple generation and passively participates in triple generation initiated by other nodes. This is constantly running until each node generates 1M Beaver triples.
   * Presignature generation. It also runs in the background. Each presignature generation requires two Beaver triples.
@@ -40,6 +40,9 @@ For detailed information about our release process, compatibility guarantees, an
 - Releases are created from the `main` branch using semantic versioning.
 - Minor versions maintain backward compatibility with previous node versions.
 - Major versions ensure contract compatibility with the previous major version.
+
+### TEE Integration
+Efforts are made to allow running MPC nodes inside a trusted execution environment (TEE). For more details, see [TEE.md](TEE.md).
 
 ### Contributions
 
