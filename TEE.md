@@ -32,7 +32,7 @@ The backup service needs a current view of the MPC smart contract on the NEAR bl
 
 ### Contract
 The MPC contract is used for authenticating the backup service and the MPC node.
-Node and service will each submit a public key to the contract that is then used for mutual authentication during Backup generation and recovery process.
+The node and service will each submit a public key to the contract that is then used for mutual authentication during backup generation and recovery processes.
 
 ### MPC network during a recovery process
 Currently, the MPC network allows three protocol states:
