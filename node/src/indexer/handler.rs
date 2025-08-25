@@ -329,7 +329,7 @@ fn maybe_get_ckd_args(
         next_receipt_id = %next_receipt_id,
         caller_id = receipt.predecessor_id.to_string(),
         request = ?ckd_request,
-        "indexed new `sign` function call"
+        "indexed new `request_app_private_key` function call"
     );
     Some((
         next_receipt_id,
