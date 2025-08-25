@@ -64,13 +64,12 @@ impl BorshDeserialize for SerializableEdwardsPoint {
     fn deserialize_reader<R: std::io::prelude::Read>(reader: &mut R) -> std::io::Result<Self> {
         let bytes: [u8; 32] = BorshDeserialize::deserialize_reader(reader)?;
 
-        EdwardsPoint::from_bytes(&bytes)
+        SerializableEdwardsPoint::from_bytes(&bytes)
             .into_option()
             .ok_or(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "The provided bytes is not a valid edwards point.",
             ))
-            .map(SerializableEdwardsPoint)
     }
 }
 
