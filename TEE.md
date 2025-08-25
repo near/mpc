@@ -104,7 +104,7 @@ The node crate already contains logic that allows mutual authentication via TLS.
 The backup service periodically fetches the current protocol state from the contract.
 It compares the key set of the current `Running` protocol state with the secret shares it has possession of.
 If there is a discrepancy, then the backup service requests a new copy of the key shares from the MPC node following the process outlined under [Backup](#backup).
-If the contract is in `Recovery` state, then the backup service follows the protocol outlined under [Recovery](#recovery)
+If the contract is in the `Recovery` state, then the backup service follows the protocol outlined under [Recovery](#recovery)
 
 ##### Backup 
 1. The backup service looks up the details of its MPC node in the set of participants of the `Running` protocol state.
