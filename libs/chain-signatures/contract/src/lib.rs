@@ -282,11 +282,6 @@ impl MpcContract {
     /// Private endpoint to clean up TEE information for non-participants after resharing.
     /// This can only be called by the contract itself via a promise.
     pub fn clean_tee_status(&mut self) {
-        // Only allow calls from the contract itself
-        if env::predecessor_account_id() != env::current_account_id() {
-            env::panic_str("clean_tee_status can only be called by the contract itself");
-        }
-
         let participants = match &self.protocol_state {
             ProtocolContractState::Running(state) => state.parameters.participants(),
             _ => {
@@ -1143,6 +1138,7 @@ impl VersionedMpcContract {
 
     /// Private endpoint to clean up TEE information for non-participants after resharing.
     /// This can only be called by the contract itself via a promise.
+    #[private]
     pub fn clean_tee_status(&mut self) {
         match self {
             Self::V2(contract) => contract.clean_tee_status(),

@@ -355,12 +355,12 @@ async fn test_tee_cleanup_endpoint_access_control() -> Result<()> {
         Err(failure) => {
             let error_msg = format!("{:?}", failure);
             assert!(
-                error_msg.contains("clean_tee_status can only be called by the contract itself"),
-                "Error should indicate unauthorized access: {}",
+                error_msg.contains("Method clean_tee_status is private"),
+                "Error should indicate private method access: {}",
                 error_msg
             );
             println!(
-                "✅ Access control working - external call properly rejected with correct message"
+                "✅ Access control working - external call properly rejected with #[private] attribute"
             );
         }
         Ok(_) => panic!("Call should have failed"),
