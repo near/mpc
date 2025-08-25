@@ -4,7 +4,54 @@
 # Loads environment variables from a .env file, generates app-compose.json, and runs deployment.
 # Based on: https://github.com/Dstack-TEE/dstack/blob/be9d0476a63e937eda4c13659547a25088393394/kms/dstack-app/deploy-to-vmm.sh
 
+check_ports_in_use() {
+    PORT_VARS="
+    EXTERNAL_DSTACK_AGENT_PORT
+    EXTERNAL_SSH_PORT
+    EXTERNAL_MPC_PUBLIC_DEBUG_PORT
+    EXTERNAL_MPC_LOCAL_DEBUG_PORT
+    EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC
+    EXTERNAL_MPC_MAIN_PORT
+    "
 
+    any_in_use=0
+
+    for var in $PORT_VARS; do
+        val=$(eval echo \$$var)
+        if [ -n "$val" ]; then
+            port=$(echo "$val" | cut -d: -f2)
+
+            echo "Checking $var (port $port)..."
+
+            # Use ss if available, otherwise fallback to netstat
+            if command -v ss >/dev/null 2>&1; then
+                if ss -ltn | awk '{print $4}' | grep -Eq "[:.]$port$"; then
+                    echo "  -> Port $port is IN USE"
+                    any_in_use=1
+                else
+                    echo "  -> Port $port is free"
+                fi
+            elif command -v netstat >/dev/null 2>&1; then
+                if netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]$port$"; then
+                    echo "  -> Port $port is IN USE"
+                    any_in_use=1
+                else
+                    echo "  -> Port $port is free"
+                fi
+            else
+                echo "  -> Neither ss nor netstat found, cannot check"
+                any_in_use=1
+            fi
+        fi
+    done
+
+    if [ $any_in_use -eq 1 ]; then
+        echo "❌ One or more required ports are in use. Aborting."
+        exit 1
+    else
+        echo "✅ All required ports are free."
+    fi
+}
 
 # Default .env path
 ENV_FILE="default.env"
@@ -138,6 +185,8 @@ echo "Deploying $APP_NAME to dstack-vmm..."
 echo "Press enter to continue..."
 read
 
+# check if port are free
+check_ports_in_use
 
 cmd="$CLI deploy \
   --name $APP_NAME \
@@ -148,6 +197,7 @@ cmd="$CLI deploy \
   --port tcp:$EXTERNAL_MPC_PUBLIC_DEBUG_PORT:$INTERNAL_MPC_PUBLIC_DEBUG_PORT \
   --port tcp:$EXTERNAL_MPC_LOCAL_DEBUG_PORT:$INTERNAL_MPC_LOCAL_DEBUG_PORT \
   --port tcp:$EXTERNAL_MPC_MAIN_PORT:$INTERNAL_MPC_MAIN_PORT \
+  --port tcp:$EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC:$INTERNAL_MPC_DECENTRALIZED_STATE_SYNC \
   --user-config $USER_CONFIG_FILE_PATH \
   --vcpu $VCPU \
   --memory $MEMORY \
@@ -156,6 +206,6 @@ cmd="$CLI deploy \
 echo "$cmd"
 eval "$cmd"
 
-#can't use port 24567
-#--port tcp:$EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC:$INTERNAL_MPC_DECENTRALIZED_STATE_SYNC \
+  
+
   
