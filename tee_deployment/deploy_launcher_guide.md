@@ -21,7 +21,7 @@ It:
 - Docker Compose template (`$DOCKER_COMPOSE_FILE_PATH`)
 - Deployment configuration in `*.env` file
 - user-config.conf file
-- See full CLI documentation here: [vmm-cli-user-guide.md](https://github.com/Dstack-TEE/dstack/blob/master/vmm-cli-user-guide.md)
+- See full CLI documentation here: [vmm-cli-user-guide.md](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md)
 
 ---
 
