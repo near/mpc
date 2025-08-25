@@ -28,7 +28,7 @@ The backup service has two responsibilities:
 
 For the hard-launch, the backup service must run inside a TEE.
 
-The backup service needs a current view of the MPC smart contract on the NEAR blockchin. For that reason, it will be operating a NEAR light-client node.
+The backup service needs a current view of the MPC smart contract on the NEAR blockchin. For that reason, it will be operating a NEAR node.
 
 ### Contract
 The MPC contract is used for authenticating the backup service and the MPC node.
