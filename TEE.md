@@ -61,7 +61,7 @@ In a first iteration, it is okay if signature requests are not accepted while th
 _Note: In this document, the term node operator refers to a person operating a node that is acting as a participant in the MPC network. That person has a unique `AccountId` (an account on the NEAR blockchain) associated to its node. Without loss of generality, we assume that a node operator only operates a single node and that their `AccountId` serves as a unique identifier for the node as well as the operator._
 
 ### Version 1: Establish TCP p2p connection
-The node already contains logic that allows mutual authentication via TLS. That logic sits in [`node/src/p2p.rs`](https://github.com/near/mpc/blob/b89d1084bcbd2fdc777140a4dda38de616b810ef/node/src/p2p.rs#L119). This implementation would re-use the existing logic.
+The node crate already contains logic that allows mutual authentication via TLS. That logic sits in [`node/src/p2p.rs`](https://github.com/near/mpc/blob/b89d1084bcbd2fdc777140a4dda38de616b810ef/node/src/p2p.rs#L119). This implementation would re-use the existing logic.
 
 #### Backup service workflow
 ##### Onboarding
