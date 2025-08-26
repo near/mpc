@@ -10,7 +10,7 @@ use std::sync::Arc;
 use serde::de;
 use serde::{Deserializer, Serializer};
 
-pub mod serialize_access_keys {
+pub mod serialize_signing_keys {
     use super::*;
 
     pub fn serialize<S>(keys: &[SigningKey], serializer: S) -> Result<S::Ok, S::Error>
@@ -33,6 +33,27 @@ pub mod serialize_access_keys {
                 SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
             })
             .collect()
+    }
+}
+
+pub mod serialize_signing_key {
+    use super::*;
+
+    pub fn serialize<S>(key: &SigningKey, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let hex_string = hex::encode(key.as_bytes());
+        hex_string.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<SigningKey, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let hex_string: String = String::deserialize(deserializer)?;
+        let bytes = hex::decode(hex_string).map_err(de::Error::custom)?;
+        SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
     }
 }
 
@@ -82,7 +103,7 @@ pub mod serialize_p2p_public_key {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NearAccount {
     pub account_id: AccountId,
-    #[serde(with = "serialize_access_keys")]
+    #[serde(with = "serialize_signing_keys")]
     pub access_keys: Vec<SigningKey>,
     pub kind: NearAccountKind,
 }
@@ -103,6 +124,7 @@ pub enum NearAccountKind {
 /// Locally stored MPC participant keys and other info.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MpcParticipantSetup {
+    #[serde(with = "serialize_signing_key")]
     pub p2p_private_key: SigningKey, // todo: this can eventually be removed [(#710)](https://github.com/near/mpc/issues/710)
     /// The account this participant uses to respond to signature requests.
     pub responding_account_id: AccountId,
