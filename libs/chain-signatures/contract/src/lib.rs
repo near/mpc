@@ -176,7 +176,18 @@ impl MpcContract {
 
     pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
+            // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
+
+            // Spawn a promise to clean up TEE information for non-participants
+            let promise = Promise::new(env::current_account_id()).function_call(
+                "clean_tee_status".to_string(),
+                vec![],
+                NearToken::from_yoctonear(0),
+                CLEAN_TEE_STATUS_GAS,
+            );
+
+            promise.as_return();
         }
         Ok(())
     }
@@ -202,25 +213,7 @@ impl MpcContract {
                 })?;
 
         if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
-            // Check if this is completing a resharing (not initial keygen)
-            // We can tell because resharing happens when there are existing participants with TEE data
-            let should_cleanup = !self.tee_state.participants_attestations.is_empty();
-
-            // Key generation/resharing has concluded, transition to new state
             self.protocol_state = new_state;
-
-            // Spawn cleanup promise only if this completed a resharing
-            if should_cleanup {
-                // Spawn a promise to clean up TEE information for non-participants
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    "clean_tee_status".to_string(),
-                    vec![],
-                    NearToken::from_yoctonear(0),
-                    CLEAN_TEE_STATUS_GAS,
-                );
-
-                promise.as_return();
-            }
         }
 
         Ok(())
