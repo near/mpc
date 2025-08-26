@@ -540,7 +540,7 @@ pub fn create_response_ckd(
     let request = CKDRequest::new(
         app_public_key.clone(),
         account_id.clone(),
-        domain_id.clone(),
+        *domain_id,
     );
 
     let app_id = account_id.as_bytes();
