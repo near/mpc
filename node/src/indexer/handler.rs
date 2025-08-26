@@ -260,12 +260,14 @@ fn try_extract_function_call_args(receipt: &ReceiptView) -> Option<(&FunctionArg
     Some((args, method_name))
 }
 
+/// If the executor for `execution_outcome` matches `expected_executor_id`,
+/// then return the SuccessReceiptId if existing. Otherwise, return None.
 fn try_extract_next_receipt_id(
     execution_outcome: &ExecutionOutcomeWithIdView,
-    mpc_contract_id: &AccountId,
+    expected_executor_id: &AccountId,
 ) -> Option<CryptoHash> {
     let outcome = &execution_outcome.outcome;
-    if &outcome.executor_id != mpc_contract_id {
+    if &outcome.executor_id != expected_executor_id {
         return None;
     }
     let ExecutionStatusView::SuccessReceiptId(next_receipt_id) = outcome.status else {
