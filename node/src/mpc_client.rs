@@ -1,6 +1,6 @@
 use crate::config::ConfigFile;
 use crate::indexer::handler::{ChainBlockUpdate, SignatureRequestFromChain};
-use crate::indexer::types::{ChainRespondArgs, ChainSendTransactionRequest};
+use crate::indexer::types::{ChainSendTransactionRequest, ChainSignatureRespondArgs};
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
@@ -259,7 +259,7 @@ impl MpcClient {
                                         )
                                         .await??;
 
-                                        let response = ChainRespondArgs::new_ecdsa(
+                                        let response = ChainSignatureRespondArgs::new_ecdsa(
                                             &signature_attempt.request,
                                             &signature,
                                             &public_key,
@@ -276,7 +276,7 @@ impl MpcClient {
                                         )
                                         .await??;
 
-                                        let response = ChainRespondArgs::new_eddsa(
+                                        let response = ChainSignatureRespondArgs::new_eddsa(
                                             &signature_attempt.request,
                                             &signature,
                                         )?;
