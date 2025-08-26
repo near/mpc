@@ -356,8 +356,6 @@ impl MeshNetworkClient {
         }
     }
 
-    // TODO(#226): Use.
-    #[allow(dead_code)]
     pub fn update_indexer_height(&self, height: u64) {
         self.indexer_heights
             .set_height(self.my_participant_id(), height);

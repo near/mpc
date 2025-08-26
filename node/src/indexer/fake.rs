@@ -475,10 +475,8 @@ pub struct FakeIndexerManager {
 
     /// Collects signature responses from the core. When the core processes signature
     /// response transactions, it sends them to this receiver. See `next_response()`.
-    #[allow(dead_code)]
     ckd_response_receiver: mpsc::UnboundedReceiver<ChainCKDRespondArgs>,
     /// Used to send signature requests to the core.
-    #[allow(dead_code)]
     ckd_request_sender: mpsc::UnboundedSender<CKDRequestFromChain>,
 
     /// Allows nodes to be disabled during tests. See `disable()`.

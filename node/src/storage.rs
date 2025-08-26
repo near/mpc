@@ -64,7 +64,7 @@ impl SignRequestStorage {
         Ok(serde_json::from_slice(&request_ser)?)
     }
 }
-#[allow(dead_code)]
+
 pub struct CKDRequestStorage {
     db: Arc<SecretDB>,
     add_sender: broadcast::Sender<CKDId>,
@@ -78,7 +78,6 @@ impl CKDRequestStorage {
 
     /// If given request is already in the database, returns false.
     /// Otherwise, inserts the request and returns true.
-    #[allow(dead_code)]
     pub fn add(&self, request: &CKDRequest) -> bool {
         let key = borsh::to_vec(&request.id).unwrap();
         if self

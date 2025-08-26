@@ -204,7 +204,7 @@ pub static MPC_INDEXER_LATEST_BLOCK_HEIGHT: LazyLock<prometheus::IntGauge> = Laz
     )
     .unwrap()
 });
-#[allow(dead_code)]
+
 pub static MPC_ACCESS_KEY_NONCE: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(
         "mpc_access_key_nonce",

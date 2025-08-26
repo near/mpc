@@ -60,12 +60,13 @@ pub struct CKDRequestFromChain {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
+
 pub struct ChainBlockUpdate {
     pub block: BlockViewLite,
     pub signature_requests: Vec<SignatureRequestFromChain>,
     pub completed_signatures: Vec<SignatureId>,
     pub ckd_requests: Vec<CKDRequestFromChain>,
+    #[allow(dead_code)]
     pub completed_ckds: Vec<CKDId>,
 }
 
