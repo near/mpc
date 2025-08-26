@@ -537,11 +537,7 @@ pub fn create_response_ckd(
     domain_id: &DomainId,
     signing_key: &ecdsa::elliptic_curve::SecretKey<k256::Secp256k1>,
 ) -> (CKDRequest, CKDResponse) {
-    let request = CKDRequest::new(
-        app_public_key.clone(),
-        account_id.clone(),
-        *domain_id,
-    );
+    let request = CKDRequest::new(app_public_key.clone(), account_id.clone(), *domain_id);
 
     let app_id = account_id.as_bytes();
     let app_pk = near_public_key_to_affine_point(app_public_key);
