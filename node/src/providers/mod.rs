@@ -6,13 +6,14 @@
 //!
 //! As a reference, check the existing implementations.
 
+pub mod ckd;
 pub mod ecdsa;
 pub mod eddsa;
 
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
-use crate::sign_request::SignatureId;
+use crate::types::SignatureId;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
 use std::str::FromStr;

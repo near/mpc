@@ -16,12 +16,14 @@ use crate::network::{
 };
 use crate::p2p::new_tls_mesh_network;
 use crate::primitives::MpcTaskId;
+use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::AsyncDroppableRuntime;
-use crate::sign_request::SignRequestStorage;
+use crate::storage::CKDRequestStorage;
+use crate::storage::SignRequestStorage;
 use crate::tracking::{self};
-use crate::web::SignatureDebugRequest;
+use crate::web::DebugRequest;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -59,7 +61,7 @@ pub struct Coordinator {
     pub currently_running_job_name: Arc<Mutex<String>>,
 
     /// For debug UI to send us debug requests.
-    pub signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
+    pub debug_request_sender: broadcast::Sender<DebugRequest>,
 }
 
 type StopFn = Box<dyn Fn(&ContractState) -> bool + Send>;
@@ -229,7 +231,7 @@ impl Coordinator {
                                     .clone()
                                     .lock_owned()
                                     .await,
-                                self.signature_debug_request_sender.subscribe(),
+                                self.debug_request_sender.subscribe(),
                                 key_event_receiver,
                             ),
                         )?,
@@ -378,7 +380,7 @@ impl Coordinator {
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
-        signature_debug_request_receiver: broadcast::Receiver<SignatureDebugRequest>,
+        debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
@@ -540,16 +542,19 @@ impl Coordinator {
                     .await?;
 
                 let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
+                let ckd_request_store = Arc::new(CKDRequestStorage::new(secret_db.clone())?);
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
                 let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
 
+                // Secp256k1 shares are used both for ecdsa and CKD
+                // Which domain is used for each is to be decided in https://github.com/near/mpc/issues/951
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
                         KeyshareData::Secp256k1(data) => {
-                            ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                            ecdsa_keyshares.insert(keyshare.key_id.domain_id, data.clone());
                             domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
                         }
                         KeyshareData::Ed25519(data) => {
@@ -566,7 +571,7 @@ impl Coordinator {
                     clock,
                     secret_db,
                     sign_request_store.clone(),
-                    ecdsa_keyshares,
+                    ecdsa_keyshares.clone(),
                 )?);
 
                 let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
@@ -577,12 +582,22 @@ impl Coordinator {
                     eddsa_keyshares,
                 ));
 
+                let ckd_provider = Arc::new(CKDProvider::new(
+                    config_file.clone().into(),
+                    running_mpc_config.clone().into(),
+                    network_client.clone(),
+                    ckd_request_store.clone(),
+                    ecdsa_keyshares,
+                ));
+
                 let mpc_client = Arc::new(MpcClient::new(
                     config_file.clone().into(),
                     network_client,
                     sign_request_store,
+                    ckd_request_store,
                     ecdsa_signature_provider,
                     eddsa_signature_provider,
+                    ckd_provider,
                     domain_to_scheme,
                 ));
 
@@ -591,7 +606,7 @@ impl Coordinator {
                         running_network_receiver,
                         block_update_receiver,
                         chain_txn_sender,
-                        signature_debug_request_receiver,
+                        debug_request_receiver,
                     )
                     .await?;
 

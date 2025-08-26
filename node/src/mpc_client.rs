@@ -4,12 +4,15 @@ use crate::indexer::types::{ChainRespondArgs, ChainSendTransactionRequest};
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
+use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
-use crate::sign_request::{SignRequestStorage, SignatureRequest};
+use crate::sign_request::SignatureRequest;
 use crate::signing::queue::{PendingSignatureRequests, CHECK_EACH_SIGNATURE_REQUEST_INTERVAL};
+use crate::storage::CKDRequestStorage;
+use crate::storage::SignRequestStorage;
 use crate::tracking::{self, AutoAbortTaskCollection};
-use crate::web::{SignatureDebugRequest, SignatureDebugRequestKind};
+use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_contract::crypto_shared::derive_tweak;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
@@ -33,26 +36,36 @@ pub struct MpcClient {
     config: Arc<ConfigFile>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
+    #[allow(dead_code)]
+    ckd_request_store: Arc<CKDRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+    // // TODO: remove when ckd provider is integrated https://github.com/near/mpc/issues/863
+    #[allow(dead_code)]
+    ckd_provider: Arc<CKDProvider>,
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
 }
 
 impl MpcClient {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
+        ckd_request_store: Arc<CKDRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+        ckd_provider: Arc<CKDProvider>,
         domain_to_scheme: HashMap<DomainId, SignatureScheme>,
     ) -> Self {
         Self {
             config,
             client,
             sign_request_store,
+            ckd_request_store,
             ecdsa_signature_provider,
             eddsa_signature_provider,
+            ckd_provider,
             domain_to_scheme,
         }
     }
@@ -66,7 +79,7 @@ impl MpcClient {
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
-        signature_debug_receiver: tokio::sync::broadcast::Receiver<SignatureDebugRequest>,
+        debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) -> anyhow::Result<()> {
         let client = self.client.clone();
         let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
@@ -90,7 +103,7 @@ impl MpcClient {
                 self.clone().monitor_block_updates(
                     block_update_receiver,
                     chain_txn_sender,
-                    signature_debug_receiver,
+                    debug_receiver,
                 ),
             )
         };
@@ -145,7 +158,7 @@ impl MpcClient {
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
-        mut signature_debug_receiver: tokio::sync::broadcast::Receiver<SignatureDebugRequest>,
+        mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures = PendingSignatureRequests::new(
@@ -191,27 +204,70 @@ impl MpcClient {
                         })
                         .collect::<Vec<_>>();
 
+
+                    // TODO: can be used only when https://github.com/near/mpc/pull/956 is merged
+                    // let ckd_requests = block_update
+                    //     .ckd_requests
+                    //     .into_iter()
+                    //     .map(|ckd_request| {
+                    //         let CKDRequestFromChain {
+                    //             ckd_id,
+                    //             receipt_id,
+                    //             request,
+                    //             predecessor_id: _,
+                    //             entropy,
+                    //             timestamp_nanosec,
+                    //         } = ckd_request;
+                    //         CKDRequest {
+                    //             id: ckd_id,
+                    //             receipt_id,
+                    //             app_public_key: request.app_public_key,
+                    //             app_id: request.app_id,
+                    //             entropy,
+                    //             timestamp_nanosec,
+                    //             domain_id: request.domain_id,
+                    //         }
+                    //     })
+                    //     .collect::<Vec<_>>();
+
+
+                    // // Index the ckd requests as soon as we see them. We'll decide
+                    // // whether to *process* them after.
+                    // for ckd_request in &ckd_requests {
+                    //     self.ckd_request_store.add(ckd_request);
+                    // }
+                    // pending_ckds.notify_new_block(
+                    //     ckd_requests,
+                    //     block_update.completed_ckds,
+                    //     &block_update.block,
+                    // );
+
                     // Index the signature requests as soon as we see them. We'll decide
                     // whether to *process* them after.
                     for signature_request in &signature_requests {
-                        self.sign_request_store.add(signature_request);
+                        // TODO: to be removed during queue unification PR
+                        self.sign_request_store.add(&crate::types::SignatureRequest { id: signature_request.id, receipt_id: signature_request.receipt_id, payload: signature_request.payload.clone(), tweak: signature_request.tweak.clone(), entropy: signature_request.entropy, timestamp_nanosec: signature_request.timestamp_nanosec, domain: signature_request.domain });
                     }
                     pending_signatures.notify_new_block(
                         signature_requests,
                         block_update.completed_signatures,
                         &block_update.block,
                     );
+
                 }
-                debug_request = signature_debug_receiver.recv() => {
+                debug_request = debug_receiver.recv() => {
                     if let Ok(debug_request) = debug_request {
                         match debug_request.kind {
-                            SignatureDebugRequestKind::RecentBlocks => {
+                            DebugRequestKind::RecentBlocks => {
                                 let debug_output = pending_signatures.debug_print_recent_blocks();
                                 debug_request.respond(debug_output);
                             }
-                            SignatureDebugRequestKind::RecentSignatures => {
+                            DebugRequestKind::RecentSignatures => {
                                 let debug_output = format!("{:?}", pending_signatures);
                                 debug_request.respond(debug_output);
+                            }
+                            DebugRequestKind::RecentCKD => {
+                                todo!();
                             }
                         }
                     }
@@ -225,7 +281,7 @@ impl MpcClient {
 
             for signature_attempt in signature_attempts {
                 let this = self.clone();
-                let chain_txn_sender = chain_txn_sender.clone();
+                let chain_txn_sender_signature = chain_txn_sender.clone();
                 tasks.spawn_checked(
                     &format!(
                         "leader for signature request {:?}",
@@ -302,7 +358,7 @@ impl MpcClient {
                             }
                             Some(response) => response,
                         };
-                        let _ = chain_txn_sender
+                        let _ = chain_txn_sender_signature
                             .send(ChainSendTransactionRequest::Respond(response))
                             .await;
                         signature_attempt
@@ -315,6 +371,86 @@ impl MpcClient {
                     },
                 );
             }
+
+            // TODO: can be used only when https://github.com/near/mpc/pull/956 is merged
+            // let ckd_attempts = pending_ckds.get_requests_to_attempt();
+
+            // for ckd_attempt in ckd_attempts {
+            //     let this = self.clone();
+            //     let chain_txn_sender_ckd = chain_txn_sender.clone();
+            //     tasks.spawn_checked(
+            //         &format!("leader for ckd request {:?}", ckd_attempt.request.id),
+            //         async move {
+            //             // Only issue an MPC ckd computation if we haven't computed it
+            //             // in a previous attempt.
+            //             let existing_response = ckd_attempt
+            //                 .computation_progress
+            //                 .lock()
+            //                 .unwrap()
+            //                 .computed_response
+            //                 .clone();
+            //             let response = match existing_response {
+            //                 None => {
+            //                     metrics::MPC_NUM_CKD_COMPUTATIONS_LED
+            //                         .with_label_values(&["total"])
+            //                         .inc();
+
+            //                     let response = match this
+            //                         .domain_to_scheme
+            //                         .get(&ckd_attempt.request.domain_id)
+            //                     {
+            //                         Some(SignatureScheme::Secp256k1) => {
+            //                             let response = timeout(
+            //                                 Duration::from_secs(this.config.signature.timeout_sec),
+            //                                 this.ckd_provider
+            //                                     .clone()
+            //                                     .make_ckd(ckd_attempt.request.id),
+            //                             )
+            //                             .await??;
+
+            //                             let response = ChainCKDRespondArgs::new_ckd(
+            //                                 &ckd_attempt.request,
+            //                                 &response,
+            //                             )?;
+
+            //                             Ok(response)
+            //                         }
+            //                         Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
+            //                             "Signature scheme is not allowed for domain: {:?}",
+            //                             ckd_attempt.request.domain_id.clone()
+            //                         )),
+            //                         None => Err(anyhow::anyhow!(
+            //                             "Signature scheme is not found for domain: {:?}",
+            //                             ckd_attempt.request.domain_id.clone()
+            //                         )),
+            //                     }?;
+
+            //                     metrics::MPC_NUM_CKD_COMPUTATIONS_LED
+            //                         .with_label_values(&["succeeded"])
+            //                         .inc();
+
+            //                     ckd_attempt
+            //                         .computation_progress
+            //                         .lock()
+            //                         .unwrap()
+            //                         .computed_response = Some(response.clone());
+            //                     response
+            //                 }
+            //                 Some(response) => response,
+            //             };
+            //             let _ = chain_txn_sender_ckd
+            //                 .send(ChainSendTransactionRequest::CKDRespond(response))
+            //                 .await;
+            //             ckd_attempt
+            //                 .computation_progress
+            //                 .lock()
+            //                 .unwrap()
+            //                 .last_response_submission = Some(Clock::real().now());
+
+            //             anyhow::Ok(())
+            //         },
+            //     );
+            // }
         }
     }
 
@@ -355,6 +491,7 @@ impl MpcClient {
                     .process_channel(channel)
                     .await?
             }
+            MpcTaskId::CKDTaskId(_) => self.ckd_provider.clone().process_channel(channel).await?,
         }
 
         Ok(())
