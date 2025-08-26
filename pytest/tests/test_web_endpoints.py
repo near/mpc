@@ -31,7 +31,7 @@ def test_web_endpoints():
 
         response = requests.get(f"http://localhost:{port}/debug/blocks")
         assert "Recent blocks:" in response.text, response.text
-        assert "2 reqs:" in response.text, response.text
+        assert "2 sign reqs:" in response.text, response.text
 
         response = requests.get(f"http://localhost:{port}/debug/signatures")
         assert "Recent signatures:" in response.text, response.text
