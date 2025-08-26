@@ -47,7 +47,14 @@ edit it:
     available throughput.
 * Set the directory of your local clone of the infra-ops repository.
   This is used for Terraform deployment of the test cluster. To avoid any errors, it is advised to ensure the local repo is up to date.
-* Configure rpcs to point to your RPC endpoint. You can find NEAR testnet RPC providers at https://docs.near.org/api/rpc/providers#testnet. Use the URL listed under "Endpoint Root" for the url field.
+* Configure `rpcs` to point to your RPC endpoint. You can find NEAR testnet RPC providers at https://docs.near.org/api/rpc/providers#testnet. Use the URL listed under "Endpoint Root" for the url field.
+Here's an example configuration:
+```yaml
+rpcs:
+  - url: https://test.rpc.fastnear.com
+    rate_limit: 5
+    max_concurrency: 30
+```
 * (Optional) Configure a `funding_account` to use a specific account for funding operations:
   ```yaml
   funding_account:
