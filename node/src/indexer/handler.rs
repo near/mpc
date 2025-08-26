@@ -1,16 +1,20 @@
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
-use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::BlockViewLite;
+use crate::types::CKDId;
+use crate::types::SignatureId;
 use anyhow::Context;
 use futures::StreamExt;
+use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
 use near_indexer_primitives::types::AccountId;
+use near_indexer_primitives::types::FunctionArgs;
 use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
 use near_indexer_primitives::CryptoHash;
+use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -28,6 +32,13 @@ pub struct SignArgs {
     pub domain_id: DomainId,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct CKDArgs {
+    pub app_public_key: PublicKey,
+    pub app_id: AccountId,
+    pub domain_id: DomainId,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SignatureRequestFromChain {
     pub signature_id: SignatureId,
@@ -38,11 +49,24 @@ pub struct SignatureRequestFromChain {
     pub timestamp_nanosec: u64,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CKDRequestFromChain {
+    pub ckd_id: CKDId,
+    pub receipt_id: CryptoHash,
+    pub request: CKDArgs,
+    pub predecessor_id: AccountId,
+    pub entropy: [u8; 32],
+    pub timestamp_nanosec: u64,
+}
+
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct ChainBlockUpdate {
     pub block: BlockViewLite,
     pub signature_requests: Vec<SignatureRequestFromChain>,
     pub completed_signatures: Vec<SignatureId>,
+    pub ckd_requests: Vec<CKDRequestFromChain>,
+    pub completed_ckds: Vec<CKDId>,
 }
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -113,29 +137,76 @@ async fn handle_message(
 
     let mut signature_requests = vec![];
     let mut completed_signatures = vec![];
+    let mut ckd_requests = vec![];
+    let mut completed_ckds = vec![];
 
     for shard in streamer_message.shards {
         for outcome in shard.receipt_execution_outcomes {
             metrics::MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES.inc();
             let receipt = outcome.receipt.clone();
             let execution_outcome = outcome.execution_outcome.clone();
-            if let Some((signature_id, sign_args)) =
-                maybe_get_sign_args(&receipt, &execution_outcome, mpc_contract_id)
+
+            // TODO: this should improve once https://github.com/near/mpc/issues/950 is done
+            if let Some(next_receipt_id) =
+                try_extract_next_receipt_id(&execution_outcome, mpc_contract_id)
             {
-                signature_requests.push(SignatureRequestFromChain {
-                    signature_id,
-                    receipt_id: receipt.receipt_id,
-                    request: sign_args,
-                    predecessor_id: receipt.predecessor_id.clone(),
-                    entropy: streamer_message.block.header.random_value.into(),
-                    timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
-                });
-                metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
-            } else if let Some(signature_id) =
-                maybe_get_signature_completion(&receipt, mpc_contract_id)
-            {
-                completed_signatures.push(signature_id);
-                metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
+                if let Some((args, method_name)) = try_extract_function_call_args(&receipt) {
+                    match method_name.as_str() {
+                        "sign" => {
+                            if let Some((signature_id, sign_args)) =
+                                try_get_sign_args(&receipt, next_receipt_id, args, method_name)
+                            {
+                                signature_requests.push(SignatureRequestFromChain {
+                                    signature_id,
+                                    receipt_id: receipt.receipt_id,
+                                    request: sign_args,
+                                    predecessor_id: receipt.predecessor_id.clone(),
+                                    entropy: streamer_message.block.header.random_value.into(),
+                                    timestamp_nanosec: streamer_message
+                                        .block
+                                        .header
+                                        .timestamp_nanosec,
+                                });
+                                metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
+                            }
+                        }
+                        "request_app_private_key" => {
+                            if let Some((ckd_id, ckd_args)) =
+                                try_get_ckd_args(&receipt, next_receipt_id, args, method_name)
+                            {
+                                ckd_requests.push(CKDRequestFromChain {
+                                    ckd_id,
+                                    receipt_id: receipt.receipt_id,
+                                    request: ckd_args,
+                                    predecessor_id: receipt.predecessor_id.clone(),
+                                    entropy: streamer_message.block.header.random_value.into(),
+                                    timestamp_nanosec: streamer_message
+                                        .block
+                                        .header
+                                        .timestamp_nanosec,
+                                });
+                                metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id) {
+                if let Some((_, method_name)) = try_extract_function_call_args(&receipt) {
+                    match method_name.as_str() {
+                        "return_signature_and_clean_state_on_success" => {
+                            completed_signatures.push(request_id);
+                            metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
+                        }
+                        "return_ck_and_clean_state_on_success" => {
+                            completed_ckds.push(request_id);
+                            metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
     }
@@ -152,6 +223,8 @@ async fn handle_message(
             },
             signature_requests,
             completed_signatures,
+            ckd_requests,
+            completed_ckds,
         })
         .inspect_err(|err| {
             tracing::error!(target: "mpc", %err, "error sending block update to mpc node");
@@ -166,18 +239,7 @@ async fn handle_message(
     Ok(())
 }
 
-fn maybe_get_sign_args(
-    receipt: &ReceiptView,
-    execution_outcome: &ExecutionOutcomeWithIdView,
-    mpc_contract_id: &AccountId,
-) -> Option<(SignatureId, SignArgs)> {
-    let outcome = &execution_outcome.outcome;
-    if &outcome.executor_id != mpc_contract_id {
-        return None;
-    }
-    let ExecutionStatusView::SuccessReceiptId(next_receipt_id) = outcome.status else {
-        return None;
-    };
+fn try_extract_function_call_args(receipt: &ReceiptView) -> Option<(&FunctionArgs, &String)> {
     let ReceiptEnumView::Action { ref actions, .. } = receipt.receipt else {
         return None;
     };
@@ -192,15 +254,38 @@ fn maybe_get_sign_args(
     else {
         return None;
     };
-    if method_name != "sign" {
+
+    tracing::debug!(target: "mpc", "found `{}` function call", method_name);
+
+    Some((args, method_name))
+}
+
+/// If the executor for `execution_outcome` matches `expected_executor_id`,
+/// then return the SuccessReceiptId if existing. Otherwise, return None.
+fn try_extract_next_receipt_id(
+    execution_outcome: &ExecutionOutcomeWithIdView,
+    expected_executor_id: &AccountId,
+) -> Option<CryptoHash> {
+    let outcome = &execution_outcome.outcome;
+    if &outcome.executor_id != expected_executor_id {
         return None;
     }
-    tracing::debug!(target: "mpc", "found `sign` function call");
+    let ExecutionStatusView::SuccessReceiptId(next_receipt_id) = outcome.status else {
+        return None;
+    };
+    Some(next_receipt_id)
+}
 
+fn try_get_sign_args(
+    receipt: &ReceiptView,
+    next_receipt_id: CryptoHash,
+    args: &FunctionArgs,
+    expected_name: &String,
+) -> Option<(SignatureId, SignArgs)> {
     let sign_args = match serde_json::from_slice::<'_, UnvalidatedSignArgs>(args) {
         Ok(parsed) => parsed,
         Err(err) => {
-            tracing::warn!(target: "mpc", %err, "failed to parse `sign` arguments");
+            tracing::warn!(target: "mpc", %err, "failed to parse `{}` arguments", expected_name);
             return None;
         }
     };
@@ -208,7 +293,7 @@ fn maybe_get_sign_args(
     let sign_request: SignRequest = match sign_args.request.try_into() {
         Ok(request) => request,
         Err(err) => {
-            tracing::warn!(target: "mpc", %err, "failed to parse `sign` arguments");
+            tracing::warn!(target: "mpc", %err, "failed to parse `{}` arguments", expected_name);
             return None;
         }
     };
@@ -219,7 +304,7 @@ fn maybe_get_sign_args(
         next_receipt_id = %next_receipt_id,
         caller_id = receipt.predecessor_id.to_string(),
         request = ?sign_request,
-        "indexed new `sign` function call"
+        "indexed new `{}` function call", expected_name
     );
     Some((
         next_receipt_id,
@@ -231,29 +316,48 @@ fn maybe_get_sign_args(
     ))
 }
 
-fn maybe_get_signature_completion(
+fn try_get_ckd_args(
     receipt: &ReceiptView,
-    mpc_contract_id: &AccountId,
-) -> Option<SignatureId> {
-    if &receipt.receiver_id != mpc_contract_id {
-        return None;
+    next_receipt_id: CryptoHash,
+    args: &FunctionArgs,
+    expected_name: &String,
+) -> Option<(CKDId, CKDArgs)> {
+    let ckd_args = match serde_json::from_slice::<'_, CKDRequestArgs>(args) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            tracing::warn!(target: "mpc", %err, "failed to parse `{}` arguments", expected_name);
+            return None;
+        }
     };
-    let ReceiptEnumView::Action { ref actions, .. } = receipt.receipt else {
-        return None;
-    };
-    if actions.len() != 1 {
-        return None;
-    }
-    let ActionView::FunctionCall {
-        ref method_name, ..
-    } = actions[0]
-    else {
-        return None;
-    };
-    if method_name != "return_signature_and_clean_state_on_success" {
-        return None;
-    }
-    tracing::debug!(target: "mpc", "found `return_signature_and_clean_state_on_success` function call");
 
-    Some(receipt.receipt_id)
+    let ckd_request = CKDRequest {
+        app_public_key: ckd_args.app_public_key,
+        app_id: receipt.predecessor_id.clone(),
+        domain_id: ckd_args.domain_id,
+    };
+
+    tracing::info!(
+        target: "mpc",
+        receipt_id = %receipt.receipt_id,
+        next_receipt_id = %next_receipt_id,
+        caller_id = receipt.predecessor_id.to_string(),
+        request = ?ckd_request,
+        "indexed new `{}` function call", expected_name
+    );
+    Some((
+        next_receipt_id,
+        CKDArgs {
+            app_public_key: ckd_request.app_public_key,
+            app_id: ckd_request.app_id,
+            domain_id: ckd_args.domain_id, // TODO: should come from CKDRequest https://github.com/near/mpc/issues/929
+        },
+    ))
+}
+
+fn try_get_request_completion(receipt: &ReceiptView, mpc_contract_id: &AccountId) -> Option<CKDId> {
+    if &receipt.receiver_id != mpc_contract_id {
+        None
+    } else {
+        Some(receipt.receipt_id)
+    }
 }

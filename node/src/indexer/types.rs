@@ -1,4 +1,4 @@
-use crate::sign_request::SignatureRequest;
+use crate::{sign_request::SignatureRequest, types::CKDRequest};
 use anyhow::Context;
 use attestation::attestation::Attestation;
 use k256::{
@@ -7,8 +7,12 @@ use k256::{
     AffinePoint, Scalar, Secp256k1,
 };
 use legacy_mpc_contract;
-use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak};
+use mpc_contract::{
+    crypto_shared::CKDResponse,
+    primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak},
+};
 use near_indexer_primitives::types::Gas;
+use near_sdk::AccountId;
 use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::FullSignature;
@@ -49,7 +53,34 @@ impl ChainSignatureRequest {
     }
 }
 
+/* The format in which the chain contract expects
+ * to receive the details of the original ckd request.
+ */
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ChainCKDRequest {
+    pub app_public_key: near_sdk::PublicKey,
+    pub app_id: AccountId,
+    pub domain_id: DomainId,
+}
+
+impl ChainCKDRequest {
+    #[allow(dead_code)]
+    pub fn new(
+        app_public_key: near_sdk::PublicKey,
+        app_id: AccountId,
+        domain_id: DomainId,
+    ) -> Self {
+        ChainCKDRequest {
+            app_public_key,
+            app_id,
+            domain_id,
+        }
+    }
+}
+
 pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
+pub type ChainCKDResponse = mpc_contract::crypto_shared::CKDResponse;
+
 pub use mpc_contract::crypto_shared::k256_types;
 use mpc_contract::crypto_shared::{ed25519_types, SignatureResponse};
 use mpc_contract::primitives::signature::Payload;
@@ -68,6 +99,8 @@ fn k256_signature_response(
     let k256_signature = k256_types::Signature::new(big_r, s, recovery_id);
     Ok(ChainSignatureResponse::Secp256k1(k256_signature))
 }
+#[allow(dead_code)]
+pub trait ChainRespondArgs {}
 
 /* These arguments are passed to the `respond` function of the
  * chain signatures contract. It takes both the details of the
@@ -75,14 +108,33 @@ fn k256_signature_response(
  * that the signature matches the requested key and payload.
  */
 #[derive(Serialize, Debug, Deserialize, Clone)]
-pub struct ChainRespondArgs {
+pub struct ChainSignatureRespondArgs {
     pub request: ChainSignatureRequest,
     response: ChainSignatureResponse,
 }
 
+impl ChainRespondArgs for ChainSignatureRespondArgs {}
+
+/* These arguments are passed to the `respond_ckd` function of the
+ * chain contract. It takes both the details of the
+ * original request and the completed ckd.
+ */
+#[derive(Serialize, Debug, Deserialize, Clone)]
+pub struct ChainCKDRespondArgs {
+    pub request: ChainCKDRequest,
+    response: ChainCKDResponse,
+}
+
+impl ChainRespondArgs for ChainCKDRespondArgs {}
+
 #[derive(Serialize, Debug)]
-pub struct ChainGetPendingRequestArgs {
+pub struct ChainGetPendingSignatureRequestArgs {
     pub request: ChainSignatureRequest,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChainGetPendingCKDRequestArgs {
+    pub request: ChainCKDRequest,
 }
 
 #[derive(Serialize, Debug)]
@@ -128,7 +180,9 @@ pub struct SubmitParticipantInfoArgs {
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
 pub(crate) enum ChainSendTransactionRequest {
-    Respond(ChainRespondArgs),
+    Respond(ChainSignatureRespondArgs),
+    #[allow(dead_code)]
+    CKDRespond(ChainCKDRespondArgs),
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
@@ -149,6 +203,7 @@ impl ChainSendTransactionRequest {
     pub fn method(&self) -> &'static str {
         match self {
             ChainSendTransactionRequest::Respond(_) => "respond",
+            ChainSendTransactionRequest::CKDRespond(_) => "respond_ckd",
             ChainSendTransactionRequest::VotePk(_) => "vote_pk",
             ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
             ChainSendTransactionRequest::StartReshare(_) => "start_reshare_instance",
@@ -165,11 +220,13 @@ impl ChainSendTransactionRequest {
     pub fn gas_required(&self) -> Gas {
         match self {
             Self::Respond(_)
+            | Self::CKDRespond(_)
             | Self::VotePk(_)
             | Self::VoteReshared(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)
+            // This is too high in most settings, see https://github.com/near/mpc/issues/166
             | Self::VerifyTee() => 300 * TGAS,
             #[cfg(feature = "tee")]
             Self::SubmitParticipantInfo(_) => 300 * TGAS,
@@ -177,7 +234,7 @@ impl ChainSendTransactionRequest {
     }
 }
 
-impl ChainRespondArgs {
+impl ChainSignatureRespondArgs {
     /// WARNING: this function assumes the input full signature is valid and comes from an authentic response
     pub fn new_ecdsa(
         request: &SignatureRequest,
@@ -192,7 +249,7 @@ impl ChainRespondArgs {
                 .as_ecdsa()
                 .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
         )?;
-        Ok(ChainRespondArgs {
+        Ok(ChainSignatureRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
                 request.payload.clone(),
@@ -210,7 +267,7 @@ impl ChainRespondArgs {
             .serialize()?
             .try_into()
             .map_err(|_| anyhow::anyhow!("Response is not 64 bytes"))?;
-        Ok(ChainRespondArgs {
+        Ok(ChainSignatureRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
                 request.payload.clone(),
@@ -245,9 +302,23 @@ impl ChainRespondArgs {
     }
 }
 
+impl ChainCKDRespondArgs {
+    #[allow(dead_code)]
+    pub fn new_ckd(request: &CKDRequest, response: &CKDResponse) -> anyhow::Result<Self> {
+        Ok(ChainCKDRespondArgs {
+            request: ChainCKDRequest::new(
+                request.app_public_key.clone(),
+                request.app_id.clone(),
+                request.domain_id,
+            ),
+            response: response.clone(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod recovery_id_tests {
-    use crate::indexer::types::ChainRespondArgs;
+    use crate::indexer::types::ChainSignatureRespondArgs;
     use k256::ecdsa::{RecoveryId, SigningKey};
     use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
     use k256::AffinePoint;
@@ -268,8 +339,8 @@ mod recovery_id_tests {
                 Ok((signature, recid)) => {
                     let (r, s) = signature.split_scalars();
 
-                    // create a full signature
-                    // any big_r creation works here as we only need it's x coordinate during bruteforce (big_r.x())
+                    // Create a full signature
+                    // any big_r creation works here as we only need its x coordinate during brute force (big_r.x())
 
                     let r_bytes = r.to_repr();
                     let hypothetical_big_r = AffinePoint::decompress(&r_bytes, 0.into()).unwrap();
@@ -279,7 +350,7 @@ mod recovery_id_tests {
                         s: *s.as_ref(),
                     };
 
-                    let tested_recid = ChainRespondArgs::brute_force_recovery_id(
+                    let tested_recid = ChainSignatureRespondArgs::brute_force_recovery_id(
                         signing_key.verifying_key().as_affine(),
                         &full_sig,
                         &prehash,

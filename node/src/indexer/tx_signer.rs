@@ -134,6 +134,7 @@ impl TransactionSigners {
     pub fn signer_for(&mut self, req: &ChainSendTransactionRequest) -> Arc<TransactionSigner> {
         match req {
             ChainSendTransactionRequest::Respond(_) => self.next_respond_signer(),
+            ChainSendTransactionRequest::CKDRespond(_) => self.next_respond_signer(),
             _ => self.owner_signer(),
         }
     }

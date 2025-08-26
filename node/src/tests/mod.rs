@@ -210,12 +210,12 @@ impl OneNodeTestConfig {
         async move {
             let root_future = async move {
                 let root_task_handle = tracking::current_task();
-                let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+                let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
                 let (_, web_contract_receiver) =
                     tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
                 let web_server = start_web_server(
                     root_task_handle,
-                    signature_debug_request_sender.clone(),
+                    debug_request_sender.clone(),
                     config.web_ui.clone(),
                     StaticWebData::new(&secrets, None),
                     web_contract_receiver.clone(),
@@ -239,7 +239,7 @@ impl OneNodeTestConfig {
                     key_storage_config,
                     indexer,
                     currently_running_job_name,
-                    signature_debug_request_sender,
+                    signature_debug_request_sender: debug_request_sender,
                 };
                 coordinator.run().await
             };

@@ -1,8 +1,9 @@
 use super::tx_signer::{TransactionSigner, TransactionSigners};
-use super::types::ChainGetPendingRequestArgs;
+use super::types::ChainGetPendingSignatureRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
 use crate::config::RespondConfig;
+use crate::indexer::types::ChainGetPendingCKDRequestArgs;
 use crate::metrics;
 use ed25519_dalek::SigningKey;
 use legacy_mpc_contract;
@@ -87,7 +88,7 @@ async fn observe_tx_result(
             // Confirm whether the respond call succeeded by checking whether the
             // pending signature request still exists in the contract state
             let get_pending_request_args: Vec<u8> =
-                serde_json::to_string(&ChainGetPendingRequestArgs {
+                serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
                     request: respond_args.request.clone(),
                 })
                 .unwrap()
@@ -100,6 +101,45 @@ async fn observe_tx_result(
                         request: QueryRequest::CallFunction {
                             account_id: indexer_state.mpc_contract_id.clone(),
                             method_name: "get_pending_request".to_string(),
+                            args: get_pending_request_args.into(),
+                        },
+                    }
+                    .with_span_context(),
+                )
+                .await??;
+            match query_response.kind {
+                QueryResponseKind::CallResult(call_result) => {
+                    let pending_request = serde_json::from_slice::<
+                        Option<legacy_mpc_contract::primitives::YieldIndex>,
+                    >(&call_result.result)?;
+                    Ok(if pending_request.is_none() {
+                        ChainTransactionState::Executed
+                    } else {
+                        ChainTransactionState::NotExecuted
+                    })
+                }
+                _ => {
+                    anyhow::bail!("Unexpected result from a view client function call");
+                }
+            }
+        }
+        CKDRespond(respond_args) => {
+            // Confirm whether the respond call succeeded by checking whether the
+            // pending ckd request still exists in the contract state
+            let get_pending_request_args: Vec<u8> =
+                serde_json::to_string(&ChainGetPendingCKDRequestArgs {
+                    request: respond_args.request.clone(),
+                })
+                .unwrap()
+                .into_bytes();
+            let query_response = indexer_state
+                .view_client
+                .send(
+                    Query {
+                        block_reference: BlockReference::Finality(Finality::Final),
+                        request: QueryRequest::CallFunction {
+                            account_id: indexer_state.mpc_contract_id.clone(),
+                            method_name: "get_pending_ckd_request".to_string(),
                             args: get_pending_request_args.into(),
                         },
                     }

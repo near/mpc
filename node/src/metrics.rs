@@ -99,6 +99,14 @@ pub static MPC_NUM_SIGN_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> = Laz
     .unwrap()
 });
 
+pub static MPC_NUM_CKD_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_num_ckd_requests_indexed",
+        "Number of ckd requests seen by the indexer"
+    )
+    .unwrap()
+});
+
 pub static MPC_NUM_SIGN_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_num_signature_responses_indexed",
@@ -106,6 +114,15 @@ pub static MPC_NUM_SIGN_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> = La
     )
     .unwrap()
 });
+
+pub static MPC_NUM_CKD_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_num_ckd_responses_indexed",
+        "Number of ckd responses seen by the indexer"
+    )
+    .unwrap()
+});
+
 pub static MPC_NUM_SIGNATURE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(

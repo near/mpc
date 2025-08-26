@@ -40,6 +40,7 @@ mod sign_request;
 pub mod signing;
 pub mod tracing;
 mod tracking;
+mod types;
 pub mod web;
 
 #[cfg(feature = "tee")]
