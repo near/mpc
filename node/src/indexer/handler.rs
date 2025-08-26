@@ -147,62 +147,65 @@ async fn handle_message(
             let execution_outcome = outcome.execution_outcome.clone();
 
             // TODO: this should improve once https://github.com/near/mpc/issues/950 is done
-            if let Some((args, method_name)) = try_extract_function_call_args(&receipt) {
-                match method_name.as_str() {
-                    "sign" => {
-                        if let Some((signature_id, sign_args)) = try_get_sign_args(
-                            &receipt,
-                            &execution_outcome,
-                            mpc_contract_id,
-                            args,
-                            method_name,
-                        ) {
-                            signature_requests.push(SignatureRequestFromChain {
-                                signature_id,
-                                receipt_id: receipt.receipt_id,
-                                request: sign_args,
-                                predecessor_id: receipt.predecessor_id.clone(),
-                                entropy: streamer_message.block.header.random_value.into(),
-                                timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
-                            });
-                            metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
+            if let Some(next_receipt_id) =
+                try_extract_next_receipt_id(&execution_outcome, mpc_contract_id)
+            {
+                if let Some((args, method_name)) = try_extract_function_call_args(&receipt) {
+                    match method_name.as_str() {
+                        "sign" => {
+                            if let Some((signature_id, sign_args)) =
+                                try_get_sign_args(&receipt, next_receipt_id, args, method_name)
+                            {
+                                signature_requests.push(SignatureRequestFromChain {
+                                    signature_id,
+                                    receipt_id: receipt.receipt_id,
+                                    request: sign_args,
+                                    predecessor_id: receipt.predecessor_id.clone(),
+                                    entropy: streamer_message.block.header.random_value.into(),
+                                    timestamp_nanosec: streamer_message
+                                        .block
+                                        .header
+                                        .timestamp_nanosec,
+                                });
+                                metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
+                            }
                         }
-                    }
-                    "request_app_private_key" => {
-                        if let Some((ckd_id, ckd_args)) = try_get_ckd_args(
-                            &receipt,
-                            &execution_outcome,
-                            mpc_contract_id,
-                            args,
-                            method_name,
-                        ) {
-                            ckd_requests.push(CKDRequestFromChain {
-                                ckd_id,
-                                receipt_id: receipt.receipt_id,
-                                request: ckd_args,
-                                predecessor_id: receipt.predecessor_id.clone(),
-                                entropy: streamer_message.block.header.random_value.into(),
-                                timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
-                            });
-                            metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
+                        "request_app_private_key" => {
+                            if let Some((ckd_id, ckd_args)) =
+                                try_get_ckd_args(&receipt, next_receipt_id, args, method_name)
+                            {
+                                ckd_requests.push(CKDRequestFromChain {
+                                    ckd_id,
+                                    receipt_id: receipt.receipt_id,
+                                    request: ckd_args,
+                                    predecessor_id: receipt.predecessor_id.clone(),
+                                    entropy: streamer_message.block.header.random_value.into(),
+                                    timestamp_nanosec: streamer_message
+                                        .block
+                                        .header
+                                        .timestamp_nanosec,
+                                });
+                                metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
+                            }
                         }
+                        _ => {}
                     }
-                    "return_signature_and_clean_state_on_success" => {
-                        if let Some(signature_id) =
-                            try_get_request_completion(&receipt, mpc_contract_id)
-                        {
-                            completed_signatures.push(signature_id);
+                }
+            }
+
+            if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id) {
+                if let Some((_, method_name)) = try_extract_function_call_args(&receipt) {
+                    match method_name.as_str() {
+                        "return_signature_and_clean_state_on_success" => {
+                            completed_signatures.push(request_id);
                             metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
                         }
-                    }
-                    "return_ck_and_clean_state_on_success" => {
-                        if let Some(ckd_id) = try_get_request_completion(&receipt, mpc_contract_id)
-                        {
-                            completed_ckds.push(ckd_id);
+                        "return_ck_and_clean_state_on_success" => {
+                            completed_ckds.push(request_id);
                             metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }
@@ -273,13 +276,10 @@ fn try_extract_next_receipt_id(
 
 fn try_get_sign_args(
     receipt: &ReceiptView,
-    execution_outcome: &ExecutionOutcomeWithIdView,
-    mpc_contract_id: &AccountId,
+    next_receipt_id: CryptoHash,
     args: &FunctionArgs,
     expected_name: &String,
 ) -> Option<(SignatureId, SignArgs)> {
-    let next_receipt_id = try_extract_next_receipt_id(execution_outcome, mpc_contract_id)?;
-
     let sign_args = match serde_json::from_slice::<'_, UnvalidatedSignArgs>(args) {
         Ok(parsed) => parsed,
         Err(err) => {
@@ -316,13 +316,10 @@ fn try_get_sign_args(
 
 fn try_get_ckd_args(
     receipt: &ReceiptView,
-    execution_outcome: &ExecutionOutcomeWithIdView,
-    mpc_contract_id: &AccountId,
+    next_receipt_id: CryptoHash,
     args: &FunctionArgs,
     expected_name: &String,
 ) -> Option<(CKDId, CKDArgs)> {
-    let next_receipt_id = try_extract_next_receipt_id(execution_outcome, mpc_contract_id)?;
-
     let ckd_args = match serde_json::from_slice::<'_, CKDRequestArgs>(args) {
         Ok(parsed) => parsed,
         Err(err) => {
