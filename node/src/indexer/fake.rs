@@ -5,9 +5,10 @@ use super::IndexerAPI;
 use crate::config::ParticipantsConfig;
 use crate::indexer::handler::CKDRequestFromChain;
 use crate::indexer::types::ChainCKDRespondArgs;
+use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
-use crate::types::{CKDId, SignatureId};
+use crate::types::CKDId;
 use anyhow::Context;
 use mpc_contract::config::Config;
 use mpc_contract::primitives::{

@@ -13,7 +13,7 @@ pub mod eddsa;
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
-use crate::types::SignatureId;
+use crate::sign_request::SignatureId;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
 use std::str::FromStr;

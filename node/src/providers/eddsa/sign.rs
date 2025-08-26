@@ -3,7 +3,7 @@ use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::kdf::derive_keygen_output;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
-use crate::types::SignatureId;
+use crate::sign_request::SignatureId;
 use anyhow::Context;
 use mpc_contract::primitives::signature::Tweak;
 use std::sync::Arc;

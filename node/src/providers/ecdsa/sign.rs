@@ -7,7 +7,7 @@ use crate::providers::ecdsa::kdf::{derive_public_key, derive_randomness};
 use crate::providers::ecdsa::{
     EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, PresignatureStorage,
 };
-use crate::types::SignatureId;
+use crate::sign_request::SignatureId;
 use anyhow::Context;
 use k256::elliptic_curve::PrimeField;
 use k256::Scalar;
