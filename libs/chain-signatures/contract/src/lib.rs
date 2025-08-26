@@ -704,7 +704,7 @@ impl VersionedMpcContract {
             .verify_proposed_participant_attestation(
                 &proposed_participant_attestation,
                 tls_public_key,
-            )?;
+            );
 
         if status == TeeQuoteStatus::Invalid {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation

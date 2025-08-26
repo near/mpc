@@ -2,7 +2,9 @@ use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
     quote::QuoteBytes, report_data::ReportData,
 };
+use alloc::{format, string::String};
 use borsh::{BorshDeserialize, BorshSerialize};
+use core::fmt;
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::{EventLog, TcbInfo};
@@ -38,7 +40,7 @@ pub enum Attestation {
     Local(LocalAttestation),
 }
 
-#[derive(Clone, Constructor, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -48,6 +50,35 @@ pub struct DstackAttestation {
     pub collateral: Collateral,
     pub tcb_info: TcbInfo,
     pub expected_measurements: ExpectedMeasurements,
+}
+
+impl fmt::Debug for DstackAttestation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const MAX_BYTES: usize = 2048;
+
+        fn truncate_debug<T: fmt::Debug>(value: &T, max_bytes: usize) -> String {
+            let debug_str = format!("{:?}", value);
+            if debug_str.len() <= max_bytes {
+                debug_str
+            } else {
+                format!(
+                    "{}... (truncated {} bytes)",
+                    &debug_str[..max_bytes],
+                    debug_str.len() - max_bytes
+                )
+            }
+        }
+
+        f.debug_struct("DstackAttestation")
+            .field("quote", &truncate_debug(&self.quote, MAX_BYTES))
+            .field("collateral", &truncate_debug(&self.collateral, MAX_BYTES))
+            .field("tcb_info", &truncate_debug(&self.tcb_info, MAX_BYTES))
+            .field(
+                "expected_measurements",
+                &truncate_debug(&self.expected_measurements, MAX_BYTES),
+            )
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
@@ -129,8 +160,8 @@ impl Attestation {
             )
     }
 
-    /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all digests
-    /// are correct
+    /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
+    /// digests are correct
     fn verify_event_log_rtmr3(event_log: &[EventLog], expected_digest: [u8; 48]) -> bool {
         let mut digest = [0u8; 48];
 
@@ -337,8 +368,7 @@ impl Attestation {
                 return false;
             }
         };
-        let launcher_compose_str = &app_compose.docker_compose_file;
-        let launcher_bytes = sha256(launcher_compose_str.as_bytes());
+        let launcher_bytes = sha256(app_compose.docker_compose_file.as_bytes());
         allowed_hashes
             .iter()
             .any(|hash| hash.as_hex() == hex::encode(&launcher_bytes))

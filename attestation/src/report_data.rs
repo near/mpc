@@ -128,19 +128,17 @@ mod tests {
     use alloc::vec::Vec;
     use dcap_qvl::quote::Quote;
     use near_sdk::PublicKey;
+    use test_utils::attestation::{p2p_tls_key, quote};
 
     #[test]
     fn test_from_str_valid() {
-        let valid_quote_json_vec = include_str!("../tests/assets/quote.json");
-        let valid_quote: Vec<u8> = serde_json::from_str(valid_quote_json_vec).unwrap();
+        let valid_quote: Vec<u8> =
+            serde_json::from_str(&serde_json::to_string(&quote()).unwrap()).unwrap();
         let quote = Quote::parse(&valid_quote).unwrap();
 
         let td_report = quote.report.as_td10().expect("Should be a TD 1.0 report");
 
-        let near_p2p_public_key: PublicKey =
-            include_str!("../tests/assets/near_p2p_public_key.pub")
-                .parse()
-                .unwrap();
+        let near_p2p_public_key: PublicKey = p2p_tls_key();
         let report_data = ReportData::V1(ReportDataV1::new(near_p2p_public_key));
         assert_eq!(report_data.to_bytes(), td_report.report_data,);
     }
