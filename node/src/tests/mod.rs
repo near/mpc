@@ -421,6 +421,7 @@ pub async fn request_signature_and_await_response(
 
 /// Request a ckd from the indexer and wait for the response.
 /// Returns the time taken to receive the response, or None if timed out.
+#[allow(dead_code)]
 pub async fn request_ckd_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,

@@ -334,6 +334,7 @@ fn try_get_ckd_args(
     let ckd_request = CKDRequest {
         app_public_key: ckd_args.app_public_key,
         app_id: receipt.predecessor_id.clone(),
+        domain_id: ckd_args.domain_id,
     };
 
     tracing::info!(
