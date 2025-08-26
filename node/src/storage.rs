@@ -1,7 +1,7 @@
 use crate::db::{DBCol, SecretDB};
 use crate::metrics;
+use crate::sign_request::{SignatureId, SignatureRequest};
 use crate::types::{CKDId, CKDRequest};
-use crate::types::{SignatureId, SignatureRequest};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -103,7 +103,7 @@ impl CKDRequestStorage {
     /// This behavior is necessary because a peer might initiate computation for a ckd
     /// request before our indexer has caught up to the request. We need proof of the request
     /// from on-chain in order to participate in the computation.
-    // TODO: remove when ckd provider is implemented
+    // // TODO: remove when ckd provider is integrated https://github.com/near/mpc/issues/863
     #[allow(dead_code)]
     pub async fn get(&self, id: CKDId) -> Result<CKDRequest, anyhow::Error> {
         let key = borsh::to_vec(&id)?;

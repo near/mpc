@@ -1,6 +1,6 @@
 use crate::config::ConfigFile;
-use crate::indexer::handler::{ChainBlockUpdate, SignatureRequestFromChain};
-use crate::indexer::types::{ChainRespondArgs, ChainSendTransactionRequest};
+use crate::indexer::handler::{CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain};
+use crate::indexer::types::{ChainSendTransactionRequest, ChainSignatureRespondArgs};
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
@@ -12,6 +12,7 @@ use crate::signing::queue::{PendingSignatureRequests, CHECK_EACH_SIGNATURE_REQUE
 use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
 use crate::tracking::{self, AutoAbortTaskCollection};
+use crate::types::CKDRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_contract::crypto_shared::derive_tweak;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -205,48 +206,41 @@ impl MpcClient {
                         .collect::<Vec<_>>();
 
 
-                    // TODO: can be used only when https://github.com/near/mpc/pull/956 is merged
-                    // let ckd_requests = block_update
-                    //     .ckd_requests
-                    //     .into_iter()
-                    //     .map(|ckd_request| {
-                    //         let CKDRequestFromChain {
-                    //             ckd_id,
-                    //             receipt_id,
-                    //             request,
-                    //             predecessor_id: _,
-                    //             entropy,
-                    //             timestamp_nanosec,
-                    //         } = ckd_request;
-                    //         CKDRequest {
-                    //             id: ckd_id,
-                    //             receipt_id,
-                    //             app_public_key: request.app_public_key,
-                    //             app_id: request.app_id,
-                    //             entropy,
-                    //             timestamp_nanosec,
-                    //             domain_id: request.domain_id,
-                    //         }
-                    //     })
-                    //     .collect::<Vec<_>>();
+                    let ckd_requests = block_update
+                        .ckd_requests
+                        .into_iter()
+                        .map(|ckd_request| {
+                            let CKDRequestFromChain {
+                                ckd_id,
+                                receipt_id,
+                                request,
+                                predecessor_id: _,
+                                entropy,
+                                timestamp_nanosec,
+                            } = ckd_request;
+                            CKDRequest {
+                                id: ckd_id,
+                                receipt_id,
+                                app_public_key: request.app_public_key,
+                                app_id: request.app_id,
+                                entropy,
+                                timestamp_nanosec,
+                                domain_id: request.domain_id,
+                            }
+                        })
+                        .collect::<Vec<_>>();
 
 
-                    // // Index the ckd requests as soon as we see them. We'll decide
-                    // // whether to *process* them after.
-                    // for ckd_request in &ckd_requests {
-                    //     self.ckd_request_store.add(ckd_request);
-                    // }
-                    // pending_ckds.notify_new_block(
-                    //     ckd_requests,
-                    //     block_update.completed_ckds,
-                    //     &block_update.block,
-                    // );
+                    // Index the ckd requests as soon as we see them. We'll decide
+                    // whether to *process* them after.
+                    for ckd_request in &ckd_requests {
+                        self.ckd_request_store.add(ckd_request);
+                    }
 
                     // Index the signature requests as soon as we see them. We'll decide
                     // whether to *process* them after.
                     for signature_request in &signature_requests {
-                        // TODO: to be removed during queue unification PR
-                        self.sign_request_store.add(&crate::types::SignatureRequest { id: signature_request.id, receipt_id: signature_request.receipt_id, payload: signature_request.payload.clone(), tweak: signature_request.tweak.clone(), entropy: signature_request.entropy, timestamp_nanosec: signature_request.timestamp_nanosec, domain: signature_request.domain });
+                        self.sign_request_store.add(signature_request);
                     }
                     pending_signatures.notify_new_block(
                         signature_requests,
@@ -315,7 +309,7 @@ impl MpcClient {
                                         )
                                         .await??;
 
-                                        let response = ChainRespondArgs::new_ecdsa(
+                                        let response = ChainSignatureRespondArgs::new_ecdsa(
                                             &signature_attempt.request,
                                             &signature,
                                             &public_key,
@@ -332,7 +326,7 @@ impl MpcClient {
                                         )
                                         .await??;
 
-                                        let response = ChainRespondArgs::new_eddsa(
+                                        let response = ChainSignatureRespondArgs::new_eddsa(
                                             &signature_attempt.request,
                                             &signature,
                                         )?;
@@ -371,86 +365,6 @@ impl MpcClient {
                     },
                 );
             }
-
-            // TODO: can be used only when https://github.com/near/mpc/pull/956 is merged
-            // let ckd_attempts = pending_ckds.get_requests_to_attempt();
-
-            // for ckd_attempt in ckd_attempts {
-            //     let this = self.clone();
-            //     let chain_txn_sender_ckd = chain_txn_sender.clone();
-            //     tasks.spawn_checked(
-            //         &format!("leader for ckd request {:?}", ckd_attempt.request.id),
-            //         async move {
-            //             // Only issue an MPC ckd computation if we haven't computed it
-            //             // in a previous attempt.
-            //             let existing_response = ckd_attempt
-            //                 .computation_progress
-            //                 .lock()
-            //                 .unwrap()
-            //                 .computed_response
-            //                 .clone();
-            //             let response = match existing_response {
-            //                 None => {
-            //                     metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-            //                         .with_label_values(&["total"])
-            //                         .inc();
-
-            //                     let response = match this
-            //                         .domain_to_scheme
-            //                         .get(&ckd_attempt.request.domain_id)
-            //                     {
-            //                         Some(SignatureScheme::Secp256k1) => {
-            //                             let response = timeout(
-            //                                 Duration::from_secs(this.config.signature.timeout_sec),
-            //                                 this.ckd_provider
-            //                                     .clone()
-            //                                     .make_ckd(ckd_attempt.request.id),
-            //                             )
-            //                             .await??;
-
-            //                             let response = ChainCKDRespondArgs::new_ckd(
-            //                                 &ckd_attempt.request,
-            //                                 &response,
-            //                             )?;
-
-            //                             Ok(response)
-            //                         }
-            //                         Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
-            //                             "Signature scheme is not allowed for domain: {:?}",
-            //                             ckd_attempt.request.domain_id.clone()
-            //                         )),
-            //                         None => Err(anyhow::anyhow!(
-            //                             "Signature scheme is not found for domain: {:?}",
-            //                             ckd_attempt.request.domain_id.clone()
-            //                         )),
-            //                     }?;
-
-            //                     metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-            //                         .with_label_values(&["succeeded"])
-            //                         .inc();
-
-            //                     ckd_attempt
-            //                         .computation_progress
-            //                         .lock()
-            //                         .unwrap()
-            //                         .computed_response = Some(response.clone());
-            //                     response
-            //                 }
-            //                 Some(response) => response,
-            //             };
-            //             let _ = chain_txn_sender_ckd
-            //                 .send(ChainSendTransactionRequest::CKDRespond(response))
-            //                 .await;
-            //             ckd_attempt
-            //                 .computation_progress
-            //                 .lock()
-            //                 .unwrap()
-            //                 .last_response_submission = Some(Clock::real().now());
-
-            //             anyhow::Ok(())
-            //         },
-            //     );
-            // }
         }
     }
 
