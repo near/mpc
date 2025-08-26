@@ -146,7 +146,7 @@ async fn handle_message(
             let receipt = outcome.receipt.clone();
             let execution_outcome = outcome.execution_outcome.clone();
             if let Some((signature_id, sign_args)) =
-                maybe_get_sign_args(&receipt, &execution_outcome, mpc_contract_id)
+                try_get_sign_args(&receipt, &execution_outcome, mpc_contract_id)
             {
                 signature_requests.push(SignatureRequestFromChain {
                     signature_id,
@@ -158,12 +158,12 @@ async fn handle_message(
                 });
                 metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
             } else if let Some(signature_id) =
-                maybe_get_request_completion(&receipt, mpc_contract_id, RequestType::Signature)
+                try_get_request_completion(&receipt, mpc_contract_id, RequestType::Signature)
             {
                 completed_signatures.push(signature_id);
                 metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
             } else if let Some((ckd_id, ckd_args)) =
-                maybe_get_ckd_args(&receipt, &execution_outcome, mpc_contract_id)
+                try_get_ckd_args(&receipt, &execution_outcome, mpc_contract_id)
             {
                 ckd_requests.push(CKDRequestFromChain {
                     ckd_id,
@@ -175,7 +175,7 @@ async fn handle_message(
                 });
                 metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
             } else if let Some(ckd_id) =
-                maybe_get_request_completion(&receipt, mpc_contract_id, RequestType::CKD)
+                try_get_request_completion(&receipt, mpc_contract_id, RequestType::CKD)
             {
                 completed_ckds.push(ckd_id);
                 metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
@@ -211,11 +211,11 @@ async fn handle_message(
     Ok(())
 }
 
-fn maybe_get_request_args_premise<'a>(
+fn try_extract_function_call_args<'a>(
     receipt: &'a ReceiptView,
     execution_outcome: &'a ExecutionOutcomeWithIdView,
     mpc_contract_id: &'a AccountId,
-    request_type: RequestType,
+    expected_method_name: &String,
 ) -> Option<(CryptoHash, &'a FunctionArgs)> {
     let outcome = &execution_outcome.outcome;
     if &outcome.executor_id != mpc_contract_id {
@@ -239,11 +239,6 @@ fn maybe_get_request_args_premise<'a>(
         return None;
     };
 
-    let expected_method_name = match request_type {
-        RequestType::CKD => "request_app_private_key",
-        RequestType::Signature => "sign",
-    };
-
     if method_name != expected_method_name {
         return None;
     }
@@ -252,16 +247,16 @@ fn maybe_get_request_args_premise<'a>(
     Some((next_receipt_id, args))
 }
 
-fn maybe_get_sign_args(
+fn try_get_sign_args(
     receipt: &ReceiptView,
     execution_outcome: &ExecutionOutcomeWithIdView,
     mpc_contract_id: &AccountId,
 ) -> Option<(SignatureId, SignArgs)> {
-    let (next_receipt_id, args) = maybe_get_request_args_premise(
+    let (next_receipt_id, args) = try_extract_function_call_args(
         receipt,
         execution_outcome,
         mpc_contract_id,
-        RequestType::Signature,
+        &"sign".to_string(),
     )?;
 
     let sign_args = match serde_json::from_slice::<'_, UnvalidatedSignArgs>(args) {
@@ -298,16 +293,16 @@ fn maybe_get_sign_args(
     ))
 }
 
-fn maybe_get_ckd_args(
+fn try_get_ckd_args(
     receipt: &ReceiptView,
     execution_outcome: &ExecutionOutcomeWithIdView,
     mpc_contract_id: &AccountId,
 ) -> Option<(CKDId, CKDArgs)> {
-    let (next_receipt_id, args) = maybe_get_request_args_premise(
+    let (next_receipt_id, args) = try_extract_function_call_args(
         receipt,
         execution_outcome,
         mpc_contract_id,
-        RequestType::CKD,
+        &"request_app_private_key".to_string(),
     )?;
 
     let ckd_args = match serde_json::from_slice::<'_, CKDRequestArgs>(args) {
@@ -336,12 +331,12 @@ fn maybe_get_ckd_args(
         CKDArgs {
             app_public_key: ckd_request.app_public_key,
             app_id: ckd_request.app_id,
-            domain_id: ckd_args.domain_id, // TODO: should come from CKDRequest
+            domain_id: ckd_args.domain_id, // TODO: should come from CKDRequest https://github.com/near/mpc/issues/929
         },
     ))
 }
 
-fn maybe_get_request_completion(
+fn try_get_request_completion(
     receipt: &ReceiptView,
     mpc_contract_id: &AccountId,
     request_type: RequestType,

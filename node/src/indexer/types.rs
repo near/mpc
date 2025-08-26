@@ -224,7 +224,8 @@ impl ChainSendTransactionRequest {
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)
-            | Self::VerifyTee() => 300 * TGAS, // TODO: is here where we put the maximum gas?
+            // This is too high in most settings, see https://github.com/near/mpc/issues/166
+            | Self::VerifyTee() => 300 * TGAS,
             #[cfg(feature = "tee")]
             Self::SubmitParticipantInfo(_) => 300 * TGAS,
         }

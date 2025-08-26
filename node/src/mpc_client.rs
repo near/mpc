@@ -42,7 +42,7 @@ pub struct MpcClient {
     ckd_request_store: Arc<CKDRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
-    // TODO: remove when ckd provider is implemented
+    // TODO: remove when ckd provider is integrated https://github.com/near/mpc/issues/863
     #[allow(dead_code)]
     ckd_provider: Arc<CKDProvider>,
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
