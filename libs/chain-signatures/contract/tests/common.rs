@@ -535,9 +535,10 @@ fn hash2curve(app_id: &[u8]) -> ProjectivePoint {
 pub fn create_response_ckd(
     account_id: &AccountId,
     app_public_key: near_sdk::PublicKey,
+    domain_id: &DomainId,
     signing_key: &ecdsa::elliptic_curve::SecretKey<k256::Secp256k1>,
 ) -> (CKDRequest, CKDResponse) {
-    let request = CKDRequest::new(app_public_key.clone(), account_id.clone());
+    let request = CKDRequest::new(app_public_key.clone(), account_id.clone(), *domain_id);
 
     let app_id = account_id.as_bytes();
     let app_pk = near_public_key_to_affine_point(app_public_key);

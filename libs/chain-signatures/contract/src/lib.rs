@@ -555,7 +555,7 @@ impl VersionedMpcContract {
         }
 
         let app_id = env::predecessor_account_id();
-        let request = CKDRequest::new(request.app_public_key, app_id);
+        let request = CKDRequest::new(request.app_public_key, app_id, request.domain_id);
 
         let promise_index = env::promise_yield_create(
             "return_ck_and_clean_state_on_success",
@@ -1554,7 +1554,11 @@ mod tests {
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
-        let ckd_request = CKDRequest::new(app_public_key, context.predecessor_account_id);
+        let ckd_request = CKDRequest::new(
+            app_public_key,
+            context.predecessor_account_id,
+            request.domain_id,
+        );
         contract.request_app_private_key(request);
         contract.get_pending_ckd_request(&ckd_request).unwrap();
 
@@ -1588,7 +1592,11 @@ mod tests {
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
-        let ckd_request = CKDRequest::new(app_public_key, context.predecessor_account_id);
+        let ckd_request = CKDRequest::new(
+            app_public_key,
+            context.predecessor_account_id,
+            request.domain_id,
+        );
         contract.request_app_private_key(request);
         assert!(matches!(
             contract.return_ck_and_clean_state_on_success(

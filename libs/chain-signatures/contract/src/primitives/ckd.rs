@@ -15,13 +15,19 @@ pub struct CKDRequest {
     /// The app ephemeral public key
     pub app_public_key: near_sdk::PublicKey,
     pub app_id: AccountId,
+    pub domain_id: DomainId,
 }
 
 impl CKDRequest {
-    pub fn new(app_public_key: near_sdk::PublicKey, app_id: AccountId) -> Self {
+    pub fn new(
+        app_public_key: near_sdk::PublicKey,
+        app_id: AccountId,
+        domain_id: DomainId,
+    ) -> Self {
         Self {
             app_public_key,
             app_id,
+            domain_id,
         }
     }
 }
