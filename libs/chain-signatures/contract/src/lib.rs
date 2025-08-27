@@ -277,15 +277,16 @@ impl MpcContract {
             .clone()
     }
 
-    pub fn clean_tee_status(&mut self) {
+    pub fn clean_tee_status(&mut self) -> Result<(), Error> {
         let participants = match &self.protocol_state {
             ProtocolContractState::Running(state) => state.parameters.participants(),
             _ => {
-                return;
+                return Err(InvalidState::ProtocolStateNotRunning.into());
             }
         };
 
         self.tee_state.clean_non_participants(participants);
+        Ok(())
     }
 }
 
@@ -1142,7 +1143,8 @@ impl VersionedMpcContract {
     /// Private endpoint to clean up TEE information for non-participants after resharing.
     /// This can only be called by the contract itself via a promise.
     #[private]
-    pub fn clean_tee_status(&mut self) {
+    #[handle_result]
+    pub fn clean_tee_status(&mut self) -> Result<(), Error> {
         match self {
             Self::V2(contract) => contract.clean_tee_status(),
             _ => env::panic_str("expected V2"),
