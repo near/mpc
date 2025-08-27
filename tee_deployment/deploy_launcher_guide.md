@@ -9,13 +9,15 @@ It:
 - Loads deployment parameters from a `.env` file (defaults to `default.env`)
 - Loads Docker Compose file and user\_config files
 - Generates an `app-compose.json` configuration
-- Deploys and starts CVM via `vmm-cli`
+- Deploys and starts CVM  via `vmm-cli`
 
 ---
 
 ### 📦 Requirements
 
-- A working Dstack setup and Dstack VMM service (`vmm-server`) accessible at `$VMM_RPC`
+- A working Dstack setup and Dstack VMM service (`vmm-server`) accessible at `$VMM_RPC`.
+See Phala's [setup guide](https://github.com/Dstack-TEE/dstack).
+Also review specific MPC configuration in [running_an_mpc_node_in_tdx_external_guide.md](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md#mpc-node-setup-and-deployment)
 - Python 3.6 or higher installed
 - Required Python packages (cryptography, eth_keys, eth_utils)
 - `vmm-cli.py` should be located under meta-dstack/dstack/vmm/src/vmm-cli.py
