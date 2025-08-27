@@ -190,12 +190,5 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Verify that the remaining TEE participants match exactly the new contract participants
     assert_eq!(tee_participants_after_cleanup, expected_participants);
 
-    // Additional verification: confirm that non-participants were actually removed
-    let initial_total_tee_participants = initial_accounts.len() + stale_accounts.len();
-    let cleaned_up_count = initial_total_tee_participants - tee_participants_after_cleanup.len();
-    let expected_cleanup_count = initial_total_tee_participants - expected_participants.len();
-
-    assert_eq!(cleaned_up_count, expected_cleanup_count);
-
     Ok(())
 }
