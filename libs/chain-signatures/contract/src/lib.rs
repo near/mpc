@@ -49,31 +49,31 @@ use primitives::{
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{proposal::MpcDockerImageHash, tee_state::TeeValidationResult};
 
-// Gas required for a sign request
+/// Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(15);
 
-// Gas required for a CKD request
+/// Gas required for a CKD request
 const GAS_FOR_CKD_CALL: Gas = Gas::from_tgas(15);
 
-// Register used to receive data id from `promise_await_data`.
+/// Register used to receive data id from `promise_await_data`
 const DATA_ID_REGISTER: u64 = 0;
 
-// Prepaid gas for a `return_signature_and_clean_state_on_success` call
+/// Prepaid gas for a `return_signature_and_clean_state_on_success` call
 const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(7);
 
-// Prepaid gas for a `return_ck_and_clean_state_on_success` call
+/// Prepaid gas for a `return_ck_and_clean_state_on_success` call
 const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(7);
 
-// Prepaid gas for a `update_config` call
+/// Prepaid gas for a `update_config` call
 const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 
-// Prepaid gas for a `fail_on_timeout` call
+/// Prepaid gas for a `fail_on_timeout` call
 const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
 
-// Prepaid gas for a `clean_tee_status` call
+/// Prepaid gas for a `clean_tee_status` call
 const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(5);
 
-// Confidential Key Derivation only supports secp256k1
+/// Confidential Key Derivation only supports secp256k1
 const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
 
 /// Store two version of the MPC contract for migration and backward compatibility purposes.
@@ -283,7 +283,6 @@ impl MpcContract {
         let participants = match &self.protocol_state {
             ProtocolContractState::Running(state) => state.parameters.participants(),
             _ => {
-                // If not in running state, don't clean up
                 return;
             }
         };

@@ -1,3 +1,4 @@
+use crate::common::gen_accounts;
 use anyhow::Result;
 use assert_matches::assert_matches;
 use attestation::attestation::Attestation;
@@ -6,9 +7,8 @@ use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, AccountId, Contract};
+use std::collections::HashSet;
 use test_utils::attestation::{mock_dstack_attestation, p2p_tls_key};
-
-use crate::common::gen_accounts;
 
 pub mod common;
 
@@ -416,6 +416,17 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
         tee_participants_after.len(),
         accounts.len(),
         "Should only have TEE data for current participants after cleanup"
+    );
+
+    let expected_participants: HashSet<_> = accounts
+        .iter()
+        .map(|account| account.id().clone())
+        .collect();
+    let actual_participants: HashSet<_> = tee_participants_after.into_iter().collect();
+
+    assert_eq!(
+        expected_participants, actual_participants,
+        "Remaining TEE participants should exactly match the current parameter set"
     );
 
     Ok(())
