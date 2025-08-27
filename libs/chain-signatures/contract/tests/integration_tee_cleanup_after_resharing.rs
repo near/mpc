@@ -1,8 +1,9 @@
 pub mod common;
 
 use anyhow::Result;
-use near_workspaces::{Account, AccountId, Contract};
+use near_workspaces::AccountId;
 use serde_json::json;
+use std::collections::HashSet;
 
 use common::{
     check_call_success, gen_accounts, get_tee_participants, init_env_secp256k1,
@@ -15,33 +16,7 @@ use mpc_contract::{
     },
     state::ProtocolContractState,
 };
-use mpc_primitives::hash::MpcDockerImageHash;
 use test_utils::attestation::{mock_local_attestation, p2p_tls_key};
-
-/// Helper function to set up contract with approved MPC hash
-async fn setup_contract_with_approved_hash(
-    contract: &Contract,
-    accounts: &[Account],
-) -> Result<()> {
-    let hash = MpcDockerImageHash::from([
-        0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
-        0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56,
-        0x78, 0x90,
-    ]);
-
-    for account in accounts {
-        check_call_success(
-            account
-                .call(contract.id(), "vote_code_hash")
-                .args_json(json!({"code_hash": hash}))
-                .max_gas()
-                .transact()
-                .await?,
-        );
-    }
-
-    Ok(())
-}
 
 /// Integration test that validates the complete E2E flow of TEE cleanup after resharing.
 ///
@@ -59,7 +34,6 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Set up TEE attestations for all initial participants
     let tls_key = p2p_tls_key();
     let attestation = mock_local_attestation(true);
-    setup_contract_with_approved_hash(&contract, &initial_accounts).await?;
 
     for account in &initial_accounts {
         let submission_result =
@@ -69,7 +43,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // Verify TEE participants were added
     let initial_tee_participants = get_tee_participants(&contract).await?;
-    assert_eq!(initial_tee_participants.len(), initial_accounts.len(),);
+    assert_eq!(initial_tee_participants.len(), initial_accounts.len());
 
     // Create additional accounts to simulate stale participants
     let (stale_accounts, _) = gen_accounts(&worker, 2).await;
@@ -101,21 +75,14 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Get current participants to construct proper ThresholdParameters
     let current_participants = running_state.parameters.participants().clone();
 
-    // Create new participants list with only the subset we want
+    // Create new participants list with first 2 participants
     let mut new_participants = Participants::new();
-    for account in new_participant_accounts {
-        // Find the participant info for this account from current participants
-        if let Some((_, _, participant_info)) = current_participants
-            .participants()
-            .iter()
-            .find(|(account_id, _, _)| account_id == account.id())
-        {
-            new_participants
-                .insert(account.id().clone(), participant_info.clone())
-                .expect("Failed to insert participant");
-        } else {
-            panic!("Account {} not found in current participants", account.id());
-        }
+    for (account_id, _participant_id, participant_info) in
+        current_participants.participants().iter().take(2)
+    {
+        new_participants
+            .insert(account_id.clone(), participant_info.clone())
+            .expect("Failed to insert participant");
     }
 
     // Create proper ThresholdParameters
@@ -126,8 +93,9 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Based on the test setup, the contract starts with epoch 5, so next epoch is 6
     let prospective_epoch_id = 6;
 
-    // Vote one by one and check the state after each vote
-    for account in initial_accounts.iter() {
+    // Vote for new parameters with threshold participants (2 out of 3)
+    // The transition to resharing should happen after 2 votes when threshold is reached
+    for account in initial_accounts.iter().take(2) {
         check_call_success(
             account
                 .call(contract.id(), "vote_new_parameters")
@@ -139,25 +107,10 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
                 .transact()
                 .await?,
         );
-
-        // Check if the state changed after this vote
-        let post_vote_state: ProtocolContractState = contract.view("state").await?.json()?;
-        match &post_vote_state {
-            ProtocolContractState::Running(_) => {
-                // Still in running state, continue voting
-            }
-            ProtocolContractState::Resharing(_) => {
-                break; // Stop voting once we're in resharing
-            }
-            _ => {
-                // Unexpected state
-            }
-        }
     }
 
     // Verify contract is now in resharing state
     let state: ProtocolContractState = contract.view("state").await?.json()?;
-
     let ProtocolContractState::Resharing(_resharing_state) = state else {
         panic!("Expected contract to be in Resharing state after voting");
     };
@@ -181,9 +134,9 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
             .await?,
     );
 
-    // Wait for all participants to vote for resharing
-    let mut transition_happened = false;
-    for account in initial_accounts.iter() {
+    // Wait for threshold participants to vote for resharing (2 out of 3)
+    // The transition should happen after 2 votes when threshold is reached
+    for account in initial_accounts.iter().take(2) {
         check_call_success(
             account
                 .call(contract.id(), "vote_reshared")
@@ -194,26 +147,6 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
                 .transact()
                 .await?,
         );
-
-        // Check state after each vote_reshared
-        let interim_state: ProtocolContractState = contract.view("state").await?.json()?;
-        match interim_state {
-            ProtocolContractState::Resharing(_) => {
-                // Still in resharing state
-            }
-            ProtocolContractState::Running(_) => {
-                transition_happened = true;
-                break;
-            }
-            _ => {
-                // Unexpected state
-            }
-        }
-    }
-
-    // Wait for the TEE cleanup promise to execute
-    if transition_happened {
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     }
 
     // Verify contract is back to running state with new threshold
@@ -226,7 +159,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     };
 
     // Get current participants to compare
-    let final_participants: Vec<AccountId> = running_state
+    let final_participants: HashSet<AccountId> = running_state
         .parameters
         .participants()
         .participants()
@@ -234,51 +167,33 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         .map(|(account_id, _, _)| account_id.clone())
         .collect();
 
-    // Verify only the new participants remain
-    let expected_participants: Vec<AccountId> = new_participant_accounts
+    // Create expected participants set
+    let expected_participants: HashSet<AccountId> = new_participant_accounts
         .iter()
         .map(|acc| acc.id().clone())
         .collect();
 
-    assert_eq!(final_participants.len(), new_participant_accounts.len());
-
-    for expected_participant in &expected_participants {
-        assert!(final_participants.contains(expected_participant));
-    }
+    // Verify only the new participants remain
+    assert_eq!(final_participants, expected_participants);
 
     // Verify TEE participants are properly cleaned up
-    let tee_participants_after_cleanup: Vec<AccountId> = contract
+    let tee_participants_after_cleanup: HashSet<AccountId> = contract
         .call("get_tee_participants")
         .args_json(serde_json::json!({}))
         .max_gas()
         .transact()
         .await?
-        .json()?;
-
-    // The expected behavior: TEE cleanup should remove non-participants, but keep participants
-    let expected_remaining_tee_participants: Vec<AccountId> = new_participant_accounts
-        .iter()
-        .map(|acc| acc.id().clone())
+        .json::<Vec<AccountId>>()?
+        .into_iter()
         .collect();
 
     // Verify that the remaining TEE participants match exactly the new contract participants
-    assert_eq!(
-        tee_participants_after_cleanup.len(),
-        expected_remaining_tee_participants.len(),
-    );
-
-    for expected_participant in &expected_remaining_tee_participants {
-        assert!(tee_participants_after_cleanup.contains(expected_participant));
-    }
-
-    for tee_participant in &tee_participants_after_cleanup {
-        assert!(expected_remaining_tee_participants.contains(tee_participant));
-    }
+    assert_eq!(tee_participants_after_cleanup, expected_participants);
 
     // Additional verification: confirm that non-participants were actually removed
     let initial_total_tee_participants = initial_accounts.len() + stale_accounts.len();
     let cleaned_up_count = initial_total_tee_participants - tee_participants_after_cleanup.len();
-    let expected_cleanup_count = initial_total_tee_participants - new_participant_accounts.len();
+    let expected_cleanup_count = initial_total_tee_participants - expected_participants.len();
 
     assert_eq!(cleaned_up_count, expected_cleanup_count);
 

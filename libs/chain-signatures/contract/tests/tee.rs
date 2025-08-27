@@ -1,3 +1,5 @@
+pub mod common;
+
 use crate::common::gen_accounts;
 use anyhow::Result;
 use assert_matches::assert_matches;
@@ -12,8 +14,6 @@ use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
 use std::collections::HashSet;
 use test_utils::attestation::{mock_dstack_attestation, p2p_tls_key};
-
-pub mod common;
 
 #[tokio::test]
 async fn test_tee_verify_no_tee() -> Result<()> {
