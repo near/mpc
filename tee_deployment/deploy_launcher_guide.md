@@ -9,7 +9,7 @@ It:
 - Loads deployment parameters from a `.env` file (defaults to `default.env`)
 - Loads Docker Compose file and user\_config files
 - Generates an `app-compose.json` configuration
-- Deploys and starts CVM  via `vmm-cli`
+- Deploys and starts CVM via `vmm-cli`
 
 ---
 
