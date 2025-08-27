@@ -4,13 +4,18 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends clang  # nee
 WORKDIR /app
 COPY .git .git
 COPY node node
+COPY devnet devnet
+COPY attestation attestation
+COPY tee_authority tee_authority
+COPY test_utils test_utils
+COPY crates crates
 COPY Cargo.lock Cargo.lock
 COPY Cargo.toml Cargo.toml
 COPY rust-toolchain.toml rust-toolchain.toml
 COPY libs/chain-signatures libs/chain-signatures
 COPY third-party-licenses third-party-licenses
 
-RUN cargo build --locked --release
+RUN cargo build -p mpc-node --locked --release
 
 FROM google/cloud-sdk:debian_component_based AS runtime
 RUN apt-get update -y \
@@ -20,6 +25,6 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 COPY --from=builder /app/target/release/mpc-node mpc-node
-COPY deployment/gcp-start.sh /app/gcp-start.sh
-RUN chmod +x /app/gcp-start.sh
-CMD [ "/app/gcp-start.sh" ]
+COPY deployment/start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+CMD [ "/app/start.sh" ]
