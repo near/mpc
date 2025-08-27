@@ -71,10 +71,7 @@ fn server_tls_config(
     Ok(Arc::new(
         rustls::ServerConfig::builder_with_protocol_versions(&[constants::TLS_PROTOCOL_VERSION])
             .with_client_cert_verifier(client_verifier) // enforcing mTLS
-            .with_single_cert(
-                vec![p2p_cert.der().clone().into()],
-                p2p_private_key.clone_key(),
-            )?,
+            .with_single_cert(vec![p2p_cert.der().clone()], p2p_private_key.clone_key())?,
     ))
 }
 
@@ -169,7 +166,7 @@ pub fn configure_tls(
 /// - Ensures that the peer presented exactly one certificate.
 /// - Parses the certificate as DER and extracts its public key.
 /// - Validates that the key is of the expected type (Ed25519, handled as `Unknown` by the parser).
-/// - Converts the raw key bytes into a [`near_crypto::ED25519PublicKey`].
+/// - Converts the raw key bytes into a [`ed25519_dalek::VerifyingKey`].
 ///
 /// # Parameters
 /// - `common_state`: A reference to the [`rustls::CommonState`] of the TLS connection.
