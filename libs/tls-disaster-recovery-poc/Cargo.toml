@@ -7,10 +7,12 @@ edition = "2024"
 anyhow = "1.0.99"
 borsh = {version = "1.5.7", features = ["derive"]}
 derive_more = {version ="2.0.1", features =["full"]}
-ed25519-dalek = "2.2.0"
+ed25519-dalek = { version = "2.1.1", features = ["serde", "digest", "pkcs8", "rand_core"] }
 mpc-tls = { version = "0.0.0", path = "../../crates/tls" }
+rand = "0.8.5"
 rustls = "0.23.31"
 tokio = {version = "1.47.1", features = ["full"]}
 tokio-rustls = "0.26.2"
 tokio-util = "0.7.16"
 tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
