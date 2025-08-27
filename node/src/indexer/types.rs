@@ -194,7 +194,6 @@ pub(crate) enum ChainSendTransactionRequest {
     //
     // For more info see clippy lint:
     // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
-    #[cfg(feature = "tee")]
     SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
 }
 
@@ -211,7 +210,6 @@ impl ChainSendTransactionRequest {
                 "vote_abort_key_event_instance"
             }
             ChainSendTransactionRequest::VerifyTee() => "verify_tee",
-            #[cfg(feature = "tee")]
             ChainSendTransactionRequest::SubmitParticipantInfo(_) => "submit_participant_info",
         }
     }
@@ -227,7 +225,6 @@ impl ChainSendTransactionRequest {
             | Self::VoteAbortKeyEventInstance(_)
             // This is too high in most settings, see https://github.com/near/mpc/issues/166
             | Self::VerifyTee() => 300 * TGAS,
-            #[cfg(feature = "tee")]
             Self::SubmitParticipantInfo(_) => 300 * TGAS,
         }
     }
