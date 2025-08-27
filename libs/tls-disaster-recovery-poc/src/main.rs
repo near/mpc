@@ -2,7 +2,7 @@ use mpc_tls::tls::configure_tls;
 use rand::rngs::OsRng;
 use rustls::{ClientConfig, ServerConfig};
 use std::sync::Arc;
-use tls_disaster_recovery_poc::conn::{self, Communicator};
+use tls_disaster_recovery_poc::communicator::conn::{self, Communicator};
 use tls_disaster_recovery_poc::messages::{Messages, PeerMessage};
 use tls_disaster_recovery_poc::types::{self, CommPeers, Peer};
 use tokio_util::sync::CancellationToken;
