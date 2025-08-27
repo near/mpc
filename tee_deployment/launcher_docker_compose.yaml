@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   launcher:
-    image: barakeinavnear/launcher@sha256:1ea7571baf18bd052359abd2a1f269e7836f9bad2270eb55fc9475aa327f8d96
+    image: barakeinavnear/launcher@sha256:3a27e5157281d4feea649ba27b2c814129650a874fe29e23df29bc0f1ff56fad
 
  # isuse #531: TODO (security): Replace with a specific image digest
     container_name: launcher

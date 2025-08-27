@@ -157,38 +157,39 @@ For details please refer to near account documentation.
 Create a user-config.conf file based on the [user-config.conf](https://github.com/near/mpc/blob/main/tee_deployment/user-config.conf) . 
 
 ```
-# Optional launcher image override
-LAUNCHER_IMAGE_NAME=nearone/mpc-node-gcp
-LAUNCHER_IMAGE_TAGS=068d88b44baa3b6c8f6f1edbf4bee572703505c7-068d88b-tee
-LAUNCHER_REGISTRY=registry.hub.docker.com
+# MPC docker image local override
+MPC_IMAGE_NAME=nearone/mpc-node-gcp
+MPC_IMAGE_TAGS=latest
+MPC_REGISTRY=registry.hub.docker.com
 
-MPC_ACCOUNT_ID=mpc-3-barak-launch1-b654bfa0a52e.5035bf56abb0.testnet
+# MPC node settings
+MPC_ACCOUNT_ID=$MY_MPC_NEAR_ACCOUNT_ID
 MPC_LOCAL_ADDRESS=127.0.0.1
 MPC_SECRET_STORE_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-MPC_CONTRACT_ID=mpc-contract-barak-launch1-4c5e2fe1fb42.5035bf56abb0.testnet
-MPC_ENV=testnet
+MPC_CONTRACT_ID=$CONTRACT_ID # v1.signer-prod.testnet for Testnet or v1.signer for Mainnet
+MPC_ENV=$CHAIN_ID # testnet or mainnet
 MPC_HOME_DIR=/data
 RUST_BACKTRACE=full
 RUST_LOG=mpc=debug,info
 
-NEAR_BOOT_NODES=ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ@116.202.220.238:34567,ed25519:8mzYnfuT5zQYqV99CfYAX6XoRmNxVJ1nAZHXXW4GrFD@34.221.144.70:24567,ed25519:B87Qq34LbWadFx2dq5bwUEtB5KBgr8ZhsoEpAiSP2qVX@142.132.203.80:24567,ed25519:EufXMhFVixgFpg2bBaHGL4Zrks1DDrhAZTQYwbjRTAUX@65.109.25.109:24567,ed25519:HJJde5skATXLA4wGk8P9awvfzaW47tCU2EsRXnMoFRA9@129.150.39.19:24567,ed25519:cRGmtzkkSZT6wXNjbthSXMD6dHrEgSeDtiEJAcnLLxH@15.204.213.166:24567
+NEAR_BOOT_NODES=$BOOT_NODES
 
 # Optional MPC responder
-MPC_RESPONDER_ID=mpc-responder-2-barak-launch1-cdd0fd949a48.5035bf56abb0.testnet
+MPC_RESPONDER_ID=$my_responder_acount
 
 # Optional: Extra hosts to add to the container
 EXTRA_HOSTS=mpc-node-0.service.mpc.consul:35.185.233.54,mpc-node-1.service.mpc.consul:34.168.117.59
 
-# needed: Port forwarding - telemetry.
-PORTS=8080:8080,3030:3030,18448:18448, 24567:24567
+# Port forwarding 
+PORTS=8080:8080, 24567:24567, 80:80
 
 ```
 
 Adjust the variables as per your environment.
 
-* MY\_MPC\_NEAR\_ACCOUNT\_ID `-` use the near account ID that was created in the previous step  
+* MPC_ACCOUNT_ID `-` use the near account ID that was created in the previous step  
   MPC\_CONTRACT\_ID is **v1.signer-prod.testnet** for testnet and **v1.signer** for mainnet 
-* PORTS: Those are the port forwarding rules for the MPC container. those should match the port forwarding for the CVM that are defined [Port Mapping](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md#using-the-web-interface)
+* PORTS: Those are the port forwarding rules for the MPC container. Those should be a subset of the port forwarding for the CVM that are defined [Port Mapping](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md#using-the-web-interface)
 *  A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into NEAR\_NOOT\_NODES variable:
 
 ```
