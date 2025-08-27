@@ -8,6 +8,7 @@ license = "MIT"
 anyhow = { workspace = true }
 attestation = { workspace = true }
 borsh = { workspace = true }
+bs58 = { workspace = true }
 clap = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }

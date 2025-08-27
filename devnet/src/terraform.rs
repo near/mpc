@@ -9,7 +9,7 @@ use crate::cli::{
 };
 use crate::constants::DEFAULT_MPC_DOCKER_IMAGE;
 use crate::devnet::OperatingDevnetSetup;
-use crate::types::{MpcNetworkSetup, ParsedConfig};
+use crate::types::{near_crypto_compatible_serialization, MpcNetworkSetup, ParsedConfig};
 use describe::TerraformInfraShowOutput;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_sdk::AccountId;
@@ -138,9 +138,13 @@ struct LegacyTerraformFile {
 #[derive(Serialize)]
 struct LegacyTerraformMpcNode {
     account: AccountId,
+    #[serde(with = "near_crypto_compatible_serialization::verifying_key")]
     account_pk: VerifyingKey,
+    #[serde(with = "near_crypto_compatible_serialization::signing_key")]
     account_sk: SigningKey,
+    #[serde(with = "near_crypto_compatible_serialization::verifying_key")]
     sign_pk: VerifyingKey,
+    #[serde(with = "near_crypto_compatible_serialization::signing_key")]
     sign_sk: SigningKey,
     url: String,
     respond_yaml: String,

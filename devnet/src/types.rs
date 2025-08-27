@@ -7,94 +7,181 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde::de;
-use serde::{Deserializer, Serializer};
+pub mod near_crypto_compatible_serialization {
+    use ed25519_dalek::{SigningKey, VerifyingKey};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    const ED25519_PREFIX: &str = "ed25519";
 
-pub mod serialize_signing_keys {
-    use super::*;
+    pub mod signing_keys {
+        use super::*;
 
-    pub fn serialize<S>(keys: &[SigningKey], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let hex_strings: Vec<String> = keys.iter().map(|key| hex::encode(key.as_bytes())).collect();
-        hex_strings.serialize(serializer)
+        pub fn serialize<S>(keys: &[SigningKey], serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let bs58_strings: Vec<String> = keys
+                .iter()
+                .map(|key| {
+                    format!(
+                        "{ED25519_PREFIX}:{}",
+                        bs58::encode(key.as_bytes()).into_string()
+                    )
+                })
+                .collect();
+            bs58_strings.serialize(serializer)
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<SigningKey>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let bs58_strings: Vec<String> = Vec::deserialize(deserializer)?;
+            bs58_strings
+                .into_iter()
+                .map(|bs58_str| {
+                    let Some((ED25519_PREFIX, encoded_key)) = &bs58_str.split_once(":") else {
+                        return Err(de::Error::custom("Key must start with 'ed25519:' prefix"));
+                    };
+
+                    let bytes = bs58::decode(encoded_key)
+                        .into_vec()
+                        .map_err(de::Error::custom)?;
+                    SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
+                })
+                .collect()
+        }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<SigningKey>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let hex_strings: Vec<String> = Vec::deserialize(deserializer)?;
-        hex_strings
-            .into_iter()
-            .map(|hex_str| {
-                let bytes = hex::decode(hex_str).map_err(de::Error::custom)?;
-                SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
-            })
-            .collect()
-    }
-}
+    pub mod signing_key {
+        use super::*;
 
-pub mod serialize_signing_key {
-    use super::*;
+        pub fn serialize<S>(key: &SigningKey, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let bs58_string = format!(
+                "{ED25519_PREFIX}:{}",
+                bs58::encode(key.as_bytes()).into_string()
+            );
+            bs58_string.serialize(serializer)
+        }
 
-    pub fn serialize<S>(key: &SigningKey, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let hex_string = hex::encode(key.as_bytes());
-        hex_string.serialize(serializer)
-    }
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<SigningKey, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let bs58_string: String = String::deserialize(deserializer)?;
+            let Some((ED25519_PREFIX, encoded_key)) = &bs58_string.split_once(":") else {
+                return Err(de::Error::custom("Key must start with 'ed25519:' prefix"));
+            };
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<SigningKey, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let hex_string: String = String::deserialize(deserializer)?;
-        let bytes = hex::decode(hex_string).map_err(de::Error::custom)?;
-        SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
-    }
-}
+            let bytes = bs58::decode(encoded_key)
+                .into_vec()
+                .map_err(de::Error::custom)?;
 
-pub mod serialize_p2p_public_key {
-    use anyhow::Context;
-
-    use super::*;
-
-    pub fn serialize<S>(key_opt: &Option<VerifyingKey>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let hex_option = key_opt.as_ref().map(|key| hex::encode(key.as_bytes()));
-        hex_option.serialize(serializer)
+            SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
+        }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<VerifyingKey>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let hex_option: Option<String> = Option::deserialize(deserializer)?;
-        match hex_option {
-            Some(hex_str) => {
-                let bytes: [u8; 32] = hex::decode(hex_str)
-                    .map_err(de::Error::custom)?
-                    .try_into()
-                    .map_err(|provided_bytes: Vec<u8>| {
-                        let error_message = format!(
-                            "Provided bytes is not 32 bytes. Actual length {:?}",
-                            provided_bytes.len()
-                        );
+    pub mod verifying_key_option {
+        use anyhow::Context;
 
-                        de::Error::custom(error_message)
-                    })?;
+        use super::*;
 
-                VerifyingKey::from_bytes(&bytes)
-                    .context("Failed to create verifying key from deserialized bytes.")
-                    .map_err(de::Error::custom)
-                    .map(Some)
+        pub fn serialize<S>(
+            key_opt: &Option<VerifyingKey>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let bs58_option = key_opt.as_ref().map(|key| {
+                format!(
+                    "{ED25519_PREFIX}:{}",
+                    bs58::encode(key.as_bytes()).into_string(),
+                )
+            });
+            bs58_option.serialize(serializer)
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<VerifyingKey>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let bs58_option: Option<String> = Option::deserialize(deserializer)?;
+            match bs58_option {
+                Some(bs58_string) => {
+                    let Some((ED25519_PREFIX, encoded_key)) = &bs58_string.split_once(":") else {
+                        return Err(de::Error::custom(format!(
+                            "Key must start with '{ED25519_PREFIX}:' prefix"
+                        )));
+                    };
+
+                    let bytes = bs58::decode(encoded_key)
+                        .into_vec()
+                        .map_err(de::Error::custom)?;
+
+                    let key_bytes: [u8; 32] =
+                        bytes.try_into().map_err(|provided_bytes: Vec<u8>| {
+                            let error_message = format!(
+                                "Provided bytes is not 32 bytes. Actual length {:?}",
+                                provided_bytes.len()
+                            );
+                            de::Error::custom(error_message)
+                        })?;
+
+                    VerifyingKey::from_bytes(&key_bytes)
+                        .context("Failed to create verifying key from deserialized bytes.")
+                        .map_err(de::Error::custom)
+                        .map(Some)
+                }
+                None => Ok(None),
             }
-            None => Ok(None),
+        }
+    }
+
+    pub mod verifying_key {
+        use anyhow::Context;
+
+        use super::*;
+
+        pub fn serialize<S>(key: &VerifyingKey, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let bs58_encoding = format!(
+                "{ED25519_PREFIX}:{}",
+                bs58::encode(key.as_bytes()).into_string()
+            );
+
+            bs58_encoding.serialize(serializer)
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<VerifyingKey, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let bs58_string = String::deserialize(deserializer)?;
+            let Some((ED25519_PREFIX, encoded_key)) = &bs58_string.split_once(":") else {
+                return Err(de::Error::custom(format!(
+                    "Key must start with '{ED25519_PREFIX}:' prefix"
+                )));
+            };
+            let bytes = bs58::decode(encoded_key)
+                .into_vec()
+                .map_err(de::Error::custom)?;
+
+            let key_bytes: [u8; 32] = bytes.try_into().map_err(|provided_bytes: Vec<u8>| {
+                let error_message = format!(
+                    "Provided bytes is not 32 bytes. Actual length {:?}",
+                    provided_bytes.len()
+                );
+                de::Error::custom(error_message)
+            })?;
+
+            VerifyingKey::from_bytes(&key_bytes)
+                .context("Failed to create verifying key from deserialized bytes.")
+                .map_err(de::Error::custom)
         }
     }
 }
@@ -103,7 +190,7 @@ pub mod serialize_p2p_public_key {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NearAccount {
     pub account_id: AccountId,
-    #[serde(with = "serialize_signing_keys")]
+    #[serde(with = "near_crypto_compatible_serialization::signing_keys")]
     pub access_keys: Vec<SigningKey>,
     pub kind: NearAccountKind,
 }
@@ -124,11 +211,11 @@ pub enum NearAccountKind {
 /// Locally stored MPC participant keys and other info.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MpcParticipantSetup {
-    #[serde(with = "serialize_signing_key")]
+    #[serde(with = "near_crypto_compatible_serialization::signing_key")]
     pub p2p_private_key: SigningKey, // todo: this can eventually be removed [(#710)](https://github.com/near/mpc/issues/710)
     /// The account this participant uses to respond to signature requests.
     pub responding_account_id: AccountId,
-    #[serde(with = "serialize_p2p_public_key")]
+    #[serde(with = "near_crypto_compatible_serialization::verifying_key_option")]
     pub p2p_public_key: Option<VerifyingKey>, // todo: this can eventually be made non-optional [(#710)](https://github.com/near/mpc/issues/710)
 }
 

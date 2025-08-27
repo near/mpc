@@ -4825,6 +4825,7 @@ dependencies = [
  "anyhow",
  "attestation",
  "borsh",
+ "bs58 0.5.1",
  "clap",
  "ed25519-dalek",
  "flume",
