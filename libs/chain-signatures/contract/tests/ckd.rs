@@ -43,13 +43,13 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
         println!("submitting: {account_id}");
 
-        let (respond_req, respond_resp) =
-            create_response_ckd(account.id(), app_public_key.clone(), sk);
-
         let request = CKDRequestArgs {
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
+
+        let (respond_req, respond_resp) =
+            create_response_ckd(account.id(), app_public_key.clone(), &request.domain_id, sk);
 
         derive_confidential_key_and_validate(
             account,
@@ -66,11 +66,13 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         .await
         .unwrap()
         .unwrap();
-    let (respond_req, respond_resp) = create_response_ckd(account.id(), app_public_key.clone(), sk);
     let request = CKDRequestArgs {
-        app_public_key,
+        app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
+    let (respond_req, respond_resp) =
+        create_response_ckd(account.id(), app_public_key, &request.domain_id, sk);
+
     derive_confidential_key_and_validate(
         account.clone(),
         &request,
@@ -108,12 +110,13 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
         common::SharedSecretKey::Ed25519(_) => unreachable!(),
     };
     let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
-
-    let (respond_req, respond_resp) = create_response_ckd(alice.id(), app_public_key.clone(), sk);
     let request = CKDRequestArgs {
-        app_public_key,
+        app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
+
+    let (respond_req, respond_resp) =
+        create_response_ckd(alice.id(), app_public_key, &request.domain_id, sk);
 
     let status = alice
         .call(contract.id(), "request_app_private_key")
@@ -252,7 +255,8 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
         .await?;
     dbg!(&status);
 
-    let (respond_req, respond_resp) = create_response_ckd(alice.id(), app_public_key, sk);
+    let (respond_req, respond_resp) =
+        create_response_ckd(alice.id(), app_public_key, &request.domain_id, sk);
     // Responding to the request should fail with missing request because the deposit is too low,
     // so the request should have never made it into the request queue and subsequently the MPC network.
     let respond = contract
