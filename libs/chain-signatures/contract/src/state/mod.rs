@@ -108,7 +108,7 @@ impl ProtocolContractState {
         public_key: PublicKeyExtended,
     ) -> Result<Option<ProtocolContractState>, Error> {
         let ProtocolContractState::Initializing(state) = self else {
-            return Err(InvalidState::ProtocolStateNotResharing.into());
+            return Err(InvalidState::ProtocolStateNotInitializing.into());
         };
         state
             .vote_pk(key_event_id, public_key)
