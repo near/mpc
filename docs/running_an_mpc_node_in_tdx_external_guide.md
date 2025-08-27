@@ -181,7 +181,7 @@ MPC_RESPONDER_ID=$my_responder_acount
 EXTRA_HOSTS=mpc-node-0.service.mpc.consul:35.185.233.54,mpc-node-1.service.mpc.consul:34.168.117.59
 
 # Port forwarding 
-PORTS=8080:8080, 24567:24567, 80:80
+PORTS=8080:8080,24567:24567,80:80
 
 ```
 
