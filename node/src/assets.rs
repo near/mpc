@@ -424,7 +424,6 @@ where
     /// TODO(#10): This reservation does not persist across restarts, leading to
     /// the assumption that the clock moves forward at least a second across
     /// restarts.
-    #[allow(dead_code)] // will be used for presignatures
     pub fn generate_and_reserve_id(&self) -> UniqueId {
         self.generate_and_reserve_id_range(1)
     }
