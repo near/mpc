@@ -2,11 +2,14 @@ use crate::common::gen_accounts;
 use anyhow::Result;
 use assert_matches::assert_matches;
 use attestation::attestation::Attestation;
-use common::{check_call_success, init_env_ed25519, init_env_secp256k1};
+use common::{
+    check_call_success, get_tee_participants, init_env_ed25519, init_env_secp256k1,
+    submit_participant_info,
+};
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
-use near_workspaces::{Account, AccountId, Contract};
+use near_workspaces::{Account, Contract};
 use std::collections::HashSet;
 use test_utils::attestation::{mock_dstack_attestation, p2p_tls_key};
 
@@ -254,33 +257,6 @@ async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Public
     let attestation = mock_dstack_attestation();
     let tls_key = p2p_tls_key();
     Ok((contract, accounts, attestation, tls_key))
-}
-
-/// Helper function to submit participant info.
-async fn submit_participant_info(
-    account: &Account,
-    contract: &Contract,
-    attestation: &Attestation,
-    tls_key: &PublicKey,
-) -> Result<bool> {
-    let result = account
-        .call(contract.id(), "submit_participant_info")
-        .args_borsh((attestation.clone(), tls_key.clone()))
-        .max_gas()
-        .transact()
-        .await?;
-    Ok(result.is_success())
-}
-
-/// Helper function to get TEE participants from contract.
-async fn get_tee_participants(contract: &Contract) -> Result<Vec<AccountId>> {
-    Ok(contract
-        .call("get_tee_participants")
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
-        .await?
-        .json()?)
 }
 
 /// Tests that TEE attestation fails when no MPC hash is approved yet.

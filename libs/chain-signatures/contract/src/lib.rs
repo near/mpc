@@ -277,8 +277,6 @@ impl MpcContract {
             .clone()
     }
 
-    /// Private endpoint to clean up TEE information for non-participants after resharing.
-    /// This can only be called by the contract itself via a promise.
     pub fn clean_tee_status(&mut self) {
         let participants = match &self.protocol_state {
             ProtocolContractState::Running(state) => state.parameters.participants(),

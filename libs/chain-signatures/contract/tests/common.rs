@@ -1,3 +1,5 @@
+use anyhow;
+use attestation::attestation::Attestation;
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
@@ -40,6 +42,7 @@ use near_workspaces::{
 };
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use sha2::Sha256;
 use signature::DigestSigner;
 use std::{
@@ -637,4 +640,31 @@ pub fn check_call_success(result: ExecutionFinalResult) {
         result.is_success(),
         "execution should have succeeded: {result:#?}"
     );
+}
+
+/// Helper function to get TEE participants from contract.
+pub async fn get_tee_participants(contract: &Contract) -> anyhow::Result<Vec<AccountId>> {
+    Ok(contract
+        .call("get_tee_participants")
+        .args_json(serde_json::json!({}))
+        .max_gas()
+        .transact()
+        .await?
+        .json()?)
+}
+
+/// Helper function to submit participant info with TEE attestation.
+pub async fn submit_participant_info(
+    account: &Account,
+    contract: &Contract,
+    attestation: &Attestation,
+    tls_key: &PublicKey,
+) -> anyhow::Result<bool> {
+    let result = account
+        .call(contract.id(), "submit_participant_info")
+        .args_borsh((attestation.clone(), tls_key.clone()))
+        .max_gas()
+        .transact()
+        .await?;
+    Ok(result.is_success())
 }
