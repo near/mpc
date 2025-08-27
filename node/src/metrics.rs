@@ -11,24 +11,34 @@ pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> 
     LazyLock::new(|| {
         near_o11y::metrics::try_create_histogram(
             "near_mpc_triples_generation_time_elapsed",
-            "Time take to generate a batch of triples",
+            "Time taken to generate a batch of triples",
         )
         .unwrap()
     });
 pub static MPC_PRE_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     near_o11y::metrics::try_create_histogram(
         "near_mpc_pre_signature_time_elapsed",
-        "Time take to generate a pre signature",
+        "Time taken to generate a pre signature",
     )
     .unwrap()
 });
 pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     near_o11y::metrics::try_create_histogram(
         "near_mpc_signature_time_elapsed",
-        "Time take to generate a signature",
+        "Time taken to generate a signature",
     )
     .unwrap()
 });
+
+// TODO: make sure this var is used before https://github.com/near/mpc/issues/861 is solved
+pub static MPC_CKD_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
+    near_o11y::metrics::try_create_histogram(
+        "near_mpc_ckd_time_elapsed",
+        "Time taken to generate a confidential key",
+    )
+    .unwrap()
+});
+
 pub static MPC_OWNED_NUM_TRIPLES_AVAILABLE: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(
         "mpc_owned_num_triples_available",
@@ -132,6 +142,18 @@ pub static MPC_NUM_SIGNATURE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVe
         )
         .unwrap()
     });
+
+// TODO: make sure this var is used before https://github.com/near/mpc/issues/861 is solved
+pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_ckd_computations_led",
+            "Number of ckd computations that this node led",
+            &["result"],
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
@@ -141,11 +163,31 @@ pub static MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED: LazyLock<prometheus::IntCount
         .unwrap()
     });
 
+// TODO: make sure this var is used before https://github.com/near/mpc/issues/861 is solved
+pub static MPC_NUM_PASSIVE_CKD_REQUESTS_RECEIVED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_passive_ckd_requests_received",
+            "Number of passive ckd requests received from mpc peers"
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
             "mpc_num_passive_signature_requests_lookup_succeeded",
             "Number of passive signature requests successfully looked up in local DB"
+        )
+        .unwrap()
+    });
+
+// TODO: make sure this var is used before https://github.com/near/mpc/issues/861 is solved
+pub static MPC_NUM_PASSIVE_CKD_REQUESTS_LOOKUP_SUCCEEDED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_passive_ckd_requests_lookup_succeeded",
+            "Number of passive ckd requests successfully looked up in local DB"
         )
         .unwrap()
     });
@@ -166,7 +208,7 @@ pub static MPC_INDEXER_LATEST_BLOCK_HEIGHT: LazyLock<prometheus::IntGauge> = Laz
     )
     .unwrap()
 });
-#[allow(dead_code)]
+
 pub static MPC_ACCESS_KEY_NONCE: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(
         "mpc_access_key_nonce",
@@ -187,6 +229,14 @@ pub static SIGN_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> = LazyL
     prometheus::register_int_counter!(
         "sign_request_channel_failed",
         "failed to send on channel in sign_request_channel",
+    )
+    .unwrap()
+});
+
+pub static CKD_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "ckd_request_channel_failed",
+        "failed to send on channel in ckd_request_channel",
     )
     .unwrap()
 });
