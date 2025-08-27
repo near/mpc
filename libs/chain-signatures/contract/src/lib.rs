@@ -901,7 +901,7 @@ impl VersionedMpcContract {
                 let resharing_concluded = contract_state.vote_reshared(key_event_id)?;
                 if resharing_concluded {
                     // Spawn a promise to clean up TEE information for non-participants
-                    let _promise = Promise::new(env::current_account_id()).function_call(
+                    Promise::new(env::current_account_id()).function_call(
                         "clean_tee_status".to_string(),
                         vec![],
                         NearToken::from_yoctonear(0),
