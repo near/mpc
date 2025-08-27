@@ -1,4 +1,3 @@
-use anyhow;
 use attestation::attestation::Attestation;
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
@@ -42,7 +41,6 @@ use near_workspaces::{
 };
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
-use serde_json;
 use sha2::Sha256;
 use signature::DigestSigner;
 use std::{

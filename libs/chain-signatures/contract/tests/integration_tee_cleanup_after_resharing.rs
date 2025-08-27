@@ -119,7 +119,8 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     }
 
     // Create proper ThresholdParameters
-    let new_threshold_parameters = ThresholdParameters::new(new_participants, Threshold::new(2))?;
+    let new_threshold_parameters =
+        ThresholdParameters::new(new_participants, Threshold::new(2)).unwrap();
 
     // Calculate prospective epoch ID based on contract's logic
     let prospective_epoch_id = match running_state.previously_cancelled_resharing_epoch_id {
@@ -128,7 +129,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     };
 
     // Vote one by one and check the state after each vote
-    for (_i, account) in initial_accounts.iter().enumerate() {
+    for account in initial_accounts.iter() {
         // Check contract state before this vote
         let pre_vote_state: ProtocolContractState = contract.view("state").await?.json()?;
         if let ProtocolContractState::Running(running_state) = &pre_vote_state {
@@ -193,7 +194,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // Wait for all participants to vote for resharing
     let mut transition_happened = false;
-    for (_i, account) in initial_accounts.iter().enumerate() {
+    for account in initial_accounts.iter() {
         check_call_success(
             account
                 .call(contract.id(), "vote_reshared")

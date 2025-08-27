@@ -187,23 +187,23 @@ impl TeeState {
     /// Removes TEE information for accounts that are not in the provided participants list.
     /// This is used to clean up storage after resharing concludes.
     pub fn clean_non_participants(&mut self, participants: &Participants) {
-        let participant_accounts: HashSet<AccountId> = participants
+        let participant_accounts: HashSet<&AccountId> = participants
             .participants()
             .iter()
-            .map(|(account_id, _, _)| account_id.clone())
+            .map(|(account_id, _, _)| account_id)
             .collect();
 
         // Collect accounts to remove (can't remove while iterating)
         let accounts_to_remove: Vec<AccountId> = self
             .participants_attestations
             .keys()
-            .filter(|account_id| !participant_accounts.contains(*account_id))
+            .filter(|account_id| !participant_accounts.contains(account_id))
             .cloned()
             .collect();
 
         // Remove non-participant TEE information
-        for account_id in accounts_to_remove {
-            self.participants_attestations.remove(&account_id);
+        for account_id in &accounts_to_remove {
+            self.participants_attestations.remove(account_id);
         }
     }
 
