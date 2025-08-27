@@ -1,95 +1,22 @@
 use crate::handshake::handshake;
-use crate::messages::Messages;
+use crate::messages::{Messages, PeerMessage};
+use crate::types::{CommPeers, CommunicatorPeerId};
+use crate::{constants, messages};
 use anyhow::Context;
 use borsh::BorshDeserialize;
-use derive_more::{AddAssign, Display, From};
-use ed25519_dalek::VerifyingKey;
 use rustls::{ClientConfig, ServerConfig};
+use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{Mutex, Semaphore, mpsc};
-use tokio::task::JoinHandle;
+use tokio::sync::{Mutex, Semaphore};
 use tokio::time::MissedTickBehavior;
 use tokio_rustls::client::TlsStream;
 use tokio_util::sync::CancellationToken;
 
-const READ_HDR_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-const READ_BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
-const HANDSHAKE_TIMEOUT: std::time::Duration = Duration::from_secs(1);
-const MESSAGE_READ_TIMEOUT_SECS: std::time::Duration = Duration::from_secs(1); // todo: adjust
-const MAX_MESSAGE_LEN: u32 = 64; // todo: adjust
-//
-#[derive(PartialEq, Copy, Clone, Debug, From, AddAssign, Eq, PartialOrd, Ord, Display)]
-struct CommunicatorPeerId(u64);
-// todo: constructor with checks
-struct AllowedPeers {
-    allowed_peer_keys: HashMap<ed25519_dalek::VerifyingKey, CommunicatorPeerId>,
-}
-
-impl AllowedPeers {
-    pub fn new(
-        allowed_peer_keys: HashMap<ed25519_dalek::VerifyingKey, CommunicatorPeerId>,
-    ) -> Self {
-        AllowedPeers { allowed_peer_keys }
-    }
-    pub fn is_allowed(&self, key: &ed25519_dalek::VerifyingKey) -> Option<CommunicatorPeerId> {
-        self.allowed_peer_keys.get(key).copied()
-    }
-}
-
-//#[cfg(test)]
-//mod test {
-//    use super::{CommPeers, Communicator, Peer};
-//
-//    async fn make_comm() {
-//        let comm_peers = CommPeers::new();
-//        // todo
-//        let peer = Peer{address, public_key};
-//        comm_peers.insert(peer)
-//        Communicator::new(comm_peers, server_config, client_config, cancel, my_port, message_sender);
-//    }
-//}
-#[derive(Hash, Clone, PartialEq, Eq)]
-pub struct Peer {
-    address: String,
-    public_key: ed25519_dalek::VerifyingKey,
-}
-#[derive(Clone)]
-pub struct CommPeers {
-    peers_by_id: HashMap<Peer, CommunicatorPeerId>,
-    next_id: CommunicatorPeerId,
-    peers: BTreeMap<CommunicatorPeerId, Peer>,
-}
-impl CommPeers {
-    pub fn new() -> Self {
-        Self {
-            peers_by_id: HashMap::new(),
-            next_id: 0.into(),
-            peers: BTreeMap::new(),
-        }
-    }
-
-    pub fn insert(&mut self, peer: Peer) {
-        self.peers.insert(self.next_id, peer.clone());
-        self.peers_by_id.insert(peer, self.next_id);
-        self.next_id = CommunicatorPeerId(self.next_id.0 + 1);
-    }
-    pub fn remove(&mut self, peer: &Peer) -> anyhow::Result<()> {
-        let Some(id) = self.peers_by_id.remove(peer) else {
-            anyhow::bail!("expected key");
-        };
-        if self.peers.remove(&id).is_none() {
-            anyhow::bail!("expected key");
-        };
-        Ok(())
-    }
-}
 struct OutgoingConnection {
     cancel: CancellationToken,
     send: tokio::sync::mpsc::UnboundedSender<Messages>,
@@ -98,7 +25,7 @@ struct OutgoingConnection {
 struct OutgoingConnections {
     cancel: CancellationToken,
     client_config: Arc<ClientConfig>,
-    peers: CommPeers,
+    peers: Arc<CommPeers>,
     outgoing: Mutex<BTreeMap<CommunicatorPeerId, OutgoingConnection>>,
     establishing: BTreeMap<CommunicatorPeerId, Semaphore>,
 }
@@ -107,15 +34,15 @@ struct OutgoingConnections {
 // Performance wise, this is not ideal.
 impl OutgoingConnections {
     pub fn new(
-        peers: CommPeers,
+        peers: Arc<CommPeers>,
         client_config: Arc<ClientConfig>,
         cancel: CancellationToken,
     ) -> Self {
         let mut establishing = BTreeMap::new();
-        peers
-            .peers
-            .iter()
-            .map(|(peer_id, ..)| establishing.insert(peer_id.clone(), Semaphore::new(1)));
+        for peer_id in peers.ids().iter() {
+            establishing.insert(peer_id.clone(), Semaphore::new(1));
+        }
+        tracing::info!("generated outgoing connections: {:?}", establishing);
         Self {
             cancel,
             client_config,
@@ -138,7 +65,7 @@ impl OutgoingConnections {
         peer_id: CommunicatorPeerId,
     ) -> anyhow::Result<tokio::sync::mpsc::UnboundedSender<Messages>> {
         let Some(establishing) = self.establishing.get(&peer_id) else {
-            anyhow::bail!("not a peer")
+            anyhow::bail!("could not find mutex. not a peer")
         };
         let _permit = establishing.acquire().await;
         if let Some(res) = self.outgoing.lock().await.get(&peer_id) {
@@ -146,7 +73,7 @@ impl OutgoingConnections {
                 return Ok(res.send.clone());
             }
         }
-        let Some(peer) = self.peers.peers.get(&peer_id) else {
+        let Some(peer) = self.peers.get(&peer_id) else {
             anyhow::bail!("not a peer")
         };
         let (send, recv) = tokio::sync::mpsc::unbounded_channel();
@@ -180,32 +107,21 @@ pub struct Communicator {
     cancel: CancellationToken,
 }
 
-pub(crate) struct PeerMessage {
-    peer: CommunicatorPeerId,
-    message: Messages,
-}
 impl Communicator {
     pub async fn new(
-        comm_peers: CommPeers,
+        comm_peers: Arc<CommPeers>,
         server_config: Arc<ServerConfig>,
         client_config: Arc<ClientConfig>,
         cancel: CancellationToken,
         my_port: u16,
         message_sender: tokio::sync::mpsc::UnboundedSender<PeerMessage>,
     ) -> anyhow::Result<Self> {
-        let mut allowed_peer_keys: HashMap<ed25519_dalek::VerifyingKey, CommunicatorPeerId> =
-            HashMap::new();
-        comm_peers
-            .peers
-            .iter()
-            .map(|(id, peer)| allowed_peer_keys.insert(peer.public_key, *id));
-        let allowed_peers = AllowedPeers::new(allowed_peer_keys);
         // spawn server:
         let incoming_connections = Arc::new(Mutex::new(IncomingConnections::new()));
         let mut server = Server::new(
             server_config,
             my_port,
-            Arc::new(allowed_peers),
+            comm_peers.clone(),
             cancel.clone(),
             incoming_connections.clone(),
         );
@@ -216,7 +132,7 @@ impl Communicator {
             client_config,
             cancel.child_token(),
         ));
-        comm_peers.peers.iter().map(|(peer_id, ..)| {
+        comm_peers.ids().iter().map(|peer_id| {
             let outgoing_clone = outgoing.clone();
             let peer_id_clone = peer_id.clone();
             tokio::spawn(async move { outgoing_clone.get_or_connect(peer_id_clone).await })
@@ -226,6 +142,14 @@ impl Communicator {
             incoming_connections,
             cancel,
         })
+    }
+
+    pub async fn send(&self, msg: PeerMessage) -> anyhow::Result<()> {
+        let sender = self
+            .outgoing_connections
+            .get_or_connect(msg.peer_id)
+            .await?;
+        Ok(sender.send(msg.message)?)
     }
 }
 
@@ -303,7 +227,7 @@ async fn establish_connection(
             }
 
             tracing::info!("Performing P2P handshake with: {:?}", target_address);
-            handshake(&mut tls_conn, HANDSHAKE_TIMEOUT)
+            handshake(&mut tls_conn, constants::HANDSHAKE_TIMEOUT)
                 .await
                 .context("p2p handshake")?;
 
@@ -329,7 +253,7 @@ pub async fn recv_loop<R: AsyncRead + Unpin>(
                 tracing::info!(target:"receiver", %peer_id, "cancelled");
                 return Ok(());
             },
-            res = tokio::time::timeout(READ_HDR_TIMEOUT, stream.read_u32()) => {
+            res = tokio::time::timeout(constants::READ_HDR_TIMEOUT, stream.read_u32()) => {
                 match res {
                     Err(_) => anyhow::bail!("header read timed out"),
                     Ok(Err(e)) => return Err(e).context("failed to read header"),
@@ -342,7 +266,7 @@ pub async fn recv_loop<R: AsyncRead + Unpin>(
             // Optional: treat zero-length as protocol error
             anyhow::bail!("unexpected zero-length message");
         }
-        if len > MAX_MESSAGE_LEN {
+        if len > messages::MAX_MESSAGE_LEN {
             anyhow::bail!("message too long: {}", len);
         }
 
@@ -353,7 +277,7 @@ pub async fn recv_loop<R: AsyncRead + Unpin>(
                 tracing::info!(target:"receiver", %peer_id, "cancelled during body read");
                 return Ok(());
             },
-            res = tokio::time::timeout(READ_BODY_TIMEOUT, stream.read_exact(&mut buf)) => {
+            res = tokio::time::timeout(constants::READ_BODY_TIMEOUT, stream.read_exact(&mut buf)) => {
                 match res {
                     Err(_) => anyhow::bail!("body read timed out"),
                     Ok(Err(e)) => return Err(e).context("failed to read body"),
@@ -370,7 +294,7 @@ pub async fn recv_loop<R: AsyncRead + Unpin>(
             Messages::KEEPALIVE => {}
             Messages::Secrets(_) => {
                 message_sender.send(PeerMessage {
-                    peer: peer_id,
+                    peer_id,
                     message: packet,
                 })?;
             }
@@ -389,7 +313,7 @@ struct IncomingConnections {
 }
 
 impl IncomingConnections {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             incoming: BTreeMap::new(),
         }
@@ -420,10 +344,10 @@ impl IncomingConnections {
 }
 
 // note: duplex connection
-pub async fn accept_connection(
+async fn accept_connection(
     tls_acceptor: tokio_rustls::TlsAcceptor,
     tcp_stream: TcpStream,
-    allowed_peer_keys: Arc<AllowedPeers>,
+    allowed_peer_keys: Arc<CommPeers>,
     message_sender: tokio::sync::mpsc::UnboundedSender<PeerMessage>,
     cancel: CancellationToken,
     connections: Arc<Mutex<IncomingConnections>>,
@@ -440,7 +364,7 @@ pub async fn accept_connection(
                 anyhow::bail!("peer is not in list of allowed peers.");
             };
             tracing::info!("Performing P2P handshake with: {:?}", peer_id);
-            handshake(&mut stream, HANDSHAKE_TIMEOUT)
+            handshake(&mut stream, constants::HANDSHAKE_TIMEOUT)
                 .await
                 .context("p2p handshake")?;
             tracing::info!("(incoming) Concluded P2P handshake with: {:?}", peer_id);
@@ -456,7 +380,7 @@ pub async fn accept_connection(
 async fn listen_incoming(
     tls_acceptor: tokio_rustls::TlsAcceptor,
     tcp_listener: tokio::net::TcpListener,
-    allowed_peer_keys: Arc<AllowedPeers>,
+    allowed_peer_keys: Arc<CommPeers>,
     cancel: CancellationToken,
     connections: Arc<Mutex<IncomingConnections>>,
     message_sender: tokio::sync::mpsc::UnboundedSender<PeerMessage>,
@@ -500,7 +424,7 @@ async fn listen_incoming(
 struct Server {
     server_config: Arc<rustls::server::ServerConfig>,
     my_port: u16,
-    allowed_peer_keys: Arc<AllowedPeers>,
+    allowed_peer_keys: Arc<CommPeers>,
     cancel: CancellationToken,
     connections: Arc<Mutex<IncomingConnections>>,
 }
@@ -509,7 +433,7 @@ impl Server {
     pub fn new(
         server_config: Arc<rustls::server::ServerConfig>,
         my_port: u16,
-        allowed_peer_keys: Arc<AllowedPeers>,
+        allowed_peer_keys: Arc<CommPeers>,
         cancel: CancellationToken,
         connections: Arc<Mutex<IncomingConnections>>,
     ) -> Self {
@@ -543,31 +467,3 @@ impl Server {
         Ok(())
     }
 }
-
-//async fn receiver(
-//    server_config: Arc<rustls::server::ServerConfig>,
-//    my_port: u16,
-//    message_sender: tokio::sync::mpsc::UnboundedSender<Messages>,
-//    allowed_peer_keys: Arc<AllowedPeers>,
-//    cancel: CancellationToken,
-//    connections: Arc<Mutex<Connections>>,
-//) -> anyhow::Result<()> {
-//    let tls_acceptor = tokio_rustls::TlsAcceptor::from(server_config);
-//    //let (message_sender, message_receiver) = mpsc::unbounded_channel();
-//    let tcp_listener = tokio::net::TcpListener::bind(SocketAddr::V4(SocketAddrV4::new(
-//        Ipv4Addr::new(0, 0, 0, 0),
-//        my_port,
-//    )))
-//    .await
-//    .context("TCP bind")?;
-//    tokio::spawn(listen_incoming(
-//        tls_acceptor,
-//        tcp_listener,
-//        allowed_peer_keys,
-//        cancel,
-//        connections,
-//        message_sender,
-//    ));
-//
-//    Ok(())
-//}
