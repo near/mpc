@@ -1145,6 +1145,7 @@ impl VersionedMpcContract {
     #[private]
     #[handle_result]
     pub fn clean_tee_status(&mut self) -> Result<(), Error> {
+        log!("clean_tee_status: signer={}", env::signer_account_id());
         match self {
             Self::V2(contract) => contract.clean_tee_status(),
             _ => env::panic_str("expected V2"),
