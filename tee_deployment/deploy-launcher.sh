@@ -101,7 +101,7 @@ INTERNAL_SSH_PORT=22
 # Address of the dstack guest agent service inside the CVM
 INTERNAL_AGENT_ADDR=8090
 
-# do not change these variables - those are messured and reflected int the attestation
+# Do not change these variables - those are measured and reflected in the attestation
 VCPU=8 # Number of vCPUs for the VM
 MEMORY=64G # Memory for the VM
 
