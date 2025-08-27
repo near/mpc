@@ -181,7 +181,7 @@ cat .app-compose.json
 rm "$COMPOSE_TMP"
 
 
-echo "Deploying $APP_NAME to dstack-vmm..."
+echo -e "Deploying $APP_NAME to dstack-vmm..."
 echo "Press enter to continue..."
 read
 

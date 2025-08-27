@@ -102,7 +102,7 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
 ./deploy-launcher.sh \
   --base-path /home/barak/project \
   --python-exec /home/barak/project/.venv/bin/python
-
+```
 ---
 
 ### 📄 `.env` File Format
