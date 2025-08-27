@@ -181,7 +181,7 @@ impl MpcClient {
                     let signature_requests = block_update
                         .signature_requests
                         .into_iter()
-                        .map(|signature_request| {
+                        .map(|signature_request_from_chain| {
                             let SignatureRequestFromChain {
                                 signature_id,
                                 receipt_id,
@@ -189,8 +189,8 @@ impl MpcClient {
                                 predecessor_id,
                                 entropy,
                                 timestamp_nanosec,
-                            } = signature_request;
-                            SignatureRequest {
+                            } = signature_request_from_chain;
+                            let signature_request = SignatureRequest {
                                 id: signature_id,
                                 receipt_id,
                                 payload: request.payload,
@@ -198,15 +198,26 @@ impl MpcClient {
                                 entropy,
                                 timestamp_nanosec,
                                 domain: request.domain_id,
-                            }
+                            };
+                            // Index the signature requests as soon as we see them. We'll decide
+                            // whether to *process* them after.
+                            self.sign_request_store.add(&signature_request);
+                            signature_request
                         })
                         .collect::<Vec<_>>();
 
+                    pending_signatures.notify_new_block(
+                        signature_requests,
+                        block_update.completed_signatures,
+                        &block_update.block,
+                    );
 
+                    // TODO: remove when ckd provider is integrated https://github.com/near/mpc/issues/863
+                    #[allow(unused)]
                     let ckd_requests = block_update
                         .ckd_requests
                         .into_iter()
-                        .map(|ckd_request| {
+                        .map(|ckd_request_from_chain| {
                             let CKDRequestFromChain {
                                 ckd_id,
                                 receipt_id,
@@ -214,8 +225,8 @@ impl MpcClient {
                                 predecessor_id: _,
                                 entropy,
                                 timestamp_nanosec,
-                            } = ckd_request;
-                            CKDRequest {
+                            } = ckd_request_from_chain;
+                            let ckd_request = CKDRequest {
                                 id: ckd_id,
                                 receipt_id,
                                 app_public_key: request.app_public_key,
@@ -223,27 +234,15 @@ impl MpcClient {
                                 entropy,
                                 timestamp_nanosec,
                                 domain_id: request.domain_id,
-                            }
+                            };
+                            // Index the ckd requests as soon as we see them. We'll decide
+                            // whether to *process* them after.
+                            self.ckd_request_store.add(&ckd_request);
+                            ckd_request
                         })
                         .collect::<Vec<_>>();
 
 
-                    // Index the ckd requests as soon as we see them. We'll decide
-                    // whether to *process* them after.
-                    for ckd_request in &ckd_requests {
-                        self.ckd_request_store.add(ckd_request);
-                    }
-
-                    // Index the signature requests as soon as we see them. We'll decide
-                    // whether to *process* them after.
-                    for signature_request in &signature_requests {
-                        self.sign_request_store.add(signature_request);
-                    }
-                    pending_signatures.notify_new_block(
-                        signature_requests,
-                        block_update.completed_signatures,
-                        &block_update.block,
-                    );
 
                 }
                 debug_request = debug_receiver.recv() => {
