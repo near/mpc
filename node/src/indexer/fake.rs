@@ -5,6 +5,7 @@ use super::IndexerAPI;
 use crate::config::ParticipantsConfig;
 use crate::indexer::handler::CKDRequestFromChain;
 use crate::indexer::types::ChainCKDRespondArgs;
+use crate::providers::PublicKeyConversion;
 use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
