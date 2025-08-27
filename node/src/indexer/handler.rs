@@ -1,8 +1,8 @@
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
+use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::BlockViewLite;
 use crate::types::CKDId;
-use crate::types::SignatureId;
 use anyhow::Context;
 use futures::StreamExt;
 use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
@@ -60,12 +60,13 @@ pub struct CKDRequestFromChain {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
+
 pub struct ChainBlockUpdate {
     pub block: BlockViewLite,
     pub signature_requests: Vec<SignatureRequestFromChain>,
     pub completed_signatures: Vec<SignatureId>,
     pub ckd_requests: Vec<CKDRequestFromChain>,
+    #[allow(dead_code)]
     pub completed_ckds: Vec<CKDId>,
 }
 
@@ -349,7 +350,7 @@ fn try_get_ckd_args(
         CKDArgs {
             app_public_key: ckd_request.app_public_key,
             app_id: ckd_request.app_id,
-            domain_id: ckd_args.domain_id, // TODO: should come from CKDRequest https://github.com/near/mpc/issues/929
+            domain_id: ckd_request.domain_id,
         },
     ))
 }

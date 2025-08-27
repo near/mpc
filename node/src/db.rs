@@ -21,6 +21,7 @@ pub enum DBCol {
     Triple,
     Presignature,
     SignRequest,
+    CKDRequest,
     EpochId,
 }
 
@@ -30,15 +31,17 @@ impl DBCol {
             DBCol::Triple => "triple",
             DBCol::Presignature => "presignature",
             DBCol::SignRequest => "sign_request",
+            DBCol::CKDRequest => "ckd_request",
             DBCol::EpochId => "epoch_id",
         }
     }
 
-    fn all() -> [DBCol; 4] {
+    fn all() -> [DBCol; 5] {
         [
             DBCol::Triple,
             DBCol::Presignature,
             DBCol::SignRequest,
+            DBCol::CKDRequest,
             DBCol::EpochId,
         ]
     }

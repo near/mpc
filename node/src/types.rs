@@ -17,5 +17,3 @@ pub struct CKDRequest {
     pub timestamp_nanosec: u64,
     pub domain_id: DomainId,
 }
-
-pub type SignatureId = CryptoHash;
