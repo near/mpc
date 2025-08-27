@@ -126,3 +126,89 @@ impl CKDRequestStorage {
         Ok(serde_json::from_slice(&request_ser)?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use mpc_contract::primitives::{
+        domain::DomainId,
+        signature::{Payload, Tweak},
+    };
+    use near_indexer_primitives::CryptoHash;
+    use near_sdk::AccountId;
+
+    use crate::types::CKDRequest;
+    use crate::{
+        db::SecretDB,
+        sign_request::SignatureRequest,
+        storage::{CKDRequestStorage, SignRequestStorage},
+    };
+    use std::str::FromStr;
+
+    #[tokio::test]
+    async fn test_sig_request_storage() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let storage = SignRequestStorage::new(db).unwrap();
+
+        let req1 = SignatureRequest {
+            id: CryptoHash(rand::random()),
+            // All other fields are irrelevant for the test.
+            receipt_id: CryptoHash([0; 32]),
+            entropy: [0; 32],
+            payload: Payload::from_legacy_ecdsa([0; 32]),
+            timestamp_nanosec: 0,
+            tweak: Tweak::new([0; 32]),
+            domain: DomainId::legacy_ecdsa_id(),
+        };
+        assert!(storage.add(&req1));
+        assert!(!storage.add(&req1));
+        assert!(storage.get(req1.id).await.is_ok());
+        let req2 = SignatureRequest {
+            id: CryptoHash(rand::random()),
+            // All other fields are irrelevant for the test.
+            receipt_id: CryptoHash([0; 32]),
+            entropy: [0; 32],
+            payload: Payload::from_legacy_ecdsa([0; 32]),
+            timestamp_nanosec: 0,
+            tweak: Tweak::new([0; 32]),
+            domain: DomainId::legacy_ecdsa_id(),
+        };
+        storage.add(&req2);
+        assert!(storage.get(req1.id).await.is_ok());
+        assert!(storage.get(req2.id).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_ckd_request_storage() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let storage = CKDRequestStorage::new(db).unwrap();
+
+        let req1 = CKDRequest {
+                id: CryptoHash(rand::random()),
+                // All other fields are irrelevant for the test.
+                receipt_id: CryptoHash([0; 32]),
+                app_public_key: "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap(),
+                app_id: AccountId::from_str("test-app").unwrap(),
+                entropy: [0; 32],
+                timestamp_nanosec: 0,
+                domain_id: DomainId::legacy_ecdsa_id(),
+            };
+        assert!(storage.add(&req1));
+        assert!(!storage.add(&req1));
+        assert!(storage.get(req1.id).await.is_ok());
+        let req2 = CKDRequest {
+                id: CryptoHash(rand::random()),
+                // All other fields are irrelevant for the test.
+                receipt_id: CryptoHash([0; 32]),
+                app_public_key: "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap(),
+                app_id: AccountId::from_str("test-app").unwrap(),
+                entropy: [0; 32],
+                timestamp_nanosec: 0,
+                domain_id: DomainId::legacy_ecdsa_id(),
+            };
+        storage.add(&req2);
+        assert!(storage.get(req1.id).await.is_ok());
+        assert!(storage.get(req2.id).await.is_ok());
+    }
+}
