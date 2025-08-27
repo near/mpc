@@ -14,7 +14,6 @@ use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::VerifyingKey;
-use mpc_tls;
 use rustls::{ClientConfig, CommonState};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
