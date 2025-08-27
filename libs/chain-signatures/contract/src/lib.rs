@@ -174,22 +174,14 @@ impl MpcContract {
             .start_reshare_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
 
-    pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+    pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<bool, Error> {
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
-
-            // Spawn a promise to clean up TEE information for non-participants
-            let promise = Promise::new(env::current_account_id()).function_call(
-                "clean_tee_status".to_string(),
-                vec![],
-                NearToken::from_yoctonear(0),
-                CLEAN_TEE_STATUS_GAS,
-            );
-
-            promise.as_return();
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
 
     pub fn vote_cancel_resharing(&mut self) -> Result<(), Error> {
@@ -905,7 +897,19 @@ impl VersionedMpcContract {
             key_event_id,
         );
         match self {
-            Self::V2(contract_state) => contract_state.vote_reshared(key_event_id),
+            Self::V2(contract_state) => {
+                let resharing_concluded = contract_state.vote_reshared(key_event_id)?;
+                if resharing_concluded {
+                    // Spawn a promise to clean up TEE information for non-participants
+                    let _promise = Promise::new(env::current_account_id()).function_call(
+                        "clean_tee_status".to_string(),
+                        vec![],
+                        NearToken::from_yoctonear(0),
+                        CLEAN_TEE_STATUS_GAS,
+                    );
+                }
+                Ok(())
+            }
             _ => env::panic_str("expected V2"),
         }
     }
