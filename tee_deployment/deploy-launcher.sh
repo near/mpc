@@ -164,7 +164,7 @@ case $SEALING_KEY_TYPE in
 esac
 
 
-echo "\nCreating app-compose.json..."
+echo -e "\nCreating app-compose.json..."
 $CLI compose \
   --docker-compose "$COMPOSE_TMP" \
   --name $APP_NAME \
