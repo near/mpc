@@ -95,7 +95,7 @@ EOF
 fi
 
 
-# do not change these variables
+# Do not change these variables
 # SSH ports (only for dev images)
 INTERNAL_SSH_PORT=22
 # Address of the dstack guest agent service inside the CVM
