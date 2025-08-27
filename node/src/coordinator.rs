@@ -554,7 +554,7 @@ impl Coordinator {
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
                         KeyshareData::Secp256k1(data) => {
-                            ecdsa_keyshares.insert(keyshare.key_id.domain_id, data.clone());
+                            ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
                             domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
                         }
                         KeyshareData::Ed25519(data) => {

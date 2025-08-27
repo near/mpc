@@ -11,7 +11,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
 
-
+# TODO: make sure this function tests ckd endpoints before https://github.com/near/mpc/issues/861 is solved
 def test_web_endpoints():
     cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1, load_mpc_contract())
     cluster.init_cluster(participants=mpc_nodes, threshold=2)

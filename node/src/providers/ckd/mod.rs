@@ -37,6 +37,7 @@ pub struct CKDProvider {
     keyshares: HashMap<DomainId, KeygenOutput>,
 }
 
+// TODO: this is currently a stub, should be implemented as part of https://github.com/near/mpc/issues/862
 impl CKDProvider {
     pub fn new(
         config: Arc<ConfigFile>,

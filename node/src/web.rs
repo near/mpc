@@ -105,7 +105,7 @@ async fn debug_signatures(state: State<WebServerState>) -> Result<String, Anyhow
     debug_request_from_node(state, DebugRequestKind::RecentSignatures).await
 }
 
-async fn debug_ckd(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
+async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
     debug_request_from_node(state, DebugRequestKind::RecentCKD).await
 }
 
@@ -197,7 +197,7 @@ pub async fn start_web_server(
         .route("/debug/tasks", axum::routing::get(debug_tasks))
         .route("/debug/blocks", axum::routing::get(debug_blocks))
         .route("/debug/signatures", axum::routing::get(debug_signatures))
-        .route("/debug/ckd", axum::routing::get(debug_ckd))
+        .route("/debug/ckds", axum::routing::get(debug_ckds))
         .route("/debug/contract", axum::routing::get(contract_state))
         .route("/licenses", axum::routing::get(third_party_licenses))
         .route("/health", axum::routing::get(|| async { "OK" }))
