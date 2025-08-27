@@ -51,7 +51,7 @@ struct WebServerState {
     /// Root task handle for the whole program.
     root_task_handle: Arc<TaskHandle>,
     /// Sender for debug requests that need the MPC client to respond.
-    signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
+    debug_request_sender: broadcast::Sender<DebugRequest>,
     /// Receiver for contract state
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
     static_web_data: StaticWebData,
@@ -62,33 +62,34 @@ async fn debug_tasks(State(state): State<WebServerState>) -> String {
 }
 
 #[derive(Clone)]
-pub struct SignatureDebugRequest {
-    pub kind: SignatureDebugRequestKind,
+pub struct DebugRequest {
+    pub kind: DebugRequestKind,
     responder: mpsc::Sender<String>,
 }
 
-impl SignatureDebugRequest {
+impl DebugRequest {
     pub fn respond(self, response: String) {
         let _ = self.responder.try_send(response);
     }
 }
 
 #[derive(Clone)]
-pub enum SignatureDebugRequestKind {
+pub enum DebugRequestKind {
     RecentBlocks,
     RecentSignatures,
+    RecentCKD,
 }
 
 async fn debug_request_from_node(
     State(state): State<WebServerState>,
-    request: SignatureDebugRequestKind,
+    request: DebugRequestKind,
 ) -> Result<String, AnyhowErrorWrapper> {
     let (sender, mut receiver) = mpsc::channel(1);
-    let request = SignatureDebugRequest {
+    let request = DebugRequest {
         kind: request,
         responder: sender,
     };
-    if state.signature_debug_request_sender.send(request).is_err() {
+    if state.debug_request_sender.send(request).is_err() {
         return Err(anyhow::anyhow!("Error: node not in the Running state").into());
     }
     let Some(response) = receiver.recv().await else {
@@ -98,11 +99,15 @@ async fn debug_request_from_node(
 }
 
 async fn debug_blocks(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
-    debug_request_from_node(state, SignatureDebugRequestKind::RecentBlocks).await
+    debug_request_from_node(state, DebugRequestKind::RecentBlocks).await
 }
 
 async fn debug_signatures(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
-    debug_request_from_node(state, SignatureDebugRequestKind::RecentSignatures).await
+    debug_request_from_node(state, DebugRequestKind::RecentSignatures).await
+}
+
+async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
+    debug_request_from_node(state, DebugRequestKind::RecentCKD).await
 }
 
 async fn contract_state(mut state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
@@ -176,7 +181,7 @@ async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
 /// the returned future will stop the web server.
 pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
-    signature_debug_request_sender: broadcast::Sender<SignatureDebugRequest>,
+    debug_request_sender: broadcast::Sender<DebugRequest>,
     config: WebUIConfig,
     static_web_data: StaticWebData,
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
@@ -194,13 +199,14 @@ pub async fn start_web_server(
         .route("/debug/tasks", axum::routing::get(debug_tasks))
         .route("/debug/blocks", axum::routing::get(debug_blocks))
         .route("/debug/signatures", axum::routing::get(debug_signatures))
+        .route("/debug/ckds", axum::routing::get(debug_ckds))
         .route("/debug/contract", axum::routing::get(contract_state))
         .route("/licenses", axum::routing::get(third_party_licenses))
         .route("/health", axum::routing::get(|| async { "OK" }))
         .route("/public_data", axum::routing::get(public_data))
         .with_state(WebServerState {
             root_task_handle,
-            signature_debug_request_sender,
+            debug_request_sender,
             contract_state_receiver,
             static_web_data,
         });

@@ -64,7 +64,6 @@ pub struct ChainCKDRequest {
 }
 
 impl ChainCKDRequest {
-    #[allow(dead_code)]
     pub fn new(
         app_public_key: near_sdk::PublicKey,
         app_id: AccountId,

@@ -1,16 +1,19 @@
+pub mod common;
+
+use crate::common::gen_accounts;
 use anyhow::Result;
 use assert_matches::assert_matches;
 use attestation::attestation::Attestation;
-use common::{check_call_success, init_env_ed25519, init_env_secp256k1};
+use common::{
+    check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
+    submit_participant_info,
+};
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
+use std::collections::HashSet;
 use test_utils::attestation::{mock_dstack_attestation, p2p_tls_key};
-
-use crate::common::gen_accounts;
-
-pub mod common;
 
 #[tokio::test]
 async fn test_tee_verify_no_tee() -> Result<()> {
@@ -256,22 +259,6 @@ async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Public
     Ok((contract, accounts, attestation, tls_key))
 }
 
-/// Helper function to submit participant info.
-async fn submit_participant_info(
-    account: &Account,
-    contract: &Contract,
-    attestation: &Attestation,
-    tls_key: &PublicKey,
-) -> Result<bool> {
-    let result = account
-        .call(contract.id(), "submit_participant_info")
-        .args_borsh((attestation.clone(), tls_key.clone()))
-        .max_gas()
-        .transact()
-        .await?;
-    Ok(result.is_success())
-}
-
 /// Tests that TEE attestation fails when no MPC hash is approved yet.
 #[tokio::test]
 async fn test_tee_attestation_fails_without_approved_hash() -> Result<()> {
@@ -310,6 +297,113 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
     let success =
         submit_participant_info(&accounts[0], &contract, &attestation, &invalid_tls_key).await?;
     assert!(!success);
+
+    Ok(())
+}
+
+/// Tests that external accounts cannot call the private clean_tee_status method.
+#[tokio::test]
+async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
+    let (worker, contract, _accounts, _) = init_env_secp256k1(1).await;
+
+    // Create a new account that's not the contract
+    let external_account = worker.dev_create_account().await?;
+
+    // Try to call clean_tee_status from external account - should fail
+    let result = external_account
+        .call(contract.id(), "clean_tee_status")
+        .args_json(serde_json::json!({}))
+        .transact()
+        .await?;
+
+    // The call should fail because it's not from the contract itself
+    assert!(
+        !result.is_success(),
+        "External account should not be able to call clean_tee_status"
+    );
+
+    // Verify the error message indicates unauthorized access
+    match result.into_result() {
+        Err(failure) => {
+            let error_msg = format!("{:?}", failure);
+            assert!(
+                error_msg.contains("Method clean_tee_status is private"),
+                "Error should indicate private method access: {}",
+                error_msg
+            );
+        }
+        Ok(_) => panic!("Call should have failed"),
+    }
+
+    Ok(())
+}
+
+/// Tests that clean_tee_status succeeds when contract calls itself.
+#[tokio::test]
+async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
+    let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    // Initially should have no TEE participants
+    assert_eq!(get_tee_accounts(&contract).await?.len(), 0);
+
+    // Setup contract with approved hash and submit TEE info for current participants
+    setup_contract_with_approved_hash(&contract, &accounts).await?;
+    let tls_key = p2p_tls_key();
+    let attestation = mock_dstack_attestation();
+
+    for account in &accounts {
+        submit_participant_info(account, &contract, &attestation, &tls_key).await?;
+    }
+
+    // Verify current participants have TEE data
+    assert_eq!(get_tee_accounts(&contract).await?.len(), accounts.len());
+
+    // Create additional accounts (non-participants) and submit TEE info for them
+    const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
+    let additional_accounts = gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await.0;
+    for account in &additional_accounts {
+        submit_participant_info(account, &contract, &attestation, &tls_key).await?;
+    }
+
+    // Verify we have TEE data for all accounts before cleanup
+    let tee_participants_before = get_tee_accounts(&contract).await?;
+    assert_eq!(
+        tee_participants_before.len(),
+        accounts.len() + additional_accounts.len(),
+        "Should have TEE data for all participants and additional accounts before cleanup"
+    );
+
+    // Contract should be able to call clean_tee_status on itself
+    let result = contract
+        .as_account()
+        .call(contract.id(), "clean_tee_status")
+        .args_json(serde_json::json!({}))
+        .transact()
+        .await?;
+
+    assert!(
+        result.is_success(),
+        "Contract should be able to call clean_tee_status on itself"
+    );
+
+    // Verify cleanup worked: only current participants should have TEE data
+    let tee_participants_after = get_tee_accounts(&contract).await?;
+    assert_eq!(
+        tee_participants_after.len(),
+        accounts.len(),
+        "Should only have TEE data for current participants after cleanup"
+    );
+
+    let expected_participants: HashSet<_> = accounts
+        .iter()
+        .map(|account| account.id().clone())
+        .collect();
+    let actual_participants: HashSet<_> = tee_participants_after.into_iter().collect();
+
+    assert_eq!(
+        expected_participants, actual_participants,
+        "Remaining TEE participants should exactly match the current parameter set"
+    );
 
     Ok(())
 }

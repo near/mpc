@@ -6,6 +6,7 @@
 //!
 //! As a reference, check the existing implementations.
 
+pub mod ckd;
 pub mod ecdsa;
 pub mod eddsa;
 

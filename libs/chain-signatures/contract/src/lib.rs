@@ -49,28 +49,31 @@ use primitives::{
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{proposal::MpcDockerImageHash, tee_state::TeeValidationResult};
 
-// Gas required for a sign request
+/// Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(15);
 
-// Gas required for a CKD request
+/// Gas required for a CKD request
 const GAS_FOR_CKD_CALL: Gas = Gas::from_tgas(15);
 
-// Register used to receive data id from `promise_await_data`.
+/// Register used to receive data id from `promise_await_data`
 const DATA_ID_REGISTER: u64 = 0;
 
-// Prepaid gas for a `return_signature_and_clean_state_on_success` call
+/// Prepaid gas for a `return_signature_and_clean_state_on_success` call
 const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(7);
 
-// Prepaid gas for a `return_ck_and_clean_state_on_success` call
+/// Prepaid gas for a `return_ck_and_clean_state_on_success` call
 const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(7);
 
-// Prepaid gas for a `update_config` call
+/// Prepaid gas for a `update_config` call
 const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 
-// Prepaid gas for a `fail_on_timeout` call
+/// Prepaid gas for a `fail_on_timeout` call
 const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
 
-// Confidential Key Derivation only supports secp256k1
+/// Prepaid gas for a `clean_tee_status` call
+const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(3);
+
+/// Confidential Key Derivation only supports secp256k1
 const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
 
 /// Store two version of the MPC contract for migration and backward compatibility purposes.
@@ -171,11 +174,14 @@ impl MpcContract {
             .start_reshare_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
 
-    pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+    pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<bool, Error> {
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
+            // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
 
     pub fn vote_cancel_resharing(&mut self) -> Result<(), Error> {
@@ -261,6 +267,18 @@ impl MpcContract {
             .last()
             .expect("there must be at least one allowed code hash")
             .clone()
+    }
+
+    pub fn clean_tee_status(&mut self) -> Result<(), Error> {
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                return Err(InvalidState::ProtocolStateNotRunning.into());
+            }
+        };
+
+        self.tee_state.clean_non_participants(participants);
+        Ok(())
     }
 }
 
@@ -879,7 +897,19 @@ impl VersionedMpcContract {
             key_event_id,
         );
         match self {
-            Self::V2(contract_state) => contract_state.vote_reshared(key_event_id),
+            Self::V2(contract_state) => {
+                let resharing_concluded = contract_state.vote_reshared(key_event_id)?;
+                if resharing_concluded {
+                    // Spawn a promise to clean up TEE information for non-participants
+                    Promise::new(env::current_account_id()).function_call(
+                        "clean_tee_status".to_string(),
+                        vec![],
+                        NearToken::from_yoctonear(0),
+                        CLEAN_TEE_STATUS_GAS,
+                    );
+                }
+                Ok(())
+            }
             _ => env::panic_str("expected V2"),
         }
     }
@@ -1047,6 +1077,17 @@ impl VersionedMpcContract {
         }
     }
 
+    /// Returns all accounts that have TEE attestations stored in the contract.
+    /// Note: This includes both current protocol participants and accounts that may have
+    /// submitted TEE information but are not currently part of the active participant set.
+    pub fn get_tee_accounts(&self) -> Vec<AccountId> {
+        log!("get_tee_accounts: signer={}", env::signer_account_id());
+        match self {
+            Self::V2(contract) => contract.tee_state.get_tee_accounts(),
+            _ => env::panic_str("expected V2"),
+        }
+    }
+
     /// Verifies if all current participants have an accepted TEE state.
     /// Automatically enters a resharing, in case one or more participants do not have an accepted
     /// TEE state.
@@ -1103,6 +1144,18 @@ impl VersionedMpcContract {
 
                 Ok(false)
             }
+        }
+    }
+
+    /// Private endpoint to clean up TEE information for non-participants after resharing.
+    /// This can only be called by the contract itself via a promise.
+    #[private]
+    #[handle_result]
+    pub fn clean_tee_status(&mut self) -> Result<(), Error> {
+        log!("clean_tee_status: signer={}", env::signer_account_id());
+        match self {
+            Self::V2(contract) => contract.clean_tee_status(),
+            _ => env::panic_str("expected V2"),
         }
     }
 }

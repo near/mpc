@@ -293,7 +293,7 @@ impl StartCmd {
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
 
-        let (signature_debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+        let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
 
         #[allow(unused_mut, unused_assignments)]
         let mut report_data_contract: Option<Attestation> = None;
@@ -305,7 +305,7 @@ impl StartCmd {
         }
         let web_server = start_web_server(
             root_task_handle,
-            signature_debug_request_sender.clone(),
+            debug_request_sender.clone(),
             config.web_ui.clone(),
             StaticWebData::new(&secrets, report_data_contract.clone()),
             web_contract_receiver,
@@ -354,7 +354,7 @@ impl StartCmd {
             key_storage_config,
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
-            signature_debug_request_sender,
+            debug_request_sender,
         };
         coordinator.run().await
     }

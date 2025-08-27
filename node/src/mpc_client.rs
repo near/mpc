@@ -1,15 +1,19 @@
 use crate::config::ConfigFile;
-use crate::indexer::handler::{ChainBlockUpdate, SignatureRequestFromChain};
+use crate::indexer::handler::{CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain};
 use crate::indexer::types::{ChainSendTransactionRequest, ChainSignatureRespondArgs};
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
+use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
-use crate::sign_request::{SignRequestStorage, SignatureRequest};
+use crate::sign_request::SignatureRequest;
 use crate::signing::queue::{PendingSignatureRequests, CHECK_EACH_SIGNATURE_REQUEST_INTERVAL};
+use crate::storage::CKDRequestStorage;
+use crate::storage::SignRequestStorage;
 use crate::tracking::{self, AutoAbortTaskCollection};
-use crate::web::{SignatureDebugRequest, SignatureDebugRequestKind};
+use crate::types::CKDRequest;
+use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_contract::crypto_shared::derive_tweak;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
@@ -33,26 +37,33 @@ pub struct MpcClient {
     config: Arc<ConfigFile>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
+    ckd_request_store: Arc<CKDRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+    ckd_provider: Arc<CKDProvider>,
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
 }
 
 impl MpcClient {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
+        ckd_request_store: Arc<CKDRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
+        ckd_provider: Arc<CKDProvider>,
         domain_to_scheme: HashMap<DomainId, SignatureScheme>,
     ) -> Self {
         Self {
             config,
             client,
             sign_request_store,
+            ckd_request_store,
             ecdsa_signature_provider,
             eddsa_signature_provider,
+            ckd_provider,
             domain_to_scheme,
         }
     }
@@ -66,7 +77,7 @@ impl MpcClient {
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
-        signature_debug_receiver: tokio::sync::broadcast::Receiver<SignatureDebugRequest>,
+        debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) -> anyhow::Result<()> {
         let client = self.client.clone();
         let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
@@ -90,7 +101,7 @@ impl MpcClient {
                 self.clone().monitor_block_updates(
                     block_update_receiver,
                     chain_txn_sender,
-                    signature_debug_receiver,
+                    debug_receiver,
                 ),
             )
         };
@@ -145,7 +156,7 @@ impl MpcClient {
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
         chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
-        mut signature_debug_receiver: tokio::sync::broadcast::Receiver<SignatureDebugRequest>,
+        mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures = PendingSignatureRequests::new(
@@ -170,7 +181,7 @@ impl MpcClient {
                     let signature_requests = block_update
                         .signature_requests
                         .into_iter()
-                        .map(|signature_request| {
+                        .map(|signature_request_from_chain| {
                             let SignatureRequestFromChain {
                                 signature_id,
                                 receipt_id,
@@ -178,8 +189,8 @@ impl MpcClient {
                                 predecessor_id,
                                 entropy,
                                 timestamp_nanosec,
-                            } = signature_request;
-                            SignatureRequest {
+                            } = signature_request_from_chain;
+                            let signature_request = SignatureRequest {
                                 id: signature_id,
                                 receipt_id,
                                 payload: request.payload,
@@ -187,31 +198,66 @@ impl MpcClient {
                                 entropy,
                                 timestamp_nanosec,
                                 domain: request.domain_id,
-                            }
+                            };
+                            // Index the signature requests as soon as we see them. We'll decide
+                            // whether to *process* them after.
+                            self.sign_request_store.add(&signature_request);
+                            signature_request
                         })
                         .collect::<Vec<_>>();
 
-                    // Index the signature requests as soon as we see them. We'll decide
-                    // whether to *process* them after.
-                    for signature_request in &signature_requests {
-                        self.sign_request_store.add(signature_request);
-                    }
                     pending_signatures.notify_new_block(
                         signature_requests,
                         block_update.completed_signatures,
                         &block_update.block,
                     );
+
+                    // TODO: remove when ckd provider is integrated https://github.com/near/mpc/issues/863
+                    #[allow(unused)]
+                    let ckd_requests = block_update
+                        .ckd_requests
+                        .into_iter()
+                        .map(|ckd_request_from_chain| {
+                            let CKDRequestFromChain {
+                                ckd_id,
+                                receipt_id,
+                                request,
+                                predecessor_id: _,
+                                entropy,
+                                timestamp_nanosec,
+                            } = ckd_request_from_chain;
+                            let ckd_request = CKDRequest {
+                                id: ckd_id,
+                                receipt_id,
+                                app_public_key: request.app_public_key,
+                                app_id: request.app_id,
+                                entropy,
+                                timestamp_nanosec,
+                                domain_id: request.domain_id,
+                            };
+                            // Index the ckd requests as soon as we see them. We'll decide
+                            // whether to *process* them after.
+                            self.ckd_request_store.add(&ckd_request);
+                            ckd_request
+                        })
+                        .collect::<Vec<_>>();
+
+
+
                 }
-                debug_request = signature_debug_receiver.recv() => {
+                debug_request = debug_receiver.recv() => {
                     if let Ok(debug_request) = debug_request {
                         match debug_request.kind {
-                            SignatureDebugRequestKind::RecentBlocks => {
+                            DebugRequestKind::RecentBlocks => {
                                 let debug_output = pending_signatures.debug_print_recent_blocks();
                                 debug_request.respond(debug_output);
                             }
-                            SignatureDebugRequestKind::RecentSignatures => {
+                            DebugRequestKind::RecentSignatures => {
                                 let debug_output = format!("{:?}", pending_signatures);
                                 debug_request.respond(debug_output);
+                            }
+                            DebugRequestKind::RecentCKD => {
+                                todo!();
                             }
                         }
                     }
@@ -225,7 +271,7 @@ impl MpcClient {
 
             for signature_attempt in signature_attempts {
                 let this = self.clone();
-                let chain_txn_sender = chain_txn_sender.clone();
+                let chain_txn_sender_signature = chain_txn_sender.clone();
                 tasks.spawn_checked(
                     &format!(
                         "leader for signature request {:?}",
@@ -302,7 +348,7 @@ impl MpcClient {
                             }
                             Some(response) => response,
                         };
-                        let _ = chain_txn_sender
+                        let _ = chain_txn_sender_signature
                             .send(ChainSendTransactionRequest::Respond(response))
                             .await;
                         signature_attempt
@@ -355,6 +401,7 @@ impl MpcClient {
                     .process_channel(channel)
                     .await?
             }
+            MpcTaskId::CKDTaskId(_) => self.ckd_provider.clone().process_channel(channel).await?,
         }
 
         Ok(())

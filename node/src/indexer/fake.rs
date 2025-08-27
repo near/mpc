@@ -5,10 +5,10 @@ use super::IndexerAPI;
 use crate::config::ParticipantsConfig;
 use crate::indexer::handler::CKDRequestFromChain;
 use crate::indexer::types::ChainCKDRespondArgs;
-use crate::providers::PublicKeyConversion;
+use crate::sign_request::SignatureId;
 use crate::signing::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
-use crate::types::{CKDId, SignatureId};
+use crate::types::CKDId;
 use anyhow::Context;
 use mpc_contract::config::Config;
 use mpc_contract::primitives::{
@@ -473,10 +473,8 @@ pub struct FakeIndexerManager {
 
     /// Collects signature responses from the core. When the core processes signature
     /// response transactions, it sends them to this receiver. See `next_response()`.
-    #[allow(dead_code)]
     ckd_response_receiver: mpsc::UnboundedReceiver<ChainCKDRespondArgs>,
     /// Used to send signature requests to the core.
-    #[allow(dead_code)]
     ckd_request_sender: mpsc::UnboundedSender<CKDRequestFromChain>,
 
     /// Allows nodes to be disabled during tests. See `disable()`.

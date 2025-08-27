@@ -9,17 +9,22 @@ It:
 - Loads deployment parameters from a `.env` file (defaults to `default.env`)
 - Loads Docker Compose file and user\_config files
 - Generates an `app-compose.json` configuration
-- Deploys the app via `vmm-cli`
+- Deploys and starts CVM  via `vmm-cli`
 
 ---
 
 ### 📦 Requirements
 
-- Python virtual environment with [`vmm-cli.py`](https://github.com/Dstack-TEE/dstack/blob/master/vmm/src/vmm-cli.py)
-- A working Dstack VMM service (`vmm-server`) accessible at `$VMM_RPC`
+- A working Dstack setup and Dstack VMM service (`vmm-server`) accessible at `$VMM_RPC`.
+See Phala's [setup guide](https://github.com/Dstack-TEE/dstack).
+Also review specific MPC configuration in [running_an_mpc_node_in_tdx_external_guide.md](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md#mpc-node-setup-and-deployment)
+- Python 3.6 or higher installed
+- Required Python packages (cryptography, eth_keys, eth_utils)
+- `vmm-cli.py` should be located under meta-dstack/dstack/vmm/src/vmm-cli.py
 - Docker Compose template (`$DOCKER_COMPOSE_FILE_PATH`)
-- Deployment configuration in `.env`
-- See full CLI documentation here: [vmm-cli-user-guide.md](https://github.com/Dstack-TEE/dstack/blob/master/vmm-cli-user-guide.md)
+- Deployment configuration in `*.env` file
+- user-config.conf file
+- See full CLI documentation here: [vmm-cli-user-guide.md](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md)
 
 ---
 
@@ -29,7 +34,7 @@ Ensure the following files are present in the working directory before running t
 
 - `default.env` – default environment configuration
 - `$DOCKER_COMPOSE_FILE_PATH` – e.g. `launcher_docker_compose.yaml`
-- `$USER_CONFIG_FILE_PATH` – e.g. `user-config.json`
+- `$USER_CONFIG_FILE_PATH` – e.g. `user-config.conf`
 
 You can also use the example `.env` files under `tee_deployment/configs/`:
 
@@ -51,8 +56,8 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
    ```bash
    ./deploy-launcher.sh \
      --env-file tee_deployment/configs/sgx.env \
-     --base-path location of \
-     --python-exec /custom/project/.venv/bin/python
+     --base-path /home/barak/project \
+     --python-exec /home/barak/project/.venv/bin/python
    ```
 
    Or use just the `.env` override:
@@ -76,7 +81,7 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
 | Option                | Description                                                               |
 | --------------------- | ------------------------------------------------------------------------- |
 | `--env-file`, `-e`    | Path to a `.env` file with deployment parameters (default: `default.env`) |
-| `--base-path`, `-b`   | location of where you have dstack installed (a folder above meta-dstack)  |
+| `--base-path`, `-b`   | Path to the parent directory containing meta-dstack. For example, if your Dstack installation is in /home/barak/project/meta-dstack, then you should set --base-path /home/barak/project.  |
 | `--python-exec`, `-p` | Path to the Python executable to use (default: under base path)           |
 
 ---
@@ -93,12 +98,11 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
 # Override Python path only
 ./deploy-launcher.sh --python-exec /home/barak/.venv/bin/python
 
-# Override both base path and Python path
+# Override both base path (folder above meta-dstack) and Python path
 ./deploy-launcher.sh \
   --base-path /home/barak/project \
   --python-exec /home/barak/project/.venv/bin/python
 ```
-
 ---
 
 ### 📄 `.env` File Format
@@ -108,15 +112,35 @@ Make sure to create and fill in a `.env` file. Example (`default.env`):
 ```env
 APP_NAME=launcher_test_app
 VMM_RPC=http://127.0.0.1:16000
-GUEST_AGENT_ADDR=127.0.0.1:9206
-SSH_HOST_PORT=127.0.0.1:9207
-MPC_PUBLIC_PORT=0.0.0.0:4444
-MPC_VM_PORT=4444
-GIT_REV=HEAD
-OS_IMAGE=dstack-dev-0.5.0
+
+# Sealing key type (KMS for deployment, SGX for production)
+SEALING_KEY_TYPE=KMS
+
+# Port on the host machine to connect to the dstack guest agent
+EXTERNAL_DSTACK_AGENT_PORT=127.0.0.1:9206
+
+# SSH port on the host
+EXTERNAL_SSH_PORT=127.0.0.1:9207
+
+# External MPC ports (host machine)
+EXTERNAL_MPC_PUBLIC_DEBUG_PORT=0.0.0.0:8080
+EXTERNAL_MPC_LOCAL_DEBUG_PORT=127.0.0.1:3030
+EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC=0.0.0.0:24567
+EXTERNAL_MPC_MAIN_PORT=0.0.0.0:80
+
+# Internal MPC ports (inside CVM)
+INTERNAL_MPC_PUBLIC_DEBUG_PORT=8080
+INTERNAL_MPC_LOCAL_DEBUG_PORT=3030
+INTERNAL_MPC_DECENTRALIZED_STATE_SYNC=24567
+INTERNAL_MPC_MAIN_PORT=80
+
+# OS image
+OS_IMAGE=dstack-dev-0.5.2
+
+# Path of the launcher docker_compose_file
 DOCKER_COMPOSE_FILE_PATH=launcher_docker_compose.yaml
+# Path of the user_config file
 USER_CONFIG_FILE_PATH=user-config.conf
-SEALING_KEY_TYPE=SGX  # or 'KMS'
 
 # Resource configuration (defaults shown):
 VCPU=8      # do not change since this is measured in the contract

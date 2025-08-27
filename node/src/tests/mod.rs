@@ -239,7 +239,7 @@ impl OneNodeTestConfig {
                     key_storage_config,
                     indexer,
                     currently_running_job_name,
-                    signature_debug_request_sender: debug_request_sender,
+                    debug_request_sender,
                 };
                 coordinator.run().await
             };
