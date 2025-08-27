@@ -1,7 +1,7 @@
 use crate::db::{DBCol, SecretDB};
 use crate::metrics;
-use crate::sign_request::{SignatureId, SignatureRequest};
 use crate::types::{CKDId, CKDRequest};
+use crate::types::{SignatureId, SignatureRequest};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -139,8 +139,8 @@ mod tests {
     use crate::types::CKDRequest;
     use crate::{
         db::SecretDB,
-        sign_request::SignatureRequest,
         storage::{CKDRequestStorage, SignRequestStorage},
+        types::SignatureRequest,
     };
     use std::str::FromStr;
 

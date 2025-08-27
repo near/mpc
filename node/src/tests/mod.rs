@@ -12,7 +12,7 @@ use crate::config::{
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::fake::FakeIndexerManager;
-use crate::indexer::handler::{SignArgs, SignatureRequestFromChain};
+use crate::indexer::handler::{CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::KeyStorageConfig;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
@@ -24,7 +24,7 @@ use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_crypto::KeyType::ED25519;
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
-use near_sdk::AccountId;
+use near_sdk::{AccountId, PublicKey};
 use near_time::Clock;
 use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
@@ -417,6 +417,86 @@ pub async fn request_signature_and_await_response(
             }
         }
     }
+}
+
+/// Request a ckd from the indexer and wait for the response.
+/// Returns the time taken to receive the response, or None if timed out.
+pub async fn request_ckd_and_await_response(
+    indexer: &mut FakeIndexerManager,
+    user: &str,
+    domain: &DomainConfig,
+    timeout_sec: std::time::Duration,
+) -> Option<std::time::Duration> {
+    let request = CKDRequestFromChain {
+        ckd_id: CryptoHash(rand::random()),
+        receipt_id: CryptoHash(rand::random()),
+        predecessor_id: user.parse().unwrap(),
+        entropy: rand::random(),
+        timestamp_nanosec: rand::random(),
+        request: CKDArgs {
+            app_public_key: example_secp256k1_point(),
+            domain_id: domain.id,
+            app_id: user.parse().unwrap(),
+        },
+    };
+    tracing::info!(
+        "Sending ckd request from user {}, app_id {:?}, app_public_key {:?}",
+        user,
+        request.request.app_id,
+        request.request.app_public_key,
+    );
+    indexer.request_ckd(request.clone());
+    let start_time = std::time::Instant::now();
+    loop {
+        match timeout(timeout_sec, indexer.next_response_ckd()).await {
+            Ok(ckd_response_args) => {
+                if ckd_response_args.request.app_id != request.request.app_id {
+                    // This can legitimately happen when multiple nodes submit responses
+                    // for the same ckd request. In tests this can happen if the
+                    // secondary leader thinks the primary leader is offline when in fact
+                    // the network just has not yet been fully established.
+                    tracing::info!(
+                        "Received ckd is not for the ckd request we sent (user {})
+                         Expected {:?}, actual {:?}",
+                        user,
+                        request.request.app_id,
+                        ckd_response_args.request.app_id
+                    );
+                    continue;
+                }
+                if ckd_response_args.request.domain_id != domain.id {
+                    tracing::info!(
+                        "Received ckd is not for the domain we requested (user {})
+                         Expected {:?}, actual {:?}",
+                        user,
+                        domain.id,
+                        ckd_response_args.request.domain_id
+                    );
+                    continue;
+                }
+                if ckd_response_args.request.app_public_key != request.request.app_public_key {
+                    tracing::info!(
+                        "Received ckd is not for the app_public_key we requested (user {})
+                         Expected {:?}, actual {:?}",
+                        user,
+                        request.request.app_public_key,
+                        ckd_response_args.request.app_public_key
+                    );
+                    continue;
+                }
+                tracing::info!("Got response ckd for user {}", user);
+                return Some(start_time.elapsed());
+            }
+            Err(_) => {
+                tracing::info!("Timed out waiting for ckd response for user {}", user);
+                return None;
+            }
+        }
+    }
+}
+
+pub fn example_secp256k1_point() -> PublicKey {
+    "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap()
 }
 
 #[test]
