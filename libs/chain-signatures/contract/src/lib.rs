@@ -71,7 +71,7 @@ const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
 
 /// Prepaid gas for a `clean_tee_status` call
-const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(5);
+const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(3);
 
 /// Confidential Key Derivation only supports secp256k1
 const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
