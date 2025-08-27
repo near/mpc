@@ -5,7 +5,7 @@ use anyhow::Result;
 use assert_matches::assert_matches;
 use attestation::attestation::Attestation;
 use common::{
-    check_call_success, get_tee_participants, init_env_ed25519, init_env_secp256k1,
+    check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
     submit_participant_info,
 };
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
@@ -344,7 +344,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
 
     // Initially should have no TEE participants
-    assert_eq!(get_tee_participants(&contract).await?.len(), 0);
+    assert_eq!(get_tee_accounts(&contract).await?.len(), 0);
 
     // Setup contract with approved hash and submit TEE info for current participants
     setup_contract_with_approved_hash(&contract, &accounts).await?;
@@ -356,7 +356,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     }
 
     // Verify current participants have TEE data
-    assert_eq!(get_tee_participants(&contract).await?.len(), accounts.len());
+    assert_eq!(get_tee_accounts(&contract).await?.len(), accounts.len());
 
     // Create additional accounts (non-participants) and submit TEE info for them
     const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
@@ -366,7 +366,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     }
 
     // Verify we have TEE data for all accounts before cleanup
-    let tee_participants_before = get_tee_participants(&contract).await?;
+    let tee_participants_before = get_tee_accounts(&contract).await?;
     assert_eq!(
         tee_participants_before.len(),
         accounts.len() + additional_accounts.len(),
@@ -387,7 +387,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     );
 
     // Verify cleanup worked: only current participants should have TEE data
-    let tee_participants_after = get_tee_participants(&contract).await?;
+    let tee_participants_after = get_tee_accounts(&contract).await?;
     assert_eq!(
         tee_participants_after.len(),
         accounts.len(),

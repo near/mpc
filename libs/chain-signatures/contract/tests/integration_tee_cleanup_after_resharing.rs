@@ -6,8 +6,7 @@ use serde_json::json;
 use std::collections::HashSet;
 
 use common::{
-    check_call_success, gen_accounts, get_tee_participants, init_env_secp256k1,
-    submit_participant_info,
+    check_call_success, gen_accounts, get_tee_accounts, init_env_secp256k1, submit_participant_info,
 };
 use mpc_contract::{
     primitives::{
@@ -42,7 +41,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     }
 
     // Verify TEE participants were added
-    let initial_tee_participants = get_tee_participants(&contract).await?;
+    let initial_tee_participants = get_tee_accounts(&contract).await?;
     assert_eq!(initial_tee_participants.len(), initial_accounts.len());
 
     // Create additional accounts to simulate stale participants
@@ -56,7 +55,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     }
 
     // Verify all participants are in TEE state (initial + stale)
-    let all_tee_participants = get_tee_participants(&contract).await?;
+    let all_tee_participants = get_tee_accounts(&contract).await?;
     assert_eq!(
         all_tee_participants.len(),
         initial_accounts.len() + stale_accounts.len()
@@ -178,7 +177,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // Verify TEE participants are properly cleaned up
     let tee_participants_after_cleanup: HashSet<AccountId> = contract
-        .call("get_tee_participants")
+        .call("get_tee_accounts")
         .args_json(serde_json::json!({}))
         .max_gas()
         .transact()

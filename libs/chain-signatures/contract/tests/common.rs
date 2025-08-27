@@ -642,9 +642,9 @@ pub fn check_call_success(result: ExecutionFinalResult) {
 }
 
 /// Helper function to get TEE participants from contract.
-pub async fn get_tee_participants(contract: &Contract) -> anyhow::Result<Vec<AccountId>> {
+pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<Vec<AccountId>> {
     Ok(contract
-        .call("get_tee_participants")
+        .call("get_tee_accounts")
         .args_json(serde_json::json!({}))
         .max_gas()
         .transact()

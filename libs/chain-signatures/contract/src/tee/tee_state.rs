@@ -208,7 +208,8 @@ impl TeeState {
     }
 
     /// Returns the list of accounts that currently have TEE attestations stored.
-    pub fn get_tee_participants(&self) -> Vec<AccountId> {
+    /// Note: This may include accounts that are no longer active protocol participants.
+    pub fn get_tee_accounts(&self) -> Vec<AccountId> {
         self.participants_attestations.keys().cloned().collect()
     }
 }

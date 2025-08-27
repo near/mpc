@@ -1073,10 +1073,13 @@ impl VersionedMpcContract {
         }
     }
 
-    pub fn get_tee_participants(&self) -> Vec<AccountId> {
-        log!("get_tee_participants: signer={}", env::signer_account_id());
+    /// Returns all accounts that have TEE attestations stored in the contract.
+    /// Note: This includes both current protocol participants and accounts that may have
+    /// submitted TEE information but are not currently part of the active participant set.
+    pub fn get_tee_accounts(&self) -> Vec<AccountId> {
+        log!("get_tee_accounts: signer={}", env::signer_account_id());
         match self {
-            Self::V2(contract) => contract.tee_state.get_tee_participants(),
+            Self::V2(contract) => contract.tee_state.get_tee_accounts(),
             _ => env::panic_str("expected V2"),
         }
     }
