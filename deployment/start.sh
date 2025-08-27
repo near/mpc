@@ -81,6 +81,7 @@ update_near_node_config && echo "Near node config updated"
 # Check and initialize MPC config if needed
 if [ -r "$MPC_NODE_CONFIG_FILE" ]; then
     echo "MPC node is already initialized but we'll still update the config"
+fi
 
 generate_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node initialized"
 
