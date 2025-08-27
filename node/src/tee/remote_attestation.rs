@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 use anyhow::{bail, Context};
 use attestation::{
     attestation::{Attestation, DstackAttestation},
@@ -7,23 +8,19 @@ use attestation::{
 use backon::{BackoffBuilder, ExponentialBuilder};
 use dstack_sdk::dstack_client::DstackClient;
 use dstack_sdk_types::dstack::TcbInfo;
+=======
+use anyhow::Context;
+use attestation::attestation::Attestation;
+>>>>>>> 88b3143 (feat: Dynamic configuration for attestation authority)
 use ed25519_dalek::VerifyingKey;
-use http::status::StatusCode;
-use reqwest::multipart::Form;
-use serde::{Deserialize, Serialize};
-use sha3::{Digest, Sha3_384};
-use std::{
-    str::FromStr,
-    {future::Future, time::Duration},
-};
 use tokio::sync::mpsc;
-use tracing::error;
 
 use crate::{
     indexer::types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
     providers::PublicKeyConversion,
 };
 
+<<<<<<< HEAD
 /// Endpoint to contact Dstack service.
 /// Set to [`None`] which defaults to `/var/run/dstack.sock`
 const ENDPOINT: Option<&str> = None;
@@ -197,6 +194,8 @@ impl TryFrom<TeeAttestation> for Attestation {
     }
 }
 
+=======
+>>>>>>> 88b3143 (feat: Dynamic configuration for attestation authority)
 pub async fn submit_remote_attestation(
     tx_sender: mpsc::Sender<ChainSendTransactionRequest>,
     report_data_contract: Attestation,

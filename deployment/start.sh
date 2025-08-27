@@ -112,4 +112,4 @@ else
 fi
 
 echo "Starting mpc node..."
-/app/mpc-node start
+/app/mpc-node start local

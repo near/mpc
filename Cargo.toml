@@ -11,6 +11,7 @@ debug = true
 #workspace members
 attestation = { path = "crates/attestation" }
 test_utils = { path = "crates/test_utils" }
+tee_authority = { path = "crates/tee_authority" }
 
 actix = "0.13.0"
 aes-gcm = "0.10.3"
