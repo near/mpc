@@ -185,7 +185,7 @@ impl TeeState {
     }
 
     /// Removes TEE information for accounts that are not in the provided participants list.
-    /// This is used to clean up storage after resharing concludes.
+    /// This is used to clean up storage after a resharing concludes.
     pub fn clean_non_participants(&mut self, participants: &Participants) {
         let participant_accounts: HashSet<&AccountId> = participants
             .participants()
