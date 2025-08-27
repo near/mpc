@@ -88,7 +88,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         initial_accounts.len() + stale_accounts.len()
     );
 
-    // Get current state to calculate prospective epoch ID
+    // Get current state to extract participant info
     let state: ProtocolContractState = contract.view("state").await?.json()?;
     let running_state = match state {
         ProtocolContractState::Running(running_state) => running_state,
@@ -122,23 +122,12 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     let new_threshold_parameters =
         ThresholdParameters::new(new_participants, Threshold::new(2)).unwrap();
 
-    // Calculate prospective epoch ID based on contract's logic
-    let prospective_epoch_id = match running_state.previously_cancelled_resharing_epoch_id {
-        Some(cancelled_epoch_id) => cancelled_epoch_id.next(),
-        None => running_state.keyset.epoch_id.next(),
-    };
+    // Use hardcoded prospective epoch ID for test simplicity
+    // Based on the test setup, the contract starts with epoch 5, so next epoch is 6
+    let prospective_epoch_id = 6;
 
     // Vote one by one and check the state after each vote
     for account in initial_accounts.iter() {
-        // Check contract state before this vote
-        let pre_vote_state: ProtocolContractState = contract.view("state").await?.json()?;
-        if let ProtocolContractState::Running(running_state) = &pre_vote_state {
-            let _expected_epoch = match running_state.previously_cancelled_resharing_epoch_id {
-                Some(cancelled_epoch_id) => cancelled_epoch_id.next(),
-                None => running_state.keyset.epoch_id.next(),
-            };
-        }
-
         check_call_success(
             account
                 .call(contract.id(), "vote_new_parameters")
@@ -169,13 +158,13 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Verify contract is now in resharing state
     let state: ProtocolContractState = contract.view("state").await?.json()?;
 
-    let ProtocolContractState::Resharing(resharing_state) = state else {
+    let ProtocolContractState::Resharing(_resharing_state) = state else {
         panic!("Expected contract to be in Resharing state after voting");
     };
 
-    // We need to start the reshare instance first
+    // Use hardcoded key event ID for test simplicity
     let key_event_id = json!({
-        "epoch_id": resharing_state.prospective_epoch_id().get(),
+        "epoch_id": 6,
         "domain_id": 0,
         "attempt_id": 0,
     });
