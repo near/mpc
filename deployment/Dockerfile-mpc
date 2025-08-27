@@ -27,4 +27,4 @@ WORKDIR /app
 COPY --from=builder /app/target/release/mpc-node mpc-node
 COPY deployment/gcp-start.sh /app/gcp-start.sh
 RUN chmod +x /app/gcp-start.sh
-CMD [ "/app/gcp-start.sh" ]
+CMD [ "/app/start.sh" ]
