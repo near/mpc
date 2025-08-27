@@ -216,54 +216,38 @@ impl TeeState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::primitives::participants::{ParticipantInfo, Participants};
     use attestation::attestation::{Attestation, LocalAttestation};
-    use near_sdk::{AccountId, PublicKey};
-    use std::str::FromStr;
+    use near_sdk::AccountId;
 
     #[test]
     fn test_clean_non_participants() {
         let mut tee_state = TeeState::default();
 
-        // Create some test participants
-        let mut participants = Participants::new();
-        let account1: AccountId = "alice.near".parse().unwrap();
-        let account2: AccountId = "bob.near".parse().unwrap();
-        let account3: AccountId = "charlie.near".parse().unwrap();
+        // Create some test participants using test utils
+        let participants = crate::primitives::test_utils::gen_participants(3);
         let non_participant: AccountId = "dave.near".parse().unwrap();
 
-        // Create participant info (dummy data)
-        let participant_info = ParticipantInfo {
-            url: "http://example.com".to_string(),
-            sign_pk: PublicKey::from_str("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")
-                .unwrap(),
-        };
+        // Get participant account IDs for verification
+        let participant_accounts: Vec<AccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
 
-        // Add participants
-        participants
-            .insert(account1.clone(), participant_info.clone())
-            .unwrap();
-        participants
-            .insert(account2.clone(), participant_info.clone())
-            .unwrap();
-        participants
-            .insert(account3.clone(), participant_info)
-            .unwrap();
-
-        // Add TEE information for all accounts including non-participant
+        // Add TEE information for all participants and non-participant
         let attestation = LocalAttestation::new(true);
         let local_attestation = Attestation::Local(attestation);
 
-        tee_state.add_participant(account1.clone(), local_attestation.clone());
-        tee_state.add_participant(account2.clone(), local_attestation.clone());
-        tee_state.add_participant(account3.clone(), local_attestation.clone());
+        for account_id in &participant_accounts {
+            tee_state.add_participant(account_id.clone(), local_attestation.clone());
+        }
         tee_state.add_participant(non_participant.clone(), local_attestation.clone());
 
         // Verify all 4 accounts have TEE info initially
         assert_eq!(tee_state.participants_attestations.len(), 4);
-        assert!(tee_state.participants_attestations.contains_key(&account1));
-        assert!(tee_state.participants_attestations.contains_key(&account2));
-        assert!(tee_state.participants_attestations.contains_key(&account3));
+        for account_id in &participant_accounts {
+            assert!(tee_state.participants_attestations.contains_key(account_id));
+        }
         assert!(tee_state
             .participants_attestations
             .contains_key(&non_participant));
@@ -273,9 +257,9 @@ mod tests {
 
         // Verify only participants remain
         assert_eq!(tee_state.participants_attestations.len(), 3);
-        assert!(tee_state.participants_attestations.contains_key(&account1));
-        assert!(tee_state.participants_attestations.contains_key(&account2));
-        assert!(tee_state.participants_attestations.contains_key(&account3));
+        for account_id in &participant_accounts {
+            assert!(tee_state.participants_attestations.contains_key(account_id));
+        }
         assert!(!tee_state
             .participants_attestations
             .contains_key(&non_participant));
