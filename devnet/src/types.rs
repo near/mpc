@@ -183,7 +183,7 @@ pub async fn load_config() -> ParsedConfig {
     }
 }
 
-/// This module is needed for two reasons:
+/// This module is needed until [(#710)](https://github.com/near/mpc/issues/710) is resolved.
 /// 1. We need to serialize the keys with [`bs58`] encoding, to maintain
 ///    backwards compatibility with the binary version previous to https://github.com/near/mpc/issues/880
 ///    which removes [`near_crypto`] representation of keys on the node in favor of the [`ed25519_dalek`] crate.
