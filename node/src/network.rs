@@ -9,7 +9,7 @@ use crate::primitives::{
     ChannelId, IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, MpcStartMessage,
     MpcTaskId, ParticipantId, PeerMessage, UniqueId,
 };
-use crate::signing::queue::NetworkAPIForSigning;
+use crate::requests::queue::NetworkAPIForRequests;
 use crate::tracking::{self, AutoAbortTask};
 use conn::{ConnectionVersion, NodeConnectivityInterface};
 use indexer_heights::IndexerHeightTracker;
@@ -79,7 +79,7 @@ pub struct MeshNetworkClient {
     last_id: Arc<Mutex<UniqueId>>,
 }
 
-impl NetworkAPIForSigning for MeshNetworkClient {
+impl NetworkAPIForRequests for MeshNetworkClient {
     fn alive_participants(&self) -> HashSet<ParticipantId> {
         self.all_alive_participant_ids().into_iter().collect()
     }
@@ -356,6 +356,8 @@ impl MeshNetworkClient {
         }
     }
 
+    // TODO(#226): Use.
+    #[allow(dead_code)]
     pub fn update_indexer_height(&self, height: u64) {
         self.indexer_heights
             .set_height(self.my_participant_id(), height);
