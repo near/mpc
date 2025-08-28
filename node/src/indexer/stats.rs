@@ -39,11 +39,7 @@ pub(crate) async fn indexer_logger(
 
         let time_to_catch_the_tip_duration = if block_processing_speed > 0.0 {
             if let Ok(block_height) = fetch_latest_block(&view_client).await {
-                let blocks_behind = if block_height > stats_copy.last_processed_block_height {
-                    block_height - stats_copy.last_processed_block_height
-                } else {
-                    0 // We're ahead of the chain tip, no catching up needed
-                };
+                let blocks_behind = block_height.saturating_sub(stats_copy.last_processed_block_height);
 
                 Some(std::time::Duration::from_millis(
                     ((blocks_behind as f64 / block_processing_speed) * 1000f64) as u64,

@@ -199,7 +199,7 @@ mod tests {
     use mockall::predicate;
     use mpc_contract::tee::proposal::LauncherDockerComposeHash;
     use rstest::rstest;
-    use std::{io::ErrorKind, sync::Arc, time::Duration};
+    use std::{sync::Arc, time::Duration};
     use tokio::sync::{mpsc::error::TryRecvError, Notify};
     use tokio_util::time::FutureExt;
 
@@ -291,7 +291,7 @@ mod tests {
         let mut mock = MockAllowedImageHashesStorage::new();
 
         mock.expect_set().once().returning(|_| {
-            Box::pin(async { Err(io::Error::new(ErrorKind::Other, "Expected test error.")) })
+            Box::pin(async { Err(io::Error::other("Expected test error.")) })
         });
 
         let cancellation_token = CancellationToken::new();

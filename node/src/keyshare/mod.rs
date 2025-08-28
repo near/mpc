@@ -339,7 +339,7 @@ mod tests {
         {
             // Before starting the good path, let's test that start_generating_key fails if called
             // when already-generated keys don't exist.
-            let bad_keyset = KeysetBuilder::from_keyshares(0, &[key1.clone()]);
+            let bad_keyset = KeysetBuilder::from_keyshares(0, std::slice::from_ref(&key1));
             assert!(storage
                 .start_generating_key(&bad_keyset.generated(), key1.key_id)
                 .await
@@ -411,7 +411,7 @@ mod tests {
         {
             // Before starting the good path, let's test that start_resharing fails if called
             // when already-reshared keys don't exist.
-            let bad_keyset = KeysetBuilder::from_keyshares(1, &[key5.clone()]);
+            let bad_keyset = KeysetBuilder::from_keyshares(1, std::slice::from_ref(&key5));
             assert!(storage
                 .start_resharing_key(&bad_keyset.generated(), key5.key_id)
                 .await
