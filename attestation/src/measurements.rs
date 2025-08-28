@@ -8,14 +8,6 @@ use alloc::string::ToString;
 use crate::report_data::ReportDataVersion;
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
 
-/// Required measurements for TEE attestation verification (a.k.a. RTMRs checks). These values
-/// define the trusted baseline that TEE environments must match during verification. They
-/// should be updated when the underlying TEE environment changes.
-///
-/// To learn more about the RTMRs, see:
-/// - https://docs.phala.network/phala-cloud/tees-attestation-and-zero-trust-security/attestation#runtime-measurement-fields
-/// - https://arxiv.org/pdf/2303.15540 (Section 9.1)
-
 /// TCB info JSON file containing measurement values.
 const TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
 
@@ -36,6 +28,13 @@ const EXPECTED_LOCAL_SGX_EVENT_DIGEST: [u8; 48] = [
 
 const EXPECTED_REPORT_DATA_VERSION: ReportDataVersion = ReportDataVersion::V1;
 
+/// Required measurements for TEE attestation verification (a.k.a. RTMRs checks). These values
+/// define the trusted baseline that TEE environments must match during verification. They
+/// should be updated when the underlying TEE environment changes.
+///
+/// To learn more about the RTMRs, see:
+/// - https://docs.phala.network/phala-cloud/tees-attestation-and-zero-trust-security/attestation#runtime-measurement-fields
+/// - https://arxiv.org/pdf/2303.15540 (Section 9.1)
 #[serde_as]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(

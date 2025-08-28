@@ -1,4 +1,7 @@
-use attestation::{measurements::ExpectedMeasurements, report_data::{ReportData, ReportDataV1}};
+use attestation::{
+    measurements::ExpectedMeasurements,
+    report_data::{ReportData, ReportDataV1},
+};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::PublicKey;
 use rstest::rstest;
