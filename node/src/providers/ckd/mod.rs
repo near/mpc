@@ -4,7 +4,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use k256::AffinePoint;
-use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId};
+use mpc_contract::primitives::domain::DomainId;
 use threshold_signatures::ecdsa::KeygenOutput;
 
 use crate::{
@@ -17,8 +17,6 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum CKDTaskId {
-    KeyGeneration { key_event: KeyEventId },
-    KeyResharing { key_event: KeyEventId },
     Ckd { id: CKDId },
 }
 
@@ -67,12 +65,6 @@ impl CKDProvider {
     ) -> anyhow::Result<()> {
         match channel.task_id() {
             MpcTaskId::CKDTaskId(task) => match task {
-                CKDTaskId::KeyGeneration { .. } => {
-                    anyhow::bail!("Key generation rejected in normal node operation");
-                }
-                CKDTaskId::KeyResharing { .. } => {
-                    anyhow::bail!("Key resharing rejected in normal node operation");
-                }
                 CKDTaskId::Ckd { id } => {
                     self.make_ckd_follower(channel, id).await?;
                 }
