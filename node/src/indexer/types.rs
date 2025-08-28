@@ -6,7 +6,6 @@ use k256::{
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
-use legacy_mpc_contract;
 use mpc_contract::{
     crypto_shared::CKDResponse,
     primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak},
@@ -134,13 +133,6 @@ pub struct ChainGetPendingSignatureRequestArgs {
 #[derive(Serialize, Debug)]
 pub struct ChainGetPendingCKDRequestArgs {
     pub request: ChainCKDRequest,
-}
-
-#[derive(Serialize, Debug)]
-pub struct ChainJoinArgs {
-    pub url: String,
-    pub cipher_pk: legacy_mpc_contract::primitives::hpke::PublicKey,
-    pub sign_pk: PublicKey,
 }
 
 #[derive(Serialize, Debug)]
