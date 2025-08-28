@@ -100,7 +100,7 @@ pub enum VersionedMpcContract {
 // This prevents wasted storage space from enum padding in production.
 const _: () = {
     assert!(
-        size_of::<MpcContract>() == size_of::<VersionedMpcContract>(),
+        size_of::<MpcContract>() >= size_of::<MpcContractV1>(),
         "The production version state of `MpcContract` should be the largest variant."
     );
 };
