@@ -18,6 +18,7 @@ use crate::rpc::NearRpcClients;
 use crate::types::{ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind};
 use ed25519_dalek::{ed25519::signature::rand_core::OsRng, SigningKey, VerifyingKey};
 use futures::FutureExt;
+#[allow(clippy::disallowed_types)]
 use near_crypto::{ED25519SecretKey, InMemorySigner, SecretKey, Signer};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::send_tx::SignedTransaction;
@@ -105,6 +106,7 @@ impl OperatingAccessKey {
         recent_block_hash: CryptoHash,
         client: Arc<NearRpcClients>,
     ) -> Self {
+        #[allow(clippy::disallowed_types)]
         let near_crypto_secret_key: SecretKey =
             SecretKey::ED25519(ED25519SecretKey(signing_key.to_keypair_bytes()));
 
@@ -593,7 +595,7 @@ impl OperatingAccounts {
 
     /// Get the balance of a single account.
     pub async fn get_account_balance(&self, account_id: &AccountId) -> u128 {
-        self.get_account_balances(&[account_id.clone()])
+        self.get_account_balances(std::slice::from_ref(account_id))
             .await
             .remove(account_id)
             .unwrap()
