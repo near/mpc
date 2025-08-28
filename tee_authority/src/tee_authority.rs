@@ -2,7 +2,6 @@ use anyhow::{Context, bail};
 use attestation::{
     attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
-    measurements::ExpectedMeasurements,
     quote::QuoteBytes,
     report_data::ReportData,
 };
@@ -97,10 +96,7 @@ impl TeeAuthority {
         let quote: QuoteBytes = hex::decode(quote)?.into();
 
         Ok(Attestation::Dstack(DstackAttestation::new(
-            quote,
-            collateral,
-            tcb_info,
-            ExpectedMeasurements::default(),
+            quote, collateral, tcb_info,
         )))
     }
 
@@ -201,7 +197,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use attestation::report_data::ReportDataV1;
+    use attestation::{measurements::ExpectedMeasurements, report_data::ReportDataV1};
     use rstest::rstest;
 
     #[cfg(feature = "external-services-tests")]
@@ -277,8 +273,9 @@ mod tests {
             .await
             .unwrap();
         let timestamp_s = 0u64;
+        let expected_measurements = ExpectedMeasurements::default();
         assert_eq!(
-            attestation.verify(report_data, timestamp_s, &[], &[]),
+            attestation.verify(report_data, timestamp_s, &[], &[], &expected_measurements),
             quote_verification_result
         );
     }

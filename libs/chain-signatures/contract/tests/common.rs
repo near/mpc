@@ -1,4 +1,4 @@
-use attestation::attestation::Attestation;
+use attestation::{attestation::Attestation, measurements::ExpectedMeasurements};
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
@@ -164,7 +164,13 @@ pub fn current_contract() -> &'static Vec<u8> {
 
         if do_build {
             let status = Command::new("cargo")
-                .args(["build", "--release", "--target=wasm32-unknown-unknown"])
+                .args([
+                    "build",
+                    "--release",
+                    "--target=wasm32-unknown-unknown",
+                    "--features",
+                    "integration-testing",
+                ])
                 .current_dir(&project_dir)
                 .status()
                 .expect("Failed to run cargo build");
@@ -662,6 +668,28 @@ pub async fn submit_participant_info(
     let result = account
         .call(contract.id(), "submit_participant_info")
         .args_borsh((attestation.clone(), tls_key.clone()))
+        .max_gas()
+        .transact()
+        .await?;
+    Ok(result.is_success())
+}
+
+/// Helper function to submit participant info with TEE attestation and custom measurements.
+/// This is useful for testing with specific [`ExpectedMeasurements`].
+pub async fn submit_participant_info_with_measurements(
+    account: &Account,
+    contract: &Contract,
+    attestation: &Attestation,
+    tls_key: &PublicKey,
+    expected_measurements: &ExpectedMeasurements,
+) -> anyhow::Result<bool> {
+    let result = account
+        .call(contract.id(), "submit_participant_info_test")
+        .args_borsh((
+            attestation.clone(),
+            tls_key.clone(),
+            expected_measurements.clone(),
+        ))
         .max_gas()
         .transact()
         .await?;

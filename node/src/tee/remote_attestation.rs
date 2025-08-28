@@ -2,7 +2,6 @@ use anyhow::{bail, Context};
 use attestation::{
     attestation::{Attestation, DstackAttestation},
     collateral::Collateral,
-    measurements::ExpectedMeasurements,
     quote::QuoteBytes,
 };
 use backon::{BackoffBuilder, ExponentialBuilder};
@@ -191,7 +190,6 @@ impl TryFrom<TeeAttestation> for Attestation {
             quote,
             collateral,
             value.tcb_info,
-            ExpectedMeasurements::default(),
         )))
     }
 }

@@ -9,6 +9,7 @@ use crate::{
 };
 use attestation::{
     attestation::Attestation,
+    measurements::ExpectedMeasurements,
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
@@ -50,13 +51,17 @@ impl TeeState {
         &mut self,
         attestation: &Attestation,
         tls_public_key: PublicKey,
+        expected_measurements: Option<&ExpectedMeasurements>,
     ) -> TeeQuoteStatus {
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
+        let default_measurements = ExpectedMeasurements::default();
+        let measurements = expected_measurements.unwrap_or(&default_measurements);
         let is_valid = attestation.verify(
             expected_report_data,
             Self::current_time_seconds(),
             &self.get_allowed_hashes(),
             &self.allowed_launcher_compose_hashes,
+            measurements,
         );
 
         if is_valid {
@@ -82,12 +87,14 @@ impl TeeState {
 
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
         let time_stamp_seconds = Self::current_time_seconds();
+        let expected_measurements = ExpectedMeasurements::default();
 
         let quote_result = participant_attestation.verify(
             expected_report_data,
             time_stamp_seconds,
             &allowed_mpc_docker_image_hashes,
             allowed_launcher_compose_hashes,
+            &expected_measurements,
         );
 
         let quote_result = if quote_result {

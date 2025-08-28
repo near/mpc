@@ -4,7 +4,7 @@ use near_sdk::PublicKey;
 use rstest::rstest;
 use test_utils::attestation::{
     TEST_LAUNCHER_COMPOSE_DIGEST_HEX, TEST_MPC_IMAGE_DIGEST_HEX, mock_dstack_attestation,
-    mock_local_attestation, p2p_tls_key,
+    mock_local_attestation, p2p_tls_key, test_expected_measurements,
 };
 
 #[rstest]
@@ -25,7 +25,8 @@ fn test_mock_attestation_verify(
             report_data,
             timestamp_s,
             &[],
-            &[]
+            &[],
+            &test_expected_measurements(),
         ),
         expected_quote_verification_result
     );
@@ -50,6 +51,7 @@ fn test_verify_method_signature() {
         timestamp_s,
         &[allowed_mpc_image_digest],
         &[allowed_launcher_compose_digest],
+        &test_expected_measurements(),
     );
     assert!(verification_result);
 }

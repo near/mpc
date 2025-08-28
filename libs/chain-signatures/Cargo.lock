@@ -115,9 +115,9 @@ dependencies = [
 
 [[package]]
 name = "async-executor"
-version = "1.13.2"
+version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb812ffb58524bdd10860d7d974e2f01cc0950c2438a74ee5ec2e2280c6c4ffa"
+checksum = "497c00e0fd83a72a79a39fcbd8e3e2f055d6f6c7e025f3b3d91f4f8e76527fb8"
 dependencies = [
  "async-task",
  "concurrent-queue",
@@ -419,7 +419,7 @@ version = "3.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca5abbf2d4a4c6896197c9de13d6d7cb7eff438c63dacde1dde980569cb00248"
 dependencies = [
- "darling 0.21.2",
+ "darling 0.21.3",
  "ident_case",
  "prettyplease 0.2.37",
  "proc-macro2",
@@ -770,12 +770,12 @@ dependencies = [
 
 [[package]]
 name = "darling"
-version = "0.21.2"
+version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08440b3dd222c3d0433e63e097463969485f112baff337dfdaca043a0d760570"
+checksum = "9cdf337090841a411e2a7f3deb9187445851f91b309c0c0a29e05f74a00a48c0"
 dependencies = [
- "darling_core 0.21.2",
- "darling_macro 0.21.2",
+ "darling_core 0.21.3",
+ "darling_macro 0.21.3",
 ]
 
 [[package]]
@@ -794,9 +794,9 @@ dependencies = [
 
 [[package]]
 name = "darling_core"
-version = "0.21.2"
+version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d25b7912bc28a04ab1b7715a68ea03aaa15662b43a1a4b2c480531fd19f8bf7e"
+checksum = "1247195ecd7e3c85f83c8d2a366e4210d588e802133e1e355180a9870b517ea4"
 dependencies = [
  "fnv",
  "ident_case",
@@ -819,11 +819,11 @@ dependencies = [
 
 [[package]]
 name = "darling_macro"
-version = "0.21.2"
+version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce154b9bea7fb0c8e8326e62d00354000c36e79770ff21b8c84e3aa267d9d531"
+checksum = "d38308df82d1080de0afee5d069fa14b0326a88c14f15c5ccda35b4a6c414c81"
 dependencies = [
- "darling_core 0.21.2",
+ "darling_core 0.21.3",
  "quote",
  "syn 2.0.106",
 ]
@@ -1303,9 +1303,9 @@ dependencies = [
 
 [[package]]
 name = "frost-core"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1858230cabb6792a5020daf4b0074f57b7d1e2a520ac544c77f102babee62ff4"
+checksum = "2619366c227233c0f817ae01156bd21b8cf74d2bd96cbe0889f4c2e266724e44"
 dependencies = [
  "byteorder",
  "const-crc32-nostd",
@@ -1319,16 +1319,15 @@ dependencies = [
  "serde",
  "serdect",
  "thiserror 2.0.16",
- "thiserror-nostd-notrait",
  "visibility",
  "zeroize",
 ]
 
 [[package]]
 name = "frost-ed25519"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c350ac3d0463a009a061aba12b67920acee94338951c849bb4c492d55223dece"
+checksum = "f73eb5fa9311d33450c2320199ad1663b5af7a50061d9627d2e0dc776f0acb27"
 dependencies = [
  "curve25519-dalek",
  "document-features",
@@ -1340,9 +1339,9 @@ dependencies = [
 
 [[package]]
 name = "frost-rerandomized"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8a3b10d9c1e9f298522510940b5b8c3d55040420517ec8d2bb86c4c2d1ae3ee"
+checksum = "4c5eb1ea58c0250b7ce834337f7b19e0417686d14ffc7f626137dea9149762d4"
 dependencies = [
  "derive-getters",
  "document-features",
@@ -1353,9 +1352,9 @@ dependencies = [
 
 [[package]]
 name = "frost-secp256k1"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d4890a0cdd6897a4af81016ec3299e4eb3a459d6468933d2a385302241662b5"
+checksum = "4f6974379aee791f2f9e0db47c37d9e4c77ea8a8233e488ae8949ce4c6864e96"
 dependencies = [
  "document-features",
  "frost-core",
@@ -1558,7 +1557,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http 0.2.12",
- "indexmap 2.10.0",
+ "indexmap 2.11.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -1577,7 +1576,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "http 1.3.1",
- "indexmap 2.10.0",
+ "indexmap 2.11.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -2015,9 +2014,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.10.0"
+version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe4cd85333e22411419a0bcae1297d25e58c9443848b11dc6a86fefe8c78a661"
+checksum = "f2481980430f9f78649238835720ddccc57e52df14ffce1c6f37391d61b563e9"
 dependencies = [
  "equivalent",
  "hashbrown 0.15.5",
@@ -2095,9 +2094,9 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
 name = "jobserver"
-version = "0.1.33"
+version = "0.1.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38f262f097c174adebe41eb73d66ae9c06b2844fb0da69969647bbddd9b0538a"
+checksum = "9afb3de4395d6b3e67a780b6de64b51c978ecf11cb9a462c66be7d4ca9039d33"
 dependencies = [
  "getrandom 0.3.3",
  "libc",
@@ -2536,9 +2535,9 @@ dependencies = [
 
 [[package]]
 name = "near-gas"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28a1951e112f1e8fee9142152e628778b277bee6d88cfe9ed7d40a287c957651"
+checksum = "41ca4044222f2f392ab61d27d0aefc5106b1ece4dcd22c5c987e3c75371d2a37"
 dependencies = [
  "borsh",
  "schemars 0.8.22",
@@ -2811,7 +2810,7 @@ dependencies = [
  "near-abi",
  "near-account-id",
  "near-crypto 0.31.0",
- "near-gas 0.3.1",
+ "near-gas 0.3.2",
  "near-parameters 0.31.0",
  "near-primitives 0.31.0",
  "near-primitives-core 0.31.0",
@@ -2942,7 +2941,7 @@ dependencies = [
  "near-abi-client",
  "near-account-id",
  "near-crypto 0.29.2",
- "near-gas 0.3.1",
+ "near-gas 0.3.2",
  "near-jsonrpc-client",
  "near-jsonrpc-primitives",
  "near-primitives 0.29.2",
@@ -3530,9 +3529,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.11.1"
+version = "1.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b544ef1b4eac5dc2db33ea63606ae9ffcfac26c1416a2806ae0bf5f56b201191"
+checksum = "23d7fd106d8c02486a8d64e778353d1cffe08ce79ac2e82f540c86d0facf6912"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -3542,9 +3541,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "809e8dc61f6de73b46c85f4c96486310fe304c434cfa43669d7b40f711150908"
+checksum = "6b9458fa0bfeeac22b5ca447c63aaf45f28439a709ccd244698632f9aa6394d6"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -3553,9 +3552,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.5"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
+checksum = "caf4aa5b0f434c91fe5c7f1ecb6a5ece2130b02ad2a590589dda5146df959001"
 
 [[package]]
 name = "relative-path"
@@ -4027,7 +4026,7 @@ version = "1.0.143"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d401abef1d108fbd9cbaebc3e46611f4b1021f714a0597a71f41ee463f5f4a5a"
 dependencies = [
- "indexmap 2.10.0",
+ "indexmap 2.11.0",
  "itoa",
  "memchr",
  "ryu",
@@ -4067,7 +4066,7 @@ dependencies = [
  "chrono",
  "hex",
  "indexmap 1.9.3",
- "indexmap 2.10.0",
+ "indexmap 2.11.0",
  "schemars 0.9.0",
  "schemars 1.0.4",
  "serde",
@@ -4095,7 +4094,7 @@ version = "0.9.34+deprecated"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
 dependencies = [
- "indexmap 2.10.0",
+ "indexmap 2.11.0",
  "itoa",
  "ryu",
  "serde",
@@ -4445,6 +4444,7 @@ version = "0.1.0"
 dependencies = [
  "attestation",
  "dstack-sdk-types",
+ "hex",
  "near-sdk",
  "serde_json",
 ]
@@ -4483,26 +4483,6 @@ name = "thiserror-impl"
 version = "2.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c5e1be1c48b9172ee610da68fd9cd2770e7a4056cb3fc98710ee6906f0c7960"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.106",
-]
-
-[[package]]
-name = "thiserror-nostd-notrait"
-version = "1.0.57"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8444e638022c44d2a9337031dee8acb732bcc7fbf52ac654edc236b26408b61"
-dependencies = [
- "thiserror-nostd-notrait-impl",
-]
-
-[[package]]
-name = "thiserror-nostd-notrait-impl"
-version = "1.0.57"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "585e5ef40a784ce60b49c67d762110688d211d395d39e096be204535cf64590e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4689,7 +4669,7 @@ version = "0.22.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
 dependencies = [
- "indexmap 2.10.0",
+ "indexmap 2.11.0",
  "toml_datetime",
  "winnow",
 ]
@@ -4846,9 +4826,9 @@ dependencies = [
 
 [[package]]
 name = "url"
-version = "2.5.6"
+version = "2.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "137a3c834eaf7139b73688502f3f1141a0337c5d8e4d9b536f9b8c796e26a7c4"
+checksum = "08bc136a29a3d1758e07a9cca267be308aeebf5cfd5a10f3f67ab2097683ef5b"
 dependencies = [
  "form_urlencoded",
  "idna",

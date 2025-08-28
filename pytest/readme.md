@@ -37,7 +37,7 @@ Simply run `exec_pytest.sh` (optional flag `--verbose` and `--reset-submodules`)
 4. Install docker and cargo-near. For the latter:
 
     ```bash
-    cargo install cargo-near
+    cargo install cargo-near --locked
     ```
 
     This is only needed if using reproducible builds for the contract, which is 
