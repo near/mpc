@@ -98,7 +98,6 @@ fn k256_signature_response(
     let k256_signature = k256_types::Signature::new(big_r, s, recovery_id);
     Ok(ChainSignatureResponse::Secp256k1(k256_signature))
 }
-#[allow(dead_code)]
 pub trait ChainRespondArgs {}
 
 /* These arguments are passed to the `respond` function of the
@@ -180,7 +179,6 @@ pub struct SubmitParticipantInfoArgs {
 #[serde(untagged)]
 pub(crate) enum ChainSendTransactionRequest {
     Respond(ChainSignatureRespondArgs),
-    #[allow(dead_code)]
     CKDRespond(ChainCKDRespondArgs),
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
