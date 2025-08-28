@@ -1,5 +1,0 @@
-FROM nearprotocol/nearcore:latest
-RUN apt-get update -y && apt-get install -y --no-install-recommends python3
-
-ADD deployment/initialize-near-node.sh /initialize-near-node.sh
-CMD ["bash", "/initialize-near-node.sh"]

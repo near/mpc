@@ -11,6 +11,9 @@ NEAR_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.json"
 
 initialize_near_node() {
     ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --download-genesis --download-config --boot-nodes "$NEAR_BOOT_NODES"
+}
+
+update_near_node_config() {
     python3 <<EOF
 import json;
 config = json.load(open("$NEAR_NODE_CONFIG_FILE"))
@@ -55,6 +58,12 @@ cores: 12
 EOF
 }
 
+update_mpc_config() {
+  # Use sed to replace placeholder values
+  sed -i "s/my_near_account_id:.*/my_near_account_id: $MPC_ACCOUNT_ID/" "$1"
+  sed -i "s/mpc_contract_id:.*/mpc_contract_id: $MPC_CONTRACT_ID/" "$1"
+}
+
 # Check and initialize Near node config if needed
 if [ -r "$NEAR_NODE_CONFIG_FILE" ]; then
     echo "Near node is already initialized"
@@ -63,13 +72,17 @@ else
     initialize_near_node "$MPC_HOME_DIR" && echo "Near node initialized"
 fi
 
+# Update the Near node config with the MPC ENV variables values
+update_near_node_config && echo "Near node config updated"
+
 # Check and initialize MPC config if needed
 if [ -r "$MPC_NODE_CONFIG_FILE" ]; then
-    echo "MPC node is already initialized"
+    echo "MPC node is already initialized."
 else
-    echo "Initializing MPC node"
-    initialize_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node initialized"
+    initialize_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config initialized"
 fi
+
+update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
 
 # Check if MPC_SECRET_STORE_KEY is empty - if so, fetch from GCP Secret Manager
 if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
