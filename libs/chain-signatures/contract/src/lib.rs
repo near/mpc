@@ -708,8 +708,6 @@ impl VersionedMpcContract {
             account_key
         );
 
-        let account_id = env::signer_account_id();
-
         // Save the initial storage usage to know how much to charge the proposer for the storage
         // used
         let initial_storage = env::storage_usage();

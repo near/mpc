@@ -183,10 +183,7 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
     };
     let expected = format!("{:?}", InvalidState::NotParticipant);
     let err_str = format!("{:?}", err);
-    assert!(
-        err_str.contains(&expected),
-        "expected failure due to voter not being a participant"
-    );
+    assert!(err_str.contains(&expected));
     Ok(())
 }
 
@@ -334,20 +331,13 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
         .await?;
 
     // The call should fail because it's not from the contract itself
-    assert!(
-        !result.is_success(),
-        "External account should not be able to call clean_tee_status"
-    );
+    assert!(!result.is_success());
 
     // Verify the error message indicates unauthorized access
     match result.into_result() {
         Err(failure) => {
             let error_msg = format!("{:?}", failure);
-            assert!(
-                error_msg.contains("Method clean_tee_status is private"),
-                "Error should indicate private method access: {}",
-                error_msg
-            );
+            assert!(error_msg.contains("Method clean_tee_status is private"));
         }
         Ok(_) => panic!("Call should have failed"),
     }
@@ -372,11 +362,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
 
     for account in &accounts {
         let success = submit_participant_info(account, &contract, &attestation, &tls_key).await?;
-        assert!(
-            success,
-            "Failed to submit participant info for account: {}",
-            account.id()
-        );
+        assert!(success);
     }
 
     // Verify current participants have TEE data
@@ -387,19 +373,14 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     let additional_accounts = gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await.0;
     for account in &additional_accounts {
         let success = submit_participant_info(account, &contract, &attestation, &tls_key).await?;
-        assert!(
-            success,
-            "Failed to submit participant info for additional account: {}",
-            account.id()
-        );
+        assert!(success);
     }
 
     // Verify we have TEE data for all accounts before cleanup
     let tee_participants_before = get_tee_accounts(&contract).await?;
     assert_eq!(
         tee_participants_before.len(),
-        accounts.len() + additional_accounts.len(),
-        "Should have TEE data for all participants and additional accounts before cleanup"
+        accounts.len() + additional_accounts.len()
     );
 
     // Contract should be able to call clean_tee_status on itself
@@ -410,18 +391,11 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
         .transact()
         .await?;
 
-    assert!(
-        result.is_success(),
-        "Contract should be able to call clean_tee_status on itself"
-    );
+    assert!(result.is_success());
 
     // Verify cleanup worked: only current participants should have TEE data
     let tee_participants_after = get_tee_accounts(&contract).await?;
-    assert_eq!(
-        tee_participants_after.len(),
-        accounts.len(),
-        "Should only have TEE data for current participants after cleanup"
-    );
+    assert_eq!(tee_participants_after.len(), accounts.len());
 
     let expected_participants: HashSet<_> = accounts
         .iter()
@@ -429,10 +403,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
         .collect();
     let actual_participants: HashSet<_> = tee_participants_after.into_iter().collect();
 
-    assert_eq!(
-        expected_participants, actual_participants,
-        "Remaining TEE participants should exactly match the current parameter set"
-    );
+    assert_eq!(expected_participants, actual_participants);
 
     Ok(())
 }

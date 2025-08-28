@@ -11,15 +11,12 @@ use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
 /// TCB info JSON file containing measurement values.
 const TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
 
-// The `EXPECTED_LOCAL_SGX_EVENT_DIGEST` is the expected SHA-384 digest for the `local-sgx` event,
-// not the event payload.
-//
-// Digest format:
-//   digest = SHA384( event_type + ":" + "key-provider" + ":"+payload) )
-//
-// Payload format: sha256 {"name":"local-sgx", "id": "<mr_enclave of the provider>"}
-
-// This value must match the digest below for the test to pass.
+/// The expected SHA-384 digest for the `local-sgx` event, not the event payload.
+///
+/// Digest format:
+///   digest = SHA384( event_type + ":" + "key-provider" + ":"+payload) )
+///
+/// Payload format: sha256 {"name":"local-sgx", "id": "<mr_enclave of the provider>"}
 const EXPECTED_LOCAL_SGX_EVENT_DIGEST: [u8; 48] = [
     0x74, 0xca, 0x93, 0x9b, 0x8c, 0x3c, 0x74, 0xaa, 0xb3, 0xc3, 0x09, 0x66, 0xa7, 0x88, 0xf7, 0x74,
     0x39, 0x51, 0xd5, 0x4a, 0x93, 0x6a, 0x71, 0x1d, 0xd0, 0x14, 0x22, 0xf0, 0x03, 0xff, 0x9d, 0xf6,
