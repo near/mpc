@@ -31,6 +31,11 @@ pub struct SignatureConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CKDConfig {
+    pub timeout_sec: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeygenConfig {
     pub timeout_sec: u64,
 }
@@ -145,6 +150,7 @@ pub struct ConfigFile {
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
     pub signature: SignatureConfig,
+    pub ckd: CKDConfig,
     #[serde(default)]
     pub keygen: KeygenConfig,
     /// This value is only considered when the node is run in normal node. It defines the number of

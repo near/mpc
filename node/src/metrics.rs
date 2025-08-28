@@ -30,7 +30,6 @@ pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLoc
     .unwrap()
 });
 
-// TODO: remove when ckd provider is integrated https://github.com/near/mpc/issues/863
 pub static MPC_CKD_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     near_o11y::metrics::try_create_histogram(
         "near_mpc_ckd_time_elapsed",
@@ -162,7 +161,6 @@ pub static MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED: LazyLock<prometheus::IntCount
         .unwrap()
     });
 
-// TODO: remove when ckd provider is integrated https://github.com/near/mpc/issues/863
 pub static MPC_NUM_PASSIVE_CKD_REQUESTS_RECEIVED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
@@ -181,7 +179,6 @@ pub static MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED: LazyLock<prometheus::
         .unwrap()
     });
 
-// TODO: remove when ckd provider is integrated https://github.com/near/mpc/issues/863
 pub static MPC_NUM_PASSIVE_CKD_REQUESTS_LOOKUP_SUCCEEDED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(

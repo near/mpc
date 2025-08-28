@@ -156,6 +156,7 @@ impl MpcLeaderCentricComputation<(FullSignature, VerifyingKey)> for SignComputat
             presign_out,
             msg_hash,
         )?;
+        // TODO: this is unused https://github.com/near/mpc/issues/975
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
         let signature = run_protocol("sign", channel, protocol).await?;
         Ok((signature, VerifyingKey::new(public_key.into())))

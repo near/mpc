@@ -662,7 +662,6 @@ impl FakeIndexerManager {
     }
 
     /// Waits for the next ckd response submitted by any node.
-    #[allow(dead_code)]
     pub async fn next_response_ckd(&mut self) -> ChainCKDRespondArgs {
         self.ckd_response_receiver.recv().await.unwrap()
     }
@@ -673,7 +672,6 @@ impl FakeIndexerManager {
     }
 
     /// Sends a ckd request to the fake blockchain.
-    #[allow(dead_code)]
     pub fn request_ckd(&self, request: CKDRequestFromChain) {
         self.ckd_request_sender.send(request).unwrap();
     }

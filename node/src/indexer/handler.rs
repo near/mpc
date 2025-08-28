@@ -66,7 +66,6 @@ pub struct ChainBlockUpdate {
     pub signature_requests: Vec<SignatureRequestFromChain>,
     pub completed_signatures: Vec<SignatureId>,
     pub ckd_requests: Vec<CKDRequestFromChain>,
-    #[allow(dead_code)]
     pub completed_ckds: Vec<CKDId>,
 }
 

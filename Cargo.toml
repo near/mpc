@@ -83,7 +83,8 @@ serial_test = "3.2.0"
 sha3 = "0.10.8"
 tempfile = "=3.14.0"
 thiserror = "2.0.12"
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "5fd9fe7d45db3b653d300d393b95719f6fc219b3"}
+# Current HEAD of main branch as of 28-08-2025
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "b4fbf84ad3244d54f4db54d3b283989861cd5f53"}
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-util = { version = "0.7.12", features = ["time"] }
