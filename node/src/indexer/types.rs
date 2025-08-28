@@ -1,4 +1,4 @@
-use crate::{sign_request::SignatureRequest, types::CKDRequest};
+use crate::{types::CKDRequest, types::SignatureRequest};
 use anyhow::Context;
 use attestation::attestation::Attestation;
 use k256::{

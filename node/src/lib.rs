@@ -35,13 +35,12 @@ pub mod primitives;
 mod protocol;
 mod protocol_version;
 mod providers;
+pub mod requests;
 mod runtime;
-mod sign_request;
-pub mod signing;
 mod storage;
 pub mod tracing;
 mod tracking;
-mod types;
+pub mod types;
 pub mod web;
 
 #[cfg(feature = "tee")]

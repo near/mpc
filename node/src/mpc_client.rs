@@ -1,18 +1,20 @@
 use crate::config::ConfigFile;
 use crate::indexer::handler::{CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain};
-use crate::indexer::types::{ChainSendTransactionRequest, ChainSignatureRespondArgs};
+use crate::indexer::types::{
+    ChainCKDRespondArgs, ChainSendTransactionRequest, ChainSignatureRespondArgs,
+};
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
-use crate::sign_request::SignatureRequest;
-use crate::signing::queue::{PendingSignatureRequests, CHECK_EACH_SIGNATURE_REQUEST_INTERVAL};
+use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
 use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::CKDRequest;
+use crate::types::SignatureRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_contract::crypto_shared::derive_tweak;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -159,7 +161,13 @@ impl MpcClient {
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
-        let mut pending_signatures = PendingSignatureRequests::new(
+        let mut pending_signatures = PendingRequests::new(
+            Clock::real(),
+            self.client.all_participant_ids(),
+            self.client.my_participant_id(),
+            self.client.clone(),
+        );
+        let mut pending_ckds = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
             Clock::real(),
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
@@ -169,7 +177,7 @@ impl MpcClient {
         let start_time = Clock::real().now();
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(CHECK_EACH_SIGNATURE_REQUEST_INTERVAL.unsigned_abs()) => {
+                _ = tokio::time::sleep(CHECK_EACH_REQUEST_INTERVAL.unsigned_abs()) => {
                 }
                 block_update = block_update_receiver.recv() => {
                     let Some(block_update) = block_update else {
@@ -212,8 +220,6 @@ impl MpcClient {
                         &block_update.block,
                     );
 
-                    // TODO: remove when ckd provider is integrated https://github.com/near/mpc/issues/863
-                    #[allow(unused)]
                     let ckd_requests = block_update
                         .ckd_requests
                         .into_iter()
@@ -241,6 +247,11 @@ impl MpcClient {
                             ckd_request
                         })
                         .collect::<Vec<_>>();
+                    pending_ckds.notify_new_block(
+                        ckd_requests,
+                        block_update.completed_ckds,
+                        &block_update.block,
+                    );
 
 
 
@@ -257,7 +268,8 @@ impl MpcClient {
                                 debug_request.respond(debug_output);
                             }
                             DebugRequestKind::RecentCKD => {
-                                todo!();
+                                let debug_output = format!("{:?}", pending_ckds);
+                                debug_request.respond(debug_output);
                             }
                         }
                     }
@@ -267,7 +279,7 @@ impl MpcClient {
             if start_time.elapsed() < INITIAL_STARTUP_SIGNATURE_PROCESSING_DELAY {
                 continue;
             }
-            let signature_attempts = pending_signatures.get_signatures_to_attempt();
+            let signature_attempts = pending_signatures.get_requests_to_attempt();
 
             for signature_attempt in signature_attempts {
                 let this = self.clone();
@@ -352,6 +364,84 @@ impl MpcClient {
                             .send(ChainSendTransactionRequest::Respond(response))
                             .await;
                         signature_attempt
+                            .computation_progress
+                            .lock()
+                            .unwrap()
+                            .last_response_submission = Some(Clock::real().now());
+
+                        anyhow::Ok(())
+                    },
+                );
+            }
+            let ckd_attempts = pending_ckds.get_requests_to_attempt();
+
+            for ckd_attempt in ckd_attempts {
+                let this = self.clone();
+                let chain_txn_sender_ckd = chain_txn_sender.clone();
+                tasks.spawn_checked(
+                    &format!("leader for ckd request {:?}", ckd_attempt.request.id),
+                    async move {
+                        // Only issue an MPC ckd computation if we haven't computed it
+                        // in a previous attempt.
+                        let existing_response = ckd_attempt
+                            .computation_progress
+                            .lock()
+                            .unwrap()
+                            .computed_response
+                            .clone();
+                        let response = match existing_response {
+                            None => {
+                                metrics::MPC_NUM_CKD_COMPUTATIONS_LED
+                                    .with_label_values(&["total"])
+                                    .inc();
+
+                                let response = match this
+                                    .domain_to_scheme
+                                    .get(&ckd_attempt.request.domain_id)
+                                {
+                                    Some(SignatureScheme::Secp256k1) => {
+                                        let response = timeout(
+                                            Duration::from_secs(this.config.signature.timeout_sec),
+                                            this.ckd_provider
+                                                .clone()
+                                                .make_ckd(ckd_attempt.request.id),
+                                        )
+                                        .await??;
+
+                                        let response = ChainCKDRespondArgs::new_ckd(
+                                            &ckd_attempt.request,
+                                            &response,
+                                        )?;
+
+                                        Ok(response)
+                                    }
+                                    Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
+                                        "Signature scheme is not allowed for domain: {:?}",
+                                        ckd_attempt.request.domain_id.clone()
+                                    )),
+                                    None => Err(anyhow::anyhow!(
+                                        "Signature scheme is not found for domain: {:?}",
+                                        ckd_attempt.request.domain_id.clone()
+                                    )),
+                                }?;
+
+                                metrics::MPC_NUM_CKD_COMPUTATIONS_LED
+                                    .with_label_values(&["succeeded"])
+                                    .inc();
+
+                                ckd_attempt
+                                    .computation_progress
+                                    .lock()
+                                    .unwrap()
+                                    .computed_response = Some(response.clone());
+                                response
+                            }
+                            Some(response) => response,
+                        };
+                        let _ = chain_txn_sender_ckd
+                            .send(ChainSendTransactionRequest::CKDRespond(response))
+                            .await;
+                        ckd_attempt
                             .computation_progress
                             .lock()
                             .unwrap()

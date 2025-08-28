@@ -475,7 +475,7 @@ impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
 #[cfg(test)]
 pub mod tests {
     use super::{BlockViewLite, RecentBlocksTracker};
-    use crate::signing::recent_blocks_tracker::CheckBlockResult;
+    use crate::requests::recent_blocks_tracker::CheckBlockResult;
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
     use std::collections::HashSet;

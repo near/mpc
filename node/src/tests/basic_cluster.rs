@@ -1,6 +1,7 @@
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
+    request_ckd_and_await_response, request_signature_and_await_response, IntegrationTestSetup,
+    DEFAULT_BLOCK_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -46,6 +47,15 @@ async fn test_basic_cluster() {
         .collect::<Vec<_>>();
 
     assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user0",
+        &domain,
+        std::time::Duration::from_secs(60)
+    )
+    .await
+    .is_some());
+
+    assert!(request_ckd_and_await_response(
         &mut setup.indexer,
         "user0",
         &domain,
