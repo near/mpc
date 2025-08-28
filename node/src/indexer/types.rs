@@ -302,7 +302,6 @@ impl ChainSignatureRespondArgs {
 }
 
 impl ChainCKDRespondArgs {
-    #[allow(dead_code)]
     pub fn new_ckd(request: &CKDRequest, response: &CKDResponse) -> anyhow::Result<Self> {
         Ok(ChainCKDRespondArgs {
             request: ChainCKDRequest::new(

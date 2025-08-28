@@ -1,11 +1,10 @@
+mod provider;
+
 use std::{collections::HashMap, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use k256::AffinePoint;
-use mpc_contract::{
-    crypto_shared::{k256_types, CKDResponse},
-    primitives::domain::DomainId,
-};
+use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId};
 use threshold_signatures::ecdsa::KeygenOutput;
 
 use crate::{
@@ -18,6 +17,8 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum CKDTaskId {
+    KeyGeneration { key_event: KeyEventId },
+    KeyResharing { key_event: KeyEventId },
     Ckd { id: CKDId },
 }
 
@@ -28,49 +29,64 @@ impl From<CKDTaskId> for MpcTaskId {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct CKDProvider {
     config: Arc<ConfigFile>,
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
-    sign_request_store: Arc<CKDRequestStorage>,
+    ckd_request_store: Arc<CKDRequestStorage>,
     keyshares: HashMap<DomainId, KeygenOutput>,
 }
 
-// TODO: this is currently a stub, should be implemented as part of https://github.com/near/mpc/issues/862
 impl CKDProvider {
     pub fn new(
         config: Arc<ConfigFile>,
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
-        sign_request_store: Arc<CKDRequestStorage>,
+        ckd_request_store: Arc<CKDRequestStorage>,
         keyshares: HashMap<DomainId, KeygenOutput>,
     ) -> Self {
         Self {
             config,
             mpc_config,
             client,
-            sign_request_store,
+            ckd_request_store,
             keyshares,
         }
     }
 
-    #[allow(dead_code)]
-    pub async fn make_ckd(self: Arc<Self>, _id: CKDId) -> anyhow::Result<CKDResponse> {
-        Ok(CKDResponse {
-            big_c: k256_types::SerializableAffinePoint {
-                affine_point: AffinePoint::GENERATOR,
-            },
-            big_y: k256_types::SerializableAffinePoint {
-                affine_point: AffinePoint::GENERATOR,
-            },
-        })
+    pub async fn make_ckd(
+        self: Arc<Self>,
+        id: CKDId,
+    ) -> anyhow::Result<(AffinePoint, AffinePoint)> {
+        self.make_ckd_leader(id).await
     }
 
     pub async fn process_channel(
         self: Arc<Self>,
-        _channel: NetworkTaskChannel,
+        channel: NetworkTaskChannel,
     ) -> anyhow::Result<()> {
+        match channel.task_id() {
+            MpcTaskId::CKDTaskId(task) => match task {
+                CKDTaskId::KeyGeneration { .. } => {
+                    anyhow::bail!("Key generation rejected in normal node operation");
+                }
+                CKDTaskId::KeyResharing { .. } => {
+                    anyhow::bail!("Key resharing rejected in normal node operation");
+                }
+                CKDTaskId::Ckd { id } => {
+                    self.make_ckd_follower(channel, id).await?;
+                }
+            },
+            _ => anyhow::bail!(
+                "ckd task handler: received unexpected task id: {:?}",
+                channel.task_id()
+            ),
+        }
+
+        Ok(())
+    }
+
+    pub async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
         Ok(())
     }
 }

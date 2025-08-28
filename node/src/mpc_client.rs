@@ -16,7 +16,8 @@ use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::CKDRequest;
 use crate::types::SignatureRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
-use mpc_contract::crypto_shared::derive_tweak;
+use mpc_contract::crypto_shared::k256_types::SerializableAffinePoint;
+use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
 use std::collections::HashMap;
@@ -142,11 +143,17 @@ impl MpcClient {
                 .spawn_background_tasks(),
         );
 
+        let ckd_background_tasks = tracking::spawn(
+            "ckd_background_tasks",
+            self.ckd_provider.clone().spawn_background_tasks(),
+        );
+
         let _ = monitor_passive_channels.await?;
         metrics_emitter.await?;
         monitor_chain.await?;
         let _ = ecdsa_background_tasks.await?;
         let _ = eddsa_background_tasks.await?;
+        let _ = ckd_background_tasks.await?;
         tee_verification_handle.await?;
 
         Ok(())
@@ -410,7 +417,14 @@ impl MpcClient {
 
                                         let response = ChainCKDRespondArgs::new_ckd(
                                             &ckd_attempt.request,
-                                            &response,
+                                            &CKDResponse {
+                                                big_y: SerializableAffinePoint {
+                                                    affine_point: response.0,
+                                                },
+                                                big_c: SerializableAffinePoint {
+                                                    affine_point: response.1,
+                                                },
+                                            },
                                         )?;
 
                                         Ok(response)
