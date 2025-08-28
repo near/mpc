@@ -9,6 +9,7 @@ use threshold_signatures::{
 };
 use tokio::time::timeout;
 
+use crate::metrics;
 use crate::providers::PublicKeyConversion;
 use crate::{
     network::{computation::MpcLeaderCentricComputation, NetworkTaskChannel},
@@ -69,17 +70,19 @@ impl CKDProvider {
         channel: NetworkTaskChannel,
         id: CKDId,
     ) -> anyhow::Result<()> {
+        metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
         let ckd_request = timeout(
             Duration::from_secs(self.config.ckd.timeout_sec),
             self.ckd_request_store.get(id),
         )
         .await??;
+        metrics::MPC_NUM_PASSIVE_CKD_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
         let Some(keygen_output) = self.keyshares.get(&ckd_request.domain_id) else {
             anyhow::bail!("No keyshare for domain {:?}", ckd_request.domain_id);
         };
 
-        let _ = CKDComputation {
+        CKDComputation {
             keygen_output: keygen_output.clone(),
             app_public_key: ckd_request.app_public_key,
             app_id: ckd_request.app_id,
@@ -125,7 +128,8 @@ impl MpcLeaderCentricComputation<Option<(AffinePoint, AffinePoint)>> for CKDComp
             VerifyingKey::from_near_sdk_public_key(&self.app_public_key)?,
         )?;
 
-        // TODO: implement metrics
+        // TODO: this is unused https://github.com/near/mpc/issues/975
+        let _timer = metrics::MPC_CKD_TIME_ELAPSED.start_timer();
         let result = run_protocol("ckd", channel, protocol).await?;
 
         Ok(result.map(|f| (f.big_y().value().to_affine(), f.big_c().value().to_affine())))
