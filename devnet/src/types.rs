@@ -207,7 +207,7 @@ pub mod near_crypto_compatible_serialization {
                 .map(|key| {
                     format!(
                         "{ED25519_PREFIX}:{}",
-                        bs58::encode(key.as_bytes()).into_string()
+                        bs58::encode(key.to_keypair_bytes()).into_string()
                     )
                 })
                 .collect();
@@ -226,10 +226,13 @@ pub mod near_crypto_compatible_serialization {
                         return Err(de::Error::custom("Key must start with 'ed25519:' prefix"));
                     };
 
-                    let bytes = bs58::decode(encoded_key)
+                    let bytes: [u8; 64] = bs58::decode(encoded_key)
                         .into_vec()
-                        .map_err(de::Error::custom)?;
-                    SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
+                        .map_err(de::Error::custom)?
+                        .try_into()
+                        .map_err(|_| de::Error::custom("Key pair bytes must be 64 bytes."))?;
+
+                    SigningKey::from_keypair_bytes(&bytes).map_err(de::Error::custom)
                 })
                 .collect()
         }
@@ -244,7 +247,7 @@ pub mod near_crypto_compatible_serialization {
         {
             let bs58_string = format!(
                 "{ED25519_PREFIX}:{}",
-                bs58::encode(key.as_bytes()).into_string()
+                bs58::encode(key.to_keypair_bytes()).into_string()
             );
             bs58_string.serialize(serializer)
         }
@@ -258,11 +261,13 @@ pub mod near_crypto_compatible_serialization {
                 return Err(de::Error::custom("Key must start with 'ed25519:' prefix"));
             };
 
-            let bytes = bs58::decode(encoded_key)
+            let bytes: [u8; 64] = bs58::decode(encoded_key)
                 .into_vec()
-                .map_err(de::Error::custom)?;
+                .map_err(de::Error::custom)?
+                .try_into()
+                .map_err(|_| de::Error::custom("Key pair bytes must be 64 bytes."))?;
 
-            SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
+            SigningKey::from_keypair_bytes(&bytes).map_err(de::Error::custom)
         }
     }
 
