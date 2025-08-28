@@ -81,10 +81,8 @@ const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
 /// variant to minimize wasted storage from enum padding.
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
-// We intentionally allow a large enum variant because V2 is the production version.
-// The enum will always occupy space equal to its largest variant plus discriminant,
-// so having the production version as the largest variant means no wasted padding
-// in the common case.
+// We intentionally allow a large enum variant if the largest variant
+// is the latest version which is what will be used in production for future releases.
 #[allow(clippy::large_enum_variant)]
 pub enum VersionedMpcContract {
     /// This is no longer deployed
@@ -93,9 +91,8 @@ pub enum VersionedMpcContract {
     V1(MpcContractV1),
     /// Current actual version
     V2(MpcContract),
-    // IMPORTANT: When adding a new variant, update the compile-time assertion below
+    // IMPORTANT: When adding a new variant, update the compile-time assertion below.
 }
-
 // Compile-time assertion to ensure the production contract variant is the largest.
 // This prevents wasted storage space from enum padding in production.
 const _: () = {
