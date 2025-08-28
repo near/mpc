@@ -1,5 +1,6 @@
 use k256::{AffinePoint, Scalar};
 use mpc_contract::state::ProtocolContractState;
+use rand::rngs::OsRng;
 use std::collections::HashMap;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
@@ -21,7 +22,6 @@ use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, StaticWebData};
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
-use near_crypto::KeyType::ED25519;
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
 use near_sdk::{AccountId, PublicKey};
@@ -315,9 +315,9 @@ impl IntegrationTestSetup {
             };
             let secrets = SecretsConfig {
                 persistent_secrets: PersistentSecrets {
-                    p2p_private_key: near_crypto::SecretKey::ED25519(p2p_key),
-                    near_signer_key: near_crypto::SecretKey::from_random(ED25519),
-                    near_responder_keys: vec![near_crypto::SecretKey::from_random(ED25519)],
+                    p2p_private_key: p2p_key,
+                    near_signer_key: ed25519_dalek::SigningKey::generate(&mut OsRng),
+                    near_responder_keys: vec![ed25519_dalek::SigningKey::generate(&mut OsRng)],
                 },
                 local_storage_aes_key: rand::random(),
             };

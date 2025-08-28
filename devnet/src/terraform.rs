@@ -9,9 +9,9 @@ use crate::cli::{
 };
 use crate::constants::DEFAULT_MPC_DOCKER_IMAGE;
 use crate::devnet::OperatingDevnetSetup;
-use crate::types::{MpcNetworkSetup, ParsedConfig};
+use crate::types::{near_crypto_compatible_serialization, MpcNetworkSetup, ParsedConfig};
 use describe::TerraformInfraShowOutput;
-use near_crypto::{PublicKey, SecretKey};
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_sdk::AccountId;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -71,10 +71,10 @@ async fn export_terraform_vars(
             let account_sk = account.any_access_key().await.secret_key();
             let mpc_node = LegacyTerraformMpcNode {
                 account: account_id.clone(),
-                account_pk: account_sk.public_key(),
+                account_pk: account_sk.verifying_key(),
                 account_sk,
                 sign_sk: participant.p2p_private_key.clone(),
-                sign_pk: participant.p2p_private_key.public_key(),
+                sign_pk: participant.p2p_private_key.verifying_key(),
                 url: format!("http://mpc-node-{}.service.mpc.consul:3000", i),
                 respond_yaml: serde_yaml::to_string(&respond_config).unwrap(),
             };
@@ -138,10 +138,14 @@ struct LegacyTerraformFile {
 #[derive(Serialize)]
 struct LegacyTerraformMpcNode {
     account: AccountId,
-    account_pk: PublicKey,
-    account_sk: SecretKey,
-    sign_sk: SecretKey,
-    sign_pk: PublicKey,
+    #[serde(with = "near_crypto_compatible_serialization::verifying_key")]
+    account_pk: VerifyingKey,
+    #[serde(with = "near_crypto_compatible_serialization::signing_key")]
+    account_sk: SigningKey,
+    #[serde(with = "near_crypto_compatible_serialization::verifying_key")]
+    sign_pk: VerifyingKey,
+    #[serde(with = "near_crypto_compatible_serialization::signing_key")]
+    sign_sk: SigningKey,
     url: String,
     respond_yaml: String,
 }
@@ -166,7 +170,8 @@ struct TerraformMpcNode {
 #[derive(Serialize)]
 pub struct RespondConfigFile {
     pub account_id: AccountId,
-    pub access_keys: Vec<SecretKey>,
+    #[serde(with = "near_crypto_compatible_serialization::signing_keys")]
+    pub access_keys: Vec<SigningKey>,
 }
 
 impl MpcTerraformDeployInfraCmd {

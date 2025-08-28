@@ -108,12 +108,13 @@ impl ProtocolContractState {
         public_key: PublicKeyExtended,
     ) -> Result<Option<ProtocolContractState>, Error> {
         let ProtocolContractState::Initializing(state) = self else {
-            return Err(InvalidState::ProtocolStateNotResharing.into());
+            return Err(InvalidState::ProtocolStateNotInitializing.into());
         };
         state
             .vote_pk(key_event_id, public_key)
             .map(|x| x.map(ProtocolContractState::Running))
     }
+
     /// Casts a vote for `proposed_parameters`, returning the new protocol state if the proposal is
     /// accepted. Returns an error if the protocol is not in the Running or Resharing state.
     pub fn vote_new_parameters(

@@ -9,9 +9,11 @@ use crate::primitives::MpcTaskId;
 use crate::providers::{PublicKeyConversion, SignatureProvider};
 use crate::storage::SignRequestStorage;
 use crate::types::SignatureId;
+use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::KeyEventId;
+use near_sdk::CurveType;
 use std::collections::HashMap;
 use std::sync::Arc;
 use threshold_signatures::eddsa::KeygenOutput;
@@ -124,23 +126,43 @@ impl SignatureProvider for EddsaSignatureProvider {
 }
 
 impl PublicKeyConversion for VerifyingKey {
-    fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey> {
+    fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let data = self.serialize()?;
         let data: [u8; 32] = data
             .try_into()
             .or_else(|_| anyhow::bail!("Serialized public key is not 32 bytes."))?;
-        Ok(near_crypto::PublicKey::ED25519(
-            near_crypto::ED25519PublicKey::from(data),
-        ))
+
+        near_sdk::PublicKey::from_parts(CurveType::ED25519, data.to_vec()).context("Infallible.")
     }
 
-    fn from_near_crypto(public_key: &near_crypto::PublicKey) -> anyhow::Result<Self> {
-        match public_key {
-            near_crypto::PublicKey::ED25519(key) => {
-                Ok(VerifyingKey::deserialize(key.0.as_slice())?)
-            }
-            _ => anyhow::bail!("Unsupported public key type"),
-        }
+    fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
+        let key_bytes = public_key.as_bytes();
+
+        // Skip first byte as it is reserved as an identifier for the curve type.
+        let key_data: [u8; 32] = key_bytes[1..]
+            .try_into()
+            .context("Invariant broken, public key must 32 bytes.")?;
+
+        VerifyingKey::deserialize(&key_data)
+            .context("Failed to convert SDK public key to ed25519_dalek::VerifyingKey")
+    }
+}
+impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
+    fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
+        let data: [u8; 32] = self.to_bytes();
+        near_sdk::PublicKey::from_parts(CurveType::ED25519, data.to_vec()).context("Infallible.")
+    }
+
+    fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
+        let key_bytes = public_key.as_bytes();
+
+        // Skip first byte as it is reserved as an identifier for the curve type.
+        let key_data: [u8; 32] = key_bytes[1..]
+            .try_into()
+            .context("Invariant broken, public key must 32 bytes.")?;
+
+        ed25519_dalek::VerifyingKey::from_bytes(&key_data)
+            .context("Failed to convert SDK public key to ed25519_dalek::VerifyingKey")
     }
 }
 
@@ -153,7 +175,7 @@ fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
         .next()
         .unwrap()
         .clone();
-    x.public_key.to_near_public_key()?;
+    x.public_key.to_near_sdk_public_key()?;
     Ok(())
 }
 
@@ -162,6 +184,6 @@ fn check_pubkey_conversion_from_sdk() -> anyhow::Result<()> {
     use std::str::FromStr;
     let near_sdk =
         near_sdk::PublicKey::from_str("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")?;
-    let _ = VerifyingKey::from_near_sdk(&near_sdk)?;
+    let _ = VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
     Ok(())
 }

@@ -3,6 +3,7 @@ mod presign;
 mod sign;
 
 use mpc_contract::primitives::key_state::KeyEventId;
+use near_sdk::CurveType;
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
 mod kdf;
@@ -254,21 +255,25 @@ impl SignatureProvider for EcdsaSignatureProvider {
 }
 
 impl PublicKeyConversion for VerifyingKey {
-    fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey> {
+    fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let bytes = self.to_element().to_encoded_point(false).to_bytes();
         anyhow::ensure!(bytes[0] == 0x04);
-        Ok(near_crypto::PublicKey::SECP256K1(
-            near_crypto::Secp256K1PublicKey::try_from(&bytes[1..65])
-                .context("Failed to convert public key to near crypto type")?,
-        ))
+
+        near_sdk::PublicKey::from_parts(CurveType::SECP256K1, bytes[1..65].to_vec())
+            .context("Failed to convert public key to near crypto type")
     }
 
-    fn from_near_crypto(public_key: &near_crypto::PublicKey) -> anyhow::Result<Self> {
-        match public_key {
-            near_crypto::PublicKey::SECP256K1(key) => {
+    fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
+        match public_key.curve_type() {
+            CurveType::SECP256K1 => {
+                // Skip first byte as it represents the curve type.
+                let key_data: [u8; 64] = public_key.as_bytes()[1..]
+                    .try_into()
+                    .context("Infallible. Key must be 64 bytes")?;
+
                 let mut bytes = [0u8; 65];
                 bytes[0] = 0x04;
-                bytes[1..65].copy_from_slice(key.as_ref());
+                bytes[1..65].copy_from_slice(&key_data);
 
                 let encoded_point = EncodedPoint::from_bytes(bytes)?;
                 let affine_point = AffinePoint::from_encoded_point(&encoded_point)
@@ -292,7 +297,7 @@ fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
         .next()
         .unwrap()
         .clone();
-    x.public_key.to_near_public_key()?;
+    x.public_key.to_near_sdk_public_key()?;
     Ok(())
 }
 
@@ -300,6 +305,6 @@ fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
 fn check_conversion_from_sdk() -> anyhow::Result<()> {
     let near_sdk: near_sdk::PublicKey = "secp256k1:5TJSTQwYwe3MgTCep9DbLxLT6UjB6LFn3SStpBMgdfGjBopNjxL7mpNK92R6cdyByjz7vUQdRgtLiu9w84kopNqn"
                 .parse()?;
-    let _ = VerifyingKey::from_near_sdk(&near_sdk)?;
+    let _ = VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
     Ok(())
 }

@@ -16,7 +16,6 @@ use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::types::SignatureId;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
-use std::str::FromStr;
 use std::sync::Arc;
 
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
@@ -80,12 +79,6 @@ pub trait HasParticipants {
 
 /// Helper functions to convert back and forth public key types
 pub trait PublicKeyConversion: Sized {
-    fn to_near_public_key(&self) -> anyhow::Result<near_crypto::PublicKey>;
-    fn from_near_crypto(public_key: &near_crypto::PublicKey) -> anyhow::Result<Self>;
-
-    // Don't implement it
-    fn from_near_sdk(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
-        let near_crypto = near_crypto::PublicKey::from_str(&String::from(public_key))?;
-        Self::from_near_crypto(&near_crypto)
-    }
+    fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey>;
+    fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self>;
 }
