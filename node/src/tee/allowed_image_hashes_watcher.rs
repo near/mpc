@@ -290,9 +290,9 @@ mod tests {
     ) {
         let mut mock = MockAllowedImageHashesStorage::new();
 
-        mock.expect_set().once().returning(|_| {
-            Box::pin(async { Err(io::Error::other("Expected test error.")) })
-        });
+        mock.expect_set()
+            .once()
+            .returning(|_| Box::pin(async { Err(io::Error::other("Expected test error.")) }));
 
         let cancellation_token = CancellationToken::new();
         let (_sender, receiver) = watch::channel(allowed_images);
