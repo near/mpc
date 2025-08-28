@@ -11,9 +11,9 @@ use mpc_contract::{
     crypto_shared::CKDResponse,
     primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak},
 };
-use near_crypto::PublicKey;
 use near_indexer_primitives::types::Gas;
 use near_sdk::AccountId;
+use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::FullSignature;
 use threshold_signatures::frost_ed25519;

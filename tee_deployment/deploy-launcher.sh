@@ -4,7 +4,54 @@
 # Loads environment variables from a .env file, generates app-compose.json, and runs deployment.
 # Based on: https://github.com/Dstack-TEE/dstack/blob/be9d0476a63e937eda4c13659547a25088393394/kms/dstack-app/deploy-to-vmm.sh
 
+check_ports_in_use() {
+    PORT_VARS="
+    EXTERNAL_DSTACK_AGENT_PORT
+    EXTERNAL_SSH_PORT
+    EXTERNAL_MPC_PUBLIC_DEBUG_PORT
+    EXTERNAL_MPC_LOCAL_DEBUG_PORT
+    EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC
+    EXTERNAL_MPC_MAIN_PORT
+    "
 
+    any_in_use=0
+
+    for var in $PORT_VARS; do
+        val=$(eval echo \$$var)
+        if [ -n "$val" ]; then
+            port=$(echo "$val" | cut -d: -f2)
+
+            echo "Checking $var (port $port)..."
+
+            # Use ss if available, otherwise fallback to netstat
+            if command -v ss >/dev/null 2>&1; then
+                if ss -ltn | awk '{print $4}' | grep -Eq "[:.]$port$"; then
+                    echo "  -> Port $port is IN USE"
+                    any_in_use=1
+                else
+                    echo "  -> Port $port is free"
+                fi
+            elif command -v netstat >/dev/null 2>&1; then
+                if netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]$port$"; then
+                    echo "  -> Port $port is IN USE"
+                    any_in_use=1
+                else
+                    echo "  -> Port $port is free"
+                fi
+            else
+                echo "  -> Neither ss nor netstat found, cannot check"
+                any_in_use=1
+            fi
+        fi
+    done
+
+    if [ $any_in_use -eq 1 ]; then
+        echo "❌ One or more required ports are in use. Aborting."
+        exit 1
+    else
+        echo "✅ All required ports are free."
+    fi
+}
 
 # Default .env path
 ENV_FILE="default.env"
@@ -47,11 +94,27 @@ EOF
   exit 1
 fi
 
+
+# Do not change these variables
+# SSH ports (only for dev images)
+INTERNAL_SSH_PORT=22
+# Address of the dstack guest agent service inside the CVM
+INTERNAL_AGENT_ADDR=8090
+
+# Do not change these variables - those are measured and reflected in the attestation
+VCPU=8 # Number of vCPUs for the VM
+MEMORY=64G # Memory for the VM
+
+
+
 required_env_vars=(
   "VMM_RPC"
-  "GUEST_AGENT_ADDR"
+  "INTERNAL_AGENT_ADDR"
   "SEALING_KEY_TYPE"
+  "DISK"
 )
+
+echo $VMM_RPC
 
 for var in "${required_env_vars[@]}"; do
   if [ -z "${!var}" ]; then
@@ -61,9 +124,18 @@ for var in "${required_env_vars[@]}"; do
   fi
 done
 
-basePath="/mnt/data/barak" #modify this to your base path
-pythonExec="$basePath/.venv/bin/python" #modify this to your python executable path
-CLI="$pythonExec $basePath/meta-dstack/dstack/vmm/src/vmm-cli.py --url \$VMM_RPC"
+# Default basePath if not provided via CLI
+if [ -z "$basePath" ]; then
+  basePath="./" # parent folder of meta-dstack
+fi
+
+# Default pythonExec if not provided via CLI
+if [ -z "$pythonExec" ]; then
+  pythonExec="python"
+fi
+
+CLI="$pythonExec $basePath/meta-dstack/dstack/vmm/src/vmm-cli.py --url $VMM_RPC"
+
 
 COMPOSE_TMP=$(mktemp)
 
@@ -92,7 +164,7 @@ case $SEALING_KEY_TYPE in
 esac
 
 
-echo "strting to create app-compose.json..."
+echo -e "\nCreating app-compose.json..."
 $CLI compose \
   --docker-compose "$COMPOSE_TMP" \
   --name $APP_NAME \
@@ -109,23 +181,31 @@ cat .app-compose.json
 rm "$COMPOSE_TMP"
 
 
-echo "Deploying $APP_NAME to dstack-vmm..."
+echo -e "Deploying $APP_NAME to dstack-vmm..."
 echo "Press enter to continue..."
 read
 
-DSTACK_AGENT_PORT=8090
-DSTACK_SSH_PORT=22
-MPC_DEBUG_PORT=8080
+# check if port are free
+check_ports_in_use
 
-$CLI deploy \
+cmd="$CLI deploy \
   --name $APP_NAME \
   --compose .app-compose.json \
   --image $OS_IMAGE \
-  --port tcp:$GUEST_AGENT_ADDR:$DSTACK_AGENT_PORT \
-  --port tcp:$SSH_HOST_PORT:$DSTACK_SSH_PORT \
-  --port tcp:$MPC_PUBLIC_PORT:$MPC_VM_PORT \
-  --port tcp:8989:$MPC_DEBUG_PORT \
+  --port tcp:$EXTERNAL_DSTACK_AGENT_PORT:$INTERNAL_AGENT_ADDR \
+  --port tcp:$EXTERNAL_SSH_PORT:$INTERNAL_SSH_PORT \
+  --port tcp:$EXTERNAL_MPC_PUBLIC_DEBUG_PORT:$INTERNAL_MPC_PUBLIC_DEBUG_PORT \
+  --port tcp:$EXTERNAL_MPC_LOCAL_DEBUG_PORT:$INTERNAL_MPC_LOCAL_DEBUG_PORT \
+  --port tcp:$EXTERNAL_MPC_MAIN_PORT:$INTERNAL_MPC_MAIN_PORT \
+  --port tcp:$EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC:$INTERNAL_MPC_DECENTRALIZED_STATE_SYNC \
   --user-config $USER_CONFIG_FILE_PATH \
   --vcpu $VCPU \
   --memory $MEMORY \
-  --disk $DISK \
+  --disk $DISK"
+
+echo "$cmd"
+eval "$cmd"
+
+  
+
+  

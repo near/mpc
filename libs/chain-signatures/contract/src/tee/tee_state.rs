@@ -13,6 +13,7 @@ use attestation::{
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
+use std::collections::HashSet;
 
 pub enum TeeValidationResult {
     Full,
@@ -181,5 +182,87 @@ impl TeeState {
         );
         self.allowed_docker_image_hashes
             .insert(tee_proposal, env::block_height());
+    }
+
+    /// Removes TEE information for accounts that are not in the provided participants list.
+    /// This is used to clean up storage after a resharing concludes.
+    pub fn clean_non_participants(&mut self, participants: &Participants) {
+        let participant_accounts: HashSet<&AccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id)
+            .collect();
+
+        // Collect accounts to remove (can't remove while iterating)
+        let accounts_to_remove: Vec<AccountId> = self
+            .participants_attestations
+            .keys()
+            .filter(|account_id| !participant_accounts.contains(account_id))
+            .cloned()
+            .collect();
+
+        // Remove non-participant TEE information
+        for account_id in &accounts_to_remove {
+            self.participants_attestations.remove(account_id);
+        }
+    }
+
+    /// Returns the list of accounts that currently have TEE attestations stored.
+    /// Note: This may include accounts that are no longer active protocol participants.
+    pub fn get_tee_accounts(&self) -> Vec<AccountId> {
+        self.participants_attestations.keys().cloned().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use attestation::attestation::{Attestation, LocalAttestation};
+    use near_sdk::AccountId;
+
+    #[test]
+    fn test_clean_non_participants() {
+        let mut tee_state = TeeState::default();
+
+        // Create some test participants using test utils
+        let participants = crate::primitives::test_utils::gen_participants(3);
+        let non_participant: AccountId = "dave.near".parse().unwrap();
+
+        // Get participant account IDs for verification
+        let participant_accounts: Vec<AccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+
+        // Add TEE information for all participants and non-participant
+        let attestation = LocalAttestation::new(true);
+        let local_attestation = Attestation::Local(attestation);
+
+        for account_id in &participant_accounts {
+            tee_state.add_participant(account_id.clone(), local_attestation.clone());
+        }
+        tee_state.add_participant(non_participant.clone(), local_attestation.clone());
+
+        // Verify all 4 accounts have TEE info initially
+        assert_eq!(tee_state.participants_attestations.len(), 4);
+        for account_id in &participant_accounts {
+            assert!(tee_state.participants_attestations.contains_key(account_id));
+        }
+        assert!(tee_state
+            .participants_attestations
+            .contains_key(&non_participant));
+
+        // Clean non-participants
+        tee_state.clean_non_participants(&participants);
+
+        // Verify only participants remain
+        assert_eq!(tee_state.participants_attestations.len(), 3);
+        for account_id in &participant_accounts {
+            assert!(tee_state.participants_attestations.contains_key(account_id));
+        }
+        assert!(!tee_state
+            .participants_attestations
+            .contains_key(&non_participant));
     }
 }
