@@ -170,6 +170,7 @@ struct TerraformMpcNode {
 #[derive(Serialize)]
 pub struct RespondConfigFile {
     pub account_id: AccountId,
+    #[serde(with = "near_crypto_compatible_serialization::signing_keys")]
     pub access_keys: Vec<SigningKey>,
 }
 
