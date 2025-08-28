@@ -83,6 +83,15 @@ Or we can choose a specific dstack image like 0.52
 3. Setup local gramine-sealing-key-provider (see details [below](#setting-up-local-gramine-sealing-key-provider:)).  
    
 
+### Dstack Configuration
+In this section we describe specific Dstack configuration changes needed for deploying the MPC node in Dstack.
+
+In vmm.toml: 
+
+- Update `cvm.port_mapping.range` to include port number **24567**  
+- In the `[cvm]` section add: `max_disk_size = 1000`
+
+
 ### Setting up local gramine-sealing-key-provider: {#setting-up-local-gramine-sealing-key-provider:}
 
 In our solution we are using the gramine-sealing-key-provider that is running in an SGX enclave in order to generate a key (based on the TDX measurements and SGX enclaves hardware sealing key) that is used to encrypt the CVM’s file system.  
@@ -152,7 +161,8 @@ Create a user-config.conf file based on the [user-config.conf](https://github.co
 MPC_IMAGE_NAME=nearone/mpc-node-gcp
 MPC_IMAGE_TAGS=latest
 MPC_REGISTRY=registry.hub.docker.com
-#MPC node settings
+
+# MPC node settings
 MPC_ACCOUNT_ID=$MY_MPC_NEAR_ACCOUNT_ID
 MPC_LOCAL_ADDRESS=127.0.0.1
 MPC_SECRET_STORE_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
@@ -171,20 +181,15 @@ MPC_RESPONDER_ID=$my_responder_acount
 EXTRA_HOSTS=mpc-node-0.service.mpc.consul:35.185.233.54,mpc-node-1.service.mpc.consul:34.168.117.59
 
 # Port forwarding 
-PORTS=8080:8080, 24567:24567, 80:80
+PORTS=8080:8080,24567:24567,80:80
 
-# measured resource configuration (defaults shown):
-VCPU=8      # do not change since this is measured  in the contract 
-MEMORY=64G  # do not change since this is measured  in the contract 
-
-# un-measured resource configuration (defaults shown):
-DISK=500G   # allowed to  change
 ```
 
 Adjust the variables as per your environment.
 
-* MY\_MPC\_NEAR\_ACCOUNT\_ID `-` use the near account ID that was created in the previous step  
-  MPC\_CONTRACT\_ID is **v1.signer-prod.testnet** for testnet and **v1.signer** for mainnet  
+* MPC_ACCOUNT_ID `-` use the near account ID that was created in the previous step  
+  MPC\_CONTRACT\_ID is **v1.signer-prod.testnet** for testnet and **v1.signer** for mainnet 
+* PORTS: Those are the port forwarding rules for the MPC container. Those should be a subset of the port forwarding for the CVM that are defined [Port Mapping](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md#using-the-web-interface)
 *  A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into NEAR\_NOOT\_NODES variable:
 
 ```

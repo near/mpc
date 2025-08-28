@@ -9,8 +9,8 @@ use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::balances::monitor_balance;
 #[cfg(feature = "tee")]
 use crate::indexer::tee::monitor_allowed_docker_images;
+use ed25519_dalek::SigningKey;
 use mpc_contract::state::ProtocolContractState;
-use near_crypto::SecretKey;
 use near_sdk::AccountId;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -47,7 +47,7 @@ pub fn spawn_real_indexer(
     home_dir: PathBuf,
     indexer_config: IndexerConfig,
     my_near_account_id: AccountId,
-    account_secret_key: SecretKey,
+    account_secret_key: SigningKey,
     respond_config: RespondConfig,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,

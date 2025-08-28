@@ -1,6 +1,7 @@
 use crate::config::RespondConfig;
 use crate::indexer::types::ChainSendTransactionRequest;
-use near_crypto::{InMemorySigner, PublicKey, SecretKey, Signer};
+use ed25519_dalek::{SigningKey, VerifyingKey};
+use k256::ecdsa::signature::Signer;
 use near_indexer::near_primitives::account::AccessKey;
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
@@ -11,14 +12,16 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 pub(crate) struct TransactionSigner {
-    signer: Signer,
+    signing_key: SigningKey,
+    account_id: AccountId,
     nonce: Mutex<u64>,
 }
 
 impl TransactionSigner {
-    pub(crate) fn from_key(account_id: AccountId, key: SecretKey) -> Self {
+    pub(crate) fn from_key(account_id: AccountId, signing_key: SigningKey) -> Self {
         TransactionSigner {
-            signer: InMemorySigner::from_secret_key(account_id, key),
+            account_id,
+            signing_key,
             nonce: Mutex::new(0),
         }
     }
@@ -47,13 +50,15 @@ impl TransactionSigner {
             gas,
             deposit: 0,
         };
-        let signer_id = match &self.signer {
-            Signer::InMemory(InMemorySigner { account_id, .. }) => account_id.clone(),
-            _ => unreachable!(),
-        };
+
+        let verifying_key = self.signing_key.verifying_key();
+        let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
+        #[allow(clippy::disallowed_methods)]
+        let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
+
         let transaction = Transaction::V0(TransactionV0 {
-            signer_id,
-            public_key: self.signer.public_key().clone(),
+            signer_id: self.account_id.clone(),
+            public_key: near_core_public_key,
             nonce: self.make_nonce(block_height),
             receiver_id,
             block_hash,
@@ -61,13 +66,16 @@ impl TransactionSigner {
         });
 
         let tx_hash = transaction.get_hash_and_size().0;
-        let signature = self.signer.sign(tx_hash.as_ref());
 
-        SignedTransaction::new(signature, transaction.clone())
+        let signature: ed25519_dalek::Signature = self.signing_key.sign(&tx_hash.0);
+        let near_crypto_signature: near_crypto::Signature =
+            near_crypto::Signature::ED25519(signature);
+
+        SignedTransaction::new(near_crypto_signature, transaction.clone())
     }
 
-    pub(crate) fn public_key(&self) -> PublicKey {
-        self.signer.public_key()
+    pub(crate) fn public_key(&self) -> VerifyingKey {
+        self.signing_key.verifying_key()
     }
 }
 
@@ -86,7 +94,7 @@ impl TransactionSigners {
     pub fn new(
         respond_config: RespondConfig,
         owner_account_id: AccountId,
-        owner_secret_key: SecretKey,
+        owner_signing_key: SigningKey,
     ) -> anyhow::Result<Self> {
         let respond_signers = respond_config
             .access_keys
@@ -100,7 +108,7 @@ impl TransactionSigners {
             .collect::<Vec<_>>();
         let owner_signer = Arc::new(TransactionSigner::from_key(
             owner_account_id,
-            owner_secret_key,
+            owner_signing_key,
         ));
         anyhow::ensure!(
             !respond_signers.is_empty(),
