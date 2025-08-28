@@ -29,7 +29,7 @@ json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
 EOF
 }
 
-generate_mpc_config() {
+initialize_mpc_config() {
   cat <<EOF > "$1"
 # Configuration File
 my_near_account_id: $MPC_ACCOUNT_ID
@@ -58,6 +58,12 @@ cores: 12
 EOF
 }
 
+update_mpc_config() {
+  # Use sed to replace placeholder values
+  sed -i "s/my_near_account_id:.*/my_near_account_id: $MPC_ACCOUNT_ID/" "$1"
+  sed -i "s/mpc_contract_id:.*/mpc_contract_id: $MPC_CONTRACT_ID/" "$1"
+}
+
 # Check and initialize Near node config if needed
 if [ -r "$NEAR_NODE_CONFIG_FILE" ]; then
     echo "Near node is already initialized"
@@ -71,10 +77,12 @@ update_near_node_config && echo "Near node config updated"
 
 # Check and initialize MPC config if needed
 if [ -r "$MPC_NODE_CONFIG_FILE" ]; then
-    echo "MPC node is already initialized but we'll still update the config"
+    echo "MPC node is already initialized."
+else
+    initialize_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config initialized"
 fi
 
-generate_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC nodeconfig initialized"
+update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
 
 # Check if MPC_SECRET_STORE_KEY is empty - if so, fetch from GCP Secret Manager
 if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
