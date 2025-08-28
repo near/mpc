@@ -720,7 +720,7 @@ impl VersionedMpcContract {
     /// This method allows custom [`ExpectedMeasurements`] for testing purposes.
     /// In production, use `submit_participant_info` which uses hardcoded secure measurements.
     /// WARNING: This method bypasses security measurements and should only be used in test environments.
-    #[cfg(feature = "integration-testing")]
+    #[cfg(feature = "unsafe-test-contract-methods")]
     #[payable]
     #[handle_result]
     pub fn submit_participant_info_test(

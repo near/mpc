@@ -169,7 +169,7 @@ pub fn current_contract() -> &'static Vec<u8> {
                     "--release",
                     "--target=wasm32-unknown-unknown",
                     "--features",
-                    "integration-testing",
+                    "unsafe-test-contract-methods",
                 ])
                 .current_dir(&project_dir)
                 .status()
