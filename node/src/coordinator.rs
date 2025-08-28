@@ -336,10 +336,7 @@ impl Coordinator {
             mpc_config.my_participant_id
         ));
 
-        let p2p_key = secrets
-            .persistent_secrets
-            .p2p_private_key
-            .unwrap_as_ed25519();
+        let p2p_key = &secrets.persistent_secrets.p2p_private_key;
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
@@ -410,10 +407,7 @@ impl Coordinator {
 
         tracing::info!("Creating tls mesh");
 
-        let p2p_key = secrets
-            .persistent_secrets
-            .p2p_private_key
-            .unwrap_as_ed25519();
+        let p2p_key = &secrets.persistent_secrets.p2p_private_key;
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let sender = Arc::new(sender);
 

@@ -29,11 +29,10 @@ pub struct Keyshare {
 
 impl Keyshare {
     pub fn public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
-        let public_key = match &self.data {
-            KeyshareData::Secp256k1(data) => data.public_key.to_near_public_key()?,
-            KeyshareData::Ed25519(data) => data.public_key.to_near_public_key()?,
-        };
-        Ok(public_key.to_string().parse()?)
+        match &self.data {
+            KeyshareData::Secp256k1(data) => data.public_key.to_near_sdk_public_key(),
+            KeyshareData::Ed25519(data) => data.public_key.to_near_sdk_public_key(),
+        }
     }
 
     pub fn check_consistency(&self, epoch_id: EpochId, key: &KeyForDomain) -> anyhow::Result<()> {
