@@ -5,6 +5,9 @@ use serde_with::{Bytes, serde_as};
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 use alloc::string::ToString;
 
+use crate::report_data::ReportDataVersion;
+use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+
 /// Required measurements for TEE attestation verification (a.k.a. RTMRs checks). These values
 /// define the trusted baseline that TEE environments must match during verification. They
 /// should be updated when the underlying TEE environment changes.
@@ -12,33 +15,9 @@ use alloc::string::ToString;
 /// To learn more about the RTMRs, see:
 /// - https://docs.phala.network/phala-cloud/tees-attestation-and-zero-trust-security/attestation#runtime-measurement-fields
 /// - https://arxiv.org/pdf/2303.15540 (Section 9.1)
-// Default measurement values from git commit fbdf2e76fb6bd9142277fdd84809de87d86548ef
-// See: https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
-use crate::report_data::ReportDataVersion;
 
-const EXPECTED_MRTD: [u8; 48] = [
-    0xc6, 0x85, 0x18, 0xa0, 0xeb, 0xb4, 0x21, 0x36, 0xc1, 0x2b, 0x22, 0x75, 0x16, 0x4f, 0x8c, 0x72,
-    0xf2, 0x5f, 0xa9, 0xa3, 0x43, 0x92, 0x22, 0x86, 0x87, 0xed, 0x6e, 0x9c, 0xae, 0xb9, 0xc0, 0xf1,
-    0xdb, 0xd8, 0x95, 0xe9, 0xcf, 0x47, 0x51, 0x21, 0xc0, 0x29, 0xdc, 0x47, 0xe7, 0x0e, 0x91, 0xfd,
-];
-
-const EXPECTED_RTMR0: [u8; 48] = [
-    0x7a, 0xe1, 0xc6, 0xbc, 0x16, 0x53, 0xc4, 0xcf, 0x03, 0x7b, 0x0e, 0xe6, 0x02, 0x94, 0x57, 0xee,
-    0x67, 0xc4, 0x75, 0x28, 0x5b, 0xcf, 0x47, 0x2a, 0x92, 0xf5, 0x18, 0x43, 0x14, 0x8e, 0x47, 0x7f,
-    0x31, 0x26, 0x18, 0x4d, 0xd6, 0x92, 0x82, 0x27, 0x9d, 0x27, 0x8a, 0x74, 0x66, 0xb6, 0x6c, 0xae,
-];
-
-const EXPECTED_RTMR1: [u8; 48] = [
-    0xa7, 0x07, 0xa3, 0x36, 0x70, 0x0c, 0x7d, 0xf3, 0x08, 0x52, 0x1f, 0x70, 0x44, 0xd0, 0xcd, 0x46,
-    0xe1, 0x62, 0xb7, 0xea, 0xeb, 0x6c, 0x1a, 0x91, 0xa0, 0x8e, 0x32, 0xe3, 0xd8, 0xd4, 0xb0, 0xad,
-    0x01, 0xfe, 0x8f, 0xbc, 0x2b, 0x91, 0x30, 0x20, 0x26, 0x2a, 0x45, 0x5f, 0xa6, 0xb1, 0xa5, 0xc4,
-];
-
-const EXPECTED_RTMR2: [u8; 48] = [
-    0x2e, 0x36, 0xd0, 0xb6, 0x1a, 0x3a, 0x20, 0xc2, 0xdf, 0xbf, 0xf7, 0x0c, 0x96, 0x00, 0x5f, 0xf3,
-    0xe1, 0xc7, 0x81, 0x3b, 0x4a, 0xba, 0xb4, 0x52, 0x57, 0x03, 0x30, 0xdd, 0xeb, 0xab, 0xf9, 0x39,
-    0x39, 0x30, 0x99, 0x23, 0x4a, 0xbc, 0x03, 0x09, 0xf0, 0x39, 0x36, 0xed, 0xeb, 0xf7, 0x4b, 0x1f,
-];
+/// TCB info JSON file containing measurement values.
+const TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
 
 // The `EXPECTED_LOCAL_SGX_EVENT_DIGEST` is the expected SHA-384 digest for the `local-sgx` event,
 // not the event payload.
@@ -96,21 +75,50 @@ pub struct ExpectedMeasurements {
     pub report_data_version: ReportDataVersion,
 }
 
+/// Default implementation that provides the expected measurements for TEE attestation verification.
+/// This implementation reads measurement values (RTMR0, RTMR1, RTMR2, MRTD) from the embedded
+/// TCB (Trusted Computing Base) info JSON file at compile time, ensuring consistent measurements
+/// across both production and test environments.
+///
+/// The TCB info contains hex-encoded measurement values that are decoded and converted to the
+/// required 48-byte arrays for each measurement register. This provides a single source of truth
+/// for all expected measurements.
+///
+/// TODO(#737): Define a process for updating these static RTMRs going forward, since they are already outdated.
+///
+/// $ git rev-parse HEAD
+/// fbdf2e76fb6bd9142277fdd84809de87d86548ef
+///
+/// See also: https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
 impl Default for ExpectedMeasurements {
     fn default() -> Self {
-        // TODO(#737): Define a process for updating these static RTMRs going forward, since they
-        // are already outdated.
-        //
-        // $ git rev-parse HEAD
-        // fbdf2e76fb6bd9142277fdd84809de87d86548ef
-        //
-        // See also: https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
+        // Parse embedded tcb_info.json file and extract RTMR values dynamically
+        let tcb_info: DstackTcbInfo =
+            serde_json::from_str(TCB_INFO_STRING).expect("Failed to parse embedded tcb_info.json");
+
+        // Extract RTMR values from the TCB info (they're in hex format)
+        let rtmr0 = hex::decode(&tcb_info.rtmr0).expect("Failed to decode rtmr0 from tcb_info");
+        let rtmr1 = hex::decode(&tcb_info.rtmr1).expect("Failed to decode rtmr1 from tcb_info");
+        let rtmr2 = hex::decode(&tcb_info.rtmr2).expect("Failed to decode rtmr2 from tcb_info");
+        let mrtd = hex::decode(&tcb_info.mrtd).expect("Failed to decode mrtd from tcb_info");
+
+        // Convert to fixed-size arrays
+        let mut rtmr0_arr = [0u8; 48];
+        let mut rtmr1_arr = [0u8; 48];
+        let mut rtmr2_arr = [0u8; 48];
+        let mut mrtd_arr = [0u8; 48];
+
+        rtmr0_arr.copy_from_slice(&rtmr0);
+        rtmr1_arr.copy_from_slice(&rtmr1);
+        rtmr2_arr.copy_from_slice(&rtmr2);
+        mrtd_arr.copy_from_slice(&mrtd);
+
         Self {
             rtmrs: Measurements {
-                mrtd: EXPECTED_MRTD,
-                rtmr0: EXPECTED_RTMR0,
-                rtmr1: EXPECTED_RTMR1,
-                rtmr2: EXPECTED_RTMR2,
+                mrtd: mrtd_arr,
+                rtmr0: rtmr0_arr,
+                rtmr1: rtmr1_arr,
+                rtmr2: rtmr2_arr,
             },
             local_sgx_event_digest: EXPECTED_LOCAL_SGX_EVENT_DIGEST,
             report_data_version: EXPECTED_REPORT_DATA_VERSION,

@@ -1,7 +1,6 @@
 use attestation::{
     attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
-    measurements::ExpectedMeasurements,
     quote::QuoteBytes,
 };
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
@@ -52,40 +51,4 @@ pub fn mock_dstack_attestation() -> Attestation {
     let tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
 
     Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
-}
-
-/// Get expected measurements compatible with the test data from tcb_info.json.
-/// This creates measurements that match the actual values in the test quote and TCB info.
-/// Use this for standalone attestation tests that verify against real test data.
-pub fn test_expected_measurements() -> ExpectedMeasurements {
-    let tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
-
-    // Extract RTMR values from the TCB info (they're in hex format)
-    let rtmr0 = hex::decode(&tcb_info.rtmr0).unwrap();
-    let rtmr1 = hex::decode(&tcb_info.rtmr1).unwrap();
-    let rtmr2 = hex::decode(&tcb_info.rtmr2).unwrap();
-    let mrtd = hex::decode(&tcb_info.mrtd).unwrap();
-
-    // Convert to fixed-size arrays
-    let mut rtmr0_arr = [0u8; 48];
-    let mut rtmr1_arr = [0u8; 48];
-    let mut rtmr2_arr = [0u8; 48];
-    let mut mrtd_arr = [0u8; 48];
-
-    rtmr0_arr.copy_from_slice(&rtmr0);
-    rtmr1_arr.copy_from_slice(&rtmr1);
-    rtmr2_arr.copy_from_slice(&rtmr2);
-    mrtd_arr.copy_from_slice(&mrtd);
-
-    ExpectedMeasurements {
-        rtmrs: attestation::measurements::Measurements {
-            mrtd: mrtd_arr,
-            rtmr0: rtmr0_arr,
-            rtmr1: rtmr1_arr,
-            rtmr2: rtmr2_arr,
-        },
-        // Use default values for other fields
-        local_sgx_event_digest: ExpectedMeasurements::default().local_sgx_event_digest,
-        report_data_version: ExpectedMeasurements::default().report_data_version,
-    }
 }

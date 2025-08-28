@@ -708,52 +708,6 @@ impl VersionedMpcContract {
             account_key
         );
 
-        self.submit_participant_info_internal(
-            proposed_participant_attestation,
-            tls_public_key,
-            None,
-        )
-    }
-
-    /// **TEST-ONLY METHOD** - DO NOT USE IN PRODUCTION
-    ///
-    /// This method allows custom [`ExpectedMeasurements`] for testing purposes.
-    /// In production, use `submit_participant_info` which uses hardcoded secure measurements.
-    /// WARNING: This method bypasses security measurements and should only be used in test environments.
-    #[cfg(feature = "unsafe-test-contract-methods")]
-    #[payable]
-    #[handle_result]
-    pub fn submit_participant_info_test(
-        &mut self,
-        #[serializer(borsh)] proposed_participant_attestation: Attestation,
-        #[serializer(borsh)] tls_public_key: PublicKey,
-        #[serializer(borsh)] expected_measurements: ExpectedMeasurements,
-    ) -> Result<(), Error> {
-        let account_id = env::signer_account_id();
-        let account_key = env::signer_account_pk();
-
-        log!(
-            "submit_participant_info_test: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
-            account_id,
-            proposed_participant_attestation,
-            account_key
-        );
-
-        self.submit_participant_info_internal(
-            proposed_participant_attestation,
-            tls_public_key,
-            Some(expected_measurements),
-        )
-    }
-
-    /// Internal helper function that contains the common logic for participant info submission.
-    /// The `expected_measurements` parameter allows custom measurements for testing.
-    fn submit_participant_info_internal(
-        &mut self,
-        proposed_participant_attestation: Attestation,
-        tls_public_key: PublicKey,
-        expected_measurements: Option<ExpectedMeasurements>,
-    ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
 
         // Save the initial storage usage to know how much to charge the proposer for the storage
@@ -765,12 +719,13 @@ impl VersionedMpcContract {
         };
 
         // Verify the TEE quote and Docker image for the proposed participant
+        let expected_measurements = ExpectedMeasurements::default();
         let status = mpc_contract
             .tee_state
             .verify_proposed_participant_attestation(
                 &proposed_participant_attestation,
                 tls_public_key,
-                expected_measurements.as_ref(),
+                Some(&expected_measurements),
             );
 
         if status == TeeQuoteStatus::Invalid {

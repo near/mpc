@@ -6,16 +6,18 @@ use assert_matches::assert_matches;
 use attestation::attestation::Attestation;
 use common::{
     check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
-    submit_participant_info, submit_participant_info_with_measurements,
+    submit_participant_info,
 };
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
 use std::collections::HashSet;
-use test_utils::attestation::{
-    mock_dstack_attestation, mock_local_attestation, p2p_tls_key, test_expected_measurements,
-};
+use test_utils::attestation::{mock_dstack_attestation, mock_local_attestation, p2p_tls_key};
+
+/// Tests the basic TEE verification functionality when no TEE accounts are present.
+/// Verifies that the contract returns true for TEE verification even without any TEE accounts submitted,
+/// and ensures the participant count remains unchanged during verification.
 #[tokio::test]
 async fn test_tee_verify_no_tee() -> Result<()> {
     let (_, contract, _, _) = init_env_ed25519(1).await;
@@ -237,11 +239,9 @@ async fn get_participants(contract: &Contract) -> Result<usize> {
     Ok(running.parameters.participants().len())
 }
 
-/// Helper function to set up contract with approved MPC hash.
-async fn setup_contract_with_approved_hash(
-    contract: &Contract,
-    accounts: &[Account],
-) -> Result<()> {
+/// Sets up a contract with an approved MPC hash by having the first two participants vote for it.
+/// This is a helper function commonly used in tests that require pre-approved hashes.
+async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> Result<()> {
     let mpc_hash = MpcDockerImageHash::from([
         0xc2, 0x29, 0x01, 0xe5, 0x2c, 0xfa, 0x91, 0xb2, 0xe7, 0x1e, 0xb8, 0x69, 0x4a, 0xc9, 0x55,
         0x80, 0x65, 0xc6, 0xe3, 0xb1, 0x37, 0x83, 0xd9, 0xe3, 0xd3, 0x6b, 0x79, 0x2d, 0x93, 0xce,
@@ -252,7 +252,8 @@ async fn setup_contract_with_approved_hash(
     Ok(())
 }
 
-/// Helper function to set up test environment with attestation and TLS key.
+/// Sets up a complete TEE test environment with contract, accounts, mock attestation, and TLS key.
+/// This is a helper function that provides all the common components needed for TEE-related tests.
 async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, PublicKey)> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     let attestation = mock_dstack_attestation();
@@ -265,14 +266,7 @@ async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Public
 #[tokio::test]
 async fn test_submit_participant_info_fails_without_approved_mpc_hash() -> Result<()> {
     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
-    let success = submit_participant_info_with_measurements(
-        &accounts[0],
-        &contract,
-        &attestation,
-        &tls_key,
-        &test_expected_measurements(),
-    )
-    .await?;
+    let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
     assert!(!success);
     Ok(())
 }
@@ -283,28 +277,9 @@ async fn test_submit_participant_info_fails_without_approved_mpc_hash() -> Resul
 #[tokio::test]
 async fn test_submit_participant_info_test_method_available_in_integration_tests() -> Result<()> {
     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
-    setup_contract_with_approved_hash(&contract, &accounts).await?;
-    let success = submit_participant_info_with_measurements(
-        &accounts[0],
-        &contract,
-        &attestation,
-        &tls_key,
-        &test_expected_measurements(),
-    )
-    .await?;
-    assert!(success);
-    Ok(())
-}
-
-/// **Production method with mismatched measurements** - Tests that the production method rejects test attestation data.
-/// Similar setup to the test above (approved hash + valid attestation), but uses the production method [`submit_participant_info`]
-/// which has hardcoded production measurements that don't match the test attestation data.
-#[tokio::test]
-async fn test_submit_participant_info_rejects_invalid_measurements() -> Result<()> {
-    let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
-    setup_contract_with_approved_hash(&contract, &accounts).await?;
+    setup_approved_mpc_hash(&contract, &accounts).await?;
     let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
-    assert!(!success);
+    assert!(success);
     Ok(())
 }
 
@@ -328,7 +303,7 @@ async fn test_submit_participant_info_succeeds_with_local_attestation() -> Resul
 #[tokio::test]
 async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
-    setup_contract_with_approved_hash(&contract, &accounts).await?;
+    setup_approved_mpc_hash(&contract, &accounts).await?;
 
     // Create invalid TLS key by flipping the last bit
     let mut invalid_tls_key_bytes = tls_key.as_bytes().to_vec();
@@ -336,14 +311,8 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
     invalid_tls_key_bytes[last_byte_idx] ^= 0x01;
     let invalid_tls_key = PublicKey::try_from(invalid_tls_key_bytes)?;
 
-    let success = submit_participant_info_with_measurements(
-        &accounts[0],
-        &contract,
-        &attestation,
-        &invalid_tls_key,
-        &test_expected_measurements(),
-    )
-    .await?;
+    let success =
+        submit_participant_info(&accounts[0], &contract, &attestation, &invalid_tls_key).await?;
     assert!(!success);
     Ok(())
 }
@@ -397,20 +366,12 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     assert_eq!(get_tee_accounts(&contract).await?.len(), 0);
 
     // Setup contract with approved hash and submit TEE info for current participants
-    setup_contract_with_approved_hash(&contract, &accounts).await?;
+    setup_approved_mpc_hash(&contract, &accounts).await?;
     let tls_key = p2p_tls_key();
     let attestation = mock_dstack_attestation();
-    let test_measurements = test_expected_measurements();
 
     for account in &accounts {
-        let success = submit_participant_info_with_measurements(
-            account,
-            &contract,
-            &attestation,
-            &tls_key,
-            &test_measurements,
-        )
-        .await?;
+        let success = submit_participant_info(account, &contract, &attestation, &tls_key).await?;
         assert!(
             success,
             "Failed to submit participant info for account: {}",
@@ -425,14 +386,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
     let additional_accounts = gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await.0;
     for account in &additional_accounts {
-        let success = submit_participant_info_with_measurements(
-            account,
-            &contract,
-            &attestation,
-            &tls_key,
-            &test_measurements,
-        )
-        .await?;
+        let success = submit_participant_info(account, &contract, &attestation, &tls_key).await?;
         assert!(
             success,
             "Failed to submit participant info for additional account: {}",
