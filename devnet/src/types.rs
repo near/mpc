@@ -7,185 +7,6 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub mod near_crypto_compatible_serialization {
-    use ed25519_dalek::{SigningKey, VerifyingKey};
-    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-    const ED25519_PREFIX: &str = "ed25519";
-
-    pub mod signing_keys {
-        use super::*;
-
-        pub fn serialize<S>(keys: &[SigningKey], serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            let bs58_strings: Vec<String> = keys
-                .iter()
-                .map(|key| {
-                    format!(
-                        "{ED25519_PREFIX}:{}",
-                        bs58::encode(key.as_bytes()).into_string()
-                    )
-                })
-                .collect();
-            bs58_strings.serialize(serializer)
-        }
-
-        pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<SigningKey>, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let bs58_strings: Vec<String> = Vec::deserialize(deserializer)?;
-            bs58_strings
-                .into_iter()
-                .map(|bs58_str| {
-                    let Some((ED25519_PREFIX, encoded_key)) = &bs58_str.split_once(":") else {
-                        return Err(de::Error::custom("Key must start with 'ed25519:' prefix"));
-                    };
-
-                    let bytes = bs58::decode(encoded_key)
-                        .into_vec()
-                        .map_err(de::Error::custom)?;
-                    SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
-                })
-                .collect()
-        }
-    }
-
-    pub mod signing_key {
-        use super::*;
-
-        pub fn serialize<S>(key: &SigningKey, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            let bs58_string = format!(
-                "{ED25519_PREFIX}:{}",
-                bs58::encode(key.as_bytes()).into_string()
-            );
-            bs58_string.serialize(serializer)
-        }
-
-        pub fn deserialize<'de, D>(deserializer: D) -> Result<SigningKey, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let bs58_string: String = String::deserialize(deserializer)?;
-            let Some((ED25519_PREFIX, encoded_key)) = &bs58_string.split_once(":") else {
-                return Err(de::Error::custom("Key must start with 'ed25519:' prefix"));
-            };
-
-            let bytes = bs58::decode(encoded_key)
-                .into_vec()
-                .map_err(de::Error::custom)?;
-
-            SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
-        }
-    }
-
-    pub mod verifying_key_option {
-        use anyhow::Context;
-
-        use super::*;
-
-        pub fn serialize<S>(
-            key_opt: &Option<VerifyingKey>,
-            serializer: S,
-        ) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            let bs58_option = key_opt.as_ref().map(|key| {
-                format!(
-                    "{ED25519_PREFIX}:{}",
-                    bs58::encode(key.as_bytes()).into_string(),
-                )
-            });
-            bs58_option.serialize(serializer)
-        }
-
-        pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<VerifyingKey>, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let bs58_option: Option<String> = Option::deserialize(deserializer)?;
-            match bs58_option {
-                Some(bs58_string) => {
-                    let Some((ED25519_PREFIX, encoded_key)) = &bs58_string.split_once(":") else {
-                        return Err(de::Error::custom(format!(
-                            "Key must start with '{ED25519_PREFIX}:' prefix"
-                        )));
-                    };
-
-                    let bytes = bs58::decode(encoded_key)
-                        .into_vec()
-                        .map_err(de::Error::custom)?;
-
-                    let key_bytes: [u8; 32] =
-                        bytes.try_into().map_err(|provided_bytes: Vec<u8>| {
-                            let error_message = format!(
-                                "Provided bytes is not 32 bytes. Actual length {:?}",
-                                provided_bytes.len()
-                            );
-                            de::Error::custom(error_message)
-                        })?;
-
-                    VerifyingKey::from_bytes(&key_bytes)
-                        .context("Failed to create verifying key from deserialized bytes.")
-                        .map_err(de::Error::custom)
-                        .map(Some)
-                }
-                None => Ok(None),
-            }
-        }
-    }
-
-    pub mod verifying_key {
-        use anyhow::Context;
-
-        use super::*;
-
-        pub fn serialize<S>(key: &VerifyingKey, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            let bs58_encoding = format!(
-                "{ED25519_PREFIX}:{}",
-                bs58::encode(key.as_bytes()).into_string()
-            );
-
-            bs58_encoding.serialize(serializer)
-        }
-
-        pub fn deserialize<'de, D>(deserializer: D) -> Result<VerifyingKey, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let bs58_string = String::deserialize(deserializer)?;
-            let Some((ED25519_PREFIX, encoded_key)) = &bs58_string.split_once(":") else {
-                return Err(de::Error::custom(format!(
-                    "Key must start with '{ED25519_PREFIX}:' prefix"
-                )));
-            };
-            let bytes = bs58::decode(encoded_key)
-                .into_vec()
-                .map_err(de::Error::custom)?;
-
-            let key_bytes: [u8; 32] = bytes.try_into().map_err(|provided_bytes: Vec<u8>| {
-                let error_message = format!(
-                    "Provided bytes is not 32 bytes. Actual length {:?}",
-                    provided_bytes.len()
-                );
-                de::Error::custom(error_message)
-            })?;
-
-            VerifyingKey::from_bytes(&key_bytes)
-                .context("Failed to create verifying key from deserialized bytes.")
-                .map_err(de::Error::custom)
-        }
-    }
-}
-
 /// Locally stored Near account information.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NearAccount {
@@ -359,5 +180,162 @@ pub async fn load_config() -> ParsedConfig {
         rpc: client,
         infra_ops_path: PathBuf::from(config.infra_ops_path),
         funding_account: config.funding_account,
+    }
+}
+
+/// This module is needed for two reasons:
+/// 1. We need to serialize the keys with [`bs58`] encoding, to maintain
+///    backwards compatibility with the binary version previous to https://github.com/near/mpc/issues/880
+///    which removes [`near_crypto`] representation of keys on the node in favor of the [`ed25519_dalek`] crate.
+///
+/// 2. [`serde_yaml`] serialization will fail as [`SigningKey`] and [`VerifyingKey`] serialize into bytes, and [`serde_yaml`] does
+///    not allow values to be defined as bytes.
+pub mod near_crypto_compatible_serialization {
+    use ed25519_dalek::{SigningKey, VerifyingKey};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    const ED25519_PREFIX: &str = "ed25519";
+
+    pub mod signing_keys {
+        use super::*;
+
+        pub fn serialize<S>(keys: &[SigningKey], serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let bs58_strings: Vec<String> = keys
+                .iter()
+                .map(|key| {
+                    format!(
+                        "{ED25519_PREFIX}:{}",
+                        bs58::encode(key.as_bytes()).into_string()
+                    )
+                })
+                .collect();
+            bs58_strings.serialize(serializer)
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<SigningKey>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let bs58_strings: Vec<String> = Vec::deserialize(deserializer)?;
+            bs58_strings
+                .into_iter()
+                .map(|bs58_str| {
+                    let Some((ED25519_PREFIX, encoded_key)) = &bs58_str.split_once(":") else {
+                        return Err(de::Error::custom("Key must start with 'ed25519:' prefix"));
+                    };
+
+                    let bytes = bs58::decode(encoded_key)
+                        .into_vec()
+                        .map_err(de::Error::custom)?;
+                    SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
+                })
+                .collect()
+        }
+    }
+
+    pub mod signing_key {
+        use super::*;
+
+        pub fn serialize<S>(key: &SigningKey, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let bs58_string = format!(
+                "{ED25519_PREFIX}:{}",
+                bs58::encode(key.as_bytes()).into_string()
+            );
+            bs58_string.serialize(serializer)
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<SigningKey, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let bs58_string: String = String::deserialize(deserializer)?;
+            let Some((ED25519_PREFIX, encoded_key)) = &bs58_string.split_once(":") else {
+                return Err(de::Error::custom("Key must start with 'ed25519:' prefix"));
+            };
+
+            let bytes = bs58::decode(encoded_key)
+                .into_vec()
+                .map_err(de::Error::custom)?;
+
+            SigningKey::try_from(bytes.as_slice()).map_err(de::Error::custom)
+        }
+    }
+
+    pub mod verifying_key_option {
+        use anyhow::Context;
+
+        use super::*;
+
+        pub fn serialize<S>(
+            key_opt: &Option<VerifyingKey>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let bs58_option = key_opt.as_ref().map(|key| {
+                format!(
+                    "{ED25519_PREFIX}:{}",
+                    bs58::encode(key.as_bytes()).into_string(),
+                )
+            });
+            bs58_option.serialize(serializer)
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<VerifyingKey>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let bs58_option: Option<String> = Option::deserialize(deserializer)?;
+            match bs58_option {
+                Some(bs58_string) => {
+                    let Some((ED25519_PREFIX, encoded_key)) = &bs58_string.split_once(":") else {
+                        return Err(de::Error::custom(format!(
+                            "Key must start with '{ED25519_PREFIX}:' prefix"
+                        )));
+                    };
+
+                    let bytes = bs58::decode(encoded_key)
+                        .into_vec()
+                        .map_err(de::Error::custom)?;
+
+                    let key_bytes: [u8; 32] =
+                        bytes.try_into().map_err(|provided_bytes: Vec<u8>| {
+                            let error_message = format!(
+                                "Provided bytes is not 32 bytes. Actual length {:?}",
+                                provided_bytes.len()
+                            );
+                            de::Error::custom(error_message)
+                        })?;
+
+                    VerifyingKey::from_bytes(&key_bytes)
+                        .context("Failed to create verifying key from deserialized bytes.")
+                        .map_err(de::Error::custom)
+                        .map(Some)
+                }
+                None => Ok(None),
+            }
+        }
+    }
+
+    pub mod verifying_key {
+        use super::*;
+
+        pub fn serialize<S>(key: &VerifyingKey, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let bs58_encoding = format!(
+                "{ED25519_PREFIX}:{}",
+                bs58::encode(key.as_bytes()).into_string()
+            );
+
+            bs58_encoding.serialize(serializer)
+        }
     }
 }
