@@ -685,11 +685,7 @@ pub async fn submit_participant_info_with_measurements(
 ) -> anyhow::Result<bool> {
     let result = account
         .call(contract.id(), "submit_participant_info_test")
-        .args_borsh((
-            attestation.clone(),
-            tls_key.clone(),
-            expected_measurements.clone(),
-        ))
+        .args_borsh((attestation.clone(), tls_key.clone(), *expected_measurements))
         .max_gas()
         .transact()
         .await?;
