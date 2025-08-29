@@ -11,9 +11,9 @@ derive_more = { workspace = true }
 dstack-sdk-types = { workspace = true }
 hex = { workspace = true }
 k256 = { workspace = true }
-lazy_static = { workspace = true }
 mpc-primitives = { workspace = true }
 near-sdk = { workspace = true }
+once_cell = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
 serde_json = { workspace = true }
