@@ -20,7 +20,8 @@ use crate::{
 };
 use anyhow::{anyhow, Context};
 use attestation::attestation::Attestation;
-use clap::{Parser, ValueEnum};
+use attestation::report_data::ReportData;
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
@@ -44,6 +45,9 @@ use {
 };
 
 #[derive(Parser, Debug)]
+#[command(name = "mpc-node")]
+#[command(about = "MPC Node for Near Protocol")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
     #[arg(long, value_enum, env("MPC_LOG_FORMAT"), default_value = "plain")]
     pub log_format: LogFormat,
@@ -59,10 +63,7 @@ pub enum LogFormat {
     Json,
 }
 
-#[derive(Parser, Debug)]
-#[command(name = "mpc-node")]
-#[command(about = "MPC Node for Near Protocol")]
-#[command(version = env!("CARGO_PKG_VERSION"))]
+#[derive(Subcommand, Debug)]
 pub enum CliCommand {
     Start(StartCmd),
     /// Generates/downloads required files for Near node to run
@@ -93,7 +94,7 @@ pub enum CliCommand {
     },
 }
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 pub struct InitConfigArgs {
     #[arg(long, env("MPC_HOME_DIR"))]
     pub dir: std::path::PathBuf,
@@ -120,7 +121,7 @@ pub struct InitConfigArgs {
     pub boot_nodes: Option<String>,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 pub struct StartCmd {
     #[arg(long, env("MPC_HOME_DIR"))]
     pub home_dir: String,
@@ -141,7 +142,7 @@ pub struct StartCmd {
     pub tee_config: TeeConfig,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 #[cfg(feature = "tee")]
 pub struct TeeConfig {
     #[arg(
@@ -158,7 +159,7 @@ pub struct TeeConfig {
     pub latest_allowed_hash_file: PathBuf,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 pub struct ImportKeyshareCmd {
     /// Path to home directory
     #[arg(long, env("MPC_HOME_DIR"))]
@@ -175,7 +176,7 @@ pub struct ImportKeyshareCmd {
     pub local_encryption_key_hex: String,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 pub struct ExportKeyshareCmd {
     /// Path to home directory
     #[arg(long, env("MPC_HOME_DIR"))]
