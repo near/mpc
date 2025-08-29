@@ -1,3 +1,4 @@
+use alloc::string::String;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
@@ -88,43 +89,63 @@ pub struct ExpectedMeasurements {
 /// See also: https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
 impl Default for ExpectedMeasurements {
     fn default() -> Self {
+        Self::from_embedded_tcb_info().expect(
+            "Failed to load measurements from embedded TCB info. This indicates a build-time issue with the embedded tcb_info.json file."
+        )
+    }
+}
+
+impl ExpectedMeasurements {
+    /// Attempts to load measurements from the embedded TCB info file.
+    pub fn from_embedded_tcb_info() -> Result<Self, MeasurementsError> {
         // Parse embedded tcb_info.json file and extract RTMR values dynamically
         let tcb_info: DstackTcbInfo =
-            serde_json::from_str(TCB_INFO_STRING).expect("Failed to parse embedded tcb_info.json");
+            serde_json::from_str(TCB_INFO_STRING).map_err(|_| MeasurementsError::InvalidTcbInfo)?;
 
-        // Extract RTMR values from the TCB info (they're in hex format)
-        let rtmr0 = hex::decode(&tcb_info.rtmr0).expect("Failed to decode rtmr0 from tcb_info");
-        let rtmr1 = hex::decode(&tcb_info.rtmr1).expect("Failed to decode rtmr1 from tcb_info");
-        let rtmr2 = hex::decode(&tcb_info.rtmr2).expect("Failed to decode rtmr2 from tcb_info");
-        let mrtd = hex::decode(&tcb_info.mrtd).expect("Failed to decode mrtd from tcb_info");
+        // Extract and decode RTMR values from the TCB info (they're in hex format)
+        let measurements = [
+            ("rtmr0", &tcb_info.rtmr0),
+            ("rtmr1", &tcb_info.rtmr1),
+            ("rtmr2", &tcb_info.rtmr2),
+            ("mrtd", &tcb_info.mrtd),
+        ];
 
-        // Convert to fixed-size arrays
-        let mut rtmr0_arr = [0u8; 48];
-        let mut rtmr1_arr = [0u8; 48];
-        let mut rtmr2_arr = [0u8; 48];
-        let mut mrtd_arr = [0u8; 48];
+        let mut decoded_rtmrs = [[0u8; 48]; 4];
 
-        rtmr0_arr.copy_from_slice(&rtmr0);
-        rtmr1_arr.copy_from_slice(&rtmr1);
-        rtmr2_arr.copy_from_slice(&rtmr2);
-        mrtd_arr.copy_from_slice(&mrtd);
+        for (i, (name, hex_value)) in measurements.iter().enumerate() {
+            let decoded = hex::decode(hex_value).map_err(|_| {
+                MeasurementsError::InvalidHexValue(String::from(*name), (*hex_value).clone())
+            })?;
 
-        Self {
+            if decoded.len() != 48 {
+                return Err(MeasurementsError::InvalidLength(
+                    String::from(*name),
+                    decoded.len(),
+                ));
+            }
+
+            decoded_rtmrs[i].copy_from_slice(&decoded);
+        }
+
+        Ok(Self {
             rtmrs: Measurements {
-                mrtd: mrtd_arr,
-                rtmr0: rtmr0_arr,
-                rtmr1: rtmr1_arr,
-                rtmr2: rtmr2_arr,
+                rtmr0: decoded_rtmrs[0],
+                rtmr1: decoded_rtmrs[1],
+                rtmr2: decoded_rtmrs[2],
+                mrtd: decoded_rtmrs[3],
             },
             local_sgx_event_digest: EXPECTED_LOCAL_SGX_EVENT_DIGEST,
             report_data_version: EXPECTED_REPORT_DATA_VERSION,
-        }
+        })
     }
 }
 
 #[derive(Debug)]
 pub enum MeasurementsError {
     NoTd10Report,
+    InvalidTcbInfo,
+    InvalidHexValue(String, String),
+    InvalidLength(String, usize),
 }
 
 impl TryFrom<dcap_qvl::verify::VerifiedReport> for Measurements {
