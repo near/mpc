@@ -20,7 +20,7 @@ use crate::{
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
     v0_state::MpcContractV1,
 };
-use attestation::{attestation::Attestation, measurements::ExpectedMeasurements};
+use attestation::attestation::Attestation;
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -717,13 +717,11 @@ impl VersionedMpcContract {
         };
 
         // Verify the TEE quote and Docker image for the proposed participant
-        let expected_measurements = ExpectedMeasurements::default();
         let status = mpc_contract
             .tee_state
             .verify_proposed_participant_attestation(
                 &proposed_participant_attestation,
                 tls_public_key,
-                Some(&expected_measurements),
             );
 
         if status == TeeQuoteStatus::Invalid {

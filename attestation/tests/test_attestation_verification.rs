@@ -1,7 +1,4 @@
-use attestation::{
-    measurements::ExpectedMeasurements,
-    report_data::{ReportData, ReportDataV1},
-};
+use attestation::report_data::{ReportData, ReportDataV1};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::PublicKey;
 use rstest::rstest;
@@ -29,7 +26,6 @@ fn test_mock_attestation_verify(
             timestamp_s,
             &[],
             &[],
-            &ExpectedMeasurements::default(),
         ),
         expected_quote_verification_result
     );
@@ -54,7 +50,6 @@ fn test_verify_method_signature() {
         timestamp_s,
         &[allowed_mpc_image_digest],
         &[allowed_launcher_compose_digest],
-        &ExpectedMeasurements::default(),
     );
     assert!(verification_result);
 }

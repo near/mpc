@@ -197,7 +197,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use attestation::{measurements::ExpectedMeasurements, report_data::ReportDataV1};
+    use attestation::report_data::ReportDataV1;
     use rstest::rstest;
 
     #[cfg(feature = "external-services-tests")]
@@ -273,9 +273,8 @@ mod tests {
             .await
             .unwrap();
         let timestamp_s = 0u64;
-        let expected_measurements = ExpectedMeasurements::default();
         assert_eq!(
-            attestation.verify(report_data, timestamp_s, &[], &[], &expected_measurements),
+            attestation.verify(report_data, timestamp_s, &[], &[]),
             quote_verification_result
         );
     }

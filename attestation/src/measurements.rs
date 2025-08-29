@@ -1,5 +1,6 @@
 use alloc::string::String;
 use borsh::{BorshDeserialize, BorshSerialize};
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
 
@@ -8,6 +9,39 @@ use alloc::string::ToString;
 
 use crate::report_data::ReportDataVersion;
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+
+// Static precomputed measurements to avoid runtime JSON parsing and hex decoding.
+lazy_static! {
+    static ref EXPECTED_MEASUREMENTS_CACHE: Result<ExpectedMeasurements, MeasurementsError> = {
+        // Parse embedded tcb_info.json file and extract RTMR values dynamically
+        let tcb_info: DstackTcbInfo =
+            serde_json::from_str(TCB_INFO_STRING).map_err(|_| MeasurementsError::InvalidTcbInfo)?;
+
+        // Helper function to decode hex RTMR values
+        let decode_rtmr = |name: &str, hex_value: &str| -> Result<[u8; 48], MeasurementsError> {
+            let decoded = hex::decode(hex_value).map_err(|_| {
+                MeasurementsError::InvalidHexValue(String::from(name), String::from(hex_value))
+            })?;
+            let decoded_len = decoded.len();
+            decoded.try_into().map_err(|_| {
+                MeasurementsError::InvalidLength(String::from(name), decoded_len)
+            })
+        };
+
+        let rtmrs = Measurements {
+            rtmr0: decode_rtmr("rtmr0", &tcb_info.rtmr0)?,
+            rtmr1: decode_rtmr("rtmr1", &tcb_info.rtmr1)?,
+            rtmr2: decode_rtmr("rtmr2", &tcb_info.rtmr2)?,
+            mrtd: decode_rtmr("mrtd", &tcb_info.mrtd)?,
+        };
+
+        Ok(ExpectedMeasurements {
+            rtmrs,
+            local_sgx_event_digest: EXPECTED_LOCAL_SGX_EVENT_DIGEST,
+            report_data_version: EXPECTED_REPORT_DATA_VERSION,
+        })
+    };
+}
 
 /// TCB info JSON file containing measurement values.
 const TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
@@ -72,75 +106,26 @@ pub struct ExpectedMeasurements {
     pub report_data_version: ReportDataVersion,
 }
 
-/// Default implementation that provides the expected measurements for TEE attestation verification.
-/// This implementation reads measurement values (RTMR0, RTMR1, RTMR2, MRTD) from the embedded
-/// TCB (Trusted Computing Base) info JSON file at compile time, ensuring consistent measurements
-/// across both production and test environments.
-///
-/// The TCB info contains hex-encoded measurement values that are decoded and converted to the
-/// required 48-byte arrays for each measurement register. This provides a single source of truth
-/// for all expected measurements.
-///
-/// TODO(#737): Define a process for updating these static RTMRs going forward, since they are already outdated.
-///
-/// $ git rev-parse HEAD
-/// fbdf2e76fb6bd9142277fdd84809de87d86548ef
-///
-/// See also: https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
-impl Default for ExpectedMeasurements {
-    fn default() -> Self {
-        Self::from_embedded_tcb_info().expect(
-            "Failed to load measurements from embedded TCB info. This indicates a build-time issue with the embedded tcb_info.json file."
-        )
-    }
-}
-
 impl ExpectedMeasurements {
-    /// Attempts to load measurements from the embedded TCB info file.
+    /// Loads expected measurements from the embedded TCB info file for TEE attestation verification.
+    /// This implementation uses a cached computation to avoid runtime JSON parsing and hex decoding,
+    /// improving performance especially in smart contract environments where every cycle counts.
+    ///
+    /// The TCB info contains hex-encoded measurement values that are decoded once and cached for
+    /// all subsequent calls, ensuring consistent measurements across both production and test environments.
+    ///
+    /// TODO(#737): Define a process for updating these static RTMRs going forward, since they are already outdated.
+    ///
+    /// $ git rev-parse HEAD
+    /// fbdf2e76fb6bd9142277fdd84809de87d86548ef
+    ///
+    /// See also: https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
     pub fn from_embedded_tcb_info() -> Result<Self, MeasurementsError> {
-        // Parse embedded tcb_info.json file and extract RTMR values dynamically
-        let tcb_info: DstackTcbInfo =
-            serde_json::from_str(TCB_INFO_STRING).map_err(|_| MeasurementsError::InvalidTcbInfo)?;
-
-        // Extract and decode RTMR values from the TCB info (they're in hex format)
-        let measurements = [
-            ("rtmr0", &tcb_info.rtmr0),
-            ("rtmr1", &tcb_info.rtmr1),
-            ("rtmr2", &tcb_info.rtmr2),
-            ("mrtd", &tcb_info.mrtd),
-        ];
-
-        let mut decoded_rtmrs = [[0u8; 48]; 4];
-
-        for (i, (name, hex_value)) in measurements.iter().enumerate() {
-            let decoded = hex::decode(hex_value).map_err(|_| {
-                MeasurementsError::InvalidHexValue(String::from(*name), (*hex_value).clone())
-            })?;
-
-            if decoded.len() != 48 {
-                return Err(MeasurementsError::InvalidLength(
-                    String::from(*name),
-                    decoded.len(),
-                ));
-            }
-
-            decoded_rtmrs[i].copy_from_slice(&decoded);
-        }
-
-        Ok(Self {
-            rtmrs: Measurements {
-                rtmr0: decoded_rtmrs[0],
-                rtmr1: decoded_rtmrs[1],
-                rtmr2: decoded_rtmrs[2],
-                mrtd: decoded_rtmrs[3],
-            },
-            local_sgx_event_digest: EXPECTED_LOCAL_SGX_EVENT_DIGEST,
-            report_data_version: EXPECTED_REPORT_DATA_VERSION,
-        })
+        EXPECTED_MEASUREMENTS_CACHE.clone()
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MeasurementsError {
     NoTd10Report,
     InvalidTcbInfo,
