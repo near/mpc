@@ -107,6 +107,10 @@ pub enum ReportData {
 }
 
 impl ReportData {
+    pub fn new(tls_public_key: PublicKey) -> Self {
+        ReportData::V1(ReportDataV1::new(tls_public_key))
+    }
+
     pub fn version(&self) -> ReportDataVersion {
         match self {
             ReportData::V1(_) => ReportDataVersion::V1,

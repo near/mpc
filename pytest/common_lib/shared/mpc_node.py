@@ -19,6 +19,8 @@ from utils import MetricsTracker
 
 import requests
 
+DUMMY_MPC_IMAGE_HASH = "deadbeef" * 8
+
 
 class MpcNode(NearAccount):
     """
@@ -113,8 +115,16 @@ class MpcNode(NearAccount):
         extra_env = {
             "RUST_LOG": "INFO",  # mpc-node produces too much output on DEBUG
             "MPC_SECRET_STORE_KEY": self.secret_store_key,
+            "MPC_IMAGE_HASH": "deadbeef" * 8,
+            "MPC_LATEST_ALLOWED_HASH_FILE": "latest_allowed_hash.txt",
         }
-        cmd = (MPC_BINARY_PATH, "start", "--home-dir", self.home_dir)
+        cmd = (
+            MPC_BINARY_PATH,
+            "start",
+            "--home-dir",
+            self.home_dir,
+            "local",
+        )
         self.near_node.run_cmd(cmd=cmd, extra_env=extra_env)
 
     def kill(self, gentle=True):
