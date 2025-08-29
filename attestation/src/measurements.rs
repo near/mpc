@@ -11,7 +11,8 @@ use crate::report_data::ReportDataVersion;
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
 
 // Static precomputed measurements to avoid runtime JSON parsing and hex decoding.
-static EXPECTED_MEASUREMENTS_CACHE: OnceCell<Result<ExpectedMeasurements, MeasurementsError>> = OnceCell::new();
+static EXPECTED_MEASUREMENTS_CACHE: OnceCell<Result<ExpectedMeasurements, MeasurementsError>> =
+    OnceCell::new();
 
 /// TCB info JSON file containing measurement values.
 const TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
@@ -91,35 +92,41 @@ impl ExpectedMeasurements {
     ///
     /// See also: https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
     pub fn from_embedded_tcb_info() -> Result<Self, MeasurementsError> {
-        EXPECTED_MEASUREMENTS_CACHE.get_or_init(|| {
-            // Parse embedded tcb_info.json file and extract RTMR values dynamically
-            let tcb_info: DstackTcbInfo =
-                serde_json::from_str(TCB_INFO_STRING).map_err(|_| MeasurementsError::InvalidTcbInfo)?;
+        EXPECTED_MEASUREMENTS_CACHE
+            .get_or_init(|| {
+                // Parse embedded tcb_info.json file and extract RTMR values dynamically
+                let tcb_info: DstackTcbInfo = serde_json::from_str(TCB_INFO_STRING)
+                    .map_err(|_| MeasurementsError::InvalidTcbInfo)?;
 
-            // Helper function to decode hex RTMR values
-            let decode_rtmr = |name: &str, hex_value: &str| -> Result<[u8; 48], MeasurementsError> {
-                let decoded = hex::decode(hex_value).map_err(|_| {
-                    MeasurementsError::InvalidHexValue(String::from(name), String::from(hex_value))
-                })?;
-                let decoded_len = decoded.len();
-                decoded.try_into().map_err(|_| {
-                    MeasurementsError::InvalidLength(String::from(name), decoded_len)
+                // Helper function to decode hex RTMR values
+                let decode_rtmr =
+                    |name: &str, hex_value: &str| -> Result<[u8; 48], MeasurementsError> {
+                        let decoded = hex::decode(hex_value).map_err(|_| {
+                            MeasurementsError::InvalidHexValue(
+                                String::from(name),
+                                String::from(hex_value),
+                            )
+                        })?;
+                        let decoded_len = decoded.len();
+                        decoded.try_into().map_err(|_| {
+                            MeasurementsError::InvalidLength(String::from(name), decoded_len)
+                        })
+                    };
+
+                let rtmrs = Measurements {
+                    rtmr0: decode_rtmr("rtmr0", &tcb_info.rtmr0)?,
+                    rtmr1: decode_rtmr("rtmr1", &tcb_info.rtmr1)?,
+                    rtmr2: decode_rtmr("rtmr2", &tcb_info.rtmr2)?,
+                    mrtd: decode_rtmr("mrtd", &tcb_info.mrtd)?,
+                };
+
+                Ok(ExpectedMeasurements {
+                    rtmrs,
+                    local_sgx_event_digest: EXPECTED_LOCAL_SGX_EVENT_DIGEST,
+                    report_data_version: EXPECTED_REPORT_DATA_VERSION,
                 })
-            };
-
-            let rtmrs = Measurements {
-                rtmr0: decode_rtmr("rtmr0", &tcb_info.rtmr0)?,
-                rtmr1: decode_rtmr("rtmr1", &tcb_info.rtmr1)?,
-                rtmr2: decode_rtmr("rtmr2", &tcb_info.rtmr2)?,
-                mrtd: decode_rtmr("mrtd", &tcb_info.mrtd)?,
-            };
-
-            Ok(ExpectedMeasurements {
-                rtmrs,
-                local_sgx_event_digest: EXPECTED_LOCAL_SGX_EVENT_DIGEST,
-                report_data_version: EXPECTED_REPORT_DATA_VERSION,
             })
-        }).clone()
+            .clone()
     }
 }
 
