@@ -25,7 +25,7 @@ fn test_mock_attestation_verify(
             report_data,
             timestamp_s,
             &[],
-            &[]
+            &[],
         ),
         expected_quote_verification_result
     );

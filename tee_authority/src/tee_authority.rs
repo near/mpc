@@ -2,7 +2,6 @@ use anyhow::{Context, bail};
 use attestation::{
     attestation::{Attestation, DstackAttestation, LocalAttestation},
     collateral::Collateral,
-    measurements::ExpectedMeasurements,
     quote::QuoteBytes,
     report_data::ReportData,
 };
@@ -97,10 +96,7 @@ impl TeeAuthority {
         let quote: QuoteBytes = hex::decode(quote)?.into();
 
         Ok(Attestation::Dstack(DstackAttestation::new(
-            quote,
-            collateral,
-            tcb_info,
-            ExpectedMeasurements::default(),
+            quote, collateral, tcb_info,
         )))
     }
 
