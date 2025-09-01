@@ -11,8 +11,8 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
-use crate::crypto_shared::types::CKDResponse;
 use crate::{
+    crypto_shared::types::CKDResponse,
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,

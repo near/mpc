@@ -49,7 +49,6 @@ pub struct DstackAttestation {
     pub quote: QuoteBytes,
     pub collateral: Collateral,
     pub tcb_info: TcbInfo,
-    pub expected_measurements: ExpectedMeasurements,
 }
 
 impl fmt::Debug for DstackAttestation {
@@ -73,10 +72,6 @@ impl fmt::Debug for DstackAttestation {
             .field("quote", &truncate_debug(&self.quote, MAX_BYTES))
             .field("collateral", &truncate_debug(&self.collateral, MAX_BYTES))
             .field("tcb_info", &truncate_debug(&self.tcb_info, MAX_BYTES))
-            .field(
-                "expected_measurements",
-                &truncate_debug(&self.expected_measurements, MAX_BYTES),
-            )
             .finish()
     }
 }
@@ -121,6 +116,11 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
+        let expected_measurements = match ExpectedMeasurements::from_embedded_tcb_info() {
+            Ok(measurements) => measurements,
+            Err(_) => return false,
+        };
+
         let verification_result = match dcap_qvl::verify::verify(
             &attestation.quote,
             &attestation.collateral,
@@ -144,15 +144,10 @@ impl Attestation {
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)
             && self.verify_report_data(&expected_report_data, report_data)
-            && self.verify_static_rtmrs(
-                report_data,
-                &attestation.tcb_info,
-                &attestation.expected_measurements,
-            )
+            && self.verify_static_rtmrs(report_data, &attestation.tcb_info, &expected_measurements)
             && self.verify_rtmr3(report_data, &attestation.tcb_info)
             && self.verify_app_compose(&attestation.tcb_info)
-            && self
-                .verify_local_sgx_digest(&attestation.tcb_info, &attestation.expected_measurements)
+            && self.verify_local_sgx_digest(&attestation.tcb_info, &expected_measurements)
             && self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
             && self.verify_launcher_compose_hash(
                 &attestation.tcb_info,
