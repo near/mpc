@@ -7,7 +7,7 @@ use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
 
 use crate::config::{
-    ConfigFile, IndexerConfig, KeygenConfig, ParticipantsConfig, PersistentSecrets,
+    CKDConfig, ConfigFile, IndexerConfig, KeygenConfig, ParticipantsConfig, PersistentSecrets,
     PresignatureConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
 };
 use crate::coordinator::Coordinator;
@@ -301,6 +301,7 @@ impl IntegrationTestSetup {
                     timeout_sec: 60,
                 },
                 signature: SignatureConfig { timeout_sec: 60 },
+                ckd: CKDConfig { timeout_sec: 60 },
                 triple: TripleConfig {
                     concurrency: 1,
                     desired_triples_to_buffer: 10,
