@@ -1,4 +1,4 @@
-use crate::config::{PersistentSecrets, RespondConfig};
+use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::web::StaticWebData;
 use crate::{
     config::{
@@ -510,6 +510,7 @@ impl Cli {
                 timeout_sec: 60,
             },
             signature: SignatureConfig { timeout_sec: 60 },
+            ckd: CKDConfig { timeout_sec: 60 },
             keygen: KeygenConfig { timeout_sec: 60 },
             cores: Some(4),
         })
