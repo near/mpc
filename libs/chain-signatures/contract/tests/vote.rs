@@ -6,11 +6,14 @@ use mpc_contract::{
     primitives::thresholds::{Threshold, ThresholdParameters},
     state::{running::RunningContractState, ProtocolContractState},
 };
+use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
 use serde_json::json;
 use std::str::FromStr;
+
+use crate::common::{submit_participant_info, vote_for_hash};
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
@@ -807,6 +810,103 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
         }
         _ => panic!("should be in running state after successful resharing"),
     }
+
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn vote_new_parameters_errors_if_new_participant_has_invalid_tee_status() -> anyhow::Result<()>
+{
+    let (worker, contract, mut current_participant_accounts, _) = init_env_secp256k1(1).await;
+
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    let ProtocolContractState::Running(initial_running_state) = state else {
+        panic!("State is not running: {:#?}", state)
+    };
+
+    let initial_epoch_id = initial_running_state.keyset.epoch_id;
+    let existing_params = initial_running_state.parameters.clone();
+    let mut new_participants = existing_params.participants().clone();
+
+    let allowed_mpc_hash = MpcDockerImageHash::from([
+        0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
+        0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56,
+        0x78, 0x90,
+    ]);
+
+    // Vote to transition to resharing state
+    for account in &current_participant_accounts {
+        vote_for_hash(account, &contract, &allowed_mpc_hash).await?;
+    }
+
+    let attestation = test_utils::attestation::mock_dstack_attestation();
+    let tls_key = test_utils::attestation::p2p_tls_key();
+
+    // submit valid attestations for all previous participant
+    for account in &current_participant_accounts {
+        assert!(
+            submit_participant_info(account, &contract, &attestation, &tls_key).await?,
+            "Failed to submit participant info."
+        );
+    }
+
+    // Create invalid TLS key by flipping the last bit
+    let mut invalid_tls_key_bytes = tls_key.as_bytes().to_vec();
+    let last_byte_idx = invalid_tls_key_bytes.len() - 1;
+    invalid_tls_key_bytes[last_byte_idx] ^= 0x01;
+    let invalid_tls_key = PublicKey::try_from(invalid_tls_key_bytes)?;
+
+    // Add a new participant
+    let (new_account, new_account_id, new_participant_info) = {
+        let (mut new_accounts, participants) = gen_accounts(&worker, 1).await;
+        let (new_account_id, _, new_participant_info) =
+            participants.participants().first().unwrap().clone();
+        let new_account = new_accounts.pop().unwrap();
+        (new_account, new_account_id, new_participant_info)
+    };
+
+    new_participants
+        .insert(new_account_id.clone(), new_participant_info)
+        .unwrap();
+
+    let threshold_parameters =
+        ThresholdParameters::new(new_participants, Threshold::new(3)).unwrap();
+
+    current_participant_accounts.push(new_account.clone());
+
+    assert!(
+        submit_participant_info(&new_account, &contract, &attestation, &invalid_tls_key).await?,
+        "Failed to submit participant info."
+    );
+
+    println!("calling vote_new_parameters.");
+    // Vote to transition to resharing state
+    for account in &current_participant_accounts {
+        let call_result = account
+            .call(contract.id(), "vote_new_parameters")
+            .max_gas()
+            .args_json(json!({
+                "prospective_epoch_id": initial_epoch_id.next(),
+                "proposal": threshold_parameters,
+            }))
+            .transact()
+            .await
+            .unwrap();
+
+        assert!(
+            call_result.is_failure(),
+            "Calling `vote_new_parameters` must fail when one participant has invalid TEE status."
+        );
+    }
+
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+
+    assert_matches!(
+        state,
+        ProtocolContractState::Running(_),
+        "Protocol state should not transition when new participant has invalid TEE status."
+    );
 
     Ok(())
 }
