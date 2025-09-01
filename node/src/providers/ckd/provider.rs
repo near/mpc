@@ -70,7 +70,7 @@ impl CKDProvider {
         channel: NetworkTaskChannel,
         id: CKDId,
     ) -> anyhow::Result<()> {
-        metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
+        metrics::MPC_NUM_PASSIVE_CKD_REQUESTS_RECEIVED.inc();
         let ckd_request = timeout(
             Duration::from_secs(self.config.ckd.timeout_sec),
             self.ckd_request_store.get(id),
