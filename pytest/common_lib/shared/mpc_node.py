@@ -115,7 +115,7 @@ class MpcNode(NearAccount):
         extra_env = {
             "RUST_LOG": "INFO",  # mpc-node produces too much output on DEBUG
             "MPC_SECRET_STORE_KEY": self.secret_store_key,
-            "MPC_IMAGE_HASH": "deadbeef" * 8,
+            "MPC_IMAGE_HASH": DUMMY_MPC_IMAGE_HASH,
             "MPC_LATEST_ALLOWED_HASH_FILE": "latest_allowed_hash.txt",
         }
         cmd = (
