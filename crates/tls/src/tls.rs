@@ -55,7 +55,7 @@ fn issue_peer_certificate(
 /// - `p2p_private_key`: DER-encoded private key matching the public key contained in `p2p_cert`.
 ///
 /// # Returns
-/// A ready-to-use `ServerConfig` wrapped in `Arc`, suitable for constructing a
+/// A `ServerConfig`, suitable for constructing a
 /// [`tokio_rustls::TlsAcceptor`].
 ///
 /// # Errors
@@ -66,13 +66,13 @@ fn server_tls_config(
     root_cert_store: Arc<rustls::RootCertStore>,
     p2p_cert: &rcgen::Certificate,
     p2p_private_key: &PrivateKeyDer,
-) -> anyhow::Result<Arc<rustls::server::ServerConfig>> {
+) -> anyhow::Result<rustls::server::ServerConfig> {
     let client_verifier = WebPkiClientVerifier::builder(root_cert_store).build()?;
-    Ok(Arc::new(
+    Ok(
         rustls::ServerConfig::builder_with_protocol_versions(&[constants::TLS_PROTOCOL_VERSION])
             .with_client_cert_verifier(client_verifier) // enforcing mTLS
             .with_single_cert(vec![p2p_cert.der().clone()], p2p_private_key.clone_key())?,
-    ))
+    )
 }
 
 /// Builds a [`rustls::client::ClientConfig`] for peer-to-peer connections.
@@ -99,12 +99,12 @@ fn client_tls_config(
     root_cert_store: Arc<rustls::RootCertStore>,
     p2p_cert: &rcgen::Certificate,
     p2p_private_key: &PrivateKeyDer,
-) -> anyhow::Result<Arc<rustls::client::ClientConfig>> {
-    Ok(Arc::new(
+) -> anyhow::Result<rustls::client::ClientConfig> {
+    Ok(
         rustls::ClientConfig::builder_with_protocol_versions(&[constants::TLS_PROTOCOL_VERSION])
             .with_root_certificates(root_cert_store)
             .with_client_auth_cert(vec![p2p_cert.der().clone()], p2p_private_key.clone_key())?,
-    ))
+    )
 }
 
 /// Builds both server and client TLS configurations for a P2P node.
@@ -122,17 +122,14 @@ fn client_tls_config(
 /// - `p2p_private_key`: The Ed25519 secret key of this node, used as its identity in P2P handshakes.
 ///
 /// # Returns
-/// A tuple `(Arc<ServerConfig>, Arc<ClientConfig>)` containing the TLS configurations
+/// A tuple `(ServerConfig, ClientConfig)` containing the TLS configurations
 /// for server and client roles.
 ///
 /// # Errors
 /// Returns an error if certificate creation, key conversion, or TLS configuration fails.
 pub fn configure_tls(
     p2p_private_key: &ed25519_dalek::SigningKey,
-) -> anyhow::Result<(
-    Arc<rustls::server::ServerConfig>,
-    Arc<rustls::client::ClientConfig>,
-)> {
+) -> anyhow::Result<(rustls::server::ServerConfig, rustls::client::ClientConfig)> {
     // Generate a self-signed certificate from the dummy key.
     let dummy_issuer_cert: SelfSignedCert = self_signed_dummy_certificate()?;
     // Add the dummy issuer to the trusted certificate list.

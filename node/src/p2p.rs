@@ -322,6 +322,7 @@ pub async fn new_tls_mesh_network(
             .insert(participant.p2p_public_key, participant.id);
     }
     let participant_identities = Arc::new(participant_identities);
+    let client_config = Arc::new(client_config);
     for participant in &config.participants.participants {
         if participant.id == config.my_participant_id {
             continue;
@@ -339,7 +340,7 @@ pub async fn new_tls_mesh_network(
         );
     }
 
-    let tls_acceptor = TlsAcceptor::from(server_config);
+    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
     let (message_sender, message_receiver) = mpsc::unbounded_channel();
     let tcp_listener = TcpListener::bind(SocketAddr::V4(SocketAddrV4::new(
