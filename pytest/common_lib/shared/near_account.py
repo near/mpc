@@ -67,14 +67,14 @@ class NearAccount:
     ):
         tx_hashes = self.send_txs_parallel_returning_hashes(txns, label)
         results = self.await_txs(tx_hashes)
-        verify_txs(results, verification_callback)
+        verify_txs(results, verification_callback, True)
 
     def get_tx(self, tx_hash):
         return self.near_node.get_tx(tx_hash, self.account_id())
 
     def await_txs(self, tx_hashes):
         """
-        sends signature requests without waiting for the result
+        sends requests without waiting for the result
         """
         for _ in range(20):
             try:
