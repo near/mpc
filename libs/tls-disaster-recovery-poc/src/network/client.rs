@@ -18,7 +18,6 @@ pub struct Client {
     pub peers: CommPeers,
     connections: Connections,
 }
-
 impl Client {
     // todo: add capability to change partcipant set.
     pub fn new(
@@ -86,7 +85,8 @@ async fn establish_connection_as_client(
     } => res?
     };
     let (tls_reader, tls_writer) = tokio::io::split(tls_stream);
-    let (outgoing_sender, outgoing_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (outgoing_sender, outgoing_receiver) =
+        tokio::sync::mpsc::channel(constants::CHANNEL_CAPACITY);
 
     let cancel_send_and_write = cancel.child_token();
     tokio::spawn(send(
@@ -96,7 +96,8 @@ async fn establish_connection_as_client(
         peer.clone(),
     ));
 
-    let (incoming_sender, incoming_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (incoming_sender, incoming_receiver) =
+        tokio::sync::mpsc::channel(constants::CHANNEL_CAPACITY);
     tokio::spawn(recv_loop(
         tls_reader,
         cancel_send_and_write.child_token(),

@@ -43,7 +43,7 @@ impl CommPeers {
         }
     }
 
-    /// Insert by unique public key and retruns its id.
+    /// Insert by unique public key and returns its id.
     /// Returns an error if a peer with the same public key already exists.
     pub fn insert(&mut self, peer: Peer) -> anyhow::Result<CommunicatorPeerId> {
         if let Some(&id) = self.id_by_key.get(&peer.public_key) {
@@ -83,16 +83,16 @@ impl CommPeers {
 pub struct Connection {
     pub peer: Peer,
     cancel: CancellationToken,
-    outgoing_messages: tokio::sync::mpsc::UnboundedSender<Messages>,
-    incoming_messages: Mutex<tokio::sync::mpsc::UnboundedReceiver<Messages>>,
+    outgoing_messages: tokio::sync::mpsc::Sender<Messages>,
+    incoming_messages: Mutex<tokio::sync::mpsc::Receiver<Messages>>,
 }
 
 impl Connection {
     pub fn new(
         peer: Peer,
         cancel: CancellationToken,
-        outgoing_messages: tokio::sync::mpsc::UnboundedSender<Messages>,
-        incoming_messages: Mutex<tokio::sync::mpsc::UnboundedReceiver<Messages>>,
+        outgoing_messages: tokio::sync::mpsc::Sender<Messages>,
+        incoming_messages: Mutex<tokio::sync::mpsc::Receiver<Messages>>,
     ) -> Self {
         Self {
             peer,
@@ -101,8 +101,8 @@ impl Connection {
             incoming_messages,
         }
     }
-    pub fn send(&self, msg: Messages) -> anyhow::Result<()> {
-        self.outgoing_messages.send(msg)?;
+    pub async fn send(&self, msg: Messages) -> anyhow::Result<()> {
+        self.outgoing_messages.send(msg).await?;
         Ok(())
     }
     pub async fn outgoing_closed(&self) {

@@ -44,10 +44,10 @@ pub async fn handshake<T: AsyncRead + AsyncWrite + Unpin>(
 
 #[cfg(test)]
 mod tests {
-    use crate::handshake::BACKUP_SERVICE_PROTOCOL_VERSION;
-    use crate::handshake::HANDSHAKE_LEN;
-    use crate::handshake::MAGIC_BYTES;
-    use crate::handshake::handshake;
+    use crate::network::handshake::BACKUP_SERVICE_PROTOCOL_VERSION;
+    use crate::network::handshake::HANDSHAKE_LEN;
+    use crate::network::handshake::MAGIC_BYTES;
+    use crate::network::handshake::handshake;
     use std::future::Future;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

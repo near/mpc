@@ -8,3 +8,5 @@ pub(crate) const READ_HDR_TIMEOUT: std::time::Duration = std::time::Duration::fr
 pub(crate) const READ_BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 pub(crate) const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 pub(crate) const HANDSHAKE_TIMEOUT: std::time::Duration = Duration::from_secs(1);
+
+pub(crate) const CHANNEL_CAPACITY: usize = 1000;

@@ -11,6 +11,8 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
+use super::constants;
+
 /* --------------------------- */
 /* ------- Server logic -------*/
 /* --------------------------- */
@@ -161,7 +163,8 @@ async fn accept_connection(
     };
 
     let (tls_reader, tls_writer) = tokio::io::split(tls_stream);
-    let (outgoing_sender, outgoing_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (outgoing_sender, outgoing_receiver) =
+        tokio::sync::mpsc::channel(constants::CHANNEL_CAPACITY);
     let cancel_send_and_write = cancel.child_token();
     tokio::spawn(send(
         tls_writer,
@@ -170,7 +173,8 @@ async fn accept_connection(
         peer.clone(),
     ));
 
-    let (incoming_sender, incoming_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (incoming_sender, incoming_receiver) =
+        tokio::sync::mpsc::channel(constants::CHANNEL_CAPACITY);
     tokio::spawn(recv_loop(
         tls_reader,
         cancel_send_and_write.child_token(),

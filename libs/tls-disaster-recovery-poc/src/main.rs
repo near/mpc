@@ -22,7 +22,7 @@ mod helpers {
             public_key: verifying_key,
         };
 
-        Ok((myself, server_config, client_config))
+        Ok((myself, Arc::new(server_config), Arc::new(client_config)))
     }
 }
 
@@ -30,19 +30,19 @@ use helpers::gen_config;
 
 async fn test_exchange(sender: &Arc<Connection>, recipient: &Arc<Connection>) {
     let msg = "Hello".to_string();
-    assert!(sender.send(Messages::Secrets(msg.clone())).is_ok());
+    assert!(sender.send(Messages::Secrets(msg.clone())).await.is_ok());
     assert!(matches!(
         recipient.receive().await.unwrap(),
         Messages::Secrets(m) if m == msg
     ));
     let msg = "Did you know,".to_string();
-    assert!(sender.send(Messages::Secrets(msg.clone())).is_ok());
+    assert!(sender.send(Messages::Secrets(msg.clone())).await.is_ok());
     assert!(matches!(
         recipient.receive().await.unwrap(),
         Messages::Secrets(m) if m == msg
     ));
     let msg = "we are communicated over an encrypted channel?".to_string();
-    assert!(sender.send(Messages::Secrets(msg.clone())).is_ok());
+    assert!(sender.send(Messages::Secrets(msg.clone())).await.is_ok());
     assert!(matches!(
         recipient.receive().await.unwrap(),
         Messages::Secrets(m) if m == msg
@@ -98,8 +98,7 @@ async fn start_new_mpc(port: u16, backup_peer: Peer) -> anyhow::Result<(MpcNode,
 }
 
 // note: do we need to set TCP nodelay somewhere?
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     const BACKUP_SERVER_PORT: u16 = 12345;
     const MPC_NODE_PORT: u16 = 23456;
@@ -151,4 +150,19 @@ async fn main() -> anyhow::Result<()> {
     .await?;
     tracing::info!("Success!");
     Ok(())
+}
+
+#[tokio::main]
+async fn main() {
+    run().await.unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_main() {
+        assert!(run().await.is_ok());
+    }
 }

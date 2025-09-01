@@ -9,12 +9,12 @@ use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 
 /* --------------------------- */
-/* Lowe level send and receive */
+/* Low level send and receive  */
 /* --------------------------- */
 pub(crate) async fn send<W>(
     mut writer: W,
     cancel: CancellationToken,
-    mut receiver: tokio::sync::mpsc::UnboundedReceiver<Messages>,
+    mut receiver: tokio::sync::mpsc::Receiver<Messages>,
     peer: Peer,
 ) -> anyhow::Result<()>
 where
@@ -75,7 +75,7 @@ where
 pub(crate) async fn recv_loop<R>(
     mut reader: R,
     cancel: CancellationToken,
-    inbound_message_sender: tokio::sync::mpsc::UnboundedSender<Messages>,
+    inbound_message_sender: tokio::sync::mpsc::Sender<Messages>,
     peer: Peer,
 ) -> anyhow::Result<()>
 where
@@ -148,7 +148,7 @@ where
                 tracing::trace!(target:"receiver", "keepalive from {:?}", peer.address);
             }
             other => {
-                if let Err(err) = inbound_message_sender.send(other) {
+                if let Err(err) = inbound_message_sender.send(other).await {
                     cancel.cancel();
                     tracing::info!(target:"receiver", "downstream dropped for {:?}: {}", peer.address, err);
                     anyhow::bail!("channel closed");
