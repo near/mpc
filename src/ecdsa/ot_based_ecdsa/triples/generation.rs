@@ -1164,17 +1164,14 @@ mod test {
         ecdsa::{ot_based_ecdsa::triples::generate_triple, ProjectivePoint},
         participants::ParticipantList,
         protocol::{errors::ProtocolError, run_protocol, Participant, Protocol},
+        test::generate_participants,
     };
 
     use super::{generate_triple_many, TripleGenerationOutput, TripleGenerationOutputMany, C};
 
     #[test]
     fn test_triple_generation() -> Result<(), ProtocolError> {
-        let participants = vec![
-            Participant::from(0u32),
-            Participant::from(1u32),
-            Participant::from(2u32),
-        ];
+        let participants = generate_participants(3);
         let threshold = 3;
 
         #[allow(clippy::type_complexity)]
@@ -1228,11 +1225,7 @@ mod test {
 
     #[test]
     fn test_triple_generation_many() -> Result<(), ProtocolError> {
-        let participants = vec![
-            Participant::from(0u32),
-            Participant::from(1u32),
-            Participant::from(2u32),
-        ];
+        let participants = generate_participants(3);
         let threshold = 3;
 
         #[allow(clippy::type_complexity)]

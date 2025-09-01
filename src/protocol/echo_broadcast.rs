@@ -313,6 +313,7 @@ mod test {
     use super::*;
     use crate::protocol::internal::{make_protocol, Comms};
     use crate::protocol::{run_protocol, Protocol, ProtocolError};
+    use crate::test::generate_participants;
     use std::error::Error;
 
     /// This function is similar to do_broadcast except it is tailored to
@@ -530,13 +531,7 @@ mod test {
 
     #[test]
     fn test_five_honest_participants() -> Result<(), Box<dyn Error>> {
-        let participants = vec![
-            Participant::from(0u32),
-            Participant::from(1u32),
-            Participant::from(2u32),
-            Participant::from(3u32),
-            Participant::from(4u32),
-        ];
+        let participants = generate_participants(5);
 
         let mut votes = vec![true, true, true, true, true];
 
@@ -556,11 +551,7 @@ mod test {
     #[test]
     fn test_three_honest_one_dihonest() -> Result<(), Box<dyn Error>> {
         // threshold is assumed to be n >= 3*threshold + 1
-        let honest_participants = vec![
-            Participant::from(0u32),
-            Participant::from(1u32),
-            Participant::from(2u32),
-        ];
+        let honest_participants = generate_participants(3);
 
         let dishonest_participant = Participant::from(3u32);
 

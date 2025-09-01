@@ -270,14 +270,13 @@ async fn fut_wrapper(
 mod test {
     use crate::crypto::hash::hash;
     use crate::participants::ParticipantList;
+    use crate::test::generate_participants;
     use frost_core::{Field, Group};
     use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512, Signature};
 
-    use crate::eddsa::test::{
-        assert_public_key_invariant, build_key_packages_with_dealer, run_keygen, run_refresh,
-        run_reshare, test_run_signature_protocols,
-    };
+    use crate::eddsa::test::{build_key_packages_with_dealer, test_run_signature_protocols};
     use crate::protocol::Participant;
+    use crate::test::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
     use std::error::Error;
 
     use super::SignatureOutput;
@@ -357,7 +356,7 @@ mod test {
 
         // test dkg
         let key_packages = run_keygen(&participants, threshold)?;
-        assert_public_key_invariant(&key_packages)?;
+        assert_public_key_invariant(&key_packages);
         let coordinators = vec![key_packages[0].0];
         let data = test_run_signature_protocols(
             &key_packages,
@@ -377,7 +376,7 @@ mod test {
 
         // // test refresh
         let key_packages1 = run_refresh(&participants, key_packages, threshold)?;
-        assert_public_key_invariant(&key_packages1)?;
+        assert_public_key_invariant(&key_packages1);
         let msg = "hello_near_2";
         let msg_hash = hash(&msg).unwrap();
         let data = test_run_signature_protocols(
@@ -408,7 +407,7 @@ mod test {
             new_threshold,
             new_participant,
         )?;
-        assert_public_key_invariant(&key_packages2)?;
+        assert_public_key_invariant(&key_packages2);
         let msg = "hello_near_3";
         let msg_hash = hash(&msg).unwrap();
         let coordinators = vec![key_packages2[0].0];
@@ -432,16 +431,10 @@ mod test {
 
     #[test]
     fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
-        let participants = vec![
-            Participant::from(0u32),
-            Participant::from(1u32),
-            Participant::from(2u32),
-            Participant::from(3u32),
-            Participant::from(4u32),
-        ];
+        let participants = generate_participants(5);
         let threshold = 3;
         let result0 = run_keygen(&participants, threshold)?;
-        assert_public_key_invariant(&result0)?;
+        assert_public_key_invariant(&result0);
 
         let pub_key = result0[2].1.public_key;
 
@@ -459,7 +452,7 @@ mod test {
             new_threshold,
             new_participant,
         )?;
-        assert_public_key_invariant(&key_packages)?;
+        assert_public_key_invariant(&key_packages);
 
         let participants: Vec<_> = key_packages
             .iter()
@@ -505,16 +498,10 @@ mod test {
 
     #[test]
     fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
-        let participants = vec![
-            Participant::from(0u32),
-            Participant::from(1u32),
-            Participant::from(2u32),
-            Participant::from(3u32),
-            Participant::from(4u32),
-        ];
+        let participants = generate_participants(5);
         let threshold = 4;
         let result0 = run_keygen(&participants, threshold)?;
-        assert_public_key_invariant(&result0)?;
+        assert_public_key_invariant(&result0);
         let coordinators = vec![result0[0].0];
 
         let pub_key = result0[2].1.public_key;
@@ -531,7 +518,7 @@ mod test {
             new_threshold,
             new_participant,
         )?;
-        assert_public_key_invariant(&key_packages)?;
+        assert_public_key_invariant(&key_packages);
 
         let participants: Vec<_> = key_packages
             .iter()

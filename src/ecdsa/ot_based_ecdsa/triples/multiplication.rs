@@ -199,6 +199,7 @@ mod test {
         protocol::{
             errors::ProtocolError, internal::make_protocol, run_protocol, Participant, Protocol,
         },
+        test::generate_participants,
     };
 
     use super::multiplication;
@@ -207,11 +208,7 @@ mod test {
 
     #[test]
     fn test_multiplication() -> Result<(), ProtocolError> {
-        let participants = vec![
-            Participant::from(0u32),
-            Participant::from(1u32),
-            Participant::from(2u32),
-        ];
+        let participants = generate_participants(3);
 
         let prep: Vec<_> = participants
             .iter()
@@ -258,11 +255,7 @@ mod test {
     #[test]
     fn test_multiplication_many() -> Result<(), ProtocolError> {
         const N: usize = 4;
-        let participants = vec![
-            Participant::from(0u32),
-            Participant::from(1u32),
-            Participant::from(2u32),
-        ];
+        let participants = generate_participants(3);
 
         let prep: Vec<_> = participants
             .iter()

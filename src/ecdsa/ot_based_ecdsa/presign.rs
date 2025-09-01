@@ -193,6 +193,7 @@ mod test {
     use crate::{
         ecdsa::{ot_based_ecdsa::triples::test::deal, KeygenOutput, Polynomial, ProjectivePoint},
         protocol::run_protocol,
+        test::generate_participants,
     };
     use frost_secp256k1::{
         keys::{PublicKeyPackage, SigningShare},
@@ -203,12 +204,7 @@ mod test {
 
     #[test]
     fn test_presign() {
-        let participants = vec![
-            Participant::from(0u32),
-            Participant::from(1u32),
-            Participant::from(2u32),
-            Participant::from(3u32),
-        ];
+        let participants = generate_participants(4);
         let original_threshold = 2;
         let f = Polynomial::generate_polynomial(None, original_threshold - 1, &mut OsRng).unwrap();
         let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;

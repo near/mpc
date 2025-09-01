@@ -3,9 +3,15 @@ use crate::crypto::{
     hash::{domain_separate_hash, HashOutput},
     polynomials::{Polynomial, PolynomialCommitment},
 };
+
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
-use crate::protocol::errors::{InitializationError, ProtocolError};
-use crate::protocol::{echo_broadcast::do_broadcast, internal::SharedChannel, Participant};
+use crate::protocol::{
+    echo_broadcast::do_broadcast,
+    errors::{InitializationError, ProtocolError},
+    internal::SharedChannel,
+    Participant,
+};
+use crate::KeygenOutput;
 
 use frost_core::keys::{
     CoefficientCommitment, SecretShare, SigningShare, VerifiableSecretSharingCommitment,
@@ -498,15 +504,6 @@ async fn do_keyshare<C: Ciphersuite>(
     })
 }
 
-/// Represents the output of the key generation protocol.
-///
-/// This contains our share of the private key, along with the public key.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct KeygenOutput<C: Ciphersuite> {
-    pub private_share: SigningShare<C>,
-    pub public_key: VerifyingKey<C>,
-}
-
 pub(crate) async fn do_keygen<C: Ciphersuite>(
     chan: SharedChannel,
     participants: ParticipantList,
@@ -648,4 +645,22 @@ pub(crate) fn reshare_assertions<C: Ciphersuite>(
         ));
     }
     Ok((participants, old_participants))
+}
+
+#[cfg(test)]
+mod test {
+    use super::domain_separate_hash;
+    use crate::test::generate_participants;
+
+    #[test]
+    fn test_domain_separate_hash() {
+        let cnt = 1;
+        let participants_1 = generate_participants(3);
+        let participants_2 = generate_participants(3);
+        let hash_1 = domain_separate_hash(cnt, &participants_1);
+        let hash_2 = domain_separate_hash(cnt, &participants_2);
+        assert!(hash_1 == hash_2);
+        let hash_2 = domain_separate_hash(cnt + 1, &participants_2);
+        assert!(hash_1 != hash_2);
+    }
 }

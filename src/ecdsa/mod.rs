@@ -11,33 +11,17 @@ use elliptic_curve::{
     point::AffineCoordinates,
 };
 
-use frost_secp256k1::{
-    keys::SigningShare, Field, Secp256K1ScalarField, Secp256K1Sha256, VerifyingKey,
-};
+use frost_secp256k1::{Field, Secp256K1ScalarField, Secp256K1Sha256};
 use k256::{AffinePoint, ProjectivePoint};
-use serde::{Deserialize, Serialize};
 
 use crate::crypto::ciphersuite::{BytesOrder, Ciphersuite, ScalarSerializationFormat};
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-pub struct KeygenOutput {
-    pub private_share: SigningShare,
-    pub public_key: VerifyingKey,
-}
+pub type KeygenOutput = crate::KeygenOutput<Secp256K1Sha256>;
 
 pub type Scalar = <Secp256K1ScalarField as Field>::Scalar;
 pub type CoefficientCommitment = frost_core::keys::CoefficientCommitment<Secp256K1Sha256>;
 pub type Polynomial = crate::crypto::polynomials::Polynomial<Secp256K1Sha256>;
 pub type PolynomialCommitment = crate::crypto::polynomials::PolynomialCommitment<Secp256K1Sha256>;
-
-impl From<crate::generic_dkg::KeygenOutput<Secp256K1Sha256>> for KeygenOutput {
-    fn from(value: crate::generic_dkg::KeygenOutput<Secp256K1Sha256>) -> Self {
-        Self {
-            private_share: value.private_share,
-            public_key: value.public_key,
-        }
-    }
-}
 
 impl ScalarSerializationFormat for Secp256K1Sha256 {
     fn bytes_order() -> BytesOrder {
