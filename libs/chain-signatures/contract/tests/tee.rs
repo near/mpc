@@ -10,8 +10,11 @@ use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
 use std::collections::HashSet;
-use test_utils::attestation::{mock_dstack_attestation, p2p_tls_key};
+use test_utils::attestation::{mock_dstack_attestation, mock_local_attestation, p2p_tls_key};
 
+/// Tests the basic TEE verification functionality when no TEE accounts are present.
+/// Verifies that the contract returns true for TEE verification even without any TEE accounts submitted,
+/// and ensures the participant count remains unchanged during verification.
 #[tokio::test]
 async fn test_tee_verify_no_tee() -> Result<()> {
     let (_, contract, _, _) = init_env_ed25519(1).await;
@@ -177,10 +180,7 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
     };
     let expected = format!("{:?}", InvalidState::NotParticipant);
     let err_str = format!("{:?}", err);
-    assert!(
-        err_str.contains(&expected),
-        "expected failure due to voter not being a participant"
-    );
+    assert!(err_str.contains(&expected));
     Ok(())
 }
 
@@ -218,11 +218,9 @@ async fn get_participants(contract: &Contract) -> Result<usize> {
     Ok(running.parameters.participants().len())
 }
 
-/// Helper function to set up contract with approved MPC hash.
-async fn setup_contract_with_approved_hash(
-    contract: &Contract,
-    accounts: &[Account],
-) -> Result<()> {
+/// Sets up a contract with an approved MPC hash by having the first two participants vote for it.
+/// This is a helper function commonly used in tests that require pre-approved hashes.
+async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> Result<()> {
     let mpc_hash = MpcDockerImageHash::from([
         0xc2, 0x29, 0x01, 0xe5, 0x2c, 0xfa, 0x91, 0xb2, 0xe7, 0x1e, 0xb8, 0x69, 0x4a, 0xc9, 0x55,
         0x80, 0x65, 0xc6, 0xe3, 0xb1, 0x37, 0x83, 0xd9, 0xe3, 0xd3, 0x6b, 0x79, 0x2d, 0x93, 0xce,
@@ -233,7 +231,8 @@ async fn setup_contract_with_approved_hash(
     Ok(())
 }
 
-/// Helper function to set up test environment with attestation and TLS key.
+/// Sets up a complete TEE test environment with contract, accounts, mock attestation, and TLS key.
+/// This is a helper function that provides all the common components needed for TEE-related tests.
 async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, PublicKey)> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     let attestation = mock_dstack_attestation();
@@ -241,34 +240,49 @@ async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Public
     Ok((contract, accounts, attestation, tls_key))
 }
 
-/// Tests that TEE attestation fails when no MPC hash is approved yet.
+/// **No MPC hash approval** - Tests that participant info submission fails when no MPC hash has been approved yet.
+/// This verifies the prerequisite step: the contract requires MPC hash approval before accepting any participant TEE information.
 #[tokio::test]
-async fn test_tee_attestation_fails_without_approved_hash() -> Result<()> {
+async fn test_submit_participant_info_fails_without_approved_mpc_hash() -> Result<()> {
     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
     let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
     assert!(!success);
     Ok(())
 }
 
-/// Tests that TEE attestation succeeds with valid TLS key and approved MPC hash.
+/// **Test method with matching measurements** - Tests that participant info submission succeeds with the test-only method.
+/// Unlike the test above, this one has an approved MPC hash. It uses the test method with custom measurements that match
+/// the attestation data.
 #[tokio::test]
-async fn test_tee_attestation_succeeds_with_valid_key() -> Result<()> {
+async fn test_submit_participant_info_test_method_available_in_integration_tests() -> Result<()> {
     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
-
-    setup_contract_with_approved_hash(&contract, &accounts).await?;
-
+    setup_approved_mpc_hash(&contract, &accounts).await?;
     let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
     assert!(success);
-
     Ok(())
 }
 
-/// Tests that TEE attestation fails when TLS key doesn't match the one in report data.
+/// **Local attestation bypass** - Tests that participant info submission succeeds with local attestation.
+/// Different from the dstack attestation tests above, this uses local attestation which bypasses complex TEE verification.
+/// This demonstrates that the submission mechanism itself works when attestation verification passes.
+#[tokio::test]
+async fn test_submit_participant_info_succeeds_with_local_attestation() -> Result<()> {
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let local_attestation = mock_local_attestation(true);
+    let tls_key = p2p_tls_key();
+    let success =
+        submit_participant_info(&accounts[0], &contract, &local_attestation, &tls_key).await?;
+    assert!(success);
+    Ok(())
+}
+
+/// **TLS key validation** - Tests that TEE attestation fails when TLS key doesn't match the one in report data.
+/// Similar to the successful test method case above, but uses a deliberately corrupted TLS key to verify
+/// that attestation validation properly checks the TLS key embedded in the attestation report.
 #[tokio::test]
 async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
-
-    setup_contract_with_approved_hash(&contract, &accounts).await?;
+    setup_approved_mpc_hash(&contract, &accounts).await?;
 
     // Create invalid TLS key by flipping the last bit
     let mut invalid_tls_key_bytes = tls_key.as_bytes().to_vec();
@@ -279,11 +293,11 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
     let success =
         submit_participant_info(&accounts[0], &contract, &attestation, &invalid_tls_key).await?;
     assert!(!success);
-
     Ok(())
 }
 
-/// Tests that external accounts cannot call the private clean_tee_status method.
+/// **Access control validation** - Tests that external accounts cannot call the private clean_tee_status contract method.
+/// This verifies the security boundary: only the contract itself should be able to perform internal cleanup operations.
 #[tokio::test]
 async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     let (worker, contract, _accounts, _) = init_env_secp256k1(1).await;
@@ -299,20 +313,13 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
         .await?;
 
     // The call should fail because it's not from the contract itself
-    assert!(
-        !result.is_success(),
-        "External account should not be able to call clean_tee_status"
-    );
+    assert!(!result.is_success());
 
     // Verify the error message indicates unauthorized access
     match result.into_result() {
         Err(failure) => {
             let error_msg = format!("{:?}", failure);
-            assert!(
-                error_msg.contains("Method clean_tee_status is private"),
-                "Error should indicate private method access: {}",
-                error_msg
-            );
+            assert!(error_msg.contains("Method clean_tee_status is private"));
         }
         Ok(_) => panic!("Call should have failed"),
     }
@@ -320,7 +327,9 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     Ok(())
 }
 
-/// Tests that clean_tee_status succeeds when contract calls itself.
+/// **TEE cleanup functionality** - Tests that the clean_tee_status contract method works correctly when called by the contract itself.
+/// Unlike the access control test above, this demonstrates the positive case: the contract can successfully clean up
+/// TEE data for accounts that are no longer participants. Uses the test method to populate initial TEE state.
 #[tokio::test]
 async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
     let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
@@ -329,12 +338,13 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     assert_eq!(get_tee_accounts(&contract).await?.len(), 0);
 
     // Setup contract with approved hash and submit TEE info for current participants
-    setup_contract_with_approved_hash(&contract, &accounts).await?;
+    setup_approved_mpc_hash(&contract, &accounts).await?;
     let tls_key = p2p_tls_key();
     let attestation = mock_dstack_attestation();
 
     for account in &accounts {
-        submit_participant_info(account, &contract, &attestation, &tls_key).await?;
+        let success = submit_participant_info(account, &contract, &attestation, &tls_key).await?;
+        assert!(success);
     }
 
     // Verify current participants have TEE data
@@ -344,15 +354,15 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
     let additional_accounts = gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await.0;
     for account in &additional_accounts {
-        submit_participant_info(account, &contract, &attestation, &tls_key).await?;
+        let success = submit_participant_info(account, &contract, &attestation, &tls_key).await?;
+        assert!(success);
     }
 
     // Verify we have TEE data for all accounts before cleanup
     let tee_participants_before = get_tee_accounts(&contract).await?;
     assert_eq!(
         tee_participants_before.len(),
-        accounts.len() + additional_accounts.len(),
-        "Should have TEE data for all participants and additional accounts before cleanup"
+        accounts.len() + additional_accounts.len()
     );
 
     // Contract should be able to call clean_tee_status on itself
@@ -363,18 +373,11 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
         .transact()
         .await?;
 
-    assert!(
-        result.is_success(),
-        "Contract should be able to call clean_tee_status on itself"
-    );
+    assert!(result.is_success());
 
     // Verify cleanup worked: only current participants should have TEE data
     let tee_participants_after = get_tee_accounts(&contract).await?;
-    assert_eq!(
-        tee_participants_after.len(),
-        accounts.len(),
-        "Should only have TEE data for current participants after cleanup"
-    );
+    assert_eq!(tee_participants_after.len(), accounts.len());
 
     let expected_participants: HashSet<_> = accounts
         .iter()
@@ -382,10 +385,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
         .collect();
     let actual_participants: HashSet<_> = tee_participants_after.into_iter().collect();
 
-    assert_eq!(
-        expected_participants, actual_participants,
-        "Remaining TEE participants should exactly match the current parameter set"
-    );
+    assert_eq!(expected_participants, actual_participants);
 
     Ok(())
 }

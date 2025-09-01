@@ -11,13 +11,12 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
-use crate::crypto_shared::types::CKDResponse;
-use crate::tee::quote::TeeQuoteStatus;
 use crate::{
+    crypto_shared::types::CKDResponse,
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
-    tee::{proposal::AllowedDockerImageHashes, tee_state::TeeState},
+    tee::{proposal::AllowedDockerImageHashes, quote::TeeQuoteStatus, tee_state::TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
     v0_state::MpcContractV1,
 };

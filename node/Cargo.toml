@@ -63,6 +63,7 @@ near-o11y = { workspace = true }
 near-time = { workspace = true }
 legacy-mpc-contract = { workspace = true }
 mpc-contract = { workspace = true }
+mpc-tls = { workspace = true }
 deranged = { workspace = true }
 itertools = { workspace = true }
 

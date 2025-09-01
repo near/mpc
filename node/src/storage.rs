@@ -102,8 +102,6 @@ impl CKDRequestStorage {
     /// This behavior is necessary because a peer might initiate computation for a ckd
     /// request before our indexer has caught up to the request. We need proof of the request
     /// from on-chain in order to participate in the computation.
-    // // TODO: remove when ckd provider is integrated https://github.com/near/mpc/issues/863
-    #[allow(dead_code)]
     pub async fn get(&self, id: CKDId) -> Result<CKDRequest, anyhow::Error> {
         let key = borsh::to_vec(&id)?;
         let mut rx = self.add_sender.subscribe();
