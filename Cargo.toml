@@ -39,7 +39,7 @@ derive_more = { version = "2.0.1", features = [
 dstack-sdk = { git = "https://github.com/Dstack-TEE/dstack.git", rev = "04de4e422bb06f075b4215b2cfc410f5d7ac7aed" }
 # Latest `master` as per 2025-08-18
 dstack-sdk-types = { features = ["borsh"], git = "https://github.com/Dstack-TEE/dstack.git", rev = "04de4e422bb06f075b4215b2cfc410f5d7ac7aed" }
-ed25519-dalek = { version = "2.1.1", features = ["serde", "digest", "pkcs8"] }
+ed25519-dalek = { version = "2.2.0", features = ["serde", "digest", "pkcs8", "rand_core"] }
 flume = "0.11.1"
 futures = "0.3.31"
 futures-util = "0.3.31"

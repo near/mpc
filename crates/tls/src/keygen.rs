@@ -31,3 +31,21 @@ pub(crate) fn raw_ed25519_secret_key_to_keypair(
     let keypair = rcgen::KeyPair::try_from(&private_key)?;
     Ok(keypair)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::keygen::raw_ed25519_secret_key_to_keypair;
+    use ed25519_dalek::SigningKey;
+
+    #[test]
+    fn test_public_key_match() {
+        use rand::rngs::OsRng;
+        let sk: SigningKey = SigningKey::generate(&mut OsRng);
+        let expected_pk: [u8; 32] = sk.verifying_key().to_bytes();
+
+        let kp: rcgen::KeyPair = raw_ed25519_secret_key_to_keypair(&sk).expect("rcgen KeyPair");
+        let found_pk = kp.public_key_raw().to_vec();
+        assert_eq!(found_pk.as_slice(), &expected_pk);
+        assert_eq!(kp.algorithm(), &rcgen::PKCS_ED25519);
+    }
+}
