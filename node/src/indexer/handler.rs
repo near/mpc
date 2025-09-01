@@ -24,6 +24,11 @@ struct UnvalidatedSignArgs {
     request: SignRequestArgs,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct UnvalidatedCKDArgs {
+    request: CKDRequestArgs,
+}
+
 /// A validated version of the signature request
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SignArgs {
@@ -323,7 +328,7 @@ fn try_get_ckd_args(
     args: &FunctionArgs,
     expected_name: &String,
 ) -> Option<(CKDId, CKDArgs)> {
-    let ckd_args = match serde_json::from_slice::<'_, CKDRequestArgs>(args) {
+    let ckd_args = match serde_json::from_slice::<'_, UnvalidatedCKDArgs>(args) {
         Ok(parsed) => parsed,
         Err(err) => {
             tracing::warn!(target: "mpc", %err, "failed to parse `{}` arguments", expected_name);
@@ -332,9 +337,9 @@ fn try_get_ckd_args(
     };
 
     let ckd_request = CKDRequest {
-        app_public_key: ckd_args.app_public_key,
+        app_public_key: ckd_args.request.app_public_key,
         app_id: receipt.predecessor_id.clone(),
-        domain_id: ckd_args.domain_id,
+        domain_id: ckd_args.request.domain_id,
     };
 
     tracing::info!(
