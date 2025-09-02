@@ -31,121 +31,127 @@ Our primary goal is to ensure that every MPC node runs inside a TEE—specifical
 
 # System Design
 
- ![](attachments/system_overview.png " =611x573")
+## High-Level System Components
+
+The MPC network is composed of the following key components:
+
+![](attachments/system_overview.png " =611x573")
+
+### External Clients 
+- Application/Users with a NEAR account 
+- Send signature requests to the MPC Signer contract.  
+
+### MPC Signer Contract
+- Maintains a record of all participants in the MPC network.  
+- Provides on-chain synchronization for MPC nodes, ensuring consistency across the network.  
+- Acts as the coordination layer between external clients and MPC nodes.  
+
+### MPC Nodes
+- Execute the MPC algorithm to collectively generate cryptographic signatures.  
+- Submit generated signatures back to the blockchain via the contract.  
+- Operate in a decentralized manner to enhance security and resilience.  
+
+
+ 
+
+## TEE Design Overview
+
+This is a more detailed component view of the MPC solution, covering both on-chain and off-chain elements, and focusing on the MPC node and how it is secured using **Intel TDX**.
+
+![](attachments/system_design_dtx.png)
+
+### MPC Signer Contract (On-Chain)
+- Maintains the list of approved MPC Docker image hashes.  
+- Enforces TDX remote attestation for MPC nodes.  
+- Exposes existing MPC methods for network operation.  
+
+### Participants (On-Chain)
+- Authorized members of the network.  
+- Approve and vote on new MPC Docker image hashes.  
+- Handle governance responsibilities (e.g., voting participants in or out).  
+
+### TDX Server
+- A Confidential Virtual Machine (CVM) host running on **Intel TDX-capable hardware**.  
+- Provides hardware-enforced isolation between the TDX VM (running the MPC node stack) and the untrusted host environment.  
+- Generates **measurement registers (MRTD, RTMRs)** that reflect the loaded software stack.  
+- Produces **attestation quotes** that can be verified remotely by the MPC Signer Contract and Participants.  
+- Ensures confidentiality and integrity of both data and code running inside the CVM. 
+- More Details can be found here [Intel TDX](https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/overview.html)  
+
+### Dstack
+- Acts as the runtime TDX orchestrator for the CVM.  
+- Abstracts and orchestrates many of the TDX interfaces.  
+- Performs initial **RTMR measurements**.  
+- Manages encryption and decryption of the filesystem.  
+- Starts the Launcher.  
+- Provides **quote generation APIs** and external logs.  
+- More details can be found here: [Dstack](https://github.com/Dstack-TEE/dstack).   
+
+### Gramine Key Provider
+- Generates a sealing key for encrypting the TDX VM filesystem.  
+- Derives the encryption key from TDX VM measurements (including the Launcher compose file, but excluding the MPC node hash).  
+- Ensures secrets at rest remain protected.  
+- More details can be found here: [Gramine Key Provider](https://github.com/MoeMahhouk/gramine-sealing-key-provider).  
+
+### Launcher
+- Verifies the MPC Docker image hash against an approved hash value.  
+- Measures the verified hash into **RTMR3**.  
+- Starts the MPC node container.  
+
+### MPC Node
+- Executes MPC operations.  
+- Synchronizes the approved MPC Docker image hash with the on-chain contract state.  
+- Produces remote attestation quotes for both the contract and the operator.  
+
+### Operators
+- Manage the CVM and the MPC nodes.  
+
+> **Note:** In this MPC solution, *Participants* also act as *Operators*.  
+
 
 ## **Launcher** Pattern 
 
-We are using the **Launcher** **Pattern** described below as the base design to support secure upgrades of the MPC nodes. The real design is a bit more complicated and will be described in more detail afterwards. 
+We are using modified version of the **Launcher** **Pattern** described below in order to allow secure upgrades of the MPC node. 
+
+![](attachments/system_design_dtx_with_steps.png)
+ 
+
+1. **Participants → MPC Signer Contract**  
+   - Participants approve a new MPC Docker image hash.  
+
+2. **Operator**  
+   - Starts the CVM.  
+
+3. **Dstack → Gramine Key Provider**  
+   - Retrieves the decryption key.  
+   - The key is derived from the Launcher's docker-compose measurements.  
+
+4. **Dstack**  
+   - Decrypts the drive.  
+   - Pulls the Launcher from DockerHub.  
+   - Extends **RTMR3** with the Launcher's measurements.  
+   - Starts the Launcher.  
+
+5. **Launcher**  
+   - If an MPC image hash exists on disk, it uses that hash.  
+   - Otherwise, it falls back to a hard-coded initial MPC hash:  
+     - Pulls the MPC Docker image.  
+     - Verifies the MPC Docker image hash against the initial hash.  
+     - Measures the hash into **RTMR3**.  
+     - Starts the MPC container.  
+
+6. **MPC Node → MPC Signer Contract**  
+   - Checks if the MPC node is running the latest approved version on-chain.  
+   - If not, it pulls the latest hash from the MPC Signer Contract and saves it to disk.  
+   - (Note: The CVM disk is encrypted with the key retrieved in step 3).  
+   - In this case, the **Operator** must restart the CVM, causing steps 2–6 to be re-run.  
+
+7. **MPC Node → MPC Signer Contract**  
+   - Registers its remote attestation information on-chain.  
 
 
- ![](attachments/launcher_pattern.png)
 
 
-
-1. DAO → Registry (step 1 in the diagram):  DAO approves a new MPC Docker image hash.
-
-
-2. Dstack → Gramine Key Provider: Retrieves decryption key (the key is derived from the launcher docker-compose measurements) 
-3. Dstack: Decrypts the drive, Pulls the Launcher from dockerhub, extends RTMR3 with the Launcher's measurements , and starts the Launcher.  
-4. Launcher → Retrieves the approved whitelist of MPC hashes from the registry(step2), Pulls the MPC docker image, verifies the MPC Docker image hash against the approved hash, measures it into RTMR3 (step 3) , and starts the MPC container.
-5. MPC node → Registry: Registers  remote attestation information on the registry.(step 4)
-
-
-
-## Actual design:
-
-
-In **Launcher Design** above, the Launcher code can't be upgraded easily, and is expected not to change. So, in order to simplify the  **Launcher's** code, the responsibility to retrieve the whitelisted MPC hashes from the registry is moved to the MPC node itself.
-
-Steps 1–3 are the same, while steps 4–6 are different:
-
-
-1. DAO → Registry (step 1 in the diagram):  DAO approves a new MPC Docker image hash.
-2. Dstack → Gramine Key Provider: Retrieves decryption key (the key is derived from the launcher docker-compose measurements) 
-3. Dstack: Decrypts the drive, Pulls the Launcher from dockerhub, extends RTMR3 with the Launcher's measurements , and starts the launcher.  
-4. Launcher → If a MPC image hash exists on disk, use it. Otherwise, it uses a hard-coded initial  MPC hash to Pull the MPC docker image, verifies the MPC Docker image hash against the hard-coded initial MPC hash, measures it into RTMR3, and starts the MPC container.
-5. MPC node → Registry: Checks if the MPC node is using the latest voted version on the registry. If not, it pulls the latest hash from the registry and saves it to disk (note - the CVM disk is encrypted using the key from step 2). In this case the Operator needs to restart the CVM, so steps 2–5 will be re-run.
-6. MPC node → Registry: Registers remote attestation information on the registry.
-
-Note - In some section of the document, we may refer to **Registry** as **Contract.** 
-
-## Component breakdown and responsibilities:
-
-
-* **Launcher** – Verifies the MPC Docker image hash against an approved hash value, measures it into RTMR3, and starts the container.
-* **[Gramine Key Provider](https://github.com/MoeMahhouk/gramine-sealing-key-provider)** – Generates a sealing key for encrypting the TDX VM filesystem. The encryption key is derived from TDX VM measurements (including Launcher compose file, but not including the MPC nodes hash) , ensuring secrets at rest remain protected.
-* **Dstack** – Performs initial RTMR measurements, manages encryption/decryption of the filesystem, starts the launcher script, and provides both quote generation APIs and external logs.
-* **MPC node** – Executes MPC operations. It synchronizes the approved MPC Docker image hash with the contract state and produces remote attestation quotes for the contract and operator.
-* **Registry/Contract (on-chain)** – Maintains the list of approved MPC Docker image hashes, enforces that MPC nodes are verified via TDX remote attestation, and provides existing MPC methods.
-* **DAO - (on-chain)** – **Decentralized Autonomous Organization** , A collection of authorized operators/participants. They approve and vote for new MPC Docker image hashes, in addition to their existing governance responsibilities (such as voting participants in or out).
-
-*Note* - In our MPC solution, those are referenced as **Participants** or **Operators.**
-
-
-# Threat Model
-
-
-## Assets
-
-* TLS key
-* Node Account key
-* key share
-* triples / pre signatures
-
-At run time - Assets are protected by TDX HW that encrypts the CVM memory and provides an isolated execution environment.
-
-At rest - Assets are saved encrypted on the disk. The key that encrypts the disk is generated by the SGX Local Key Store, and is derived based on the CVM measurements.
-
-## Key Management Assumptions
-
-There are two distinct Near Account Keys with different responsibilities:
-
-* **Node key**
-  * Used by the MPC node to perform specific contract calls (e.g., submitting attestation quotes, updating state).
-  * Stays within the TEE boundary.
-  * Integrity and correct usage depend on the TEE guarantees and the node execution environment.
-* **Operator key**
-  * Held by the operator outside of the TEE.
-  * Used for governance actions such as DAO voting and approving new MPC Docker image hashes.
-  * Requires explicit trust in the operator to safeguard this key, since it is not TEE-protected.
-
-
----
-
-## Trust Assumptions
-
-* **Operator**
-  * Trusted to protect the operator key.
-  * Not trusted with the TLS (`sign_pk`) key or the `Node Account Key`, which never leaves the TEE.
-  * Not trusted to securely run the MPC node.
-* **dstack**
-  * Trusted as the software framework used to deploy MPC nodes.
-
-    
-* **MPC node code & NEAR node**
-  * Code is Trusted.
-
-
----
-
-## TEE Model Assumptions
-
-* We conservatively assume the TEE protects **integrity** but not **confidentiality**.
-  * In principle, TEEs are designed to guarantee both confidentiality (e.g., preventing the host from reading Enclave/CVM memory) and integrity.
-  * However, due to a history of practical exploits (e.g., side-channel attacks such as cache timing, speculative execution leaks, and microarchitectural vulnerabilities), we choose not to rely on confidentiality guarantees.
-  * This conservative stance mainly affects the types of MPC protocol optimizations we may choose to apply in the future, since we cannot assume secret values remain fully hidden from a powerful host adversary.
-* Standard TEE threat model applies:
-  * A privileged attacker with host-level (root) access can interrupt execution, inspect memory (but can't decrypt the CVM memory), and control scheduling.
-  * Side-channel and hardware-based attacks are considered out of scope.
-
-
----
-
-## Identified Risks
-
-* **Rollback & asset reuse**
-  * An entire MPC node disk may be replaced with a previous snapshot, leading to reuse of cryptographic assets (e.g., triples, presignatures).
-  * Currently, these assets are persisted on disk — mitigation will be required in future iterations.
 
 # High Level Flows
 
@@ -228,28 +234,21 @@ In this section, a more detailed description of the main flows is provided:
    * Operator → Contract: Calls `vote_new_parameters` to update the active participant set.
 
 
-# Secret key Handling
-
-The MPC node has two key pairs to protect: 
-
-* Account key 
-
-* P2P TLS Key
-
-
-In contrast to the pre-TEE design, where those keys were generated by the operator,  in the TEE base design, both keys will be generated inside the CVM. 
-
-The private key never leaves the CVM. While the public key can be exported from the CVM via an HTTP endpoint <IP>/public_data
-
-The Operator will then register the node's account key as an additional access key for the node's near account, and provide it with the following permissions (TODO - add list of contract APIs) 
-
-In addition - The node will generate multiple responder account keys as well. These are used to increase throughout when posting generated MPC signatures to the chain.
-
-*Note - We plan (in future release) to add a restriction that some of  contract API can only be invoked with the node key and not the operators key, those enhancing the security and separation of duty.*
 
 #  Design Details 
 
-## Smart Contract API Changes
+This section is intended for readers who want to **deep dive into the technical design choices** of the MPC solution.  
+It expands on the high-level architecture by covering specific implementation details such as key handling,  
+smart contract APIs, MPC node behavior, attestation generation and verification, and upgrade mechanisms.  
+
+
+
+
+## Smart Contract
+
+This section describes the API and functionality with respect to TEE.
+
+### Smart Contract APIs
 
 * New methods: Voting on the whitelisted docker images, retrieving whitelisted hashes, submitting participant (attestation) info, and removing  participants with invalid/stale attestation.
 * Existing vote_new_parameters API:  keep the same interface , but voting will also include a verification of the remote attestation information of each node.
@@ -306,6 +305,7 @@ In addition - The node will generate multiple responder account keys as well. Th
 
 *Note*: submit_participant_info - can be called either by the node or by the operator.
 
+
 ## MPC Node changes:
 
 * Generate sign key (TLS p2p key) and account key by the node.
@@ -317,7 +317,37 @@ In addition - The node will generate multiple responder account keys as well. Th
 * Call verify_tee every 7 days - in order to trigger a re-validation of attestation information on the contract.
 * Monitor contract state - and if a new MPC docker image hash was voted successfully, pull that image and store on disk (so that the Launcher will use it for next boot)  
 
-## Attestation Generation by MPC Node
+
+### Secret key Handling
+
+The MPC node has two key pairs to protect: 
+
+* Account key 
+
+* P2P TLS Key
+
+
+In contrast to the pre-TEE design, where those keys were generated by the operator,  in the TEE base design, both keys will be generated inside the CVM. 
+
+The private key never leaves the CVM. While the public key can be exported from the CVM via an HTTP endpoint <IP>/public_data
+
+The Operator will then register the node's account key as an additional access key for the node's near account, and provide it with the following permissions (TODO - add list of contract APIs) 
+
+In addition - The node will generate multiple responder account keys as well. These are used to increase throughout when posting generated MPC signatures to the chain.
+
+*Note - We plan (in future release) to add a restriction that some of  contract API can only be invoked with the node key and not the operators key, those enhancing the security and separation of duty.*
+
+
+## Remote Attestation
+
+This section covers both sides of the **remote attestation process** in the MPC solution:  
+
+1. **Attestation Generation by the MPC Node** – how the node produces a TDX attestation quote and supporting evidence using Dstack. This ensures that the node’s runtime environment, configuration, and MPC Docker image are correctly measured and can be proven to external verifiers.  
+
+2. **Attestation Verification by the Contract** – how the MPC Signer Contract validates the attestation data submitted by nodes. The contract checks measurement registers (MRTD, RTMRs), event logs, and cryptographic signatures against expected values to guarantee that only verified and approved MPC nodes participate in the network.  
+
+
+### Attestation Generation by MPC Node
 
 The node will use the Dstack APIs in order to generate the remote attestation information including:
 
@@ -497,162 +527,71 @@ After 7 days, any call to the contract API `verify_tee` will removing the old
 If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.  
 Note - In case the number of remaining participants is less that the threshold. The node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.
 
-# MPC Network Upgrade from Non TEE to TEE
-
-The approach is to support a 2 phase upgrade process.
-
-**First contract upgrade:**
-
-The contract will support both TEE and non TEE participants.  
-If a node submitted a remote attestation to the contract, it must be valid, otherwise he can not join the network.  
-But we will also allow participants to join without summiting remote attestation.  In this phase, all participants, **one by one**, will be moved to a TDX based MPC node. 
-
-Then they will be removed from the network and added again while submitting their remote attestation
-
-*Note - The move to TDX based MPC node, will force a change in the TLS and node account keys, therefor the removal and re-adding from the contract is necessary.*  
-After all node have been migrated to TDX, and network is deemed stable (enough time has passed and enough test have been run). We will move to the second phase.
 
 
-**Second contract upgrade**
 
-In this upgrade, the contract will enforce that only nodes with valid remote attestation can join the network. 
+#  Threat Model
 
-In addition, any node without a valid attestation will be kick out.
+This section outlines the threat model and key security considerations behind the solution design.  
 
-TODO: there is an alternative option in discussion.
+## Assets
 
-# Looking Ahead
+* TLS key
+* Node Account key
+* key share
+* triples / pre signatures
 
-In this section we are describing possible scenarios we might need to address in the future such as:  **Updating Dstack version** or **updating the Launcher**.
+At run time - Assets are protected by TDX HW that encrypts the CVM memory and provides an isolated execution environment.
 
-A possible security enhancement that are not planned for the first release such as **Node to Node RA-TLS.**
+At rest - Assets are saved encrypted on the disk. The key that encrypts the disk is generated by the SGX Local Key Store, and is derived based on the CVM measurements.
 
-## Node to Node Authentication with RA-TLS
+## Key Management Assumptions
 
+There are two distinct Near Account Keys with different responsibilities:
 
-**Note** - not implemented in the current version
+* **Node key**
+  * Used by the MPC node to perform specific contract calls (e.g., submitting attestation quotes, updating state).
+  * Stays within the TEE boundary.
+  * Integrity and correct usage depend on the TEE guarantees and the node execution environment.
+* **Operator key**
+  * Held by the operator outside of the TEE.
+  * Used for governance actions such as DAO voting and approving new MPC Docker image hashes.
+  * Requires explicit trust in the operator to safeguard this key, since it is not TEE-protected.
 
-**Note**: the following is necessary only if we don't trust the confidentiality of a TEE. Specifically, we can have the `sign_pk` (network key) always generated inside the TEE and the node operator cannot move it outside without breaking the confidentiality of a TEE. In the smart contract changes proposed above, `sign_pk` would get verified when a node joins as part of its remote attestation.
-
-MPC nodes authenticate each other upon connection. The expected behavior upon connection is as follows:
-
-* They exchange a handshake message that contains the remote attestation
-* Each node verifies the other node's remote attestation
-* If verification passes then the handshake is successful. Otherwise the connection is dropped
-* We should check whether we can use [the existing implementation](https://github.com/Dstack-TEE/dstack/tree/master/ra-tls) in dstack for this.
-
- 
-
-## Dstack version and upgrade:
-
-We use a fixed Dstack version and OS image, and this version is reflected in the hardcoded expected RTMR values in the contract.  
-Dstack upgrad is not supported in the first release.  
-Future release:  
-In case there is a need to upgrade Dstack, (e.g security bug or additional features)
-
-The expected values of RTMRs:1-3 may change.  
-In order to support this, a new contract with support for multiple allowed values of those RTMRs will be needed. 
-
-## Launcher upgrade
-
-The Launcher pattern was chosen since we want:  
-1. To be able to upgrade the MPC node.
-2. Prevent an upgrade to a malicious MPC node, that will read the keys from the encrypted disk and send them to the operator.
-
-The Launcher is responsible for this logic, and the Launcher's code is measured and is used to derive the disk encryption key. Thus, it is not possible to upgrade the Launcher without losing the secrets on the disk: (key share, account/P2P keys)   
-
-How do we upgrade the Launcher in case there is a critical bug:
-
-1.  Need to upgrade the contract to accept both new and old Launcher measurements.
-Then, for each node, (**one by one**) in a loop: 
-2. Create a new CVM with the new Launcher code  -thus losing all the secrets.
-3. Vote out and then back in each.
-
-
-4. Depending on the implementation ,either 
-
-   
-   * Update the contract to enforce only the new launcher measurements (similar to the  non TEE to TEE upgrade process).   
-   or  
-   * Add a mechanism to kick out the node, after some time (as we do for old MPC node hash)
-
-Note - An Alternative solution is to use the **back up key service** that is under design.
-
-# Q&A (Reference Notes)
-
-### Dstack & Builds
-- **Q: What Dstack version should we use?**  
-  **A:** Use version `0.52`. Commit `be9d0476a63e937eda4c13659547a25088393394` is the audited commit for Phala.  
-
-- **Q: Does Dstack have a reproducible build?**  
-  **A:** Yes. (Note: there was an issue in build 0.5; needs validation on 0.52.)  
-
-- **Q: How do we create a reproducible build of the MPC binary?**  
-  **A:**  
-  - Use the [`Makefile`](https://github.com/Near-One/mpc/blob/6d5a3764dc745e8ade84356619f04d4bbceef6a5/Makefile), [`Dockerfile-gcp`](https://github.com/Near-One/mpc/blob/6d5a3764dc745e8ade84356619f04d4bbceef6a5/deployment/Dockerfile-gcp), and [`build-image.sh`](https://github.com/Near-One/mpc/blob/6d5a3764dc745e8ade84356619f04d4bbceef6a5/deployment/build-image.sh) (launcher branch).  
-  - Running `./build-image.sh` in different environments should yield identical image digests.  
-  - The Dockerfile pins dependencies (e.g., `openssl=3.0.15-1~deb12u1`, base image with sha256 digest).  
-  - Makefile ensures reproducible Rust builds.  
 
 ---
 
-### Availability & Registries
-- **Q: What happens if DockerHub is not available?**  
-  **A:**  
-  - First release: Launcher can be configured to pull from an alternative registry.  
-  - Future release: Support manual builds and pulling from host OS instead of DockerHub.  
+## Trust Assumptions
+
+* **Operator**
+  * Trusted to protect the operator key.
+  * Not trusted with the TLS (`sign_pk`) key or the `Node Account Key`, which never leaves the TEE.
+  * Not trusted to securely run the MPC node.
+* **dstack**
+  * Trusted as the software framework used to deploy MPC nodes.
+
+    
+* **MPC node code & NEAR node**
+  * Code is Trusted.
+
 
 ---
 
-### Attestation & Verification
-- **Q: Who should send the quote and event log to the contract?**  
-  **A:**  
-  - Periodic or after hash change: the **node**.  
-  - When adding participants: the **operator**.  
+## TEE Model Assumptions
 
-- **Q: Do we need a dedicated contract API for periodic verification?**  
-  **A:** Not in the first release. However, `submit_attestation_report` will exist and can be reused.  
+* We conservatively assume the TEE protects **integrity** but not **confidentiality**.
+  * In principle, TEEs are designed to guarantee both confidentiality (e.g., preventing the host from reading Enclave/CVM memory) and integrity.
+  * However, due to a history of practical exploits (e.g., side-channel attacks such as cache timing, speculative execution leaks, and microarchitectural vulnerabilities), we choose not to rely on confidentiality guarantees.
+  * This conservative stance mainly affects the types of MPC protocol optimizations we may choose to apply in the future, since we cannot assume secret values remain fully hidden from a powerful host adversary.
+* Standard TEE threat model applies:
+  * A privileged attacker with host-level (root) access can interrupt execution, inspect memory (but can't decrypt the CVM memory), and control scheduling.
+  * Side-channel and hardware-based attacks are considered out of scope.
 
-- **Q: How do we handle quote collateral?**  
-  **A:**  
-  - First release: Retrieve from Phala endpoint <https://proof.t16z.com/>.  
-  - Future releases: Options include self-hosted DCAP, operator-provided services, or on-chain storage.  
-
-- **Q: What do we vote for in the contract — MPC node hash, docker-compose hash, or both?**  
-  **A:** Vote for the **MPC node docker image hash** (digest).  
-
-- **Q: What about the launcher docker image hash?**  
-  **A:** Keep as text for reproducibility; can reconstruct per MPC docker hash.  
-
-- **Q: Do we validate that the participant’s signing key is in the quote.reportData?**  
-  **A:** Yes. This should be done when adding a participant and during periodic attestation.  
 
 ---
 
-### Upgrade & Hash Management
-- **Q: How do we handle the period between updating the digest hash and all nodes upgrading?**  
-  **A:** Both old and new hashes remain valid temporarily. Need to track which nodes submitted attestation for the new hash.  
+## Identified Risks
 
-- **Q: Should we vote for RTMR3 values directly or compute them in the contract?**  
-  **A:** Either:  
-  - Operators compute and vote on expected RTMR3 values.  
-  - Or vote for image digest and have contract replay RTMR3.  
-  → (Patrick to check gas costs of replaying RTMR3.)  
-
-- **Q: How to ensure operator talks to their own node, not another?**  
-  **A:** Node generates attestation with TLS + account keys in `reportData`. Operator uses this to authenticate. (No nonce-signing step yet, but integrity of node code in RTMR3 is relied upon.)  
-
----
-
-### Miscellaneous
-- **Q: What should we do with timestamps?**  
-  **A:** Use block time.  
-
-- **Q: Periodic verification of MPC node in TEE — how often?**  
-  **A:** Not part of first release. Future contract API will define interval.  
-
-- **Q: Do user config options (log level, rust_backtrace, home dir) pose risks?**  
-  **A:** Needs review, since these are not measured and could introduce vulnerabilities.  
-
-- **Q: Security of docker image hash verification (via `docker pull`)?**  
-  **A:** Needs deeper audit — verify how Docker ensures image digest integrity.  
+* **Rollback & asset reuse**
+  * An entire MPC node disk may be replaced with a previous snapshot, leading to reuse of cryptographic assets (e.g., triples, presignatures).
+  * Currently, these assets are persisted on disk — mitigation will be required in future iterations.
