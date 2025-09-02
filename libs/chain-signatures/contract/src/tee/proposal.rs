@@ -73,13 +73,15 @@ impl AllowedDockerImageHashes {
     fn clean_expired_hashes(
         &mut self,
         current_block_height: BlockHeight,
-        tee_upgrade_period: u64,
+        tee_upgrade_deadline_duration_blocks: u64,
     ) -> usize {
         // Find the first non-expired entry, but never remove the last one
         let expired_count = self
             .allowed_tee_proposals
             .iter()
-            .position(|entry| entry.added + tee_upgrade_period >= current_block_height)
+            .position(|entry| {
+                entry.added + tee_upgrade_deadline_duration_blocks >= current_block_height
+            })
             .unwrap_or(self.allowed_tee_proposals.len());
 
         // Never remove all proposals; always keep at least one (the latest)
@@ -127,9 +129,9 @@ impl AllowedDockerImageHashes {
     pub fn get(
         &mut self,
         current_block_height: BlockHeight,
-        tee_upgrade_period: u64,
+        tee_upgrade_deadline_duration_blocks: u64,
     ) -> &[AllowedDockerImageHash] {
-        self.clean_expired_hashes(current_block_height, tee_upgrade_period);
+        self.clean_expired_hashes(current_block_height, tee_upgrade_deadline_duration_blocks);
         &self.allowed_tee_proposals
     }
 
@@ -156,7 +158,7 @@ impl AllowedDockerImageHashes {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const TEST_TEE_UPGRADE_PERIOD: u64 = 100;
+    const TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS: u64 = 100;
 
     fn dummy_code_hash(val: u8) -> MpcDockerImageHash {
         MpcDockerImageHash::from([val; 32])
@@ -180,7 +182,7 @@ mod tests {
         assert!(inserted2);
 
         // Get proposals (should return both)
-        let proposals = allowed.get(block_height + 2, TEST_TEE_UPGRADE_PERIOD);
+        let proposals = allowed.get(block_height + 2, TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS);
         assert_eq!(proposals.len(), 2);
         assert_eq!(proposals[0].image_hash, dummy_code_hash(1));
         assert_eq!(proposals[1].image_hash, dummy_code_hash(2));
@@ -196,8 +198,8 @@ mod tests {
         allowed.insert(dummy_code_hash(2), block_height + 1);
 
         // Move block height far enough to expire the first proposal
-        let expired_height = block_height + TEST_TEE_UPGRADE_PERIOD + 1;
-        let proposals = allowed.get(expired_height, TEST_TEE_UPGRADE_PERIOD);
+        let expired_height = block_height + TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS + 1;
+        let proposals = allowed.get(expired_height, TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS);
 
         // Only the second proposal should remain if the first is expired
         assert_eq!(proposals.len(), 1);
@@ -205,8 +207,8 @@ mod tests {
 
         // Move block height far enough to expire both proposals; we never allow all proposals in
         // the whitelist to expire, so there should still be one proposal in the whitelist
-        let expired_height = block_height + TEST_TEE_UPGRADE_PERIOD + 2;
-        let proposals = allowed.get(expired_height, TEST_TEE_UPGRADE_PERIOD);
+        let expired_height = block_height + TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS + 2;
+        let proposals = allowed.get(expired_height, TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS);
 
         assert_eq!(proposals.len(), 1);
         assert_eq!(proposals[0].image_hash, dummy_code_hash(2));
