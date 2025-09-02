@@ -169,7 +169,6 @@ async fn observe_tx_result(
         | VoteReshared(_)
         | VoteAbortKeyEventInstance(_)
         | VerifyTee() => Ok(ChainTransactionState::Unknown),
-        #[cfg(feature = "tee")]
         SubmitParticipantInfo(_) => Ok(ChainTransactionState::Unknown),
     }
 }

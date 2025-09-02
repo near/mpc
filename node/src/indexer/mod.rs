@@ -1,6 +1,5 @@
 use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
-#[cfg(feature = "tee")]
 use mpc_contract::tee::proposal::AllowedDockerImageHash;
 use near_indexer_primitives::types::AccountId;
 use participants::ContractState;
@@ -20,7 +19,6 @@ pub mod tx_sender;
 pub mod tx_signer;
 pub mod types;
 
-#[cfg(feature = "tee")]
 pub mod tee;
 
 #[cfg(test)]
@@ -75,7 +73,6 @@ pub struct IndexerAPI {
     /// Sender to request transactions be signed (by a TransactionSigner that
     /// the indexer is initialized with) and sent to the chain.
     pub txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
-    #[cfg(feature = "tee")]
     /// Watcher that keeps track of allowed [`AllowedDockerImageHash`]es on the contract.
     pub allowed_docker_images_receiver: watch::Receiver<Vec<AllowedDockerImageHash>>,
 }

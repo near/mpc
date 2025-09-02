@@ -7,7 +7,7 @@ use attestation::{
 };
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
-use derive_more::Constructor;
+use derive_more::{Constructor, From};
 use dstack_sdk::dstack_client::DstackClient;
 use http::status::StatusCode;
 use reqwest::{Url, multipart::Form};
@@ -18,15 +18,23 @@ use tracing::error;
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
 /// Default URL for submission of TDX quote. Returns collateral to be used for verification.
-const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str =
+pub const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str =
     "https://cloud-api.phala.network/api/v1/attestations/verify";
 
 /// Default path for dstack Unix socket endpoint.
-const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
+pub const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
 
 #[derive(Constructor)]
 pub struct LocalTeeAuthorityConfig {
     verification_result: bool,
+}
+
+impl Default for LocalTeeAuthorityConfig {
+    fn default() -> Self {
+        Self {
+            verification_result: true,
+        }
+    }
 }
 
 #[derive(Constructor)]
@@ -50,6 +58,7 @@ impl Default for DstackTeeAuthorityConfig {
 
 /// TeeAuthority is an abstraction over different TEE attestation generator implementations. It
 /// generates [`Attestation`] instances - either mocked or real ones.
+#[derive(From)]
 pub enum TeeAuthority {
     Dstack(DstackTeeAuthorityConfig),
     Local(LocalTeeAuthorityConfig),
