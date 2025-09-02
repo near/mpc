@@ -274,7 +274,7 @@ More details can be found in [Phala's guide](https://github.com/Dstack-TEE/dstac
 ---
 
 ### Local Access
-The web page is available on the **`dstack_agent_port`** configured earlier in [Using the Web Interface](#using-the-web-interface).  
+The web page is available on the **TDX server**  at **`dstack_agent_port`** configured earlier in [Using the Web Interface](#using-the-web-interface).  
 
 Open in your browser:  
 
@@ -290,7 +290,7 @@ If you need to access the web page from another machine, set up SSH port forward
 For example, if `dstack_agent_port = 8090`:  
 
 ```bash
-ssh -NL 8090:localhost:17190 USER_NAME@TDX_SERVER
+ssh -NL 17190:localhost:8090 USER_NAME@TDX_SERVER
 ```
 
 Then open:  
