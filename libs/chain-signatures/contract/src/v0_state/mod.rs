@@ -158,7 +158,7 @@ impl From<Config> for crate::config::Config {
 impl From<MpcContractV1> for MpcContract {
     fn from(value: MpcContractV1) -> Self {
         let config = value.config.into();
-        let tee_state = crate::TeeState::new(&config);
+        let tee_state = crate::TeeState::default();
         Self {
             protocol_state: value.protocol_state.into(),
             pending_signature_requests: value.pending_requests,

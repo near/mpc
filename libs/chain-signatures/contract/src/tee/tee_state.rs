@@ -1,5 +1,4 @@
 use crate::{
-    config::Config,
     errors::Error,
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
@@ -30,16 +29,18 @@ pub struct TeeState {
     pub(crate) participants_attestations: IterableMap<AccountId, Attestation>,
 }
 
-impl TeeState {
-    pub fn new(config: &Config) -> Self {
+impl Default for TeeState {
+    fn default() -> Self {
         Self {
-            allowed_docker_image_hashes: AllowedDockerImageHashes::new(config),
+            allowed_docker_image_hashes: AllowedDockerImageHashes::default(),
             allowed_launcher_compose_hashes: vec![],
             votes: CodeHashesVotes::default(),
             participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestation),
         }
     }
+}
 
+impl TeeState {
     fn current_time_seconds() -> u64 {
         let current_time_milliseconds = env::block_timestamp_ms();
         current_time_milliseconds / 1_000
@@ -49,12 +50,13 @@ impl TeeState {
         &mut self,
         attestation: &Attestation,
         tls_public_key: PublicKey,
+        tee_upgrade_period_blocks: u64,
     ) -> TeeQuoteStatus {
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
         let is_valid = attestation.verify(
             expected_report_data,
             Self::current_time_seconds(),
-            &self.get_allowed_hashes(),
+            &self.get_allowed_hashes(tee_upgrade_period_blocks),
             &self.allowed_launcher_compose_hashes,
         );
 
@@ -70,8 +72,9 @@ impl TeeState {
         &mut self,
         account_id: &AccountId,
         tls_public_key: PublicKey,
+        tee_upgrade_period_blocks: u64,
     ) -> Result<TeeQuoteStatus, Error> {
-        let allowed_mpc_docker_image_hashes = self.get_allowed_hashes();
+        let allowed_mpc_docker_image_hashes = self.get_allowed_hashes(tee_upgrade_period_blocks);
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
 
         let participant_attestation = self.participants_attestations.get(account_id);
@@ -106,7 +109,11 @@ impl TeeState {
     /// Participants with [`TeeQuoteStatus::Valid`] or [`TeeQuoteStatus::None`] are considered
     /// valid. The returned [`Participants`] preserves participant data and
     /// [`Participants::next_id()`].
-    pub fn validate_tee(&mut self, participants: &Participants) -> TeeValidationResult {
+    pub fn validate_tee(
+        &mut self,
+        participants: &Participants,
+        tee_upgrade_period_blocks: u64,
+    ) -> TeeValidationResult {
         let new_participants: Vec<_> = participants
             .participants()
             .iter()
@@ -114,7 +121,7 @@ impl TeeState {
                 let tls_public_key = participant_info.sign_pk.clone();
 
                 matches!(
-                    self.tee_status(account_id, tls_public_key),
+                    self.tee_status(account_id, tls_public_key, tee_upgrade_period_blocks),
                     TeeQuoteStatus::Valid | TeeQuoteStatus::None
                 )
             })
@@ -139,8 +146,9 @@ impl TeeState {
         &mut self,
         account_id: &AccountId,
         tls_public_key: PublicKey,
+        tee_upgrade_period_blocks: u64,
     ) -> TeeQuoteStatus {
-        match self.verify_tee_participant(account_id, tls_public_key) {
+        match self.verify_tee_participant(account_id, tls_public_key, tee_upgrade_period_blocks) {
             Ok(status) => status,
             Err(_) => TeeQuoteStatus::Invalid,
         }
@@ -164,13 +172,16 @@ impl TeeState {
     }
 
     /// Retrieves the current allowed hashes, cleaning up any expired entries.
-    pub fn get_allowed_hashes(&mut self) -> Vec<MpcDockerImageHash> {
+    pub fn get_allowed_hashes(
+        &mut self,
+        tee_upgrade_period_blocks: u64,
+    ) -> Vec<MpcDockerImageHash> {
         // Clean up expired entries and return the current allowed hashes. Don't remove the get
         // call, as it ensures we only get hashes valid for the current block height.
         self.allowed_docker_image_hashes
-            .get(env::block_height())
-            .into_iter()
-            .map(|entry| entry.image_hash)
+            .get(env::block_height(), tee_upgrade_period_blocks)
+            .iter()
+            .map(|entry| entry.image_hash.clone())
             .collect()
     }
 
@@ -221,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_clean_non_participants() {
-        let mut tee_state = TeeState::new(&Config::default());
+        let mut tee_state = TeeState::default();
 
         // Create some test participants using test utils
         let participants = crate::primitives::test_utils::gen_participants(3);
