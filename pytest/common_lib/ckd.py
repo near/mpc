@@ -2,7 +2,6 @@ import pathlib
 import sys
 import json
 import base64
-import random
 import base58
 from cryptography.hazmat.primitives.asymmetric import ec
 
