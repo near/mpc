@@ -97,6 +97,8 @@ def test_multi_domain():
         ["Secp256k1", "Ed25519", "Secp256k1", "Ed25519"], wait_for_running=False
     )
     cluster.wait_for_state(ProtocolState.RUNNING)
+    cluster.send_and_await_ckd_requests(1)
+
     ## two new nodes join, increase threshold
     cluster.do_resharing(
         new_participants=mpc_nodes[:4], new_threshold=3, prospective_epoch_id=1
