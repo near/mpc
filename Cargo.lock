@@ -4925,6 +4925,7 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "sha3",
+ "tee_authority",
  "tempfile",
  "thiserror 2.0.16",
  "threshold-signatures",
