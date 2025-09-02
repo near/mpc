@@ -17,9 +17,9 @@ You cannot migrate an existing MPC node out of its CVM without data loss (for ex
 
 From an operator’s perspective, the key differences between a **TEE-based** MPC node and a **non-TEE** node are:
 
-For a full architecture review of the TEE-based MPC, see: **(TBD — insert link)**  
-[#891](https://github.com/near/mpc/issues/891) -update operatore guide guide task
-[#857](https://github.com/near/mpc/issues/857)  - write arch/design guide.
+For a full architecture review of the TEE-based MPC, see: [design doc](securing_mpc_with_tee_design_doc.md)
+
+
 
 | Category/feature | Non TEE | With TEE |
 | :---- | :---- | :---- |
