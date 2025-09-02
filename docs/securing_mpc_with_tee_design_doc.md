@@ -165,7 +165,34 @@ In this section, a more detailed description of the main flows is provided:
 ## MPC boot flow
 
 
- ![](attachments/mpc_boot_flow.png " =1094x486")
+
+```mermaid
+sequenceDiagram
+    title MPC Boot Flow
+
+    participant operator
+    participant dstack
+    participant launcher
+    participant MPC_NODE
+    participant contract
+
+    operator ->> dstack: Start the CVM
+    dstack ->> dstack: Boot CVM, extend RTMR3 with docker_compose,\nstart the launcher
+    launcher ->> launcher: Retrieve MPC_NODE code (local image or DockerHub)
+    launcher ->> launcher: Verify hash against approved MPC_NODE hash\n(from Allowed Hash file or DEFAULT_IMAGE_DIGEST)
+    launcher ->> launcher: Extend RTMR3 with MPC_NODE hash
+    launcher ->> launcher: Start MPC_NODE in separate container
+
+    MPC_NODE ->> contract: Verify if running MPC_NODE hash is approved
+    alt Approved
+        MPC_NODE ->> contract: Send quote + measurements + signing key
+    else Not approved
+        MPC_NODE ->> contract: Request latest MPC_NODE hash
+        contract ->> MPC_NODE: Return MPC_NODE hash
+        MPC_NODE ->> MPC_NODE: Store hash in Allowed Hash file on disk
+    end
+
+```
 
 
 ### MPC Boot Flow (Step-by-Step)
@@ -190,9 +217,33 @@ In this section, a more detailed description of the main flows is provided:
 
 ## Voting for a new MPC node hash
 
- ![](attachments/voting_for_new_hash.png " =852x615")
+```mermaid
+sequenceDiagram
+    title Voting for New MPC_NODE Hash
 
+    participant operator
+    participant MPC_NODE
+    participant contract
 
+    operator ->> contract: Vote for a new MPC_NODE (Docker image) hash
+
+    alt Not enough votes
+        contract ->> contract: Increment vote counter (+1)
+    else Enough votes
+        contract ->> contract: Update Allowed_MPC_NODE list
+        contract ->> contract: Update contract state to use new binary
+        contract ->> contract: Start timer for all nodes to switch to new MPC_NODE
+    end
+
+    MPC_NODE ->> MPC_NODE: Detect update required\nWrite new hash from contract to disk\n(see node boot flow)
+    operator ->> operator: Restart CVM (see node boot flow)
+
+    alt Node sends updated attestation within time window
+        contract ->> contract: Validate and update attestation info
+    else Node fails to update
+        contract ->> contract: Remove Node\n(only if threshold is maintained)
+    end
+```
 
 
 ### Voting for a New MPC Node Hash (Step-by-Step)
@@ -215,8 +266,35 @@ In this section, a more detailed description of the main flows is provided:
 
 ## Adding a New Participant
 
- ![](attachments/adding_new_participant.png " =838x685")
+```mermaid
+sequenceDiagram
+    title Add a New Participant
 
+    participant operator
+    participant MPC_NODE
+    participant contract
+
+    operator ->> MPC_NODE: Start CVM
+    MPC_NODE ->> operator: Node boots and is ready
+
+    operator ->> MPC_NODE: Get TLS public key + node account public key
+    operator ->> operator: Add node account public key to account as access key
+    operator ->> MPC_NODE: Wait for node to sync
+    MPC_NODE ->> operator: Signal sync complete
+    operator ->> operator: Restart CVM if needed (see MPC boot flow)
+
+    MPC_NODE ->> contract: Submit remote attestation
+
+    opt If MPC_NODE fails to submit remote attestation
+        operator ->> MPC_NODE: Retrieve quote, event log, and collateral
+        operator ->> contract: Submit remote attestation on node's behalf
+    end
+
+    loop Until threshold participants reached
+        operator ->> contract: Call "vote_new_parameters"
+    end
+
+```
 
 
 ### Adding a New Participant (Step-by-Step)
