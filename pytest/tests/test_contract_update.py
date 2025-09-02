@@ -31,6 +31,7 @@ def test_update_from_current():
     cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 3, 1, load_mpc_contract())
     cluster.init_cluster(mpc_nodes, 2)
     cluster.send_and_await_signature_requests(1)
+    cluster.send_and_await_ckd_requests(1)
     new_contract = UpdateArgsV2(MIGRATE_CURRENT_CONTRACT_PATH)
     cluster.propose_update(new_contract.borsh_serialize())
     cluster.vote_update(nodes=cluster.get_voters()[0:2], update_id=0)
@@ -48,6 +49,7 @@ def test_update_to_current(fetch_contract):
     cluster.init_contract(threshold=3)
     cluster.add_domains(signature_schemes=["Secp256k1", "Ed25519"])
     cluster.send_and_await_signature_requests(1)
+    cluster.send_and_await_ckd_requests(1)
 
     # introduce some state:
     args = {"prospective_epoch_id": 1, "proposal": cluster.make_threshold_parameters(3)}
@@ -67,3 +69,4 @@ def test_update_to_current(fetch_contract):
     cluster.wait_for_state(ProtocolState.RUNNING)
     cluster.contract_state().print()
     cluster.send_and_await_signature_requests(1)
+    cluster.send_and_await_ckd_requests(1)
