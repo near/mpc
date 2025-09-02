@@ -49,7 +49,6 @@ def test_update_to_current(fetch_contract):
     cluster.init_contract(threshold=3)
     cluster.add_domains(signature_schemes=["Secp256k1", "Ed25519"])
     cluster.send_and_await_signature_requests(1)
-    cluster.send_and_await_ckd_requests(1)
 
     # introduce some state:
     args = {"prospective_epoch_id": 1, "proposal": cluster.make_threshold_parameters(3)}

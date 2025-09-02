@@ -63,7 +63,6 @@ def test_single_domain():
     cluster.update_participant_status()
     cluster.send_and_await_ckd_requests(1)
     cluster.send_and_await_signature_requests(1)
-    
 
     # test for multiple attemps:
 
