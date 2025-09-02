@@ -9,7 +9,9 @@
 use near_account_id::AccountId;
 use near_sdk::store::IterableMap;
 use near_sdk::{env, near, store::LookupMap};
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use crate::legacy_contract_state::ConfigV1;
 use crate::primitives::votes::ThresholdParametersVotes;
@@ -157,8 +159,8 @@ impl From<Config> for crate::config::Config {
 
 impl From<MpcContractV1> for MpcContract {
     fn from(value: MpcContractV1) -> Self {
-        let config = value.config.into();
-        let tee_state = crate::TeeState::new(&config);
+        let config = Rc::new(RefCell::new(value.config.into()));
+        let tee_state = crate::TeeState::new(config.clone());
         Self {
             protocol_state: value.protocol_state.into(),
             pending_signature_requests: value.pending_requests,

@@ -11,6 +11,8 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     crypto_shared::types::CKDResponse,
     errors::{Error, RequestError},
@@ -102,7 +104,7 @@ pub struct MpcContract {
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
-    config: Config,
+    config: Rc<RefCell<Config>>,
     tee_state: TeeState,
     accept_requests: bool,
 }
@@ -149,8 +151,8 @@ impl MpcContract {
         );
         parameters.validate().unwrap();
 
-        let config = Config::from(init_config);
-        let tee_state = TeeState::new(&config);
+        let config = Rc::new(RefCell::new(Config::from(init_config)));
+        let tee_state = TeeState::new(config.clone());
 
         Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -169,12 +171,12 @@ impl MpcContract {
 
     pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         self.protocol_state
-            .start_keygen_instance(key_event_id, self.config.key_event_timeout_blocks)
+            .start_keygen_instance(key_event_id, self.config.borrow().key_event_timeout_blocks)
     }
 
     pub fn start_reshare_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         self.protocol_state
-            .start_reshare_instance(key_event_id, self.config.key_event_timeout_blocks)
+            .start_reshare_instance(key_event_id, self.config.borrow().key_event_timeout_blocks)
     }
 
     pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<bool, Error> {
@@ -1216,8 +1218,8 @@ impl VersionedMpcContract {
             return Err(DomainError::DomainsMismatch.into());
         }
 
-        let config = Config::from(init_config);
-        let tee_state = TeeState::new(&config);
+        let config = Rc::new(RefCell::new(Config::from(init_config)));
+        let tee_state = TeeState::new(config.clone());
 
         Ok(Self::V2(MpcContract {
             config,
@@ -1277,13 +1279,6 @@ impl VersionedMpcContract {
     pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
         match self {
             Self::V2(mpc_contract) => mpc_contract.get_pending_ckd_request(request),
-            _ => env::panic_str("expected V2"),
-        }
-    }
-
-    pub fn config(&self) -> &Config {
-        match self {
-            Self::V2(mpc_contract) => &mpc_contract.config,
             _ => env::panic_str("expected V2"),
         }
     }
@@ -1358,7 +1353,8 @@ impl VersionedMpcContract {
         let Self::V2(mpc_contract) = self else {
             env::panic_str("expected v2")
         };
-        mpc_contract.config = config;
+
+        *mpc_contract.config.borrow_mut() = config;
     }
 
     fn proposed_updates(&mut self) -> &mut ProposedUpdates {

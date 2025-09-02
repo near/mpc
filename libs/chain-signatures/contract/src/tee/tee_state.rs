@@ -14,7 +14,7 @@ use attestation::{
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
-use std::collections::HashSet;
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 pub enum TeeValidationResult {
     Full,
@@ -31,7 +31,7 @@ pub struct TeeState {
 }
 
 impl TeeState {
-    pub fn new(config: &Config) -> Self {
+    pub fn new(config: Rc<RefCell<Config>>) -> Self {
         Self {
             allowed_docker_image_hashes: AllowedDockerImageHashes::new(config),
             allowed_launcher_compose_hashes: vec![],
@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn test_clean_non_participants() {
-        let mut tee_state = TeeState::new(&Config::default());
+        let mut tee_state = TeeState::new(Rc::new(RefCell::new(Config::default())));
 
         // Create some test participants using test utils
         let participants = crate::primitives::test_utils::gen_participants(3);
