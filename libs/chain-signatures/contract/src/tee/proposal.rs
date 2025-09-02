@@ -92,11 +92,16 @@ impl AllowedDockerImageHashes {
         expired_count
     }
 
-    /// Inserts a new code hash into the lists. Maintains the sorted order by `added` (ascending).
-    ///
-    /// Returns `true` if the insertion was successful, `false` if the
-    /// code hash already exists.
-    pub fn insert(&mut self, code_hash: MpcDockerImageHash, current_block_height: u64) -> bool {
+    /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
+    /// order by `added` (ascending). Returns `true` if the insertion was successful, `false` if the
+    pub fn insert(
+        &mut self,
+        code_hash: MpcDockerImageHash,
+        current_block_height: u64,
+        tee_upgrade_deadline_duration_blocks: u64,
+    ) -> bool {
+        self.clean_expired_hashes(current_block_height, tee_upgrade_deadline_duration_blocks);
+
         // Remove the old entry if it exists
         if let Some(pos) = self
             .allowed_tee_proposals
@@ -170,15 +175,27 @@ mod tests {
         let block_height = 1000;
 
         // Insert a new proposal
-        let inserted = allowed.insert(dummy_code_hash(1), block_height);
+        let inserted = allowed.insert(
+            dummy_code_hash(1),
+            block_height,
+            TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
+        );
         assert!(inserted);
 
         // Insert the same code hash again (should success)
-        let inserted_again = allowed.insert(dummy_code_hash(1), block_height + 1);
+        let inserted_again = allowed.insert(
+            dummy_code_hash(1),
+            block_height + 1,
+            TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
+        );
         assert!(inserted_again);
 
         // Insert a different code hash
-        let inserted2 = allowed.insert(dummy_code_hash(2), block_height + 2);
+        let inserted2 = allowed.insert(
+            dummy_code_hash(2),
+            block_height + 2,
+            TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
+        );
         assert!(inserted2);
 
         // Get proposals (should return both)
@@ -194,8 +211,16 @@ mod tests {
         let block_height = 1000;
 
         // Insert two proposals at different heights
-        allowed.insert(dummy_code_hash(1), block_height);
-        allowed.insert(dummy_code_hash(2), block_height + 1);
+        allowed.insert(
+            dummy_code_hash(1),
+            block_height,
+            TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
+        );
+        allowed.insert(
+            dummy_code_hash(2),
+            block_height + 1,
+            TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
+        );
 
         // Move block height far enough to expire the first proposal
         let expired_height = block_height + TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS + 1;

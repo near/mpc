@@ -185,13 +185,20 @@ impl TeeState {
             .collect()
     }
 
-    pub fn whitelist_tee_proposal(&mut self, tee_proposal: MpcDockerImageHash) {
+    pub fn whitelist_tee_proposal(
+        &mut self,
+        tee_proposal: MpcDockerImageHash,
+        tee_upgrade_period_blocks: u64,
+    ) {
         self.votes.clear_votes();
         self.allowed_launcher_compose_hashes.push(
             AllowedDockerImageHashes::get_docker_compose_hash(tee_proposal.clone()),
         );
-        self.allowed_docker_image_hashes
-            .insert(tee_proposal, env::block_height());
+        self.allowed_docker_image_hashes.insert(
+            tee_proposal,
+            env::block_height(),
+            tee_upgrade_period_blocks,
+        );
     }
 
     /// Removes TEE information for accounts that are not in the provided participants list.

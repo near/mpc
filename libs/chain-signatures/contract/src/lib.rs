@@ -255,7 +255,10 @@ impl MpcContract {
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
         if votes >= self.threshold()?.value() {
-            self.tee_state.whitelist_tee_proposal(code_hash);
+            self.tee_state.whitelist_tee_proposal(
+                code_hash,
+                self.config.tee_upgrade_deadline_duration_blocks,
+            );
         }
 
         Ok(())
