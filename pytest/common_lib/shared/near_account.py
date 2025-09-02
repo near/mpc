@@ -67,7 +67,7 @@ class NearAccount:
     ):
         tx_hashes = self.send_txs_parallel_returning_hashes(txns, label)
         results = self.await_txs(tx_hashes)
-        verify_txs(results, verification_callback, True)
+        verify_txs(results, verification_callback)
 
     def get_tx(self, tx_hash):
         return self.near_node.get_tx(tx_hash, self.account_id())

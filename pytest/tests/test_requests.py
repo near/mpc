@@ -20,7 +20,8 @@ from common_lib.constants import TIMEOUT
 from common_lib.shared import metrics
 
 
-def cluster_setup_test_request_lifecycle(num_respond_access_keys):
+@pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
+def test_request_lifecycle(num_requests, num_respond_access_keys):
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
         2, 2, num_respond_access_keys, load_mpc_contract()
     )
@@ -44,16 +45,5 @@ def cluster_setup_test_request_lifecycle(num_respond_access_keys):
         if not all([sb and sb > 0 for sb in signer_balances]):
             continue
         break
-    return cluster
-
-
-@pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
-def test_signature_lifecycle(num_requests, num_respond_access_keys):
-    cluster = cluster_setup_test_request_lifecycle(num_respond_access_keys)
     cluster.send_and_await_signature_requests(num_requests)
-
-
-@pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
-def test_ckd_lifecycle(num_requests, num_respond_access_keys):
-    cluster = cluster_setup_test_request_lifecycle(num_respond_access_keys)
     cluster.send_and_await_ckd_requests(num_requests)

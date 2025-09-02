@@ -24,7 +24,7 @@ from common_lib import shared
 from common_lib.contracts import load_mpc_contract
 
 
-def setup_test_threshold_from_previous_running_state_is_maintained():
+def test_threshold_from_previous_running_state_is_maintained():
     # Have the nodes disabled
     cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 4, 1, load_mpc_contract())
 
@@ -45,20 +45,13 @@ def setup_test_threshold_from_previous_running_state_is_maintained():
     assert cluster.wait_for_state(ProtocolState.RESHARING), (
         "State should still be in resharing. 4th node was killed."
     )
-    return cluster
 
-
-def test_threshold_from_previous_running_state_is_maintained_with_signature():
-    cluster = setup_test_threshold_from_previous_running_state_is_maintained()
     cluster.send_and_await_signature_requests(3)
     # sanity check
     assert cluster.wait_for_state(ProtocolState.RESHARING), (
         "State should still be in resharing. 4th node was killed."
     )
 
-
-def test_threshold_from_previous_running_state_is_maintained_with_ckd():
-    cluster = setup_test_threshold_from_previous_running_state_is_maintained()
     cluster.send_and_await_ckd_requests(3)
     # sanity check
     assert cluster.wait_for_state(ProtocolState.RESHARING), (
