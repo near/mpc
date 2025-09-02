@@ -427,7 +427,7 @@ MPC_IMAGE_TAGS=SHA256:abc
 
 1. **Stop the CVM**  
 2. **Update `user-config.conf`** with the new values  
-3. **Restart the CVM**
+3. **Start the CVM**
 
 ---
 
