@@ -465,8 +465,7 @@ First, define environment variables (once per shell session):
 ```bash
 
 export VMM_URL=http://127.0.0.1:11100 # change to your port 
-export VMM_PY="python /meta-dstack/dstack/vmm/src/vmm-cli.py" # change to your meta-dstack location 
-export VMM_CLI="$VMM_PY --url $VMM_URL"
+export VMM_CLI_PATH="meta-dstack/dstack/vmm/src/vmm-cli.py" # change to your meta-dstack location 
 ```
 
 Then you can use `$VMM_CLI` for all commands:
