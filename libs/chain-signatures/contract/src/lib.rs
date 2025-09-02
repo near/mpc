@@ -16,7 +16,7 @@ use crate::{
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
-    tee::{proposal::AllowedDockerImageHashes, quote::TeeQuoteStatus, tee_state::TeeState},
+    tee::{proposal::AllowedDockerImageHash, quote::TeeQuoteStatus, tee_state::TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
     v0_state::MpcContractV1,
 };
@@ -1271,9 +1271,24 @@ impl VersionedMpcContract {
         }
     }
 
-    pub fn allowed_docker_image_hashes(&self) -> &AllowedDockerImageHashes {
+    pub fn allowed_docker_image_hashes(&self) -> Vec<AllowedDockerImageHash> {
         match self {
-            Self::V2(mpc_contract) => &mpc_contract.tee_state.allowed_docker_image_hashes,
+            Self::V2(mpc_contract) => {
+                let tee_upgrade_deadline_duration_blocks =
+                    mpc_contract.config.tee_upgrade_deadline_duration_blocks;
+
+                let current_block_height = env::block_height();
+
+                // this is a query method, meaning no `&mut self`, so we need to clone.
+                let mut allowed_image_hashes =
+                    mpc_contract.tee_state.allowed_docker_image_hashes.clone();
+
+                allowed_image_hashes
+                    .get(current_block_height, tee_upgrade_deadline_duration_blocks)
+                    .iter()
+                    .cloned()
+                    .collect()
+            }
             _ => env::panic_str("expected V2"),
         }
     }
