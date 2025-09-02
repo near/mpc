@@ -31,7 +31,7 @@ def verify_txs(results, verification_callback, verbose=False):
         total_tgas += gas_tx / TGAS
         total_receipts += n_rcpts_tx
         verification_callback(res)
-    if verbose:
+    if verbose and num_txs > 0:
         print(
             f"number of txs: {num_txs}\n max gas used (Tgas):{max_tgas_used}\n average receipts: {total_receipts / num_txs}\n average gas used (Tgas): {total_tgas / num_txs}\n"
         )
