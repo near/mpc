@@ -43,7 +43,6 @@ mod tracking;
 pub mod types;
 pub mod web;
 
-#[cfg(feature = "tee")]
 mod tee;
 #[cfg(test)]
 mod tests;

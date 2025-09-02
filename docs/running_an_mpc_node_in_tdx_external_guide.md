@@ -44,8 +44,8 @@ For a full architecture review of the TEE-based MPC, see: **(TBD — insert link
 * (v)Cores \- 8  
 * Disk space \- 500GB, SSD NVMe or similar performance
 
-Optional Vendor list that support TDX: [https://github.com/Near-One/infra-ops/issues/407](https://github.com/Near-One/infra-ops/issues/407)  (TBD \- extract list from about issue)
-[#893](https://github.com/near/mpc/issues/893)
+For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](./cloud-providers-tdx.md).
+
 
 ##  General 
 

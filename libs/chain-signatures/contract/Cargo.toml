@@ -61,7 +61,7 @@ k256 = { version = "0.13.4", features = [
     "expose-field",
 ] }
 mpc-primitives = { path = "../../../crates/primitives" }
-attestation = { path = "../../../attestation" }
+attestation = { path = "../../../crates/attestation" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-account-id = "1.1.1"
 thiserror = "1"
@@ -80,7 +80,7 @@ tokio = { version = "1", features = ["full"] }
 sha2 = "0.10.8"
 reqwest = { version = "0.11", features = ["json"] }
 base64 = "0.21"
-test_utils = { path = "../../../test_utils" }
+test_utils = { path = "../../../crates/test_utils" }
 
 # crypto dependencies
 ed25519-dalek = { version = "2.1.1", features = ["serde", "digest"] }
