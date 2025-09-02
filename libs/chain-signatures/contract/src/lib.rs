@@ -149,6 +149,9 @@ impl MpcContract {
         );
         parameters.validate().unwrap();
 
+        let config = Config::from(init_config);
+        let tee_state = TeeState::new(&config);
+
         Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 DomainRegistry::default(),
@@ -158,8 +161,8 @@ impl MpcContract {
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: ProposedUpdates::default(),
-            config: Config::from(init_config),
-            tee_state: Default::default(),
+            config,
+            tee_state,
             accept_requests: true,
         }
     }
@@ -1213,15 +1216,18 @@ impl VersionedMpcContract {
             return Err(DomainError::DomainsMismatch.into());
         }
 
+        let config = Config::from(init_config);
+        let tee_state = TeeState::new(&config);
+
         Ok(Self::V2(MpcContract {
-            config: Config::from(init_config),
+            config,
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 domains, keyset, parameters,
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: Default::default(),
-            tee_state: Default::default(),
+            tee_state,
             accept_requests: true,
         }))
     }

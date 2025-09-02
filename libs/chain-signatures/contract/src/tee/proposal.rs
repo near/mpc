@@ -1,10 +1,8 @@
 use near_sdk::{env::sha256, log, near, BlockHeight};
 use std::collections::BTreeMap;
 
+use crate::config::Config;
 use crate::primitives::key_state::AuthenticatedParticipantId;
-
-// Maximum time after which TEE MPC nodes must be upgraded to the latest version
-const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds
 
 pub use mpc_primitives::hash::LauncherDockerComposeHash;
 pub use mpc_primitives::hash::MpcDockerImageHash;
@@ -63,14 +61,22 @@ pub struct AllowedDockerImageHash {
 /// Collection of whitelisted Docker code hashes that are the only ones MPC nodes are allowed to
 /// run.
 #[near(serializers=[borsh, json])]
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AllowedDockerImageHashes {
     /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
     /// lazily cleaned up during insertions and lookups.
     allowed_tee_proposals: Vec<AllowedDockerImageHash>,
+    tee_upgrade_period: u64,
 }
 
 impl AllowedDockerImageHashes {
+    pub fn new(config: &Config) -> Self {
+        Self {
+            allowed_tee_proposals: vec![],
+            tee_upgrade_period: config.tee_upgrade_deadline_duration_blocks,
+        }
+    }
+
     /// Removes all expired code hashes and returns the number of removed entries.
     /// Ensures that at least one (the latest) proposal always remains in the whitelist.
     fn clean_expired_hashes(&mut self, current_block_height: BlockHeight) -> usize {
@@ -78,7 +84,7 @@ impl AllowedDockerImageHashes {
         let expired_count = self
             .allowed_tee_proposals
             .iter()
-            .position(|entry| entry.added + TEE_UPGRADE_PERIOD >= current_block_height)
+            .position(|entry| entry.added + self.tee_upgrade_period >= current_block_height)
             .unwrap_or(self.allowed_tee_proposals.len());
 
         // Never remove all proposals; always keep at least one (the latest)
@@ -152,6 +158,7 @@ impl AllowedDockerImageHashes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const TEST_TEE_UPGRADE_PERIOD: u64 = 100;
 
     fn dummy_code_hash(val: u8) -> MpcDockerImageHash {
         MpcDockerImageHash::from([val; 32])
@@ -159,7 +166,12 @@ mod tests {
 
     #[test]
     fn test_insert_and_get() {
-        let mut allowed = AllowedDockerImageHashes::default();
+        let config = Config {
+            tee_upgrade_deadline_duration_blocks: TEST_TEE_UPGRADE_PERIOD,
+            ..Default::default()
+        };
+
+        let mut allowed = AllowedDockerImageHashes::new(&config);
         let block_height = 1000;
 
         // Insert a new proposal
@@ -183,7 +195,11 @@ mod tests {
 
     #[test]
     fn test_clean_expired() {
-        let mut allowed = AllowedDockerImageHashes::default();
+        let config = Config {
+            tee_upgrade_deadline_duration_blocks: TEST_TEE_UPGRADE_PERIOD,
+            ..Default::default()
+        };
+        let mut allowed = AllowedDockerImageHashes::new(&config);
         let block_height = 1000;
 
         // Insert two proposals at different heights
@@ -191,7 +207,7 @@ mod tests {
         allowed.insert(dummy_code_hash(2), block_height + 1);
 
         // Move block height far enough to expire the first proposal
-        let expired_height = block_height + TEE_UPGRADE_PERIOD + 1;
+        let expired_height = block_height + TEST_TEE_UPGRADE_PERIOD + 1;
         let proposals = allowed.get(expired_height);
 
         // Only the second proposal should remain if the first is expired
@@ -200,7 +216,7 @@ mod tests {
 
         // Move block height far enough to expire both proposals; we never allow all proposals in
         // the whitelist to expire, so there should still be one proposal in the whitelist
-        let expired_height = block_height + TEE_UPGRADE_PERIOD + 2;
+        let expired_height = block_height + TEST_TEE_UPGRADE_PERIOD + 2;
         let proposals = allowed.get(expired_height);
 
         assert_eq!(proposals.len(), 1);

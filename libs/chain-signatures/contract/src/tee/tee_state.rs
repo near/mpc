@@ -1,4 +1,5 @@
 use crate::{
+    config::Config,
     errors::Error,
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
@@ -29,18 +30,16 @@ pub struct TeeState {
     pub(crate) participants_attestations: IterableMap<AccountId, Attestation>,
 }
 
-impl Default for TeeState {
-    fn default() -> Self {
+impl TeeState {
+    pub fn new(config: &Config) -> Self {
         Self {
-            allowed_docker_image_hashes: Default::default(),
-            allowed_launcher_compose_hashes: Default::default(),
-            votes: Default::default(),
+            allowed_docker_image_hashes: AllowedDockerImageHashes::new(config),
+            allowed_launcher_compose_hashes: vec![],
+            votes: CodeHashesVotes::default(),
             participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestation),
         }
     }
-}
 
-impl TeeState {
     fn current_time_seconds() -> u64 {
         let current_time_milliseconds = env::block_timestamp_ms();
         current_time_milliseconds / 1_000
@@ -222,7 +221,7 @@ mod tests {
 
     #[test]
     fn test_clean_non_participants() {
-        let mut tee_state = TeeState::default();
+        let mut tee_state = TeeState::new(&Config::default());
 
         // Create some test participants using test utils
         let participants = crate::primitives::test_utils::gen_participants(3);
