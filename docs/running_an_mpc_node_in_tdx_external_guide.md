@@ -264,6 +264,8 @@ To configure and start your VM.
 
 ## Accessing mpc docker logs.
 
+In order to see the Launcher or the MPC docker logs, checkout Phala's 
+
 TBD [#901](https://github.com/near/mpc/issues/901) \-  
 Missing phala documentation about this.    
 add phala link once they add them.  
@@ -404,30 +406,84 @@ Following the hash update, you should upgrade the MPC node by following those st
   * docker inspect nearone/mpc-node-gcp:abc | grep “Id”:  
 * Check that you got "Id":"xyz…", that matches the hash you voted for.
 
-###  Update the CVM user-config.conf used to to deploy the CVM to with the new registry information.
+# Updating the CVM `user-config.conf` with new registry information
 
-If there is a change in one or more of the following field, you will need to update the  user-config.conf  
-e.g  
-MPC\_REGISTRY=registry.hub.docker.com  
-MPC\_IMAGE\_NAME=nearone/mpc-node-gcp  
-MPC\_IMAGE\_TAGS=SHA256:abc
+If any of the following fields change, you must update your `user-config.conf`:
 
-In order to do this, you will need to:  
-1\. Stop the CVM,   
-2\. Update the user-config.conf section  
-3\. Restart the CVM.
+- `MPC_REGISTRY`  
+- `MPC_IMAGE_NAME`  
+- `MPC_IMAGE_TAGS`  
 
-**Via WebUI:**  
-Only starting and stopping is support via the webUI,  
-Updating the user\_config must be done via command line.
+**Example:**
+```ini
+MPC_REGISTRY=registry.hub.docker.com
+MPC_IMAGE_NAME=nearone/mpc-node-gcp
+MPC_IMAGE_TAGS=SHA256:abc
+```
 
-**Via Script command line:**  
-Follow [https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md)
+---
 
-1\. Find you  VM ID ./vmm-cli.py lsvm  
-2\. Gracefully stop a VM ./vmm-cli.py stop \<vm-id\>  
-3\. Update  user-config.conf  (TBD location [#911](https://github.com/near/mpc/issues/911) )?  
-4\. \# Start a VM ./vmm-cli.py start \<vm-id\>
+## Steps
+
+1. **Stop the CVM**  
+2. **Update `user-config.conf`** with the new values  
+3. **Start the CVM**
+
+---
+
+## Options for performing the update
+
+### Manually (WebUI + file edit)
+
+- You can only **start** and **stop** a CVM from the WebUI.  
+- The **config must be edited manually**.  
+- The config file can be found under the VM’s shared directory:
+
+```
+/meta-dstack/build/run/vm/<VM-ID>/shared
+```
+
+For example:
+
+```bash
+ubuntu@near-tdx-test02:/mnt/data/barak/test/meta-dstack/build/run/vm/e44abe87-6c5b-46ec-83b8-5d8357fd001a/shared$ ls -a
+.  ..  .instance_info  .sys-config.json  .user-config  app-compose.json
+```
+
+Here, the file you need is `.user-config`.
+
+---
+
+### Via Command Line
+
+- See the [VMM CLI user guide](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md).  
+- The CLI script is located at:  
+  `meta-dstack/dstack/vmm/src/vmm-cli.py`  
+
+First, define environment variables (once per shell session):  
+
+```bash
+
+export VMM_URL=http://127.0.0.1:11100 # change to your port 
+export VMM_CLI_PATH="meta-dstack/dstack/vmm/src/vmm-cli.py" # change to your meta-dstack location 
+```
+
+Then you can use `$VMM_CLI` for all commands:
+
+```bash
+# 1. Enumerate and find your VM ID
+python $VMM_CLI_PATH --url $VMM_URL lsvm
+
+# 2. Gracefully stop the VM
+python $VMM_CLI_PATH --url $VMM_URL stop <vm-id>
+
+# 3. Update user-config
+python $VMM_CLI_PATH --url $VMM_URL update-user-config <vm-id> ./new-user-config.txt
+
+# 4. Start the VM
+python $VMM_CLI_PATH --url $VMM_URL start <vm-id>
+```
+
 
 ### Restart the CVM 
 
