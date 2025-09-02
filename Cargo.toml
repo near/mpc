@@ -25,7 +25,7 @@ bs58 = { version = "0.5.1" }
 clap = { version = "4.5.20", features = ["derive", "env"] }
 curve25519-dalek = "4.1.3"
 # Latest `master` as per 2025-08-18
-dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl", rev = "3d4f1bb57b104b1701c8bafacfdcf6e03a2bbcad", default-features = false, features=["contract", "borsh", "std"] }
+dcap-qvl = { version = "0.3.2", default-features = false, features=["contract", "borsh", "std"] }
 # Pinned to resolve compilation errors with conflicting implementations of PartialOrd trait
 # See error E0283 with multiple implementations satisfying `u128: std::cmp::PartialOrd<_>`
 deranged = "=0.4.0"
