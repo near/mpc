@@ -74,7 +74,7 @@ class NearAccount:
 
     def await_txs(self, tx_hashes):
         """
-        sends requests without waiting for the result
+        sends requests and waits for the result
         """
         for _ in range(20):
             try:
