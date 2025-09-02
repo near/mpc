@@ -4,6 +4,7 @@ import json
 import base64
 import random
 import base58
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from typing import Optional
 
@@ -28,32 +29,16 @@ def assert_ckd_success(res):
 # some of our tests use concurrent ckd requests, and the indexer
 # currently optimizes away identical requests
 def generate_app_public_key() -> str:
-    p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
-
-    def is_quadratic_residue(n):
-        return pow(n, (p - 1) // 2, p) == 1
-
-    def modular_sqrt(n, p):
-        if not is_quadratic_residue(n):
-            return None
-        return pow(n, (p + 1) // 4, p)
-
-    def generate_random_point():
-        while True:
-            x = random.randrange(0, p)
-            rhs = (x**3 + 7) % p  # y^2 = x^3 + 7 mod p
-            y = modular_sqrt(rhs, p)
-            if y is not None:
-                return (x, y)
-
     def b58encode(x, y):
         coordinate_length = 32
         x_bytes = x.to_bytes(coordinate_length, byteorder="big")
         y_bytes = y.to_bytes(coordinate_length, byteorder="big")
         return "secp256k1:" + base58.b58encode(x_bytes + y_bytes).decode("ascii")
 
-    x, y = generate_random_point()
-    pk = b58encode(x, y)
+    private_key = ec.generate_private_key(ec.SECP256K1())
+    public_key = private_key.public_key()
+    pk = public_key.public_numbers()
+    pk = b58encode(pk.x, pk.y)
     return pk
 
 
