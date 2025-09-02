@@ -472,16 +472,16 @@ Then you can use `$VMM_CLI` for all commands:
 
 ```bash
 # 1. Enumerate and find your VM ID
-$VMM_CLI lsvm
+python $VMM_CLI_PATH --url $VMM_URL lsvm
 
 # 2. Gracefully stop the VM
-$VMM_CLI stop <vm-id>
+python $VMM_CLI_PATH --url $VMM_URL stop <vm-id>
 
 # 3. Update user-config
-$VMM_CLI update-user-config <vm-id> ./new-user-config.txt
+python $VMM_CLI_PATH --url $VMM_URL update-user-config <vm-id> ./new-user-config.txt
 
 # 4. Start the VM
-$VMM_CLI start <vm-id>
+python $VMM_CLI_PATH --url $VMM_URL start <vm-id>
 ```
 
 
