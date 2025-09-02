@@ -1285,9 +1285,7 @@ impl VersionedMpcContract {
 
                 allowed_image_hashes
                     .get(current_block_height, tee_upgrade_deadline_duration_blocks)
-                    .iter()
-                    .cloned()
-                    .collect()
+                    .to_vec()
             }
             _ => env::panic_str("expected V2"),
         }
