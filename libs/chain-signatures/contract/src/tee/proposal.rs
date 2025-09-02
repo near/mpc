@@ -1,7 +1,5 @@
 use near_sdk::{env::sha256, log, near, BlockHeight};
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
 use crate::config::Config;
 use crate::primitives::key_state::AuthenticatedParticipantId;
@@ -68,31 +66,25 @@ pub struct AllowedDockerImageHashes {
     /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
     /// lazily cleaned up during insertions and lookups.
     allowed_tee_proposals: Vec<AllowedDockerImageHash>,
-    // TODO: Probably can't deserialize previous state because of this new field.
-    config: Rc<RefCell<Config>>,
+    tee_upgrade_period: u64,
 }
 
 impl AllowedDockerImageHashes {
-    pub fn new(config: Rc<RefCell<Config>>) -> Self {
+    pub fn new(config: &Config) -> Self {
         Self {
             allowed_tee_proposals: vec![],
-            config,
+            tee_upgrade_period: config.tee_upgrade_deadline_duration_blocks,
         }
     }
 
     /// Removes all expired code hashes and returns the number of removed entries.
     /// Ensures that at least one (the latest) proposal always remains in the whitelist.
     fn clean_expired_hashes(&mut self, current_block_height: BlockHeight) -> usize {
-        let tee_upgrade_deadline_duration_blocks =
-            self.config.borrow().tee_upgrade_deadline_duration_blocks;
-
         // Find the first non-expired entry, but never remove the last one
         let expired_count = self
             .allowed_tee_proposals
             .iter()
-            .position(|entry| {
-                entry.added + tee_upgrade_deadline_duration_blocks >= current_block_height
-            })
+            .position(|entry| entry.added + self.tee_upgrade_period >= current_block_height)
             .unwrap_or(self.allowed_tee_proposals.len());
 
         // Never remove all proposals; always keep at least one (the latest)
@@ -174,12 +166,12 @@ mod tests {
 
     #[test]
     fn test_insert_and_get() {
-        let config: Rc<RefCell<Config>> = Rc::new(RefCell::new(Config {
+        let config = Config {
             tee_upgrade_deadline_duration_blocks: TEST_TEE_UPGRADE_PERIOD,
             ..Default::default()
-        }));
+        };
 
-        let mut allowed = AllowedDockerImageHashes::new(config);
+        let mut allowed = AllowedDockerImageHashes::new(&config);
         let block_height = 1000;
 
         // Insert a new proposal
@@ -203,11 +195,11 @@ mod tests {
 
     #[test]
     fn test_clean_expired() {
-        let config: Rc<RefCell<Config>> = Rc::new(RefCell::new(Config {
+        let config = Config {
             tee_upgrade_deadline_duration_blocks: TEST_TEE_UPGRADE_PERIOD,
             ..Default::default()
-        }));
-        let mut allowed = AllowedDockerImageHashes::new(config);
+        };
+        let mut allowed = AllowedDockerImageHashes::new(&config);
         let block_height = 1000;
 
         // Insert two proposals at different heights
