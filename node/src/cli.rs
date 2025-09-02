@@ -1,5 +1,4 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
-use crate::config::{PersistentSecrets, RespondConfig};
 use crate::providers::PublicKeyConversion;
 use crate::web::StaticWebData;
 use crate::{
