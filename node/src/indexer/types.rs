@@ -98,7 +98,6 @@ fn k256_signature_response(
     let k256_signature = k256_types::Signature::new(big_r, s, recovery_id);
     Ok(ChainSignatureResponse::Secp256k1(k256_signature))
 }
-#[allow(dead_code)]
 pub trait ChainRespondArgs {}
 
 /* These arguments are passed to the `respond` function of the
@@ -180,7 +179,6 @@ pub struct SubmitParticipantInfoArgs {
 #[serde(untagged)]
 pub(crate) enum ChainSendTransactionRequest {
     Respond(ChainSignatureRespondArgs),
-    #[allow(dead_code)]
     CKDRespond(ChainCKDRespondArgs),
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
@@ -194,7 +192,6 @@ pub(crate) enum ChainSendTransactionRequest {
     //
     // For more info see clippy lint:
     // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
-    #[cfg(feature = "tee")]
     SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
 }
 
@@ -211,7 +208,6 @@ impl ChainSendTransactionRequest {
                 "vote_abort_key_event_instance"
             }
             ChainSendTransactionRequest::VerifyTee() => "verify_tee",
-            #[cfg(feature = "tee")]
             ChainSendTransactionRequest::SubmitParticipantInfo(_) => "submit_participant_info",
         }
     }
@@ -227,7 +223,6 @@ impl ChainSendTransactionRequest {
             | Self::VoteAbortKeyEventInstance(_)
             // This is too high in most settings, see https://github.com/near/mpc/issues/166
             | Self::VerifyTee() => 300 * TGAS,
-            #[cfg(feature = "tee")]
             Self::SubmitParticipantInfo(_) => 300 * TGAS,
         }
     }
@@ -302,7 +297,6 @@ impl ChainSignatureRespondArgs {
 }
 
 impl ChainCKDRespondArgs {
-    #[allow(dead_code)]
     pub fn new_ckd(request: &CKDRequest, response: &CKDResponse) -> anyhow::Result<Self> {
         Ok(ChainCKDRespondArgs {
             request: ChainCKDRequest::new(

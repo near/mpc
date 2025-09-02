@@ -437,7 +437,6 @@ impl FakeIndexerCore {
                         contract.vote_abort_key_event(account_id, abort.key_event_id);
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
-                    #[cfg(feature = "tee")]
                     ChainSendTransactionRequest::SubmitParticipantInfo(_participant_info) => {
                         unimplemented!(
                             "Submitting participant info is not implemented for tests yet."
@@ -662,7 +661,6 @@ impl FakeIndexerManager {
     }
 
     /// Waits for the next ckd response submitted by any node.
-    #[allow(dead_code)]
     pub async fn next_response_ckd(&mut self) -> ChainCKDRespondArgs {
         self.ckd_response_receiver.recv().await.unwrap()
     }
@@ -673,7 +671,6 @@ impl FakeIndexerManager {
     }
 
     /// Sends a ckd request to the fake blockchain.
-    #[allow(dead_code)]
     pub fn request_ckd(&self, request: CKDRequestFromChain) {
         self.ckd_request_sender.send(request).unwrap();
     }
@@ -688,7 +685,6 @@ impl FakeIndexerManager {
         let (api_signature_request_sender, api_signature_request_receiver) =
             mpsc::unbounded_channel();
         let (api_txn_sender, api_txn_receiver) = mpsc::channel(1000);
-        #[cfg(feature = "tee")]
         let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
             watch::channel(vec![]);
 
@@ -698,7 +694,6 @@ impl FakeIndexerManager {
                 api_signature_request_receiver,
             )),
             txn_sender: api_txn_sender,
-            #[cfg(feature = "tee")]
             allowed_docker_images_receiver,
         };
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

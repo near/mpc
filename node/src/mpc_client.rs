@@ -16,7 +16,8 @@ use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::CKDRequest;
 use crate::types::SignatureRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
-use mpc_contract::crypto_shared::derive_tweak;
+use mpc_contract::crypto_shared::k256_types::SerializableAffinePoint;
+use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
 use std::collections::HashMap;
@@ -25,12 +26,12 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, timeout};
 
-/// A one-time delay before processing signature requests on startup. This is to prevent the case
-/// where we have not yet connected to all participants, and the signature processing code thinks
-/// that others are offline, leading to signature requests having multiple leaders and unnecessarily
+/// A one-time delay before processing requests on startup. This is to prevent the case
+/// where we have not yet connected to all participants, and the signature/ckd request processing code thinks
+/// that others are offline, leading to requests having multiple leaders and unnecessarily
 /// responded to multiple times. It doesn't affect correctness, but can make tests less flaky and
-/// production runs experience fewer redundant signatures.
-const INITIAL_STARTUP_SIGNATURE_PROCESSING_DELAY: Duration = Duration::from_secs(2);
+/// production runs experience fewer redundant signatures/ckds.
+const INITIAL_STARTUP_PROCESSING_DELAY: Duration = Duration::from_secs(2);
 const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
 
@@ -142,11 +143,17 @@ impl MpcClient {
                 .spawn_background_tasks(),
         );
 
+        let ckd_background_tasks = tracking::spawn(
+            "ckd_background_tasks",
+            self.ckd_provider.clone().spawn_background_tasks(),
+        );
+
         let _ = monitor_passive_channels.await?;
         metrics_emitter.await?;
         monitor_chain.await?;
         let _ = ecdsa_background_tasks.await?;
         let _ = eddsa_background_tasks.await?;
+        let _ = ckd_background_tasks.await?;
         tee_verification_handle.await?;
 
         Ok(())
@@ -247,6 +254,7 @@ impl MpcClient {
                             ckd_request
                         })
                         .collect::<Vec<_>>();
+
                     pending_ckds.notify_new_block(
                         ckd_requests,
                         block_update.completed_ckds,
@@ -276,7 +284,7 @@ impl MpcClient {
                 }
             }
 
-            if start_time.elapsed() < INITIAL_STARTUP_SIGNATURE_PROCESSING_DELAY {
+            if start_time.elapsed() < INITIAL_STARTUP_PROCESSING_DELAY {
                 continue;
             }
             let signature_attempts = pending_signatures.get_requests_to_attempt();
@@ -395,35 +403,41 @@ impl MpcClient {
                                     .with_label_values(&["total"])
                                     .inc();
 
-                                let response = match this
-                                    .domain_to_scheme
-                                    .get(&ckd_attempt.request.domain_id)
-                                {
-                                    Some(SignatureScheme::Secp256k1) => {
-                                        let response = timeout(
-                                            Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.ckd_provider
-                                                .clone()
-                                                .make_ckd(ckd_attempt.request.id),
-                                        )
-                                        .await??;
+                                let response =
+                                    match this.domain_to_scheme.get(&ckd_attempt.request.domain_id)
+                                    {
+                                        Some(SignatureScheme::Secp256k1) => {
+                                            let response = timeout(
+                                                Duration::from_secs(this.config.ckd.timeout_sec),
+                                                this.ckd_provider
+                                                    .clone()
+                                                    .make_ckd(ckd_attempt.request.id),
+                                            )
+                                            .await??;
 
-                                        let response = ChainCKDRespondArgs::new_ckd(
-                                            &ckd_attempt.request,
-                                            &response,
-                                        )?;
+                                            let response = ChainCKDRespondArgs::new_ckd(
+                                                &ckd_attempt.request,
+                                                &CKDResponse {
+                                                    big_y: SerializableAffinePoint {
+                                                        affine_point: response.0,
+                                                    },
+                                                    big_c: SerializableAffinePoint {
+                                                        affine_point: response.1,
+                                                    },
+                                                },
+                                            )?;
 
-                                        Ok(response)
-                                    }
-                                    Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
-                                        "Signature scheme is not allowed for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                    None => Err(anyhow::anyhow!(
-                                        "Signature scheme is not found for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                }?;
+                                            Ok(response)
+                                        }
+                                        Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
+                                            "Signature scheme is not allowed for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        )),
+                                        None => Err(anyhow::anyhow!(
+                                            "Signature scheme is not found for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        )),
+                                    }?;
 
                                 metrics::MPC_NUM_CKD_COMPUTATIONS_LED
                                     .with_label_values(&["succeeded"])
