@@ -187,6 +187,11 @@ impl<'a, T> ParticipantMap<'a, T> {
             .map(|opt| opt.as_ref())
             .collect::<Option<Vec<_>>>()
     }
+
+    // Returns the set of included participants
+    pub fn participants(&self) -> &[Participant] {
+        self.participants.participants()
+    }
 }
 
 impl<T> Index<Participant> for ParticipantMap<'_, T> {

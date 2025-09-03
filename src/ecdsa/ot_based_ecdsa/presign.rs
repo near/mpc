@@ -127,7 +127,7 @@ async fn do_presign(
 /// all the work we can do without yet knowing the message to be signed.
 ///
 /// This work does depend on the private key though, and it's crucial
-/// that a presignature is never used.
+/// that a presignature is never reused.
 pub fn presign(
     participants: &[Participant],
     me: Participant,

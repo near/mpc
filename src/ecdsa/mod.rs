@@ -1,7 +1,7 @@
 //! This module serves as a wrapper for ECDSA scheme.
 pub mod dkg_ecdsa;
 pub mod ot_based_ecdsa;
-// pub mod robust_ecdsa;
+pub mod robust_ecdsa;
 #[cfg(test)]
 mod test;
 
