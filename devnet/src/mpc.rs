@@ -22,7 +22,7 @@ use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
     config::InitConfig,
     primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{DomainConfig, DomainId, DomainProtocol},
         key_state::EpochId,
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -608,10 +608,10 @@ impl MpcVoteAddDomainsCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
             "Going to vote_add_domains MPC network {} for signature schemes {:?}",
-            name, self.signature_schemes
+            name, self.protocols
         );
-        let signature_schemes: Vec<SignatureScheme> = self
-            .signature_schemes
+        let protocols: Vec<DomainProtocol> = self
+            .protocols
             .iter()
             .map(|scheme| {
                 serde_json::from_str(&format!("\"{}\"", scheme))
@@ -644,10 +644,10 @@ impl MpcVoteAddDomainsCmd {
         };
         let mut proposal = Vec::new();
         let mut next_domain = domains.next_domain_id();
-        for signature_scheme in &signature_schemes {
+        for protocol in &protocols {
             proposal.push(DomainConfig {
                 id: DomainId(next_domain),
-                scheme: *signature_scheme,
+                protocol: *protocol,
             });
             next_domain += 1;
         }
