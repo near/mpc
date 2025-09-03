@@ -1,6 +1,6 @@
 use actix::Addr;
 use anyhow::bail;
-use mpc_contract::state::ProtocolContractState;
+use mpc_contract::{state::ProtocolContractState, tee::proposal::AllowedDockerImageHash};
 use near_client::ClientActor;
 use near_client::Status;
 use near_indexer_primitives::types;
@@ -11,8 +11,6 @@ use near_o11y::WithSpanContextExt;
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::time;
-
-use mpc_contract::tee::proposal::AllowedDockerImageHashes;
 
 const INTERVAL: Duration = Duration::from_millis(500);
 const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = "allowed_docker_image_hashes";
@@ -80,7 +78,7 @@ pub(crate) async fn get_mpc_contract_state(
 pub(crate) async fn get_mpc_allowed_image_hashes(
     mpc_contract_id: AccountId,
     client: &actix::Addr<near_client::ViewClientActor>,
-) -> anyhow::Result<(u64, AllowedDockerImageHashes)> {
+) -> anyhow::Result<(u64, Vec<AllowedDockerImageHash>)> {
     get_mpc_state(mpc_contract_id, client, ALLOWED_IMAGE_HASHES_ENDPOINT).await
 }
 
