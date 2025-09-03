@@ -3,8 +3,8 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::PublicKey;
 use rstest::rstest;
 use test_utils::attestation::{
-    TEST_LAUNCHER_COMPOSE_DIGEST_HEX, TEST_MPC_IMAGE_DIGEST_HEX, mock_dstack_attestation,
-    mock_local_attestation, p2p_tls_key,
+    image_digest, launcher_compose_digest, mock_dstack_attestation, mock_local_attestation,
+    p2p_tls_key,
 };
 
 #[rstest]
@@ -39,11 +39,8 @@ fn test_verify_method_signature() {
     let report_data = ReportData::V1(ReportDataV1::new(tls_key));
     let timestamp_s = 1755186041_u64;
 
-    let allowed_mpc_image_digest =
-        MpcDockerImageHash::try_from_hex(TEST_MPC_IMAGE_DIGEST_HEX).unwrap();
-
-    let allowed_launcher_compose_digest =
-        LauncherDockerComposeHash::try_from_hex(TEST_LAUNCHER_COMPOSE_DIGEST_HEX).unwrap();
+    let allowed_mpc_image_digest: MpcDockerImageHash = image_digest();
+    let allowed_launcher_compose_digest: LauncherDockerComposeHash = launcher_compose_digest();
 
     let verification_result = attestation.verify(
         report_data,

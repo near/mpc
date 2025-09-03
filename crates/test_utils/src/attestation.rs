@@ -4,25 +4,35 @@ use attestation::{
     quote::QuoteBytes,
 };
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::PublicKey;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 pub const TEST_TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
 pub const TEST_APP_COMPOSE_STRING: &str = include_str!("../assets/app_compose.json");
 pub const TEST_APP_COMPOSE_WITH_SERVICES_STRING: &str =
     include_str!("../assets/app_compose_with_services.json");
 
-pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
-    include_str!("../assets/launcher_image_compose.yaml");
-
 /// App compose field corresponds to the `DEFAULT_IMAGE_DIGEST` field in
 /// test_utils/assets/launcher_image_compose.yaml
 pub const TEST_MPC_IMAGE_DIGEST_HEX: &str = include_str!("../assets/mpc_image_digest.txt");
-/// sha256sum test_utils/assets/launcher_image_compose.yaml
-pub const TEST_LAUNCHER_COMPOSE_DIGEST_HEX: &str =
-    "9f9f570c2b84cb56d537abb6a4ab4b3cc93a6a84da4e2c21bddba8963726fdaa";
+pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
+    include_str!("../assets/launcher_image_compose.yaml");
 
-pub const IMAGE_HASH: MpcDock = 
+pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
+    let digest: [u8; 32] = Sha256::digest(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).into();
+    LauncherDockerComposeHash::from(digest)
+}
+
+pub fn image_digest() -> MpcDockerImageHash {
+    let digest: [u8; 32] = hex::decode(TEST_MPC_IMAGE_DIGEST_HEX)
+        .expect("File has valid hex encoding.")
+        .try_into()
+        .expect("Hex file decoded is 32 bytes.");
+
+    MpcDockerImageHash::from(digest)
+}
 
 pub fn collateral() -> Value {
     let quote_collateral_json_string = include_str!("../assets/collateral.json");
@@ -54,4 +64,3 @@ pub fn mock_dstack_attestation() -> Attestation {
 
     Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
 }
-

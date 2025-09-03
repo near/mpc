@@ -4952,7 +4952,6 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
- "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -9383,6 +9382,7 @@ dependencies = [
  "mpc-primitives",
  "near-sdk",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
