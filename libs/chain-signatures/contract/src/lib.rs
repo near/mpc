@@ -1,3 +1,4 @@
+#![deny(clippy::mod_module_files)]
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
