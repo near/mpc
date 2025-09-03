@@ -76,85 +76,92 @@ impl fmt::Debug for DstackAttestation {
     }
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-pub struct LocalAttestation {
-    /// When set, overrides all validation checks. Useful for testing error paths.
-    always_invalid: bool,
+#[derive(Debug, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+pub enum LocalAttestation {
+    /// Always pass validation
+    Valid,
+    /// Always fails validation
+    Invalid,
+    /// Pass validation depending on the set constraints
+    WithConstraints {
+        mpc_docker_image_hash: Option<MpcDockerImageHash>,
+        launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
+        expiry_time_stamp_seconds: Option<u64>,
+    },
+}
+
+impl LocalAttestation {
+    pub fn with_constraints() -> LocalAttestationWithConstraintsBuilder {
+        LocalAttestationWithConstraintsBuilder::default()
+    }
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct LocalAttestationWithConstraintsBuilder {
     mpc_docker_image_hash: Option<MpcDockerImageHash>,
     launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
     expiry_time_stamp_seconds: Option<u64>,
 }
 
-impl LocalAttestation {
-    /// Creates a [`LocalAttestation`] that always passes validation.
-    pub fn new() -> Self {
-        Self::default()
+impl LocalAttestationWithConstraintsBuilder {
+    pub fn mpc_docker_image_hash(mut self, hash: MpcDockerImageHash) -> Self {
+        self.mpc_docker_image_hash = Some(hash);
+        self
     }
 
-    /// Returns a [`LocalAttestation`] that always fails validation.
-    pub fn always_invalid(self) -> Self {
-        Self {
-            always_invalid: true,
-            ..self
-        }
+    pub fn launcher_docker_compose_hash(mut self, hash: LauncherDockerComposeHash) -> Self {
+        self.launcher_docker_compose_hash = Some(hash);
+        self
     }
 
-    pub fn with_mpc_docker_image_hash(self, mpc_docker_image_hash: MpcDockerImageHash) -> Self {
-        Self {
-            mpc_docker_image_hash: Some(mpc_docker_image_hash),
-            ..self
-        }
+    pub fn expiry_time_stamp_seconds(mut self, timestamp: u64) -> Self {
+        self.expiry_time_stamp_seconds = Some(timestamp);
+        self
     }
 
-    pub fn with_launcher_docker_compose_hash(
-        self,
-        launcher_docker_compose_hash: LauncherDockerComposeHash,
-    ) -> Self {
-        Self {
-            launcher_docker_compose_hash: Some(launcher_docker_compose_hash),
-            ..self
-        }
-    }
-
-    pub fn with_expiry_time_stamp_seconds(self, expiry_time_stamp_seconds: u64) -> Self {
-        Self {
-            expiry_time_stamp_seconds: Some(expiry_time_stamp_seconds),
-            ..self
+    pub fn build(self) -> LocalAttestation {
+        LocalAttestation::WithConstraints {
+            mpc_docker_image_hash: self.mpc_docker_image_hash,
+            launcher_docker_compose_hash: self.launcher_docker_compose_hash,
+            expiry_time_stamp_seconds: self.expiry_time_stamp_seconds,
         }
     }
 }
 
-fn verify_local_attestation(
+pub(crate) fn verify_local_attestation(
     local_attestation: &LocalAttestation,
     timestamp_seconds: u64,
     allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
     allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
 ) -> bool {
-    if local_attestation.always_invalid {
-        return false;
+    match local_attestation {
+        LocalAttestation::Valid => true,
+        LocalAttestation::Invalid => false,
+        LocalAttestation::WithConstraints {
+            mpc_docker_image_hash,
+            launcher_docker_compose_hash,
+            expiry_time_stamp_seconds,
+        } => {
+            let mpc_docker_image_hash_is_allowed = mpc_docker_image_hash
+                .as_ref()
+                .is_none_or(|hash| allowed_mpc_docker_image_hashes.contains(hash));
+
+            let launcher_docker_compose_hash_is_allowed = launcher_docker_compose_hash
+                .as_ref()
+                .is_none_or(|hash| allowed_launcher_docker_compose_hashes.contains(hash));
+
+            let attestation_certificate_has_not_expired = expiry_time_stamp_seconds
+                .is_none_or(|expiry_time| timestamp_seconds <= expiry_time);
+
+            mpc_docker_image_hash_is_allowed
+                && launcher_docker_compose_hash_is_allowed
+                && attestation_certificate_has_not_expired
+        }
     }
-
-    let mpc_docker_image_hash_is_allowed = local_attestation
-        .mpc_docker_image_hash
-        .as_ref()
-        .is_none_or(|hash| allowed_mpc_docker_image_hashes.contains(hash));
-
-    let launcher_docker_compose_hash_is_allowed = local_attestation
-        .launcher_docker_compose_hash
-        .as_ref()
-        .is_none_or(|hash| allowed_launcher_docker_compose_hashes.contains(hash));
-
-    let attestation_certificate_has_not_expired = local_attestation
-        .expiry_time_stamp_seconds
-        .is_none_or(|expiry_time| timestamp_seconds <= expiry_time);
-
-    mpc_docker_image_hash_is_allowed
-        && launcher_docker_compose_hash_is_allowed
-        && attestation_certificate_has_not_expired
 }
 
 impl Attestation {

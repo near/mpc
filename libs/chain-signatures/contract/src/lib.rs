@@ -1677,9 +1677,9 @@ mod tests {
         let participants_list = participants.participants();
         let (account_id, _, participant_info) = &participants_list[participant_index];
         let attestation = if is_valid {
-            LocalAttestation::new()
+            LocalAttestation::Valid
         } else {
-            LocalAttestation::new().always_invalid()
+            LocalAttestation::Invalid
         };
 
         let tls_public_key = participant_info.sign_pk.clone();

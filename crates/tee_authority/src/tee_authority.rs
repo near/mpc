@@ -74,9 +74,9 @@ impl TeeAuthority {
                 let create_valid_attestation = config.generate_valid_attestations;
 
                 let attestation = if create_valid_attestation {
-                    LocalAttestation::new()
+                    LocalAttestation::Valid
                 } else {
-                    LocalAttestation::new().always_invalid()
+                    LocalAttestation::Invalid
                 };
 
                 Ok(Attestation::Local(attestation))

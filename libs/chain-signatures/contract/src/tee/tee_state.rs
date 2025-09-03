@@ -253,8 +253,7 @@ mod tests {
             .collect();
 
         // Add TEE information for all participants and non-participant
-        let attestation = LocalAttestation::new();
-        let local_attestation = Attestation::Local(attestation);
+        let local_attestation = Attestation::Local(LocalAttestation::Valid);
 
         for account_id in &participant_accounts {
             tee_state.add_participant(account_id.clone(), local_attestation.clone());

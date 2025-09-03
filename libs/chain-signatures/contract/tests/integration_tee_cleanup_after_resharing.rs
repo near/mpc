@@ -33,7 +33,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // Set up TEE attestations for all initial participants
     let tls_key = p2p_tls_key();
-    let attestation = Attestation::Local(LocalAttestation::new());
+    let attestation = Attestation::Local(LocalAttestation::Valid);
 
     for account in &initial_accounts {
         let submission_result =

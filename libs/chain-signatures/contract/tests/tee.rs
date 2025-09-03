@@ -269,7 +269,7 @@ async fn test_submit_participant_info_test_method_available_in_integration_tests
 #[tokio::test]
 async fn test_submit_participant_info_succeeds_with_local_attestation() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
-    let local_attestation = Attestation::Local(LocalAttestation::new());
+    let local_attestation = Attestation::Local(LocalAttestation::Valid);
     let tls_key = p2p_tls_key();
     let success =
         submit_participant_info(&accounts[0], &contract, &local_attestation, &tls_key).await?;
