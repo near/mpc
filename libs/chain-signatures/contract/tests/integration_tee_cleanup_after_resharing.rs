@@ -1,6 +1,7 @@
 pub mod common;
 
 use anyhow::Result;
+use attestation::attestation::{Attestation, LocalAttestation};
 use near_workspaces::AccountId;
 use serde_json::json;
 use std::collections::HashSet;
@@ -15,7 +16,7 @@ use mpc_contract::{
     },
     state::ProtocolContractState,
 };
-use test_utils::attestation::{mock_local_attestation, p2p_tls_key};
+use test_utils::attestation::p2p_tls_key;
 
 /// Integration test that validates the complete E2E flow of TEE cleanup after resharing.
 ///
@@ -32,7 +33,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // Set up TEE attestations for all initial participants
     let tls_key = p2p_tls_key();
-    let attestation = mock_local_attestation(true);
+    let attestation = Attestation::Local(LocalAttestation::new());
 
     for account in &initial_accounts {
         let submission_result =

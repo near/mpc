@@ -76,20 +76,92 @@ impl fmt::Debug for DstackAttestation {
     }
 }
 
-#[derive(Debug, Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
 pub struct LocalAttestation {
-    verification_result: bool,
+    /// When set, overrides all validation checks. Useful for testing error paths.
+    always_invalid: bool,
+    mpc_docker_image_hash: Option<MpcDockerImageHash>,
+    launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
+    expiry_time_stamp_seconds: Option<u64>,
+}
+
+impl LocalAttestation {
+    /// Creates a [`LocalAttestation`] that always passes validation.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns a [`LocalAttestation`] that always fails validation.
+    pub fn always_invalid(self) -> Self {
+        Self {
+            always_invalid: true,
+            ..self
+        }
+    }
+
+    pub fn with_mpc_docker_image_hash(self, mpc_docker_image_hash: MpcDockerImageHash) -> Self {
+        Self {
+            mpc_docker_image_hash: Some(mpc_docker_image_hash),
+            ..self
+        }
+    }
+
+    pub fn with_launcher_docker_compose_hash(
+        self,
+        launcher_docker_compose_hash: LauncherDockerComposeHash,
+    ) -> Self {
+        Self {
+            launcher_docker_compose_hash: Some(launcher_docker_compose_hash),
+            ..self
+        }
+    }
+
+    pub fn with_expiry_time_stamp_seconds(self, expiry_time_stamp_seconds: u64) -> Self {
+        Self {
+            expiry_time_stamp_seconds: Some(expiry_time_stamp_seconds),
+            ..self
+        }
+    }
+}
+
+fn verify_local_attestation(
+    local_attestation: &LocalAttestation,
+    timestamp_seconds: u64,
+    allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+    allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+) -> bool {
+    if local_attestation.always_invalid {
+        return false;
+    }
+
+    let mpc_docker_image_hash_is_allowed = local_attestation
+        .mpc_docker_image_hash
+        .as_ref()
+        .is_none_or(|hash| allowed_mpc_docker_image_hashes.contains(hash));
+
+    let launcher_docker_compose_hash_is_allowed = local_attestation
+        .launcher_docker_compose_hash
+        .as_ref()
+        .is_none_or(|hash| allowed_launcher_docker_compose_hashes.contains(hash));
+
+    let attestation_certificate_has_not_expired = local_attestation
+        .expiry_time_stamp_seconds
+        .is_none_or(|expiry_time| timestamp_seconds <= expiry_time);
+
+    mpc_docker_image_hash_is_allowed
+        && launcher_docker_compose_hash_is_allowed
+        && attestation_certificate_has_not_expired
 }
 
 impl Attestation {
     pub fn verify(
         &self,
         expected_report_data: ReportData,
-        timestamp_s: u64,
+        timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
@@ -97,11 +169,16 @@ impl Attestation {
             Self::Dstack(dstack_attestation) => self.verify_attestation(
                 dstack_attestation,
                 expected_report_data,
-                timestamp_s,
+                timestamp_seconds,
                 allowed_mpc_docker_image_hashes,
                 allowed_launcher_docker_compose_hashes,
             ),
-            Self::Local(config) => config.verification_result,
+            Self::Local(local_attestation) => verify_local_attestation(
+                local_attestation,
+                timestamp_seconds,
+                allowed_mpc_docker_image_hashes,
+                allowed_launcher_docker_compose_hashes,
+            ),
         }
     }
 
@@ -112,7 +189,7 @@ impl Attestation {
         &self,
         attestation: &DstackAttestation,
         expected_report_data: ReportData,
-        timestamp_s: u64,
+        timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
@@ -124,7 +201,7 @@ impl Attestation {
         let verification_result = match dcap_qvl::verify::verify(
             &attestation.quote,
             &attestation.collateral,
-            timestamp_s,
+            timestamp_seconds,
         ) {
             Ok(result) => result,
             Err(err) => {

@@ -1676,7 +1676,12 @@ mod tests {
     ) -> Result<(), crate::errors::Error> {
         let participants_list = participants.participants();
         let (account_id, _, participant_info) = &participants_list[participant_index];
-        let attestation = Attestation::Local(LocalAttestation::new(is_valid));
+        let attestation = if is_valid {
+            LocalAttestation::new()
+        } else {
+            LocalAttestation::new().always_invalid()
+        };
+
         let tls_public_key = participant_info.sign_pk.clone();
 
         let participant_context = VMContextBuilder::new()
@@ -1685,7 +1690,7 @@ mod tests {
             .build();
         testing_env!(participant_context);
 
-        contract.submit_participant_info(attestation, tls_public_key)
+        contract.submit_participant_info(Attestation::Local(attestation), tls_public_key)
     }
 
     fn submit_valid_attestations(

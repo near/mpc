@@ -26,13 +26,13 @@ pub const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
 
 #[derive(Constructor)]
 pub struct LocalTeeAuthorityConfig {
-    verification_result: bool,
+    generate_valid_attestations: bool,
 }
 
 impl Default for LocalTeeAuthorityConfig {
     fn default() -> Self {
         Self {
-            verification_result: true,
+            generate_valid_attestations: true,
         }
     }
 }
@@ -70,9 +70,17 @@ impl TeeAuthority {
         report_data: ReportData,
     ) -> anyhow::Result<Attestation> {
         match self {
-            TeeAuthority::Local(config) => Ok(Attestation::Local(LocalAttestation::new(
-                config.verification_result,
-            ))),
+            TeeAuthority::Local(config) => {
+                let create_valid_attestation = config.generate_valid_attestations;
+
+                let attestation = if create_valid_attestation {
+                    LocalAttestation::new()
+                } else {
+                    LocalAttestation::new().always_invalid()
+                };
+
+                Ok(Attestation::Local(attestation))
+            }
             TeeAuthority::Dstack(config) => {
                 self.generate_dstack_attestation(config, report_data).await
             }
