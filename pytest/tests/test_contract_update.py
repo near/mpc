@@ -47,7 +47,7 @@ def test_update_to_current(fetch_contract):
     cluster.define_candidate_set(mpc_nodes)
     cluster.update_participant_status(assert_contract=False)
     cluster.init_contract(threshold=3)
-    cluster.add_domains(schemes=["Secp256k1", "Ed25519", "CkdSecp256k1"])
+    cluster.add_domains(schemes=["Secp256k1", "Ed25519"])
     cluster.send_and_await_signature_requests(1)
 
     # introduce some state:
@@ -67,5 +67,6 @@ def test_update_to_current(fetch_contract):
     cluster.assert_is_deployed(new_contract.code())
     cluster.wait_for_state(ProtocolState.RUNNING)
     cluster.contract_state().print()
+    cluster.add_domains(schemes=["CkdSecp256k1"])
     cluster.send_and_await_signature_requests(1)
     cluster.send_and_await_ckd_requests(1)
