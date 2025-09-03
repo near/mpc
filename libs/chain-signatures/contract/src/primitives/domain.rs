@@ -1,6 +1,6 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
-use near_sdk::{log, near, CurveType};
+use near_sdk::{log, near};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
@@ -29,37 +29,29 @@ impl Display for DomainId {
     }
 }
 
-/// Uniquely identifies a specific signature algorithm.
-/// More signature schemes may be added in the future. When adding new signature schemes, both Borsh
+/// Uniquely identifies a specific request algorithm.
+/// More protocols may be added in the future. When adding new protocols, both Borsh
 /// *and* JSON serialization must be kept compatible.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SignatureScheme {
-    Secp256k1,
-    Ed25519,
+pub enum DomainProtocol {
+    SignSecp256k1,
+    SignEd25519,
+    CkdSecp256k1,
 }
 
-impl From<CurveType> for SignatureScheme {
-    fn from(curve_type: CurveType) -> Self {
-        match curve_type {
-            CurveType::ED25519 => Self::Ed25519,
-            CurveType::SECP256K1 => Self::Secp256k1,
-        }
-    }
-}
-
-impl Default for SignatureScheme {
+impl Default for DomainProtocol {
     fn default() -> Self {
-        Self::Secp256k1
+        Self::SignSecp256k1
     }
 }
 
-/// Describes the configuration of a domain: the domain ID and the signature scheme it uses.
+/// Describes the configuration of a domain: the domain ID and the protocol it uses.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
-    pub scheme: SignatureScheme,
+    pub protocol: DomainProtocol,
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
@@ -80,16 +72,16 @@ impl DomainRegistry {
     /// Migration from legacy: creates a DomainRegistry with a single ecdsa key.
     pub fn new_single_ecdsa_key_from_legacy() -> Self {
         let mut registry = Self::default();
-        registry.add_domain(SignatureScheme::Secp256k1);
+        registry.add_domain(DomainProtocol::SignSecp256k1);
         registry
     }
 
-    /// Add a single domain with the given signature scheme, returning the DomainId of the added
+    /// Add a single domain with the given protocol, returning the DomainId of the added
     /// domain.
-    fn add_domain(&mut self, scheme: SignatureScheme) -> DomainId {
+    fn add_domain(&mut self, protocol: DomainProtocol) -> DomainId {
         let domain = DomainConfig {
             id: DomainId(self.next_domain_id),
-            scheme,
+            protocol,
         };
         self.next_domain_id += 1;
         self.domains.push(domain.clone());
@@ -102,7 +94,7 @@ impl DomainRegistry {
     pub fn add_domains(&self, domains: Vec<DomainConfig>) -> Result<DomainRegistry, Error> {
         let mut new_registry = self.clone();
         for domain in domains {
-            let new_domain_id = new_registry.add_domain(domain.scheme);
+            let new_domain_id = new_registry.add_domain(domain.protocol);
             if new_domain_id != domain.id {
                 return Err(DomainError::NewDomainIdsNotContiguous.into());
             }
@@ -121,16 +113,13 @@ impl DomainRegistry {
         self.domains.get(index)
     }
 
-    /// Returns the most recently added domain for the given signature scheme,
+    /// Returns the most recently added domain for the given protocol,
     /// or None if no such domain exists.
-    pub fn most_recent_domain_for_signature_scheme(
-        &self,
-        scheme: SignatureScheme,
-    ) -> Option<DomainId> {
+    pub fn most_recent_domain_for_protocol(&self, protocol: DomainProtocol) -> Option<DomainId> {
         self.domains
             .iter()
             .rev()
-            .find(|domain| domain.scheme == scheme)
+            .find(|domain| domain.protocol == protocol)
             .map(|domain| domain.id)
     }
 
@@ -200,10 +189,13 @@ impl AddDomainsVotes {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
+    use super::{DomainConfig, DomainId, DomainProtocol, DomainRegistry};
 
-    const ALL_SIGNATURE_SCHEMES: [SignatureScheme; 2] =
-        [SignatureScheme::Secp256k1, SignatureScheme::Ed25519];
+    const ALL_PROTOCOLS: [DomainProtocol; 3] = [
+        DomainProtocol::SignSecp256k1,
+        DomainProtocol::SignEd25519,
+        DomainProtocol::CkdSecp256k1,
+    ];
 
     /// Generates a valid DomainRegistry with various signature schemes, with num_domains total.
     pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
@@ -211,7 +203,7 @@ pub mod tests {
         for i in 0..num_domains {
             domains.push(DomainConfig {
                 id: DomainId(i as u64 * 2),
-                scheme: ALL_SIGNATURE_SCHEMES[i % ALL_SIGNATURE_SCHEMES.len()],
+                protocol: ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()],
             });
         }
         DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
@@ -223,7 +215,7 @@ pub mod tests {
         for i in 0..num_domains {
             new_domains.push(DomainConfig {
                 id: DomainId(registry.next_domain_id + i as u64),
-                scheme: ALL_SIGNATURE_SCHEMES[i % ALL_SIGNATURE_SCHEMES.len()],
+                protocol: ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()],
             });
         }
         new_domains
@@ -235,11 +227,11 @@ pub mod tests {
         let domains1 = vec![
             DomainConfig {
                 id: DomainId(0),
-                scheme: SignatureScheme::Secp256k1,
+                protocol: DomainProtocol::SignSecp256k1,
             },
             DomainConfig {
                 id: DomainId(1),
-                scheme: SignatureScheme::Ed25519,
+                protocol: DomainProtocol::SignEd25519,
             },
         ];
         let new_registry = registry.add_domains(domains1.clone()).unwrap();
@@ -248,11 +240,11 @@ pub mod tests {
         let domains2 = vec![
             DomainConfig {
                 id: DomainId(2),
-                scheme: SignatureScheme::Secp256k1,
+                protocol: DomainProtocol::SignSecp256k1,
             },
             DomainConfig {
                 id: DomainId(3),
-                scheme: SignatureScheme::Ed25519,
+                protocol: DomainProtocol::SignEd25519,
             },
         ];
         let new_registry = new_registry.add_domains(domains2.clone()).unwrap();
@@ -262,7 +254,7 @@ pub mod tests {
         // This fails because the domain ID does not start from next_domain_id.
         let domains3 = vec![DomainConfig {
             id: DomainId(5),
-            scheme: SignatureScheme::Secp256k1,
+            protocol: DomainProtocol::SignSecp256k1,
         }];
         assert!(new_registry.add_domains(domains3).is_err());
 
@@ -270,11 +262,11 @@ pub mod tests {
         let domains4 = vec![
             DomainConfig {
                 id: DomainId(5),
-                scheme: SignatureScheme::Secp256k1,
+                protocol: DomainProtocol::SignSecp256k1,
             },
             DomainConfig {
                 id: DomainId(4),
-                scheme: SignatureScheme::Secp256k1,
+                protocol: DomainProtocol::SignSecp256k1,
             },
         ];
         assert!(new_registry.add_domains(domains4).is_err());
@@ -286,15 +278,15 @@ pub mod tests {
             vec![
                 DomainConfig {
                     id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
+                    protocol: DomainProtocol::SignSecp256k1,
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    scheme: SignatureScheme::Ed25519,
+                    protocol: DomainProtocol::SignEd25519,
                 },
                 DomainConfig {
                     id: DomainId(3),
-                    scheme: SignatureScheme::Secp256k1,
+                    protocol: DomainProtocol::SignSecp256k1,
                 },
             ],
             6,
@@ -306,15 +298,15 @@ pub mod tests {
             vec![
                 DomainConfig {
                     id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
+                    protocol: DomainProtocol::SignSecp256k1,
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    scheme: SignatureScheme::Ed25519,
+                    protocol: DomainProtocol::SignEd25519,
                 },
                 DomainConfig {
                     id: DomainId(3),
-                    scheme: SignatureScheme::Secp256k1,
+                    protocol: DomainProtocol::SignSecp256k1,
                 },
             ]
         );
@@ -325,11 +317,11 @@ pub mod tests {
             vec![
                 DomainConfig {
                     id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
+                    protocol: DomainProtocol::SignSecp256k1,
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    scheme: SignatureScheme::Ed25519,
+                    protocol: DomainProtocol::SignEd25519,
                 },
             ]
         );
@@ -345,26 +337,26 @@ pub mod tests {
             vec![
                 DomainConfig {
                     id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
+                    protocol: DomainProtocol::SignSecp256k1,
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    scheme: SignatureScheme::Ed25519,
+                    protocol: DomainProtocol::SignEd25519,
                 },
                 DomainConfig {
                     id: DomainId(3),
-                    scheme: SignatureScheme::Secp256k1,
+                    protocol: DomainProtocol::SignSecp256k1,
                 },
             ],
             6,
         )
         .unwrap();
         assert_eq!(
-            registry.most_recent_domain_for_signature_scheme(SignatureScheme::Secp256k1),
+            registry.most_recent_domain_for_protocol(DomainProtocol::SignSecp256k1),
             Some(DomainId(3))
         );
         assert_eq!(
-            registry.most_recent_domain_for_signature_scheme(SignatureScheme::Ed25519),
+            registry.most_recent_domain_for_protocol(DomainProtocol::SignEd25519),
             Some(DomainId(2))
         );
     }
@@ -373,13 +365,13 @@ pub mod tests {
     fn test_serialization_format() {
         let domain_config = DomainConfig {
             id: DomainId(3),
-            scheme: SignatureScheme::Secp256k1,
+            protocol: DomainProtocol::SignSecp256k1,
         };
         let json = serde_json::to_string(&domain_config).unwrap();
-        assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1"}"#);
+        assert_eq!(json, r#"{"id":3,"protocol":"SignSecp256k1"}"#);
 
         let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(domain_config.id, DomainId(3));
-        assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
+        assert_eq!(domain_config.protocol, DomainProtocol::SignSecp256k1);
     }
 }

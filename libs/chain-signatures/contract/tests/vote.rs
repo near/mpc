@@ -20,7 +20,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         "domains": vec![
             json!({
                 "id": 2,
-                "scheme": "Ed25519",
+                "protocol": "SignEd25519",
             })
         ]
     });
@@ -95,7 +95,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         "domains": vec![
             json!({
                 "id": 2,
-                "scheme": "Ed25519",
+                "protocol": "SignEd25519",
             })
         ]
     });

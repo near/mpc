@@ -30,7 +30,7 @@ pub enum RespondError {
     #[error("The provided signature is invalid.")]
     InvalidSignature,
     #[error("The provided signature scheme does not match the requestued key's scheme")]
-    SignatureSchemeMismatch,
+    DomainProtocolMismatch,
     #[error("The provided domain was not found.")]
     DomainNotFound,
     #[error("The provided tweak is not on the curve of the public key.")]
