@@ -22,7 +22,7 @@ pub enum DBCol {
     Presignature,
     SignRequest,
     CKDRequest,
-    EpochId,
+    Epoch,
 }
 
 impl DBCol {
@@ -32,7 +32,7 @@ impl DBCol {
             DBCol::Presignature => "presignature",
             DBCol::SignRequest => "sign_request",
             DBCol::CKDRequest => "ckd_request",
-            DBCol::EpochId => "epoch_id",
+            DBCol::Epoch => "epoch_id",
         }
     }
 
@@ -42,7 +42,7 @@ impl DBCol {
             DBCol::Presignature,
             DBCol::SignRequest,
             DBCol::CKDRequest,
-            DBCol::EpochId,
+            DBCol::Epoch,
         ]
     }
 }

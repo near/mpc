@@ -173,6 +173,12 @@ pub struct ParticipantsConfig {
     pub participants: Vec<ParticipantInfo>,
 }
 
+impl ParticipantsConfig {
+    pub fn get_info(&self, id: ParticipantId) -> Option<&ParticipantInfo> {
+        self.participants.iter().find(|p| p.id == id)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ParticipantInfo {
     pub id: ParticipantId,

@@ -25,6 +25,7 @@ pub mod cli;
 mod config;
 mod coordinator;
 mod db;
+mod epoch_data;
 mod indexer;
 mod key_events;
 mod keyshare;

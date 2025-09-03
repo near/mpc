@@ -215,6 +215,13 @@ impl FakeMpcContractState {
             }
         }
     }
+
+    //pub fn set_protocol_contract_state(&mut self, state: ProtocolContractState) {
+    //    // Lol, implementing the actual resharing logic will be faster.
+
+    //    let threshold_params = participants_config_to_threshold_parameters(&participants),
+    //    self.state = state;
+    //}
 }
 
 fn participants_config_to_threshold_parameters(

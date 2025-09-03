@@ -1,5 +1,5 @@
 pub mod key_generation;
-mod presign;
+pub mod presign;
 mod sign;
 
 use mpc_contract::primitives::key_state::KeyEventId;
@@ -68,7 +68,6 @@ impl EcdsaSignatureProvider {
             client.my_participant_id(),
             active_participants_query.clone(),
         )?);
-
         let mut per_domain_data = HashMap::new();
         for (domain_id, keyshare) in keyshares {
             let presignature_store = Arc::new(PresignatureStorage::new(

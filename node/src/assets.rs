@@ -1,5 +1,6 @@
 use crate::db::{DBCol, SecretDB};
 use crate::primitives::{ParticipantId, UniqueId};
+use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::DomainId;
@@ -345,6 +346,32 @@ where
     my_participant_id: ParticipantId,
     owned_queue: DoubleQueue<T, Vec<ParticipantId>>,
     last_id: Mutex<Option<UniqueId>>,
+}
+
+impl<T> DistributedAssetStorage<T>
+where
+    T: Serialize + DeserializeOwned + Send + 'static + HasParticipants,
+{
+    // todo: test
+    pub fn clean_db(
+        db: &Arc<SecretDB>,
+        active_participants: &Vec<ParticipantId>,
+        my_participant_id: ParticipantId,
+        domain_id: Option<DomainId>,
+    ) -> anyhow::Result<()> {
+        let (start, end): (Vec<u8>, Vec<u8>) =
+            Self::make_prefix_range(my_participant_id, domain_id);
+        let mut update_writer = db.update();
+        for item in db.iter_range(DBCol::Triple, &start, &end) {
+            let (key, value) = item?;
+            let value: T = serde_json::from_slice(&value)?;
+            if !value.is_subset_of_active_participants(active_participants.as_slice()) {
+                update_writer.delete(DBCol::Triple, &key);
+            }
+        }
+        update_writer.commit()?;
+        Ok(())
+    }
 }
 
 impl<T> DistributedAssetStorage<T>

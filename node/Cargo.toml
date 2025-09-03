@@ -13,6 +13,7 @@ attestation = { workspace = true }
 axum = { workspace = true }
 backon = { workspace = true }
 borsh = { workspace = true }
+bincode = { workspace = true }
 threshold-signatures = { workspace = true }
 clap = { workspace = true }
 curve25519-dalek = { workspace = true }
