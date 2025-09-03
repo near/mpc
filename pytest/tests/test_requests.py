@@ -2,9 +2,9 @@
 """
 Starts 2 near validators and 2 mpc nodes.
 Deploys mpc contract in 'libs/chain-signatures/res/mpc_contract.wasm'
-Sends signature requests.
-Verifies that the mpc nodes index the signature request.
-Waits for the signature responses. Fails if timeout is reached.
+Sends signature/ckd requests.
+Verifies that the mpc nodes index the signature/ckd request.
+Waits for the signature/ckd responses. Fails if timeout is reached.
 """
 
 import sys
@@ -21,7 +21,7 @@ from common_lib.shared import metrics
 
 
 @pytest.mark.parametrize("num_requests, num_respond_access_keys", [(10, 1)])
-def test_signature_lifecycle(num_requests, num_respond_access_keys):
+def test_request_lifecycle(num_requests, num_respond_access_keys):
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
         2, 2, num_respond_access_keys, load_mpc_contract()
     )
@@ -45,5 +45,5 @@ def test_signature_lifecycle(num_requests, num_respond_access_keys):
         if not all([sb and sb > 0 for sb in signer_balances]):
             continue
         break
-
     cluster.send_and_await_signature_requests(num_requests)
+    cluster.send_and_await_ckd_requests(num_requests)
