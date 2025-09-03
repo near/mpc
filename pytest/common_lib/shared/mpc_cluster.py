@@ -10,7 +10,7 @@ from common_lib import constants
 from common_lib import signature
 from common_lib import ckd
 from common_lib.constants import TGAS
-from common_lib.contract_state import ContractState, ProtocolState, DomainProtocol
+from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
 from common_lib.contracts import ContractMethod
 from common_lib.shared.metrics import FloatMetricName, IntMetricName
 from common_lib.shared.mpc_node import MpcNode
@@ -153,11 +153,11 @@ class MpcCluster:
         self,
         participants: List[MpcNode],
         threshold: int,
-        domains=["SignSecp256k1", "SignEd25519", "CkdSecp256k1"],
+        domains=["Secp256k1", "Ed25519", "CkdSecp256k1"],
     ):
         """
         initializes the contract with `participants` and `threshold`.
-        Adds `SignSecp256k1`, `SignEd25519` and `CkdSecp256k1` to the contract domains.
+        Adds `Secp256k1`, `Ed25519` and `CkdSecp256k1` to the contract domains.
         """
         self.define_candidate_set(participants)
         self.update_participant_status(
@@ -263,20 +263,20 @@ class MpcCluster:
 
     def add_domains(
         self,
-        protocols: List[DomainProtocol],
+        schemes: List[SignatureScheme],
         wait_for_running=True,
     ):
-        print(f"\033[91m(Vote Domains) Adding domains: \033[93m{protocols}\033[0m")
+        print(f"\033[91m(Vote Domains) Adding domains: \033[93m{schemes}\033[0m")
         state = self.contract_state()
         state.print()
         assert state.is_state(ProtocolState.RUNNING), "require running state"
         domains_to_add = []
         next_domain_id = state.protocol_state.next_domain_id()
-        for protocol in protocols:
+        for scheme in schemes:
             domains_to_add.append(
                 {
                     "id": next_domain_id,
-                    "protocol": protocol,
+                    "scheme": scheme,
                 }
             )
             next_domain_id += 1
@@ -364,7 +364,7 @@ class MpcCluster:
         deposit = constants.SIGNATURE_DEPOSIT + (add_deposit or 0)
         domains = self.contract_state().get_running_domains()
         for domain in domains:
-            if domain.protocol == "SignSecp256k1" or domain.protocol == "SignEd25519":
+            if domain.scheme == "Secp256k1" or domain.scheme == "Ed25519":
                 print(
                     f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m sign requests for {domain}.\033[0m"
                 )
@@ -423,7 +423,7 @@ class MpcCluster:
         deposit = constants.CKD_DEPOSIT + (add_deposit or 0)
         domains = self.contract_state().get_running_domains()
         for domain in domains:
-            if domain.protocol == "CkdSecp256k1":
+            if domain.scheme == "CkdSecp256k1":
                 print(
                     f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m ckd requests for {domain}.\033[0m"
                 )

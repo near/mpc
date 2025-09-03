@@ -4,7 +4,7 @@ use crate::tests::{
     DEFAULT_BLOCK_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, DomainProtocol};
+use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
 
@@ -31,12 +31,12 @@ async fn test_basic_cluster() {
 
     let sig_domain = DomainConfig {
         id: DomainId(0),
-        protocol: DomainProtocol::SignSecp256k1,
+        scheme: SignatureScheme::Secp256k1,
     };
 
     let ckd_domain = DomainConfig {
         id: DomainId(1),
-        protocol: DomainProtocol::CkdSecp256k1,
+        scheme: SignatureScheme::CkdSecp256k1,
     };
 
     {

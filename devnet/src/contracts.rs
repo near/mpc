@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use mpc_contract::primitives::{
-    domain::{DomainConfig, DomainProtocol},
+    domain::{DomainConfig, SignatureScheme},
     signature::{Bytes, Payload, SignRequestArgs},
 };
 use near_primitives::action::Action;
@@ -47,14 +47,14 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
             let mut eddsa_calls_by_domain = BTreeMap::new();
             let mut ckd_calls_by_domain = BTreeMap::new();
             for (domain, prot_calls) in args.calls_by_domain {
-                match domain.protocol {
-                    DomainProtocol::SignSecp256k1 => {
+                match domain.scheme {
+                    SignatureScheme::Secp256k1 => {
                         ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    DomainProtocol::SignEd25519 => {
+                    SignatureScheme::Ed25519 => {
                         eddsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    DomainProtocol::CkdSecp256k1 => {
+                    SignatureScheme::CkdSecp256k1 => {
                         ckd_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
                 }
@@ -83,7 +83,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     request: SignRequestArgs {
                         domain_id: Some(args.domain_config.id),
                         path: "".to_string(),
-                        payload_v2: Some(make_payload(args.domain_config.protocol)),
+                        payload_v2: Some(make_payload(args.domain_config.scheme)),
                         ..Default::default()
                     },
                 })
@@ -129,18 +129,18 @@ struct ParallelSignArgsV2 {
     seed: u64,
 }
 
-fn make_payload(protocol: DomainProtocol) -> Payload {
-    match protocol {
-        DomainProtocol::SignSecp256k1 => {
+fn make_payload(scheme: SignatureScheme) -> Payload {
+    match scheme {
+        SignatureScheme::Secp256k1 => {
             Payload::Ecdsa(Bytes::new(rand::random::<[u8; 32]>().to_vec()).unwrap())
         }
-        DomainProtocol::SignEd25519 => {
+        SignatureScheme::Ed25519 => {
             let len = rand::random_range(32..=1232);
             let mut payload = vec![0; len];
             rand::rng().fill_bytes(&mut payload);
             Payload::Eddsa(Bytes::new(payload).unwrap())
         }
-        DomainProtocol::CkdSecp256k1 => unreachable!(),
+        SignatureScheme::CkdSecp256k1 => unreachable!(),
     }
 }
 

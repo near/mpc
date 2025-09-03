@@ -6,15 +6,15 @@ import base64
 
 from typing import Dict, Literal, Optional
 
-from common_lib.contract_state import Domain, DomainProtocol
+from common_lib.contract_state import Domain, SignatureScheme
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 PayloadType = Literal["Ecdsa", "Eddsa"]
 
-signature_scheme_to_payload: Dict[DomainProtocol, PayloadType] = {
-    "SignSecp256k1": "Ecdsa",
-    "SignEd25519": "Eddsa",
+signature_scheme_to_payload: Dict[SignatureScheme, PayloadType] = {
+    "Secp256k1": "Ecdsa",
+    "Ed25519": "Eddsa",
 }
 
 
@@ -26,7 +26,7 @@ def generate_sign_args(
     domain: Domain, path: str = "test", payload: Optional[dict[PayloadType, str]] = None
 ) -> dict:
     if payload is None:
-        payload = generate_payload(signature_scheme_to_payload[domain.protocol])
+        payload = generate_payload(signature_scheme_to_payload[domain.scheme])
     return {
         "request": {
             "domain_id": domain.id,

@@ -41,7 +41,7 @@ use near_sdk::{
     PromiseOrValue, PublicKey,
 };
 use primitives::{
-    domain::{DomainConfig, DomainId, DomainProtocol, DomainRegistry},
+    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
@@ -462,9 +462,9 @@ impl VersionedMpcContract {
     /// changes. Older key versions will always work but newer key versions were never held by
     /// older signers. Newer key versions may also add new security features, like only existing
     /// within a secure enclave. The signature_scheme parameter specifies which protocol
-    /// we're querying the latest version for. The default is SignSecp256k1. The default is **NOT**
+    /// we're querying the latest version for. The default is Secp256k1. The default is **NOT**
     /// to query across all protocols.
-    pub fn latest_key_version(&self, signature_scheme: Option<DomainProtocol>) -> u32 {
+    pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
         self.state()
             .most_recent_domain_for_protocol(signature_scheme.unwrap_or_default())
             .unwrap()
@@ -643,7 +643,7 @@ impl VersionedMpcContract {
                 ed25519_verify(signature.as_bytes(), message, &derived_public_key_32_bytes)
             }
             (signature_response, public_key_requested) => {
-                return Err(RespondError::DomainProtocolMismatch.message(format!(
+                return Err(RespondError::SignatureSchemeMismatch.message(format!(
                     "Signature response from MPC: {:?}. Key requested by user {:?}",
                     signature_response, public_key_requested
                 )));
@@ -1419,7 +1419,7 @@ mod tests {
     use super::*;
     use crate::crypto_shared::k256_types::{self, SerializableAffinePoint};
     use crate::primitives::{
-        domain::{DomainConfig, DomainId, DomainProtocol},
+        domain::{DomainConfig, DomainId, SignatureScheme},
         participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
@@ -1453,7 +1453,7 @@ mod tests {
         let domain_id = DomainId::legacy_ecdsa_id();
         let domains = vec![DomainConfig {
             id: domain_id,
-            protocol: DomainProtocol::SignSecp256k1,
+            scheme: SignatureScheme::Secp256k1,
         }];
         let epoch_id = EpochId::new(0);
         let near_public_key =

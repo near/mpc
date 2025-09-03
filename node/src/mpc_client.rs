@@ -18,7 +18,7 @@ use crate::types::SignatureRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_contract::crypto_shared::k256_types::SerializableAffinePoint;
 use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
-use mpc_contract::primitives::domain::{DomainId, DomainProtocol};
+use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -44,7 +44,7 @@ pub struct MpcClient {
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
-    domain_to_scheme: HashMap<DomainId, DomainProtocol>,
+    domain_to_scheme: HashMap<DomainId, SignatureScheme>,
 }
 
 impl MpcClient {
@@ -57,7 +57,7 @@ impl MpcClient {
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
-        domain_to_scheme: HashMap<DomainId, DomainProtocol>,
+        domain_to_scheme: HashMap<DomainId, SignatureScheme>,
     ) -> Self {
         Self {
             config,
@@ -316,7 +316,7 @@ impl MpcClient {
                                     .domain_to_scheme
                                     .get(&signature_attempt.request.domain)
                                 {
-                                    Some(DomainProtocol::SignSecp256k1) => {
+                                    Some(SignatureScheme::Secp256k1) => {
                                         let (signature, public_key) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.ecdsa_signature_provider
@@ -333,7 +333,7 @@ impl MpcClient {
 
                                         Ok(response)
                                     }
-                                    Some(DomainProtocol::SignEd25519) => {
+                                    Some(SignatureScheme::Ed25519) => {
                                         let (signature, _) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.eddsa_signature_provider
@@ -349,7 +349,7 @@ impl MpcClient {
 
                                         Ok(response)
                                     }
-                                    Some(DomainProtocol::CkdSecp256k1) => Err(anyhow::anyhow!(
+                                    Some(SignatureScheme::CkdSecp256k1) => Err(anyhow::anyhow!(
                                         "Incorrect protocol for domain: {:?}",
                                         signature_attempt.request.domain.clone()
                                     )),
@@ -407,46 +407,45 @@ impl MpcClient {
                                     .with_label_values(&["total"])
                                     .inc();
 
-                                let response = match this
-                                    .domain_to_scheme
-                                    .get(&ckd_attempt.request.domain_id)
-                                {
-                                    Some(DomainProtocol::CkdSecp256k1) => {
-                                        let response = timeout(
-                                            Duration::from_secs(this.config.ckd.timeout_sec),
-                                            this.ckd_provider
-                                                .clone()
-                                                .make_ckd(ckd_attempt.request.id),
-                                        )
-                                        .await??;
+                                let response =
+                                    match this.domain_to_scheme.get(&ckd_attempt.request.domain_id)
+                                    {
+                                        Some(SignatureScheme::CkdSecp256k1) => {
+                                            let response = timeout(
+                                                Duration::from_secs(this.config.ckd.timeout_sec),
+                                                this.ckd_provider
+                                                    .clone()
+                                                    .make_ckd(ckd_attempt.request.id),
+                                            )
+                                            .await??;
 
-                                        let response = ChainCKDRespondArgs::new_ckd(
-                                            &ckd_attempt.request,
-                                            &CKDResponse {
-                                                big_y: SerializableAffinePoint {
-                                                    affine_point: response.0,
+                                            let response = ChainCKDRespondArgs::new_ckd(
+                                                &ckd_attempt.request,
+                                                &CKDResponse {
+                                                    big_y: SerializableAffinePoint {
+                                                        affine_point: response.0,
+                                                    },
+                                                    big_c: SerializableAffinePoint {
+                                                        affine_point: response.1,
+                                                    },
                                                 },
-                                                big_c: SerializableAffinePoint {
-                                                    affine_point: response.1,
-                                                },
-                                            },
-                                        )?;
+                                            )?;
 
-                                        Ok(response)
-                                    }
-                                    Some(DomainProtocol::SignSecp256k1) => Err(anyhow::anyhow!(
-                                        "Signature scheme is not allowed for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                    Some(DomainProtocol::SignEd25519) => Err(anyhow::anyhow!(
-                                        "Signature scheme is not allowed for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                    None => Err(anyhow::anyhow!(
-                                        "Signature scheme is not found for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                }?;
+                                            Ok(response)
+                                        }
+                                        Some(SignatureScheme::Secp256k1) => Err(anyhow::anyhow!(
+                                            "Signature scheme is not allowed for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        )),
+                                        Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
+                                            "Signature scheme is not allowed for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        )),
+                                        None => Err(anyhow::anyhow!(
+                                            "Signature scheme is not found for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        )),
+                                    }?;
 
                                 metrics::MPC_NUM_CKD_COMPUTATIONS_LED
                                     .with_label_values(&["succeeded"])

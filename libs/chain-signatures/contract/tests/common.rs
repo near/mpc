@@ -20,7 +20,7 @@ use mpc_contract::{
     },
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
-        domain::{DomainConfig, DomainId, DomainProtocol},
+        domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         signature::{Bytes, SignatureRequest, Tweak},
@@ -217,16 +217,16 @@ pub async fn init_with_candidates(
             .enumerate()
             .map(|(i, pk)| {
                 let domain_id = DomainId((i as u64) * 2);
-                let protocol = match pk.curve_type() {
-                    CurveType::ED25519 => DomainProtocol::SignEd25519,
-                    CurveType::SECP256K1 => DomainProtocol::SignSecp256k1,
+                let scheme = match pk.curve_type() {
+                    CurveType::ED25519 => SignatureScheme::Ed25519,
+                    CurveType::SECP256K1 => SignatureScheme::Secp256k1,
                 };
                 let key = pk.try_into().unwrap();
 
                 (
                     DomainConfig {
                         id: domain_id,
-                        protocol,
+                        scheme,
                     },
                     KeyForDomain {
                         attempt: AttemptId::new(),
@@ -288,23 +288,23 @@ pub async fn init_env_secp256k1(
     Vec<SharedSecretKey>,
 ) {
     let (public_keys, secret_keys) =
-        make_key_for_domains(vec![DomainProtocol::SignSecp256k1; num_domains]);
+        make_key_for_domains(vec![SignatureScheme::Secp256k1; num_domains]);
     let (worker, contract, accounts) = init_with_candidates(public_keys).await;
 
     (worker, contract, accounts, secret_keys)
 }
 
 pub fn make_key_for_domains(
-    protocols: Vec<DomainProtocol>,
+    protocols: Vec<SignatureScheme>,
 ) -> (Vec<near_sdk::PublicKey>, Vec<SharedSecretKey>) {
     protocols
         .into_iter()
         .map(|protocol| match protocol {
-            DomainProtocol::SignSecp256k1 | DomainProtocol::CkdSecp256k1 => {
+            SignatureScheme::Secp256k1 | SignatureScheme::CkdSecp256k1 => {
                 let (pk, sk) = new_secp256k1();
                 (pk, SharedSecretKey::Secp256k1(sk))
             }
-            DomainProtocol::SignEd25519 => {
+            SignatureScheme::Ed25519 => {
                 let (pk, sk) = new_ed25519();
                 (pk, SharedSecretKey::Ed25519(sk))
             }
@@ -338,7 +338,7 @@ pub async fn init_env_ed25519(
     Vec<SharedSecretKey>,
 ) {
     let (public_keys, secret_keys) =
-        make_key_for_domains(vec![DomainProtocol::SignEd25519; num_domains]);
+        make_key_for_domains(vec![SignatureScheme::Ed25519; num_domains]);
     let (worker, contract, accounts) = init_with_candidates(public_keys).await;
 
     (worker, contract, accounts, secret_keys)

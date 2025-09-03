@@ -9,7 +9,7 @@ class ProtocolState(str, Enum):
     RESHARING = "Resharing"
 
 
-DomainProtocol = Literal["SignSecp256k1", "SignEd25519", "CkdSecp256k1"]
+SignatureScheme = Literal["Secp256k1", "Ed25519", "CkdSecp256k1"]
 
 
 @dataclass
@@ -48,7 +48,7 @@ class Keyset:
 @dataclass
 class Domain:
     id: int
-    protocol: DomainProtocol
+    scheme: SignatureScheme
 
 
 @dataclass
@@ -58,14 +58,14 @@ class Domains:
 
     def make_str(self):
         return f"\033[93mnext domain id: {self.next_domain_id}, " + ", ".join(
-            f"\033[93m({d.id} -> {d.protocol})" for d in self.domains
+            f"\033[93m({d.id} -> {d.scheme})" for d in self.domains
         )
 
     @staticmethod
     def from_json(domains_data):
         next_domain_id = domains_data["next_domain_id"]
         domains = [
-            Domain(id=d["id"], protocol=d["protocol"]) for d in domains_data["domains"]
+            Domain(id=d["id"], scheme=d["scheme"]) for d in domains_data["domains"]
         ]
         res = Domains(next_domain_id, domains)
         return res
@@ -247,7 +247,7 @@ class KeyEvent:
     def from_json(event_data):
         instance = KeyEventInstance.from_json(event_data.get("instance"))
         domain_data = event_data["domain"]
-        event_key = Domain(id=domain_data["id"], protocol=domain_data["protocol"])
+        event_key = Domain(id=domain_data["id"], scheme=domain_data["scheme"])
         return KeyEvent(
             next_attempt_id=event_data["next_attempt_id"],
             event_key=event_key,

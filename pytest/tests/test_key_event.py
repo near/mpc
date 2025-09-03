@@ -94,7 +94,7 @@ def test_multi_domain():
     cluster.send_and_await_ckd_requests(1)
 
     cluster.add_domains(
-        ["SignSecp256k1", "SignEd25519", "CkdSecp256k1", "SignEd25519"],
+        ["Secp256k1", "Ed25519", "Secp256k1", "Ed25519"],
         wait_for_running=False,
     )
     cluster.wait_for_state(ProtocolState.RUNNING)
@@ -108,7 +108,7 @@ def test_multi_domain():
 
     mpc_nodes[1].reserve_key_event_attempt(1, 5, 0)
     mpc_nodes[1].reserve_key_event_attempt(1, 5, 1)
-    cluster.add_domains(["SignSecp256k1"], wait_for_running=False)
+    cluster.add_domains(["Secp256k1"], wait_for_running=False)
     mpc_nodes[0].kill(False)
     for node in mpc_nodes[1:4]:
         print(f"{node.print()} voting to cancel domain")

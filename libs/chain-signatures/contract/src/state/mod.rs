@@ -6,7 +6,7 @@ pub mod running;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
-    domain::{DomainConfig, DomainId, DomainProtocol, DomainRegistry},
+    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     thresholds::{Threshold, ThresholdParameters},
 };
@@ -166,7 +166,7 @@ impl ProtocolContractState {
 
     pub fn most_recent_domain_for_protocol(
         &self,
-        signature_scheme: DomainProtocol,
+        signature_scheme: SignatureScheme,
     ) -> Result<DomainId, Error> {
         self.domain_registry()?
             .most_recent_domain_for_protocol(signature_scheme)

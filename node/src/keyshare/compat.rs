@@ -21,7 +21,7 @@ pub fn legacy_ecdsa_key_from_keyshares(
             keyshare.key_id.domain_id
         );
     }
-    let KeyshareData::SignSecp256k1(secp256k1_data) = &keyshare.data else {
+    let KeyshareData::Secp256k1(secp256k1_data) = &keyshare.data else {
         anyhow::bail!(
             "Expected keyshare for legacy ECDSA domain, got {:?}",
             keyshare.key_id.domain_id
@@ -43,7 +43,7 @@ impl Keyshare {
                 DomainId::legacy_ecdsa_id(),
                 AttemptId::legacy_attempt_id(),
             ),
-            data: KeyshareData::SignSecp256k1(KeygenOutput {
+            data: KeyshareData::Secp256k1(KeygenOutput {
                 private_share: SigningShare::new(legacy.private_share),
                 public_key: VerifyingKey::new(legacy.public_key.into()),
             }),

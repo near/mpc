@@ -18,7 +18,7 @@ pub fn generate_dummy_keyshare(epoch_id: u64, domain_id: u64, attempt_id: u64) -
             DomainId(domain_id),
             serde_json::from_str(&format!("{}", attempt_id)).unwrap(),
         ),
-        data: KeyshareData::SignSecp256k1(KeygenOutput {
+        data: KeyshareData::Secp256k1(KeygenOutput {
             private_share: key.private_share,
             public_key: key.public_key,
         }),

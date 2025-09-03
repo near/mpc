@@ -26,7 +26,7 @@ use crate::tracking::{self};
 use crate::web::DebugRequest;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use mpc_contract::primitives::domain::{DomainId, DomainProtocol};
+use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use mpc_contract::primitives::key_state::EpochId;
 use near_time::Clock;
 use std::collections::HashMap;
@@ -541,22 +541,22 @@ impl Coordinator {
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
                 let mut ckd_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
-                let mut domain_to_scheme: HashMap<DomainId, DomainProtocol> = HashMap::new();
+                let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
 
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
-                        KeyshareData::SignSecp256k1(data) => {
+                        KeyshareData::Secp256k1(data) => {
                             ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, DomainProtocol::SignSecp256k1);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
                         }
-                        KeyshareData::SignEd25519(data) => {
+                        KeyshareData::Ed25519(data) => {
                             eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, DomainProtocol::SignEd25519);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
                         }
                         KeyshareData::CkdSecp256k1(data) => {
                             ckd_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, DomainProtocol::CkdSecp256k1);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::CkdSecp256k1);
                         }
                     }
                 }

@@ -42,7 +42,7 @@ def generate_app_public_key() -> str:
 
 
 def generate_ckd_args(domain: Domain, app_public_key: Optional[str] = None) -> dict:
-    assert domain.protocol == "CkdSecp256k1"
+    assert domain.scheme == "CkdSecp256k1"
     if app_public_key is None:
         app_public_key = generate_app_public_key()
     return {"request": {"domain_id": domain.id, "app_public_key": app_public_key}}
