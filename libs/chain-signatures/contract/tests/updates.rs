@@ -81,6 +81,7 @@ async fn test_propose_update_config() {
     // have each participant propose a new update:
     let new_config = Config {
         key_event_timeout_blocks: 20,
+        tee_upgrade_deadline_duration_blocks: 3333,
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
@@ -263,9 +264,7 @@ async fn test_propose_incorrect_updates() {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     dbg!(contract.id());
 
-    let dummy_config = Config {
-        key_event_timeout_blocks: 20,
-    };
+    let dummy_config = Config::default();
 
     // Can not propose update both to code and config
     let execution = accounts[0]
