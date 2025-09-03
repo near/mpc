@@ -1,13 +1,10 @@
 pub mod common;
 
-use crate::common::gen_accounts;
+use crate::common::{gen_accounts, vote_for_hash};
 use anyhow::Result;
 use assert_matches::assert_matches;
 use attestation::attestation::Attestation;
-use common::{
-    check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
-    submit_participant_info,
-};
+use common::{get_tee_accounts, init_env_ed25519, init_env_secp256k1, submit_participant_info};
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
@@ -205,21 +202,6 @@ async fn get_latest_code_hash(contract: &Contract) -> Result<Option<MpcDockerIma
         .transact()
         .await?
         .json::<Option<MpcDockerImageHash>>()?)
-}
-
-async fn vote_for_hash(
-    account: &Account,
-    contract: &Contract,
-    hash: &MpcDockerImageHash,
-) -> Result<()> {
-    check_call_success(
-        account
-            .call(contract.id(), "vote_code_hash")
-            .args_json(serde_json::json!({"code_hash": hash}))
-            .transact()
-            .await?,
-    );
-    Ok(())
 }
 
 async fn get_participants(contract: &Contract) -> Result<usize> {
