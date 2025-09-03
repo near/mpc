@@ -178,3 +178,24 @@ pub fn delete_stale_triples_and_presignatures(
     update_writer.commit()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::db::SecretDB;
+
+    pub fn prepare(secret_db: std::sync::Arc<SecretDB>) {
+        // 1. make a secret db
+        //let secret_b = SecretDB::new(path, cer);
+        //
+        // 2. store some secret shares that you own
+        // 3. store some secret shares of a different participant
+        // 4. ensure they are there.
+        // 5. now, calle the cleanup mechanism
+        // 6. ensure that they are gone / there / partially there.
+        //
+        // let update_writer = secret.writer
+        //secret_db.put()
+        // need to implement the trait for participantId, but that should be simple. Basically, the
+        // value is a vector of participants.
+    }
+}
