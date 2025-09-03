@@ -460,14 +460,14 @@ impl VersionedMpcContract {
     }
 
     /// Key versions refer new versions of the root key that we may choose to generate on cohort
-    /// changes Older key versions will always work but newer key versions were never held by
-    /// older signers Newer key versions may also add new security features, like only existing
-    /// within a secure enclave. The signature_scheme parameter specifies which signature scheme
+    /// changes. Older key versions will always work but newer key versions were never held by
+    /// older signers. Newer key versions may also add new security features, like only existing
+    /// within a secure enclave. The signature_scheme parameter specifies which protocol
     /// we're querying the latest version for. The default is Secp256k1. The default is **NOT**
-    /// to query across all signature schemes.
+    /// to query across all protocols.
     pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
         self.state()
-            .most_recent_domain_for_signature_scheme(signature_scheme.unwrap_or_default())
+            .most_recent_domain_for_protocol(signature_scheme.unwrap_or_default())
             .unwrap()
             .0 as u32
     }
