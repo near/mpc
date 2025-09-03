@@ -209,7 +209,7 @@ mod tests {
         assert_eq!(loaded.keyshares[0].key_id.attempt_id.get(), 0);
         assert_eq!(
             loaded.keyshares[0].data,
-            KeyshareData::Secp256k1(threshold_signatures::ecdsa::KeygenOutput {
+            KeyshareData::SignSecp256k1(threshold_signatures::ecdsa::KeygenOutput {
                 private_share: SigningShare::new(legacy_data.private_share),
                 public_key: VerifyingKey::new(legacy_data.public_key.into()),
             })

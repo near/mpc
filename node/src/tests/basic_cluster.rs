@@ -4,7 +4,7 @@ use crate::tests::{
     DEFAULT_BLOCK_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
+use mpc_contract::primitives::domain::{DomainConfig, DomainId, DomainProtocol};
 use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
 
@@ -29,15 +29,20 @@ async fn test_basic_cluster() {
         DEFAULT_BLOCK_TIME,
     );
 
-    let domain = DomainConfig {
+    let sig_domain = DomainConfig {
         id: DomainId(0),
-        scheme: SignatureScheme::Secp256k1,
+        protocol: DomainProtocol::SignSecp256k1,
+    };
+
+    let ckd_domain = DomainConfig {
+        id: DomainId(1),
+        protocol: DomainProtocol::CkdSecp256k1,
     };
 
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
-        contract.add_domains(vec![domain.clone()]);
+        contract.add_domains(vec![sig_domain.clone(), ckd_domain.clone()]);
     }
 
     let _runs = setup
@@ -49,7 +54,7 @@ async fn test_basic_cluster() {
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
-        &domain,
+        &sig_domain,
         std::time::Duration::from_secs(60)
     )
     .await
@@ -58,7 +63,7 @@ async fn test_basic_cluster() {
     assert!(request_ckd_and_await_response(
         &mut setup.indexer,
         "user0",
-        &domain,
+        &ckd_domain,
         std::time::Duration::from_secs(60)
     )
     .await

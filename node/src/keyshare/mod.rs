@@ -16,8 +16,9 @@ use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum KeyshareData {
-    Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
-    Ed25519(threshold_signatures::eddsa::KeygenOutput),
+    SignSecp256k1(threshold_signatures::ecdsa::KeygenOutput),
+    SignEd25519(threshold_signatures::eddsa::KeygenOutput),
+    CkdSecp256k1(threshold_signatures::ecdsa::KeygenOutput),
 }
 
 /// A single keyshare, corresponding to one epoch, one domain, one attempt.
@@ -30,8 +31,9 @@ pub struct Keyshare {
 impl Keyshare {
     pub fn public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         match &self.data {
-            KeyshareData::Secp256k1(data) => data.public_key.to_near_sdk_public_key(),
-            KeyshareData::Ed25519(data) => data.public_key.to_near_sdk_public_key(),
+            KeyshareData::SignSecp256k1(data) => data.public_key.to_near_sdk_public_key(),
+            KeyshareData::SignEd25519(data) => data.public_key.to_near_sdk_public_key(),
+            KeyshareData::CkdSecp256k1(data) => data.public_key.to_near_sdk_public_key(),
         }
     }
 

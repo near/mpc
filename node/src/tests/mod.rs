@@ -20,7 +20,7 @@ use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, StaticWebData};
-use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
+use mpc_contract::primitives::domain::{DomainConfig, DomainProtocol};
 use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
@@ -350,18 +350,19 @@ pub async fn request_signature_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
-    let payload = match domain.scheme {
-        SignatureScheme::Secp256k1 => {
+    let payload = match domain.protocol {
+        DomainProtocol::SignSecp256k1 => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
         }
-        SignatureScheme::Ed25519 => {
+        DomainProtocol::SignEd25519 => {
             let len = rand::thread_rng().gen_range(32..1232);
             let mut payload = vec![0; len];
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Eddsa(Bytes::new(payload.to_vec()).unwrap())
         }
+        DomainProtocol::CkdSecp256k1 => unreachable!(),
     };
     let request = SignatureRequestFromChain {
         entropy: rand::random(),
@@ -428,6 +429,12 @@ pub async fn request_ckd_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
+    if domain.protocol != DomainProtocol::CkdSecp256k1 {
+        panic!(
+            "`request_ckd_and_await_response` must be called with a compatible domain: {:?}",
+            domain.protocol
+        )
+    }
     let request = CKDRequestFromChain {
         ckd_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),

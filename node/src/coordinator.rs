@@ -26,7 +26,7 @@ use crate::tracking::{self};
 use crate::web::DebugRequest;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
+use mpc_contract::primitives::domain::{DomainId, DomainProtocol};
 use mpc_contract::primitives::key_state::EpochId;
 use near_time::Clock;
 use std::collections::HashMap;
@@ -540,20 +540,23 @@ impl Coordinator {
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
-                let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
+                let mut ckd_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
+                let mut domain_to_scheme: HashMap<DomainId, DomainProtocol> = HashMap::new();
 
-                // Secp256k1 shares are used both for ecdsa and CKD
-                // Which domain is used for each is to be decided in https://github.com/near/mpc/issues/951
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
-                        KeyshareData::Secp256k1(data) => {
+                        KeyshareData::SignSecp256k1(data) => {
                             ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
+                            domain_to_scheme.insert(domain_id, DomainProtocol::SignSecp256k1);
                         }
-                        KeyshareData::Ed25519(data) => {
+                        KeyshareData::SignEd25519(data) => {
                             eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
+                            domain_to_scheme.insert(domain_id, DomainProtocol::SignEd25519);
+                        }
+                        KeyshareData::CkdSecp256k1(data) => {
+                            ckd_keyshares.insert(keyshare.key_id.domain_id, data);
+                            domain_to_scheme.insert(domain_id, DomainProtocol::CkdSecp256k1);
                         }
                     }
                 }
@@ -581,7 +584,7 @@ impl Coordinator {
                     running_mpc_config.clone().into(),
                     network_client.clone(),
                     ckd_request_store.clone(),
-                    ecdsa_keyshares,
+                    ckd_keyshares,
                 ));
 
                 let mpc_client = Arc::new(MpcClient::new(
