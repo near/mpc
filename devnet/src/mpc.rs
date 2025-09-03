@@ -608,10 +608,10 @@ impl MpcVoteAddDomainsCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
             "Going to vote_add_domains MPC network {} for signature schemes {:?}",
-            name, self.protocols
+            name, self.schemes
         );
-        let protocols: Vec<SignatureScheme> = self
-            .protocols
+        let schemes: Vec<SignatureScheme> = self
+            .schemes
             .iter()
             .map(|scheme| {
                 serde_json::from_str(&format!("\"{}\"", scheme))
@@ -644,7 +644,7 @@ impl MpcVoteAddDomainsCmd {
         };
         let mut proposal = Vec::new();
         let mut next_domain = domains.next_domain_id();
-        for scheme in &protocols {
+        for scheme in &schemes {
             proposal.push(DomainConfig {
                 id: DomainId(next_domain),
                 scheme: *scheme,

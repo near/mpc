@@ -140,7 +140,8 @@ fn make_payload(scheme: SignatureScheme) -> Payload {
             rand::rng().fill_bytes(&mut payload);
             Payload::Eddsa(Bytes::new(payload).unwrap())
         }
-        SignatureScheme::CkdSecp256k1 => unreachable!(),
+        // TODO: should be handled as part of https://github.com/near/mpc/issues/1012
+        SignatureScheme::CkdSecp256k1 => todo!(),
     }
 }
 

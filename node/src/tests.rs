@@ -429,12 +429,7 @@ pub async fn request_ckd_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
-    if domain.scheme != SignatureScheme::CkdSecp256k1 {
-        panic!(
-            "`request_ckd_and_await_response` must be called with a compatible domain: {:?}",
-            domain.scheme
-        )
-    }
+    assert!(matches!(domain.scheme, SignatureScheme::CkdSecp256k1));
     let request = CKDRequestFromChain {
         ckd_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
