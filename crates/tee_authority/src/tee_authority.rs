@@ -1,6 +1,6 @@
 use anyhow::{Context, bail};
 use attestation::{
-    attestation::{Attestation, DstackAttestation, LocalAttestation},
+    attestation::{Attestation, DstackAttestation, MockAttestation},
     collateral::Collateral,
     quote::QuoteBytes,
     report_data::ReportData,
@@ -74,12 +74,12 @@ impl TeeAuthority {
                 let create_valid_attestation = config.generate_valid_attestations;
 
                 let attestation = if create_valid_attestation {
-                    LocalAttestation::Valid
+                    MockAttestation::Valid
                 } else {
-                    LocalAttestation::Invalid
+                    MockAttestation::Invalid
                 };
 
-                Ok(Attestation::Local(attestation))
+                Ok(Attestation::Mock(attestation))
             }
             TeeAuthority::Dstack(config) => {
                 self.generate_dstack_attestation(config, report_data).await

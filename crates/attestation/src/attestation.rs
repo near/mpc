@@ -37,7 +37,7 @@ const RTMR3_INDEX: u32 = 3;
 )]
 pub enum Attestation {
     Dstack(DstackAttestation),
-    Local(LocalAttestation),
+    Mock(MockAttestation),
 }
 
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
@@ -81,7 +81,7 @@ impl fmt::Debug for DstackAttestation {
     derive(borsh::BorshSchema)
 )]
 #[derive(Debug, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
-pub enum LocalAttestation {
+pub enum MockAttestation {
     /// Always pass validation
     Valid,
     /// Always fails validation
@@ -94,20 +94,20 @@ pub enum LocalAttestation {
     },
 }
 
-impl LocalAttestation {
-    pub fn with_constraints() -> LocalAttestationWithConstraintsBuilder {
-        LocalAttestationWithConstraintsBuilder::default()
+impl MockAttestation {
+    pub fn with_constraints() -> MockAttestationWithConstraintsBuilder {
+        MockAttestationWithConstraintsBuilder::default()
     }
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct LocalAttestationWithConstraintsBuilder {
+pub struct MockAttestationWithConstraintsBuilder {
     mpc_docker_image_hash: Option<MpcDockerImageHash>,
     launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
     expiry_time_stamp_seconds: Option<u64>,
 }
 
-impl LocalAttestationWithConstraintsBuilder {
+impl MockAttestationWithConstraintsBuilder {
     pub fn mpc_docker_image_hash(mut self, hash: MpcDockerImageHash) -> Self {
         self.mpc_docker_image_hash = Some(hash);
         self
@@ -123,8 +123,8 @@ impl LocalAttestationWithConstraintsBuilder {
         self
     }
 
-    pub fn build(self) -> LocalAttestation {
-        LocalAttestation::WithConstraints {
+    pub fn build(self) -> MockAttestation {
+        MockAttestation::WithConstraints {
             mpc_docker_image_hash: self.mpc_docker_image_hash,
             launcher_docker_compose_hash: self.launcher_docker_compose_hash,
             expiry_time_stamp_seconds: self.expiry_time_stamp_seconds,
@@ -132,16 +132,16 @@ impl LocalAttestationWithConstraintsBuilder {
     }
 }
 
-pub(crate) fn verify_local_attestation(
-    local_attestation: &LocalAttestation,
+pub(crate) fn verify_mock_attestation(
+    mock_attestation: &MockAttestation,
     timestamp_seconds: u64,
     allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
     allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
 ) -> bool {
-    match local_attestation {
-        LocalAttestation::Valid => true,
-        LocalAttestation::Invalid => false,
-        LocalAttestation::WithConstraints {
+    match mock_attestation {
+        MockAttestation::Valid => true,
+        MockAttestation::Invalid => false,
+        MockAttestation::WithConstraints {
             mpc_docker_image_hash,
             launcher_docker_compose_hash,
             expiry_time_stamp_seconds,
@@ -180,8 +180,8 @@ impl Attestation {
                 allowed_mpc_docker_image_hashes,
                 allowed_launcher_docker_compose_hashes,
             ),
-            Self::Local(local_attestation) => verify_local_attestation(
-                local_attestation,
+            Self::Mock(mock_attestation) => verify_mock_attestation(
+                mock_attestation,
                 timestamp_seconds,
                 allowed_mpc_docker_image_hashes,
                 allowed_launcher_docker_compose_hashes,

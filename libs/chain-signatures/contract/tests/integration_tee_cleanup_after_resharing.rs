@@ -1,7 +1,7 @@
 pub mod common;
 
 use anyhow::Result;
-use attestation::attestation::{Attestation, LocalAttestation};
+use attestation::attestation::{Attestation, MockAttestation};
 use near_workspaces::AccountId;
 use serde_json::json;
 use std::collections::HashSet;
@@ -33,7 +33,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // Set up TEE attestations for all initial participants
     let tls_key = p2p_tls_key();
-    let attestation = Attestation::Local(LocalAttestation::Valid);
+    let attestation = Attestation::Mock(MockAttestation::Valid);
 
     for account in &initial_accounts {
         let submission_result =

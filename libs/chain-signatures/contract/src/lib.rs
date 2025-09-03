@@ -1424,7 +1424,7 @@ mod tests {
         signature::{Payload, Tweak},
         test_utils::gen_participants,
     };
-    use attestation::attestation::{Attestation, LocalAttestation};
+    use attestation::attestation::{Attestation, MockAttestation};
     use k256::{
         self,
         ecdsa::SigningKey,
@@ -1677,9 +1677,9 @@ mod tests {
         let participants_list = participants.participants();
         let (account_id, _, participant_info) = &participants_list[participant_index];
         let attestation = if is_valid {
-            LocalAttestation::Valid
+            MockAttestation::Valid
         } else {
-            LocalAttestation::Invalid
+            MockAttestation::Invalid
         };
 
         let tls_public_key = participant_info.sign_pk.clone();
@@ -1690,7 +1690,7 @@ mod tests {
             .build();
         testing_env!(participant_context);
 
-        contract.submit_participant_info(Attestation::Local(attestation), tls_public_key)
+        contract.submit_participant_info(Attestation::Mock(attestation), tls_public_key)
     }
 
     fn submit_valid_attestations(

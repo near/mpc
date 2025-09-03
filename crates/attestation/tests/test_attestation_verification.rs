@@ -1,5 +1,5 @@
 use attestation::{
-    attestation::{Attestation, LocalAttestation},
+    attestation::{Attestation, MockAttestation},
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
@@ -10,10 +10,10 @@ use test_utils::attestation::{
 };
 
 #[rstest]
-#[case(LocalAttestation::Valid, true)]
-#[case(LocalAttestation::Invalid, false)]
+#[case(MockAttestation::Valid, true)]
+#[case(MockAttestation::Invalid, false)]
 fn test_mock_attestation_verify(
-    #[case] local_attestation: LocalAttestation,
+    #[case] local_attestation: MockAttestation,
     #[case] expected_quote_verification_result: bool,
 ) {
     let timestamp_s = 0u64;
@@ -21,7 +21,7 @@ fn test_mock_attestation_verify(
         .parse()
         .unwrap();
     let report_data = ReportData::V1(ReportDataV1::new(tls_key));
-    let attestation = Attestation::Local(local_attestation);
+    let attestation = Attestation::Mock(local_attestation);
 
     assert_eq!(
         attestation.verify(report_data, timestamp_s, &[], &[],),

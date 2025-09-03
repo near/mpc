@@ -3,7 +3,7 @@ pub mod common;
 use crate::common::gen_accounts;
 use anyhow::Result;
 use assert_matches::assert_matches;
-use attestation::attestation::{Attestation, LocalAttestation};
+use attestation::attestation::{Attestation, MockAttestation};
 use common::{
     check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
     submit_participant_info,
@@ -263,16 +263,16 @@ async fn test_submit_participant_info_test_method_available_in_integration_tests
     Ok(())
 }
 
-/// **Local attestation bypass** - Tests that participant info submission succeeds with local attestation.
-/// Different from the dstack attestation tests above, this uses local attestation which bypasses complex TEE verification.
+/// **Mock attestation bypass** - Tests that participant info submission succeeds with mock attestation.
+/// Different from the dstack attestation tests above, this uses a mock attestation which bypasses complex TEE verification.
 /// This demonstrates that the submission mechanism itself works when attestation verification passes.
 #[tokio::test]
-async fn test_submit_participant_info_succeeds_with_local_attestation() -> Result<()> {
+async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
-    let local_attestation = Attestation::Local(LocalAttestation::Valid);
+    let mock_attestation = Attestation::Mock(MockAttestation::Valid);
     let tls_key = p2p_tls_key();
     let success =
-        submit_participant_info(&accounts[0], &contract, &local_attestation, &tls_key).await?;
+        submit_participant_info(&accounts[0], &contract, &mock_attestation, &tls_key).await?;
     assert!(success);
     Ok(())
 }
