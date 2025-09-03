@@ -37,10 +37,11 @@ It should be uploaded to: /tapp/.host-shared/.user-config
 
 The launcher supports the following environment variables via `/tapp/.host-shared/.user-config`:
 
+```bash
 LAUNCHER_IMAGE_NAME=nearone/mpc-node-gcp
 LAUNCHER_IMAGE_TAGS=latest
 LAUNCHER_REGISTRY=registry.hub.docker.com
-
+```
 
 ## Reproducible builds
 from: tee_launcher folder run:
@@ -81,4 +82,4 @@ Opens: write a script utilizing `vmm-cli.py` from Dstack to deploy an mpc node
 - Actual upgrade procedure
   - Write new image hash to /mnt/shared/image-digest
   - Shut down cvm
-  - Amend LAUNCHER_IMAGE_TAGS if necessary; can be done from host by editing ./meta-dstack/build/run/*/shared/.user-config
+  - Amend `LAUNCHER_IMAGE_TAGS` if necessary; can be done from host by editing ./meta-dstack/build/run/*/shared/.user-config
