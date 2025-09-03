@@ -43,6 +43,7 @@ impl FakeMpcContractState {
         let state = ProtocolContractState::NotInitialized;
         let config = Config {
             key_event_timeout_blocks: 10,
+            ..Default::default()
         };
         let env = Environment::new(None, None, None);
         Self {

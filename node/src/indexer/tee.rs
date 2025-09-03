@@ -39,9 +39,7 @@ pub async fn monitor_allowed_docker_images(
                 )
                 .await
                 {
-                    Ok((block_height, mut allowed_images_on_contract)) => {
-                        let allowed_images: Vec<AllowedDockerImageHash> =
-                            allowed_images_on_contract.get(block_height);
+                    Ok((_block_height, allowed_images)) => {
                         break allowed_images;
                     }
                     Err(e) => {

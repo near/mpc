@@ -16,7 +16,7 @@ use crate::{
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
-    tee::{proposal::AllowedDockerImageHashes, quote::TeeQuoteStatus, tee_state::TeeState},
+    tee::{proposal::AllowedDockerImageHash, quote::TeeQuoteStatus, tee_state::TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
     v0_state::MpcContractV1,
 };
@@ -159,7 +159,7 @@ impl MpcContract {
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: ProposedUpdates::default(),
             config: Config::from(init_config),
-            tee_state: Default::default(),
+            tee_state: TeeState::default(),
             accept_requests: true,
         }
     }
@@ -255,7 +255,10 @@ impl MpcContract {
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
         if votes >= self.threshold()?.value() {
-            self.tee_state.whitelist_tee_proposal(code_hash);
+            self.tee_state.whitelist_tee_proposal(
+                code_hash,
+                self.config.tee_upgrade_deadline_duration_blocks,
+            );
         }
 
         Ok(())
@@ -263,7 +266,7 @@ impl MpcContract {
 
     pub fn latest_code_hash(&mut self) -> MpcDockerImageHash {
         self.tee_state
-            .get_allowed_hashes()
+            .get_allowed_hashes(self.config.tee_upgrade_deadline_duration_blocks)
             .last()
             .expect("there must be at least one allowed code hash")
             .clone()
@@ -722,6 +725,7 @@ impl VersionedMpcContract {
             .verify_proposed_participant_attestation(
                 &proposed_participant_attestation,
                 tls_public_key,
+                mpc_contract.config.tee_upgrade_deadline_duration_blocks,
             );
 
         if status == TeeQuoteStatus::Invalid {
@@ -781,8 +785,10 @@ impl VersionedMpcContract {
 
         match self {
             Self::V2(mpc_contract) => {
-                let validation_result =
-                    mpc_contract.tee_state.validate_tee(proposal.participants());
+                let validation_result = mpc_contract.tee_state.validate_tee(
+                    proposal.participants(),
+                    mpc_contract.config.tee_upgrade_deadline_duration_blocks,
+                );
                 match validation_result {
                     TeeValidationResult::Full => {
                         mpc_contract.vote_new_parameters(prospective_epoch_id, &proposal)
@@ -1063,7 +1069,14 @@ impl VersionedMpcContract {
     pub fn allowed_code_hashes(&mut self) -> Result<Vec<MpcDockerImageHash>, Error> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
         match self {
-            Self::V2(contract) => Ok(contract.tee_state.get_allowed_hashes()),
+            Self::V2(contract) => {
+                let tee_upgrade_deadline_duration_blocks =
+                    contract.config.tee_upgrade_deadline_duration_blocks;
+
+                Ok(contract
+                    .tee_state
+                    .get_allowed_hashes(tee_upgrade_deadline_duration_blocks))
+            }
             _ => env::panic_str("expected V2"),
         }
     }
@@ -1103,10 +1116,14 @@ impl VersionedMpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
         let current_params = running_state.parameters.clone();
-        match contract
-            .tee_state
-            .validate_tee(current_params.participants())
-        {
+
+        let tee_upgrade_deadline_duration_blocks =
+            contract.config.tee_upgrade_deadline_duration_blocks;
+
+        match contract.tee_state.validate_tee(
+            current_params.participants(),
+            tee_upgrade_deadline_duration_blocks,
+        ) {
             TeeValidationResult::Full => {
                 contract.accept_requests = true;
                 log!("All participants have an accepted Tee status");
@@ -1254,9 +1271,22 @@ impl VersionedMpcContract {
         }
     }
 
-    pub fn allowed_docker_image_hashes(&self) -> &AllowedDockerImageHashes {
+    pub fn allowed_docker_image_hashes(&self) -> Vec<AllowedDockerImageHash> {
         match self {
-            Self::V2(mpc_contract) => &mpc_contract.tee_state.allowed_docker_image_hashes,
+            Self::V2(mpc_contract) => {
+                let tee_upgrade_deadline_duration_blocks =
+                    mpc_contract.config.tee_upgrade_deadline_duration_blocks;
+
+                let current_block_height = env::block_height();
+
+                // this is a query method, meaning no `&mut self`, so we need to clone.
+                let mut allowed_image_hashes =
+                    mpc_contract.tee_state.allowed_docker_image_hashes.clone();
+
+                allowed_image_hashes
+                    .get(current_block_height, tee_upgrade_deadline_duration_blocks)
+                    .to_vec()
+            }
             _ => env::panic_str("expected V2"),
         }
     }

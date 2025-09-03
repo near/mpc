@@ -3,9 +3,6 @@ use std::collections::BTreeMap;
 
 use crate::primitives::key_state::AuthenticatedParticipantId;
 
-// Maximum time after which TEE MPC nodes must be upgraded to the latest version
-const TEE_UPGRADE_PERIOD: BlockHeight = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds
-
 pub use mpc_primitives::hash::LauncherDockerComposeHash;
 pub use mpc_primitives::hash::MpcDockerImageHash;
 
@@ -63,7 +60,7 @@ pub struct AllowedDockerImageHash {
 /// Collection of whitelisted Docker code hashes that are the only ones MPC nodes are allowed to
 /// run.
 #[near(serializers=[borsh, json])]
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct AllowedDockerImageHashes {
     /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
     /// lazily cleaned up during insertions and lookups.
@@ -73,12 +70,18 @@ pub struct AllowedDockerImageHashes {
 impl AllowedDockerImageHashes {
     /// Removes all expired code hashes and returns the number of removed entries.
     /// Ensures that at least one (the latest) proposal always remains in the whitelist.
-    fn clean_expired_hashes(&mut self, current_block_height: BlockHeight) -> usize {
+    fn clean_expired_hashes(
+        &mut self,
+        current_block_height: BlockHeight,
+        tee_upgrade_deadline_duration_blocks: u64,
+    ) -> usize {
         // Find the first non-expired entry, but never remove the last one
         let expired_count = self
             .allowed_tee_proposals
             .iter()
-            .position(|entry| entry.added + TEE_UPGRADE_PERIOD >= current_block_height)
+            .position(|entry| {
+                entry.added + tee_upgrade_deadline_duration_blocks >= current_block_height
+            })
             .unwrap_or(self.allowed_tee_proposals.len());
 
         // Never remove all proposals; always keep at least one (the latest)
@@ -91,9 +94,13 @@ impl AllowedDockerImageHashes {
 
     /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
     /// order by `added` (ascending). Returns `true` if the insertion was successful, `false` if the
-    /// code hash already exists.
-    pub fn insert(&mut self, code_hash: MpcDockerImageHash, current_block_height: u64) -> bool {
-        self.clean_expired_hashes(current_block_height);
+    pub fn insert(
+        &mut self,
+        code_hash: MpcDockerImageHash,
+        current_block_height: u64,
+        tee_upgrade_deadline_duration_blocks: u64,
+    ) -> bool {
+        self.clean_expired_hashes(current_block_height, tee_upgrade_deadline_duration_blocks);
 
         // Remove the old entry if it exists
         if let Some(pos) = self
@@ -124,9 +131,13 @@ impl AllowedDockerImageHashes {
         true
     }
 
-    pub fn get(&mut self, current_block_height: BlockHeight) -> Vec<AllowedDockerImageHash> {
-        self.clean_expired_hashes(current_block_height);
-        self.allowed_tee_proposals.clone()
+    pub fn get(
+        &mut self,
+        current_block_height: BlockHeight,
+        tee_upgrade_deadline_duration_blocks: u64,
+    ) -> &[AllowedDockerImageHash] {
+        self.clean_expired_hashes(current_block_height, tee_upgrade_deadline_duration_blocks);
+        &self.allowed_tee_proposals
     }
 
     // Given a docker image hash obtain the launcher docker compose hash
@@ -152,6 +163,7 @@ impl AllowedDockerImageHashes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS: u64 = 100;
 
     fn dummy_code_hash(val: u8) -> MpcDockerImageHash {
         MpcDockerImageHash::from([val; 32])
@@ -163,19 +175,31 @@ mod tests {
         let block_height = 1000;
 
         // Insert a new proposal
-        let inserted = allowed.insert(dummy_code_hash(1), block_height);
+        let inserted = allowed.insert(
+            dummy_code_hash(1),
+            block_height,
+            TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
+        );
         assert!(inserted);
 
         // Insert the same code hash again (should success)
-        let inserted_again = allowed.insert(dummy_code_hash(1), block_height + 1);
+        let inserted_again = allowed.insert(
+            dummy_code_hash(1),
+            block_height + 1,
+            TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
+        );
         assert!(inserted_again);
 
         // Insert a different code hash
-        let inserted2 = allowed.insert(dummy_code_hash(2), block_height + 2);
+        let inserted2 = allowed.insert(
+            dummy_code_hash(2),
+            block_height + 2,
+            TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
+        );
         assert!(inserted2);
 
         // Get proposals (should return both)
-        let proposals = allowed.get(block_height + 2);
+        let proposals = allowed.get(block_height + 2, TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS);
         assert_eq!(proposals.len(), 2);
         assert_eq!(proposals[0].image_hash, dummy_code_hash(1));
         assert_eq!(proposals[1].image_hash, dummy_code_hash(2));
@@ -187,12 +211,20 @@ mod tests {
         let block_height = 1000;
 
         // Insert two proposals at different heights
-        allowed.insert(dummy_code_hash(1), block_height);
-        allowed.insert(dummy_code_hash(2), block_height + 1);
+        allowed.insert(
+            dummy_code_hash(1),
+            block_height,
+            TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
+        );
+        allowed.insert(
+            dummy_code_hash(2),
+            block_height + 1,
+            TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
+        );
 
         // Move block height far enough to expire the first proposal
-        let expired_height = block_height + TEE_UPGRADE_PERIOD + 1;
-        let proposals = allowed.get(expired_height);
+        let expired_height = block_height + TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS + 1;
+        let proposals = allowed.get(expired_height, TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS);
 
         // Only the second proposal should remain if the first is expired
         assert_eq!(proposals.len(), 1);
@@ -200,8 +232,8 @@ mod tests {
 
         // Move block height far enough to expire both proposals; we never allow all proposals in
         // the whitelist to expire, so there should still be one proposal in the whitelist
-        let expired_height = block_height + TEE_UPGRADE_PERIOD + 2;
-        let proposals = allowed.get(expired_height);
+        let expired_height = block_height + TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS + 2;
+        let proposals = allowed.get(expired_height, TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS);
 
         assert_eq!(proposals.len(), 1);
         assert_eq!(proposals[0].image_hash, dummy_code_hash(2));

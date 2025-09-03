@@ -22,7 +22,6 @@ use crate::state::{initializing::InitializingContractState, key_event::KeyEvent}
 use crate::storage_keys::StorageKey;
 use crate::update::UpdateId;
 use crate::{
-    config::Config,
     primitives::signature::{SignatureRequest, YieldIndex},
     MpcContract,
 };
@@ -139,15 +138,34 @@ impl From<ProtocolContractState> for crate::ProtocolContractState {
     }
 }
 
+#[near(serializers=[borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Config {
+    /// If a key event attempt has not successfully completed within this many blocks,
+    /// it is considered failed.
+    pub key_event_timeout_blocks: u64,
+}
+
+impl From<Config> for crate::config::Config {
+    fn from(old_config: Config) -> Self {
+        crate::config::Config {
+            key_event_timeout_blocks: old_config.key_event_timeout_blocks,
+            ..Default::default()
+        }
+    }
+}
+
 impl From<MpcContractV1> for MpcContract {
     fn from(value: MpcContractV1) -> Self {
+        let config = value.config.into();
+        let tee_state = crate::TeeState::default();
         Self {
             protocol_state: value.protocol_state.into(),
             pending_signature_requests: value.pending_requests,
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: value.proposed_updates,
-            config: value.config,
-            tee_state: crate::TeeState::default(),
+            config,
+            tee_state,
             accept_requests: true,
         }
     }

@@ -314,7 +314,6 @@ impl Attestation {
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
             && app_compose.secure_time == Some(true)
-            && app_compose.secure_time == Some(true)
             && app_compose.pre_launch_script.is_none()
     }
 

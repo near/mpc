@@ -12,11 +12,11 @@ from common_lib import shared
 from common_lib.contracts import load_mpc_contract
 
 
-# TODO: make sure this function tests ckd endpoints before https://github.com/near/mpc/issues/861 is solved
 def test_web_endpoints():
     cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1, load_mpc_contract())
     cluster.init_cluster(participants=mpc_nodes, threshold=2)
     cluster.send_and_await_signature_requests(1)
+    cluster.send_and_await_ckd_requests(1)
 
     # ports are hardcoded... they come from PortSeed::CLI_FOR_PYTEST.web_port(i)
     for port in [20000, 20001]:
@@ -36,6 +36,10 @@ def test_web_endpoints():
 
         response = requests.get(f"http://localhost:{port}/debug/signatures")
         assert "Recent signatures:" in response.text, response.text
+        assert "id:" in response.text, response.text
+
+        response = requests.get(f"http://localhost:{port}/debug/ckds")
+        assert "Recent ckds:" in response.text, response.text
         assert "id:" in response.text, response.text
 
         response = requests.get(f"http://localhost:{port}/debug/contract")
