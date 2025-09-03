@@ -1028,7 +1028,8 @@ dependencies = [
 [[package]]
 name = "dstack-sdk-types"
 version = "0.1.0"
-source = "git+https://github.com/Dstack-TEE/dstack.git?rev=04de4e422bb06f075b4215b2cfc410f5d7ac7aed#04de4e422bb06f075b4215b2cfc410f5d7ac7aed"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "469b108182a3b53030d0b6c49bfa89d0fb75679280814b93a25ff866c8282782"
 dependencies = [
  "anyhow",
  "bon",
