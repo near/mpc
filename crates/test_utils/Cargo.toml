@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 attestation = { workspace = true }
+mpc-primitives = { workspace = true }
 dstack-sdk-types = { workspace = true }
 hex = { workspace = true }
 near-sdk = { workspace = true }

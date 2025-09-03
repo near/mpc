@@ -38,10 +38,7 @@ pub struct Hash32<T> {
 
 impl<T> From<[u8; 32]> for Hash32<T> {
     fn from(bytes: [u8; 32]) -> Self {
-        Self {
-            bytes,
-            _marker: PhantomData,
-        }
+        Self::new(bytes)
     }
 }
 
@@ -54,6 +51,13 @@ pub enum HexToHashError {
 }
 
 impl<T> Hash32<T> {
+    pub const fn new(bytes: [u8; 32]) -> Self {
+        Self {
+            bytes,
+            _marker: PhantomData,
+        }
+    }
+
     /// Converts the hash to a hexadecimal string representation.
     pub fn as_hex(&self) -> String {
         hex::encode(self.as_ref())
@@ -73,7 +77,7 @@ impl<T> Hash32<T> {
                     provided_length: err.len(),
                 })?;
 
-        Ok(Self::from(bytes))
+        Ok(Self::new(bytes))
     }
 }
 

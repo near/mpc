@@ -4446,6 +4446,7 @@ dependencies = [
  "attestation",
  "dstack-sdk-types",
  "hex",
+ "mpc-primitives",
  "near-sdk",
  "serde_json",
 ]

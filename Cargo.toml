@@ -10,6 +10,7 @@ debug = true
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
+mpc-primitives = { path = "crates/primitives" }
 test_utils = { path = "crates/test_utils" }
 tee_authority = { path = "crates/tee_authority" }
 
@@ -58,7 +59,6 @@ k256 = "0.13.4"
 lazy_static = "1.5.0"
 lru = "0.12.5"
 mockall = "0.13.1"
-mpc-primitives = { path = "crates/primitives" }
 mpc-tls = { path = "crates/tls" }
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"

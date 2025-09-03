@@ -22,6 +22,8 @@ pub const TEST_MPC_IMAGE_DIGEST_HEX: &str = include_str!("../assets/mpc_image_di
 pub const TEST_LAUNCHER_COMPOSE_DIGEST_HEX: &str =
     "9f9f570c2b84cb56d537abb6a4ab4b3cc93a6a84da4e2c21bddba8963726fdaa";
 
+pub const IMAGE_HASH: MpcDock = 
+
 pub fn collateral() -> Value {
     let quote_collateral_json_string = include_str!("../assets/collateral.json");
     quote_collateral_json_string
@@ -52,3 +54,4 @@ pub fn mock_dstack_attestation() -> Attestation {
 
     Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
 }
+
