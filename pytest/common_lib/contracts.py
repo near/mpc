@@ -41,7 +41,7 @@ class NetworkRpc(Enum):
 def fetch_contract_code(account_id: str, network: NetworkRpc) -> bytearray:
     print(f"fetching contract at {account_id} from {network}\n")
     request_payload = build_view_code_request(account_id)
-    response = requests.post(network.value, json=request_payload)
+    response = requests.post(network.value, json=request_payload, timeout=10)
     response.raise_for_status()
 
     result = response.json()
