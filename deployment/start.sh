@@ -55,6 +55,8 @@ presignature:
   timeout_sec: 60
 signature:
   timeout_sec: 60
+ckd:
+  timeout_sec: 60
 indexer:
   validate_genesis: false
   sync_mode: Latest
