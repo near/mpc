@@ -1,9 +1,19 @@
 use std::collections::BTreeMap;
 
+use k256::ecdsa::VerifyingKey;
+use k256::elliptic_curve::ProjectivePoint;
+use k256::AffinePoint;
+use k256::PublicKey;
+use k256::Scalar;
+use k256::Secp256k1;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::Serialize;
-use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise, PromiseResult};
+use near_sdk::{
+    env, near_bindgen, serde_json, AccountId, CurveType, Gas, NearToken, Promise, PromiseResult,
+};
 use sha2::{Digest, Sha256};
+
+// TODO: all these types should come from mpc_contract. Any reason for not doing so?
 
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -23,6 +33,34 @@ pub struct SignArgs {
     pub request: SignRequest,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct CKDRequestArgs {
+    pub app_public_key: near_sdk::PublicKey,
+    pub domain_id: u64,
+}
+
+#[derive(Serialize)]
+struct CKDArgs {
+    pub request: CKDRequestArgs,
+}
+
+pub fn generate_app_public_key(scalar: u128) -> near_sdk::PublicKey {
+    let random_point: AffinePoint =
+        (ProjectivePoint::<Secp256k1>::GENERATOR * Scalar::from(scalar)).to_affine();
+    let random_point = VerifyingKey::from(&PublicKey::from_affine(random_point).unwrap());
+    let bytes = random_point.to_encoded_point(false).to_bytes();
+    near_sdk::PublicKey::from_parts(CurveType::SECP256K1, bytes[1..65].to_vec()).unwrap()
+}
+
+// #[cfg(target_arch = "wasm32")]
+// use getrandom::{register_custom_getrandom, Error};
+// #[cfg(target_arch = "wasm32")]
+// pub fn randomness_unsupported(_: &mut [u8]) -> Result<(), Error> {
+//     Err(Error::UNSUPPORTED)
+// }
+// #[cfg(target_arch = "wasm32")]
+// register_custom_getrandom!(randomness_unsupported);
+
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Default)]
 pub struct TestContract;
@@ -34,9 +72,10 @@ impl TestContract {
         target_contract: AccountId,
         ecdsa_calls_by_domain: BTreeMap<u64, u64>,
         eddsa_calls_by_domain: BTreeMap<u64, u64>,
+        ckd_calls_by_domain: BTreeMap<u64, u64>,
         seed: u64,
     ) -> Promise {
-        fn build_calls<F>(
+        fn build_signature_calls<F>(
             target_contract: &AccountId,
             domain_map: &BTreeMap<u64, u64>,
             seed: u64,
@@ -71,20 +110,46 @@ impl TestContract {
                 })
                 .collect()
         }
+        fn build_ckd_calls(
+            target_contract: &AccountId,
+            domain_map: &BTreeMap<u64, u64>,
+        ) -> Vec<Promise> {
+            domain_map
+                .iter()
+                .flat_map(|(domain_id, num_calls)| {
+                    (0..*num_calls).map(move |i| {
+                        let args = CKDArgs {
+                            request: CKDRequestArgs {
+                                domain_id: *domain_id,
+                                app_public_key: generate_app_public_key(i as u128 + 2),
+                            },
+                        };
+
+                        Promise::new(target_contract.clone()).function_call(
+                            "request_app_private_key".to_string(),
+                            serde_json::to_vec(&args).unwrap(),
+                            NearToken::from_yoctonear(1),
+                            Gas::from_tgas(30),
+                        )
+                    })
+                })
+                .collect()
+        }
 
         let mut promises = Vec::new();
-        promises.extend(build_calls(
+        promises.extend(build_signature_calls(
             &target_contract,
             &ecdsa_calls_by_domain,
             seed,
             &|hex| Payload::Ecdsa(hex),
         ));
-        promises.extend(build_calls(
+        promises.extend(build_signature_calls(
             &target_contract,
             &eddsa_calls_by_domain,
             seed + 1_000_000, // tweak seed offset to avoid collision if needed
             &|hex| Payload::Eddsa(hex),
         ));
+        promises.extend(build_ckd_calls(&target_contract, &ckd_calls_by_domain));
 
         // Combine the calls using promise::and
         promises.reverse();
