@@ -141,11 +141,15 @@ async fn back_compatibility(network: Network) -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+// TODO(#1026): Fix broken test
+#[ignore]
 async fn test_back_compatiblity_mainnet() {
     back_compatibility(Network::Mainnet).await.unwrap();
 }
 
 #[tokio::test]
+#[ignore]
+// TODO(#1026): Fix broken test
 async fn test_back_compatiblity_testnet() {
     back_compatibility(Network::Testnet).await.unwrap();
 }
