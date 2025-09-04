@@ -410,8 +410,8 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
     let hashes = [hash_1, hash_2, hash_3];
 
     for (i, current_hash) in hashes.iter().enumerate() {
-        vote_for_hash(participant_account_1, &contract, &current_hash).await?;
-        vote_for_hash(participant_account_2, &contract, &current_hash).await?;
+        vote_for_hash(participant_account_1, &contract, current_hash).await?;
+        vote_for_hash(participant_account_2, &contract, current_hash).await?;
 
         let previous_and_current_approved_hashes = &hashes[..=i];
 
