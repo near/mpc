@@ -362,6 +362,7 @@ pub async fn request_signature_and_await_response(
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Eddsa(Bytes::new(payload.to_vec()).unwrap())
         }
+        SignatureScheme::CkdSecp256k1 => unreachable!(),
     };
     let request = SignatureRequestFromChain {
         entropy: rand::random(),
@@ -428,6 +429,7 @@ pub async fn request_ckd_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
+    assert!(matches!(domain.scheme, SignatureScheme::CkdSecp256k1));
     let request = CKDRequestFromChain {
         ckd_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),

@@ -540,10 +540,9 @@ impl Coordinator {
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
+                let mut ckd_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
 
-                // Secp256k1 shares are used both for ecdsa and CKD
-                // Which domain is used for each is to be decided in https://github.com/near/mpc/issues/951
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
@@ -554,6 +553,10 @@ impl Coordinator {
                         KeyshareData::Ed25519(data) => {
                             eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
                             domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
+                        }
+                        KeyshareData::CkdSecp256k1(data) => {
+                            ckd_keyshares.insert(keyshare.key_id.domain_id, data);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::CkdSecp256k1);
                         }
                     }
                 }
@@ -581,7 +584,7 @@ impl Coordinator {
                     running_mpc_config.clone().into(),
                     network_client.clone(),
                     ckd_request_store.clone(),
-                    ecdsa_keyshares,
+                    ckd_keyshares,
                 ));
 
                 let mpc_client = Arc::new(MpcClient::new(

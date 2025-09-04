@@ -349,6 +349,10 @@ impl MpcClient {
 
                                         Ok(response)
                                     }
+                                    Some(SignatureScheme::CkdSecp256k1) => Err(anyhow::anyhow!(
+                                        "Incorrect protocol for domain: {:?}",
+                                        signature_attempt.request.domain.clone()
+                                    )),
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
                                         signature_attempt.request.domain.clone()
@@ -406,7 +410,7 @@ impl MpcClient {
                                 let response =
                                     match this.domain_to_scheme.get(&ckd_attempt.request.domain_id)
                                     {
-                                        Some(SignatureScheme::Secp256k1) => {
+                                        Some(SignatureScheme::CkdSecp256k1) => {
                                             let response = timeout(
                                                 Duration::from_secs(this.config.ckd.timeout_sec),
                                                 this.ckd_provider
@@ -429,6 +433,10 @@ impl MpcClient {
 
                                             Ok(response)
                                         }
+                                        Some(SignatureScheme::Secp256k1) => Err(anyhow::anyhow!(
+                                            "Signature scheme is not allowed for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        )),
                                         Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
                                             "Signature scheme is not allowed for domain: {:?}",
                                             ckd_attempt.request.domain_id.clone()

@@ -45,13 +45,17 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
         ContractActionCall::ParallelSignCall(args) => {
             let mut ecdsa_calls_by_domain = BTreeMap::new();
             let mut eddsa_calls_by_domain = BTreeMap::new();
-            for (domain, sig_calls) in args.calls_by_domain {
+            let mut ckd_calls_by_domain = BTreeMap::new();
+            for (domain, prot_calls) in args.calls_by_domain {
                 match domain.scheme {
                     SignatureScheme::Secp256k1 => {
-                        ecdsa_calls_by_domain.insert(domain.id.0, sig_calls);
+                        ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
                     SignatureScheme::Ed25519 => {
-                        eddsa_calls_by_domain.insert(domain.id.0, sig_calls);
+                        eddsa_calls_by_domain.insert(domain.id.0, prot_calls);
+                    }
+                    SignatureScheme::CkdSecp256k1 => {
+                        ckd_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
                 }
             }
@@ -136,6 +140,8 @@ fn make_payload(scheme: SignatureScheme) -> Payload {
             rand::rng().fill_bytes(&mut payload);
             Payload::Eddsa(Bytes::new(payload).unwrap())
         }
+        // TODO: should be handled as part of https://github.com/near/mpc/issues/1012
+        SignatureScheme::CkdSecp256k1 => todo!(),
     }
 }
 

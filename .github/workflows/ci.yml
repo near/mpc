@@ -279,6 +279,8 @@ jobs:
           source pytest/venv/bin/activate
           cd pytest
           pip install -r requirements.txt
+          cd ../
+          git submodule foreach --recursive 'git reset --hard && git clean -fd'
 
       - name: Run pytest
         run: |

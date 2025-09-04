@@ -51,10 +51,9 @@ def assert_signature_success(res):
 def print_signature_outcome(res):
     try:
         signature_base64 = res["result"]["status"]["SuccessValue"]
+        signature_base64 += "=" * ((4 - len(signature_base64) % 4) % 4)
+        signature = json.loads(base64.b64decode(signature_base64))
+        print("\033[96mSign Response ✓\033[0m")
+        return signature
     except KeyError:
         print("signature failed")
-
-    signature_base64 += "=" * ((4 - len(signature_base64) % 4) % 4)
-    signature = json.loads(base64.b64decode(signature_base64))
-    print("\033[96mSign Response ✓\033[0m")
-    return signature
