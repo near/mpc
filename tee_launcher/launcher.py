@@ -512,7 +512,8 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
     docker_cmd += ["--env", f"MPC_LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
 
     # Set the MPC configuration to run in real TDX mode.
-    docker_cmd += ["--env", "DSTACK_ENDPOINT=1"]
+    docker_cmd += ["--env", f"DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}"]
+
 
     for key, value in user_env.items():
         if key in ALLOWED_ENV_VARS:
