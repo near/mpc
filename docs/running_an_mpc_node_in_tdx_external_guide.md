@@ -174,11 +174,6 @@ RUST_LOG=mpc=debug,info
 
 NEAR_BOOT_NODES=$BOOT_NODES
 
-# Optional MPC responder
-MPC_RESPONDER_ID=$my_responder_acount
-
-# Optional: Extra hosts to add to the container
-EXTRA_HOSTS=mpc-node-0.service.mpc.consul:35.185.233.54,mpc-node-1.service.mpc.consul:34.168.117.59
 
 # Port forwarding 
 PORTS=8080:8080,24567:24567,80:80
@@ -205,10 +200,6 @@ jq -r '.result.active_peers[]  as $active_peer  | "\($active_peer.id)@\($active_
 paste -sd',' -
 ```
 
-TBD:   [#897](https://github.com/near/mpc/issues/897)
-
-My\_responder\_acount \- is this used by someone? If yes, we need steps to create this as well.  
-EXTRA\_HOSTS  \- not sure we need this for production.
 
 ## Preparing a docker compose
 
@@ -222,6 +213,31 @@ TBD  [#898](https://github.com/near/mpc/issues/898) \- add how to get it from th
 TBD [#899](https://github.com/near/mpc/issues/899)  \- where should it be published?  
    
 Note \-  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including any white spaces).
+
+
+## Required Ports and Port Collisions 
+
+MPC nodes use a fixed set of ports for communication and telemetry.  
+This creates a limitation when trying to run both **mainnet** and **testnet** nodes on the same physical server, since both sets of nodes attempt to bind to the same ports.
+
+---
+
+- **Single network per machine**: By default, running both mainnet and testnet on the same machine is not supported because of port collisions.  
+- **Workaround with multiple IPs**: It is possible to run multiple nodes (e.g., one mainnet and one testnet) on the same host if the server is configured with **multiple external IP addresses**.  
+  - Each node binds to the required ports (see below) on a separate IP.  
+  - Additional IP/port routing on the local machine may be required.  
+
+---
+
+### Required Ports
+
+| Port   | Purpose                                                                 |
+|--------|-------------------------------------------------------------------------|
+| **80** | Node-to-node communication (port override convention)                   |
+| **24567** | Decentralized state sync                                               |
+| **8080** | Debug and telemetry collection, plus the new `getdata` endpoint         |
+| **3030** | Debug and telemetry collection                                         |
+
 
 ## Configuring and starting the MPC binary in a CVM
 
@@ -244,7 +260,7 @@ Use the following custom settings for MPC:
 3. Pre script  \- empty.  
 4. user-config \- provided above  
 5. KMS=disable, Local Keyprovier=enabled, Tproxy=disable, public logs=enabled,public sysinfo=enabled,pin NUMA=disabled  
-6. Port mapping:   
+6. Port mapping: (taken from the list above)  
    Public 80:80  (main node to node communication port)   
    Public 24567:24567 (required for decentralized state sync)  
    Public 8080:8080  (required for collecting debug and telemetry information)   
@@ -253,8 +269,7 @@ Use the following custom settings for MPC:
      
 7.  Key Provider ID: (The MrEnclave for the sgx local key provider) 1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
 
-   TBD [#900](https://github.com/near/mpc/issues/900) \- add explanation about port collision. And how to use both mainnet and testnet on the same machine.  
-   
+ 
 
 ![CVM Web Page](./attachments/VMM_web_page.png)
 
