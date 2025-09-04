@@ -1,17 +1,19 @@
-use attestation::report_data::{ReportData, ReportDataV1};
+use attestation::{
+    attestation::{Attestation, MockAttestation},
+    report_data::{ReportData, ReportDataV1},
+};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::PublicKey;
 use rstest::rstest;
 use test_utils::attestation::{
-    image_digest, launcher_compose_digest, mock_dstack_attestation, mock_local_attestation,
-    p2p_tls_key,
+    image_digest, launcher_compose_digest, mock_dstack_attestation, p2p_tls_key,
 };
 
 #[rstest]
-#[case(false, false)]
-#[case(true, true)]
+#[case(MockAttestation::Valid, true)]
+#[case(MockAttestation::Invalid, false)]
 fn test_mock_attestation_verify(
-    #[case] quote_verification_result: bool,
+    #[case] local_attestation: MockAttestation,
     #[case] expected_quote_verification_result: bool,
 ) {
     let timestamp_s = 0u64;
@@ -19,14 +21,10 @@ fn test_mock_attestation_verify(
         .parse()
         .unwrap();
     let report_data = ReportData::V1(ReportDataV1::new(tls_key));
+    let attestation = Attestation::Mock(local_attestation);
 
     assert_eq!(
-        mock_local_attestation(quote_verification_result).verify(
-            report_data,
-            timestamp_s,
-            &[],
-            &[],
-        ),
+        attestation.verify(report_data, timestamp_s, &[], &[],),
         expected_quote_verification_result
     );
 }

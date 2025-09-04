@@ -234,7 +234,7 @@ impl TeeState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use attestation::attestation::{Attestation, LocalAttestation};
+    use attestation::attestation::{Attestation, MockAttestation};
     use near_sdk::AccountId;
 
     #[test]
@@ -253,8 +253,7 @@ mod tests {
             .collect();
 
         // Add TEE information for all participants and non-participant
-        let attestation = LocalAttestation::new(true);
-        let local_attestation = Attestation::Local(attestation);
+        let local_attestation = Attestation::Mock(MockAttestation::Valid);
 
         for account_id in &participant_accounts {
             tee_state.add_participant(account_id.clone(), local_attestation.clone());

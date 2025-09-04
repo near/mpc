@@ -10,7 +10,7 @@ debug = true
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
-mpc-primitives = { path = "crates/primitives" }
+mpc-primitives = { path = "crates/primitives", features = ["abi"]}
 test_utils = { path = "crates/test_utils" }
 tee_authority = { path = "crates/tee_authority" }
 
