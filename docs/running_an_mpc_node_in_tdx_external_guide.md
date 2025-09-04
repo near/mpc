@@ -174,11 +174,6 @@ RUST_LOG=mpc=debug,info
 
 NEAR_BOOT_NODES=$BOOT_NODES
 
-# Optional MPC responder
-MPC_RESPONDER_ID=$my_responder_acount
-
-# Optional: Extra hosts to add to the container
-EXTRA_HOSTS=mpc-node-0.service.mpc.consul:35.185.233.54,mpc-node-1.service.mpc.consul:34.168.117.59
 
 # Port forwarding 
 PORTS=8080:8080,24567:24567,80:80
@@ -205,10 +200,6 @@ jq -r '.result.active_peers[]  as $active_peer  | "\($active_peer.id)@\($active_
 paste -sd',' -
 ```
 
-TBD:   [#897](https://github.com/near/mpc/issues/897)
-
-My\_responder\_acount \- is this used by someone? If yes, we need steps to create this as well.  
-EXTRA\_HOSTS  \- not sure we need this for production.
 
 ## Preparing a docker compose
 
