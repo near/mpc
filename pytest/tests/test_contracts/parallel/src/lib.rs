@@ -52,15 +52,6 @@ pub fn generate_app_public_key(scalar: u128) -> near_sdk::PublicKey {
     near_sdk::PublicKey::from_parts(CurveType::SECP256K1, bytes[1..65].to_vec()).unwrap()
 }
 
-// #[cfg(target_arch = "wasm32")]
-// use getrandom::{register_custom_getrandom, Error};
-// #[cfg(target_arch = "wasm32")]
-// pub fn randomness_unsupported(_: &mut [u8]) -> Result<(), Error> {
-//     Err(Error::UNSUPPORTED)
-// }
-// #[cfg(target_arch = "wasm32")]
-// register_custom_getrandom!(randomness_unsupported);
-
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Default)]
 pub struct TestContract;
