@@ -390,3 +390,53 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
 
     Ok(())
 }
+
+#[tokio::test]
+async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification(
+) -> Result<()> {
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    let hash_1 = MpcDockerImageHash::from([1; 32]);
+    let hash_2 = MpcDockerImageHash::from([2; 32]);
+    let hash_3 = MpcDockerImageHash::from([3; 32]);
+
+    let participant_account_1 = &accounts[0];
+    let participant_account_2 = &accounts[1];
+
+    // Initially, there should be no allowed hashes
+    assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
+    assert_matches!(get_latest_code_hash(&contract).await, Err(_));
+
+    let hashes = [hash_1, hash_2, hash_3];
+
+    for (i, current_hash) in hashes.iter().enumerate() {
+        vote_for_hash(participant_account_1, &contract, &current_hash).await?;
+        vote_for_hash(participant_account_2, &contract, &current_hash).await?;
+
+        let previous_and_current_approved_hashes = &hashes[..=i];
+
+        for approved_hash in previous_and_current_approved_hashes {
+            let mock_attestation = MockAttestation::with_constraints()
+                .mpc_docker_image_hash(approved_hash.clone())
+                .build();
+            let attestation = Attestation::Mock(mock_attestation);
+
+            let dummy_tls_key = p2p_tls_key();
+
+            let validation_success = submit_participant_info(
+                participant_account_1,
+                &contract,
+                &attestation,
+                &dummy_tls_key,
+            )
+            .await?;
+
+            assert!(
+                validation_success,
+                "Attestation for all previous images must pass"
+            );
+        }
+    }
+
+    Ok(())
+}
