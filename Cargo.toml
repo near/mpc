@@ -149,10 +149,10 @@ x509-parser = "0.16.0"
 
 
 # NEAR CORE DEPENDENCIES:
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.8.0-rc.1" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.8.0-rc.1" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.8.0-rc.1" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.8.0-rc.1" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.8.0-rc.1" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.8.0-rc.1" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.8.0-rc.1" }
