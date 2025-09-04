@@ -12,9 +12,9 @@ byteorder = "1.5.0"
 digest = "0.10.7"
 ecdsa = { version = "0.16.8", features = ["digest", "hazmat"] }
 elliptic-curve = { version = "0.13.5", features = ["serde"] }
-frost-core = { version = "2.1.0", default-features = false, features = ["serialization", "std", "internals"] }
-frost-ed25519 = { version = "2.1.0", default-features = false, features = ["serialization", "std"] }
-frost-secp256k1 = { version = "2.1.0", default-features = false, features = ["serialization", "std"] }
+frost-core = { version = "2.2.0", default-features = false, features = ["serialization", "std", "internals"] }
+frost-ed25519 = { version = "2.2.0", default-features = false, features = ["serialization", "std"] }
+frost-secp256k1 = { version = "2.2.0", default-features = false, features = ["serialization", "std"] }
 futures = "0.3.31"
 itertools = "0.14.0"
 k256 = { version = "0.13.1", features = ["sha256", "ecdsa", "serde", "hash2curve"] }

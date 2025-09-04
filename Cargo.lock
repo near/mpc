@@ -456,9 +456,9 @@ checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
 name = "frost-core"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1858230cabb6792a5020daf4b0074f57b7d1e2a520ac544c77f102babee62ff4"
+checksum = "2619366c227233c0f817ae01156bd21b8cf74d2bd96cbe0889f4c2e266724e44"
 dependencies = [
  "byteorder",
  "const-crc32-nostd",
@@ -472,16 +472,15 @@ dependencies = [
  "serde",
  "serdect",
  "thiserror",
- "thiserror-nostd-notrait",
  "visibility",
  "zeroize",
 ]
 
 [[package]]
 name = "frost-ed25519"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c350ac3d0463a009a061aba12b67920acee94338951c849bb4c492d55223dece"
+checksum = "f73eb5fa9311d33450c2320199ad1663b5af7a50061d9627d2e0dc776f0acb27"
 dependencies = [
  "curve25519-dalek",
  "document-features",
@@ -493,9 +492,9 @@ dependencies = [
 
 [[package]]
 name = "frost-rerandomized"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8a3b10d9c1e9f298522510940b5b8c3d55040420517ec8d2bb86c4c2d1ae3ee"
+checksum = "4c5eb1ea58c0250b7ce834337f7b19e0417686d14ffc7f626137dea9149762d4"
 dependencies = [
  "derive-getters",
  "document-features",
@@ -506,9 +505,9 @@ dependencies = [
 
 [[package]]
 name = "frost-secp256k1"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d4890a0cdd6897a4af81016ec3299e4eb3a459d6468933d2a385302241662b5"
+checksum = "4f6974379aee791f2f9e0db47c37d9e4c77ea8a8233e488ae8949ce4c6864e96"
 dependencies = [
  "document-features",
  "frost-core",
@@ -1164,26 +1163,6 @@ name = "thiserror-impl"
 version = "2.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c5e1be1c48b9172ee610da68fd9cd2770e7a4056cb3fc98710ee6906f0c7960"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "thiserror-nostd-notrait"
-version = "1.0.57"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8444e638022c44d2a9337031dee8acb732bcc7fbf52ac654edc236b26408b61"
-dependencies = [
- "thiserror-nostd-notrait-impl",
-]
-
-[[package]]
-name = "thiserror-nostd-notrait-impl"
-version = "1.0.57"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "585e5ef40a784ce60b49c67d762110688d211d395d39e096be204535cf64590e"
 dependencies = [
  "proc-macro2",
  "quote",
