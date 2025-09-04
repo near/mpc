@@ -1,3 +1,12 @@
+use k256::ecdsa::VerifyingKey;
+use k256::elliptic_curve::Group;
+use k256::elliptic_curve::ProjectivePoint;
+use k256::AffinePoint;
+use k256::PublicKey;
+use k256::Secp256k1;
+use near_sdk::CurveType;
+use rand::rngs::OsRng;
+
 use crate::{primitives::thresholds::ThresholdParameters, state::ProtocolContractState};
 
 fn params_to_string(output: &mut String, parameters: &ThresholdParameters) {
@@ -130,4 +139,11 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
         }
     }
     output
+}
+
+pub fn random_app_public_key() -> near_sdk::PublicKey {
+    let random_point: AffinePoint = ProjectivePoint::<Secp256k1>::random(&mut OsRng).to_affine();
+    let random_point = VerifyingKey::from(&PublicKey::from_affine(random_point).unwrap());
+    let bytes = random_point.to_encoded_point(false).to_bytes();
+    near_sdk::PublicKey::from_parts(CurveType::SECP256K1, bytes[1..65].to_vec()).unwrap()
 }
