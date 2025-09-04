@@ -3,6 +3,8 @@ members = ["node", "devnet", "crates/attestation", "crates/primitives", "crates/
 resolver = "2"
 exclude = ["libs", "pytest"]
 
+
+
 [profile.dev-release]
 inherits = "release"
 debug = true
@@ -117,4 +119,3 @@ near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
 near-crypto = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
 near-o11y = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
 near-time = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-

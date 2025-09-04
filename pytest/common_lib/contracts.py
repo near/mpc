@@ -1,6 +1,6 @@
 import json
-import base64
-from utils import load_binary_file, requests
+
+from utils import load_binary_file
 from enum import Enum
 from borsh_construct import Vec, U8, CStruct, U64, Option
 from .constants import MPC_REPO_DIR
@@ -16,8 +16,12 @@ MIGRATE_CURRENT_CONTRACT_PATH = (
     / "migration"
     / "migration_contract.wasm"
 )
-TESTNET_ACCOUNT_ID = "v1.signer-prod.testnet"
-MAINNET_ACCOUNT_ID = "v1.signer"
+CURRENT_MAINNET_CONTRACT_PATH = (
+    MPC_REPO_DIR / "pytest" / "common_lib" / "current_contracts" / "signer_mainnet.wasm"
+)
+CURRENT_TESTNET_CONTRACT_PATH = (
+    MPC_REPO_DIR / "pytest" / "common_lib" / "current_contracts" / "signer_testnet.wasm"
+)
 
 
 def build_view_code_request(account_id: str) -> dict:
@@ -33,33 +37,24 @@ def build_view_code_request(account_id: str) -> dict:
     }
 
 
-class NetworkRpc(Enum):
-    MAINNET = "https://rpc.mainnet.near.org"
-    TESTNET = "https://rpc.testnet.near.org"
-
-
-def fetch_contract_code(account_id: str, network: NetworkRpc) -> bytearray:
-    print(f"fetching contract at {account_id} from {network}\n")
-    request_payload = build_view_code_request(account_id)
-    response = requests.post(network.value, json=request_payload, timeout=10)
-    response.raise_for_status()
-
-    result = response.json()
-    try:
-        code_base64 = result["result"]["code_base64"]
-        return bytearray(base64.b64decode(code_base64))
-    except KeyError:
-        raise RuntimeError("Invalid RPC response or contract code not found.")
-
-
 def fetch_testnet_contract() -> bytearray:
-    # add a sanity check that the hash of this code matches a specific hash
-    return fetch_contract_code(TESTNET_ACCOUNT_ID, NetworkRpc.TESTNET)
+    """Returns the current testnet contract from local storage."""
+    return current_testnet_contract()
+
+
+def current_testnet_contract() -> bytearray:
+    """Load the current testnet contract WASM."""
+    return bytearray(CURRENT_TESTNET_CONTRACT_PATH.read_bytes())
 
 
 def fetch_mainnet_contract() -> bytearray:
-    # add a sanity check that the hash of this code matches a specific hash
-    return fetch_contract_code(MAINNET_ACCOUNT_ID, NetworkRpc.MAINNET)
+    """Returns the current mainnet contract from local storage."""
+    return current_mainnet_contract()
+
+
+def current_mainnet_contract():
+    """Load the current mainnet contract WASM."""
+    return bytearray(CURRENT_MAINNET_CONTRACT_PATH.read_bytes())
 
 
 def load_mpc_contract() -> bytearray:
