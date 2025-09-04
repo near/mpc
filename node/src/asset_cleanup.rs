@@ -8,7 +8,6 @@ use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::EpochId;
 use serde::{self, Deserialize, Serialize};
 use std::sync::Arc;
-use tracing;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct EpochData {
@@ -172,12 +171,14 @@ mod test_utils {
     use crate::providers::ecdsa::triple::{PairedTriple, TRIPLE_STORE_DOMAIN_ID};
     use crate::providers::HasParticipants;
     use crate::{db::DBCol, primitives::ParticipantId};
+    use ed25519_dalek::{SigningKey, VerifyingKey};
     use k256::ProjectivePoint;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::EpochId;
     use mpc_contract::primitives::test_utils::gen_participants;
     use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
     use near_time::FakeClock;
+    use rand::rngs::OsRng;
     use rand::RngCore;
     use serde::de::DeserializeOwned;
     use serde::Serialize;
@@ -188,13 +189,12 @@ mod test_utils {
     use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
     use threshold_signatures::ecdsa::Polynomial;
 
-    use ed25519_dalek::{SigningKey, VerifyingKey};
-    use rand::rngs::OsRng;
     pub fn random_verifying_key() -> VerifyingKey {
         let mut csprng = OsRng;
         let signing_key = SigningKey::generate(&mut csprng);
         signing_key.verifying_key()
     }
+
     pub fn gen_four_participants() -> (EpochData, ParticipantId) {
         let epoch_id = EpochId::new(rand::thread_rng().next_u64());
         let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
@@ -203,15 +203,10 @@ mod test_utils {
             epoch_id,
             participants,
         };
-        let my_participant_id = epoch_data
-            .participants
-            .participants
-            .first()
-            .unwrap()
-            .id
-            .clone();
+        let my_participant_id = epoch_data.participants.participants.first().unwrap().id;
         (epoch_data, my_participant_id)
     }
+
     pub fn get_participant_ids(epoch_data: EpochData) -> Vec<ParticipantId> {
         epoch_data
             .participants
@@ -220,6 +215,7 @@ mod test_utils {
             .map(|p_info| p_info.id)
             .collect()
     }
+
     pub struct TestContext {
         pub db: Arc<SecretDB>,
         pub clock: FakeClock,
@@ -227,7 +223,8 @@ mod test_utils {
         pub alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
         pub presign_domain_ids: Vec<DomainId>,
     }
-    pub fn make_triple(participants: &Vec<ParticipantId>) -> PairedTriple {
+
+    pub fn make_triple(participants: &[ParticipantId]) -> PairedTriple {
         let g = Polynomial::generate_polynomial(None, 2 - 1, &mut OsRng).unwrap();
         let scalar = g.eval_at_zero().unwrap().0;
         let affine_point = (ProjectivePoint::GENERATOR * scalar.invert().unwrap()).to_affine();
@@ -249,7 +246,8 @@ mod test_utils {
         let triple_gen_output: TripleGenerationOutput = (triple_share, triple_pub);
         (triple_gen_output.clone(), triple_gen_output.clone())
     }
-    pub fn make_presign(participants: &Vec<ParticipantId>) -> PresignOutputWithParticipants {
+
+    pub fn make_presign(participants: &[ParticipantId]) -> PresignOutputWithParticipants {
         let g = Polynomial::generate_polynomial(None, 2 - 1, &mut OsRng).unwrap();
         let scalar = g.eval_at_zero().unwrap().0;
         let affine_point = (ProjectivePoint::GENERATOR * scalar.invert().unwrap()).to_affine();
@@ -260,7 +258,7 @@ mod test_utils {
         };
         PresignOutputWithParticipants {
             presignature: presignature.clone(),
-            participants: participants.clone(),
+            participants: participants.to_owned(),
         }
     }
 
@@ -279,6 +277,7 @@ mod test_utils {
                 presign_domain_ids: [DomainId(0), DomainId(1)].to_vec(),
             }
         }
+
         pub fn new_store<T>(
             &self,
             db_col: DBCol,
@@ -301,7 +300,8 @@ mod test_utils {
             )
             .unwrap()
         }
-        pub fn populate(&self, participants: &Vec<ParticipantId>) {
+
+        pub fn populate(&self, participants: &[ParticipantId]) {
             {
                 let store = self.new_store::<PairedTriple>(DBCol::Triple, TRIPLE_STORE_DOMAIN_ID);
                 let id = store.generate_and_reserve_id();
@@ -316,6 +316,7 @@ mod test_utils {
                 }
             }
         }
+
         pub fn assert_owned(&self, expected: usize) {
             let store = self.new_store::<PairedTriple>(DBCol::Triple, TRIPLE_STORE_DOMAIN_ID);
             assert_eq!(store.num_owned(), expected);
@@ -338,6 +339,20 @@ mod tests {
     use crate::asset_cleanup::{delete_stale_triples_and_presignatures, get_epoch_data};
     use mpc_contract::primitives::domain::DomainId;
     use std::sync::{Arc, Mutex};
+
+    use super::EpochData;
+
+    fn assert_epoch_data_in_db_matches(ctx: &TestContext, expected: &EpochData) {
+        let found = get_epoch_data(&ctx.db).unwrap().unwrap();
+        match found {
+            EpochDataWrapper::Current(current) => {
+                assert_eq!(current, *expected);
+            }
+            _ => {
+                panic!("Expected to find current epoch data.");
+            }
+        }
+    }
     #[test]
     fn test_delete_triples_and_presignatures() {
         // setup
@@ -365,15 +380,7 @@ mod tests {
         )
         .unwrap();
         ctx.assert_owned(2);
-        let found = get_epoch_data(&ctx.db).unwrap().unwrap();
-        match found {
-            EpochDataWrapper::Current(current) => {
-                assert_eq!(current, start_data);
-            }
-            _ => {
-                assert!(false);
-            }
-        }
+        assert_epoch_data_in_db_matches(&ctx, &start_data);
 
         // changing the details of the last participant should remove one of the assets.
         start_data
@@ -390,15 +397,7 @@ mod tests {
         )
         .unwrap();
         ctx.assert_owned(1);
-        let found = get_epoch_data(&ctx.db).unwrap().unwrap();
-        match found {
-            EpochDataWrapper::Current(current) => {
-                assert_eq!(current, start_data);
-            }
-            _ => {
-                assert!(false);
-            }
-        }
+        assert_epoch_data_in_db_matches(&ctx, &start_data);
 
         // change epoch id
         let mut end_data = start_data.clone();
@@ -412,14 +411,6 @@ mod tests {
         .unwrap();
 
         ctx.assert_owned(0);
-        let found = get_epoch_data(&ctx.db).unwrap().unwrap();
-        match found {
-            EpochDataWrapper::Current(current) => {
-                assert_eq!(current, end_data)
-            }
-            _ => {
-                assert!(false);
-            }
-        }
+        assert_epoch_data_in_db_matches(&ctx, &end_data);
     }
 }
