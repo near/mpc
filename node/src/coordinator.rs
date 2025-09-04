@@ -1,6 +1,6 @@
+use crate::asset_cleanup::{delete_stale_triples_and_presignatures, EpochData};
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
-use crate::epoch_data::{delete_stale_triples_and_presignatures, EpochWithParticipants};
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{ContractKeyEventInstance, ContractRunningState, ContractState};
 use crate::indexer::types::ChainSendTransactionRequest;
@@ -190,23 +190,19 @@ impl Coordinator {
 
                             (Some(key_event_receiver), stop_fn)
                         }
-                        None => {
-                            let participants = running_state.participants.clone();
-                            (
-                                None,
-                                Box::new(move |new_state| match new_state {
-                                    ContractState::Running(new_state) => {
-                                        let new_running_epoch = new_state.keyset.epoch_id
-                                            != running_state.keyset.epoch_id;
-                                        let resharing_started = new_state.resharing_state.is_some();
-                                        let participants_changed =
-                                            new_state.participants != participants;
-                                        new_running_epoch | resharing_started | participants_changed
-                                    }
-                                    _ => true,
-                                }),
-                            )
-                        }
+                        None => (
+                            None,
+                            Box::new(move |new_state| match new_state {
+                                ContractState::Running(new_state) => {
+                                    let new_running_epoch =
+                                        new_state.keyset.epoch_id != running_state.keyset.epoch_id;
+                                    let resharing_started = new_state.resharing_state.is_some();
+
+                                    new_running_epoch | resharing_started
+                                }
+                                _ => true,
+                            }),
+                        ),
                     };
 
                     tracing::info!("Key event receiver is: {:?}", key_event_receiver);
@@ -386,28 +382,14 @@ impl Coordinator {
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
         let keyshare_storage = Arc::new(keyshare_storage);
-        let current_participants_config = running_state.participants.clone();
-        let current_epoch_id = running_state.keyset.epoch_id;
-        let my_participant_id =
-            running_state
-                .participants
-                .participants
-                .iter()
-                .find_map(|participant_info| {
-                    if participant_info.near_account_id == config_file.my_near_account_id {
-                        Some(participant_info.id)
-                    } else {
-                        None
-                    }
-                });
+        let my_participant_id = running_state
+            .participants
+            .get_participant_id(&config_file.my_near_account_id);
         if let Some(my_participant_id) = my_participant_id {
-            let all_domains: Vec<DomainId> = running_state
-                .keyset
-                .domains
-                .iter()
-                .map(|domain| domain.domain_id)
-                .collect();
-            let current_epoch_data = EpochWithParticipants {
+            let current_participants_config = running_state.participants.clone();
+            let current_epoch_id = running_state.keyset.epoch_id;
+            let all_domains: Vec<DomainId> = running_state.keyset.get_domain_ids();
+            let current_epoch_data = EpochData {
                 epoch_id: current_epoch_id,
                 participants: current_participants_config,
             };
