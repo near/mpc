@@ -1,0 +1,14 @@
+[package]
+name = "contract_history"
+version = "0.1.0"
+edition = "2024"
+
+[dev-dependencies]
+base64.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[features]
+external-services-tests = []
