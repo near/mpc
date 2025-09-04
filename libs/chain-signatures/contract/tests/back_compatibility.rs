@@ -7,6 +7,7 @@ use mpc_contract::{
 };
 use near_workspaces::{network::Sandbox, Contract, Worker};
 use reqwest::Client;
+use std::time::Duration;
 pub mod common;
 use serde::Deserialize;
 
@@ -45,6 +46,7 @@ async fn fetch_contract_code(network: Network) -> anyhow::Result<Vec<u8>> {
     let client = Client::new();
     let response = client
         .post(url)
+        .timeout(Duration::from_secs(10))
         .json(&body)
         .send()
         .await?
@@ -141,15 +143,11 @@ async fn back_compatibility(network: Network) -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-// TODO(#1026): Fix broken test
-#[ignore]
 async fn test_back_compatiblity_mainnet() {
     back_compatibility(Network::Mainnet).await.unwrap();
 }
 
 #[tokio::test]
-#[ignore]
-// TODO(#1026): Fix broken test
 async fn test_back_compatiblity_testnet() {
     back_compatibility(Network::Testnet).await.unwrap();
 }
