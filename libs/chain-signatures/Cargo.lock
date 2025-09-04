@@ -2324,7 +2324,6 @@ dependencies = [
  "hex",
  "schemars 0.8.22",
  "serde",
- "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -4447,8 +4446,10 @@ dependencies = [
  "attestation",
  "dstack-sdk-types",
  "hex",
+ "mpc-primitives",
  "near-sdk",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
