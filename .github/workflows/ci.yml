@@ -282,9 +282,6 @@ jobs:
           cd ../
           git submodule foreach --recursive 'git reset --hard && git clean -fd'
 
-      - name: Ensure mainnet and testnet contracts are exported to the pytests
-        run: cargo run --bin export_contracts --release
-
       - name: Run pytest
         run: |
           source pytest/venv/bin/activate

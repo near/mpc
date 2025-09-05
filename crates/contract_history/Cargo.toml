@@ -7,6 +7,9 @@ edition = "2024"
 name = "export_contracts"
 path = "src/bin/export_contracts.rs"
 
+[dependencies]
+clap.workspace = true
+
 [dev-dependencies]
 base64.workspace = true
 reqwest.workspace = true

@@ -16,12 +16,6 @@ MIGRATE_CURRENT_CONTRACT_PATH = (
     / "migration"
     / "migration_contract.wasm"
 )
-CURRENT_MAINNET_CONTRACT_PATH = (
-    MPC_REPO_DIR / "pytest" / "common_lib" / "current_contracts" / "signer_mainnet.wasm"
-)
-CURRENT_TESTNET_CONTRACT_PATH = (
-    MPC_REPO_DIR / "pytest" / "common_lib" / "current_contracts" / "signer_testnet.wasm"
-)
 
 
 def build_view_code_request(account_id: str) -> dict:
@@ -35,26 +29,6 @@ def build_view_code_request(account_id: str) -> dict:
             "account_id": account_id,
         },
     }
-
-
-def fetch_testnet_contract() -> bytearray:
-    """Returns the current testnet contract from local storage."""
-    return current_testnet_contract()
-
-
-def current_testnet_contract() -> bytearray:
-    """Load the current testnet contract WASM."""
-    return bytearray(CURRENT_TESTNET_CONTRACT_PATH.read_bytes())
-
-
-def fetch_mainnet_contract() -> bytearray:
-    """Returns the current mainnet contract from local storage."""
-    return current_mainnet_contract()
-
-
-def current_mainnet_contract():
-    """Load the current mainnet contract WASM."""
-    return bytearray(CURRENT_MAINNET_CONTRACT_PATH.read_bytes())
 
 
 def load_mpc_contract() -> bytearray:

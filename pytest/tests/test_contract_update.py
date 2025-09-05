@@ -10,7 +10,6 @@ Verifies that the update was executed.
 import sys
 import time
 import pathlib
-import pytest
 
 from common_lib.contract_state import ProtocolState
 
@@ -21,8 +20,6 @@ from common_lib.contracts import (
     MIGRATE_CURRENT_CONTRACT_PATH,
     ContractMethod,
     UpdateArgsV2,
-    fetch_mainnet_contract,
-    fetch_testnet_contract,
     load_mpc_contract,
 )
 
@@ -38,11 +35,8 @@ def test_update_from_current():
     cluster.assert_is_deployed(new_contract.code())
 
 
-@pytest.mark.parametrize(
-    "fetch_contract", [fetch_mainnet_contract, fetch_testnet_contract]
-)
-def test_update_to_current(fetch_contract):
-    current = fetch_contract()
+def test_update_to_current(current_contract):
+    current = current_contract
     cluster, mpc_nodes = shared.start_cluster_with_mpc(4, 4, 1, current)
     cluster.define_candidate_set(mpc_nodes)
     cluster.update_participant_status(assert_contract=False)
