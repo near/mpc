@@ -88,9 +88,13 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Debug
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (leader, attempts) = {
+            let progress = self.progress.lock().unwrap();
+            (progress.selected_leader, progress.attempts)
+        };
         write!(
             f,
-            "  [completed] blk {:>10} -> {:<24} id: {} rx: {:<44} tries: {:<2}",
+            "  [completed]  blk {:>10} -> {:<24} id: {} rx: {:<44} tries: {:<2} leader: {:<2}",
             self.indexed_block_height,
             self.completion_delay
                 .map(|(delay_blocks, delay_time)| {
@@ -106,7 +110,8 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Debug
                 .unwrap_or("?".to_string()),
             &format!("{:?}", self.request.get_id())[0..6],
             format!("{:?}", self.request.get_receipt_id()),
-            self.progress.lock().unwrap().attempts,
+            attempts,
+            leader.map(|x| x.to_string()).unwrap_or("?".to_string()),
         )
     }
 }
@@ -121,17 +126,11 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         eligible_leaders: &HashSet<ParticipantId>,
     ) -> String {
         let mut output = String::new();
-        let mut leader_selection = Vec::new();
-        for participant in &self.leader_selection_order {
-            leader_selection.push(*participant);
-            if eligible_leaders.contains(participant) {
-                break;
-            }
-        }
+        let current_leader = self.current_leader(eligible_leaders);
         write!(
             &mut output,
             "  {:>11} blk {:>10} -> {:<24} id: {} rx: {:<44} tries: {:<2}",
-            if leader_selection.last() == Some(&me) {
+            if current_leader == Some(me) {
                 "[leader]"
             } else {
                 ""
@@ -159,8 +158,8 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
             .unwrap();
         }
         write!(&mut output, " elect:").unwrap();
-        for (i, participant) in leader_selection.iter().enumerate() {
-            if i == leader_selection.len() - 1 {
+        for participant in self.leader_selection_order.iter() {
+            if Some(*participant) == current_leader {
                 write!(&mut output, " 🗸{}", participant).unwrap();
             } else {
                 write!(&mut output, " ✗{}", participant).unwrap();
