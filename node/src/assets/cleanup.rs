@@ -47,7 +47,7 @@ enum AssetCleanup {
     KeepOnly(Vec<primitives::ParticipantId>),
 }
 
-fn get_cleanup_behavior(
+fn cleanup_behavior(
     previous_epoch_data: &EpochData,
     current_epoch_data: &EpochData,
 ) -> AssetCleanup {
@@ -82,7 +82,7 @@ fn get_cleanup_behavior(
     }
 }
 
-fn get_cleanup_behavior_during_update(
+fn cleanup_behavior_during_update(
     previous_epoch_id: EpochId,
     current_epoch_id: EpochId,
 ) -> AssetCleanup {
@@ -113,10 +113,10 @@ pub fn delete_stale_triples_and_presignatures(
         None => AssetCleanup::Keep,
         Some(previous_epoch_data) => match previous_epoch_data {
             EpochDataWrapper::Legacy(previous_epoch_id) => {
-                get_cleanup_behavior_during_update(previous_epoch_id, current_epoch_id)
+                cleanup_behavior_during_update(previous_epoch_id, current_epoch_id)
             }
             EpochDataWrapper::Current(previous_epoch_data) => {
-                get_cleanup_behavior(&previous_epoch_data, &current_epoch_data)
+                cleanup_behavior(&previous_epoch_data, &current_epoch_data)
             }
         },
     };
