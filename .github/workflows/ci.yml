@@ -36,6 +36,7 @@ jobs:
       - name: Check Docker image can initialize and start
         run: |
           touch /tmp/image-digest.bin
+          # Test container startup - fail if container can't start
           timeout -k 10 180s docker run --rm \
           -e MPC_HOME_DIR="/tmp" \
           -e MPC_ACCOUNT_ID=test_image.testnet \
@@ -48,7 +49,18 @@ jobs:
           -e MPC_CONTRACT_ID=v1.signer-prod.testnet \
           -e MPC_IMAGE_HASH=5ba283860c0efa3d4c3e08a76a2b77fab4725baad4f48504eac858e04af7fd64 \
           -e MPC_LATEST_ALLOWED_HASH_FILE=/tmp/image-digest.bin \
-          -e MPC_ENV=testnet test_image_tag_ci || echo "Container test completed successfully"
+          -e MPC_ENV=testnet test_image_tag_ci
+          
+          # Check exit code
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -eq 124 ]; then
+            echo "✅ Container test completed successfully (timeout after 180s)"
+          elif [ $EXIT_CODE -eq 0 ]; then
+            echo "✅ Container test completed successfully (normal exit)"
+          else
+            echo "❌ Container failed to start or crashed with exit code: $EXIT_CODE"
+            exit 1
+          fi
 
   clippy-mpc-node:
     name: "MPC Node: clippy and format"
