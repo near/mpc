@@ -128,29 +128,42 @@ Including
 * Accessing mpc docker logs.  
 * Retrieve keys from the CVM.  
 * Add the node key to your Near account.
+## Create a NEAR Account for Your Node
 
-## Create a Near account for your node 
 
-TBD [#896](https://github.com/near/mpc/issues/896) -Do we need a pre step for generating account private/public key pair?
+> **Important** – In the following examples, the account keys are auto-generated as part of the command. But it is also possible to create the keys separately and add them to the account creation command.  
+>  
+> In either case, it is the operator's full responsibility to manage and protect these keys.  
+>  
+> See the [NEAR CLI](https://github.com/near/near-cli-rs/blob/main/docs/GUIDE.en.md) documentation for more options and details.
 
 ### **Mainnet**
 
-Using a mainnet named account is required. To create one you can use a known wallet like [https://www.mynearwallet.com](https://www.mynearwallet.com) or [https://wallet.meteorwallet.app](https://wallet.meteorwallet.app) or fund it yourself:
+A named mainnet account is required. To create one, you can use a known wallet like [https://www.mynearwallet.com](https://www.mynearwallet.com) or [https://wallet.meteorwallet.app](https://wallet.meteorwallet.app), or fund it yourself:
 
 ```
-# Example of account creation using near cli
-$ near account create-account fund-myself <ACCOUNT_NAME> '<AMMOUNT TO FUND> NEAR' autogenerate-new-keypair save-to-keychain sign-as <SIGNER_ACCOUNT_ID> network-config mainnet
+# Example of account creation using NEAR CLI
+$ near account create-account fund-myself <ACCOUNT_NAME> '<AMOUNT TO FUND> NEAR' autogenerate-new-keypair save-to-keychain sign-as <SIGNER_ACCOUNT_ID> network-config mainnet
 ```
 
 ### **Testnet**
 
-If you're using testnet, the easiest way to get started is to create an account sponsored by faucet \- the [Near command line interface](https://github.com/near/near-cli-rs) can set this up for you. Public and private keys were generated here. You can also use an existing account if you have one.
+If you're using testnet, the easiest way to get started is to create an account sponsored by the faucet — the [NEAR command line interface](https://github.com/near/near-cli-rs) can set this up for you. Public and private keys are generated during this process. You can also use an existing account if you have one.
 
+**Example of account creation using NEAR CLI**
+
+Using auto-generated keypair:
 ```
-# Example of account creation using near cli
+$ near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> autogenerate-new-keypair save-to-keychain network-config testnet create
+```
+
+Using a manually provided public key:
+```
 $ near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> use-manually-provided-public-key <PUBLIC_KEY> network-config testnet create
-For details please refer to near account documentation.
 ```
+
+For more details, please refer to the NEAR account documentation.
+
 
 ##   Prepare MPC container environment variables
 
