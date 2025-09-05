@@ -1,5 +1,5 @@
 pub mod key_generation;
-mod presign;
+pub mod presign;
 mod sign;
 
 use mpc_contract::primitives::key_state::KeyEventId;
