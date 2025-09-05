@@ -15,6 +15,68 @@ pub struct EpochData {
     pub participants: ParticipantsConfig,
 }
 
+// This function compares the `current_epoch_data` with the epoch data stored in the database.
+// If the epoch id changed, then all assets (triples & presignatures) are deleted.
+// If the epoch id did not change, then the node will discard all owned assets (triples &
+// presignatures) involving any nodes that changed their TLS key.
+pub fn delete_stale_triples_and_presignatures(
+    db: &Arc<SecretDB>,
+    current_epoch_data: EpochData,
+    my_participant_id: primitives::ParticipantId,
+    ecdsa_domain_ds: Vec<DomainId>,
+) -> anyhow::Result<()> {
+    let current_epoch_id = current_epoch_data.epoch_id;
+    let asset_cleanup: AssetCleanup = match get_epoch_data(db)? {
+        None => AssetCleanup::Keep,
+        Some(previous_epoch_data) => match previous_epoch_data {
+            EpochDataWrapper::Legacy(previous_epoch_id) => {
+                cleanup_behavior_during_update(previous_epoch_id, current_epoch_id)
+            }
+            EpochDataWrapper::Current(previous_epoch_data) => {
+                cleanup_behavior(&previous_epoch_data, &current_epoch_data)
+            }
+        },
+    };
+
+    match asset_cleanup {
+        AssetCleanup::Keep => {}
+        AssetCleanup::DeleteAll => {
+            let mut update_writer = db.update();
+            let _ = update_writer.delete_all(DBCol::Presignature);
+            let _ = update_writer.delete_all(DBCol::Triple);
+            update_writer.commit()?;
+        }
+        AssetCleanup::KeepOnly(persitent_participants) => {
+            // cleanup triples:
+            clean_db::<PairedTriple>(
+                db,
+                DBCol::Triple,
+                &persitent_participants,
+                my_participant_id,
+                TRIPLE_STORE_DOMAIN_ID,
+            )?;
+            // cleanup presignatures:
+            for domain_id in &ecdsa_domain_ds {
+                clean_db::<PresignOutputWithParticipants>(
+                    db,
+                    DBCol::Presignature,
+                    &persitent_participants,
+                    my_participant_id,
+                    Some(*domain_id),
+                )?;
+            }
+        }
+    }
+
+    let mut update_writer = db.update();
+    tracing::info!("Updating epoch data: {:?}.", current_epoch_data);
+    let bytes = bincode::serialize(&current_epoch_data)?;
+    update_writer.put(DBCol::EpochData, EPOCH_ID_KEY, &bytes);
+    tracing::info!("Updated epoch id entry");
+    update_writer.commit()?;
+    Ok(())
+}
+
 /* database helpers */
 enum EpochDataWrapper {
     Legacy(EpochId),
@@ -96,68 +158,6 @@ fn cleanup_behavior_during_update(
     } else {
         AssetCleanup::Keep
     }
-}
-
-// This function compares the `current_epoch_data` with the epoch data stored in the database.
-// If the epoch id changed, then all assets (triples & presignatures) are deleted.
-// If the epoch id did not change, then the node will discard all owned assets (triples &
-// presignatures) involving any nodes that changed their TLS key.
-pub fn delete_stale_triples_and_presignatures(
-    db: &Arc<SecretDB>,
-    current_epoch_data: EpochData,
-    my_participant_id: primitives::ParticipantId,
-    ecdsa_domain_ds: Vec<DomainId>,
-) -> anyhow::Result<()> {
-    let current_epoch_id = current_epoch_data.epoch_id;
-    let asset_cleanup: AssetCleanup = match get_epoch_data(db)? {
-        None => AssetCleanup::Keep,
-        Some(previous_epoch_data) => match previous_epoch_data {
-            EpochDataWrapper::Legacy(previous_epoch_id) => {
-                cleanup_behavior_during_update(previous_epoch_id, current_epoch_id)
-            }
-            EpochDataWrapper::Current(previous_epoch_data) => {
-                cleanup_behavior(&previous_epoch_data, &current_epoch_data)
-            }
-        },
-    };
-
-    match asset_cleanup {
-        AssetCleanup::Keep => {}
-        AssetCleanup::DeleteAll => {
-            let mut update_writer = db.update();
-            let _ = update_writer.delete_all(DBCol::Presignature);
-            let _ = update_writer.delete_all(DBCol::Triple);
-            update_writer.commit()?;
-        }
-        AssetCleanup::KeepOnly(persitent_participants) => {
-            // cleanup triples:
-            clean_db::<PairedTriple>(
-                db,
-                DBCol::Triple,
-                &persitent_participants,
-                my_participant_id,
-                TRIPLE_STORE_DOMAIN_ID,
-            )?;
-            // cleanup presignatures:
-            for domain_id in &ecdsa_domain_ds {
-                clean_db::<PresignOutputWithParticipants>(
-                    db,
-                    DBCol::Presignature,
-                    &persitent_participants,
-                    my_participant_id,
-                    Some(*domain_id),
-                )?;
-            }
-        }
-    }
-
-    let mut update_writer = db.update();
-    tracing::info!("Updating epoch data: {:?}.", current_epoch_data);
-    let bytes = bincode::serialize(&current_epoch_data)?;
-    update_writer.put(DBCol::EpochData, EPOCH_ID_KEY, &bytes);
-    tracing::info!("Updated epoch id entry");
-    update_writer.commit()?;
-    Ok(())
 }
 
 #[cfg(test)]
