@@ -2084,6 +2084,7 @@ dependencies = [
  "reqwest 0.12.23",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
 ]
 
