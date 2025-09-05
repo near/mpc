@@ -1,58 +1,22 @@
 use crate::common::{gen_accounts, PARTICIPANT_LEN};
-use base64::{engine::general_purpose, Engine};
 use common::current_contract;
 use mpc_contract::{
     config::InitConfig,
     primitives::thresholds::{Threshold, ThresholdParameters},
 };
 use near_workspaces::{network::Sandbox, Contract, Worker};
-use reqwest::Client;
-use std::time::Duration;
 pub mod common;
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-struct RpcResponse {
-    result: RpcResult,
-}
-
-#[derive(Deserialize)]
-struct RpcResult {
-    code_base64: String,
-}
 
 enum Network {
     Testnet,
     Mainnet,
 }
 
-async fn fetch_contract_code(network: Network) -> anyhow::Result<Vec<u8>> {
-    let (url, account_id) = match network {
-        Network::Mainnet => ("https://rpc.mainnet.near.org", "v1.signer"),
-        Network::Testnet => ("https://rpc.testnet.near.org", "v1.signer-prod.testnet"),
-    };
-
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": "dontcare",
-        "method": "query",
-        "params": {
-            "request_type": "view_code",
-            "finality": "final",
-            "account_id": account_id
-        }
-    });
-
-    let client = Client::new();
-    let response = client
-        .post(url)
-        .timeout(Duration::from_secs(10))
-        .json(&body)
-        .send()
-        .await?
-        .json::<RpcResponse>()
-        .await?;
-    Ok(general_purpose::STANDARD.decode(&response.result.code_base64)?)
+fn contract_code(network: Network) -> &'static [u8] {
+    match network {
+        Network::Mainnet => contract_history::current_mainnet(),
+        Network::Testnet => contract_history::current_testnet(),
+    }
 }
 
 async fn init_contract(worker: Worker<Sandbox>, contract: &Contract) -> anyhow::Result<()> {
@@ -85,8 +49,8 @@ async fn healthcheck(contract: &Contract) -> anyhow::Result<bool> {
 }
 
 async fn deploy_old(worker: &Worker<Sandbox>, network: Network) -> anyhow::Result<Contract> {
-    let old_wasm = fetch_contract_code(network).await?;
-    let old_contract = worker.dev_deploy(&old_wasm).await?;
+    let old_wasm = contract_code(network);
+    let old_contract = worker.dev_deploy(old_wasm).await?;
     Ok(old_contract)
 }
 
@@ -139,7 +103,9 @@ async fn back_compatibility(network: Network) -> anyhow::Result<()> {
         return Ok(());
     };
 
-    anyhow::bail!("❌Back compatibility check failed: state() call doesnt work after migration(). Probably you should introduce new logic to the `migrate()` method.")
+    anyhow::bail!(
+        "❌Back compatibility check failed: state() call doesnt work after migration(). Probably you should introduce new logic to the `migrate()` method."
+    )
 }
 
 #[tokio::test]

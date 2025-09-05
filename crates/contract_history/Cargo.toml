@@ -1,0 +1,22 @@
+[package]
+name = "contract_history"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "export_contracts"
+path = "src/bin/export_contracts.rs"
+
+[dependencies]
+clap.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+
+[features]
+external-services-tests = []
