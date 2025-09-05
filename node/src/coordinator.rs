@@ -190,19 +190,23 @@ impl Coordinator {
 
                             (Some(key_event_receiver), stop_fn)
                         }
-                        None => (
-                            None,
-                            Box::new(move |new_state| match new_state {
-                                ContractState::Running(new_state) => {
-                                    let new_running_epoch =
-                                        new_state.keyset.epoch_id != running_state.keyset.epoch_id;
-                                    let resharing_started = new_state.resharing_state.is_some();
-
-                                    new_running_epoch | resharing_started
-                                }
-                                _ => true,
-                            }),
-                        ),
+                        None => {
+                            let participants = running_state.participants.clone();
+                            (
+                                None,
+                                Box::new(move |new_state| match new_state {
+                                    ContractState::Running(new_state) => {
+                                        let new_running_epoch = new_state.keyset.epoch_id
+                                            != running_state.keyset.epoch_id;
+                                        let resharing_started = new_state.resharing_state.is_some();
+                                        let participants_changed =
+                                            new_state.participants != participants;
+                                        new_running_epoch | resharing_started | participants_changed
+                                    }
+                                    _ => true,
+                                }),
+                            )
+                        }
                     };
 
                     tracing::info!("Key event receiver is: {:?}", key_event_receiver);

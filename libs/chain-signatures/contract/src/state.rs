@@ -1,5 +1,6 @@
 pub mod initializing;
 pub mod key_event;
+pub mod recovery;
 pub mod resharing;
 pub mod running;
 
