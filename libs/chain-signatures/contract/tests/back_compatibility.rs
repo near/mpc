@@ -7,6 +7,7 @@ use mpc_contract::{
 };
 use near_workspaces::{network::Sandbox, Contract, Worker};
 use reqwest::Client;
+use std::time::Duration;
 pub mod common;
 use serde::Deserialize;
 
@@ -45,6 +46,7 @@ async fn fetch_contract_code(network: Network) -> anyhow::Result<Vec<u8>> {
     let client = Client::new();
     let response = client
         .post(url)
+        .timeout(Duration::from_secs(10))
         .json(&body)
         .send()
         .await?
