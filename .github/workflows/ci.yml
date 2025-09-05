@@ -12,7 +12,7 @@ on:
 jobs:
   docker-build:
     name: "Build Docker image"
-    runs-on: warp-ubuntu-2204-x64-2x
+    runs-on: warp-ubuntu-2204-x64-8x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -36,7 +36,7 @@ jobs:
       - name: Test new image can initialize and start
         run: |
           touch /tmp/image-digest.bin
-          docker run --rm --stop-timeout 180 \
+          timeout 180s docker run --rm \
           -e MPC_HOME_DIR="/tmp" \
           -e MPC_ACCOUNT_ID=test_image.testnet \
           -e MPC_SECRET_STORE_KEY=BD399143F5B3126098B0EAA023A0E730 \
