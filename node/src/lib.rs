@@ -17,7 +17,6 @@ pub static MPC_VERSION_STRING: LazyLock<String> = LazyLock::new(|| {
     )
 });
 
-mod asset_cleanup;
 mod assets;
 #[cfg(test)]
 mod async_testing;

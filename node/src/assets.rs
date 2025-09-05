@@ -1,3 +1,7 @@
+pub mod cleanup;
+#[cfg(test)]
+pub mod test_utils;
+
 use crate::db::{DBCol, SecretDB};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
