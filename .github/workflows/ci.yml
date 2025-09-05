@@ -36,8 +36,7 @@ jobs:
       - name: Test new image can initialize and start
         run: |
           touch /tmp/image-digest.bin
-          echo "check available images" && docker images # debug
-          docker run --rm --stop-timeout 60 \
+          docker run --rm --stop-timeout 180 \
           -e MPC_HOME_DIR="/tmp" \
           -e MPC_ACCOUNT_ID=test_image.testnet \
           -e MPC_SECRET_STORE_KEY=BD399143F5B3126098B0EAA023A0E730 \
