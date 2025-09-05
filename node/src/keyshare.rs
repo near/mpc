@@ -269,6 +269,19 @@ impl KeyshareStorage {
     }
 }
 
+#[cfg(test)]
+impl KeyshareStorage {
+    // Do NOT use this for production
+    pub async fn put_keyshares(&self, keyshares: Vec<Keyshare>) -> anyhow::Result<()> {
+        let epoch_id = keyshares.first().unwrap().key_id.epoch_id;
+        let keyshare_data = &PermanentKeyshareData {
+            epoch_id,
+            keyshares,
+        };
+        self.permanent.store(keyshare_data).await
+    }
+}
+
 pub struct GcpPermanentKeyStorageConfig {
     pub project_id: String,
     pub secret_id: String,

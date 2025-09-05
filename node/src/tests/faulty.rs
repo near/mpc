@@ -33,7 +33,8 @@ async fn test_faulty_cluster() {
         TXN_DELAY_BLOCKS,
         PortSeed::FAULTY_CLUSTER_TEST,
         DEFAULT_BLOCK_TIME,
-    );
+    )
+    .await;
 
     let domain = DomainConfig {
         id: DomainId(0),
@@ -78,7 +79,7 @@ async fn test_faulty_cluster() {
     let mut rng = rand::thread_rng();
     let to_drop: usize = rng.gen_range(0..NUM_PARTICIPANTS);
     tracing::info!("Bringing down one node #{}", to_drop);
-    let disabled1 = setup.indexer.disable(accounts[to_drop].clone()).await;
+    let disabled1 = setup.indexer.disable(to_drop.into()).await;
 
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
@@ -98,10 +99,7 @@ async fn test_faulty_cluster() {
         }
     };
     tracing::info!("Bringing down another node #{}", another_to_drop);
-    let disabled2 = setup
-        .indexer
-        .disable(accounts[another_to_drop].clone())
-        .await;
+    let disabled2 = setup.indexer.disable(another_to_drop.into()).await;
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user2",
@@ -127,9 +125,9 @@ async fn test_faulty_cluster() {
     drop(disabled1);
 
     tracing::info!("Pausing node #0");
-    let paused1 = setup.indexer.pause_indexer(accounts[0].clone()).await;
+    let paused1 = setup.indexer.pause_indexer(0.into()).await;
     tracing::info!("Pausing node #1");
-    let paused2 = setup.indexer.pause_indexer(accounts[1].clone()).await;
+    let paused2 = setup.indexer.pause_indexer(1.into()).await;
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
@@ -172,7 +170,8 @@ async fn test_indexer_stuck() {
         TXN_DELAY_BLOCKS,
         PortSeed::FAULTY_STUCK_INDEXER_TEST,
         std::time::Duration::from_millis(100),
-    );
+    )
+    .await;
 
     let domain = DomainConfig {
         id: DomainId(0),
@@ -208,7 +207,7 @@ async fn test_indexer_stuck() {
 
     // Pause the indexer and make sure it doesn't respond to requests
     tracing::info!("Pausing node #0");
-    let _paused1 = setup.indexer.pause_indexer(accounts[0].clone()).await;
+    let _paused1 = setup.indexer.pause_indexer(0.into()).await;
     tracing::info!(
         "participants {:?}",
         setup

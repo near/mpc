@@ -550,6 +550,7 @@ pub mod testing {
         pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: Self = Self(7);
         pub const BASIC_MULTIDOMAIN_TEST: Self = Self(8);
         pub const FAULTY_STUCK_INDEXER_TEST: Self = Self(9);
+        pub const RECOVERY_TEST: Self = Self(10);
     }
 
     pub fn generate_test_p2p_configs(

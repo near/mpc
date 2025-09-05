@@ -1,4 +1,5 @@
 use k256::{AffinePoint, Scalar};
+use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
 use rand::rngs::OsRng;
 use std::collections::HashMap;
@@ -15,7 +16,7 @@ use crate::db::SecretDB;
 use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain};
 use crate::indexer::IndexerAPI;
-use crate::keyshare::KeyStorageConfig;
+use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
@@ -38,6 +39,7 @@ use tokio::time::timeout;
 
 mod basic_cluster;
 mod benchmark;
+mod changing_participant_details;
 mod faulty;
 mod multidomain;
 mod research;
@@ -191,55 +193,72 @@ pub struct OneNodeTestConfig {
     pub config: ConfigFile,
     secrets: SecretsConfig,
     indexer: IndexerAPI,
-    indexer_task: AutoAbortTask<()>,
+    _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
+}
+
+fn make_key_storage_config(home_dir: PathBuf, local_encryption_key: [u8; 16]) -> KeyStorageConfig {
+    KeyStorageConfig {
+        home_dir,
+        local_encryption_key,
+        gcp: None,
+    }
+}
+
+pub async fn get_keyshares(
+    home_dir: PathBuf,
+    local_encryption_key: [u8; 16],
+    keyset: &Keyset,
+) -> anyhow::Result<Vec<Keyshare>> {
+    let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
+    let keystore = key_storage_config.create().await.unwrap();
+    keystore.load_keyset(keyset).await
+}
+
+pub async fn put_keyshares(
+    home_dir: PathBuf,
+    keyshares: Vec<Keyshare>,
+    local_encryption_key: [u8; 16],
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(&home_dir)?;
+    let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
+    let keystore = key_storage_config.create().await?;
+    keystore.put_keyshares(keyshares).await
 }
 
 impl OneNodeTestConfig {
     pub async fn run(self) -> anyhow::Result<()> {
-        let OneNodeTestConfig {
-            clock,
-            home_dir,
-            config,
-            secrets,
-            indexer,
-            indexer_task: _indexer_task,
-            currently_running_job_name,
-        } = self;
-        let my_account_id = config.my_near_account_id.clone();
-        std::fs::create_dir_all(&home_dir)?;
+        std::fs::create_dir_all(&self.home_dir)?;
+        let my_account_id = self.config.my_near_account_id.clone();
         async move {
             let root_future = async move {
                 let root_task_handle = tracking::current_task();
                 let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
                 let (_, web_contract_receiver) =
                     tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
+
                 let web_server = start_web_server(
                     root_task_handle,
                     debug_request_sender.clone(),
-                    config.web_ui.clone(),
-                    StaticWebData::new(&secrets, None),
+                    self.config.web_ui.clone(),
+                    StaticWebData::new(&self.secrets, None),
                     web_contract_receiver.clone(),
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
 
-                let secret_db = SecretDB::new(&home_dir, secrets.local_storage_aes_key)?;
-
-                let key_storage_config = KeyStorageConfig {
-                    home_dir: home_dir.clone(),
-                    local_encryption_key: secrets.local_storage_aes_key,
-                    gcp: None,
-                };
+                let secret_db = SecretDB::new(&self.home_dir, self.secrets.local_storage_aes_key)?;
+                let key_storage_config =
+                    make_key_storage_config(self.home_dir, self.secrets.local_storage_aes_key);
 
                 let coordinator = Coordinator {
-                    clock,
-                    config_file: config,
-                    secrets,
+                    clock: self.clock,
+                    config_file: self.config,
+                    secrets: self.secrets,
                     secret_db,
                     key_storage_config,
-                    indexer,
-                    currently_running_job_name,
+                    indexer: self.indexer,
+                    currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,
                 };
                 coordinator.run().await
@@ -264,10 +283,10 @@ pub struct IntegrationTestSetup {
 impl IntegrationTestSetup {
     /// Generates test node configs and a fake indexer; each config can then be used
     /// to start running the node.
-    pub fn new(
+    pub async fn new(
         clock: Clock,
         temp_dir: &Path,
-        participant_accounts: Vec<AccountId>,
+        participant_accounts: Vec<AccountId>, // we create per account. lol.
         threshold: usize,
         txn_delay_blocks: u64,
         port_seed: PortSeed,
@@ -321,17 +340,18 @@ impl IntegrationTestSetup {
                     near_signer_key: ed25519_dalek::SigningKey::generate(&mut OsRng),
                     near_responder_keys: vec![ed25519_dalek::SigningKey::generate(&mut OsRng)],
                 },
-                local_storage_aes_key: rand::random(),
+                local_storage_aes_key: rand::random(), // change this after the fact
             };
-            let (indexer_api, task, currently_running_job_name) =
-                indexer_manager.add_indexer_node(participant_accounts[i].clone());
+            let (indexer_api, task, currently_running_job_name) = indexer_manager
+                .add_indexer_node(i.into(), participant_accounts[i].clone())
+                .await;
             configs.push(OneNodeTestConfig {
                 clock: clock.clone(),
                 config,
                 home_dir: temp_dir.join(format!("{}", i)),
                 secrets,
                 indexer: indexer_api,
-                indexer_task: task,
+                _indexer_task: task,
                 currently_running_job_name,
             });
         }
@@ -415,7 +435,7 @@ pub async fn request_signature_and_await_response(
                 return Some(start_time.elapsed());
             }
             Err(_) => {
-                tracing::info!("Timed out waiting for signature respnse for user {}", user);
+                tracing::info!("Timed out waiting for signature response for user {}", user);
                 return None;
             }
         }

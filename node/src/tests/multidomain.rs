@@ -27,7 +27,8 @@ async fn test_basic_multidomain() {
         TXN_DELAY_BLOCKS,
         PortSeed::BASIC_MULTIDOMAIN_TEST,
         std::time::Duration::from_millis(600), // helps to avoid flaky test
-    );
+    )
+    .await;
 
     let mut domains = vec![
         DomainConfig {

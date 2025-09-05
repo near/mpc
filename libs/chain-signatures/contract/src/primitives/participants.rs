@@ -52,10 +52,12 @@ impl Participants {
             participants: Vec::new(),
         }
     }
+
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.participants.len()
     }
+
     pub fn insert_with_id(
         &mut self,
         account_id: AccountId,
@@ -77,12 +79,15 @@ impl Participants {
         self.next_id.0 = id.0 + 1;
         Ok(())
     }
+
     pub fn insert(&mut self, account_id: AccountId, info: ParticipantInfo) -> Result<(), Error> {
         self.insert_with_id(account_id, info, self.next_id.clone())
     }
+
     pub fn participants(&self) -> &Vec<(AccountId, ParticipantId, ParticipantInfo)> {
         &self.participants
     }
+
     pub fn next_id(&self) -> ParticipantId {
         self.next_id.clone()
     }
@@ -109,6 +114,7 @@ impl Participants {
         }
         Ok(())
     }
+
     pub fn init(
         next_id: ParticipantId,
         participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
@@ -129,12 +135,14 @@ impl Participants {
             .map(|(_, p_id, _)| p_id.clone())
             .ok_or_else(|| crate::errors::InvalidState::NotParticipant.into())
     }
+
     pub fn info(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
         self.participants
             .iter()
             .find(|(a_id, _, _)| a_id == account_id)
             .map(|(_, _, info)| info)
     }
+
     pub fn account_id(&self, id: &ParticipantId) -> Result<AccountId, Error> {
         self.participants
             .iter()
@@ -142,11 +150,13 @@ impl Participants {
             .map(|(a_id, _, _)| a_id.clone())
             .ok_or_else(|| crate::errors::InvalidState::ParticipantIndexOutOfRange.into())
     }
+
     pub fn is_participant(&self, account_id: &AccountId) -> bool {
         self.participants
             .iter()
             .any(|(a_id, _, _)| a_id == account_id)
     }
+
     /// Returns a subset of the participants according to the given range of indices.
     pub fn subset(&self, range: std::ops::Range<usize>) -> Participants {
         let participants = self.participants[range]
@@ -157,6 +167,7 @@ impl Participants {
             participants: participants.collect(),
         }
     }
+
     pub fn add_random_participants_till_n(&mut self, n: usize) {
         let mut rng = rand::thread_rng();
         while self.len() < n {
@@ -165,6 +176,7 @@ impl Participants {
             self.insert(account, pinfo).unwrap();
         }
     }
+
     pub fn remove(&mut self, account: &AccountId) {
         if let Some(pos) = self
             .participants
@@ -173,6 +185,20 @@ impl Participants {
         {
             self.participants.remove(pos);
         }
+    }
+
+    pub fn change_info(
+        &mut self,
+        account_id: AccountId,
+        new_info: ParticipantInfo,
+    ) -> Result<(), Error> {
+        for (a_id, _, info) in self.participants.iter_mut() {
+            if *a_id == account_id {
+                *info = new_info.clone();
+                return Ok(());
+            }
+        }
+        Err(crate::errors::InvalidState::NotParticipant.into())
     }
 }
 
