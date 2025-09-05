@@ -136,16 +136,16 @@ pub fn presign(
     args: PresignArguments,
 ) -> Result<impl Protocol<Output = PresignOutput>, InitializationError> {
     if participants.len() < 2 {
-        return Err(InitializationError::BadParameters(format!(
-            "participant count cannot be < 2, found: {}",
-            participants.len()
-        )));
+        return Err(InitializationError::NotEnoughParticipants {
+            participants: participants.len() as u32,
+        });
     };
     // Spec 1.1
     if args.threshold > participants.len() {
-        return Err(InitializationError::BadParameters(
-            "threshold must be <= participant count".to_string(),
-        ));
+        return Err(InitializationError::ThresholdTooLarge {
+            threshold: args.threshold as u32,
+            max: participants.len() as u32,
+        });
     }
 
     // NOTE: We omit the check that the new participant set was present for
@@ -159,15 +159,11 @@ pub fn presign(
         ));
     }
 
-    let participants = ParticipantList::new(participants).ok_or_else(|| {
-        InitializationError::BadParameters("participant list cannot contain duplicates".to_string())
-    })?;
+    let participants =
+        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
-    let all_bt_ids = ParticipantList::new(bt_participants).ok_or_else(|| {
-        InitializationError::BadParameters(
-            "bt_participants list cannot contain duplicates".to_string(),
-        )
-    })?;
+    let all_bt_ids =
+        ParticipantList::new(bt_participants).ok_or(InitializationError::DuplicateParticipants)?;
 
     if !participants.contains(me) {
         return Err(InitializationError::BadParameters(

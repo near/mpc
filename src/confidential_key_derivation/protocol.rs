@@ -111,17 +111,14 @@ pub fn ckd(
 ) -> Result<impl Protocol<Output = CKDOutput>, InitializationError> {
     // not enough participants
     if participants.len() < 2 {
-        return Err(InitializationError::BadParameters(format!(
-            "participant count cannot be < 2, found: {}",
-            participants.len()
-        )));
+        return Err(InitializationError::NotEnoughParticipants {
+            participants: participants.len() as u32,
+        });
     };
 
     // kick out duplicates
     let Some(participants) = ParticipantList::new(participants) else {
-        return Err(InitializationError::BadParameters(
-            "Participants list contains duplicates".to_string(),
-        ));
+        return Err(InitializationError::DuplicateParticipants);
     };
 
     // ensure my presence in the participant list
@@ -132,9 +129,10 @@ pub fn ckd(
     };
     // ensure the coordinator is a participant
     if !participants.contains(coordinator) {
-        return Err(InitializationError::BadParameters(format!(
-            "participant list must contain coordinator {coordinator:?}"
-        )));
+        return Err(InitializationError::MissingParticipant {
+            role: "coordinator",
+            participant: coordinator,
+        });
     };
 
     let comms = Comms::new();
@@ -270,5 +268,34 @@ mod test {
             "Keys should be equal"
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_ckd_duplicate_participants() {
+        let participants = vec![
+            Participant::from(0u32),
+            Participant::from(1u32),
+            Participant::from(1u32),
+        ];
+        let coordinator = Participant::from(0u32);
+        let me = Participant::from(0u32);
+        let (_app_sk, app_pk) = Secp256K1Sha256::generate_nonce(&mut OsRng);
+        let app_pk = VerifyingKey::new(app_pk);
+        let f = Polynomial::<Secp256K1Sha256>::generate_polynomial(None, 2, &mut OsRng).unwrap();
+        let private_share = SigningShare::new(f.eval_at_participant(me).unwrap().0);
+        let app_id = b"test".to_vec();
+
+        let result = ckd(
+            &participants,
+            coordinator,
+            me,
+            private_share,
+            app_id,
+            app_pk,
+        );
+        match result {
+            Ok(_) => panic!("Expected an error, but got Ok"),
+            Err(err) => assert_eq!(err, InitializationError::DuplicateParticipants),
+        }
     }
 }

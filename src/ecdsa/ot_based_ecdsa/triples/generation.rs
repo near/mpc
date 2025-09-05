@@ -1109,21 +1109,20 @@ pub fn generate_triple(
     threshold: usize,
 ) -> Result<impl Protocol<Output = TripleGenerationOutput>, InitializationError> {
     if participants.len() < 2 {
-        return Err(InitializationError::BadParameters(format!(
-            "participant count cannot be < 2, found: {}",
-            participants.len()
-        )));
+        return Err(InitializationError::NotEnoughParticipants {
+            participants: participants.len() as u32,
+        });
     };
     // Spec 1.1
     if threshold > participants.len() {
-        return Err(InitializationError::BadParameters(
-            "threshold must be <= participant count".to_string(),
-        ));
+        return Err(InitializationError::ThresholdTooLarge {
+            threshold: threshold as u32,
+            max: participants.len() as u32,
+        });
     }
 
-    let participants = ParticipantList::new(participants).ok_or_else(|| {
-        InitializationError::BadParameters("participant list cannot contain duplicates".to_string())
-    })?;
+    let participants =
+        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
     let ctx = Comms::new();
     let fut = do_generation(ctx.clone(), participants, me, threshold);
@@ -1137,21 +1136,20 @@ pub fn generate_triple_many<const N: usize>(
     threshold: usize,
 ) -> Result<impl Protocol<Output = TripleGenerationOutputMany>, InitializationError> {
     if participants.len() < 2 {
-        return Err(InitializationError::BadParameters(format!(
-            "participant count cannot be < 2, found: {}",
-            participants.len()
-        )));
+        return Err(InitializationError::NotEnoughParticipants {
+            participants: participants.len() as u32,
+        });
     };
     // Spec 1.1
     if threshold > participants.len() {
-        return Err(InitializationError::BadParameters(
-            "threshold must be <= participant count".to_string(),
-        ));
+        return Err(InitializationError::ThresholdTooLarge {
+            threshold: threshold as u32,
+            max: participants.len() as u32,
+        });
     }
 
-    let participants = ParticipantList::new(participants).ok_or_else(|| {
-        InitializationError::BadParameters("participant list cannot contain duplicates".to_string())
-    })?;
+    let participants =
+        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
     let ctx = Comms::new();
     let fut = do_generation_many::<N>(ctx.clone(), participants, me, threshold);

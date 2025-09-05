@@ -526,29 +526,29 @@ pub(crate) fn assert_keygen_invariants(
 ) -> Result<ParticipantList, InitializationError> {
     // need enough participants
     if participants.len() < 2 {
-        return Err(InitializationError::BadParameters(format!(
-            "participant count cannot be < 2, found: {}",
-            participants.len()
-        )));
+        return Err(InitializationError::NotEnoughParticipants {
+            participants: participants.len() as u32,
+        });
     };
 
     // validate threshold
     if threshold > participants.len() {
-        return Err(InitializationError::BadParameters(
-            "threshold must be <= participant count".to_string(),
-        ));
+        return Err(InitializationError::ThresholdTooLarge {
+            threshold: threshold as u32,
+            max: participants.len() as u32,
+        });
     }
 
     // ensure uniqueness of participants in the participant list
-    let participants = ParticipantList::new(participants).ok_or_else(|| {
-        InitializationError::BadParameters("participant list cannot contain duplicates".to_string())
-    })?;
+    let participants =
+        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
     // ensure my presence in the participant list
     if !participants.contains(me) {
-        return Err(InitializationError::BadParameters(
-            format!("participant list must contain {me:?}").to_string(),
-        ));
+        return Err(InitializationError::MissingParticipant {
+            role: "self",
+            participant: me,
+        });
     };
     Ok(participants)
 }
@@ -597,52 +597,41 @@ pub(crate) fn reshare_assertions<C: Ciphersuite>(
     old_participants: &[Participant],
 ) -> Result<(ParticipantList, ParticipantList), InitializationError> {
     if participants.len() < 2 {
-        return Err(InitializationError::BadParameters(format!(
-            "participant count cannot be < 2, found: {}",
-            participants.len()
-        )));
+        return Err(InitializationError::NotEnoughParticipants {
+            participants: participants.len() as u32,
+        });
     };
     if threshold > participants.len() {
-        return Err(InitializationError::BadParameters(
-            format!(
-                "new threshold {threshold:?} must be <= participant count {}",
-                participants.len()
-            )
-            .to_string(),
-        ));
+        return Err(InitializationError::ThresholdTooLarge {
+            threshold: threshold as u32,
+            max: participants.len() as u32,
+        });
     }
 
-    let participants = ParticipantList::new(participants).ok_or_else(|| {
-        InitializationError::BadParameters(
-            "new participant list cannot contain duplicates".to_string(),
-        )
-    })?;
+    let participants =
+        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
     if !participants.contains(me) {
-        return Err(InitializationError::BadParameters(
-            format!("participant list must contain {me:?}").to_string(),
-        ));
+        return Err(InitializationError::MissingParticipant {
+            role: "self",
+            participant: me,
+        });
     }
 
-    let old_participants = ParticipantList::new(old_participants).ok_or_else(|| {
-        InitializationError::BadParameters(
-            "old participant list cannot contain duplicates".to_string(),
-        )
-    })?;
+    let old_participants =
+        ParticipantList::new(old_participants).ok_or(InitializationError::DuplicateParticipants)?;
 
     if old_participants.intersection(&participants).len() < old_threshold {
-        return Err(InitializationError::BadParameters(
-            format!("not enough intersecting old/new participants {:?} to reconstruct private key for resharing with threshold bigger than old threshold {}",
-            old_participants.intersection(&participants),
-            old_threshold).to_string(),
-        ));
+        return Err(InitializationError::NotEnoughParticipantsForThreshold {
+            threshold: old_threshold as u32,
+            participants: old_participants.intersection(&participants).len() as u32,
+        });
     }
     // if me is not in the old participant set then ensure that old_signing_key is None
     if old_participants.contains(me) && old_signing_key.is_none() {
-        return Err(InitializationError::BadParameters(
-            format!("party {me:?} is present in the old participant list but provided no share")
-                .to_string(),
-        ));
+        return Err(InitializationError::BadParameters(format!(
+            "party {me:?} is present in the old participant list but provided no share"
+        )));
     }
     Ok((participants, old_participants))
 }
