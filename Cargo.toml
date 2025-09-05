@@ -12,12 +12,27 @@ byteorder = "1.5.0"
 digest = "0.10.7"
 ecdsa = { version = "0.16.8", features = ["digest", "hazmat"] }
 elliptic-curve = { version = "0.13.5", features = ["serde"] }
-frost-core = { version = "2.2.0", default-features = false, features = ["serialization", "std", "internals"] }
-frost-ed25519 = { version = "2.2.0", default-features = false, features = ["serialization", "std"] }
-frost-secp256k1 = { version = "2.2.0", default-features = false, features = ["serialization", "std"] }
+frost-core = { version = "2.1.0", default-features = false, features = [
+  "serialization",
+  "std",
+  "internals",
+] }
+frost-ed25519 = { version = "2.1.0", default-features = false, features = [
+  "serialization",
+  "std",
+] }
+frost-secp256k1 = { version = "2.1.0", default-features = false, features = [
+  "serialization",
+  "std",
+] }
 futures = "0.3.31"
 itertools = "0.14.0"
-k256 = { version = "0.13.1", features = ["sha256", "ecdsa", "serde", "hash2curve"] }
+k256 = { version = "0.13.1", features = [
+  "sha256",
+  "ecdsa",
+  "serde",
+  "hash2curve",
+] }
 keccak = "0.1.5"
 rand = "0.9.0"
 # updating this one requires quite a few code changes
@@ -30,3 +45,10 @@ smol = "2.0.2"
 subtle = "2.5.0"
 thiserror = "2.0.16"
 zeroize = "1.8.1"
+
+[dev-dependencies]
+criterion = "0.7.0"
+
+[[bench]]
+name = "main"
+harness = false

@@ -127,11 +127,11 @@ impl<C: Ciphersuite> Polynomial<C> {
             return Err(ProtocolError::InvalidInterpolationArguments);
         }
 
-        // Compute the Lagrange coefficients
-        for (id, share) in identifiers.iter().zip(shares) {
-            let lagrange_coefficient = compute_lagrange_coefficient::<C>(identifiers, id, point)?;
+        // Compute the Lagrange coefficients in batch
+        let lagrange_coefficients = batch_compute_lagrange_coefficients::<C>(identifiers, point)?;
 
-            // Compute y = f(point) via polynomial interpolation of these points of f
+        // Compute y = f(point) via polynomial interpolation of these points of f
+        for (lagrange_coefficient, share) in lagrange_coefficients.iter().zip(shares) {
             interpolation = interpolation + (lagrange_coefficient.0 * share.0);
         }
 
@@ -296,11 +296,11 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
             return Err(ProtocolError::InvalidInterpolationArguments);
         };
 
-        // Compute the Lagrange coefficients
-        for (id, share) in identifiers.iter().zip(shares) {
-            let lagrange_coefficient = compute_lagrange_coefficient::<C>(identifiers, id, point)?;
+        // Compute the Lagrange coefficients in batch
+        let lagrange_coefficients = batch_compute_lagrange_coefficients::<C>(identifiers, point)?;
 
-            // Compute y = g^f(point) via polynomial interpolation of these points of f
+        // Compute y = g^f(point) via polynomial interpolation of these points of f
+        for (lagrange_coefficient, share) in lagrange_coefficients.iter().zip(shares) {
             interpolation = interpolation + (share.value() * lagrange_coefficient.0);
         }
 
@@ -370,7 +370,7 @@ impl<'de, C: Ciphersuite> Deserialize<'de> for PolynomialCommitment<C> {
 
 /// Computes the Lagrange coefficient (a.k.a. Lagrange basis polynomial)
 /// evaluated at point x.
-/// lamda_i(x) = \prod_j (x - x_j)/(x_i - x_j)  where j != i
+/// lambda_i(x) = \prod_j (x - x_j)/(x_i - x_j)  where j != i
 /// Note: if `x` is None then consider it as 0.
 /// Note: `x_j` are elements in `point_set`
 /// Note: if `x_i` is not in `point_set` then return an error
@@ -421,6 +421,150 @@ pub fn compute_lagrange_coefficient<C: Ciphersuite>(
     Ok(SerializableScalar(num * den))
 }
 
+/// Computes all Lagrange basis coefficients lambda_i(x) for the nodes in `points_set`,
+/// evaluated at a single point `x`, using batch operations to reduce field inversions.
+///
+/// Lagrange coefficient definition:
+///   lambda_i(x) = \prod_{j!=i} (x - x_j) / (x_i - x_j)
+///
+/// Inputs:
+/// - `points_set` = {x₀, x₁, …, xₙ₋₁}. Each lambda_i corresponds to xᵢ ∈ `points_set`.
+/// - `x`: the evaluation point. If `None`, it is treated as 0.
+///
+/// Requirements:
+/// - `points_set.len() > 1`.
+/// - All x_i are distinct.
+///
+/// Early exit:
+/// - If x equals some x_k in `points_set`, return the Kronecker delta vector:
+///   lambda_k(x)=1 and lambda_i(x)=0 for i!=k.
+///
+/// Batch computation strategy:
+/// 1) Denominators: for each i, compute d_i = \prod_{j!=i} (x_i - x_j),
+///    then invert all d_i together in a single batch. This reduces n separate
+///    inversions to 1 batch inversion (O(n) instead of O(n^2)).
+/// 2) Numerators: compute the global numerator N = \prod_j (x - x_j),
+///    then for each i obtain n_i = N / (x - x_i) using batch inversion of (x - x_i).
+/// 3) Combine: lambda_i(x) = n_i * (d_i^-1).
+///
+/// Returns:
+/// - Vec<SerializableScalar<C>>: Lagrange coefficients corresponding to each x_i.
+///
+/// Example (over reals for clarity):
+/// - points_set = [1, 2, 4], x = 3:
+///   lambda(3) = [-1/3, 1, 1/3]   // sums to 1
+/// - points_set = [1, 2, 4], x = 2:
+///   lambda(2) = [0, 1, 0]        // x equals x₁
+/// - points_set = [1, 3, 4], x = None (so x=0):
+///   lambda(0) = [2, -2, 1]       // sums to 1
+pub fn batch_compute_lagrange_coefficients<C: Ciphersuite>(
+    points_set: &[Scalar<C>],
+    x: Option<&Scalar<C>>,
+) -> Result<Vec<SerializableScalar<C>>, ProtocolError> {
+    let n = points_set.len();
+    if n <= 1 {
+        return Err(ProtocolError::InvalidInterpolationArguments);
+    }
+
+    // Treat None as zero
+    let zero = <C::Group as Group>::Field::zero();
+    let x = x.unwrap_or(&zero);
+
+    // If x exactly equals some x_i, return Kronecker delta vector
+    if let Some(k) = points_set.iter().position(|&p| p == *x) {
+        let mut coeffs = vec![SerializableScalar(<C::Group as Group>::Field::zero()); n];
+        coeffs[k] = SerializableScalar(<C::Group as Group>::Field::one());
+        return Ok(coeffs);
+    }
+
+    // Compute denominators d_i = \prod_{j!=i} (x_i - x_j) for each point x_i in points_set.
+    // This corresponds to the denominator of the Lagrange basis polynomial lambda_i(x):
+    //    lambda_i(x) = prod_{j!=i} (x - x_j) / (x_i - x_j)
+    // By computing all d_i here, we can invert them in a single batch later, which
+    // is much faster than inverting each individually.
+    let mut denominators = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut den = <C::Group as Group>::Field::one();
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            den = den * (points_set[i] - points_set[j]);
+        }
+        denominators.push(den);
+    }
+
+    // Invert all denominators in one batch for efficiency
+    let inv_denominators = batch_invert::<C>(&denominators)?;
+
+    // Special case: x = 0
+    let (numerator_prod, inv_factors) = if *x == zero {
+        // Compute P = ∏_j x_j
+        let mut p = <C::Group as Group>::Field::one();
+        for x_i in points_set.iter() {
+            p = p * *x_i;
+        }
+
+        // Batch invert points_set to get 1 / x_i
+        let inv_xis = batch_invert::<C>(points_set)?;
+
+        (p, inv_xis) // Sign (-1)^(n-1) left to caller
+    } else {
+        // General case: x != 0
+        let mut full_numerator = <C::Group as Group>::Field::one();
+        let mut x_minus_xi_vec = Vec::with_capacity(n);
+        for x_i in points_set.iter() {
+            let x_minus_xi = *x - *x_i;
+            full_numerator = full_numerator * x_minus_xi;
+            x_minus_xi_vec.push(x_minus_xi);
+        }
+        let inv_x_minus_xi_vec = batch_invert::<C>(&x_minus_xi_vec)?;
+        (full_numerator, inv_x_minus_xi_vec)
+    };
+
+    // Compute final Lagrange coefficients
+    let mut lagrange_coeffs = Vec::with_capacity(n);
+    for i in 0..n {
+        // For each i, compute the numerator n_i = N / (x - x_i), where N = Prod_j (x - x_j).
+        // This is done by multiplying the total product `numerator_prod` by the pre-computed
+        // inverse of the term `(x - x_i)` (or `x_i` if x is zero).
+        let num_i = numerator_prod * inv_factors[i];
+        lagrange_coeffs.push(SerializableScalar(num_i * inv_denominators[i]));
+    }
+
+    Ok(lagrange_coeffs)
+}
+
+/// Batch inversion of a list of field elements.
+/// Returns a vector of inverses in the same order.
+/// Uses the standard prefix-product / suffix-product trick for O(n) inversions instead of O(n²).
+pub fn batch_invert<C: Ciphersuite>(values: &[Scalar<C>]) -> Result<Vec<Scalar<C>>, ProtocolError> {
+    if values.is_empty() {
+        return Err(ProtocolError::InvalidInterpolationArguments);
+    }
+
+    let mut products: Vec<Scalar<C>> = Vec::with_capacity(values.len());
+    let mut acc = <C::Group as Group>::Field::one();
+    for v in values {
+        acc = acc * *v;
+        products.push(acc);
+    }
+
+    // Invert the total product
+    let mut inv_last = <C::Group as Group>::Field::invert(&acc)
+        .map_err(|_| ProtocolError::InvalidInterpolationArguments)?;
+
+    // Compute individual inverses usin suffix products
+    let mut inverted = vec![<C::Group as Group>::Field::one(); values.len()];
+    for i in (1..values.len()).rev() {
+        inverted[i] = products[i - 1] * inv_last;
+        inv_last = inv_last * values[i];
+    }
+    inverted[0] = inv_last;
+
+    Ok(inverted)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -429,6 +573,7 @@ mod test {
     use frost_secp256k1::{Secp256K1Group, Secp256K1ScalarField, Secp256K1Sha256};
     use rand_core::{OsRng, RngCore};
     type C = Secp256K1Sha256;
+
     #[test]
     fn abort_no_polynomial() {
         let poly = Polynomial::<C>::new(vec![]);
@@ -889,6 +1034,56 @@ mod test {
                 let index = i - ext_sum_left.len() / 2;
                 assert_eq!(c, coefpoly[index].value() * two);
             }
+        }
+    }
+
+    #[test]
+    fn test_batch_edge_cases_errors() {
+        let points = vec![
+            Participant::from(1u32).scalar::<C>(),
+            Participant::from(1u32).scalar::<C>(), // duplicate
+        ];
+        let result =
+            batch_compute_lagrange_coefficients::<C>(&points, Some(&Secp256K1ScalarField::zero()));
+        assert!(result.is_err());
+
+        let points_single = vec![Participant::from(1u32).scalar::<C>()];
+        let result = batch_compute_lagrange_coefficients::<C>(
+            &points_single,
+            Some(&Secp256K1ScalarField::zero()),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_lagrange_computation_equivalence() {
+        let degree = 10; // smaller for fast CI runs
+        let participants = (0..degree + 1)
+            .map(|i| Participant::from(i as u32))
+            .collect::<Vec<_>>();
+        let ids = participants
+            .iter()
+            .map(|p| p.scalar::<C>())
+            .collect::<Vec<_>>();
+        let point = Some(Secp256K1ScalarField::random(&mut rand_core::OsRng));
+
+        // Sequential
+        let mut lagrange_coefficients_seq = Vec::new();
+        for id in &ids {
+            lagrange_coefficients_seq
+                .push(compute_lagrange_coefficient::<C>(&ids, id, point.as_ref()).unwrap());
+        }
+
+        // Batch
+        let lagrange_coefficients_batch =
+            batch_compute_lagrange_coefficients::<C>(&ids, point.as_ref()).unwrap();
+
+        // Verify results match
+        for (a, b) in lagrange_coefficients_seq
+            .iter()
+            .zip(lagrange_coefficients_batch.iter())
+        {
+            assert_eq!(a.0, b.0);
         }
     }
 }
