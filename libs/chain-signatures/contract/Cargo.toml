@@ -97,7 +97,7 @@ rstest = "0.25.0"
 
 [features]
 test-utils = ["rand"]
-dev-utils = []
+dev-utils = ["rand"]
 abi = ["borsh/unstable__schema", "mpc-primitives/abi", "attestation/abi"]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,

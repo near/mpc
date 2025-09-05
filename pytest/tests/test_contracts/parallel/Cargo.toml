@@ -13,3 +13,14 @@ near-sdk = { version = "5.15.1", features = ["legacy", "unit-testing"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 hex = "0.4"
+k256 = { version = "0.13.4", features = [
+    "sha256",
+    "ecdsa",
+    "serde",
+    "arithmetic",
+    "expose-field",
+] }
+
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2.12", features = ["custom"] }

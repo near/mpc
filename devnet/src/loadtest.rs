@@ -278,12 +278,24 @@ impl RunLoadtestCmd {
             crate::contracts::ContractActionCall::ParallelSignCall(args)
         } else if let Some(domain_id) = self.domain_id {
             let contract_state = read_contract_state(&config.rpc, &mpc_account).await;
-            ContractActionCall::Sign(crate::contracts::SignActionCallArgs {
-                mpc_contract: mpc_account,
-                domain_config: contract_state
-                    .get_domain_config(DomainId(domain_id))
-                    .expect("require valid domain id"),
-            })
+            let domain_config = contract_state
+                .get_domain_config(DomainId(domain_id))
+                .expect("require valid domain id");
+            match domain_config.scheme {
+                mpc_contract::primitives::domain::SignatureScheme::CkdSecp256k1 => {
+                    ContractActionCall::Ckd(crate::contracts::RequestActionCallArgs {
+                        mpc_contract: mpc_account,
+                        domain_config,
+                    })
+                }
+                mpc_contract::primitives::domain::SignatureScheme::Ed25519
+                | mpc_contract::primitives::domain::SignatureScheme::Secp256k1 => {
+                    ContractActionCall::Sign(crate::contracts::RequestActionCallArgs {
+                        mpc_contract: mpc_account,
+                        domain_config,
+                    })
+                }
+            }
         } else {
             ContractActionCall::LegacySign(crate::contracts::LegacySignActionCallArgs {
                 mpc_contract: mpc_account,

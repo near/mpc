@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use mpc_contract::primitives::{
+    ckd::CKDRequestArgs,
     domain::{DomainConfig, SignatureScheme},
     signature::{Bytes, Payload, SignRequestArgs},
 };
@@ -23,7 +24,7 @@ pub struct ParallelSignCallArgs {
 }
 
 #[derive(Clone)]
-pub struct SignActionCallArgs {
+pub struct RequestActionCallArgs {
     pub mpc_contract: AccountId,
     pub domain_config: DomainConfig,
 }
@@ -36,8 +37,9 @@ pub struct LegacySignActionCallArgs {
 #[derive(Clone)]
 pub enum ContractActionCall {
     ParallelSignCall(ParallelSignCallArgs),
-    Sign(SignActionCallArgs),
+    Sign(RequestActionCallArgs),
     LegacySign(LegacySignActionCallArgs),
+    Ckd(RequestActionCallArgs),
 }
 
 pub fn make_actions(call: ContractActionCall) -> ActionCall {
@@ -67,6 +69,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                         target_contract: args.mpc_contract,
                         ecdsa_calls_by_domain,
                         eddsa_calls_by_domain,
+                        ckd_calls_by_domain,
                         seed: rand::random(),
                     })
                     .unwrap(),
@@ -108,6 +111,21 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                 1,
             )],
         },
+        ContractActionCall::Ckd(args) => ActionCall {
+            receiver_id: args.mpc_contract,
+            actions: vec![make_action(
+                "request_app_private_key",
+                &serde_json::to_vec(&CKDArgs {
+                    request: CKDRequestArgs {
+                        domain_id: args.domain_config.id,
+                        app_public_key: mpc_contract::utils::random_app_public_key(),
+                    },
+                })
+                .unwrap(),
+                300,
+                1,
+            )],
+        },
     }
 }
 
@@ -122,10 +140,16 @@ struct SignArgsV2 {
 }
 
 #[derive(Serialize)]
+struct CKDArgs {
+    pub request: CKDRequestArgs,
+}
+
+#[derive(Serialize)]
 struct ParallelSignArgsV2 {
     target_contract: AccountId,
     ecdsa_calls_by_domain: BTreeMap<u64, u64>,
     eddsa_calls_by_domain: BTreeMap<u64, u64>,
+    ckd_calls_by_domain: BTreeMap<u64, u64>,
     seed: u64,
 }
 
@@ -140,8 +164,9 @@ fn make_payload(scheme: SignatureScheme) -> Payload {
             rand::rng().fill_bytes(&mut payload);
             Payload::Eddsa(Bytes::new(payload).unwrap())
         }
-        // TODO: should be handled as part of https://github.com/near/mpc/issues/1012
-        SignatureScheme::CkdSecp256k1 => todo!(),
+        SignatureScheme::CkdSecp256k1 => {
+            unreachable!("make_payload should not be called with `CkdSecp256k1` scheme")
+        }
     }
 }
 

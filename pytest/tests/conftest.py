@@ -128,3 +128,55 @@ def compile_contract(request):
         )
     os.makedirs(os.path.dirname(contracts.COMPILED_CONTRACT_PATH), exist_ok=True)
     shutil.copy(compiled_contract, contracts.COMPILED_CONTRACT_PATH)
+
+
+@pytest.fixture(scope="session")
+def compile_parallel_contract(request):
+    """
+    This function navigates to the tests/tests_contracts/parallel directory,
+    compiles the contract and moves it in the res folder.
+    """
+    print("compiling contract")
+    git_repo = git.Repo(".", search_parent_directories=True)
+    git_root = Path(git_repo.git.rev_parse("--show-toplevel"))
+    chain_signatures = git_root / "pytest" / "tests" / "test_contracts" / "parallel"
+
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "-p",
+            "parallel-contract",
+            "--target=wasm32-unknown-unknown",
+            "--release",
+        ],
+        cwd=chain_signatures,
+        check=True,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+
+    subprocess.run(
+        [
+            "wasm-opt",
+            "-Oz",
+            "target/wasm32-unknown-unknown/release/parallel_contract.wasm",
+            "-o",
+            "target/wasm32-unknown-unknown/release/parallel_contract.wasm",
+            "--enable-bulk-memory",
+        ],
+        cwd=chain_signatures,
+        check=True,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+
+    compiled_contract = (
+        chain_signatures
+        / "target"
+        / "wasm32-unknown-unknown"
+        / "release"
+        / "parallel_contract.wasm"
+    )
+    os.makedirs(os.path.dirname(contracts.PARALLEL_CONTRACT_PATH), exist_ok=True)
+    shutil.copy(compiled_contract, contracts.PARALLEL_CONTRACT_PATH)
