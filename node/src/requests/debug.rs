@@ -94,7 +94,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Debug
         };
         write!(
             f,
-            "  [completed]  blk {:>10} -> {:<24} id: {} rx: {:<44} tries: {:<2} leader: {:<2}",
+            "  [completed] blk {:>10} -> {:<24} id: {} rx: {:<44} tries: {:<2} leader: {:<2}",
             self.indexed_block_height,
             self.completion_delay
                 .map(|(delay_blocks, delay_time)| {
