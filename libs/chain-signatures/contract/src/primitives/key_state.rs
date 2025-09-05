@@ -135,6 +135,11 @@ impl Keyset {
             .key
             .clone())
     }
+
+    #[cfg(feature = "dev-utils")]
+    pub fn get_domain_ids(&self) -> Vec<DomainId> {
+        self.domains.iter().map(|domain| domain.domain_id).collect()
+    }
 }
 /// This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`,
 /// but is only constructible given a set of participants that includes the signer, thus acting as
