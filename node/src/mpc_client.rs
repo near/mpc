@@ -168,12 +168,13 @@ impl MpcClient {
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
-        let mut pending_signatures = PendingRequests::new(
-            Clock::real(),
-            self.client.all_participant_ids(),
-            self.client.my_participant_id(),
-            self.client.clone(),
-        );
+        let mut pending_signatures =
+            PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
+                Clock::real(),
+                self.client.all_participant_ids(),
+                self.client.my_participant_id(),
+                self.client.clone(),
+            );
         let mut pending_ckds = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
             Clock::real(),
             self.client.all_participant_ids(),
@@ -275,7 +276,7 @@ impl MpcClient {
                                 let debug_output = format!("{:?}", pending_signatures);
                                 debug_request.respond(debug_output);
                             }
-                            DebugRequestKind::RecentCKD => {
+                            DebugRequestKind::RecentCKDs => {
                                 let debug_output = format!("{:?}", pending_ckds);
                                 debug_request.respond(debug_output);
                             }
