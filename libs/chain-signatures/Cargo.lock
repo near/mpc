@@ -2285,7 +2285,6 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "attestation",
- "base64 0.21.7",
  "borsh",
  "contract_history",
  "curve25519-dalek",
