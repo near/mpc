@@ -11,7 +11,7 @@ path = "src/bin/export_contracts.rs"
 clap.workspace = true
 
 [dev-dependencies]
-base64.workspace = true
+bs58.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

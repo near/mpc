@@ -2079,7 +2079,7 @@ dependencies = [
 name = "contract_history"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "bs58 0.5.1",
  "clap",
  "reqwest 0.12.23",
  "serde",
