@@ -47,6 +47,7 @@ mod tests {
 
         let response = reqwest::Client::new()
             .post(rpc_endpoint)
+            .timeout(std::time::Duration::from_secs(10))
             .json(&body)
             .send()
             .await
