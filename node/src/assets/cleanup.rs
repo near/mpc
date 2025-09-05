@@ -70,8 +70,8 @@ pub fn delete_stale_triples_and_presignatures(
 
     let mut update_writer = db.update();
     tracing::info!("Updating epoch data: {:?}.", current_epoch_data);
-    let bytes = bincode::serialize(&current_epoch_data)?;
-    update_writer.put(DBCol::EpochData, EPOCH_ID_KEY, &bytes);
+    let current_epoch_data_ser = serde_json::to_vec(&current_epoch_data)?;
+    update_writer.put(DBCol::EpochData, EPOCH_ID_KEY, &current_epoch_data_ser);
     tracing::info!("Updated epoch id entry");
     update_writer.commit()?;
     Ok(())
@@ -87,7 +87,7 @@ fn get_epoch_data(db: &Arc<SecretDB>) -> anyhow::Result<Option<EpochDataWrapper>
     let Some(db_res): Option<Vec<u8>> = db.get(DBCol::EpochData, EPOCH_ID_KEY)? else {
         return Ok(None);
     };
-    if let Ok(epoch_data) = bincode::deserialize::<EpochData>(&db_res) {
+    if let Ok(epoch_data) = serde_json::from_slice::<EpochData>(&db_res) {
         return Ok(Some(EpochDataWrapper::Current(epoch_data)));
     }
 
