@@ -357,7 +357,7 @@ where
 pub fn clean_db<T>(
     db: &Arc<SecretDB>,
     db_col: DBCol,
-    persistent_participants: &Vec<ParticipantId>,
+    persistent_participants: &[ParticipantId],
     my_participant_id: ParticipantId,
     domain_id: Option<DomainId>,
 ) -> anyhow::Result<()>
@@ -370,7 +370,7 @@ where
     for item in db.iter_range(db_col, &start, &end) {
         let (key, value) = item?;
         let value: T = serde_json::from_slice(&value)?;
-        if !value.is_subset_of_active_participants(persistent_participants.as_slice()) {
+        if !value.is_subset_of_active_participants(persistent_participants) {
             update_writer.delete(db_col, &key);
         }
     }
