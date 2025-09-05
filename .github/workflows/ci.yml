@@ -30,6 +30,19 @@ jobs:
           context: .
           profile-name: "mpc-image-builder"
           file: deployment/Dockerfile-mpc
+          tags: TEST_IMAGE
+
+      - name: Test new image can initialize and start
+        run: |
+          docker run --rm --stop-timeout 60 \
+          -e MPC_HOME_DIR="/tmp" \
+          -e MPC_ACCOUNT_ID=test_image.testnet \
+          -e MPC_SECRET_STORE_KEY=BD399143F5B3126098B0EAA023A0E730 \
+          -e MPC_P2P_PRIVATE_KEY=ed25519:2WBi5gRyJntYA7dCyddiwNV2yNTdr5uZhrP4WX5GNBL5DSVCSR7ESvcXF2DBfY5oPYhzBmHnguPVSXjr6UCi8h1g \
+          -e MPC_ACCOUNT_SK=ed25519:6X3Bnghdf89WjHQfHDFYjW2UeNaNqCQ1AUGxX7zgvbJT4KSoeXzuHEdux6A2jsphTZTmS4SUGQRyYqC2ik3UrMP \
+          -e NEAR_BOOT_NODES=ed25519:ERguu7jQuYk8pxNsRC6FdezvNsegBPva1GRGqjmtD7i2@10.10.10.10:24567 \
+          -e MPC_CONTRACT_ID=v1.signer-prod.testnet \
+          -e MPC_ENV=testnet TEST_IMAGE
 
   clippy-mpc-node:
     name: "MPC Node: clippy and format"
