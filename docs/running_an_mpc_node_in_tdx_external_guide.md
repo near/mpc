@@ -142,7 +142,6 @@ Including
 A named mainnet account is required. To create one, you can use a known wallet like [https://www.mynearwallet.com](https://www.mynearwallet.com) or [https://wallet.meteorwallet.app](https://wallet.meteorwallet.app), or fund it yourself:
 
 ```
-# Example of account creation using NEAR CLI
 $ near account create-account fund-myself <ACCOUNT_NAME> '<AMOUNT TO FUND> NEAR' autogenerate-new-keypair save-to-keychain sign-as <SIGNER_ACCOUNT_ID> network-config mainnet
 ```
 
@@ -150,7 +149,6 @@ $ near account create-account fund-myself <ACCOUNT_NAME> '<AMOUNT TO FUND> NEAR'
 
 If you're using testnet, the easiest way to get started is to create an account sponsored by the faucet — the [NEAR command line interface](https://github.com/near/near-cli-rs) can set this up for you. Public and private keys are generated during this process. You can also use an existing account if you have one.
 
-**Example of account creation using NEAR CLI**
 
 Using auto-generated keypair:
 ```
