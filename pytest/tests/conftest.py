@@ -53,7 +53,7 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture(scope="session")
-def contract_binaries(request):
+def current_contracts():
     with tempfile.TemporaryDirectory() as tmpdir:
         subprocess.run(
             ["cargo", "run", "--bin", "export_contracts", "--", "-t", tmpdir],
@@ -67,11 +67,6 @@ def contract_binaries(request):
             "mainnet": contract_read(tmpdir, "signer_mainnet.wasm"),
             "testnet": contract_read(tmpdir, "signer_testnet.wasm"),
         }
-
-
-@pytest.fixture(params=["mainnet", "testnet"])
-def current_contract(request, contract_binaries):
-    return contract_binaries[request.param]
 
 
 @pytest.fixture(scope="session", autouse=True)

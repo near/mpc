@@ -11,6 +11,8 @@ import sys
 import time
 import pathlib
 
+import pytest
+
 from common_lib.contract_state import ProtocolState
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -35,8 +37,9 @@ def test_update_from_current():
     cluster.assert_is_deployed(new_contract.code())
 
 
-def test_update_to_current(current_contract):
-    current = current_contract
+@pytest.mark.parametrize("network", ["mainnet", "testnet"])
+def test_update_to_current(network, current_contracts):
+    current = current_contracts[network]
     cluster, mpc_nodes = shared.start_cluster_with_mpc(4, 4, 1, current)
     cluster.define_candidate_set(mpc_nodes)
     cluster.update_participant_status(assert_contract=False)
