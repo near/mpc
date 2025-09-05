@@ -558,7 +558,7 @@ pub(crate) async fn do_reshare<C: Ciphersuite>(
     chan: SharedChannel,
     participants: ParticipantList,
     me: Participant,
-    threshold: usize,
+    old_threshold: usize,
     old_signing_key: Option<SigningShare<C>>,
     old_public_key: VerifyingKey<C>,
     old_participants: ParticipantList,
@@ -579,7 +579,7 @@ pub(crate) async fn do_reshare<C: Ciphersuite>(
         chan,
         participants,
         me,
-        threshold,
+        old_threshold,
         secret,
         old_reshare_package,
     )

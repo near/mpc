@@ -77,8 +77,8 @@ where
 pub fn refresh<C: Ciphersuite>(
     old_signing_key: Option<SigningShare<C>>,
     old_public_key: VerifyingKey<C>,
-    new_participants: &[Participant],
-    new_threshold: usize,
+    old_participants: &[Participant],
+    old_threshold: usize,
     me: Participant,
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
 where
@@ -91,14 +91,14 @@ where
         )));
     }
     let comms = Comms::new();
-    let threshold = new_threshold;
+    let threshold = old_threshold;
     let (participants, old_participants) = reshare_assertions::<C>(
-        new_participants,
+        old_participants,
         me,
         threshold,
         old_signing_key,
         threshold,
-        new_participants,
+        old_participants,
     )?;
     let fut = do_reshare(
         comms.shared_channel(),
