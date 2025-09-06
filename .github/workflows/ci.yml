@@ -37,7 +37,7 @@ jobs:
         run: |
           touch /tmp/image-digest.bin
           # Test container startup - fail if container can't start
-          timeout -k 30 120s -s SIGINT docker run \
+          timeout -k 30 -s SIGINT 120s docker run \
           -e MPC_HOME_DIR="/tmp" \
           -e MPC_ACCOUNT_ID=test_image.near \
           -e RUST_BACKTRACE="full" \
