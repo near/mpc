@@ -37,7 +37,7 @@ jobs:
         run: |
           touch /tmp/image-digest.bin
           # Test container startup - fail if container can't start
-          timeout -k 10 120s docker run --rm \
+          timeout 120s docker run --rm \
           -e MPC_HOME_DIR="/tmp" \
           -e MPC_ACCOUNT_ID=test_image.near \
           -e RUST_BACKTRACE="full" \
@@ -55,8 +55,6 @@ jobs:
           EXIT_CODE=$?
           if [ $EXIT_CODE -eq 124 ]; then
             echo "✅ Container test completed successfully (timeout after 120s)"
-          elif [ $EXIT_CODE -eq 137 ]; then
-            echo "✅ Container test completed successfully (killed after timeout - expected behavior)"
           elif [ $EXIT_CODE -eq 0 ]; then
             echo "✅ Container test completed successfully (normal exit)"
           else
