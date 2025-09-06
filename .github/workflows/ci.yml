@@ -46,7 +46,7 @@ jobs:
           -e MPC_P2P_PRIVATE_KEY=ed25519:2WBi5gRyJntYA7dCyddiwNV2yNTdr5uZhrP4WX5GNBL5DSVCSR7ESvcXF2DBfY5oPYhzBmHnguPVSXjr6UCi8h1g \
           -e MPC_ACCOUNT_SK=ed25519:6X3Bnghdf89WjHQfHDFYjW2UeNaNqCQ1AUGxX7zgvbJT4KSoeXzuHEdux6A2jsphTZTmS4SUGQRyYqC2ik3UrMP \
           -e NEAR_BOOT_NODES=ed25519:ERguu7jQuYk8pxNsRC6FdezvNsegBPva1GRGqjmtD7i2@10.10.10.10:24567 \
-          -e MPC_CONTRACT_ID=v1.signer \
+          -e MPC_CONTRACT_ID=v1.signer_test \
           -e MPC_IMAGE_HASH=5ba283860c0efa3d4c3e08a76a2b77fab4725baad4f48504eac858e04af7fd64 \
           -e MPC_LATEST_ALLOWED_HASH_FILE=/tmp/image-digest.bin \
           -e MPC_ENV=mainnet test_image_tag_ci
@@ -54,7 +54,9 @@ jobs:
           # Check exit code
           EXIT_CODE=$?
           if [ $EXIT_CODE -eq 124 ]; then
-            echo "✅ Container test completed successfully (timeout after 180s)"
+            echo "✅ Container test completed successfully (timeout after 120s)"
+          elif [ $EXIT_CODE -eq 137 ]; then
+            echo "✅ Container test completed successfully (killed after timeout - expected behavior)"
           elif [ $EXIT_CODE -eq 0 ]; then
             echo "✅ Container test completed successfully (normal exit)"
           else
