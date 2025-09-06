@@ -49,7 +49,7 @@ jobs:
           -e MPC_CONTRACT_ID=v1.signer \
           -e MPC_IMAGE_HASH=5ba283860c0efa3d4c3e08a76a2b77fab4725baad4f48504eac858e04af7fd64 \
           -e MPC_LATEST_ALLOWED_HASH_FILE=/tmp/image-digest.bin \
-          -e MPC_ENV=mainnet test_image_tag_ci
+          -e MPC_ENV=localnet test_image_tag_ci
           
           # Check exit code
           EXIT_CODE=$?
