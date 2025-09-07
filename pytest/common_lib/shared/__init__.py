@@ -118,13 +118,13 @@ def sign_create_account_with_multiple_access_keys_tx(
     keys: List[Key],
     nonce,
     block_hash,
-    contract,
+    contract_id,
 ) -> bytes:
     create_account_action = create_create_account_action()
     payment_action = create_payment_action(100 * NEAR_BASE)
     access_key_actions = [
         # create_full_access_key_action(key.decoded_pk()) for key in keys
-        create_mpc_function_call_access_key_action(key.decoded_pk(), contract)
+        create_mpc_function_call_access_key_action(key.decoded_pk(), contract_id)
         for key in keys
     ]
     actions = [create_account_action, payment_action] + access_key_actions
@@ -346,7 +346,7 @@ def start_cluster_with_mpc(
             candidate.responder_keys,
             nonce,
             cluster.contract_node.last_block_hash(),
-            contract,
+            cluster.mpc_contract_account,
         )
         txs.append(tx)
         candidate_account_id = candidate.signer_key.account_id
@@ -370,7 +370,7 @@ def start_cluster_with_mpc(
             [candidate.signer_key] + pytest_signer_keys,
             nonce,
             cluster.contract_node.last_block_hash(),
-            contract,
+            cluster.mpc_contract_account
         )
         txs.append(tx)
 
