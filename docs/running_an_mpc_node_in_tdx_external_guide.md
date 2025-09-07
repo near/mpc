@@ -346,13 +346,7 @@ $ed25519:B2JvaYmgzfXsvCxrqd4nBrBt8jo9ReqUZatG3dAZEBv5$curl -s http://<IP>:8080/p
 ```
 ## Add the Node Account Key to Your Account
 
-This section shows how to add the MPC node's public key (from the previous section) as a **restricted function-call access key** to your NEAR account so that an MPC node can interact with the **MPC signer contract**.  
-
-Installation instructions can be found here:  
-https://github.com/near/near-cli-rs  
-
-`near-cli-rs` usage guide:  
-https://github.com/near/near-cli-rs/blob/main/docs/GUIDE.en.md  
+This section shows how to add the MPC node's public key (from the previous section) as a **restricted function-call access key** to your NEAR account using the previously mentioned NEAR-CLI, allowing the MPC node to interact with the **MPC signer contract**.
 
 ---
 
