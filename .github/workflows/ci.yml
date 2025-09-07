@@ -286,7 +286,7 @@ jobs:
         run: |
           source pytest/venv/bin/activate
           cd pytest 
-          pytest -vv -s tests/test_key_event.py::test_single_domain --non-reproducible
+          pytest -m "not ci_excluded" -s -x
 
   tee-launcher-tests:
     name: "TEE Launcher: pytests"
