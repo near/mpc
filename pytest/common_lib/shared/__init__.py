@@ -75,7 +75,7 @@ def create_function_call_access_key_action(
 
 
 def create_mpc_function_call_access_key_action(
-    pk: str, contract, allowance: int | None = None
+    pk: str, contract_id: str, allowance: int | None = None
 ) -> "Action":
     """
     Create a restricted access key that only allows calling MPC-related contract methods.
@@ -94,7 +94,7 @@ def create_mpc_function_call_access_key_action(
 
     return create_function_call_access_key_action(
         pk=pk,
-        contract_id=contract,
+        contract_id=contract_id,
         method_names=mpc_methods,
         allowance=allowance,
     )
@@ -346,7 +346,7 @@ def start_cluster_with_mpc(
             candidate.responder_keys,
             nonce,
             cluster.contract_node.last_block_hash(),
-            cluster.mpc_contract_account,
+            cluster.mpc_contract_account(),
         )
         txs.append(tx)
         candidate_account_id = candidate.signer_key.account_id
@@ -370,7 +370,7 @@ def start_cluster_with_mpc(
             [candidate.signer_key] + pytest_signer_keys,
             nonce,
             cluster.contract_node.last_block_hash(),
-            cluster.mpc_contract_account
+            cluster.mpc_contract_account(),
         )
         txs.append(tx)
 
