@@ -25,19 +25,22 @@ from transaction import (
     create_create_account_action,
     create_payment_action,
     create_full_access_key_action,
-    #create_mpc_function_call_access_key_action
+    # create_mpc_function_call_access_key_action
     sign_transaction,
     serialize_transaction,
+    Action,
+    AccessKey,
+    AccessKeyPermission,
+    FunctionCallPermission,
+    PublicKey,
+    AddKey,
 )
-
-
 
 
 from key import Key
 
 dot_near = pathlib.Path.home() / ".near"
 SECRETS_JSON = "secrets.json"
-
 
 
 def create_function_call_access_key_action(
@@ -70,7 +73,10 @@ def create_function_call_access_key_action(
 
     return action
 
-def create_mpc_function_call_access_key_action(pk: str, contract, allowance: int | None = None) -> "Action":
+
+def create_mpc_function_call_access_key_action(
+    pk: str, contract, allowance: int | None = None
+) -> "Action":
     """
     Create a restricted access key that only allows calling MPC-related contract methods.
     """
@@ -85,12 +91,14 @@ def create_mpc_function_call_access_key_action(pk: str, contract, allowance: int
         "verify_tee",
         "submit_participant_info",
     ]
+
     return create_function_call_access_key_action(
         pk=pk,
         contract_id=contract,
         method_names=mpc_methods,
         allowance=allowance,
     )
+
 
 # Output is deserializable into the rust type near_sdk::SecretKey
 def serialize_key(key: bytes) -> str:
@@ -115,8 +123,9 @@ def sign_create_account_with_multiple_access_keys_tx(
     create_account_action = create_create_account_action()
     payment_action = create_payment_action(100 * NEAR_BASE)
     access_key_actions = [
-        #create_full_access_key_action(key.decoded_pk()) for key in keys
-        create_mpc_function_call_access_key_action(key.decoded_pk(), contract) for key in keys
+        # create_full_access_key_action(key.decoded_pk()) for key in keys
+        create_mpc_function_call_access_key_action(key.decoded_pk(), contract)
+        for key in keys
     ]
     actions = [create_account_action, payment_action] + access_key_actions
     signed_tx = sign_transaction(
