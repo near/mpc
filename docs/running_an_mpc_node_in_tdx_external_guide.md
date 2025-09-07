@@ -339,7 +339,7 @@ There are 2 keys that should be retrieved from node.
 * Node Account Key (near\_signer\_public\_key) \- this key is used by the node to issue operations such as “vote\_reshared”.  
   This key needs to be added to the Near account that was created in the step above.
 
-### Retrieve the node account key and P2P key.
+## Retrieve the node account key and P2P key.
 
 In order to retrieve the node account key and the P2P key. On your server   
 Call the HTTP end point [http://localhost:8080/public\_data](http://localhost:8080/public_data)  \- and search for near\_signer\_public\_key and near\_p2p\_public\_key
@@ -355,12 +355,83 @@ $curl -s http://<IP>:8080/public_data | jq -r '.near_signer_public_key'
 $ed25519:B2JvaYmgzfXsvCxrqd4nBrBt8jo9ReqUZatG3dAZEBv5$curl -s http://<IP>:8080/public_data | jq -r '.near_p2p_public_key'$ed25519:5SiS1SJiABiM79Yt6uEjMabAT9UguQY9hSyF7xfHLGYt
 
 ```
+## Add the Node Account Key to Your Account
 
-### **Add Node Account Key to your account:**
+This section shows how to add the MPC node's public key (from the previous section) as a **restricted function-call access key** to your NEAR account using the previously mentioned NEAR-CLI, allowing the MPC node to interact with the **MPC signer contract**.
 
-TBD  [#902](https://github.com/near/mpc/issues/902) \- add commands here
+---
 
-## 
+### Parameters
+
+- **`ACCOUNT_ID`** → The NEAR account that will own the new key.  
+  Example: `your-node-account.testnet`
+
+- **`MPC_CONTRACT_ID`** → The MPC signer contract ID:  
+  
+  Testnet:   v1.signer-prod.testnet  
+  Mainnet:   v1.signer
+  
+
+- **`MPC_NODE_PUBLIC_KEY`** → The public key of the MPC node you want to add.  
+  Example: `ed25519:ABCDEFG...`
+
+- **`METHOD_NAMES`** → The list of contract methods the MPC node is allowed to call:  
+  ```
+  respond,
+  respond_ckd,
+  vote_pk,
+  start_keygen_instance,
+  vote_reshared,
+  start_reshare_instance,
+  vote_abort_key_event_instance,
+  verify_tee,
+  submit_participant_info
+  ```
+
+---
+
+### Example Command
+
+```bash
+./target/release/near account add-key $ACCOUNT_ID   grant-function-call-access   --allowance '1 NEAR'   --contract-account-id $MPC_CONTRACT_ID   --function-names $METHOD_NAMES   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY   network-config testnet   sign-with-keychain   send
+```
+
+---
+
+### Sample Bash Script
+
+```bash
+#!/bin/bash
+
+# === Configuration ===
+ACCOUNT_ID="your-node-account.testnet"
+MPC_CONTRACT_ID="v1.signer-prod.testnet"    # use "v1.signer" for mainnet
+MPC_NODE_PUBLIC_KEY="ed25519:YOUR_PUBLIC_KEY_HERE"
+ALLOWANCE="1 NEAR"
+NETWORK="testnet"   # or "mainnet"
+
+# Methods the MPC node is allowed to call
+METHOD_NAMES="respond,respond_ckd,vote_pk,start_keygen_instance,vote_reshared,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info"
+
+# === Add Access Key ===
+./target/release/near account add-key $ACCOUNT_ID   grant-function-call-access   --allowance "$ALLOWANCE"   --contract-account-id $MPC_CONTRACT_ID   --function-names $METHOD_NAMES   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY   network-config $NETWORK   sign-with-keychain   send
+```
+
+---
+
+### Verification
+
+
+After sending the transaction, check that the new key was added:
+
+```bash
+./target/release/near account list-keys $ACCOUNT_ID \
+  network-config $NETWORK \
+  now
+```
+
+
+
 
 # Joining the MPC Cluster
 
