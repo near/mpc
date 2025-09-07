@@ -10,6 +10,7 @@ use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
+use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -19,6 +20,8 @@ use threshold_signatures::protocol::Participant;
 
 pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
 
+// IMPORTANT: if we add domain_ids as an idetifier to triples, ensure to also update the asset cleanup mechanism on startup (the other place where this constant is used).
+pub const TRIPLE_STORE_DOMAIN_ID: Option<DomainId> = None;
 impl TripleStorage {
     pub fn new(
         clock: Clock,
@@ -30,7 +33,7 @@ impl TripleStorage {
             clock,
             db,
             crate::db::DBCol::Triple,
-            None,
+            TRIPLE_STORE_DOMAIN_ID,
             my_participant_id,
             |participants, pair| pair.is_subset_of_active_participants(participants),
             alive_participant_ids_query,

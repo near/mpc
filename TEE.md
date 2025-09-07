@@ -66,45 +66,42 @@ The MPC contract is used for authenticating the backup service and the MPC node.
 The node and service will each submit a public key to the contract that is then used for mutual authentication during backup generation and recovery processes.
 
 ### MPC network during a recovery process
-Currently, the MPC network allows three protocol states:
+The MPC network allows three protocol states:
 - `Initializing` for generating new key shares
 - `Running` when handling signature request
 - `Resharing` when the network is resharing their secret keys for a change of the participant set, or for a change of the cryptography threshold
 
 Until now, when a node operator wanted to switch their machine, they needed to do so through a `Resharing` - they had to leave the network and then re-join.
 Unfortunately, it may not be possible to use the same mechanism for recovering from disaster, as by definition, a disaster implies that the network lost it signing quorum and thus, its ability to execute a resharing.
-To account for this, a fourth protocol state must be introduced: `Recovery`.
 
-The purpose of this state is to:
-- allow participants to change their participant information (e.g. TLS keys, IP address, and anything other than their account id);
+To allow actual recovery, we must enable nodes to change their participant details during a `Running` state. We can do so by having a `RecoveryProcess` in parallel to the current `ProtocolState`.
+
+The purpose of a recovery process is to:
+- allow participants to change their participant information (e.g. TLS keys, IP address, and anything other than their account id) without going through a resharing;
 - allow a node to activate the Recovery mechanism and request the back-up share from the backup service.
 
-This protocol state may:
-- only be entered from a `Running` state. (_note: we might be able to also allow re-entering it from a `Recovery` state. But this adds complexity and is not necessary._)
-- resume in a `Resharing` state under the same conditions under which the `Resharing` state could be resumed from a `Running` state.
-- not resume in a state different to `Running` or `Resharing`.
+A recovery process may occur only while the protocol is in a `Running` state. This is to simplify the problem space. Having a recovery process in parallel to a `Resharing` or `Initializing` protcol state requires to account for many edge cases and race conditions, which we would prefer to avoid.
 
-Unlike the `Resharing` state, entering this state does not require `threshold` votes, but rather, a single vote is sufficient. However, the `AccountId` of all participants must be preserved. Only secondary participant details may be changed.
-
-In the first iteration of the implementation, it is okay if signature requests are not accepted while the protocol is in the `Recovery` state.
+Unlike changes in the `ProtocolState`, changes in `Recovery` process do not require a signing quorum. Instead, each participant can initiate and conclude a recovery process at their own discretion.
+To avoid making the `Recovery` process a DOS attack vector, protocol state changes must have priority over ongoing `Recovery` processes. If the protocol state changes into a `Resharing` or `Initializing` state, any ongoing `Recovery` processes will simply be cancelled.
 
 ## Implementation Details
 _Note: In this document, the term node operator refers to a person operating a node that is acting as a participant in the MPC network. That person has a unique `AccountId` (an account on the NEAR blockchain) associated to its node. Without loss of generality, we assume that a node operator only operates a single node and that their `AccountId` serves as a unique identifier for the node as well as the operator._
 
 ### Version 1: Establish TCP p2p connection
-The node crate already contains logic that allows mutual authentication via TLS. That logic sits in [`node/src/p2p.rs`](https://github.com/near/mpc/blob/b89d1084bcbd2fdc777140a4dda38de616b810ef/node/src/p2p.rs#L119). This implementation would re-use the existing logic.
+The node crate already contains logic that allows mutual authentication via TLS. That logic sits in [`node/src/p2p.rs`](https://github.com/near/mpc/blob/b89d1084bcbd2fdc777140a4dda38de616b810ef/node/src/p2p.rs#L119). This implementation would re-use the existing logic. A PoC can be found in [PR #962](https://github.com/near/mpc/issues/962).
 
 #### Backup service workflow
 ##### Onboarding
 1. The backup service generates a NEAR account public key and a TLS key.
-2. The node operator adds the NEAR account public key as an access key to their account and grants it access to necessary contract methods (_todo: list of methods_).
+2. The node operator adds the NEAR account public key as an access key to their account and grants it access to necessary contract methods (_todo [946](https://github.com/near/mpc/issues/946): specify methods_).
 3. The backup service submits their [todo: specify with TEE] information to the MPC smart contract.
 
 ##### Monitoring 
-The backup service periodically fetches the current protocol state from the contract.
+The backup service periodically fetches the current protocol state and any ongoing recovery processes from the contract.
 It compares the key set of the current `Running` protocol state with the secret shares it has possession of.
 If there is a discrepancy, then the backup service requests a new copy of the key shares from the MPC node following the process outlined under [Backup](#backup).
-If the contract is in the `Recovery` state, then the backup service follows the protocol outlined under [Recovery](#recovery)
+If there the contract has an active `Recovery` process, then the backup service follows the protocol outlined under [Recovery](#recovery).
 
 ##### Backup 
 1. The backup service looks up the details of its MPC node in the set of participants of the `Running` protocol state.
@@ -112,15 +109,15 @@ If the contract is in the `Recovery` state, then the backup service follows the 
 3. The backup service waits for the node to send the key shares, stores them securely and then closes the connection.
 
 ##### Recovery
-1. The backup service looks up the details of its MPC node in the set of prospective participants of the `Recovery` protocol state.
-2. the backup service establishes a p2p connection with the node with mutual TLS authentication.
+1. If one of the recovering nodes belongs to the same node operator as the backup service, then the backup service follows steps 2-4. otherwise, it will continue monitoring the contract.
+2. the backup service gets the connection details for its node from the ongoing recovery process and establishes a p2p connection with mutual TLS authentication.
 3. The backup service sends the key shares to the node.
 4. The backup service sends a confirmation to the MPC smart contract.
 
 #### MPC node workflow
 ##### Onboarding
 1. The MPC node generates a NEAR account public key and a TLS key.
-2. The node operator adds the NEAR account public key as an access key to their account and grants it access to the necessary contract methods (_todo: list of methods_).
+2. The node operator adds the NEAR account public key as an access key to their account and grants it access to the necessary contract methods (_todo [(#946)](https://github.com/near/mpc/issues/946): specify methods_).
 3. The MPC node monitors the MPC smart contract.
     - **If** the account ID of their node operator is **not** in the set of current participants:  
         - Submit their information to `submit_participant_info`.  
@@ -132,7 +129,7 @@ If the contract is in the `Recovery` state, then the backup service follows the 
         
     - **If** the account ID of their node operator **is** in the set of current participants, **but** the TLS key of the participant info does **not** match theirs:  
         - Submit their information to `submit_participant_recovery_info`. 
-        - This puts the protocol in `Recovery` mode (c.f. also the [contract](#contract) section).
+        - This initiates a `Recovery` process for this node (c.f. also the [contract](#contract) section).
 ```mermaid
 flowchart TB
     subgraph Onboarding
@@ -147,7 +144,7 @@ flowchart TB
         EYY[Call submit_participant_recovery_info]
         EYYA[Participate in protocol as a normal participant]
         EYN[Call submit_participant_recovery_info]
-        EYNA[enter Recovery mode]
+        EYNA[start Recovery process]
 
         B --> C --> D --> E
         E -- "No" --> EN --> ENA
@@ -156,8 +153,8 @@ flowchart TB
         EY -- "No" --> EYN --> EYNA
     end
 ```
-##### Recovery Protocol
-The node follows this protocol when the protocol state is in `Recovery`:
+##### Recovery Process
+The node follows this protocol when its node operator has an active `Recovery` process:
 
 - **If** this nodes account ID matches the account ID of the recovering node:
     - **If** this node is the recovering node (matches the TLS key):

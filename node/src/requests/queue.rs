@@ -173,6 +173,8 @@ pub struct ComputationProgress<ChainRespondArgsType: ChainRespondArgs> {
     /// The computed response, if any. This is used to prevent unnecessary recomputation,
     /// if all that's needed is to submit the response to chain.
     pub computed_response: Option<ChainRespondArgsType>,
+    /// The leader selected during computation
+    pub selected_leader: Option<ParticipantId>,
     /// The time and when the last response was submitted to chain.
     /// This is used to delay the next retry as well as debugging.
     pub last_response_submission: Option<near_time::Instant>,
@@ -183,6 +185,7 @@ impl<ChainRespondArgsType: ChainRespondArgs> Default for ComputationProgress<Cha
         Self {
             attempts: Default::default(),
             computed_response: Default::default(),
+            selected_leader: Default::default(),
             last_response_submission: Default::default(),
         }
     }
@@ -241,7 +244,10 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     }
 
     /// Selects the leader given the current state of the network.
-    fn current_leader(&self, eligible_leaders: &HashSet<ParticipantId>) -> Option<ParticipantId> {
+    pub fn current_leader(
+        &self,
+        eligible_leaders: &HashSet<ParticipantId>,
+    ) -> Option<ParticipantId> {
         for candidate_leader in &self.leader_selection_order {
             if eligible_leaders.contains(candidate_leader) {
                 return Some(*candidate_leader);
@@ -441,9 +447,10 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 | CheckBlockResult::Unknown => {
                     if let Some(leader) = request.current_leader(&eligible_leaders) {
                         tracing::debug!(target: "request", "Leader for {} request {:?} from block {} is {}", RequestType::get_type(), request.request.get_id(), request.block_height, leader);
+                        let mut progress = request.computation_progress.lock().unwrap();
+                        progress.selected_leader = Some(leader);
                         if leader == self.my_participant_id {
                             {
-                                let mut progress = request.computation_progress.lock().unwrap();
                                 if progress.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
                                     tracing::debug!(target: "request", "Discarding {} request {:?} from block {} because it has been attempted too many ({}) times", RequestType::get_type(), request.request.get_id(), request.block_height, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER);
                                     requests_to_remove.push(*id);

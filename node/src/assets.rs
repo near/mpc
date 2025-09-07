@@ -1,5 +1,10 @@
+pub mod cleanup;
+#[cfg(test)]
+pub mod test_utils;
+
 use crate::db::{DBCol, SecretDB};
 use crate::primitives::{ParticipantId, UniqueId};
+use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::DomainId;
@@ -347,6 +352,32 @@ where
     last_id: Mutex<Option<UniqueId>>,
 }
 
+/// Iterates over a key range in column `db_col`, determined by  [`DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, domain_id)`],
+/// Deletes all entries in `db_col` that evaluate `false` for `is_subset_of_active_participants(persistent_participants)`
+pub fn clean_db<T>(
+    db: &Arc<SecretDB>,
+    db_col: DBCol,
+    persistent_participants: &[ParticipantId],
+    my_participant_id: ParticipantId,
+    domain_id: Option<DomainId>,
+) -> anyhow::Result<()>
+where
+    T: Serialize + DeserializeOwned + Send + 'static + HasParticipants,
+{
+    let (start, end): (Vec<u8>, Vec<u8>) =
+        DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, domain_id);
+    let mut update_writer = db.update();
+    for item in db.iter_range(db_col, &start, &end) {
+        let (key, value) = item?;
+        let value: T = serde_json::from_slice(&value)?;
+        if !value.is_subset_of_active_participants(persistent_participants) {
+            update_writer.delete(db_col, &key);
+        }
+    }
+    update_writer.commit()?;
+    Ok(())
+}
+
 impl<T> DistributedAssetStorage<T>
 where
     T: Serialize + DeserializeOwned + Send + 'static,
@@ -534,7 +565,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::{ColdQueue, DistributedAssetStorage, DomainId, DoubleQueue, UniqueId};
+    use crate::assets::clean_db;
     use crate::async_testing::{run_future_once, MaybeReady};
+    use crate::db::DBCol;
     use crate::primitives::ParticipantId;
     use crate::providers::HasParticipants;
     use borsh::BorshDeserialize;
@@ -547,7 +580,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-    struct ParticipantsWithI32(Vec<ParticipantId>, i32);
+    struct ParticipantsWithI32(pub Vec<ParticipantId>, pub i32);
 
     impl HasParticipants for ParticipantsWithI32 {
         fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
@@ -1221,6 +1254,99 @@ mod tests {
                         .unwrap(),
                     40000 + i * 100 + j
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn test_distributed_assets_storage_cleanup() {
+        let clock = FakeClock::default();
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let all_participants = vec![
+            ParticipantId::from_raw(0),
+            ParticipantId::from_raw(1),
+            ParticipantId::from_raw(2),
+            ParticipantId::from_raw(3),
+        ];
+        let participant_subset_a = vec![
+            ParticipantId::from_raw(0),
+            ParticipantId::from_raw(1),
+            ParticipantId::from_raw(2),
+        ];
+        let participant_subset_b = vec![
+            ParticipantId::from_raw(1),
+            ParticipantId::from_raw(2),
+            ParticipantId::from_raw(3),
+        ];
+        let participant_subset_c = vec![ParticipantId::from_raw(1), ParticipantId::from_raw(2)];
+        let my_participant_id = ParticipantId::from_raw(42);
+        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
+        let new_store_from_db = |db_col: DBCol,
+                                 domain_id: Option<DomainId>|
+         -> DistributedAssetStorage<ParticipantsWithI32> {
+            DistributedAssetStorage::<ParticipantsWithI32>::new(
+                clock.clock(),
+                db.clone(),
+                db_col,
+                domain_id,
+                my_participant_id,
+                |cond, val| val.is_subset_of_active_participants(cond),
+                {
+                    let alive_participants = alive_participants.clone();
+                    Arc::new(move || alive_participants.lock().unwrap().clone())
+                },
+            )
+            .unwrap()
+        };
+        let assert_db_num_owned = |db_col: DBCol, domain_id: Option<DomainId>, expected: usize| {
+            let store = new_store_from_db(db_col, domain_id);
+            assert_eq!(store.num_owned(), expected);
+        };
+        for domain_id in [None, Some(DomainId(0)), Some(DomainId(1))] {
+            for db_col in [crate::db::DBCol::Presignature, crate::db::DBCol::Triple] {
+                assert_db_num_owned(db_col, domain_id, 0);
+                {
+                    // populate the database
+                    let all_1 = ParticipantsWithI32(all_participants.clone(), 456);
+                    let subset_a_1 = ParticipantsWithI32(participant_subset_a.clone(), 789);
+                    let subset_b_1 = ParticipantsWithI32(participant_subset_b.clone(), 789);
+                    let subset_c_1 = ParticipantsWithI32(participant_subset_c.clone(), 789);
+                    let store = new_store_from_db(db_col, domain_id);
+                    for p in [all_1, subset_a_1, subset_b_1, subset_c_1] {
+                        let id = store.generate_and_reserve_id();
+                        store.add_owned(id, p);
+                    }
+                }
+                assert_db_num_owned(db_col, domain_id, 4);
+                clean_db::<ParticipantsWithI32>(
+                    &db,
+                    db_col,
+                    &all_participants,
+                    my_participant_id,
+                    domain_id,
+                )
+                .unwrap();
+                assert_db_num_owned(db_col, domain_id, 4);
+                clean_db::<ParticipantsWithI32>(
+                    &db,
+                    db_col,
+                    &participant_subset_a,
+                    my_participant_id,
+                    domain_id,
+                )
+                .unwrap();
+                assert_db_num_owned(db_col, domain_id, 2);
+
+                clean_db::<ParticipantsWithI32>(
+                    &db,
+                    db_col,
+                    &participant_subset_b,
+                    my_participant_id,
+                    domain_id,
+                )
+                .unwrap();
+                assert_db_num_owned(db_col, domain_id, 1);
             }
         }
     }
