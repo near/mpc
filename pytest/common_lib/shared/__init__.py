@@ -91,6 +91,7 @@ def create_mpc_function_call_access_key_action(
         "verify_tee",
         "submit_participant_info",
         "vote_add_domains",
+        "vote_cancel_resharing",
     ]
 
     return create_function_call_access_key_action(
