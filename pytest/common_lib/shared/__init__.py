@@ -90,6 +90,7 @@ def create_mpc_function_call_access_key_action(
         "vote_abort_key_event_instance",
         "verify_tee",
         "submit_participant_info",
+        "vote_add_domains",
     ]
 
     return create_function_call_access_key_action(
