@@ -1,0 +1,37 @@
+name: Contract Verification
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  verify-contracts:
+    name: "Verify deployed contracts match expectations"
+    runs-on: warp-ubuntu-2204-x64-2x
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
+
+      - name: Cache Rust dependencies
+        uses: WarpBuilds/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+
+      - name: Run contract verification tests
+        run: |
+          cd crates/contract_history
+          cargo test --features external-services-tests --release
