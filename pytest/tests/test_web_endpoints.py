@@ -13,13 +13,16 @@ from common_lib.contracts import load_mpc_contract
 
 
 def test_web_endpoints():
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1, load_mpc_contract())
+    number_nodes = 2
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        2, number_nodes, 1, load_mpc_contract()
+    )
     cluster.init_cluster(participants=mpc_nodes, threshold=2)
     cluster.send_and_await_signature_requests(1)
     cluster.send_and_await_ckd_requests(1)
 
     # ports are hardcoded... they come from PortSeed::CLI_FOR_PYTEST.web_port(i)
-    for port in [20000, 20001]:
+    for port in range(20000, 20000 + number_nodes):
         response = requests.get(f"http://localhost:{port}/health")
         assert response.status_code == 200, response.status_code
         assert "OK" in response.text, response.text

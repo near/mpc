@@ -1,6 +1,6 @@
 import json
-import base64
-from utils import load_binary_file, requests
+
+from utils import load_binary_file
 from enum import Enum
 from borsh_construct import Vec, U8, CStruct, U64, Option
 from .constants import MPC_REPO_DIR
@@ -41,35 +41,6 @@ def build_view_code_request(account_id: str) -> dict:
             "account_id": account_id,
         },
     }
-
-
-class NetworkRpc(Enum):
-    MAINNET = "https://rpc.mainnet.near.org"
-    TESTNET = "https://rpc.testnet.near.org"
-
-
-def fetch_contract_code(account_id: str, network: NetworkRpc) -> bytearray:
-    print(f"fetching contract at {account_id} from {network}\n")
-    request_payload = build_view_code_request(account_id)
-    response = requests.post(network.value, json=request_payload, timeout=10)
-    response.raise_for_status()
-
-    result = response.json()
-    try:
-        code_base64 = result["result"]["code_base64"]
-        return bytearray(base64.b64decode(code_base64))
-    except KeyError:
-        raise RuntimeError("Invalid RPC response or contract code not found.")
-
-
-def fetch_testnet_contract() -> bytearray:
-    # add a sanity check that the hash of this code matches a specific hash
-    return fetch_contract_code(TESTNET_ACCOUNT_ID, NetworkRpc.TESTNET)
-
-
-def fetch_mainnet_contract() -> bytearray:
-    # add a sanity check that the hash of this code matches a specific hash
-    return fetch_contract_code(MAINNET_ACCOUNT_ID, NetworkRpc.MAINNET)
 
 
 def load_mpc_contract() -> bytearray:

@@ -128,29 +128,40 @@ Including
 * Accessing mpc docker logs.  
 * Retrieve keys from the CVM.  
 * Add the node key to your Near account.
+## Create a NEAR Account for Your Node
 
-## Create a Near account for your node 
 
-TBD [#896](https://github.com/near/mpc/issues/896) -Do we need a pre step for generating account private/public key pair?
+> **Important** – In the following examples, the account keys are auto-generated as part of the command. But it is also possible to create the keys separately and add them to the account creation command.  
+>  
+> In either case, it is the operator's full responsibility to manage and protect these keys.  
+>  
+> See the [NEAR CLI](https://github.com/near/near-cli-rs/blob/main/docs/GUIDE.en.md) documentation for more options and details.
 
 ### **Mainnet**
 
-Using a mainnet named account is required. To create one you can use a known wallet like [https://www.mynearwallet.com](https://www.mynearwallet.com) or [https://wallet.meteorwallet.app](https://wallet.meteorwallet.app) or fund it yourself:
+A named mainnet account is required. To create one, you can use a known wallet like [https://www.mynearwallet.com](https://www.mynearwallet.com) or [https://wallet.meteorwallet.app](https://wallet.meteorwallet.app), or fund it yourself:
 
 ```
-# Example of account creation using near cli
-$ near account create-account fund-myself <ACCOUNT_NAME> '<AMMOUNT TO FUND> NEAR' autogenerate-new-keypair save-to-keychain sign-as <SIGNER_ACCOUNT_ID> network-config mainnet
+$ near account create-account fund-myself <ACCOUNT_NAME> '<AMOUNT TO FUND> NEAR' autogenerate-new-keypair save-to-keychain sign-as <SIGNER_ACCOUNT_ID> network-config mainnet
 ```
 
 ### **Testnet**
 
-If you're using testnet, the easiest way to get started is to create an account sponsored by faucet \- the [Near command line interface](https://github.com/near/near-cli-rs) can set this up for you. Public and private keys were generated here. You can also use an existing account if you have one.
+If you're using testnet, the easiest way to get started is to create an account sponsored by the faucet — the [NEAR command line interface](https://github.com/near/near-cli-rs) can set this up for you. Public and private keys are generated during this process. You can also use an existing account if you have one.
 
+
+Using auto-generated keypair:
 ```
-# Example of account creation using near cli
+$ near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> autogenerate-new-keypair save-to-keychain network-config testnet create
+```
+
+Using a manually provided public key:
+```
 $ near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> use-manually-provided-public-key <PUBLIC_KEY> network-config testnet create
-For details please refer to near account documentation.
 ```
+
+For more details, please refer to the NEAR account documentation.
+
 
 ##   Prepare MPC container environment variables
 
@@ -328,7 +339,7 @@ There are 2 keys that should be retrieved from node.
 * Node Account Key (near\_signer\_public\_key) \- this key is used by the node to issue operations such as “vote\_reshared”.  
   This key needs to be added to the Near account that was created in the step above.
 
-### Retrieve the node account key and P2P key.
+## Retrieve the node account key and P2P key.
 
 In order to retrieve the node account key and the P2P key. On your server   
 Call the HTTP end point [http://localhost:8080/public\_data](http://localhost:8080/public_data)  \- and search for near\_signer\_public\_key and near\_p2p\_public\_key
@@ -344,12 +355,83 @@ $curl -s http://<IP>:8080/public_data | jq -r '.near_signer_public_key'
 $ed25519:B2JvaYmgzfXsvCxrqd4nBrBt8jo9ReqUZatG3dAZEBv5$curl -s http://<IP>:8080/public_data | jq -r '.near_p2p_public_key'$ed25519:5SiS1SJiABiM79Yt6uEjMabAT9UguQY9hSyF7xfHLGYt
 
 ```
+## Add the Node Account Key to Your Account
 
-### **Add Node Account Key to your account:**
+This section shows how to add the MPC node's public key (from the previous section) as a **restricted function-call access key** to your NEAR account using the previously mentioned NEAR-CLI, allowing the MPC node to interact with the **MPC signer contract**.
 
-TBD  [#902](https://github.com/near/mpc/issues/902) \- add commands here
+---
 
-## 
+### Parameters
+
+- **`ACCOUNT_ID`** → The NEAR account that will own the new key.  
+  Example: `your-node-account.testnet`
+
+- **`MPC_CONTRACT_ID`** → The MPC signer contract ID:  
+  
+  Testnet:   v1.signer-prod.testnet  
+  Mainnet:   v1.signer
+  
+
+- **`MPC_NODE_PUBLIC_KEY`** → The public key of the MPC node you want to add.  
+  Example: `ed25519:ABCDEFG...`
+
+- **`METHOD_NAMES`** → The list of contract methods the MPC node is allowed to call:  
+  ```
+  respond,
+  respond_ckd,
+  vote_pk,
+  start_keygen_instance,
+  vote_reshared,
+  start_reshare_instance,
+  vote_abort_key_event_instance,
+  verify_tee,
+  submit_participant_info
+  ```
+
+---
+
+### Example Command
+
+```bash
+./target/release/near account add-key $ACCOUNT_ID   grant-function-call-access   --allowance '1 NEAR'   --contract-account-id $MPC_CONTRACT_ID   --function-names $METHOD_NAMES   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY   network-config testnet   sign-with-keychain   send
+```
+
+---
+
+### Sample Bash Script
+
+```bash
+#!/bin/bash
+
+# === Configuration ===
+ACCOUNT_ID="your-node-account.testnet"
+MPC_CONTRACT_ID="v1.signer-prod.testnet"    # use "v1.signer" for mainnet
+MPC_NODE_PUBLIC_KEY="ed25519:YOUR_PUBLIC_KEY_HERE"
+ALLOWANCE="1 NEAR"
+NETWORK="testnet"   # or "mainnet"
+
+# Methods the MPC node is allowed to call
+METHOD_NAMES="respond,respond_ckd,vote_pk,start_keygen_instance,vote_reshared,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info"
+
+# === Add Access Key ===
+./target/release/near account add-key $ACCOUNT_ID   grant-function-call-access   --allowance "$ALLOWANCE"   --contract-account-id $MPC_CONTRACT_ID   --function-names $METHOD_NAMES   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY   network-config $NETWORK   sign-with-keychain   send
+```
+
+---
+
+### Verification
+
+
+After sending the transaction, check that the new key was added:
+
+```bash
+./target/release/near account list-keys $ACCOUNT_ID \
+  network-config $NETWORK \
+  now
+```
+
+
+
 
 # Joining the MPC Cluster
 

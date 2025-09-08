@@ -173,6 +173,22 @@ pub struct ParticipantsConfig {
     pub participants: Vec<ParticipantInfo>,
 }
 
+impl ParticipantsConfig {
+    pub fn get_info(&self, id: ParticipantId) -> Option<&ParticipantInfo> {
+        self.participants.iter().find(|p| p.id == id)
+    }
+
+    pub fn get_participant_id(&self, account_id: &AccountId) -> Option<ParticipantId> {
+        self.participants.iter().find_map(|participant_info| {
+            if participant_info.near_account_id == *account_id {
+                Some(participant_info.id)
+            } else {
+                None
+            }
+        })
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ParticipantInfo {
     pub id: ParticipantId,

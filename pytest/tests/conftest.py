@@ -11,6 +11,7 @@ import sys
 import shutil
 from pathlib import Path
 import os
+import tempfile
 
 from cluster import CONFIG_ENV_VAR
 
@@ -51,6 +52,23 @@ def pytest_addoption(parser):
     )
 
 
+@pytest.fixture(scope="session")
+def current_contracts():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(
+            ["cargo", "run", "--bin", "export_contracts", "--", "-t", tmpdir],
+            cwd=git_root(),
+            check=True,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+
+        yield {
+            "mainnet": contract_read(tmpdir, "signer_mainnet.wasm"),
+            "testnet": contract_read(tmpdir, "signer_testnet.wasm"),
+        }
+
+
 @pytest.fixture(scope="session", autouse=True)
 def compile_contract(request):
     """
@@ -58,9 +76,7 @@ def compile_contract(request):
     This ensures that the pytests will always use the source code inside chain-signatures/contract.
     """
     print("compiling contract")
-    git_repo = git.Repo(".", search_parent_directories=True)
-    git_root = Path(git_repo.git.rev_parse("--show-toplevel"))
-    chain_signatures = git_root / "libs" / "chain-signatures"
+    chain_signatures = git_root() / "libs" / "chain-signatures"
     non_reproducible = request.config.getoption("--non-reproducible")
 
     if not non_reproducible:
@@ -137,9 +153,10 @@ def compile_parallel_contract(request):
     compiles the contract and moves it in the res folder.
     """
     print("compiling contract")
-    git_repo = git.Repo(".", search_parent_directories=True)
-    git_root = Path(git_repo.git.rev_parse("--show-toplevel"))
-    chain_signatures = git_root / "pytest" / "tests" / "test_contracts" / "parallel"
+    git_root_path = git_root()
+    chain_signatures = (
+        git_root_path / "pytest" / "tests" / "test_contracts" / "parallel"
+    )
 
     subprocess.run(
         [
@@ -180,3 +197,12 @@ def compile_parallel_contract(request):
     )
     os.makedirs(os.path.dirname(contracts.PARALLEL_CONTRACT_PATH), exist_ok=True)
     shutil.copy(compiled_contract, contracts.PARALLEL_CONTRACT_PATH)
+
+
+def git_root() -> Path:
+    git_repo = git.Repo(".", search_parent_directories=True)
+    return Path(git_repo.git.rev_parse("--show-toplevel"))
+
+
+def contract_read(dir: str, name: str) -> bytearray:
+    return bytearray(Path(dir).joinpath(name).read_bytes())

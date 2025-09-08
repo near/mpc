@@ -58,7 +58,7 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
     (
         gen_account_id(),
         ParticipantInfo {
-            url: format!("near{}", i),
+            url: format!("https://www.near{}.com", i),
             sign_pk: bogus_ed25519_near_public_key(),
         },
     )
