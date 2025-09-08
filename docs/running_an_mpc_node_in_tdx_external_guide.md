@@ -478,7 +478,7 @@ To generate a voting command, follow these steps:
 
 1. **Get the current state**
    ```bash
-   near contract call-function as-read-only v1.signer-prod.testnet state json-args {} network-config testnet now 2>&1
+   near contract call-function as-read-only v1.signer-prod.testnet state json-args {} network-config testnet now
    ```
 
    Example output (truncated for clarity):
