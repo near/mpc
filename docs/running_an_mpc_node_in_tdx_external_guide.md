@@ -214,13 +214,33 @@ paste -sd',' -
 
 ## Preparing a docker compose
 
-Take the docker compose file from [https://github.com/near/mpc/blob/main/tee\_deployment/launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml)
+To launch the MPC node in the TEE environment, start by using the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml).
 
-Replace MPC docker image digest hash (DEFAULT\_IMAGE\_DIGEST field) with the hash of the latest hash that is voted on the contract or the latest hash published by NEAR.
+Update the `DEFAULT_IMAGE_DIGEST` field with the latest MPC Docker image digest.  
+This should be the digest that has been voted on in the contract or the latest digest published by NEAR.
 
-DEFAULT\_IMAGE\_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d 
+For example:
+```bash
+DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
+```
 
-TBD  [#898](https://github.com/near/mpc/issues/898) \- add how to get it from the contract?  
+You can retrieve the latest MPC Docker image hash directly from the contract using the NEAR CLI:
+
+```bash
+near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  latest_code_hash \
+  json-args '{}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+The transaction output will include the latest MPC Docker image digest.
+
 TBD [#899](https://github.com/near/mpc/issues/899)  \- where should it be published?  
    
 Note \-  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including any white spaces).
