@@ -235,7 +235,7 @@ near contract call-function as-transaction \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
   network-config testnet \
-  sign-with-plaintext-private-key <your-private-key> \
+  sign-with-keychain \
   send
 ```
 
