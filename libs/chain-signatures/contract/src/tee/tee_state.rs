@@ -2,10 +2,7 @@ use crate::{
     errors::Error,
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
-    tee::{
-        proposal::{AllowedDockerImageHashes, CodeHashesVotes, MpcDockerImageHash},
-        quote::TeeQuoteStatus,
-    },
+    tee::proposal::{AllowedDockerImageHashes, CodeHashesVotes, MpcDockerImageHash},
 };
 use attestation::{
     attestation::Attestation,
@@ -17,7 +14,21 @@ use std::collections::HashSet;
 
 pub enum TeeValidationResult {
     Full,
-    Partial(Participants),
+    Partial {
+        participants_with_valid_attestation: Participants,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TeeQuoteStatus {
+    /// TEE quote and Docker image verification both passed successfully.
+    /// The participant is considered to have a valid, verified TEE status.
+    Valid,
+
+    /// TEE verification failed - either the quote verification failed,
+    /// the Docker image verification failed, or both validations failed.
+    /// The participant should not be trusted for TEE-dependent operations.
+    Invalid,
 }
 
 #[near(serializers=[borsh])]
@@ -79,7 +90,7 @@ impl TeeState {
 
         let participant_attestation = self.participants_attestations.get(account_id);
         let Some(participant_attestation) = participant_attestation else {
-            return Ok(TeeQuoteStatus::None);
+            return Ok(TeeQuoteStatus::Invalid);
         };
 
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
@@ -106,51 +117,44 @@ impl TeeState {
     /// Returns [`TeeValidationResult::Full`] if all participants are valid, or
     /// [`TeeValidationResult::Partial`] with the subset of valid participants otherwise.
     ///
-    /// Participants with [`TeeQuoteStatus::Valid`] or [`TeeQuoteStatus::None`] are considered
-    /// valid. The returned [`Participants`] preserves participant data and
+    /// The returned [`Participants`] preserves participant data and
     /// [`Participants::next_id()`].
-    pub fn validate_tee(
+    pub fn validate_participants_tee_attestation(
         &mut self,
         participants: &Participants,
         tee_upgrade_period_blocks: u64,
     ) -> TeeValidationResult {
-        let new_participants: Vec<_> = participants
+        let participants_with_valid_attestation: Vec<_> = participants
             .participants()
             .iter()
             .filter(|(account_id, _, participant_info)| {
                 let tls_public_key = participant_info.sign_pk.clone();
+                let tee_status = match self.verify_tee_participant(
+                    account_id,
+                    tls_public_key,
+                    tee_upgrade_period_blocks,
+                ) {
+                    Ok(status) => status,
+                    Err(_) => TeeQuoteStatus::Invalid,
+                };
 
-                matches!(
-                    self.tee_status(account_id, tls_public_key, tee_upgrade_period_blocks),
-                    TeeQuoteStatus::Valid | TeeQuoteStatus::None
-                )
+                matches!(tee_status, TeeQuoteStatus::Valid)
             })
             .cloned()
             .collect();
 
-        if new_participants.len() != participants.len() {
-            TeeValidationResult::Partial(Participants::init(
-                participants.next_id(),
-                new_participants,
-            ))
-        } else {
-            TeeValidationResult::Full
-        }
-    }
+        let all_participants_passed_attestation =
+            participants_with_valid_attestation.len() == participants.len();
 
-    /// Retrieves and validates the TEE status for a participant, combining both the TEE quote
-    /// verification and the Docker image verification. If both validations pass, the participant
-    /// is considered to have a valid TEE status. Otherwise, the participant is marked as invalid.
-    /// If no TEE information is found, the participant is marked with `TeeQuoteStatus::None`.
-    pub fn tee_status(
-        &mut self,
-        account_id: &AccountId,
-        tls_public_key: PublicKey,
-        tee_upgrade_period_blocks: u64,
-    ) -> TeeQuoteStatus {
-        match self.verify_tee_participant(account_id, tls_public_key, tee_upgrade_period_blocks) {
-            Ok(status) => status,
-            Err(_) => TeeQuoteStatus::Invalid,
+        if all_participants_passed_attestation {
+            TeeValidationResult::Full
+        } else {
+            let new_participant_set =
+                Participants::init(participants.next_id(), participants_with_valid_attestation);
+
+            TeeValidationResult::Partial {
+                participants_with_valid_attestation: new_participant_set,
+            }
         }
     }
 
