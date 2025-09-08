@@ -146,6 +146,58 @@ def compile_contract(request):
     shutil.copy(compiled_contract, contracts.COMPILED_CONTRACT_PATH)
 
 
+@pytest.fixture(scope="session")
+def compile_migration_contract(request):
+    """
+    This function navigates to the tests/tests_contracts/migration directory,
+    compiles the contract and moves it in the res folder.
+    """
+    print("compiling contract")
+    git_repo = git.Repo(".", search_parent_directories=True)
+    git_root = Path(git_repo.git.rev_parse("--show-toplevel"))
+    chain_signatures = git_root / "pytest" / "tests" / "test_contracts" / "migration"
+
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "-p",
+            "migration-contract",
+            "--target=wasm32-unknown-unknown",
+            "--release",
+        ],
+        cwd=chain_signatures,
+        check=True,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+
+    subprocess.run(
+        [
+            "wasm-opt",
+            "-Oz",
+            "target/wasm32-unknown-unknown/release/migration_contract.wasm",
+            "-o",
+            "target/wasm32-unknown-unknown/release/migration_contract.wasm",
+            "--enable-bulk-memory",
+        ],
+        cwd=chain_signatures,
+        check=True,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+
+    compiled_contract = (
+        chain_signatures
+        / "target"
+        / "wasm32-unknown-unknown"
+        / "release"
+        / "migration_contract.wasm"
+    )
+    os.makedirs(os.path.dirname(contracts.MIGRATE_CURRENT_CONTRACT_PATH), exist_ok=True)
+    shutil.copy(compiled_contract, contracts.MIGRATE_CURRENT_CONTRACT_PATH)
+
+
 def git_root() -> Path:
     git_repo = git.Repo(".", search_parent_directories=True)
     return Path(git_repo.git.rev_parse("--show-toplevel"))
