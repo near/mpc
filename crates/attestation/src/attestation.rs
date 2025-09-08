@@ -37,7 +37,7 @@ const RTMR3_INDEX: u32 = 3;
 )]
 pub enum Attestation {
     Dstack(DstackAttestation),
-    Local(LocalAttestation),
+    Mock(MockAttestation),
 }
 
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
@@ -76,20 +76,63 @@ impl fmt::Debug for DstackAttestation {
     }
 }
 
-#[derive(Debug, Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-pub struct LocalAttestation {
-    verification_result: bool,
+#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+pub enum MockAttestation {
+    #[default]
+    /// Always pass validation
+    Valid,
+    /// Always fails validation
+    Invalid,
+    /// Pass validation depending on the set constraints
+    WithConstraints {
+        mpc_docker_image_hash: Option<MpcDockerImageHash>,
+        launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
+        /// Unix time stamp for when this attestation expires.  
+        expiry_time_stamp_seconds: Option<u64>,
+    },
+}
+
+pub(crate) fn verify_mock_attestation(
+    mock_attestation: &MockAttestation,
+    timestamp_seconds: u64,
+    allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+    allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+) -> bool {
+    match mock_attestation {
+        MockAttestation::Valid => true,
+        MockAttestation::Invalid => false,
+        MockAttestation::WithConstraints {
+            mpc_docker_image_hash,
+            launcher_docker_compose_hash,
+            expiry_time_stamp_seconds,
+        } => {
+            let mpc_docker_image_hash_is_allowed = mpc_docker_image_hash
+                .as_ref()
+                .is_none_or(|hash| allowed_mpc_docker_image_hashes.contains(hash));
+
+            let launcher_docker_compose_hash_is_allowed = launcher_docker_compose_hash
+                .as_ref()
+                .is_none_or(|hash| allowed_launcher_docker_compose_hashes.contains(hash));
+
+            let attestation_certificate_has_not_expired = expiry_time_stamp_seconds
+                .is_none_or(|expiry_time| timestamp_seconds <= expiry_time);
+
+            mpc_docker_image_hash_is_allowed
+                && launcher_docker_compose_hash_is_allowed
+                && attestation_certificate_has_not_expired
+        }
+    }
 }
 
 impl Attestation {
     pub fn verify(
         &self,
         expected_report_data: ReportData,
-        timestamp_s: u64,
+        timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
@@ -97,11 +140,16 @@ impl Attestation {
             Self::Dstack(dstack_attestation) => self.verify_attestation(
                 dstack_attestation,
                 expected_report_data,
-                timestamp_s,
+                timestamp_seconds,
                 allowed_mpc_docker_image_hashes,
                 allowed_launcher_docker_compose_hashes,
             ),
-            Self::Local(config) => config.verification_result,
+            Self::Mock(mock_attestation) => verify_mock_attestation(
+                mock_attestation,
+                timestamp_seconds,
+                allowed_mpc_docker_image_hashes,
+                allowed_launcher_docker_compose_hashes,
+            ),
         }
     }
 
@@ -112,7 +160,7 @@ impl Attestation {
         &self,
         attestation: &DstackAttestation,
         expected_report_data: ReportData,
-        timestamp_s: u64,
+        timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
@@ -124,7 +172,7 @@ impl Attestation {
         let verification_result = match dcap_qvl::verify::verify(
             &attestation.quote,
             &attestation.collateral,
-            timestamp_s,
+            timestamp_seconds,
         ) {
             Ok(result) => result,
             Err(err) => {

@@ -1,5 +1,5 @@
 [package]
-name = "migration"
+name = "migration-contract"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
@@ -8,7 +8,7 @@ license = "MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
-near-sdk = { version = "5.15.1", features = ["unit-testing"] }
+near-sdk = { version = "5.17.2", features = ["unit-testing"] }
 borsh = "1.5.0"  
 
 [profile.release]

@@ -3,7 +3,7 @@ pub mod common;
 use crate::common::gen_accounts;
 use anyhow::Result;
 use assert_matches::assert_matches;
-use attestation::attestation::Attestation;
+use attestation::attestation::{Attestation, MockAttestation};
 use common::{
     check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
     submit_participant_info,
@@ -13,9 +13,7 @@ use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
 use std::collections::HashSet;
-use test_utils::attestation::{
-    image_digest, mock_dstack_attestation, mock_local_attestation, p2p_tls_key,
-};
+use test_utils::attestation::{image_digest, mock_dstack_attestation, p2p_tls_key};
 
 /// Tests the basic TEE verification functionality when no TEE accounts are present.
 /// Verifies that the contract returns true for TEE verification even without any TEE accounts submitted,
@@ -265,16 +263,16 @@ async fn test_submit_participant_info_test_method_available_in_integration_tests
     Ok(())
 }
 
-/// **Local attestation bypass** - Tests that participant info submission succeeds with local attestation.
-/// Different from the dstack attestation tests above, this uses local attestation which bypasses complex TEE verification.
+/// **Mock attestation bypass** - Tests that participant info submission succeeds with mock attestation.
+/// Different from the dstack attestation tests above, this uses a mock attestation which bypasses complex TEE verification.
 /// This demonstrates that the submission mechanism itself works when attestation verification passes.
 #[tokio::test]
-async fn test_submit_participant_info_succeeds_with_local_attestation() -> Result<()> {
+async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
-    let local_attestation = mock_local_attestation(true);
+    let mock_attestation = Attestation::Mock(MockAttestation::Valid);
     let tls_key = p2p_tls_key();
     let success =
-        submit_participant_info(&accounts[0], &contract, &local_attestation, &tls_key).await?;
+        submit_participant_info(&accounts[0], &contract, &mock_attestation, &tls_key).await?;
     assert!(success);
     Ok(())
 }
@@ -389,6 +387,58 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     let actual_participants: HashSet<_> = tee_participants_after.into_iter().collect();
 
     assert_eq!(expected_participants, actual_participants);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification(
+) -> Result<()> {
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    let hash_1 = MpcDockerImageHash::from([1; 32]);
+    let hash_2 = MpcDockerImageHash::from([2; 32]);
+    let hash_3 = MpcDockerImageHash::from([3; 32]);
+
+    let participant_account_1 = &accounts[0];
+    let participant_account_2 = &accounts[1];
+
+    // Initially, there should be no allowed hashes
+    assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
+    assert_matches!(get_latest_code_hash(&contract).await, Err(_));
+
+    let hashes = [hash_1, hash_2, hash_3];
+
+    for (i, current_hash) in hashes.iter().enumerate() {
+        vote_for_hash(participant_account_1, &contract, current_hash).await?;
+        vote_for_hash(participant_account_2, &contract, current_hash).await?;
+
+        let previous_and_current_approved_hashes = &hashes[..=i];
+
+        for approved_hash in previous_and_current_approved_hashes {
+            let mock_attestation = MockAttestation::WithConstraints {
+                mpc_docker_image_hash: Some(approved_hash.clone()),
+                launcher_docker_compose_hash: None,
+                expiry_time_stamp_seconds: None,
+            };
+            let attestation = Attestation::Mock(mock_attestation);
+
+            let dummy_tls_key = p2p_tls_key();
+
+            let validation_success = submit_participant_info(
+                participant_account_1,
+                &contract,
+                &attestation,
+                &dummy_tls_key,
+            )
+            .await?;
+
+            assert!(
+                validation_success,
+                "Attestation for all previous images must pass"
+            );
+        }
+    }
 
     Ok(())
 }

@@ -14,6 +14,7 @@ MIGRATE_CURRENT_CONTRACT_PATH = (
     / "tests"
     / "test_contracts"
     / "migration"
+    / "res"
     / "migration_contract.wasm"
 )
 PARALLEL_CONTRACT_PATH = (

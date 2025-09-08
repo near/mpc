@@ -1,5 +1,5 @@
 use attestation::{
-    attestation::{Attestation, DstackAttestation, LocalAttestation},
+    attestation::{Attestation, DstackAttestation},
     collateral::Collateral,
     quote::QuoteBytes,
 };
@@ -45,10 +45,6 @@ pub fn quote() -> QuoteBytes {
     let quote_collateral_json_string = include_str!("../assets/quote.json");
     serde_json::from_str(quote_collateral_json_string)
         .expect("Quote collateral file is a valid json.")
-}
-
-pub fn mock_local_attestation(quote_verification_result: bool) -> Attestation {
-    Attestation::Local(LocalAttestation::new(quote_verification_result))
 }
 
 pub fn p2p_tls_key() -> PublicKey {

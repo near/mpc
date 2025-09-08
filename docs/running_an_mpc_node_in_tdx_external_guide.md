@@ -214,13 +214,33 @@ paste -sd',' -
 
 ## Preparing a docker compose
 
-Take the docker compose file from [https://github.com/near/mpc/blob/main/tee\_deployment/launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml)
+To launch the MPC node in the TEE environment, start by using the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml).
 
-Replace MPC docker image digest hash (DEFAULT\_IMAGE\_DIGEST field) with the hash of the latest hash that is voted on the contract or the latest hash published by NEAR.
+Update the `DEFAULT_IMAGE_DIGEST` field with the latest MPC Docker image digest.  
+This should be the digest that has been voted on in the contract or the latest digest published by NEAR.
 
-DEFAULT\_IMAGE\_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d 
+For example:
+```bash
+DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
+```
 
-TBD  [#898](https://github.com/near/mpc/issues/898) \- add how to get it from the contract?  
+You can retrieve the latest MPC Docker image hash directly from the contract using the NEAR CLI:
+
+```bash
+near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  latest_code_hash \
+  json-args '{}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+The transaction output will include the latest MPC Docker image digest.
+
 TBD [#899](https://github.com/near/mpc/issues/899)  \- where should it be published?  
    
 Note \-  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including any white spaces).
@@ -437,15 +457,12 @@ After sending the transaction, check that the new key was added:
 
 After the MPC node has been deployed, the next steps are:
 
-* Register the node’s attestation information on the contract,   
+* Register the node’s attestation information on the contract via **submit_participant_info**
 * Wait for the node to fully sync  
-* Vote for joining the node to the MPC cluster.  
+* Vote for joining the node to the MPC cluster via **vote_new_parameters**.  
   Note \- this step needs to be done by all the operators. 
 
-  To join the cluster there are 1-2 contract commands that need to be called by the operator.  
-  vote\_new\_parameters  and (possibly) submit\_participant\_info.
-
-##  Submitting participate info (Submit\_participant\_info)
+##  Submitting participate info (Submit_participant_info)
 
 This method needs to be called in order to register the node attestation information on the contract and prove that the node is running inside a CVM with a valid configuration.
 
@@ -472,13 +489,148 @@ near_sync_status 0
 
 ```
 
-## Voting \[ vote\_new\_parameters\]
+## Voting: (vote_new_parameters)
 
-Ask other members to vote for your candidacy via the vote\_new\_parameters contract method. 
 
-```
-TBD [#905](https://github.com/near/mpc/issues/905)  near CLI command line 
-```
+Ask other members to vote for your candidacy via the `vote_new_parameters` contract method.
+
+To generate a voting command, follow these steps:
+
+1. **Get the current state**
+   ```bash
+   near contract call-function as-read-only v1.signer-prod.testnet state json-args {} network-config testnet now
+   ```
+
+   Example output (truncated for clarity):
+   ```json
+   {
+     "Running": {
+       "keyset": {
+         "domains": [
+           {
+             "attempt": 0,
+             "domain_id": 0,
+             "key": {
+               "Secp256k1": {
+                 "near_public_key": "secp256k1:4NfTiv3UsGahebgTaHyD9vF8KYKMBnfd6kh94mK6xv8fGBiJB8TBtFMP5WWXz6B89Ac1fbpzPwAvoyQebemHFwx3"
+               }
+             }
+           },
+           {
+             "attempt": 0,
+             "domain_id": 1,
+             "key": {
+               "Ed25519": {
+                 "near_public_key_compressed": "ed25519:6vSEtQxrQj6txUMh33WC4ERyCWmNMRTdufDWAaDY3Un2"
+               }
+             }
+           }
+         ],
+         "epoch_id": 10
+       },
+       "parameters": {
+         "participants": {
+           "next_id": 12,
+           "participants": [
+             [
+               "aurora-multichain.testnet",
+               0,
+               { "sign_pk": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
+             ],
+             [
+               "bst-near.testnet",
+               1,
+               { "sign_pk": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
+             ]
+             ...
+             ...
+             ...
+           ]
+         },
+         "threshold": 5
+     
+       }
+     }
+   }
+   ```
+
+   From this output, extract:
+   - `participants`
+   - `epoch_id` (10 in this example)
+   - `next_id` (12 in this example)
+
+2. **Update the state**  
+   - Add your new participant to the `participants` array.  
+   - Set `prospective_epoch_id = epoch_id + 1` (11 in this example).  
+   - Set `next_id = next_id + 1` (13 in this example).  
+
+   ### Before
+   ```json
+   "participants": {
+     "next_id": 12,
+     "participants": [
+       [
+         "aurora-multichain.testnet",
+         0,
+         { "sign_pk": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
+       ],
+       [
+         "bst-near.testnet",
+         1,
+         { "sign_pk": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
+       ]
+       ...
+       ...
+       ...
+     ]
+   }
+   ```
+
+   ### After (new participant `new-node.testnet` added)
+   ```json
+   "participants": {
+     "next_id": 13,
+     "participants": [
+       [
+         "aurora-multichain.testnet",
+         0,
+         { "sign_pk": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
+       ],
+       [
+         "bst-near.testnet",
+         1,
+         { "sign_pk": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
+       ],
+       [
+         "new-node.testnet",
+         12,
+         { "sign_pk": "ed25519:NEWKEY...", "url": "http://example.org" }
+       ]
+       ...
+       ...
+       ...
+     ]
+   }
+   ```
+
+   Example request payload:
+   ```json
+   REQUEST='{
+     "prospective_epoch_id": 11,
+     "proposal": {
+       "participants": {
+         "next_id": 13,
+         "participants": <participants_with_new_entry>
+       }
+     }
+   }'
+   ```
+
+3. **Create the vote command**
+   ```bash
+   near contract call-function as-transaction v1.signer vote_new_parameters      json-args "$REQUEST"      prepaid-gas '100.0 Tgas'      attached-deposit '0 NEAR'      sign-as $YOUR_MPC_NEAR_ACCOUNT      network-config mainnet      sign-with-keychain send
+   ```
+
 
 After all participants have voted, the contract will move to a resharing phase.  
 You can see this in the node logs (TBD) [#906](https://github.com/near/mpc/issues/906)
@@ -510,7 +662,40 @@ The following steps allow you to inspect the code that was used to build the doc
 4.  Make sure the image hash you get is Sha256:xyz…  
 5.  Do your own self do diligence on the code/binary   
 
-##  **Voting for the image** 
+##  **Voting for the Image** 
+
+After deciding to vote for a new MPC Docker image hash, each participant submits a vote for that hash.  
+A **threshold** number of participant votes is required in order for the vote to pass.
+
+
+
+Vote Command using NEAR CLI:
+
+```bash
+  near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  vote_code_hash \
+  json-args '{"code_hash": "<IMAGE_HASH>"}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+The **IMAGE_HASH** argument must be provided as a JSON array of 32 numbers, where each number is a byte (0–255) of the SHA-256 digest.
+
+For example, for the digest
+````bash
+4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
+````
+the corresponding `IMAGE_HASH` is:
+
+````bash
+IMAGE_HASH="[75, 8, 194, 116, 90, 51, 170, 40, 80, 62, 134, 227, 53, 71, 204, 90,
+ 86, 74, 187, 177, 62, 215, 55, 85, 147, 125, 237, 20, 41, 53, 140, 157]"
+ ````
 
 TBD [#908](https://github.com/near/mpc/issues/908) Add here voting procedure.
 
