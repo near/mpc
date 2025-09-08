@@ -416,9 +416,11 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
         let previous_and_current_approved_hashes = &hashes[..=i];
 
         for approved_hash in previous_and_current_approved_hashes {
-            let mock_attestation = MockAttestation::with_constraints()
-                .mpc_docker_image_hash(approved_hash.clone())
-                .build();
+            let mock_attestation = MockAttestation::WithConstraints {
+                mpc_docker_image_hash: Some(approved_hash.clone()),
+                launcher_docker_compose_hash: None,
+                expiry_time_stamp_seconds: None,
+            };
             let attestation = Attestation::Mock(mock_attestation);
 
             let dummy_tls_key = p2p_tls_key();

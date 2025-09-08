@@ -80,8 +80,9 @@ impl fmt::Debug for DstackAttestation {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-#[derive(Debug, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub enum MockAttestation {
+    #[default]
     /// Always pass validation
     Valid,
     /// Always fails validation
@@ -90,46 +91,9 @@ pub enum MockAttestation {
     WithConstraints {
         mpc_docker_image_hash: Option<MpcDockerImageHash>,
         launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
+        /// Unix time stamp for when this attestation expires.  
         expiry_time_stamp_seconds: Option<u64>,
     },
-}
-
-impl MockAttestation {
-    pub fn with_constraints() -> MockAttestationWithConstraintsBuilder {
-        MockAttestationWithConstraintsBuilder::default()
-    }
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct MockAttestationWithConstraintsBuilder {
-    mpc_docker_image_hash: Option<MpcDockerImageHash>,
-    launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
-    expiry_time_stamp_seconds: Option<u64>,
-}
-
-impl MockAttestationWithConstraintsBuilder {
-    pub fn mpc_docker_image_hash(mut self, hash: MpcDockerImageHash) -> Self {
-        self.mpc_docker_image_hash = Some(hash);
-        self
-    }
-
-    pub fn launcher_docker_compose_hash(mut self, hash: LauncherDockerComposeHash) -> Self {
-        self.launcher_docker_compose_hash = Some(hash);
-        self
-    }
-
-    pub fn expiry_time_stamp_seconds(mut self, timestamp: u64) -> Self {
-        self.expiry_time_stamp_seconds = Some(timestamp);
-        self
-    }
-
-    pub fn build(self) -> MockAttestation {
-        MockAttestation::WithConstraints {
-            mpc_docker_image_hash: self.mpc_docker_image_hash,
-            launcher_docker_compose_hash: self.launcher_docker_compose_hash,
-            expiry_time_stamp_seconds: self.expiry_time_stamp_seconds,
-        }
-    }
 }
 
 pub(crate) fn verify_mock_attestation(
