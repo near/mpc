@@ -100,14 +100,15 @@ This key is derived from TDX measurements and the SGX enclave’s hardware seali
 
 > **Note:** This key is tied to the platform. Losing it will prevent the CVM from decrypting the drive on subsequent VM boots.
 
+For more information, see [local-key-provider-from-phala](https://github.com/Dstack-TEE/dstack/tree/master/kms#local-key-provider-mode-1).  
+
 #### Setup Instructions
 
 1. Follow the [canonical/tdx setup](#) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
 
 2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.  
-   - Run the script `run.sh`.  
-   - For more information, see [local-key-provider-from-phala](#).  
-
+   - On the DTX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)  
+   
    > **Prerequisite:** Docker must be installed.
 
 3. To find the `mr_enclave` value of the SGX key provider, run:
