@@ -218,9 +218,27 @@ Take the docker compose file from [https://github.com/near/mpc/blob/main/tee\_de
 
 Replace MPC docker image digest hash (DEFAULT\_IMAGE\_DIGEST field) with the hash of the latest hash that is voted on the contract or the latest hash published by NEAR.
 
-DEFAULT\_IMAGE\_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d 
+For example:
+```
+DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d 
+```
 
-TBD  [#898](https://github.com/near/mpc/issues/898) \- add how to get it from the contract?  
+Retrieving  the latest MPC docker image hash from the contract can be done using the NEAR CLI:
+
+````
+./target/release/near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  latest_code_hash \
+  json-args '{}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-plaintext-private-key <your-private-key> \
+  send
+````
+
+
 TBD [#899](https://github.com/near/mpc/issues/899)  \- where should it be published?  
    
 Note \-  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including any white spaces).
