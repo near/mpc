@@ -227,7 +227,7 @@ DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937d
 You can retrieve the latest MPC Docker image hash directly from the contract using the NEAR CLI:
 
 ```bash
-./target/release/near contract call-function as-transaction \
+near contract call-function as-transaction \
   v1.signer-prod.testnet \
   latest_code_hash \
   json-args '{}' \
