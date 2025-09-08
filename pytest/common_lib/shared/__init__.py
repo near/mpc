@@ -80,7 +80,7 @@ def create_mpc_function_call_access_key_action(
     """
     Create a restricted access key that only allows calling MPC-related contract methods.
     """
-    mpc_methods = [
+    mpc_methods_used_by_node = [
         "respond",
         "respond_ckd",
         "vote_pk",
@@ -97,7 +97,7 @@ def create_mpc_function_call_access_key_action(
     return create_function_call_access_key_action(
         pk=pk,
         contract_id=contract_id,
-        method_names=mpc_methods,
+        method_names=mpc_methods_used_by_node,
         allowance=allowance,
     )
 
@@ -121,14 +121,19 @@ def sign_create_account_with_multiple_access_keys_tx(
     nonce,
     block_hash,
     contract_id,
+    fullAccess: bool,
 ) -> bytes:
     create_account_action = create_create_account_action()
     payment_action = create_payment_action(100 * NEAR_BASE)
-    access_key_actions = [
-        # create_full_access_key_action(key.decoded_pk()) for key in keys
-        create_mpc_function_call_access_key_action(key.decoded_pk(), contract_id)
-        for key in keys
-    ]
+    if fullAccess:
+        access_key_actions = [
+            create_full_access_key_action(key.decoded_pk()) for key in keys
+        ]
+    else:
+        access_key_actions = [
+            create_mpc_function_call_access_key_action(key.decoded_pk(), contract_id)
+            for key in keys
+        ]
     actions = [create_account_action, payment_action] + access_key_actions
     signed_tx = sign_transaction(
         new_account_id,
@@ -340,7 +345,7 @@ def start_cluster_with_mpc(
     txs = []
     mpc_nodes = []
     for near_node, candidate in zip(observers, candidates):
-        # add the nodes access key to the list
+        # add the nodes responder access key to the list
         nonce += 1
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
@@ -349,6 +354,7 @@ def start_cluster_with_mpc(
             nonce,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
+            False,
         )
         txs.append(tx)
         candidate_account_id = candidate.signer_key.account_id
@@ -366,13 +372,28 @@ def start_cluster_with_mpc(
         nonce += 1
 
         # Observer nodes haven't started yet so we use cluster node to send txs
+        # add pytest_signer_keys that are used for voting, need to access
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
             candidate_account_id,
-            [candidate.signer_key] + pytest_signer_keys,
+            pytest_signer_keys,
             nonce,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
+            True,
+        )
+        txs.append(tx)
+
+        nonce += 1
+        # add node access key
+        tx = sign_create_account_with_multiple_access_keys_tx(
+            key,
+            candidate_account_id,
+            [candidate.signer_key],
+            nonce,
+            cluster.contract_node.last_block_hash(),
+            cluster.mpc_contract_account(),
+            False,
         )
         txs.append(tx)
 
