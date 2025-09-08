@@ -1,5 +1,6 @@
+use crate::assets::cleanup::{delete_stale_triples_and_presignatures, EpochData};
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig, SecretsConfig};
-use crate::db::{DBCol, SecretDB, EPOCH_ID_KEY};
+use crate::db::SecretDB;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{ContractKeyEventInstance, ContractRunningState, ContractState};
 use crate::indexer::types::ChainSendTransactionRequest;
@@ -27,7 +28,6 @@ use crate::web::DebugRequest;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
-use mpc_contract::primitives::key_state::EpochId;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -382,9 +382,24 @@ impl Coordinator {
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
         let keyshare_storage = Arc::new(keyshare_storage);
-
-        delete_stale_triples_and_presignatures(&secret_db, running_state.keyset.epoch_id)?;
-
+        let my_participant_id = running_state
+            .participants
+            .get_participant_id(&config_file.my_near_account_id);
+        if let Some(my_participant_id) = my_participant_id {
+            let current_participants_config = running_state.participants.clone();
+            let current_epoch_id = running_state.keyset.epoch_id;
+            let all_domains: Vec<DomainId> = running_state.keyset.get_domain_ids();
+            let current_epoch_data = EpochData {
+                epoch_id: current_epoch_id,
+                participants: current_participants_config,
+            };
+            delete_stale_triples_and_presignatures(
+                &secret_db,
+                current_epoch_data,
+                my_participant_id,
+                all_domains,
+            )?;
+        }
         let mut running_participants = running_state.participants.clone();
 
         let participants_config = match &running_state.resharing_state {
@@ -540,10 +555,9 @@ impl Coordinator {
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
+                let mut ckd_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
 
-                // Secp256k1 shares are used both for ecdsa and CKD
-                // Which domain is used for each is to be decided in https://github.com/near/mpc/issues/951
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
@@ -554,6 +568,10 @@ impl Coordinator {
                         KeyshareData::Ed25519(data) => {
                             eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
                             domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
+                        }
+                        KeyshareData::CkdSecp256k1(data) => {
+                            ckd_keyshares.insert(keyshare.key_id.domain_id, data);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::CkdSecp256k1);
                         }
                     }
                 }
@@ -581,7 +599,7 @@ impl Coordinator {
                     running_mpc_config.clone().into(),
                     network_client.clone(),
                     ckd_request_store.clone(),
-                    ecdsa_keyshares,
+                    ckd_keyshares,
                 ));
 
                 let mpc_client = Arc::new(MpcClient::new(
@@ -687,52 +705,6 @@ impl Coordinator {
         }
         Ok(MpcJobResult::Done)
     }
-}
-
-pub fn delete_stale_triples_and_presignatures(
-    db: &Arc<SecretDB>,
-    new_epoch_id: EpochId,
-) -> anyhow::Result<()> {
-    let previous_epoch_id: Option<EpochId> =
-        db.get(DBCol::EpochId, EPOCH_ID_KEY)?
-            .and_then(|bytes: Vec<u8>| {
-                let bytes_array = bytes
-                    .try_into()
-                    .inspect_err(|bytes| error!("PREVIOUS EPOCH_ID ENTRY NOT u64: {:?}", bytes))
-                    .ok()?;
-                let epoch_id_number = u64::from_be_bytes(bytes_array);
-
-                Some(EpochId::new(epoch_id_number))
-            });
-
-    let new_epoch_id_is_seen =
-        previous_epoch_id.is_some_and(|previous_epoch_id| previous_epoch_id == new_epoch_id);
-
-    if new_epoch_id_is_seen {
-        return Ok(());
-    }
-
-    info!(
-        "Updating running epoch. NEW EPOCH: {:?}, OLD EPOCH {:?}.",
-        new_epoch_id.get(),
-        previous_epoch_id
-    );
-    let mut update_writer = db.update();
-    let big_endian_bytes_repr = &new_epoch_id.get().to_be_bytes();
-    update_writer.put(DBCol::EpochId, EPOCH_ID_KEY, big_endian_bytes_repr);
-
-    // Delete all triples and presignatures from the previous epoch;
-    // They are no longer usable once we have completed resharing of keys. Presignatures are
-    // dependent on key so those are completely invalidated, and triples may have different threshold
-    // or assume different participants, so it would be too much trouble to keep them around.
-    tracing::info!("Deleting all triples and presignatures...");
-    let _ = update_writer.delete_all(DBCol::Presignature);
-    let _ = update_writer.delete_all(DBCol::Triple);
-    tracing::info!("Deleted all presignatures");
-
-    update_writer.commit()?;
-
-    Ok(())
 }
 
 /// Simple RAII to export current job name to metrics and /debug/tasks.

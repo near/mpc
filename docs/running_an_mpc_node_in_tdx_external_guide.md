@@ -128,29 +128,40 @@ Including
 * Accessing mpc docker logs.  
 * Retrieve keys from the CVM.  
 * Add the node key to your Near account.
+## Create a NEAR Account for Your Node
 
-## Create a Near account for your node 
 
-TBD [#896](https://github.com/near/mpc/issues/896) -Do we need a pre step for generating account private/public key pair?
+> **Important** – In the following examples, the account keys are auto-generated as part of the command. But it is also possible to create the keys separately and add them to the account creation command.  
+>  
+> In either case, it is the operator's full responsibility to manage and protect these keys.  
+>  
+> See the [NEAR CLI](https://github.com/near/near-cli-rs/blob/main/docs/GUIDE.en.md) documentation for more options and details.
 
 ### **Mainnet**
 
-Using a mainnet named account is required. To create one you can use a known wallet like [https://www.mynearwallet.com](https://www.mynearwallet.com) or [https://wallet.meteorwallet.app](https://wallet.meteorwallet.app) or fund it yourself:
+A named mainnet account is required. To create one, you can use a known wallet like [https://www.mynearwallet.com](https://www.mynearwallet.com) or [https://wallet.meteorwallet.app](https://wallet.meteorwallet.app), or fund it yourself:
 
 ```
-# Example of account creation using near cli
-$ near account create-account fund-myself <ACCOUNT_NAME> '<AMMOUNT TO FUND> NEAR' autogenerate-new-keypair save-to-keychain sign-as <SIGNER_ACCOUNT_ID> network-config mainnet
+$ near account create-account fund-myself <ACCOUNT_NAME> '<AMOUNT TO FUND> NEAR' autogenerate-new-keypair save-to-keychain sign-as <SIGNER_ACCOUNT_ID> network-config mainnet
 ```
 
 ### **Testnet**
 
-If you're using testnet, the easiest way to get started is to create an account sponsored by faucet \- the [Near command line interface](https://github.com/near/near-cli-rs) can set this up for you. Public and private keys were generated here. You can also use an existing account if you have one.
+If you're using testnet, the easiest way to get started is to create an account sponsored by the faucet — the [NEAR command line interface](https://github.com/near/near-cli-rs) can set this up for you. Public and private keys are generated during this process. You can also use an existing account if you have one.
 
+
+Using auto-generated keypair:
 ```
-# Example of account creation using near cli
+$ near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> autogenerate-new-keypair save-to-keychain network-config testnet create
+```
+
+Using a manually provided public key:
+```
 $ near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> use-manually-provided-public-key <PUBLIC_KEY> network-config testnet create
-For details please refer to near account documentation.
 ```
+
+For more details, please refer to the NEAR account documentation.
+
 
 ##   Prepare MPC container environment variables
 
@@ -174,11 +185,6 @@ RUST_LOG=mpc=debug,info
 
 NEAR_BOOT_NODES=$BOOT_NODES
 
-# Optional MPC responder
-MPC_RESPONDER_ID=$my_responder_acount
-
-# Optional: Extra hosts to add to the container
-EXTRA_HOSTS=mpc-node-0.service.mpc.consul:35.185.233.54,mpc-node-1.service.mpc.consul:34.168.117.59
 
 # Port forwarding 
 PORTS=8080:8080,24567:24567,80:80
@@ -205,23 +211,64 @@ jq -r '.result.active_peers[]  as $active_peer  | "\($active_peer.id)@\($active_
 paste -sd',' -
 ```
 
-TBD:   [#897](https://github.com/near/mpc/issues/897)
-
-My\_responder\_acount \- is this used by someone? If yes, we need steps to create this as well.  
-EXTRA\_HOSTS  \- not sure we need this for production.
 
 ## Preparing a docker compose
 
-Take the docker compose file from [https://github.com/near/mpc/blob/main/tee\_deployment/launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml)
+To launch the MPC node in the TEE environment, start by using the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml).
 
-Replace MPC docker image digest hash (DEFAULT\_IMAGE\_DIGEST field) with the hash of the latest hash that is voted on the contract or the latest hash published by NEAR.
+Update the `DEFAULT_IMAGE_DIGEST` field with the latest MPC Docker image digest.  
+This should be the digest that has been voted on in the contract or the latest digest published by NEAR.
 
-DEFAULT\_IMAGE\_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d 
+For example:
+```bash
+DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
+```
 
-TBD  [#898](https://github.com/near/mpc/issues/898) \- add how to get it from the contract?  
+You can retrieve the latest MPC Docker image hash directly from the contract using the NEAR CLI:
+
+```bash
+near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  latest_code_hash \
+  json-args '{}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+The transaction output will include the latest MPC Docker image digest.
+
 TBD [#899](https://github.com/near/mpc/issues/899)  \- where should it be published?  
    
 Note \-  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including any white spaces).
+
+
+## Required Ports and Port Collisions 
+
+MPC nodes use a fixed set of ports for communication and telemetry.  
+This creates a limitation when trying to run both **mainnet** and **testnet** nodes on the same physical server, since both sets of nodes attempt to bind to the same ports.
+
+---
+
+- **Single network per machine**: By default, running both mainnet and testnet on the same machine is not supported because of port collisions.  
+- **Workaround with multiple IPs**: It is possible to run multiple nodes (e.g., one mainnet and one testnet) on the same host if the server is configured with **multiple external IP addresses**.  
+  - Each node binds to the required ports (see below) on a separate IP.  
+  - Additional IP/port routing on the local machine may be required.  
+
+---
+
+### Required Ports
+
+| Port   | Purpose                                                                 |
+|--------|-------------------------------------------------------------------------|
+| **80** | Node-to-node communication (port override convention)                   |
+| **24567** | Decentralized state sync                                               |
+| **8080** | Debug and telemetry collection, plus the new `getdata` endpoint         |
+| **3030** | Debug and telemetry collection                                         |
+
 
 ## Configuring and starting the MPC binary in a CVM
 
@@ -244,7 +291,7 @@ Use the following custom settings for MPC:
 3. Pre script  \- empty.  
 4. user-config \- provided above  
 5. KMS=disable, Local Keyprovier=enabled, Tproxy=disable, public logs=enabled,public sysinfo=enabled,pin NUMA=disabled  
-6. Port mapping:   
+6. Port mapping: (taken from the list above)  
    Public 80:80  (main node to node communication port)   
    Public 24567:24567 (required for decentralized state sync)  
    Public 8080:8080  (required for collecting debug and telemetry information)   
@@ -253,8 +300,7 @@ Use the following custom settings for MPC:
      
 7.  Key Provider ID: (The MrEnclave for the sgx local key provider) 1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
 
-   TBD [#900](https://github.com/near/mpc/issues/900) \- add explanation about port collision. And how to use both mainnet and testnet on the same machine.  
-   
+ 
 
 ![CVM Web Page](./attachments/VMM_web_page.png)
 
@@ -313,7 +359,7 @@ There are 2 keys that should be retrieved from node.
 * Node Account Key (near\_signer\_public\_key) \- this key is used by the node to issue operations such as “vote\_reshared”.  
   This key needs to be added to the Near account that was created in the step above.
 
-### Retrieve the node account key and P2P key.
+## Retrieve the node account key and P2P key.
 
 In order to retrieve the node account key and the P2P key. On your server   
 Call the HTTP end point [http://localhost:8080/public\_data](http://localhost:8080/public_data)  \- and search for near\_signer\_public\_key and near\_p2p\_public\_key
@@ -329,26 +375,94 @@ $curl -s http://<IP>:8080/public_data | jq -r '.near_signer_public_key'
 $ed25519:B2JvaYmgzfXsvCxrqd4nBrBt8jo9ReqUZatG3dAZEBv5$curl -s http://<IP>:8080/public_data | jq -r '.near_p2p_public_key'$ed25519:5SiS1SJiABiM79Yt6uEjMabAT9UguQY9hSyF7xfHLGYt
 
 ```
+## Add the Node Account Key to Your Account
 
-### **Add Node Account Key to your account:**
+This section shows how to add the MPC node's public key (from the previous section) as a **restricted function-call access key** to your NEAR account using the previously mentioned NEAR-CLI, allowing the MPC node to interact with the **MPC signer contract**.
 
-TBD  [#902](https://github.com/near/mpc/issues/902) \- add commands here
+---
 
-## 
+### Parameters
+
+- **`ACCOUNT_ID`** → The NEAR account that will own the new key.  
+  Example: `your-node-account.testnet`
+
+- **`MPC_CONTRACT_ID`** → The MPC signer contract ID:  
+  
+  Testnet:   v1.signer-prod.testnet  
+  Mainnet:   v1.signer
+  
+
+- **`MPC_NODE_PUBLIC_KEY`** → The public key of the MPC node you want to add.  
+  Example: `ed25519:ABCDEFG...`
+
+- **`METHOD_NAMES`** → The list of contract methods the MPC node is allowed to call:  
+  ```
+  respond,
+  respond_ckd,
+  vote_pk,
+  start_keygen_instance,
+  vote_reshared,
+  start_reshare_instance,
+  vote_abort_key_event_instance,
+  verify_tee,
+  submit_participant_info
+  ```
+
+---
+
+### Example Command
+
+```bash
+./target/release/near account add-key $ACCOUNT_ID   grant-function-call-access   --allowance '1 NEAR'   --contract-account-id $MPC_CONTRACT_ID   --function-names $METHOD_NAMES   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY   network-config testnet   sign-with-keychain   send
+```
+
+---
+
+### Sample Bash Script
+
+```bash
+#!/bin/bash
+
+# === Configuration ===
+ACCOUNT_ID="your-node-account.testnet"
+MPC_CONTRACT_ID="v1.signer-prod.testnet"    # use "v1.signer" for mainnet
+MPC_NODE_PUBLIC_KEY="ed25519:YOUR_PUBLIC_KEY_HERE"
+ALLOWANCE="1 NEAR"
+NETWORK="testnet"   # or "mainnet"
+
+# Methods the MPC node is allowed to call
+METHOD_NAMES="respond,respond_ckd,vote_pk,start_keygen_instance,vote_reshared,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info"
+
+# === Add Access Key ===
+./target/release/near account add-key $ACCOUNT_ID   grant-function-call-access   --allowance "$ALLOWANCE"   --contract-account-id $MPC_CONTRACT_ID   --function-names $METHOD_NAMES   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY   network-config $NETWORK   sign-with-keychain   send
+```
+
+---
+
+### Verification
+
+
+After sending the transaction, check that the new key was added:
+
+```bash
+./target/release/near account list-keys $ACCOUNT_ID \
+  network-config $NETWORK \
+  now
+```
+
+
+
 
 # Joining the MPC Cluster
 
 After the MPC node has been deployed, the next steps are:
 
-* Register the node’s attestation information on the contract,   
+* Register the node’s attestation information on the contract via **submit_participant_info**
 * Wait for the node to fully sync  
-* Vote for joining the node to the MPC cluster.  
+* Vote for joining the node to the MPC cluster via **vote_new_parameters**.  
   Note \- this step needs to be done by all the operators. 
 
-  To join the cluster there are 1-2 contract commands that need to be called by the operator.  
-  vote\_new\_parameters  and (possibly) submit\_participant\_info.
-
-##  Submitting participate info (Submit\_participant\_info)
+##  Submitting participate info (Submit_participant_info)
 
 This method needs to be called in order to register the node attestation information on the contract and prove that the node is running inside a CVM with a valid configuration.
 
@@ -375,13 +489,148 @@ near_sync_status 0
 
 ```
 
-## Voting \[ vote\_new\_parameters\]
+## Voting: (vote_new_parameters)
 
-Ask other members to vote for your candidacy via the vote\_new\_parameters contract method. 
 
-```
-TBD [#905](https://github.com/near/mpc/issues/905)  near CLI command line 
-```
+Ask other members to vote for your candidacy via the `vote_new_parameters` contract method.
+
+To generate a voting command, follow these steps:
+
+1. **Get the current state**
+   ```bash
+   near contract call-function as-read-only v1.signer-prod.testnet state json-args {} network-config testnet now
+   ```
+
+   Example output (truncated for clarity):
+   ```json
+   {
+     "Running": {
+       "keyset": {
+         "domains": [
+           {
+             "attempt": 0,
+             "domain_id": 0,
+             "key": {
+               "Secp256k1": {
+                 "near_public_key": "secp256k1:4NfTiv3UsGahebgTaHyD9vF8KYKMBnfd6kh94mK6xv8fGBiJB8TBtFMP5WWXz6B89Ac1fbpzPwAvoyQebemHFwx3"
+               }
+             }
+           },
+           {
+             "attempt": 0,
+             "domain_id": 1,
+             "key": {
+               "Ed25519": {
+                 "near_public_key_compressed": "ed25519:6vSEtQxrQj6txUMh33WC4ERyCWmNMRTdufDWAaDY3Un2"
+               }
+             }
+           }
+         ],
+         "epoch_id": 10
+       },
+       "parameters": {
+         "participants": {
+           "next_id": 12,
+           "participants": [
+             [
+               "aurora-multichain.testnet",
+               0,
+               { "sign_pk": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
+             ],
+             [
+               "bst-near.testnet",
+               1,
+               { "sign_pk": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
+             ]
+             ...
+             ...
+             ...
+           ]
+         },
+         "threshold": 5
+     
+       }
+     }
+   }
+   ```
+
+   From this output, extract:
+   - `participants`
+   - `epoch_id` (10 in this example)
+   - `next_id` (12 in this example)
+
+2. **Update the state**  
+   - Add your new participant to the `participants` array.  
+   - Set `prospective_epoch_id = epoch_id + 1` (11 in this example).  
+   - Set `next_id = next_id + 1` (13 in this example).  
+
+   ### Before
+   ```json
+   "participants": {
+     "next_id": 12,
+     "participants": [
+       [
+         "aurora-multichain.testnet",
+         0,
+         { "sign_pk": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
+       ],
+       [
+         "bst-near.testnet",
+         1,
+         { "sign_pk": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
+       ]
+       ...
+       ...
+       ...
+     ]
+   }
+   ```
+
+   ### After (new participant `new-node.testnet` added)
+   ```json
+   "participants": {
+     "next_id": 13,
+     "participants": [
+       [
+         "aurora-multichain.testnet",
+         0,
+         { "sign_pk": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
+       ],
+       [
+         "bst-near.testnet",
+         1,
+         { "sign_pk": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
+       ],
+       [
+         "new-node.testnet",
+         12,
+         { "sign_pk": "ed25519:NEWKEY...", "url": "http://example.org" }
+       ]
+       ...
+       ...
+       ...
+     ]
+   }
+   ```
+
+   Example request payload:
+   ```json
+   REQUEST='{
+     "prospective_epoch_id": 11,
+     "proposal": {
+       "participants": {
+         "next_id": 13,
+         "participants": <participants_with_new_entry>
+       }
+     }
+   }'
+   ```
+
+3. **Create the vote command**
+   ```bash
+   near contract call-function as-transaction v1.signer vote_new_parameters      json-args "$REQUEST"      prepaid-gas '100.0 Tgas'      attached-deposit '0 NEAR'      sign-as $YOUR_MPC_NEAR_ACCOUNT      network-config mainnet      sign-with-keychain send
+   ```
+
 
 After all participants have voted, the contract will move to a resharing phase.  
 You can see this in the node logs (TBD) [#906](https://github.com/near/mpc/issues/906)
@@ -413,7 +662,40 @@ The following steps allow you to inspect the code that was used to build the doc
 4.  Make sure the image hash you get is Sha256:xyz…  
 5.  Do your own self do diligence on the code/binary   
 
-##  **Voting for the image** 
+##  **Voting for the Image** 
+
+After deciding to vote for a new MPC Docker image hash, each participant submits a vote for that hash.  
+A **threshold** number of participant votes is required in order for the vote to pass.
+
+
+
+Vote Command using NEAR CLI:
+
+```bash
+  near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  vote_code_hash \
+  json-args '{"code_hash": "<IMAGE_HASH>"}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+The **IMAGE_HASH** argument must be provided as a JSON array of 32 numbers, where each number is a byte (0–255) of the SHA-256 digest.
+
+For example, for the digest
+````bash
+4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
+````
+the corresponding `IMAGE_HASH` is:
+
+````bash
+IMAGE_HASH="[75, 8, 194, 116, 90, 51, 170, 40, 80, 62, 134, 227, 53, 71, 204, 90,
+ 86, 74, 187, 177, 62, 215, 55, 85, 147, 125, 237, 20, 41, 53, 140, 157]"
+ ````
 
 TBD [#908](https://github.com/near/mpc/issues/908) Add here voting procedure.
 

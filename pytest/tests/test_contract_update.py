@@ -10,6 +10,7 @@ Verifies that the update was executed.
 import sys
 import time
 import pathlib
+
 import pytest
 
 from common_lib.contract_state import ProtocolState
@@ -21,8 +22,6 @@ from common_lib.contracts import (
     MIGRATE_CURRENT_CONTRACT_PATH,
     ContractMethod,
     UpdateArgsV2,
-    fetch_mainnet_contract,
-    fetch_testnet_contract,
     load_mpc_contract,
 )
 
@@ -38,16 +37,14 @@ def test_update_from_current():
     cluster.assert_is_deployed(new_contract.code())
 
 
-@pytest.mark.parametrize(
-    "fetch_contract", [fetch_mainnet_contract, fetch_testnet_contract]
-)
-def test_update_to_current(fetch_contract):
-    current = fetch_contract()
+@pytest.mark.parametrize("network", ["mainnet", "testnet"])
+def test_update_to_current(network, current_contracts):
+    current = current_contracts[network]
     cluster, mpc_nodes = shared.start_cluster_with_mpc(4, 4, 1, current)
     cluster.define_candidate_set(mpc_nodes)
     cluster.update_participant_status(assert_contract=False)
     cluster.init_contract(threshold=3)
-    cluster.add_domains(signature_schemes=["Secp256k1", "Ed25519"])
+    cluster.add_domains(schemes=["Secp256k1", "Ed25519"])
     cluster.send_and_await_signature_requests(1)
 
     # introduce some state:
@@ -67,5 +64,6 @@ def test_update_to_current(fetch_contract):
     cluster.assert_is_deployed(new_contract.code())
     cluster.wait_for_state(ProtocolState.RUNNING)
     cluster.contract_state().print()
+    cluster.add_domains(schemes=["CkdSecp256k1"])
     cluster.send_and_await_signature_requests(1)
     cluster.send_and_await_ckd_requests(1)

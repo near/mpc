@@ -164,12 +164,12 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Running))
     }
 
-    pub fn most_recent_domain_for_signature_scheme(
+    pub fn most_recent_domain_for_protocol(
         &self,
         signature_scheme: SignatureScheme,
     ) -> Result<DomainId, Error> {
         self.domain_registry()?
-            .most_recent_domain_for_signature_scheme(signature_scheme)
+            .most_recent_domain_for_protocol(signature_scheme)
             .ok_or_else(|| DomainError::NoSuchDomain.into())
     }
 }

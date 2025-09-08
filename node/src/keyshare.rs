@@ -18,6 +18,7 @@ use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 pub enum KeyshareData {
     Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
     Ed25519(threshold_signatures::eddsa::KeygenOutput),
+    CkdSecp256k1(threshold_signatures::ecdsa::KeygenOutput),
 }
 
 /// A single keyshare, corresponding to one epoch, one domain, one attempt.
@@ -32,6 +33,7 @@ impl Keyshare {
         match &self.data {
             KeyshareData::Secp256k1(data) => data.public_key.to_near_sdk_public_key(),
             KeyshareData::Ed25519(data) => data.public_key.to_near_sdk_public_key(),
+            KeyshareData::CkdSecp256k1(data) => data.public_key.to_near_sdk_public_key(),
         }
     }
 

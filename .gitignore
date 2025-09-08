@@ -7,6 +7,7 @@ venv
 /pytest/output.log
 /pytest/venv/
 /pytest/**/__pycache__/
+/pytest/contract_history/*.wasm
 /pytest/nearcore_pytest/nearcore_pytest.egg-info/
 /pytest/tests/test_contracts/parallel/target/
 
@@ -17,5 +18,3 @@ venv
 /node/signature_network_report_best_case.json
 /node/triple_network_report_best_case.json
 /node/triple_network_report_worst_case.json
-
-/libs/nearcore/pytest/lib/nearcore_pytest.egg-info/

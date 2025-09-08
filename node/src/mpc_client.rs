@@ -168,12 +168,13 @@ impl MpcClient {
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
-        let mut pending_signatures = PendingRequests::new(
-            Clock::real(),
-            self.client.all_participant_ids(),
-            self.client.my_participant_id(),
-            self.client.clone(),
-        );
+        let mut pending_signatures =
+            PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
+                Clock::real(),
+                self.client.all_participant_ids(),
+                self.client.my_participant_id(),
+                self.client.clone(),
+            );
         let mut pending_ckds = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
             Clock::real(),
             self.client.all_participant_ids(),
@@ -275,7 +276,7 @@ impl MpcClient {
                                 let debug_output = format!("{:?}", pending_signatures);
                                 debug_request.respond(debug_output);
                             }
-                            DebugRequestKind::RecentCKD => {
+                            DebugRequestKind::RecentCKDs => {
                                 let debug_output = format!("{:?}", pending_ckds);
                                 debug_request.respond(debug_output);
                             }
@@ -349,6 +350,10 @@ impl MpcClient {
 
                                         Ok(response)
                                     }
+                                    Some(SignatureScheme::CkdSecp256k1) => Err(anyhow::anyhow!(
+                                        "Incorrect protocol for domain: {:?}",
+                                        signature_attempt.request.domain.clone()
+                                    )),
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
                                         signature_attempt.request.domain.clone()
@@ -406,7 +411,7 @@ impl MpcClient {
                                 let response =
                                     match this.domain_to_scheme.get(&ckd_attempt.request.domain_id)
                                     {
-                                        Some(SignatureScheme::Secp256k1) => {
+                                        Some(SignatureScheme::CkdSecp256k1) => {
                                             let response = timeout(
                                                 Duration::from_secs(this.config.ckd.timeout_sec),
                                                 this.ckd_provider
@@ -429,6 +434,10 @@ impl MpcClient {
 
                                             Ok(response)
                                         }
+                                        Some(SignatureScheme::Secp256k1) => Err(anyhow::anyhow!(
+                                            "Signature scheme is not allowed for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        )),
                                         Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
                                             "Signature scheme is not allowed for domain: {:?}",
                                             ckd_attempt.request.domain_id.clone()

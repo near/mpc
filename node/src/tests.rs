@@ -20,6 +20,7 @@ use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, StaticWebData};
+use assert_matches::assert_matches;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_indexer_primitives::types::Finality;
@@ -362,6 +363,7 @@ pub async fn request_signature_and_await_response(
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Eddsa(Bytes::new(payload.to_vec()).unwrap())
         }
+        SignatureScheme::CkdSecp256k1 => unreachable!(),
     };
     let request = SignatureRequestFromChain {
         entropy: rand::random(),
@@ -428,6 +430,11 @@ pub async fn request_ckd_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
+    assert_matches!(
+        domain.scheme,
+        SignatureScheme::CkdSecp256k1,
+        "`request_ckd_and_await_response` must be called with a compatible domain",
+    );
     let request = CKDRequestFromChain {
         ckd_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
