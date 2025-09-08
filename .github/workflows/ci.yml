@@ -37,8 +37,10 @@ jobs:
         run: |
           touch /tmp/image-digest.bin
           # Test container startup - fail if container can't start
-          timeout -k 30 -s SIGINT 120s docker run \
-          -e MPC_HOME_DIR="/tmp" \
+          # Start container in background and check status after 60 seconds
+          CONTAINER_ID=$(docker run -d \
+          -v /tmp/:/data \
+          -e MPC_HOME_DIR="/data" \
           -e MPC_ACCOUNT_ID=test_image.near \
           -e RUST_BACKTRACE="full" \
           -e RUST_LOG="mpc=debug,info" \
@@ -49,18 +51,25 @@ jobs:
           -e MPC_CONTRACT_ID=v1.signer_test \
           -e MPC_IMAGE_HASH=5ba283860c0efa3d4c3e08a76a2b77fab4725baad4f48504eac858e04af7fd64 \
           -e MPC_LATEST_ALLOWED_HASH_FILE=/tmp/image-digest.bin \
-          -e MPC_ENV=mainnet test_image_tag_ci
+          -e MPC_ENV=mainnet test_image_tag_ci)
           
-          # Check exit code
-          EXIT_CODE=$?
-          if [ $EXIT_CODE -eq 124 ]; then
-            echo "✅ Container test completed successfully (timeout after 120s)"
-          elif [ $EXIT_CODE -eq 0 ]; then
-            echo "✅ Container test completed successfully (normal exit)"
-          else
-            echo "❌ Container failed to start or crashed with exit code: $EXIT_CODE"
+          if [ -z "$CONTAINER_ID" ]; then
+            echo "❌ Failed to start container"
             exit 1
           fi
+          
+          echo "Container started: $CONTAINER_ID"
+          
+          # Check if container is actually running
+          sleep 60
+          if [ -z "$(docker ps --filter "id=$CONTAINER_ID" --format "{{.ID}}")" ]; then
+            echo "❌ Container failed configuration validation or startup. Checking logs..."
+            docker logs "$CONTAINER_ID" 2>&1 | head -50
+            echo "❌ Container cannot start properly - this indicates a real problem"
+            exit 1
+          fi
+          
+          echo "✅ Container started successfully"
 
   clippy-mpc-node:
     name: "MPC Node: clippy and format"
