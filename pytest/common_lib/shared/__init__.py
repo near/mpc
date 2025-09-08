@@ -122,9 +122,13 @@ def sign_create_account_with_multiple_access_keys_tx(
     block_hash,
     contract_id,
     fullAccess: bool,
+    createNewAccount: bool,
 ) -> bytes:
-    create_account_action = create_create_account_action()
+    actions = []
+    if createNewAccount:
+        actions.append(create_create_account_action())
     payment_action = create_payment_action(100 * NEAR_BASE)
+    actions.append(payment_action)
     if fullAccess:
         access_key_actions = [
             create_full_access_key_action(key.decoded_pk()) for key in keys
@@ -134,7 +138,7 @@ def sign_create_account_with_multiple_access_keys_tx(
             create_mpc_function_call_access_key_action(key.decoded_pk(), contract_id)
             for key in keys
         ]
-    actions = [create_account_action, payment_action] + access_key_actions
+    actions.extend(access_key_actions)
     signed_tx = sign_transaction(
         new_account_id,
         nonce,
@@ -355,6 +359,7 @@ def start_cluster_with_mpc(
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
             False,
+            True,
         )
         txs.append(tx)
         candidate_account_id = candidate.signer_key.account_id
@@ -381,10 +386,13 @@ def start_cluster_with_mpc(
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
             True,
+            True
         )
         txs.append(tx)
 
         nonce += 1
+
+
         # add node access key
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
@@ -394,6 +402,7 @@ def start_cluster_with_mpc(
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
             False,
+            False
         )
         txs.append(tx)
 
