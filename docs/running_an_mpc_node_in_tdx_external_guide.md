@@ -530,7 +530,40 @@ The following steps allow you to inspect the code that was used to build the doc
 4.  Make sure the image hash you get is Sha256:xyz…  
 5.  Do your own self do diligence on the code/binary   
 
-##  **Voting for the image** 
+##  **Voting for the Image** 
+
+After deciding to vote for a new MPC Docker image hash, each participant submits a vote for that hash.  
+A **threshold** number of participant votes is required in order for the vote to pass.
+
+
+
+Vote Command using NEAR CLI:
+
+```bash
+  near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  vote_code_hash \
+  json-args '{"code_hash": "<IMAGE_HASH>"}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+The **IMAGE_HASH** argument must be provided as a JSON array of 32 numbers, where each number is a byte (0–255) of the SHA-256 digest.
+
+For example, for the digest
+````bash
+4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
+````
+the corresponding `IMAGE_HASH` is:
+
+````bash
+IMAGE_HASH="[75, 8, 194, 116, 90, 51, 170, 40, 80, 62, 134, 227, 53, 71, 204, 90,
+ 86, 74, 187, 177, 62, 215, 55, 85, 147, 125, 237, 20, 41, 53, 140, 157]"
+ ````
 
 TBD [#908](https://github.com/near/mpc/issues/908) Add here voting procedure.
 
