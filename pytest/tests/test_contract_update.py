@@ -26,7 +26,7 @@ from common_lib.contracts import (
 )
 
 
-def test_update_from_current():
+def test_update_from_current(compile_migration_contract):
     cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 3, 1, load_mpc_contract())
     cluster.init_cluster(mpc_nodes, 2)
     cluster.send_and_await_signature_requests(1)
