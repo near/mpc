@@ -92,26 +92,36 @@ In vmm.toml:
 - In the `[cvm]` section add: `max_disk_size = 1000`
 
 
-### Setting up local gramine-sealing-key-provider: {#setting-up-local-gramine-sealing-key-provider:}
+### Setting up a Local Gramine-Sealing-Key-Provider 
 
-In our solution we are using the gramine-sealing-key-provider that is running in an SGX enclave in order to generate a key (based on the TDX measurements and SGX enclaves hardware sealing key) that is used to encrypt the CVM’s file system.  
-**Note** - This key is tied to the platform, and losing it will cause the CVM to lose the ability to decrypt the drive on the following VM boot.
 
-#### Setup instructions:
+In this solution, we use the **gramine-sealing-key-provider**, which runs inside an SGX enclave, to generate a key.  
+This key is derived from TDX measurements and the SGX enclave’s hardware sealing key, and it is used to encrypt the CVM’s file system.  
 
-1\.  Follow the [canonical/tdx](https://github.com/canonical/tdx/blob/main/README.md) setup if not done before  especially step 9.1-2  (establishing a SGX PCCS - Provisioning Certification Caching Service ) 
+> **Note:** This key is tied to the platform. Losing it will prevent the CVM from decrypting the drive on subsequent VM boots.
 
-2\. An instance of [**gramine-sealing-key-provider**](https://github.com/MoeMahhouk/gramine-sealing-key-provider) is required to be deployed on the host machine.   
-The instance can be deployed by running the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh). For more information see  [local-key-provider-from-phala](https://github.com/Dstack-TEE/dstack/tree/master/kms#local-key-provider-mode-1)    
+#### Setup Instructions
 
-**Note:** Having Docker installed is a prerequisite for this step.
+1. Follow the [canonical/tdx setup](#) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
 
-You can find mr_enclave value (of the sgx key provider)  by printing the container logs:  
-docker logs gramine-sealing-key-provider 2\>&1 | grep mr_enclave | head -n 1
+2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.  
+   - Run the script `run.sh`.  
+   - For more information, see [local-key-provider-from-phala](#).  
 
-Make sure the  mr_enclave of the sgx key provider is 1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
+   > **Prerequisite:** Docker must be installed.
 
-TBD [#895](https://github.com/near/mpc/issues/895) - regenerate the MR_enclave again check it is the same. 
+3. To find the `mr_enclave` value of the SGX key provider, run:
+   ```bash
+   docker logs gramine-sealing-key-provider 2>&1 | grep mr_enclave | head -n 1
+   ```
+
+   Ensure that the `mr_enclave` matches the expected value:
+   ```
+   1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
+   ```
+ 
+ **Note**: As part of the mutual attestation between the CVM and the key provider, the CVM will check that the key provider’s mr_enclave matches the above hash.
+
 
 # MPC Node Setup and Deployment
 
