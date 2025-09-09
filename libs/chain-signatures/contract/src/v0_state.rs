@@ -99,7 +99,6 @@ impl From<TeeState> for crate::TeeState {
             allowed_docker_image_hashes: value.allowed_tee_proposals,
             allowed_launcher_compose_hashes: value.historical_tee_proposals,
             votes: value.votes,
-            participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestation),
         }
     }
 }
@@ -167,6 +166,9 @@ impl From<MpcContractV1> for MpcContract {
             config,
             tee_state,
             accept_requests: true,
+            proposed_participants_attestations: LookupMap::new(
+                StorageKey::TeeParticipantAttestation,
+            ),
         }
     }
 }

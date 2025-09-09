@@ -2,8 +2,8 @@ use crate::{primitives::thresholds::ThresholdParameters, state::ProtocolContract
 
 fn params_to_string(output: &mut String, parameters: &ThresholdParameters) {
     output.push_str("    Participants:\n");
-    for (account_id, id, info) in parameters.participants().participants() {
-        output.push_str(&format!("      ID {}: {} ({})\n", id, account_id, info.url));
+    for participant_info in parameters.participants().participants() {
+        output.push_str(&format!("{:#?}\n", participant_info));
     }
     output.push_str(&format!(
         "    Threshold: {}\n",

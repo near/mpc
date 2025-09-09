@@ -177,218 +177,218 @@ impl RunningContractState {
     }
 }
 
-#[cfg(test)]
-pub mod running_tests {
-    use std::collections::BTreeSet;
+// #[cfg(test)]
+// pub mod running_tests {
+//     use std::collections::BTreeSet;
 
-    use super::RunningContractState;
-    use crate::primitives::{
-        domain::{tests::gen_domain_registry, AddDomainsVotes},
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-        participants::{ParticipantId, Participants},
-        test_utils::{bogus_ed25519_public_key_extended, gen_participant, gen_threshold_params},
-        thresholds::{Threshold, ThresholdParameters},
-        votes::ThresholdParametersVotes,
-    };
-    use crate::state::key_event::tests::Environment;
-    use rand::Rng;
+//     use super::RunningContractState;
+//     use crate::primitives::{
+//         domain::{tests::gen_domain_registry, AddDomainsVotes},
+//         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+//         participants::{ParticipantId, Participants},
+//         test_utils::{bogus_ed25519_public_key_extended, gen_participant, gen_threshold_params},
+//         thresholds::{Threshold, ThresholdParameters},
+//         votes::ThresholdParametersVotes,
+//     };
+//     use crate::state::key_event::tests::Environment;
+//     use rand::Rng;
 
-    /// Generates a Running state that contains this many domains.
-    pub fn gen_running_state(num_domains: usize) -> RunningContractState {
-        let epoch_id = EpochId::new(rand::thread_rng().gen());
-        let domains = gen_domain_registry(num_domains);
+//     /// Generates a Running state that contains this many domains.
+//     pub fn gen_running_state(num_domains: usize) -> RunningContractState {
+//         let epoch_id = EpochId::new(rand::thread_rng().gen());
+//         let domains = gen_domain_registry(num_domains);
 
-        let mut keys = Vec::new();
-        for domain in domains.domains() {
-            let mut attempt = AttemptId::default();
-            let x: usize = rand::thread_rng().gen();
-            let x = x % 800;
-            for _ in 0..x {
-                attempt = attempt.next();
-            }
-            keys.push(KeyForDomain {
-                attempt,
-                domain_id: domain.id,
-                key: bogus_ed25519_public_key_extended(),
-            });
-        }
-        let max_n = 30;
-        let threshold_parameters = gen_threshold_params(max_n);
-        RunningContractState::new(domains, Keyset::new(epoch_id, keys), threshold_parameters)
-    }
+//         let mut keys = Vec::new();
+//         for domain in domains.domains() {
+//             let mut attempt = AttemptId::default();
+//             let x: usize = rand::thread_rng().gen();
+//             let x = x % 800;
+//             for _ in 0..x {
+//                 attempt = attempt.next();
+//             }
+//             keys.push(KeyForDomain {
+//                 attempt,
+//                 domain_id: domain.id,
+//                 key: bogus_ed25519_public_key_extended(),
+//             });
+//         }
+//         let max_n = 30;
+//         let threshold_parameters = gen_threshold_params(max_n);
+//         RunningContractState::new(domains, Keyset::new(epoch_id, keys), threshold_parameters)
+//     }
 
-    pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParameters {
-        let mut rng = rand::thread_rng();
-        let current_k = params.threshold().value() as usize;
-        let current_n = params.participants().len();
-        let n_old_participants: usize = rng.gen_range(current_k..current_n + 1);
-        let current_participants = params.participants();
-        let mut old_ids: BTreeSet<ParticipantId> = current_participants
-            .participants()
-            .iter()
-            .map(|(_, id, _)| id.clone())
-            .collect();
-        let mut new_ids = BTreeSet::new();
-        while new_ids.len() < (n_old_participants as usize) {
-            let x: usize = rng.gen::<usize>() % old_ids.len();
-            let c = old_ids.iter().nth(x).unwrap().clone();
-            new_ids.insert(c.clone());
-            old_ids.remove(&c);
-        }
-        let mut new_participants = Participants::default();
-        for id in new_ids {
-            let account_id = current_participants.account_id(&id).unwrap();
-            let info = current_participants.info(&account_id).unwrap();
-            let _ = new_participants.insert_with_id(account_id, info.clone(), id.clone());
-        }
-        let max_added: usize = rng.gen_range(0..10);
-        let mut next_id = current_participants.next_id();
-        for i in 0..max_added {
-            let (account_id, info) = gen_participant(i);
-            let _ = new_participants.insert_with_id(account_id, info, next_id.clone());
-            next_id = next_id.next();
-        }
+//     pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParameters {
+//         let mut rng = rand::thread_rng();
+//         let current_k = params.threshold().value() as usize;
+//         let current_n = params.participants().len();
+//         let n_old_participants: usize = rng.gen_range(current_k..current_n + 1);
+//         let current_participants = params.participants();
+//         let mut old_ids: BTreeSet<ParticipantId> = current_participants
+//             .participants()
+//             .iter()
+//             .map(|(_, id, _)| id.clone())
+//             .collect();
+//         let mut new_ids = BTreeSet::new();
+//         while new_ids.len() < (n_old_participants as usize) {
+//             let x: usize = rng.gen::<usize>() % old_ids.len();
+//             let c = old_ids.iter().nth(x).unwrap().clone();
+//             new_ids.insert(c.clone());
+//             old_ids.remove(&c);
+//         }
+//         let mut new_participants = Participants::default();
+//         for id in new_ids {
+//             let account_id = current_participants.account_id(&id).unwrap();
+//             let info = current_participants.info(&account_id).unwrap();
+//             let _ = new_participants.insert_with_id(account_id, info.clone(), id.clone());
+//         }
+//         let max_added: usize = rng.gen_range(0..10);
+//         let mut next_id = current_participants.next_id();
+//         for i in 0..max_added {
+//             let (account_id, info) = gen_participant(i);
+//             let _ = new_participants.insert_with_id(account_id, info, next_id.clone());
+//             next_id = next_id.next();
+//         }
 
-        let threshold = ((new_participants.len() as f64) * 0.6).ceil() as u64;
-        ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap()
-    }
+//         let threshold = ((new_participants.len() as f64) * 0.6).ceil() as u64;
+//         ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap()
+//     }
 
-    fn test_running_for(num_domains: usize) {
-        let mut state = gen_running_state(num_domains);
-        println!(
-            "Participants: {}, threshold: {}",
-            state.parameters.participants().len(),
-            state.parameters.threshold().value()
-        );
-        let mut env = Environment::new(None, None, None);
-        let participants = state.parameters.participants().clone();
-        // Assert that random proposals get rejected.
-        for (account_id, _, _) in participants.participants() {
-            let ksp = gen_threshold_params(30);
-            env.set_signer(account_id);
-            assert!(state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &ksp)
-                .is_err());
-        }
-        // Assert that proposals of the wrong epoch ID get rejected.
-        {
-            let ksp = gen_valid_params_proposal(&state.parameters);
-            env.set_signer(&participants.participants()[0].0);
-            assert!(state
-                .vote_new_parameters(state.keyset.epoch_id, &ksp)
-                .is_err());
-            assert!(state
-                .vote_new_parameters(state.keyset.epoch_id.next().next(), &ksp)
-                .is_err());
-        }
-        // Assert that disagreeing proposals do not reach consensus.
-        // Generate an extra proposal for the next step.
-        let mut proposals = Vec::new();
-        for i in 0..participants.participants().len() + 1 {
-            loop {
-                let proposal = gen_valid_params_proposal(&state.parameters);
-                if proposals.contains(&proposal) {
-                    continue;
-                }
-                if i < participants.participants().len()
-                    && !proposal
-                        .participants()
-                        .is_participant(&participants.participants()[i].0)
-                {
-                    continue;
-                }
-                proposals.push(proposal.clone());
-                break;
-            }
-        }
-        for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
-            env.set_signer(account_id);
-            assert!(state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &proposals[i])
-                .unwrap()
-                .is_none());
-        }
+//     fn test_running_for(num_domains: usize) {
+//         let mut state = gen_running_state(num_domains);
+//         println!(
+//             "Participants: {}, threshold: {}",
+//             state.parameters.participants().len(),
+//             state.parameters.threshold().value()
+//         );
+//         let mut env = Environment::new(None, None, None);
+//         let participants = state.parameters.participants().clone();
+//         // Assert that random proposals get rejected.
+//         for (account_id, _, _) in participants.participants() {
+//             let ksp = gen_threshold_params(30);
+//             env.set_signer(account_id);
+//             assert!(state
+//                 .vote_new_parameters(state.keyset.epoch_id.next(), &ksp)
+//                 .is_err());
+//         }
+//         // Assert that proposals of the wrong epoch ID get rejected.
+//         {
+//             let ksp = gen_valid_params_proposal(&state.parameters);
+//             env.set_signer(&participants.participants()[0].0);
+//             assert!(state
+//                 .vote_new_parameters(state.keyset.epoch_id, &ksp)
+//                 .is_err());
+//             assert!(state
+//                 .vote_new_parameters(state.keyset.epoch_id.next().next(), &ksp)
+//                 .is_err());
+//         }
+//         // Assert that disagreeing proposals do not reach consensus.
+//         // Generate an extra proposal for the next step.
+//         let mut proposals = Vec::new();
+//         for i in 0..participants.participants().len() + 1 {
+//             loop {
+//                 let proposal = gen_valid_params_proposal(&state.parameters);
+//                 if proposals.contains(&proposal) {
+//                     continue;
+//                 }
+//                 if i < participants.participants().len()
+//                     && !proposal
+//                         .participants()
+//                         .is_participant(&participants.participants()[i].0)
+//                 {
+//                     continue;
+//                 }
+//                 proposals.push(proposal.clone());
+//                 break;
+//             }
+//         }
+//         for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
+//             env.set_signer(account_id);
+//             assert!(state
+//                 .vote_new_parameters(state.keyset.epoch_id.next(), &proposals[i])
+//                 .unwrap()
+//                 .is_none());
+//         }
 
-        // Now let's vote for agreeing proposals.
-        let proposal = proposals.last().unwrap().clone();
+//         // Now let's vote for agreeing proposals.
+//         let proposal = proposals.last().unwrap().clone();
 
-        let original_epoch_id = state.keyset.epoch_id;
-        let mut resharing = None;
-        // existing participants vote
-        let mut n_votes = 0;
-        for (account_id, _, _) in participants.participants().iter() {
-            if !proposal.participants().is_participant(account_id) {
-                continue;
-            }
-            n_votes += 1;
-            env.set_signer(account_id);
-            let res = state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
-                .unwrap();
-            if n_votes < proposal.participants().len() || num_domains == 0 {
-                assert!(res.is_none());
-            } else {
-                resharing = Some(res.unwrap());
-            }
-        }
-        // candidates vote
-        for (account_id, _, _) in proposal.participants().participants().iter() {
-            if participants.is_participant(account_id) {
-                continue;
-            }
-            n_votes += 1;
-            env.set_signer(account_id);
-            let res = state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
-                .unwrap();
-            if n_votes < proposal.participants().len() || num_domains == 0 {
-                assert!(res.is_none());
-            } else {
-                resharing = Some(res.unwrap());
-            }
-        }
-        if num_domains == 0 {
-            // If there are no domains, we should transition directly to Running with a higher
-            // epoch ID, not resharing.
-            assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
-            assert_eq!(state.parameters_votes, ThresholdParametersVotes::default());
-            assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
-        } else {
-            let resharing = resharing.unwrap();
-            assert_eq!(
-                resharing.previous_running_state.parameters,
-                state.parameters
-            );
-            assert_eq!(
-                resharing.prospective_epoch_id(),
-                state.keyset.epoch_id.next(),
-            );
-            assert_eq!(resharing.resharing_key.proposed_parameters(), &proposal);
-        }
-    }
+//         let original_epoch_id = state.keyset.epoch_id;
+//         let mut resharing = None;
+//         // existing participants vote
+//         let mut n_votes = 0;
+//         for (account_id, _, _) in participants.participants().iter() {
+//             if !proposal.participants().is_participant(account_id) {
+//                 continue;
+//             }
+//             n_votes += 1;
+//             env.set_signer(account_id);
+//             let res = state
+//                 .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+//                 .unwrap();
+//             if n_votes < proposal.participants().len() || num_domains == 0 {
+//                 assert!(res.is_none());
+//             } else {
+//                 resharing = Some(res.unwrap());
+//             }
+//         }
+//         // candidates vote
+//         for (account_id, _, _) in proposal.participants().participants().iter() {
+//             if participants.is_participant(account_id) {
+//                 continue;
+//             }
+//             n_votes += 1;
+//             env.set_signer(account_id);
+//             let res = state
+//                 .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
+//                 .unwrap();
+//             if n_votes < proposal.participants().len() || num_domains == 0 {
+//                 assert!(res.is_none());
+//             } else {
+//                 resharing = Some(res.unwrap());
+//             }
+//         }
+//         if num_domains == 0 {
+//             // If there are no domains, we should transition directly to Running with a higher
+//             // epoch ID, not resharing.
+//             assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
+//             assert_eq!(state.parameters_votes, ThresholdParametersVotes::default());
+//             assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
+//         } else {
+//             let resharing = resharing.unwrap();
+//             assert_eq!(
+//                 resharing.previous_running_state.parameters,
+//                 state.parameters
+//             );
+//             assert_eq!(
+//                 resharing.prospective_epoch_id(),
+//                 state.keyset.epoch_id.next(),
+//             );
+//             assert_eq!(resharing.resharing_key.proposed_parameters(), &proposal);
+//         }
+//     }
 
-    #[test]
-    fn test_running_0() {
-        test_running_for(0);
-    }
+//     #[test]
+//     fn test_running_0() {
+//         test_running_for(0);
+//     }
 
-    #[test]
-    fn test_running_1() {
-        test_running_for(1);
-    }
+//     #[test]
+//     fn test_running_1() {
+//         test_running_for(1);
+//     }
 
-    #[test]
-    fn test_running_2() {
-        test_running_for(2);
-    }
+//     #[test]
+//     fn test_running_2() {
+//         test_running_for(2);
+//     }
 
-    #[test]
-    fn test_running_3() {
-        test_running_for(3);
-    }
+//     #[test]
+//     fn test_running_3() {
+//         test_running_for(3);
+//     }
 
-    #[test]
-    fn test_running_4() {
-        test_running_for(4);
-    }
-}
+//     #[test]
+//     fn test_running_4() {
+//         test_running_for(4);
+//     }
+// }

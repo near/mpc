@@ -15,7 +15,17 @@ use alloc::string::ToString;
 /// Intel hardware, along with details about the Trusted Computing Base (TCB) versioning, status,
 /// and other relevant info.
 #[derive(
-    Clone, From, Deref, Into, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+    Clone,
+    PartialEq,
+    Eq,
+    From,
+    Deref,
+    Into,
+    Debug,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

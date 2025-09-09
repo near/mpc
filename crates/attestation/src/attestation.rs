@@ -10,7 +10,7 @@ use derive_more::Constructor;
 use dstack_sdk_types::dstack::{EventLog, TcbInfo};
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
-use near_sdk::env::sha256;
+use near_sdk::{env::sha256, schemars::JsonSchema};
 use serde::{Deserialize, Serialize};
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
@@ -30,7 +30,7 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -40,7 +40,9 @@ pub enum Attestation {
     Mock(MockAttestation),
 }
 
-#[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone, Constructor, PartialEq, Eq, Serialize, Deserialize, BorshDeserialize, BorshSerialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -80,7 +82,9 @@ impl fmt::Debug for DstackAttestation {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize,
+)]
 pub enum MockAttestation {
     #[default]
     /// Always pass validation
@@ -94,6 +98,18 @@ pub enum MockAttestation {
         /// Unix time stamp for when this attestation expires.  
         expiry_time_stamp_seconds: Option<u64>,
     },
+}
+
+impl JsonSchema for Attestation {
+    fn schema_name() -> String {
+        todo!()
+    }
+
+    fn json_schema(
+        generator: &mut near_sdk::schemars::r#gen::SchemaGenerator,
+    ) -> near_sdk::schemars::schema::Schema {
+        todo!()
+    }
 }
 
 pub(crate) fn verify_mock_attestation(

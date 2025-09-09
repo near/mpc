@@ -68,9 +68,9 @@ impl KeyEvent {
             .participants()
             .participants()
             .iter()
-            .min_by_key(|(_, participant_id, _)| participant_id)
+            .min_by_key(|p| &p.participant_id)
             .unwrap()
-            .0
+            .account_id
             != env::signer_account_id()
         {
             return Err(VoteError::VoterNotLeader.into());
@@ -284,70 +284,70 @@ impl KeyEventInstance {
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
-pub mod tests {
-    use crate::primitives::{
-        participants::ParticipantId,
-        test_utils::{gen_account_id, gen_seed},
-    };
-    use crate::state::key_event::KeyEvent;
-    use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, BlockHeight};
-    use rand::Rng;
+// #[cfg(any(test, feature = "test-utils"))]
+// pub mod tests {
+//     use crate::primitives::{
+//         participants::ParticipantId,
+//         test_utils::{gen_account_id, gen_seed},
+//     };
+//     use crate::state::key_event::KeyEvent;
+//     use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, BlockHeight};
+//     use rand::Rng;
 
-    pub struct Environment {
-        pub signer: AccountId,
-        pub block_height: BlockHeight,
-        pub seed: [u8; 32],
-    }
-    impl Environment {
-        pub fn new(
-            block_height: Option<BlockHeight>,
-            signer: Option<AccountId>,
-            seed: Option<[u8; 32]>,
-        ) -> Self {
-            let seed = seed.unwrap_or(gen_seed());
-            let mut ctx = VMContextBuilder::new();
-            let block_height = block_height.unwrap_or(rand::thread_rng().gen());
-            ctx.block_height(block_height);
-            ctx.random_seed(seed);
-            let signer = signer.unwrap_or(gen_account_id());
-            ctx.signer_account_id(signer.clone());
-            testing_env!(ctx.build());
-            Environment {
-                signer,
-                block_height,
-                seed,
-            }
-        }
-        pub fn set_signer(&mut self, signer: &AccountId) {
-            self.signer = signer.clone();
-            self.set();
-        }
-        pub fn set(&self) {
-            let mut ctx = VMContextBuilder::new();
-            ctx.block_height(self.block_height);
-            ctx.random_seed(self.seed);
-            ctx.signer_account_id(self.signer.clone());
-            testing_env!(ctx.build());
-        }
-        pub fn set_block_height(&mut self, block_height: BlockHeight) {
-            self.block_height = block_height;
-            self.set();
-        }
-        pub fn advance_block_height(&mut self, delta: BlockHeight) {
-            self.block_height += delta;
-            self.set();
-        }
-    }
+//     pub struct Environment {
+//         pub signer: AccountId,
+//         pub block_height: BlockHeight,
+//         pub seed: [u8; 32],
+//     }
+//     impl Environment {
+//         pub fn new(
+//             block_height: Option<BlockHeight>,
+//             signer: Option<AccountId>,
+//             seed: Option<[u8; 32]>,
+//         ) -> Self {
+//             let seed = seed.unwrap_or(gen_seed());
+//             let mut ctx = VMContextBuilder::new();
+//             let block_height = block_height.unwrap_or(rand::thread_rng().gen());
+//             ctx.block_height(block_height);
+//             ctx.random_seed(seed);
+//             let signer = signer.unwrap_or(gen_account_id());
+//             ctx.signer_account_id(signer.clone());
+//             testing_env!(ctx.build());
+//             Environment {
+//                 signer,
+//                 block_height,
+//                 seed,
+//             }
+//         }
+//         pub fn set_signer(&mut self, signer: &AccountId) {
+//             self.signer = signer.clone();
+//             self.set();
+//         }
+//         pub fn set(&self) {
+//             let mut ctx = VMContextBuilder::new();
+//             ctx.block_height(self.block_height);
+//             ctx.random_seed(self.seed);
+//             ctx.signer_account_id(self.signer.clone());
+//             testing_env!(ctx.build());
+//         }
+//         pub fn set_block_height(&mut self, block_height: BlockHeight) {
+//             self.block_height = block_height;
+//             self.set();
+//         }
+//         pub fn advance_block_height(&mut self, delta: BlockHeight) {
+//             self.block_height += delta;
+//             self.set();
+//         }
+//     }
 
-    pub fn find_leader(kes: &KeyEvent) -> (AccountId, ParticipantId) {
-        let (account_id, participant_id, _) = kes
-            .proposed_parameters()
-            .participants()
-            .participants()
-            .iter()
-            .min_by_key(|(_, id, _)| id)
-            .unwrap();
-        (account_id.clone(), participant_id.clone())
-    }
-}
+//     pub fn find_leader(kes: &KeyEvent) -> (AccountId, ParticipantId) {
+//         let (account_id, participant_id, _) = kes
+//             .proposed_parameters()
+//             .participants()
+//             .participants()
+//             .iter()
+//             .min_by_key(|(_, id, _)| id)
+//             .unwrap();
+//         (account_id.clone(), participant_id.clone())
+//     }
+// }

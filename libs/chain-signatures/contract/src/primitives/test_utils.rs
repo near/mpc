@@ -54,14 +54,14 @@ fn test_random_account_id() {
     assert_ne!(acc1, acc2, "Random keys should be different");
 }
 
-pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
-    (
-        gen_account_id(),
-        ParticipantInfo {
-            url: format!("https://www.near{}.com", i),
-            sign_pk: bogus_ed25519_near_public_key(),
-        },
-    )
+pub fn gen_participant(i: usize) -> ParticipantInfo {
+    ParticipantInfo {
+        url: format!("https://www.near{}.com", i),
+        sign_pk: bogus_ed25519_near_public_key(),
+        account_id: gen_account_id(),
+        participant_id: todo!(),
+        attestation: todo!(),
+    }
 }
 
 pub fn min_thrershold(n: usize) -> usize {
