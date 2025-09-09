@@ -5,6 +5,7 @@ import subprocess
 import sys
 from typing import List, Optional, Tuple, cast
 import typing
+import time
 
 import base58
 import yaml
@@ -412,10 +413,7 @@ def start_cluster_with_mpc(
     cluster.contract_node.send_await_check_txs_parallel(
         "phase1: create accounts + pytest keys", txs_phase1, assert_txn_success
     )
-    # --- Wait for finality (make sure accounts exist) ---
-    cluster.contract_node.block_until_final_height(
-        cluster.contract_node.latest_block_height() + 2
-    )
+    time.sleep(2*60)
 
     # --- Phase 2: add node access key (signed by pytest key which now exists) ---
     txs_phase2 = []
