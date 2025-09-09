@@ -386,12 +386,11 @@ def start_cluster_with_mpc(
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
             True,
-            True
+            False,
         )
         txs.append(tx)
 
         nonce += 1
-
 
         # add node access key
         tx = sign_create_account_with_multiple_access_keys_tx(
@@ -402,7 +401,7 @@ def start_cluster_with_mpc(
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
             False,
-            False
+            False,
         )
         txs.append(tx)
 
