@@ -141,7 +141,7 @@ def sign_create_account_with_multiple_access_keys_tx(
         # Give restricted MPC-only access to all keys
         access_key_actions = [
             create_mpc_function_call_access_key_action(
-                key.decoded_pk(), contract_id, 10
+                key.decoded_pk(), contract_id, 1 * NEAR_BASE
             )
             for key in keys
         ]
@@ -415,7 +415,7 @@ def start_cluster_with_mpc(
     cluster.contract_node.send_await_check_txs_parallel(
         "phase1: create accounts + pytest keys", txs_phase1, assert_txn_success
     )
-    time.sleep(10)
+    time.sleep(1)
 
     # --- Phase 2: add node access key (signed by pytest key which now exists) ---
     txs_phase2 = []
@@ -423,7 +423,9 @@ def start_cluster_with_mpc(
     for mpc_node, candidate in zip(mpc_nodes, candidates):
         nonce += 1
         tx = sign_create_account_with_multiple_access_keys_tx(
-            pytest_signer_keys[0],  # any pytest key will do
+            mpc_node.pytest_signer_keys[
+                0
+            ],  # pytest_signer_keys[0],  # any pytest key will do
             candidate.signer_key.account_id,
             [candidate.signer_key],
             nonce,
