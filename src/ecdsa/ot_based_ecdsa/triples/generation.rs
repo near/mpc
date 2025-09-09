@@ -1110,14 +1110,14 @@ pub fn generate_triple(
 ) -> Result<impl Protocol<Output = TripleGenerationOutput>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len() as u32,
+            participants: participants.len(),
         });
     };
     // Spec 1.1
     if threshold > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold: threshold as u32,
-            max: participants.len() as u32,
+            threshold,
+            max: participants.len(),
         });
     }
 
@@ -1137,14 +1137,14 @@ pub fn generate_triple_many<const N: usize>(
 ) -> Result<impl Protocol<Output = TripleGenerationOutputMany>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len() as u32,
+            participants: participants.len(),
         });
     };
     // Spec 1.1
     if threshold > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold: threshold as u32,
-            max: participants.len() as u32,
+            threshold,
+            max: participants.len(),
         });
     }
 

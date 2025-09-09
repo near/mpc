@@ -75,21 +75,31 @@ impl From<Box<dyn error::Error + Send + Sync>> for ProtocolError {
 pub enum InitializationError {
     #[error("bad parameters: {0}")]
     BadParameters(String),
+
     #[error("participant list must contain {role}: {participant:?}")]
     MissingParticipant {
         role: &'static str,
         participant: Participant,
     },
+
     #[error("participant list cannot contain duplicates")]
     DuplicateParticipants,
+
     #[error("Participant count cannot be < 2, found: {participants}")]
-    NotEnoughParticipants { participants: u32 },
+    NotEnoughParticipants { participants: usize },
+
     #[error("not enough intersecting old/new participants ({participants}) to reconstruct private key for resharing with threshold bigger than old threshold ({threshold})")]
-    NotEnoughParticipantsForThreshold { threshold: u32, participants: u32 },
+    NotEnoughParticipantsForThreshold {
+        threshold: usize,
+        participants: usize,
+    },
+
     #[error("threshold {threshold} is too small, it must be at least {min}")]
-    ThresholdTooSmall { threshold: u32, min: u32 },
+    ThresholdTooSmall { threshold: usize, min: usize },
+
     #[error("threshold {threshold} is too large, it must be at most {max}")]
-    ThresholdTooLarge { threshold: u32, max: u32 },
+    ThresholdTooLarge { threshold: usize, max: usize },
+
     #[error("participant has an invalid index")]
     InvalidParticipantIndex,
 }

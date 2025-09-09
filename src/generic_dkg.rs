@@ -527,15 +527,15 @@ pub(crate) fn assert_keygen_invariants(
     // need enough participants
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len() as u32,
+            participants: participants.len(),
         });
     };
 
     // validate threshold
     if threshold > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold: threshold as u32,
-            max: participants.len() as u32,
+            threshold,
+            max: participants.len(),
         });
     }
 
@@ -598,13 +598,13 @@ pub(crate) fn reshare_assertions<C: Ciphersuite>(
 ) -> Result<(ParticipantList, ParticipantList), InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len() as u32,
+            participants: participants.len(),
         });
     };
     if threshold > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold: threshold as u32,
-            max: participants.len() as u32,
+            threshold,
+            max: participants.len(),
         });
     }
 
@@ -623,8 +623,8 @@ pub(crate) fn reshare_assertions<C: Ciphersuite>(
 
     if old_participants.intersection(&participants).len() < old_threshold {
         return Err(InitializationError::NotEnoughParticipantsForThreshold {
-            threshold: old_threshold as u32,
-            participants: old_participants.intersection(&participants).len() as u32,
+            threshold: old_threshold,
+            participants: old_participants.intersection(&participants).len(),
         });
     }
     // if me is not in the old participant set then ensure that old_signing_key is None

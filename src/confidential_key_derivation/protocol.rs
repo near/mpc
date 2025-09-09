@@ -112,7 +112,7 @@ pub fn ckd(
     // not enough participants
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len() as u32,
+            participants: participants.len(),
         });
     };
 

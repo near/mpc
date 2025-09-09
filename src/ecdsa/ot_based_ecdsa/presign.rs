@@ -9,118 +9,6 @@ use crate::protocol::{
 
 type Secp256 = Secp256K1Sha256;
 
-async fn do_presign(
-    mut chan: SharedChannel,
-    participants: ParticipantList,
-    me: Participant,
-    bt_participants: ParticipantList,
-    bt_id: Participant,
-    args: PresignArguments,
-) -> Result<PresignOutput, ProtocolError> {
-    // Spec 1.2 + 1.3
-    let big_k: ProjectivePoint = args.triple0.1.big_a.into();
-
-    let big_d = args.triple0.1.big_b;
-    let big_kd = args.triple0.1.big_c;
-
-    let big_a: ProjectivePoint = args.triple1.1.big_a.into();
-    let big_b: ProjectivePoint = args.triple1.1.big_b.into();
-
-    let sk_lambda = participants.lagrange::<Secp256>(me)?;
-    let bt_lambda = bt_participants.lagrange::<Secp256>(bt_id)?;
-
-    let k_i = args.triple0.0.a;
-    let k_prime_i = bt_lambda * k_i;
-    let kd_i: Scalar = bt_lambda * args.triple0.0.c; // if this is zero, then the broadcast kdi is also zero.
-
-    let a_i = args.triple1.0.a;
-    let b_i = args.triple1.0.b;
-    let c_i = args.triple1.0.c;
-    let a_prime_i = bt_lambda * a_i;
-    let b_prime_i = bt_lambda * b_i;
-
-    let big_x: ProjectivePoint = args.keygen_out.public_key.to_element();
-    let private_share = args.keygen_out.private_share.to_scalar();
-    let x_prime_i = sk_lambda * private_share;
-
-    // Spec 1.4
-    let wait0 = chan.next_waitpoint();
-    chan.send_many(wait0, &kd_i)?;
-
-    // Spec 1.9
-    let ka_i: Scalar = k_prime_i + a_prime_i;
-    let xb_i: Scalar = x_prime_i + b_prime_i;
-
-    // Spec 1.10
-    let wait1 = chan.next_waitpoint();
-    chan.send_many(wait1, &(ka_i, xb_i))?;
-
-    // Spec 2.1 and 2.2
-    let mut kd = kd_i;
-    let mut seen = ParticipantCounter::new(&participants);
-    seen.put(me);
-    while !seen.full() {
-        let (from, kd_j): (_, Scalar) = chan.recv(wait0).await?;
-
-        if kd_j.is_zero().into() {
-            return Err(ProtocolError::AssertionFailed(
-                "Received zero share of kd, indicating a triple wasn't available.".to_string(),
-            ));
-        }
-
-        if !seen.put(from) {
-            continue;
-        }
-        kd += kd_j;
-    }
-
-    // Spec 2.3
-    if big_kd != (ProjectivePoint::GENERATOR * kd).to_affine() {
-        return Err(ProtocolError::AssertionFailed(
-            "received incorrect shares of kd".to_string(),
-        ));
-    }
-
-    // Spec 2.4 and 2.5
-    let mut ka = ka_i;
-    let mut xb = xb_i;
-    seen.clear();
-    seen.put(me);
-    while !seen.full() {
-        let (from, (ka_j, xb_j)): (_, (Scalar, Scalar)) = chan.recv(wait1).await?;
-        if !seen.put(from) {
-            continue;
-        }
-        ka += ka_j;
-        xb += xb_j;
-    }
-
-    // Spec 2.6
-    if (ProjectivePoint::GENERATOR * ka != big_k + big_a)
-        || (ProjectivePoint::GENERATOR * xb != big_x + big_b)
-    {
-        return Err(ProtocolError::AssertionFailed(
-            "received incorrect shares of additive triple phase.".to_string(),
-        ));
-    }
-
-    // Spec 2.7
-    let kd_inv: Option<Scalar> = kd.invert().into();
-    let kd_inv =
-        kd_inv.ok_or_else(|| ProtocolError::AssertionFailed("failed to invert kd".to_string()))?;
-    let big_r = (big_d * kd_inv).into();
-
-    // Spec 2.8
-    let lambda_diff = bt_lambda * sk_lambda.invert().expect("to invert sk_lambda");
-    let sigma_i = ka * private_share - (xb * a_i - c_i) * lambda_diff;
-
-    Ok(PresignOutput {
-        big_r,
-        k: k_i * lambda_diff,
-        sigma: sigma_i,
-    })
-}
-
 /// The presignature protocol.
 ///
 /// This is the first phase of performing a signature, in which we perform
@@ -131,20 +19,18 @@ async fn do_presign(
 pub fn presign(
     participants: &[Participant],
     me: Participant,
-    bt_participants: &[Participant],
-    bt_id: Participant,
     args: PresignArguments,
 ) -> Result<impl Protocol<Output = PresignOutput>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len() as u32,
+            participants: participants.len(),
         });
     };
     // Spec 1.1
     if args.threshold > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold: args.threshold as u32,
-            max: participants.len() as u32,
+            threshold: args.threshold,
+            max: participants.len(),
         });
     }
 
@@ -162,9 +48,6 @@ pub fn presign(
     let participants =
         ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
-    let all_bt_ids =
-        ParticipantList::new(bt_participants).ok_or(InitializationError::DuplicateParticipants)?;
-
     if !participants.contains(me) {
         return Err(InitializationError::BadParameters(
             "participant list does not contain me".to_string(),
@@ -172,15 +55,141 @@ pub fn presign(
     };
 
     let ctx = Comms::new();
-    let fut = do_presign(
-        ctx.shared_channel(),
-        participants,
-        me,
-        all_bt_ids,
-        bt_id,
-        args,
-    );
+    let fut = do_presign(ctx.shared_channel(), participants, me, args);
     Ok(make_protocol(ctx, fut))
+}
+
+async fn do_presign(
+    mut chan: SharedChannel,
+    participants: ParticipantList,
+    me: Participant,
+    args: PresignArguments,
+) -> Result<PresignOutput, ProtocolError> {
+    // Round 1
+    // Extracting triples private variables (ai, bi, ci)
+    let a_i = args.triple1.0.a;
+    let b_i = args.triple1.0.b;
+    let c_i = args.triple1.0.c;
+
+    // Extracting triples public variables (A, B, _)
+    // notice C is not used
+    let big_a: ProjectivePoint = args.triple1.1.big_a.into();
+    let big_b: ProjectivePoint = args.triple1.1.big_b.into();
+
+    // Extracting triples private variables (ki, _, ei)
+    // notice di is not used
+    let k_i = args.triple0.0.a;
+    let e_i = args.triple0.0.c;
+
+    // Extracting triples public variables (K, D, E)
+    let big_k: ProjectivePoint = args.triple0.1.big_a.into();
+    let big_d = args.triple0.1.big_b;
+    let big_e = args.triple0.1.big_c;
+
+    // linearize ki ei ai bi ci xi
+    // Spec 1.1
+    let lambda_me = participants.lagrange::<Secp256>(me)?;
+
+    let k_prime_i = lambda_me * k_i;
+    let e_i: Scalar = lambda_me * e_i;
+
+    let a_prime_i = lambda_me * a_i;
+    let b_prime_i = lambda_me * b_i;
+
+    let big_x: ProjectivePoint = args.keygen_out.public_key.to_element();
+    let private_share = args.keygen_out.private_share.to_scalar();
+    let x_prime_i = lambda_me * private_share;
+
+    // Send ei
+    // Spec 1.2
+    let wait0 = chan.next_waitpoint();
+    chan.send_many(wait0, &e_i)?;
+
+    // Receive ej and compute e = SUM_j ej
+    // Spec 1.3
+    let mut e = e_i;
+    let mut seen = ParticipantCounter::new(&participants);
+    seen.put(me);
+    while !seen.full() {
+        let (from, e_j): (_, Scalar) = chan.recv(wait0).await?;
+
+        if e_j.is_zero().into() {
+            return Err(ProtocolError::AssertionFailed(
+                "Received zero share of kd, indicating a triple wasn't available.".to_string(),
+            ));
+        }
+
+        if !seen.put(from) {
+            continue;
+        }
+        // Spec 1.4
+        e += e_j;
+    }
+
+    // E =?= e*G
+    // Spec 1.5
+    if big_e != (ProjectivePoint::GENERATOR * e).to_affine() {
+        return Err(ProtocolError::AssertionFailed(
+            "received incorrect shares of kd".to_string(),
+        ));
+    }
+
+    // Round 2
+    // alphai = ki' + ai'
+    // Spec 2.1
+    let alpha_i: Scalar = k_prime_i + a_prime_i;
+    // betai = xi' + bi'
+    let beta_i: Scalar = x_prime_i + b_prime_i;
+
+    // Send alphai and betai
+    // Spec 2.2
+    let wait1 = chan.next_waitpoint();
+    chan.send_many(wait1, &(alpha_i, beta_i))?;
+
+    // Receive and compute alpha = SUM_j alphaj
+    // Receive and compute beta = SUM_j betaj
+    // Spec 2.3
+    let mut alpha = alpha_i;
+    let mut beta = beta_i;
+    seen.clear();
+    seen.put(me);
+    while !seen.full() {
+        let (from, (alpha_j, beta_j)): (_, (Scalar, Scalar)) = chan.recv(wait1).await?;
+        if !seen.put(from) {
+            continue;
+        }
+        // Spec 2.4
+        alpha += alpha_j;
+        beta += beta_j;
+    }
+
+    // alpha*G =?= K + A
+    // beta*G =?= X + B
+    // Spec 2.5
+    if (ProjectivePoint::GENERATOR * alpha != big_k + big_a)
+        || (ProjectivePoint::GENERATOR * beta != big_x + big_b)
+    {
+        return Err(ProtocolError::AssertionFailed(
+            "received incorrect shares of additive triple phase.".to_string(),
+        ));
+    }
+
+    // Compute R = 1/e * D
+    // Spec 2.6
+    let e_inv: Option<Scalar> = e.invert().into();
+    let e_inv =
+        e_inv.ok_or_else(|| ProtocolError::AssertionFailed("failed to invert kd".to_string()))?;
+    let big_r = (big_d * e_inv).into();
+
+    // sigmai = alpha*xi - beta*ai + ci
+    // Spec 2.7
+    let sigma_i = alpha * private_share - (beta * a_i - c_i);
+
+    Ok(PresignOutput {
+        big_r,
+        k: k_i,
+        sigma: sigma_i,
+    })
 }
 
 #[cfg(test)]
@@ -231,8 +240,6 @@ mod test {
             };
 
             let protocol = presign(
-                &participants[..3],
-                *p,
                 &participants[..3],
                 *p,
                 PresignArguments {
