@@ -12,8 +12,10 @@ use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
 use std::collections::HashSet;
 
-pub enum TeeValidationResult {
+pub(crate) enum TeeValidationResult {
+    /// All participants have a valid attestation.
     Full,
+    /// Only a subset of the participants had a valid attestation.
     Partial {
         participants_with_valid_attestation: Participants,
     },
@@ -113,13 +115,7 @@ impl TeeState {
     }
 
     /// Performs TEE validation on the given participants.
-    ///
-    /// Returns [`TeeValidationResult::Full`] if all participants are valid, or
-    /// [`TeeValidationResult::Partial`] with the subset of valid participants otherwise.
-    ///
-    /// The returned [`Participants`] preserves participant data and
-    /// [`Participants::next_id()`].
-    pub fn validate_participants_tee_attestation(
+    pub(crate) fn validate_participants_tee_attestation(
         &mut self,
         participants: &Participants,
         tee_upgrade_period_blocks: u64,
@@ -129,16 +125,13 @@ impl TeeState {
             .iter()
             .filter(|(account_id, _, participant_info)| {
                 let tls_public_key = participant_info.sign_pk.clone();
-                let tee_status = match self.verify_tee_participant(
+                let tee_status = self.verify_tee_participant(
                     account_id,
                     tls_public_key,
                     tee_upgrade_period_blocks,
-                ) {
-                    Ok(status) => status,
-                    Err(_) => TeeQuoteStatus::Invalid,
-                };
+                );
 
-                matches!(tee_status, TeeQuoteStatus::Valid)
+                matches!(tee_status, Ok(TeeQuoteStatus::Valid))
             })
             .cloned()
             .collect();
