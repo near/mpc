@@ -429,7 +429,7 @@ def start_cluster_with_mpc(
             nonce,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
-            False,  # restricted access
+            True,  # full access
             False,  # account already exists
         )
         txs_phase2.append(tx)
