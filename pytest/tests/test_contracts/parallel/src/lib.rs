@@ -13,7 +13,7 @@ use near_sdk::{
 };
 use sha2::{Digest, Sha256};
 
-// TODO: all these types should come from mpc_contract. Any reason for not doing so?
+// TODO: all these types should come from mpc_contract https://github.com/near/mpc/issues/1057
 
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
