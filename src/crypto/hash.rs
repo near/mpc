@@ -82,7 +82,8 @@ pub mod test {
     }
 
     /// Hashes a message string into an arbitrary scalar
-    pub(crate) fn scalar_hash(msg: &[u8]) -> <Secp256k1 as CurveArithmetic>::Scalar {
+    pub(crate) fn scalar_hash_secp256k1(msg: &[u8]) -> <Secp256k1 as CurveArithmetic>::Scalar {
+        // follows  https://datatracker.ietf.org/doc/html/rfc9591#name-cryptographic-hash-function
         let digest = <Secp256k1 as DigestPrimitive>::Digest::new_with_prefix(msg);
         let m_bytes: FieldBytes = digest.finalize_fixed();
         <Scalar as Reduce<<Secp256k1 as Curve>::Uint>>::reduce_bytes(&m_bytes)

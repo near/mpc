@@ -187,16 +187,17 @@ mod test {
     use rand_core::RngCore;
 
     #[test]
-    fn test_hash2curve() {
+    fn test_hash2curve() -> Result<(), Box<dyn Error>> {
         let app_id = b"Hello Near";
         let app_id_same = b"Hello Near";
-        let pt1 = hash2curve(app_id).unwrap();
-        let pt2 = hash2curve(app_id_same).unwrap();
+        let pt1 = hash2curve(app_id)?;
+        let pt2 = hash2curve(app_id_same)?;
         assert!(pt1 == pt2);
 
         let app_id = b"Hello Near!";
-        let pt2 = hash2curve(app_id).unwrap();
+        let pt2 = hash2curve(app_id)?;
         assert!(pt1 != pt2);
+        Ok(())
     }
 
     #[test]
@@ -207,14 +208,14 @@ mod test {
             Polynomial::<Secp256K1Sha256>::generate_polynomial(None, threshold - 1, &mut OsRng)?;
 
         // Create the threshold signer's master secret key
-        let msk = f.eval_at_zero().unwrap();
+        let msk = f.eval_at_zero()?;
 
         // Create the app necessary items
         let app_id = b"Near App";
         let (app_sk, app_pk) = Secp256K1Sha256::generate_nonce(&mut OsRng);
         let app_pk = VerifyingKey::new(app_pk);
 
-        let expected_confidential_key = hash2curve(app_id).unwrap() * msk.0;
+        let expected_confidential_key = hash2curve(app_id)? * msk.0;
 
         let participants = vec![
             Participant::from(0u32),
@@ -230,8 +231,8 @@ mod test {
             Vec::with_capacity(participants.len());
 
         for p in &participants {
-            let share = f.eval_at_participant(*p);
-            let private_share = SigningShare::new(share.unwrap().0);
+            let share = f.eval_at_participant(*p)?;
+            let private_share = SigningShare::new(share.0);
 
             let protocol = ckd(
                 &participants,

@@ -349,25 +349,26 @@ mod test {
     use crate::{ecdsa::KeygenOutput, protocol::run_protocol, test::generate_participants};
     use frost_secp256k1::keys::PublicKeyPackage;
     use frost_secp256k1::VerifyingKey;
-    use std::collections::BTreeMap;
 
     use k256::ProjectivePoint;
+    use std::collections::BTreeMap;
+    use std::error::Error;
 
     #[test]
-    fn test_presign() {
+    fn test_presign() -> Result<(), Box<dyn Error>> {
         let participants = generate_participants(5);
 
         let max_malicious = 2;
 
-        let f = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng).unwrap();
-        let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
+        let f = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng)?;
+        let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero()?.0;
 
         let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = PresignOutput>>)> =
             Vec::with_capacity(participants.len());
 
         for p in &participants {
             // simulating the key packages for each participant
-            let private_share = f.eval_at_participant(*p).unwrap();
+            let private_share = f.eval_at_participant(*p)?;
             let verifying_key = VerifyingKey::new(big_x);
             let public_key_package = PublicKeyPackage::new(BTreeMap::new(), verifying_key);
             let keygen_out = KeygenOutput {
@@ -387,7 +388,7 @@ mod test {
             protocols.push((*p, Box::new(protocol)));
         }
 
-        let result = run_protocol(protocols).unwrap();
+        let result = run_protocol(protocols)?;
 
         assert!(result.len() == 5);
         // testing that big_r is the same accross participants
@@ -395,5 +396,6 @@ mod test {
         assert_eq!(result[1].1.big_r, result[2].1.big_r);
         assert_eq!(result[2].1.big_r, result[3].1.big_r);
         assert_eq!(result[3].1.big_r, result[4].1.big_r);
+        Ok(())
     }
 }

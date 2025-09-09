@@ -1,6 +1,6 @@
 //! This module wraps a signature generation functionality from `Frost` library
 //!  into `cait-sith::Protocol` representation.
-use crate::eddsa::KeygenOutput;
+use super::{KeygenOutput, Signature};
 use crate::participants::{ParticipantCounter, ParticipantList};
 use crate::protocol::errors::{InitializationError, ProtocolError};
 use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
@@ -32,8 +32,6 @@ fn construct_key_package(
     )
 }
 
-pub type SignatureOutput = Option<Signature>; // None for participants and Some for coordinator
-
 /// Returns a future that executes signature protocol for *the Coordinator*.
 ///
 /// WARNING: Extracted from FROST documentation:
@@ -50,7 +48,7 @@ async fn do_sign_coordinator(
     me: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
-) -> Result<SignatureOutput, ProtocolError> {
+) -> Result<Signature, ProtocolError> {
     let mut seen = ParticipantCounter::new(&participants);
     let mut rng = OsRng;
 
@@ -139,7 +137,7 @@ async fn do_sign_participant(
     coordinator: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
-) -> Result<SignatureOutput, ProtocolError> {
+) -> Result<Signature, ProtocolError> {
     let mut rng = OsRng;
     if coordinator == me {
         return Err(ProtocolError::AssertionFailed(
@@ -210,7 +208,7 @@ pub fn sign(
     coordinator: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
-) -> Result<impl Protocol<Output = SignatureOutput>, InitializationError> {
+) -> Result<impl Protocol<Output = Signature>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -256,7 +254,7 @@ async fn fut_wrapper(
     coordinator: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
-) -> Result<SignatureOutput, ProtocolError> {
+) -> Result<Signature, ProtocolError> {
     if me == coordinator {
         do_sign_coordinator(chan, participants, threshold, me, keygen_output, message).await
     } else {
@@ -270,16 +268,16 @@ mod test {
     use crate::participants::ParticipantList;
     use crate::test::generate_participants;
     use frost_core::{Field, Group};
-    use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512, Signature};
+    use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512};
 
     use crate::eddsa::test::{build_key_packages_with_dealer, test_run_signature_protocols};
     use crate::protocol::Participant;
     use crate::test::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
     use std::error::Error;
 
-    use super::SignatureOutput;
-
-    fn assert_single_coordinator_result(data: Vec<(Participant, SignatureOutput)>) -> Signature {
+    fn assert_single_coordinator_result(
+        data: Vec<(Participant, super::Signature)>,
+    ) -> frost_ed25519::Signature {
         let mut signature = None;
         let count = data
             .iter()
@@ -350,7 +348,7 @@ mod test {
         let actual_signers = participants.len();
         let threshold = 2;
         let msg = "hello_near";
-        let msg_hash = hash(&msg).unwrap();
+        let msg_hash = hash(&msg)?;
 
         // test dkg
         let key_packages = run_keygen(&participants, threshold)?;
@@ -362,8 +360,7 @@ mod test {
             &coordinators,
             threshold,
             msg_hash,
-        )
-        .unwrap();
+        )?;
         let signature = assert_single_coordinator_result(data);
 
         assert!(key_packages[0]
@@ -376,15 +373,14 @@ mod test {
         let key_packages1 = run_refresh(&participants, key_packages, threshold)?;
         assert_public_key_invariant(&key_packages1);
         let msg = "hello_near_2";
-        let msg_hash = hash(&msg).unwrap();
+        let msg_hash = hash(&msg)?;
         let data = test_run_signature_protocols(
             &key_packages1,
             actual_signers,
             &coordinators,
             threshold,
             msg_hash,
-        )
-        .unwrap();
+        )?;
         let signature = assert_single_coordinator_result(data);
         let pub_key = key_packages1[2].1.public_key;
         assert!(key_packages1[0]
@@ -407,7 +403,7 @@ mod test {
         )?;
         assert_public_key_invariant(&key_packages2);
         let msg = "hello_near_3";
-        let msg_hash = hash(&msg).unwrap();
+        let msg_hash = hash(&msg)?;
         let coordinators = vec![key_packages2[0].0];
         let data = test_run_signature_protocols(
             &key_packages2,
@@ -415,8 +411,7 @@ mod test {
             &coordinators,
             new_threshold,
             msg_hash,
-        )
-        .unwrap();
+        )?;
         let signature = assert_single_coordinator_result(data);
         assert!(key_packages2[0]
             .1
@@ -467,14 +462,14 @@ mod test {
         let p_list = ParticipantList::new(&participants).unwrap();
         let mut x = Ed25519ScalarField::zero();
         for (p, share) in participants.iter().zip(shares.iter()) {
-            x += p_list.lagrange::<Ed25519Sha512>(*p).unwrap() * share;
+            x += p_list.lagrange::<Ed25519Sha512>(*p)? * share;
         }
         assert_eq!(<Ed25519Group>::generator() * x, pub_key.to_element());
 
         // Sign
         let actual_signers = participants.len();
         let msg = "hello_near";
-        let msg_hash = hash(&msg).unwrap();
+        let msg_hash = hash(&msg)?;
 
         let coordinators = vec![key_packages[0].0];
         let data = test_run_signature_protocols(
@@ -483,8 +478,7 @@ mod test {
             &coordinators,
             new_threshold,
             msg_hash,
-        )
-        .unwrap();
+        )?;
         let signature = assert_single_coordinator_result(data);
         assert!(key_packages[0]
             .1
@@ -533,13 +527,13 @@ mod test {
         let p_list = ParticipantList::new(&participants).unwrap();
         let mut x = Ed25519ScalarField::zero();
         for (p, share) in participants.iter().zip(shares.iter()) {
-            x += p_list.lagrange::<Ed25519Sha512>(*p).unwrap() * share;
+            x += p_list.lagrange::<Ed25519Sha512>(*p)? * share;
         }
         assert_eq!(<Ed25519Group>::generator() * x, pub_key.to_element());
 
         // Sign
         let msg = "hello_near";
-        let msg_hash = hash(&msg).unwrap();
+        let msg_hash = hash(&msg)?;
 
         let data = test_run_signature_protocols(
             &key_packages,
@@ -547,8 +541,7 @@ mod test {
             &coordinators,
             new_threshold,
             msg_hash,
-        )
-        .unwrap();
+        )?;
         let signature = assert_single_coordinator_result(data);
         assert!(key_packages[0]
             .1

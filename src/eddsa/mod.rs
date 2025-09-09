@@ -16,3 +16,6 @@ impl ScalarSerializationFormat for Ed25519Sha512 {
 }
 
 impl Ciphersuite for Ed25519Sha512 {}
+
+/// Signature would be Some for coordinator and None for other participants
+pub type Signature = Option<frost_ed25519::Signature>;

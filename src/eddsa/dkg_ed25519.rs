@@ -24,8 +24,6 @@ mod test {
         assert_public_key_invariant(&result);
 
         assert!(result.len() == participants.len());
-        assert_eq!(result[0].1.public_key, result[1].1.public_key);
-        assert_eq!(result[1].1.public_key, result[2].1.public_key);
 
         let pub_key = result[2].1.public_key.to_element();
 
@@ -36,9 +34,9 @@ mod test {
             result[2].1.private_share.to_scalar(),
         ];
         let p_list = ParticipantList::new(&participants).unwrap();
-        let x = p_list.lagrange::<E>(participants[0]).unwrap() * shares[0]
-            + p_list.lagrange::<E>(participants[1]).unwrap() * shares[1]
-            + p_list.lagrange::<E>(participants[2]).unwrap() * shares[2];
+        let x = p_list.lagrange::<E>(participants[0])? * shares[0]
+            + p_list.lagrange::<E>(participants[1])? * shares[1]
+            + p_list.lagrange::<E>(participants[2])? * shares[2];
         assert_eq!(<Ed25519Group>::generator() * x, pub_key);
         Ok(())
     }
@@ -67,9 +65,9 @@ mod test {
             result1[2].1.private_share.to_scalar(),
         ];
         let p_list = ParticipantList::new(&participants).unwrap();
-        let x = p_list.lagrange::<E>(participants[0]).unwrap() * shares[0]
-            + p_list.lagrange::<E>(participants[1]).unwrap() * shares[1]
-            + p_list.lagrange::<E>(participants[2]).unwrap() * shares[2];
+        let x = p_list.lagrange::<E>(participants[0])? * shares[0]
+            + p_list.lagrange::<E>(participants[1])? * shares[1]
+            + p_list.lagrange::<E>(participants[2])? * shares[2];
         assert_eq!(<Ed25519Group>::generator() * x, pub_key);
         Ok(())
     }
@@ -105,10 +103,10 @@ mod test {
             result1[3].1.private_share.to_scalar(),
         ];
         let p_list = ParticipantList::new(&participants).unwrap();
-        let x = p_list.lagrange::<E>(participants[0]).unwrap() * shares[0]
-            + p_list.lagrange::<E>(participants[1]).unwrap() * shares[1]
-            + p_list.lagrange::<E>(participants[2]).unwrap() * shares[2]
-            + p_list.lagrange::<E>(participants[3]).unwrap() * shares[3];
+        let x = p_list.lagrange::<E>(participants[0])? * shares[0]
+            + p_list.lagrange::<E>(participants[1])? * shares[1]
+            + p_list.lagrange::<E>(participants[2])? * shares[2]
+            + p_list.lagrange::<E>(participants[3])? * shares[3];
         assert_eq!(<Ed25519Group>::generator() * x, pub_key.to_element());
 
         Ok(())

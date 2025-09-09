@@ -1179,9 +1179,7 @@ mod test {
         )> = Vec::with_capacity(participants.len());
 
         for &p in &participants {
-            let protocol = generate_triple(&participants, p, threshold);
-            assert!(protocol.is_ok());
-            let protocol = protocol.unwrap();
+            let protocol = generate_triple(&participants, p, threshold).unwrap();
             protocols.push((p, Box::new(protocol)));
         }
 
@@ -1201,19 +1199,19 @@ mod test {
         ];
         let p_list = ParticipantList::new(&participants).unwrap();
 
-        let a = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].a
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].a
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].a;
+        let a = p_list.lagrange::<C>(participants[0])? * triple_shares[0].a
+            + p_list.lagrange::<C>(participants[1])? * triple_shares[1].a
+            + p_list.lagrange::<C>(participants[2])? * triple_shares[2].a;
         assert_eq!(ProjectivePoint::GENERATOR * a, triple_pub.big_a);
 
-        let b = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].b
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].b
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].b;
+        let b = p_list.lagrange::<C>(participants[0])? * triple_shares[0].b
+            + p_list.lagrange::<C>(participants[1])? * triple_shares[1].b
+            + p_list.lagrange::<C>(participants[2])? * triple_shares[2].b;
         assert_eq!(ProjectivePoint::GENERATOR * b, triple_pub.big_b);
 
-        let c = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].c
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].c
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].c;
+        let c = p_list.lagrange::<C>(participants[0])? * triple_shares[0].c
+            + p_list.lagrange::<C>(participants[1])? * triple_shares[1].c
+            + p_list.lagrange::<C>(participants[2])? * triple_shares[2].c;
         assert_eq!(ProjectivePoint::GENERATOR * c, triple_pub.big_c);
 
         assert_eq!(a * b, c);
@@ -1233,9 +1231,7 @@ mod test {
         )> = Vec::with_capacity(participants.len());
 
         for &p in &participants {
-            let protocol = generate_triple_many::<1>(&participants, p, threshold);
-            assert!(protocol.is_ok());
-            let protocol = protocol.unwrap();
+            let protocol = generate_triple_many::<1>(&participants, p, threshold).unwrap();
             protocols.push((p, Box::new(protocol)));
         }
 
@@ -1255,19 +1251,19 @@ mod test {
         ];
         let p_list = ParticipantList::new(&participants).unwrap();
 
-        let a = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].a
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].a
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].a;
+        let a = p_list.lagrange::<C>(participants[0])? * triple_shares[0].a
+            + p_list.lagrange::<C>(participants[1])? * triple_shares[1].a
+            + p_list.lagrange::<C>(participants[2])? * triple_shares[2].a;
         assert_eq!(ProjectivePoint::GENERATOR * a, triple_pub.big_a);
 
-        let b = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].b
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].b
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].b;
+        let b = p_list.lagrange::<C>(participants[0])? * triple_shares[0].b
+            + p_list.lagrange::<C>(participants[1])? * triple_shares[1].b
+            + p_list.lagrange::<C>(participants[2])? * triple_shares[2].b;
         assert_eq!(ProjectivePoint::GENERATOR * b, triple_pub.big_b);
 
-        let c = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].c
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].c
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].c;
+        let c = p_list.lagrange::<C>(participants[0])? * triple_shares[0].c
+            + p_list.lagrange::<C>(participants[1])? * triple_shares[1].c
+            + p_list.lagrange::<C>(participants[2])? * triple_shares[2].c;
         assert_eq!(ProjectivePoint::GENERATOR * c, triple_pub.big_c);
 
         assert_eq!(a * b, c);

@@ -5,7 +5,7 @@ use subtle::ConditionallySelectable;
 
 use super::PresignOutput;
 use crate::{
-    ecdsa::{AffinePoint, FullSignature, Polynomial, Scalar, Secp256K1Sha256},
+    ecdsa::{AffinePoint, Polynomial, Scalar, Secp256K1Sha256, Signature},
     participants::{ParticipantCounter, ParticipantList, ParticipantMap},
     protocol::{
         errors::{InitializationError, ProtocolError},
@@ -21,7 +21,7 @@ pub fn sign(
     public_key: AffinePoint,
     presignature: PresignOutput,
     msg_hash: Scalar,
-) -> Result<impl Protocol<Output = FullSignature>, InitializationError> {
+) -> Result<impl Protocol<Output = Signature>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::BadParameters(format!(
             "participant count cannot be < 2, found: {}",
@@ -58,7 +58,7 @@ async fn do_sign(
     public_key: AffinePoint,
     presignature: PresignOutput,
     msg_hash: Scalar,
-) -> Result<FullSignature, ProtocolError> {
+) -> Result<Signature, ProtocolError> {
     let s_me = msg_hash * presignature.alpha_i + presignature.beta_i;
     let s_me = SerializableScalar(s_me);
 
@@ -100,7 +100,7 @@ async fn do_sign(
     s.conditional_assign(&(-s), s.is_high());
 
     let big_r = presignature.big_r;
-    let sig = FullSignature { big_r, s };
+    let sig = Signature { big_r, s };
 
     if !sig.verify(&public_key, &msg_hash) {
         return Err(ProtocolError::AssertionFailed(
@@ -115,15 +115,14 @@ async fn do_sign(
 mod test {
     use std::error::Error;
 
-    use ecdsa::Signature;
     use k256::{ecdsa::signature::Verifier, ecdsa::VerifyingKey, PublicKey};
     use rand_core::OsRng;
 
     use super::*;
-    use crate::ecdsa::{x_coordinate, Field, ProjectivePoint, Secp256K1ScalarField};
+    use crate::ecdsa::{
+        robust_ecdsa::test::run_sign, x_coordinate, Field, ProjectivePoint, Secp256K1ScalarField,
+    };
     use crate::test::generate_participants;
-
-    use crate::{crypto::hash::test::scalar_hash, protocol::run_protocol};
 
     #[test]
     fn test_sign_given_presignature() -> Result<(), Box<dyn Error>> {
@@ -131,31 +130,29 @@ mod test {
         let msg = b"Hello? Is it me you're looking for?";
 
         // Manually compute presignatures then deliver them to the signing function
-        let fx = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng).unwrap();
+        let fx = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng)?;
         // master secret key
-        let x = fx.eval_at_zero().unwrap().0;
+        let x = fx.eval_at_zero()?.0;
         // master public key
-        let public_key = (ProjectivePoint::GENERATOR * x).to_affine();
+        let public_key = ProjectivePoint::GENERATOR * x;
 
         // the presignatures scheme requires the generation of 5 different polynomials
         // (fk, fa, fb, fd, fe)
         // here we do not need fb as it is only used to mask some values before sending
         // them to other participants then adding them all together to generate w
         // this sum would annihilate all the fb shares which make them useless in our case
-        let fa = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng).unwrap();
-        let fk = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng).unwrap();
+        let fa = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng)?;
+        let fk = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng)?;
         let fd = Polynomial::generate_polynomial(
             Some(Secp256K1ScalarField::zero()),
             2 * max_malicious,
             &mut OsRng,
-        )
-        .unwrap();
+        )?;
         let fe = Polynomial::generate_polynomial(
             Some(Secp256K1ScalarField::zero()),
             2 * max_malicious,
             &mut OsRng,
-        )
-        .unwrap();
+        )?;
 
         // computing k, R, Rx
         let k = fk.eval_at_zero()?.0;
@@ -168,16 +165,13 @@ mod test {
 
         let participants = generate_participants(5);
 
-        #[allow(clippy::type_complexity)]
-        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = FullSignature>>)> =
-            Vec::with_capacity(participants.len());
-
+        let mut participants_presign = Vec::new();
         // Simulate the each participant's presignature
         for p in &participants {
-            let h_i = w_invert * fa.eval_at_participant(*p).unwrap().0;
-            let alpha_i = h_i + fd.eval_at_participant(*p).unwrap().0;
+            let h_i = w_invert * fa.eval_at_participant(*p)?.0;
+            let alpha_i = h_i + fd.eval_at_participant(*p)?.0;
             let beta_i = h_i * big_r_x_coordinate * fx.eval_at_participant(*p)?.0
-                + fe.eval_at_participant(*p).unwrap().0;
+                + fe.eval_at_participant(*p)?.0;
 
             // build the presignature
             let presignature = PresignOutput {
@@ -185,24 +179,16 @@ mod test {
                 alpha_i,
                 beta_i,
             };
-
-            // run the signing algorithm using the build presignature
-            let protocol = sign(
-                &participants,
-                *p,
-                public_key,
-                presignature,
-                scalar_hash(msg),
-            )?;
-            protocols.push((*p, Box::new(protocol)));
+            participants_presign.push((*p, presignature));
         }
 
-        let result = run_protocol(protocols)?;
+        let result = run_sign(participants_presign, public_key, msg)?;
         let sig = result[0].1.clone();
-        let sig = Signature::from_scalars(x_coordinate(&sig.big_r), sig.s)?;
+        let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s)?;
 
         // verify the correctness of the generated signature
-        VerifyingKey::from(&PublicKey::from_affine(public_key).unwrap()).verify(&msg[..], &sig)?;
+        VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
+            .verify(&msg[..], &sig)?;
         Ok(())
     }
 }

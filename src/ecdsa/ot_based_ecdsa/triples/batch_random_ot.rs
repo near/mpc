@@ -330,9 +330,7 @@ mod test {
 
     #[test]
     fn test_batch_random_ot() {
-        let res = run_batch_random_ot();
-        assert!(res.is_ok());
-        let ((k0, k1), (delta, k_delta)) = res.unwrap();
+        let ((k0, k1), (delta, k_delta)) = run_batch_random_ot().unwrap();
 
         // Check that we've gotten the right rows of the two matrices.
         for (((row0, row1), delta_i), row_delta) in k0
@@ -379,9 +377,7 @@ mod test {
     #[test]
     fn test_batch_random_ot_many() {
         const N: usize = 10;
-        let res = run_batch_random_ot_many::<N>();
-        assert!(res.is_ok());
-        let (a, b) = res.unwrap();
+        let (a, b) = run_batch_random_ot_many::<N>().unwrap();
         for i in 0..N {
             let ((k0, k1), (delta, k_delta)) = (&a[i], &b[i]);
             // Check that we've gotten the right rows of the two matrices.
