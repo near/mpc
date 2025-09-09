@@ -125,20 +125,26 @@ def sign_create_account_with_multiple_access_keys_tx(
     createNewAccount: bool,
 ) -> bytes:
     actions = []
+
     if createNewAccount:
+        # Only when creating a brand-new account
         actions.append(create_create_account_action())
-    payment_action = create_payment_action(100 * NEAR_BASE)
-    actions.append(payment_action)
+        actions.append(create_payment_action(100 * NEAR_BASE))
+
     if fullAccess:
+        # Give full access to all keys
         access_key_actions = [
             create_full_access_key_action(key.decoded_pk()) for key in keys
         ]
     else:
+        # Give restricted MPC-only access to all keys
         access_key_actions = [
             create_mpc_function_call_access_key_action(key.decoded_pk(), contract_id)
             for key in keys
         ]
+
     actions.extend(access_key_actions)
+
     signed_tx = sign_transaction(
         new_account_id,
         nonce,
@@ -352,15 +358,16 @@ def start_cluster_with_mpc(
         # add the nodes responder access key to the list
         nonce += 1
         tx = sign_create_account_with_multiple_access_keys_tx(
-            key,
-            candidate.responder_keys[0].account_id,
-            candidate.responder_keys,
+            key,  # cluster contract node key
+            "responder_0.test0",  # new responder account
+            candidate.responder_keys,  # responder keys
             nonce,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
-            False,
-            True,
+            fullAccess=False,  # responder should have restricted access
+            createNewAccount=True,  # new account creation
         )
+
         txs.append(tx)
         candidate_account_id = candidate.signer_key.account_id
         pytest_signer_keys = []
@@ -380,14 +387,15 @@ def start_cluster_with_mpc(
         # add pytest_signer_keys that are used for voting, need to access
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
-            candidate_account_id,
-            pytest_signer_keys,
+            "signer_0.test0",  # operator account
+            pytest_signer_keys,  # pytest keys (full access)
             nonce,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
-            True,
-            False,
+            fullAccess=True,  # these keys can drive the operator
+            createNewAccount=True,  # new account creation
         )
+
         txs.append(tx)
 
         nonce += 1
@@ -395,14 +403,15 @@ def start_cluster_with_mpc(
         # add node access key
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
-            candidate_account_id,
-            [candidate.signer_key],
+            "signer_0.test0",  # same operator account
+            [candidate.signer_key],  # the actual MPC node key
             nonce,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
-            False,
-            False,
+            fullAccess=False,  # restricted (MPC-only)
+            createNewAccount=False,  # account already exists
         )
+
         txs.append(tx)
 
         mpc_node = MpcNode(
