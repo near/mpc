@@ -10,7 +10,7 @@ MPC_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.yaml"
 NEAR_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.json"
 
 initialize_near_node() {
-    ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --download-genesis --download-config --boot-nodes "$NEAR_BOOT_NODES"
+    ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --download-genesis --download-config
     python3 <<EOF
 import json;
 config = json.load(open("$NEAR_NODE_CONFIG_FILE"))
