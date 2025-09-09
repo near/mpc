@@ -42,3 +42,27 @@ jobs:
 
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked --all-features
+
+  ci-coverage:
+    name: Coverage
+    runs-on: warp-ubuntu-2204-x64-8x
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Cache Rust dependencies
+        uses: WarpBuilds/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest
+      - name: Generate code coverage
+        run: cargo llvm-cov nextest --release --all-features --workspace --codecov --output-path codecov.json
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: codecov.json
+          fail_ci_if_error: false
