@@ -352,33 +352,38 @@ def start_cluster_with_mpc(
     )
 
     (key, nonce) = cluster.contract_node.get_key_and_nonce()
-    txs = []
+    # --- Phase 1: create accounts + add pytest keys ---
+    txs_phase1 = []
     mpc_nodes = []
+
     for near_node, candidate in zip(observers, candidates):
-        # Tx1: create responder account
+        candidate_account_id = candidate.signer_key.account_id
+        pytest_signer_keys = []
+
+        # Responder account (new account, responder access keys)
         nonce += 1
         tx = sign_create_account_with_multiple_access_keys_tx(
-            key,  # cluster.contract_node (parent test0) – valid for creating new account
+            key,
             candidate.responder_keys[0].account_id,
-            candidate.responder_keys,  # include responder keys
+            candidate.responder_keys,
             nonce,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
-            True,  # ✅ make sure responders get full access at creation
-            True,
+            False,  # restricted access
+            True,  # create new account
         )
-        txs.append(tx)
+        txs_phase1.append(tx)
 
-        candidate_account_id = candidate.signer_key.account_id
-        pytest_signer_keys = []
-        for i in range(0, 5):
+        # Generate pytest signing keys (local only, for later TXs)
+        for i in range(5):
             pytest_signing_key: SigningKey = SigningKey.generate()
             pytest_signer_key: Key = Key.from_keypair(
-                candidate_account_id, pytest_signing_key
+                candidate_account_id,
+                pytest_signing_key,
             )
             pytest_signer_keys.append(pytest_signer_key)
 
-        # Tx2: add pytest signer keys (for voting) – signed by parent
+        # Add pytest keys to candidate account
         nonce += 1
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
@@ -387,25 +392,12 @@ def start_cluster_with_mpc(
             nonce,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
-            True,
-            True,
+            True,  # full access
+            True,  # new account
         )
-        txs.append(tx)
+        txs_phase1.append(tx)
 
-        # Tx3: add node access key – signed by candidate itself
-        nonce += 1
-        tx = sign_create_account_with_multiple_access_keys_tx(
-            pytest_signer_keys[0],  # ✅ signer_0.test0’s full-access key
-            candidate_account_id,
-            [candidate.signer_key],
-            nonce,
-            cluster.contract_node.last_block_hash(),
-            cluster.mpc_contract_account(),
-            False,
-            False,
-        )
-        txs.append(tx)
-
+        # Build MPC node but don’t add node key yet
         mpc_node = MpcNode(
             near_node,
             candidate.signer_key,
@@ -416,8 +408,30 @@ def start_cluster_with_mpc(
         mpc_node.set_block_ingestion(True)
         mpc_nodes.append(mpc_node)
 
+    # 🚀 Send + wait for Phase 1 TXs
     cluster.contract_node.send_await_check_txs_parallel(
-        "create account", txs, assert_txn_success
+        "phase1: create accounts + pytest keys", txs_phase1, assert_txn_success
+    )
+
+    # --- Phase 2: add node access key (signed by pytest key which now exists) ---
+    txs_phase2 = []
+
+    for mpc_node, candidate in zip(mpc_nodes, candidates):
+        nonce += 1
+        tx = sign_create_account_with_multiple_access_keys_tx(
+            key,
+            candidate.signer_key.account_id,
+            [candidate.signer_key],
+            nonce,
+            cluster.contract_node.last_block_hash(),
+            cluster.mpc_contract_account(),
+            False,  # restricted access
+            False,  # account already exists
+        )
+        txs_phase2.append(tx)
+
+    cluster.contract_node.send_await_check_txs_parallel(
+        "phase2: add node keys", txs_phase2, assert_txn_success
     )
 
     # Deploy the mpc contract
