@@ -419,7 +419,7 @@ def start_cluster_with_mpc(
     for mpc_node, candidate in zip(mpc_nodes, candidates):
         nonce += 1
         tx = sign_create_account_with_multiple_access_keys_tx(
-            key,
+            pytest_signer_keys[0],  # any pytest key will do
             candidate.signer_key.account_id,
             [candidate.signer_key],
             nonce,
