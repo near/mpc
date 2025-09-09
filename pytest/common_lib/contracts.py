@@ -17,6 +17,18 @@ MIGRATE_CURRENT_CONTRACT_PATH = (
     / "res"
     / "migration_contract.wasm"
 )
+PARALLEL_CONTRACT_PATH = (
+    MPC_REPO_DIR
+    / "pytest"
+    / "tests"
+    / "test_contracts"
+    / "parallel"
+    / "res"
+    / "contract.wasm"
+)
+
+TESTNET_ACCOUNT_ID = "v1.signer-prod.testnet"
+MAINNET_ACCOUNT_ID = "v1.signer"
 
 
 def build_view_code_request(account_id: str) -> dict:
