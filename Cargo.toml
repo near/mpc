@@ -46,6 +46,10 @@ subtle = "2.5.0"
 thiserror = "2.0.16"
 zeroize = "1.8.1"
 
+[features]
+default = ["actively_secure_robust_ecdsa"]
+actively_secure_robust_ecdsa = []
+
 [dev-dependencies]
 criterion = "0.7.0"
 

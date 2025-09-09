@@ -88,8 +88,8 @@ async fn do_sign(
         .into_vec_or_none()
         .ok_or(ProtocolError::InvalidInterpolationArguments)?;
 
+    // interpolate s
     let mut s = Polynomial::eval_interpolation(&identifiers, &sshares, None)?.0;
-
     // raise error if s is zero
     if s == <<<C as frost_core::Ciphersuite>::Group as frost_core::Group>::Field as frost_core::Field>::zero(){
         return Err(ProtocolError::AssertionFailed(

@@ -5,7 +5,7 @@ use super::{presign::presign, sign::sign, PresignArguments, PresignOutput};
 use crate::ecdsa::{test::run_sign, AffinePoint, FullSignature, KeygenOutput, Scalar};
 
 use crate::protocol::{errors::InitializationError, run_protocol, Participant, Protocol};
-use crate::test::{assert_public_key_invariant, run_keygen, run_reshare};
+use crate::test::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
 use crate::test::{generate_participants, generate_participants_with_random_ids};
 
 fn sign_box(
@@ -43,6 +43,30 @@ pub fn run_presign(
     }
 
     run_protocol(protocols).unwrap()
+}
+
+#[test]
+fn test_refresh() -> Result<(), Box<dyn Error>> {
+    let participants = generate_participants(11);
+    let max_malicious = 5;
+    let threshold = max_malicious + 1;
+    let keys = run_keygen(&participants, threshold)?;
+    assert_public_key_invariant(&keys);
+    // run refresh on these
+    let key_packages = run_refresh(&participants, keys, threshold)?;
+    let public_key = key_packages[0].1.public_key;
+    assert_public_key_invariant(&key_packages);
+    let presign_result = run_presign(key_packages, max_malicious);
+
+    let msg = b"hello world";
+    run_sign(
+        presign_result,
+        public_key.to_element().to_affine(),
+        msg,
+        sign_box,
+    );
+
+    Ok(())
 }
 
 #[test]

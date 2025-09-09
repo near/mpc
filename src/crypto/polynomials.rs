@@ -428,7 +428,7 @@ pub fn compute_lagrange_coefficient<C: Ciphersuite>(
 ///   lambda_i(x) = \prod_{j!=i} (x - x_j) / (x_i - x_j)
 ///
 /// Inputs:
-/// - `points_set` = {x₀, x₁, …, xₙ₋₁}. Each lambda_i corresponds to xᵢ ∈ `points_set`.
+/// - `points_set` = {x_0, x_1, …}. Each lambda_i corresponds to x_i ∈ `points_set`.
 /// - `x`: the evaluation point. If `None`, it is treated as 0.
 ///
 /// Requirements:
@@ -499,16 +499,19 @@ pub fn batch_compute_lagrange_coefficients<C: Ciphersuite>(
 
     // Special case: x = 0
     let (numerator_prod, inv_factors) = if *x == zero {
-        // Compute P = ∏_j x_j
+        // Compute P = \prod_j (-1)* *x_j
         let mut p = <C::Group as Group>::Field::one();
         for x_i in points_set.iter() {
             p = p * *x_i;
         }
 
+        // For constant time computation always compute minus_p
+        let minus_p = zero - p;
+
         // Batch invert points_set to get 1 / x_i
         let inv_xis = batch_invert::<C>(points_set)?;
-
-        (p, inv_xis) // Sign (-1)^(n-1) left to caller
+        // Return the proper numerator based on the number of elements
+        (if n % 2 == 0 { minus_p } else { p }, inv_xis)
     } else {
         // General case: x != 0
         let mut full_numerator = <C::Group as Group>::Field::one();
@@ -832,15 +835,15 @@ mod test {
 
         let shares = participants
             .iter()
-            .map(|_| SerializableScalar(Secp256K1ScalarField::random(&mut rand_core::OsRng)))
+            .map(|_| SerializableScalar::<C>(Secp256K1ScalarField::random(&mut rand_core::OsRng)))
             .collect::<Vec<_>>();
         let ref_point = Some(Secp256K1ScalarField::random(&mut rand_core::OsRng));
         let point = ref_point.as_ref();
-        assert!(Polynomial::<C>::eval_interpolation(&ids, &shares, point).is_ok());
-        assert!(Polynomial::<C>::eval_interpolation(&ids, &shares, None).is_ok());
-        assert!(Polynomial::<C>::eval_interpolation(&ids[..1], &shares[..1], None).is_err());
-        assert!(Polynomial::<C>::eval_interpolation(&ids[..0], &shares[..0], None).is_err());
-        assert!(Polynomial::<C>::eval_interpolation(&ids[..2], &shares, None).is_err());
+        assert!(Polynomial::eval_interpolation(&ids, &shares, point).is_ok());
+        assert!(Polynomial::eval_interpolation(&ids, &shares, None).is_ok());
+        assert!(Polynomial::eval_interpolation(&ids[..1], &shares[..1], None).is_err());
+        assert!(Polynomial::eval_interpolation(&ids[..0], &shares[..0], None).is_err());
+        assert!(Polynomial::eval_interpolation(&ids[..2], &shares, None).is_err());
     }
 
     #[test]
@@ -867,9 +870,8 @@ mod test {
             // create arbitrary point
             let point = Secp256K1ScalarField::random(&mut OsRng);
             // interpolate on this point
-            let interpolation =
-                Polynomial::<C>::eval_interpolation(&scalars, &shares, Some(&point))
-                    .expect("Interpolation has the correct inputs");
+            let interpolation = Polynomial::eval_interpolation(&scalars, &shares, Some(&point))
+                .expect("Interpolation has the correct inputs");
             // evaluate the polynomial on the point
             let evaluation = poly.eval_at_point(point).unwrap();
 
@@ -1057,10 +1059,9 @@ mod test {
 
     #[test]
     fn test_lagrange_computation_equivalence() {
-        let degree = 10; // smaller for fast CI runs
-        let participants = (0..degree + 1)
-            .map(|i| Participant::from(i as u32))
-            .collect::<Vec<_>>();
+        let degree = 10;
+        let participants = generate_participants(degree + 1);
+
         let ids = participants
             .iter()
             .map(|p| p.scalar::<C>())
@@ -1085,5 +1086,107 @@ mod test {
         {
             assert_eq!(a.0, b.0);
         }
+    }
+
+    #[test]
+    fn test_eval_exponent_interpolation_against_interpolation_times_g_at_none(
+    ) -> Result<(), ProtocolError> {
+        for participants in 2..20 {
+            for degree in 1..participants {
+                let participants = generate_participants(participants);
+
+                let ids = participants
+                    .iter()
+                    .map(|p| p.scalar::<C>())
+                    .collect::<Vec<_>>();
+
+                // generate polynomial
+                let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut OsRng)
+                    .expect("Generation must not fail with overwhealming probability");
+
+                // build all the shares
+                let shares = participants
+                    .iter()
+                    .map(|p| poly.eval_at_participant(*p).unwrap())
+                    .collect::<Vec<_>>();
+
+                let compoly = poly.commit_polynomial().unwrap();
+
+                // build all commited shares
+                let com_shares = participants
+                    .iter()
+                    .map(|p| compoly.eval_at_participant(*p).unwrap())
+                    .collect::<Vec<_>>();
+
+                // use only degree + 1 shares to evaluate exponent
+                let exponent_eval = PolynomialCommitment::eval_exponent_interpolation(
+                    &ids[..degree + 1],
+                    &com_shares[..degree + 1],
+                    None,
+                )?;
+
+                // use all to evaluate the share
+                let eval = Polynomial::eval_interpolation(&ids, &shares, None)?;
+
+                println!("{participants:?} {degree:?}");
+                assert_eq!(
+                    exponent_eval.value(),
+                    <C as frost_core::Ciphersuite>::Group::generator() * eval.0
+                );
+            }
+        }
+
+        Ok(())
+    }
+    #[test]
+    fn test_eval_exponent_interpolation_against_interpolation_times_g_at_some(
+    ) -> Result<(), ProtocolError> {
+        for participants in 2..20 {
+            for degree in 1..participants {
+                let participants = generate_participants(participants);
+
+                let ids = participants
+                    .iter()
+                    .map(|p| p.scalar::<C>())
+                    .collect::<Vec<_>>();
+
+                // generate polynomial
+                let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut OsRng)
+                    .expect("Generation must not fail with overwhealming probability");
+
+                // build all the shares
+                let shares = participants
+                    .iter()
+                    .map(|p| poly.eval_at_participant(*p).unwrap())
+                    .collect::<Vec<_>>();
+
+                let compoly = poly.commit_polynomial().unwrap();
+
+                // build all commited shares
+                let com_shares = participants
+                    .iter()
+                    .map(|p| compoly.eval_at_participant(*p).unwrap())
+                    .collect::<Vec<_>>();
+
+                let point = Some(Secp256K1ScalarField::random(&mut rand_core::OsRng));
+
+                // use only degree + 1 shares to evaluate exponent
+                let exponent_eval = PolynomialCommitment::eval_exponent_interpolation(
+                    &ids[..degree + 1],
+                    &com_shares[..degree + 1],
+                    point.as_ref(),
+                )?;
+
+                // use all to evaluate the share
+                let eval = Polynomial::eval_interpolation(&ids, &shares, point.as_ref())?;
+
+                assert_eq!(
+                    exponent_eval.value(),
+                    <C as frost_core::Ciphersuite>::Group::generator() * eval.0
+                );
+            }
+        }
+
+        Ok(())
     }
 }
