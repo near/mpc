@@ -87,6 +87,12 @@ impl Participants {
         self.next_id.clone()
     }
 
+    pub(crate) fn is_participant(&self, account_id: &AccountId) -> bool {
+        self.participants
+            .iter()
+            .any(|(a_id, _, _)| a_id == account_id)
+    }
+
     /// Validates that the fields are coherent:
     ///  - All participant IDs are unique.
     ///  - All account IDs are unique.
@@ -141,11 +147,6 @@ impl Participants {
             .find(|(_, p_id, _)| p_id == id)
             .map(|(a_id, _, _)| a_id.clone())
             .ok_or_else(|| crate::errors::InvalidState::ParticipantIndexOutOfRange.into())
-    }
-    pub fn is_participant(&self, account_id: &AccountId) -> bool {
-        self.participants
-            .iter()
-            .any(|(a_id, _, _)| a_id == account_id)
     }
     /// Returns a subset of the participants according to the given range of indices.
     pub fn subset(&self, range: std::ops::Range<usize>) -> Participants {

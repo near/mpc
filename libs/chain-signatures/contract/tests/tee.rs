@@ -1,6 +1,6 @@
 pub mod common;
 
-use crate::common::gen_accounts;
+use crate::common::{gen_accounts, get_participants};
 use anyhow::Result;
 use assert_matches::assert_matches;
 use attestation::attestation::{Attestation, MockAttestation};
@@ -8,7 +8,7 @@ use common::{
     check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
     submit_participant_info,
 };
-use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
+use mpc_contract::errors::InvalidState;
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
@@ -21,7 +21,7 @@ use test_utils::attestation::{image_digest, mock_dstack_attestation, p2p_tls_key
 #[tokio::test]
 async fn test_tee_verify_no_tee() -> Result<()> {
     let (_, contract, _, _) = init_env_ed25519(1).await;
-    let n_participants_start = get_participants(&contract).await?;
+    let initial_participants = get_participants(&contract).await?;
 
     let verified_tee: bool = contract
         .call("verify_tee")
@@ -31,7 +31,8 @@ async fn test_tee_verify_no_tee() -> Result<()> {
         .await?
         .json()?;
     assert!(verified_tee);
-    assert_eq!(n_participants_start, get_participants(&contract).await?);
+
+    assert_eq!(initial_participants, get_participants(&contract).await?);
     Ok(())
 }
 
@@ -207,20 +208,6 @@ async fn vote_for_hash(
             .await?,
     );
     Ok(())
-}
-
-async fn get_participants(contract: &Contract) -> Result<usize> {
-    let state = contract
-        .call("state")
-        .args_json(serde_json::json!(""))
-        .max_gas()
-        .transact()
-        .await?;
-    let value: ProtocolContractState = state.json()?;
-    let ProtocolContractState::Running(running) = value else {
-        panic!("Expected running state")
-    };
-    Ok(running.parameters.participants().len())
 }
 
 /// Sets up a contract with an approved MPC hash by having the first two participants vote for it.

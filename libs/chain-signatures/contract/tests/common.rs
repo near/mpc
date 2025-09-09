@@ -26,6 +26,7 @@ use mpc_contract::{
         signature::{Bytes, SignatureRequest, Tweak},
         thresholds::{Threshold, ThresholdParameters},
     },
+    state::ProtocolContractState,
     update::UpdateId,
 };
 use mpc_contract::{
@@ -666,4 +667,19 @@ pub async fn submit_participant_info(
         .transact()
         .await?;
     Ok(result.is_success())
+}
+
+pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
+    let state = contract
+        .call("state")
+        .args_json(serde_json::json!(""))
+        .max_gas()
+        .transact()
+        .await?;
+    let value: ProtocolContractState = state.json()?;
+    let ProtocolContractState::Running(running) = value else {
+        panic!("Expected running state")
+    };
+
+    Ok(running.parameters.participants().clone())
 }

@@ -98,14 +98,12 @@ async fn back_compatibility(network: Network) -> anyhow::Result<()> {
         .await
         .expect("❌ Back compatibility check failed: migration() failed");
 
-    if healthcheck(&contract).await? {
-        println!("✅ Back compatibility check succeeded: migration() works fine 👍");
-        return Ok(());
-    };
+    let health_check_status = healthcheck(&contract).await?;
+    anyhow::ensure!(health_check_status, "❌Back compatibility check failed: state() call doesnt work after migration(). Probably you should introduce new logic to the `migrate()` method.");
 
-    anyhow::bail!(
-        "❌Back compatibility check failed: state() call doesnt work after migration(). Probably you should introduce new logic to the `migrate()` method."
-    )
+    println!("✅ Back compatibility check succeeded: migration() works fine 👍");
+
+    return Ok(());
 }
 
 #[tokio::test]
@@ -116,4 +114,17 @@ async fn test_back_compatiblity_mainnet() {
 #[tokio::test]
 async fn test_back_compatiblity_testnet() {
     back_compatibility(Network::Testnet).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_all_participants_have_valid_attestation_for_soft_launch() -> anyhow::Result<()> {
+    let worker = near_workspaces::sandbox().await?;
+    let contract = deploy_old(&worker, Network::Testnet).await?;
+    let contract = upgrade_to_new(contract).await?;
+
+    migrate(&contract)
+        .await
+        .expect("❌ Back compatibility check failed: migration() failed");
+
+    Ok(())
 }
