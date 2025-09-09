@@ -6,6 +6,7 @@
 //! In theory, you could copy-paste every struct from the specific commit you're migrating from.
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
+use attestation::attestation::{Attestation, MockAttestation};
 use near_account_id::AccountId;
 use near_sdk::store::IterableMap;
 use near_sdk::{env, near, store::LookupMap};
@@ -158,9 +159,34 @@ impl From<Config> for crate::config::Config {
 impl From<MpcContractV1> for MpcContract {
     fn from(value: MpcContractV1) -> Self {
         let config = value.config.into();
-        let tee_state = crate::TeeState::default();
+        let mut tee_state = crate::TeeState::default();
+
+        let protocol_state = value.protocol_state.into();
+
+        let crate::ProtocolContractState::Running(running_state) = &protocol_state else {
+            env::panic_str("Contract must be in running state when migrating.");
+        };
+
+        // For the soft release we give every participant a mocked attestation.
+        // For more context see: https://github.com/near/mpc/issues/1052
+        {
+            let participant_account_ids = running_state
+                .parameters
+                .participants()
+                .participants()
+                .iter()
+                .map(|(account_id, _, _)| account_id); // This API structure is so so bad. Create a TODO to revisit this.
+
+            for participant_account_id in participant_account_ids {
+                tee_state.add_participant(
+                    participant_account_id.clone(),
+                    Attestation::Mock(MockAttestation::Valid),
+                )
+            }
+        }
+
         Self {
-            protocol_state: value.protocol_state.into(),
+            protocol_state,
             pending_signature_requests: value.pending_requests,
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: value.proposed_updates,
