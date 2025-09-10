@@ -8,6 +8,7 @@ license = "MIT"
 
 [dependencies]
 auto_ops = "0.3.0"
+borsh = "1.5.7"
 byteorder = "1.5.0"
 digest = "0.10.7"
 ecdsa = { version = "0.16.8", features = ["digest", "hazmat"] }
@@ -26,6 +27,7 @@ frost-secp256k1 = { version = "2.1.0", default-features = false, features = [
   "std",
 ] }
 futures = "0.3.31"
+hex = "0.4.3"
 itertools = "0.14.0"
 k256 = { version = "0.13.1", features = [
   "sha256",
@@ -39,6 +41,8 @@ rand = "0.9.0"
 rand_core = { version = "0.6.4", features = ["getrandom"] }
 rmp-serde = "1.1.2"
 serde = { version = "1.0.175", features = ["derive"] }
+serde_bytes = "0.11.17"
+serde_json = "1.0.143"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
 smol = "2.0.2"
@@ -52,6 +56,7 @@ actively_secure_robust_ecdsa = []
 
 [dev-dependencies]
 criterion = "0.7.0"
+bincode = { version = "2.0.1", features = ["serde"] }
 
 [[bench]]
 name = "main"

@@ -1,4 +1,17 @@
+//! Confidential Key Derivation (CKD) protocol.
+//!
+//! This module provides the implementation of the Confidential Key Derivation (CKD) protocol,
+//! which allows a client to derive a unique key for a specific application without revealing
+//! the application identifier to the key derivation service.
+//!
+//! The protocol is based on a combination of Oblivious Transfer (OT) and Diffie-Hellman key exchange.
+//!
+//! For more details, refer to the `confidential_key_derivation.md` document in the `docs` folder.
+
+pub mod app_id;
 pub mod protocol;
+
+pub use app_id::AppId;
 
 use frost_secp256k1::{keys::SigningShare, Secp256K1Sha256, VerifyingKey};
 use serde::{Deserialize, Serialize};

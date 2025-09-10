@@ -1,5 +1,5 @@
 use crate::confidential_key_derivation::{
-    CKDCoordinatorOutput, CKDOutput, CoefficientCommitment, SigningShare, VerifyingKey,
+    AppId, CKDCoordinatorOutput, CKDOutput, CoefficientCommitment, SigningShare, VerifyingKey,
 };
 use crate::participants::{ParticipantCounter, ParticipantList};
 use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
@@ -18,9 +18,9 @@ use k256::{
 
 const DOMAIN: &[u8] = b"NEAR CURVE_XOF:SHAKE-256_SSWU_RO_";
 
-fn hash2curve(app_id: &[u8]) -> Result<ProjectivePoint, ProtocolError> {
+fn hash2curve(app_id: &AppId) -> Result<ProjectivePoint, ProtocolError> {
     let hash = <Secp256k1 as GroupDigest>::hash_from_bytes::<ExpandMsgXof<sha3::Shake256>>(
-        &[app_id],
+        &[app_id.as_ref()],
         &[DOMAIN],
     )
     .map_err(|_| ProtocolError::ZeroScalar)?;
@@ -33,7 +33,7 @@ async fn do_ckd_participant(
     coordinator: Participant,
     me: Participant,
     private_share: SigningShare,
-    app_id: &[u8],
+    app_id: &AppId,
     app_pk: VerifyingKey,
 ) -> Result<CKDOutput, ProtocolError> {
     // y <- ZZq* , Y <- y * G
@@ -61,7 +61,7 @@ async fn do_ckd_coordinator(
     participants: ParticipantList,
     me: Participant,
     private_share: SigningShare,
-    app_id: &[u8],
+    app_id: &AppId,
     app_pk: VerifyingKey,
 ) -> Result<CKDOutput, ProtocolError> {
     // y <- ZZq* , Y <- y * G
@@ -106,7 +106,7 @@ pub fn ckd(
     coordinator: Participant,
     me: Participant,
     private_share: SigningShare,
-    app_id: Vec<u8>,
+    app_id: impl Into<AppId>,
     app_pk: VerifyingKey,
 ) -> Result<impl Protocol<Output = CKDOutput>, InitializationError> {
     // not enough participants
@@ -144,7 +144,7 @@ pub fn ckd(
         me,
         participants,
         private_share,
-        app_id,
+        app_id.into(),
         app_pk,
     );
     Ok(make_protocol(comms, fut))
@@ -158,7 +158,7 @@ async fn run_ckd_protocol(
     me: Participant,
     participants: ParticipantList,
     private_share: SigningShare,
-    app_id: Vec<u8>,
+    app_id: AppId,
     app_pk: VerifyingKey,
 ) -> Result<CKDOutput, ProtocolError> {
     if me == coordinator {
@@ -190,12 +190,12 @@ mod test {
     fn test_hash2curve() -> Result<(), Box<dyn Error>> {
         let app_id = b"Hello Near";
         let app_id_same = b"Hello Near";
-        let pt1 = hash2curve(app_id)?;
-        let pt2 = hash2curve(app_id_same)?;
+        let pt1 = hash2curve(&AppId::from(app_id)).unwrap();
+        let pt2 = hash2curve(&AppId::from(app_id_same)).unwrap();
         assert!(pt1 == pt2);
 
         let app_id = b"Hello Near!";
-        let pt2 = hash2curve(app_id)?;
+        let pt2 = hash2curve(&AppId::from(app_id)).unwrap();
         assert!(pt1 != pt2);
         Ok(())
     }
@@ -211,11 +211,11 @@ mod test {
         let msk = f.eval_at_zero()?;
 
         // Create the app necessary items
-        let app_id = b"Near App";
+        let app_id = AppId::from(b"Near App");
         let (app_sk, app_pk) = Secp256K1Sha256::generate_nonce(&mut OsRng);
         let app_pk = VerifyingKey::new(app_pk);
 
-        let expected_confidential_key = hash2curve(app_id)? * msk.0;
+        let expected_confidential_key = hash2curve(&app_id).unwrap() * msk.0;
 
         let participants = vec![
             Participant::from(0u32),
@@ -239,7 +239,7 @@ mod test {
                 coordinator,
                 *p,
                 private_share,
-                app_id.to_vec(),
+                app_id.clone(),
                 app_pk,
             )?;
 
@@ -284,7 +284,7 @@ mod test {
         let app_pk = VerifyingKey::new(app_pk);
         let f = Polynomial::<Secp256K1Sha256>::generate_polynomial(None, 2, &mut OsRng).unwrap();
         let private_share = SigningShare::new(f.eval_at_participant(me).unwrap().0);
-        let app_id = b"test".to_vec();
+        let app_id = AppId::from(b"test");
 
         let result = ckd(
             &participants,
