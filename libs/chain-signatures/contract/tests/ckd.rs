@@ -227,12 +227,12 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
         "refund should happen"
     );
 
-    let contract_balance_drained_post_transaction_yocto: u128 = contract_balance_pre_transaction
-        .as_yoctonear()
-        .saturating_sub(contract_balance_post_transaction.as_yoctonear()); // And underflow can occur if the contract's balance increases after the transaction.
+    let contract_balance_drained_post_transaction_mili: u128 = contract_balance_pre_transaction
+        .as_millinear()
+        .saturating_sub(contract_balance_post_transaction.as_millinear()); // Underflow can occur if the contract's balance increases after the transaction.
 
     assert!(
-        contract_balance_drained_post_transaction_yocto <= 1,
+        contract_balance_drained_post_transaction_mili <= 1,
         "refund transfer should take less than 0.001 NEAR.",
     );
 
