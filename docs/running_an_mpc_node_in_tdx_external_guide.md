@@ -464,23 +464,68 @@ After the MPC node has been deployed, the next steps are:
 * Vote for joining the node to the MPC cluster via **vote_new_parameters**.  
   Note \- this step needs to be done by all the operators. 
 
-##  Submitting participate info (Submit_participant_info)
+## Submitting Participant Info (`submit_participant_info`)
 
-This method needs to be called in order to register the node attestation information on the contract and prove that the node is running inside a CVM with a valid configuration.
+This method registers the node’s attestation information on the contract and proves that the node is running inside a CVM with a valid configuration.
 
-Node \- during the [transition phase](#transition-phase) \- this step is optional in case you want to register a node without TEE.
+During the [transition phase](#transition-phase), this step is optional. If no attestation is submitted, the contract will use a mock attestation instead.
 
-After the MPC node is fully synced, the node will check if the operator has added the node’s account keys to the operator's near contract. If so, the MPC node will send to the contract its attestation information via the submit\_participant\_info contract method.
+The MPC node submits this information by default. If it does not, the operator can perform the action on its behalf by retrieving the required data from the node.
 
-This command can’t be called unless the key was added to the account, otherwise the call will fail due to lack of funds associated with the key.
+### Automatic Submission by the MPC Node
 
-**Note \- Calling this method will cost TBD [#903](https://github.com/near/mpc/issues/903) Near to none participants.**  
-**So you need to have this amount associated with your account.**
+Once the MPC node is fully synced, it will check if the operator has added the node’s account keys to the operator's NEAR account. If so, the MPC node will send its attestation information to the contract using the `submit_participant_info` method.
+
+This command cannot be called unless the key has been added to the account. Otherwise, the call will fail due to insufficient funds associated with the key.
+
+> **Note:** Calling this method will incur a cost (TBD, XXX NEAR). Ensure this amount is available in your account.  
+
+(TBD [#903](https://github.com/near/mpc/issues/903)  – confirm exact cost)
+
+### Manual Submission by the Operator
+
+```bash
+curl http://<NODE_IP>:8080/public_info | jq '.tee_participant_info'
+curl http://<NODE_IP>:8080/public_info | jq '.near_p2p_public_key'
+```
+
+Example output (truncated for clarity):
+
+```json
+"tee_participant_info": {
+  "tee_quote": [4, 0, 2, 0, 129, 0, 0, 0, 0, 0, 0, 0, 147, 154, 114, 51, ... ],
+  "...": "..."
+},
+"near_p2p_public_key": "ed25519:4ztgpj1wKLJva2cLvCDAuWMUCc1rwk9WHeCq3CYvAk8Q"
+```
+
+Both fields are required when submitting to the contract:
+
+```rust
+pub fn submit_participant_info(
+    &mut self,
+    #[serializer(borsh)] proposed_participant_attestation: Attestation,
+    #[serializer(borsh)] tls_public_key: PublicKey,
+) -> Result<(), Error>
+```
+
+- `proposed_participant_attestation` → use the extracted `tee_participant_info` JSON block.  
+- `tls_public_key` → use the `near_p2p_public_key` value.  
+
+#### Example NEAR CLI Command
+
+```bash
+REQUEST=$(jq -n   --argjson attestation "$(curl -s http://<NODE_IP>:8080/public_info | jq '.tee_participant_info')"   --arg tls_key "$(curl -s http://<NODE_IP>:8080/public_info | jq -r '.near_p2p_public_key')"   '{proposed_participant_attestation: $attestation, tls_public_key: $tls_key}')
+
+near contract call-function as-transaction v1.signer   submit_participant_info   json-args "$REQUEST"   prepaid-gas '100.0 Tgas'   attached-deposit '0 NEAR'   sign-as $YOUR_MPC_NEAR_ACCOUNT   network-config mainnet   sign-with-keychain send
+```
+
+## Wait for node indexer to sync
+
 
 In case the node failed to call submit\_participant\_info. The operator can do it on its behalf, by retrieving the attestation info from \<IP\>:8080/public\_info and submitting it to the contract.  
 TBD [#904](https://github.com/near/mpc/issues/904) \- need to add some more details or script on how to do it.
 
-## Wait for node indexer to sync
 
 Wait till near-indexer state sync is completed. It will take a few hours. Check the docker container logs for sync progress. Indexer sync status is also available via metrics page:
 
