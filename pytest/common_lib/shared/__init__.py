@@ -396,14 +396,14 @@ def start_cluster_with_mpc(
         )
         txs.append(tx)
 
-        nonce += 1
-
+        #nonce += 1
+        candidate.signer_key
         # add node access key
         tx = sign_create_account_with_multiple_access_keys_tx(
             pytest_signer_keys[0],
             candidate_account_id,
             [candidate.signer_key],
-            nonce,
+            0,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
             True,
