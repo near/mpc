@@ -179,8 +179,8 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
 async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
     let (worker, contract, _, _) = init_env_secp256k1(1).await;
     let alice = worker.dev_create_account().await?;
-    let balance = alice.view_account().await?.balance;
-    let contract_balance = contract.view_account().await?.balance;
+    let alice_balance_pre_transaction = alice.view_account().await?.balance;
+    let contract_balance_pre_transaction = contract.view_account().await?.balance;
     let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
     let request = CKDRequestArgs {
         app_public_key,
@@ -210,22 +210,31 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
         .to_string()
         .contains(&errors::RequestError::Timeout.to_string()));
 
-    let new_balance = alice.view_account().await?.balance;
-    let new_contract_balance = contract.view_account().await?.balance;
+    let alice_balance_post_transaction = alice.view_account().await?.balance;
+    let contract_balance_post_transaction = contract.view_account().await?.balance;
     println!(
-        "{} {} {} {}",
-        balance.as_millinear(),
-        new_balance.as_millinear(),
-        contract_balance.as_yoctonear(),
-        new_contract_balance.as_yoctonear(),
+        "alice_balance_pre_transaction: {}\nalice_balance_post_transaction: {}\ncontract_balance_pre_transaction: {}\ncontract_balance_post_transaction: {}",
+        alice_balance_pre_transaction.as_yoctonear(),
+        alice_balance_post_transaction.as_yoctonear(),
+        contract_balance_pre_transaction.as_yoctonear(),
+        contract_balance_post_transaction.as_yoctonear(),
     );
+
     assert!(
-        balance.as_millinear() - new_balance.as_millinear() < 10,
+        alice_balance_pre_transaction.as_millinear()
+            - alice_balance_post_transaction.as_millinear()
+            < 10,
         "refund should happen"
     );
+
+    let contract_balance_drained_post_transaction_yocto: u128 = contract_balance_pre_transaction
+        .as_yoctonear()
+        .checked_sub(contract_balance_post_transaction.as_yoctonear()) // And underflow can occur if the contract's balance increases after the transaction.
+        .unwrap_or(0);
+
     assert!(
-        contract_balance.as_millinear() - new_contract_balance.as_millinear() <= 1,
-        "refund transfer should take less than 0.001 NEAR"
+        contract_balance_drained_post_transaction_yocto <= 1,
+        "refund transfer should take less than 0.001 NEAR.",
     );
 
     Ok(())
