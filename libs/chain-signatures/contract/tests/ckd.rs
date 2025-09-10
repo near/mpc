@@ -229,8 +229,7 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 
     let contract_balance_drained_post_transaction_yocto: u128 = contract_balance_pre_transaction
         .as_yoctonear()
-        .checked_sub(contract_balance_post_transaction.as_yoctonear()) // And underflow can occur if the contract's balance increases after the transaction.
-        .unwrap_or(0);
+        .saturating_sub(contract_balance_post_transaction.as_yoctonear()); // And underflow can occur if the contract's balance increases after the transaction.
 
     assert!(
         contract_balance_drained_post_transaction_yocto <= 1,
