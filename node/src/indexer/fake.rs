@@ -595,7 +595,7 @@ impl Drop for PausedIndexer {
 pub struct Uid(usize);
 /// Runs the fake indexer logic for one node.
 struct FakeIndexerOneNode {
-    /// Account under which transactions by this node are originated.
+    /// Internal ID used to uniquely identify this node for tests
     uid: Uid,
 
     // The following are counterparts of the core channels.
