@@ -684,7 +684,7 @@ impl Drop for ReportCurrentJobGuard {
     }
 }
 
-/// returns true if one if one of the following occurs:
+/// returns true if one of the following occurs:
 /// - the epoch id changes
 /// - a resharing starts
 /// - the participant set changes

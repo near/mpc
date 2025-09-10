@@ -16,6 +16,7 @@ use crate::db::SecretDB;
 use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain};
 use crate::indexer::IndexerAPI;
+use crate::keyshare;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
@@ -223,7 +224,7 @@ pub async fn put_keyshares(
     std::fs::create_dir_all(&home_dir)?;
     let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
     let keystore = key_storage_config.create().await?;
-    keystore.put_keyshares(keyshares).await
+    keyshare::recovery_test_utils::put_keyshares(&keystore, keyshares).await
 }
 
 impl OneNodeTestConfig {

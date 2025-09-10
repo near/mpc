@@ -270,15 +270,22 @@ impl KeyshareStorage {
 }
 
 #[cfg(test)]
-impl KeyshareStorage {
-    // Do NOT use this for production
-    pub async fn put_keyshares(&self, keyshares: Vec<Keyshare>) -> anyhow::Result<()> {
+pub mod recovery_test_utils {
+    use crate::keyshare::permanent::PermanentKeyshareData;
+    use crate::keyshare::Keyshare;
+    use crate::keyshare::KeyshareStorage;
+
+    /// Do NOT use this for production
+    pub async fn put_keyshares(
+        keyshare_storage: &KeyshareStorage,
+        keyshares: Vec<Keyshare>,
+    ) -> anyhow::Result<()> {
         let epoch_id = keyshares.first().unwrap().key_id.epoch_id;
         let keyshare_data = &PermanentKeyshareData {
             epoch_id,
             keyshares,
         };
-        self.permanent.store(keyshare_data).await
+        keyshare_storage.permanent.store(keyshare_data).await
     }
 }
 
