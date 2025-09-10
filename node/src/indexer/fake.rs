@@ -26,7 +26,7 @@ use mpc_contract::state::{
 };
 use near_sdk::{AccountId, PublicKey};
 use near_time::{Clock, Duration};
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -286,7 +286,7 @@ struct FakeIndexerCore {
     /// A fake contract state to emulate the real MPC contract but with much less complexity.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
     /// Receives transactions sent via the APIs of each node.
-    txn_receiver: mpsc::UnboundedReceiver<(ChainSendTransactionRequest, Uid)>,
+    txn_receiver: mpsc::UnboundedReceiver<(ChainSendTransactionRequest, TestNodeUid)>,
     /// Receives signature requests from the FakeIndexerManager.
     signature_request_receiver: mpsc::UnboundedReceiver<SignatureRequestFromChain>,
     /// Receives ckd requests from the FakeIndexerManager.
@@ -309,7 +309,7 @@ struct FakeIndexerCore {
     /// How long to wait before generating the next block.
     block_time: std::time::Duration,
 
-    account_id_by_uid: Arc<std::sync::Mutex<BTreeMap<Uid, AccountId>>>,
+    account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
 
 impl FakeIndexerCore {
@@ -504,7 +504,7 @@ impl FakeIndexerCore {
 pub struct FakeIndexerManager {
     /// Sends transactions to the core for processing. This is cloned to each node,
     /// so each node can send transactions (with its AccountId) to the core.
-    core_txn_sender: mpsc::UnboundedSender<(ChainSendTransactionRequest, Uid)>,
+    core_txn_sender: mpsc::UnboundedSender<(ChainSendTransactionRequest, TestNodeUid)>,
     /// Used to call .subscribe() so that each node can receive changes to the
     /// contract state.
     core_state_change_sender: broadcast::Sender<ContractState>,
@@ -526,13 +526,13 @@ pub struct FakeIndexerManager {
     ckd_request_sender: mpsc::UnboundedSender<CKDRequestFromChain>,
 
     /// Allows nodes to be disabled during tests. See `disable()`.
-    node_disabler: BTreeMap<Uid, NodeDisabler>,
+    node_disabler: HashMap<TestNodeUid, NodeDisabler>,
     /// Allows nodes' indexers to be paused during tests.
-    indexer_pauser: BTreeMap<Uid, IndexerPauser>,
+    indexer_pauser: HashMap<TestNodeUid, IndexerPauser>,
     /// Allows modification of the contract.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 
-    account_id_by_uid: Arc<std::sync::Mutex<BTreeMap<Uid, AccountId>>>,
+    account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
 
 /// Allows a node to be disabled during tests.
@@ -591,15 +591,18 @@ impl Drop for PausedIndexer {
         self.indexer_suspended.send(false).unwrap();
     }
 }
-#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, From)]
-pub struct Uid(usize);
+
+/// unique identifier for test nodes
+#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, From, Hash)]
+pub struct TestNodeUid(usize);
+
 /// Runs the fake indexer logic for one node.
 struct FakeIndexerOneNode {
     /// Internal ID used to uniquely identify this node for tests
-    uid: Uid,
+    uid: TestNodeUid,
 
     // The following are counterparts of the core channels.
-    core_txn_sender: mpsc::UnboundedSender<(ChainSendTransactionRequest, Uid)>,
+    core_txn_sender: mpsc::UnboundedSender<(ChainSendTransactionRequest, TestNodeUid)>,
     core_state_change_receiver: broadcast::Receiver<ContractState>,
     block_update_receiver: broadcast::Receiver<ChainBlockUpdate>,
 
@@ -677,7 +680,7 @@ impl FakeIndexerManager {
         let (ckd_request_sender, ckd_request_receiver) = mpsc::unbounded_channel();
         let (ckd_response_sender, ckd_response_receiver) = mpsc::unbounded_channel();
         let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
-        let account_id_by_uid = Arc::new(std::sync::Mutex::new(BTreeMap::new()));
+        let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
             clock: clock.clone(),
             txn_delay_blocks,
@@ -702,8 +705,8 @@ impl FakeIndexerManager {
             ckd_response_receiver,
             signature_request_sender,
             ckd_request_sender,
-            node_disabler: BTreeMap::new(),
-            indexer_pauser: BTreeMap::new(),
+            node_disabler: HashMap::new(),
+            indexer_pauser: HashMap::new(),
             contract,
             account_id_by_uid,
         }
@@ -733,7 +736,7 @@ impl FakeIndexerManager {
     /// runs the node's logic, and the running job name to passed to the coordinator.
     pub fn add_indexer_node(
         &mut self,
-        uid: Uid,
+        uid: TestNodeUid,
         account_id: AccountId,
     ) -> (IndexerAPI, AutoAbortTask<()>, Arc<std::sync::Mutex<String>>) {
         let (api_state_sender, api_state_receiver) = watch::channel(ContractState::WaitingForSync);
@@ -809,7 +812,7 @@ impl FakeIndexerManager {
     }
 
     /// Disables a node, in order to test resilience to node failures.
-    pub async fn disable(&self, uid: Uid) -> DisabledNode {
+    pub async fn disable(&self, uid: TestNodeUid) -> DisabledNode {
         let NodeDisabler {
             disable,
             currently_running_job_name,
@@ -835,7 +838,7 @@ impl FakeIndexerManager {
     }
 
     /// Pauses a node's indexer, in order to test resilience to indexer being stuck.
-    pub async fn pause_indexer(&self, uid: Uid) -> PausedIndexer {
+    pub async fn pause_indexer(&self, uid: TestNodeUid) -> PausedIndexer {
         let indexer_pauser = self.indexer_pauser.get(&uid).unwrap();
         indexer_pauser.indexer_suspended.send(true).unwrap();
         PausedIndexer {
