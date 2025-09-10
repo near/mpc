@@ -3,14 +3,14 @@ pub mod common;
 use crate::common::{gen_accounts, vote_for_hash};
 use anyhow::Result;
 use assert_matches::assert_matches;
-use attestation::attestation::Attestation;
+use attestation::attestation::{Attestation, MockAttestation};
 use common::{get_tee_accounts, init_env_ed25519, init_env_secp256k1, submit_participant_info};
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
 use std::collections::HashSet;
-use test_utils::attestation::{mock_dstack_attestation, mock_local_attestation, p2p_tls_key};
+use test_utils::attestation::{image_digest, mock_dstack_attestation, p2p_tls_key};
 
 /// Tests the basic TEE verification functionality when no TEE accounts are present.
 /// Verifies that the contract returns true for TEE verification even without any TEE accounts submitted,
@@ -39,43 +39,39 @@ async fn test_tee_verify_no_tee() -> Result<()> {
 async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
-    let mpc_hash = MpcDockerImageHash::from([
-        0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
-        0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56,
-        0x78, 0x90,
-    ]);
+    let allowed_mpc_image_digest = image_digest();
 
     // Initially, there should be no allowed hashes
     assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
     assert_matches!(get_latest_code_hash(&contract).await, Err(_));
 
     // First vote - should not be enough
-    vote_for_hash(&accounts[0], &contract, &mpc_hash).await?;
+    vote_for_hash(&accounts[0], &contract, &allowed_mpc_image_digest).await?;
     assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
     // Should get an error when no code hash is available yet
     assert_matches!(get_latest_code_hash(&contract).await, Err(_));
 
     // Second vote - should reach threshold
-    vote_for_hash(&accounts[1], &contract, &mpc_hash).await?;
+    vote_for_hash(&accounts[1], &contract, &allowed_mpc_image_digest).await?;
     let allowed_hashes = get_allowed_hashes(&contract).await?;
-    assert_eq!(allowed_hashes, vec![mpc_hash.clone()]);
+    assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest.clone()]);
     // latest_code_hash should return the same hash as the one in allowed_code_hashes
     assert_eq!(
         get_latest_code_hash(&contract).await?,
-        Some(mpc_hash.clone())
+        Some(allowed_mpc_image_digest.clone())
     );
 
     // Additional votes - should not change the allowed hashes
     const EXTRA_VOTES_TO_TEST_STABILITY: usize = 4;
     for _ in 0..EXTRA_VOTES_TO_TEST_STABILITY {
-        vote_for_hash(&accounts[2], &contract, &mpc_hash).await?;
+        vote_for_hash(&accounts[2], &contract, &allowed_mpc_image_digest).await?;
         // Should still have exactly one hash
         let allowed_hashes = get_allowed_hashes(&contract).await?;
-        assert_eq!(allowed_hashes, vec![mpc_hash.clone()]);
+        assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest.clone()]);
         // latest_code_hash should still return the same hash
         assert_eq!(
             get_latest_code_hash(&contract).await?,
-            Some(mpc_hash.clone())
+            Some(allowed_mpc_image_digest.clone())
         );
     }
 
@@ -88,16 +84,10 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
 async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
-    let first_hash = MpcDockerImageHash::from([
-        0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
-        0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56,
-        0x78, 0x90,
-    ]);
-    let second_hash = MpcDockerImageHash::from([
-        0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd,
-        0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
-        0xcd, 0xef,
-    ]);
+    let first_hash = image_digest();
+
+    let arbitrary_bytes = [2; 32];
+    let second_hash = MpcDockerImageHash::from(arbitrary_bytes);
 
     // Initially, there should be no allowed hashes
     assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
@@ -165,14 +155,11 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
 async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() -> Result<()> {
     let (worker, contract, _accounts, _) = init_env_secp256k1(1).await;
     let random_account = &gen_accounts(&worker, 1).await.0[0];
-    let hash = MpcDockerImageHash::from([
-        0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
-        0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56,
-        0x78, 0x90,
-    ]);
+    let allowed_mpc_image_digest = image_digest();
+
     let res = random_account
         .call(contract.id(), "vote_code_hash")
-        .args_json(serde_json::json!({"code_hash": hash}))
+        .args_json(serde_json::json!({"code_hash": allowed_mpc_image_digest}))
         .transact()
         .await?;
     let Err(err) = res.into_result() else {
@@ -221,11 +208,7 @@ async fn get_participants(contract: &Contract) -> Result<usize> {
 /// Sets up a contract with an approved MPC hash by having the first two participants vote for it.
 /// This is a helper function commonly used in tests that require pre-approved hashes.
 async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> Result<()> {
-    let mpc_hash = MpcDockerImageHash::from([
-        0xc2, 0x29, 0x01, 0xe5, 0x2c, 0xfa, 0x91, 0xb2, 0xe7, 0x1e, 0xb8, 0x69, 0x4a, 0xc9, 0x55,
-        0x80, 0x65, 0xc6, 0xe3, 0xb1, 0x37, 0x83, 0xd9, 0xe3, 0xd3, 0x6b, 0x79, 0x2d, 0x93, 0xce,
-        0x15, 0x3b,
-    ]);
+    let mpc_hash = image_digest();
     vote_for_hash(&accounts[0], contract, &mpc_hash).await?;
     vote_for_hash(&accounts[1], contract, &mpc_hash).await?;
     Ok(())
@@ -262,16 +245,16 @@ async fn test_submit_participant_info_test_method_available_in_integration_tests
     Ok(())
 }
 
-/// **Local attestation bypass** - Tests that participant info submission succeeds with local attestation.
-/// Different from the dstack attestation tests above, this uses local attestation which bypasses complex TEE verification.
+/// **Mock attestation bypass** - Tests that participant info submission succeeds with mock attestation.
+/// Different from the dstack attestation tests above, this uses a mock attestation which bypasses complex TEE verification.
 /// This demonstrates that the submission mechanism itself works when attestation verification passes.
 #[tokio::test]
-async fn test_submit_participant_info_succeeds_with_local_attestation() -> Result<()> {
+async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
-    let local_attestation = mock_local_attestation(true);
+    let mock_attestation = Attestation::Mock(MockAttestation::Valid);
     let tls_key = p2p_tls_key();
     let success =
-        submit_participant_info(&accounts[0], &contract, &local_attestation, &tls_key).await?;
+        submit_participant_info(&accounts[0], &contract, &mock_attestation, &tls_key).await?;
     assert!(success);
     Ok(())
 }
@@ -386,6 +369,58 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     let actual_participants: HashSet<_> = tee_participants_after.into_iter().collect();
 
     assert_eq!(expected_participants, actual_participants);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification(
+) -> Result<()> {
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    let hash_1 = MpcDockerImageHash::from([1; 32]);
+    let hash_2 = MpcDockerImageHash::from([2; 32]);
+    let hash_3 = MpcDockerImageHash::from([3; 32]);
+
+    let participant_account_1 = &accounts[0];
+    let participant_account_2 = &accounts[1];
+
+    // Initially, there should be no allowed hashes
+    assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
+    assert_matches!(get_latest_code_hash(&contract).await, Err(_));
+
+    let hashes = [hash_1, hash_2, hash_3];
+
+    for (i, current_hash) in hashes.iter().enumerate() {
+        vote_for_hash(participant_account_1, &contract, current_hash).await?;
+        vote_for_hash(participant_account_2, &contract, current_hash).await?;
+
+        let previous_and_current_approved_hashes = &hashes[..=i];
+
+        for approved_hash in previous_and_current_approved_hashes {
+            let mock_attestation = MockAttestation::WithConstraints {
+                mpc_docker_image_hash: Some(approved_hash.clone()),
+                launcher_docker_compose_hash: None,
+                expiry_time_stamp_seconds: None,
+            };
+            let attestation = Attestation::Mock(mock_attestation);
+
+            let dummy_tls_key = p2p_tls_key();
+
+            let validation_success = submit_participant_info(
+                participant_account_1,
+                &contract,
+                &attestation,
+                &dummy_tls_key,
+            )
+            .await?;
+
+            assert!(
+                validation_success,
+                "Attestation for all previous images must pass"
+            );
+        }
+    }
 
     Ok(())
 }

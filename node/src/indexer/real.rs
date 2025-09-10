@@ -7,7 +7,6 @@ use super::{IndexerAPI, IndexerState};
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::balances::monitor_balance;
-#[cfg(feature = "tee")]
 use crate::indexer::tee::monitor_allowed_docker_images;
 use ed25519_dalek::SigningKey;
 use mpc_contract::state::ProtocolContractState;
@@ -56,7 +55,6 @@ pub fn spawn_real_indexer(
         tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
-    #[cfg(feature = "tee")]
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
 
     // TODO(#156): replace actix with tokio
@@ -107,7 +105,6 @@ pub fn spawn_real_indexer(
                 indexer_state.view_client.clone(),
             ));
 
-            #[cfg(feature = "tee")]
             actix::spawn(monitor_allowed_docker_images(
                 allowed_docker_images_sender,
                 indexer_state.clone(),
@@ -145,7 +142,6 @@ pub fn spawn_real_indexer(
         contract_state_receiver: chain_config_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender: chain_txn_sender,
-        #[cfg(feature = "tee")]
         allowed_docker_images_receiver,
     }
 }

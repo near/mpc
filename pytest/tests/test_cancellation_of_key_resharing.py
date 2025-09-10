@@ -106,8 +106,9 @@ def test_cancellation_of_key_resharing():
         f"Contract stored wrong epoch ID: expected {initial_prospective_epoch_id}, got {previously_cancelled_resharing_epoch_id}"
     )
 
-    # Verify that network can handle signature requests after cancellation
+    # Verify that network can handle requests after cancellation
     cluster.send_and_await_signature_requests(3)
+    cluster.send_and_await_ckd_requests(3)
 
     # Retry resharing with the previously killed node back online
     killed_node.run()
@@ -132,5 +133,6 @@ def test_cancellation_of_key_resharing():
         "`previously_cancelled_resharing_epoch_id` must be None after completing a resharing"
     )
 
-    # Verify that network can handle signature requests after resharing
+    # Verify that network can handle requests after resharing
     cluster.send_and_await_signature_requests(3)
+    cluster.send_and_await_ckd_requests(3)

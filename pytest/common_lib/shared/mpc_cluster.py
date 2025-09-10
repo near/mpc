@@ -8,6 +8,7 @@ import time
 
 from common_lib import constants
 from common_lib import signature
+from common_lib import ckd
 from common_lib.constants import TGAS
 from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
 from common_lib.contracts import ContractMethod
@@ -16,6 +17,7 @@ from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
 from common_lib.shared.transaction_status import assert_txn_success
 from common_lib.signature import generate_sign_args
+from common_lib.ckd import generate_ckd_args
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -66,7 +68,7 @@ class MpcCluster:
         # In some tests we may need another CS contract.
         self.secondary_contract_node = secondary
         # An account from which we make requests to the Chain Signatures contract
-        self.sign_request_node = secondary
+        self.request_node = secondary
 
     def print_cluster_status(self):
         status_list = [node.print() for node in self.mpc_nodes]
@@ -151,11 +153,11 @@ class MpcCluster:
         self,
         participants: List[MpcNode],
         threshold: int,
-        domains=["Secp256k1", "Ed25519"],
+        domains=["Secp256k1", "Ed25519", "CkdSecp256k1"],
     ):
         """
         initializes the contract with `participants` and `threshold`.
-        Adds `Secp256k1` to the contract domains.
+        Adds `Secp256k1`, `Ed25519` and `CkdSecp256k1` to the contract domains.
         """
         self.define_candidate_set(participants)
         self.update_participant_status(
@@ -261,18 +263,16 @@ class MpcCluster:
 
     def add_domains(
         self,
-        signature_schemes: List[SignatureScheme],
+        schemes: List[SignatureScheme],
         wait_for_running=True,
     ):
-        print(
-            f"\033[91m(Vote Domains) Adding domains: \033[93m{signature_schemes}\033[0m"
-        )
+        print(f"\033[91m(Vote Domains) Adding domains: \033[93m{schemes}\033[0m")
         state = self.contract_state()
         state.print()
         assert state.is_state(ProtocolState.RUNNING), "require running state"
         domains_to_add = []
         next_domain_id = state.protocol_state.next_domain_id()
-        for scheme in signature_schemes:
+        for scheme in schemes:
             domains_to_add.append(
                 {
                     "id": next_domain_id,
@@ -364,22 +364,23 @@ class MpcCluster:
         deposit = constants.SIGNATURE_DEPOSIT + (add_deposit or 0)
         domains = self.contract_state().get_running_domains()
         for domain in domains:
-            print(
-                f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m sign requests for {domain}.\033[0m"
-            )
-            for _ in range(requests_per_domains):
-                sign_args = generate_sign_args(domain)
-                nonce_offset += 1
-
-                tx = self.sign_request_node.sign_tx(
-                    self.mpc_contract_account(),
-                    "sign",
-                    sign_args,
-                    nonce_offset=nonce_offset,
-                    deposit=deposit,
-                    gas=gas,
+            if domain.scheme == "Secp256k1" or domain.scheme == "Ed25519":
+                print(
+                    f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m sign requests for {domain}.\033[0m"
                 )
-                txs.append(tx)
+                for _ in range(requests_per_domains):
+                    sign_args = generate_sign_args(domain)
+                    nonce_offset += 1
+
+                    tx = self.request_node.sign_tx(
+                        self.mpc_contract_account(),
+                        "sign",
+                        sign_args,
+                        nonce_offset=nonce_offset,
+                        deposit=deposit,
+                        gas=gas,
+                    )
+                    txs.append(tx)
         return txs
 
     def send_and_await_signature_requests(
@@ -400,8 +401,67 @@ class MpcCluster:
         txs = self.make_sign_request_txns(
             requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
         )
-        self.sign_request_node.send_await_check_txs_parallel(
+        self.request_node.send_await_check_txs_parallel(
             "sign request", txs, sig_verification
+        )
+
+    def make_ckd_request_txns(
+        self,
+        requests_per_domains: int,
+        nonce_offset: int = 1,
+        add_gas: Optional[int] = None,
+        add_deposit: Optional[int] = None,
+    ):
+        """
+        Creates ckd transactions for each domain and request count pair.
+
+        Returns:
+            A list of signed transactions
+        """
+        txs = []
+        gas = constants.GAS_FOR_CKD_CALL * TGAS + (add_gas or 0)
+        deposit = constants.CKD_DEPOSIT + (add_deposit or 0)
+        domains = self.contract_state().get_running_domains()
+        for domain in domains:
+            if domain.scheme == "CkdSecp256k1":
+                print(
+                    f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m ckd requests for {domain}.\033[0m"
+                )
+                for i in range(requests_per_domains):
+                    ckd_args = generate_ckd_args(domain)
+                    nonce_offset += 1
+
+                    tx = self.request_node.sign_tx(
+                        self.mpc_contract_account(),
+                        "request_app_private_key",
+                        ckd_args,
+                        nonce_offset=nonce_offset,
+                        deposit=deposit,
+                        gas=gas,
+                    )
+                    txs.append(tx)
+        return txs
+
+    def send_and_await_ckd_requests(
+        self,
+        requests_per_domains: int,
+        ckd_verification=ckd.assert_ckd_success,
+        add_gas: Optional[int] = None,
+        add_deposit: Optional[int] = None,
+    ):
+        """
+        Sends ckd requests, waits for the results and validates them with `ckd_verification`.
+
+        Raises:
+            AssertionError:
+                - If the indexers fail to observe the ckd requests before `constants.TIMEOUT` is reached.
+                - If `ckd_verification` raises an AssertionError.
+        """
+        txs = self.make_ckd_request_txns(
+            requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
+        )
+        self.request_node.send_await_check_txs_parallel(
+            "ckd request", txs, ckd_verification
         )
 
     def propose_update(self, args):

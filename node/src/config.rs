@@ -61,11 +61,14 @@ impl MpcConfig {
     pub fn from_participants_with_near_account_id(
         participants: ParticipantsConfig,
         my_near_account_id: &AccountId,
+        my_p2p_public_key: &ed25519_dalek::VerifyingKey,
     ) -> Option<Self> {
         let my_participant_id = participants
             .participants
             .iter()
-            .find(|p| &p.near_account_id == my_near_account_id)?
+            .find(|p| {
+                &p.near_account_id == my_near_account_id && &p.p2p_public_key == my_p2p_public_key
+            })?
             .id;
         Some(Self {
             my_participant_id,
@@ -171,6 +174,22 @@ pub struct ParticipantsConfig {
     /// The threshold for the MPC protocol.
     pub threshold: u64,
     pub participants: Vec<ParticipantInfo>,
+}
+
+impl ParticipantsConfig {
+    pub fn get_info(&self, id: ParticipantId) -> Option<&ParticipantInfo> {
+        self.participants.iter().find(|p| p.id == id)
+    }
+
+    pub fn get_participant_id(&self, account_id: &AccountId) -> Option<ParticipantId> {
+        self.participants.iter().find_map(|participant_info| {
+            if participant_info.near_account_id == *account_id {
+                Some(participant_info.id)
+            } else {
+                None
+            }
+        })
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

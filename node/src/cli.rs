@@ -1,4 +1,5 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
+use crate::providers::PublicKeyConversion;
 use crate::web::StaticWebData;
 use crate::{
     config::{
@@ -19,8 +20,8 @@ use crate::{
     web::start_web_server,
 };
 use anyhow::{anyhow, Context};
-use attestation::attestation::Attestation;
-use clap::{Parser, ValueEnum};
+use attestation::report_data::ReportData;
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
@@ -30,20 +31,27 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
+use tee_authority::tee_authority::{
+    DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
+    DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL,
+};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
+use url::Url;
 
-#[cfg(feature = "tee")]
 use {
     crate::tee::{
-        monitor_allowed_image_hashes, remote_attestation::create_remote_attestation_info,
-        remote_attestation::submit_remote_attestation, AllowedImageHashesFile,
+        monitor_allowed_image_hashes, remote_attestation::submit_remote_attestation,
+        AllowedImageHashesFile,
     },
     mpc_contract::tee::proposal::MpcDockerImageHash,
     tracing::info,
 };
 
 #[derive(Parser, Debug)]
+#[command(name = "mpc-node")]
+#[command(about = "MPC Node for Near Protocol")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
     #[arg(long, value_enum, env("MPC_LOG_FORMAT"), default_value = "plain")]
     pub log_format: LogFormat,
@@ -59,10 +67,7 @@ pub enum LogFormat {
     Json,
 }
 
-#[derive(Parser, Debug)]
-#[command(name = "mpc-node")]
-#[command(about = "MPC Node for Near Protocol")]
-#[command(version = env!("CARGO_PKG_VERSION"))]
+#[derive(Subcommand, Debug)]
 pub enum CliCommand {
     Start(StartCmd),
     /// Generates/downloads required files for Near node to run
@@ -93,7 +98,7 @@ pub enum CliCommand {
     },
 }
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 pub struct InitConfigArgs {
     #[arg(long, env("MPC_HOME_DIR"))]
     pub dir: std::path::PathBuf,
@@ -120,7 +125,7 @@ pub struct InitConfigArgs {
     pub boot_nodes: Option<String>,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 pub struct StartCmd {
     #[arg(long, env("MPC_HOME_DIR"))]
     pub home_dir: String,
@@ -135,30 +140,58 @@ pub struct StartCmd {
     pub gcp_keyshare_secret_id: Option<String>,
     #[arg(env("GCP_PROJECT_ID"))]
     pub gcp_project_id: Option<String>,
+    /// TEE authority config
+    #[command(subcommand)]
+    pub tee_authority: TeeAuthorityConfig,
     /// TEE related configuration settings.
     #[command(flatten)]
-    #[cfg(feature = "tee")]
-    pub tee_config: TeeConfig,
+    pub image_hash_config: MpcImageHashConfig,
 }
 
-#[derive(Parser, Debug)]
-#[cfg(feature = "tee")]
-pub struct TeeConfig {
+#[derive(Subcommand, Debug)]
+pub enum TeeAuthorityConfig {
+    Local,
+    Dstack {
+        #[arg(long, env("DSTACK_ENDPOINT"), default_value = DEFAULT_DSTACK_ENDPOINT)]
+        dstack_endpoint: String,
+        #[arg(long, env("QUOTE_UPLOAD_URL"), default_value = DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL)]
+        quote_upload_url: Url,
+    },
+}
+
+impl TryFrom<TeeAuthorityConfig> for TeeAuthority {
+    type Error = anyhow::Error;
+
+    fn try_from(cmd: TeeAuthorityConfig) -> Result<Self, Self::Error> {
+        let authority_config = match cmd {
+            TeeAuthorityConfig::Local => LocalTeeAuthorityConfig::default().into(),
+            TeeAuthorityConfig::Dstack {
+                dstack_endpoint,
+                quote_upload_url,
+            } => DstackTeeAuthorityConfig::new(dstack_endpoint, quote_upload_url).into(),
+        };
+
+        Ok(authority_config)
+    }
+}
+
+#[derive(Args, Debug)]
+pub struct MpcImageHashConfig {
     #[arg(
         long,
-        env("IMAGE_HASH"),
+        env("MPC_IMAGE_HASH"),
         help_heading = "hex representation of the hash of the image running."
     )]
     pub image_hash: String,
     #[arg(
         long,
-        env("LATEST_ALLOWED_HASH_FILE"),
+        env("MPC_LATEST_ALLOWED_HASH_FILE"),
         help_heading = "Path to the file which the mpc node will write the latest allowed hash to."
     )]
     pub latest_allowed_hash_file: PathBuf,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 pub struct ImportKeyshareCmd {
     /// Path to home directory
     #[arg(long, env("MPC_HOME_DIR"))]
@@ -175,7 +208,7 @@ pub struct ImportKeyshareCmd {
     pub local_encryption_key_hex: String,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Args, Debug)]
 pub struct ExportKeyshareCmd {
     /// Path to home directory
     #[arg(long, env("MPC_HOME_DIR"))]
@@ -220,20 +253,20 @@ impl StartCmd {
 
         // Currently, we only trigger graceful shutdowns from TEE logic,
         // hence we need to disable the `unused_variables` lint when TEE is disabled.
-        #[cfg_attr(not(feature = "tee"), allow(unused_variables))]
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
         let cancellation_token = CancellationToken::new();
 
-        #[cfg(feature = "tee")]
         let image_hash_watcher_handle = {
-            let current_image_hash_bytes: [u8; 32] = hex::decode(self.tee_config.image_hash)
-                .expect("The currently running image is a hex string.")
-                .try_into()
-                .expect("The currently running image hash hex representation is 32 bytes.");
+            let current_image_hash_bytes: [u8; 32] =
+                hex::decode(&self.image_hash_config.image_hash)
+                    .expect("The currently running image is a hex string.")
+                    .try_into()
+                    .expect("The currently running image hash hex representation is 32 bytes.");
 
             let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
-            let image_hash_storage =
-                AllowedImageHashesFile::from(self.tee_config.latest_allowed_hash_file);
+            let image_hash_storage = AllowedImageHashesFile::from(
+                self.image_hash_config.latest_allowed_hash_file.clone(),
+            );
 
             tokio::spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
@@ -245,13 +278,11 @@ impl StartCmd {
         };
 
         let secrets = SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets)?;
-        let root_future = Self::create_root_future(
+        let root_future = self.create_root_future(
             home_dir.clone(),
             config.clone(),
             secrets.clone(),
             indexer_api,
-            self.gcp_keyshare_secret_id.clone(),
-            self.gcp_project_id.clone(),
             web_contract_receiver,
         );
 
@@ -272,7 +303,6 @@ impl StartCmd {
         // Perform graceful shutdown
         cancellation_token.cancel();
 
-        #[cfg(feature = "tee")]
         {
             info!("Waiting for image hash watcher to gracefully exit.");
             let exit_result = image_hash_watcher_handle.await;
@@ -283,31 +313,31 @@ impl StartCmd {
     }
 
     async fn create_root_future(
+        self,
         home_dir: PathBuf,
         config: ConfigFile,
         secrets: SecretsConfig,
         indexer_api: IndexerAPI,
-        gcp_keyshare_secret_id: Option<String>,
-        gcp_project_id: Option<String>,
         web_contract_receiver: tokio::sync::watch::Receiver<ProtocolContractState>,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
 
         let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
 
-        #[allow(unused_mut, unused_assignments)]
-        let mut report_data_contract: Option<Attestation> = None;
-        #[cfg(feature = "tee")]
-        {
-            let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
-            let report_data = create_remote_attestation_info(&tls_public_key).await;
-            report_data_contract = Some(report_data.try_into()?);
-        }
+        let tls_public_key = secrets
+            .persistent_secrets
+            .p2p_private_key
+            .verifying_key()
+            .to_near_sdk_public_key()?;
+
+        let report_data = ReportData::new(tls_public_key);
+        let tee_authority = TeeAuthority::try_from(self.tee_authority)?;
+        let attestation = tee_authority.generate_attestation(report_data).await?;
         let web_server = start_web_server(
             root_task_handle,
             debug_request_sender.clone(),
             config.web_ui.clone(),
-            StaticWebData::new(&secrets, report_data_contract.clone()),
+            StaticWebData::new(&secrets, Some(attestation.clone())),
             web_contract_receiver,
         )
         .await?;
@@ -318,8 +348,8 @@ impl StartCmd {
         let key_storage_config = KeyStorageConfig {
             home_dir: home_dir.clone(),
             local_encryption_key: secrets.local_storage_aes_key,
-            gcp: if let Some(secret_id) = gcp_keyshare_secret_id {
-                let project_id = gcp_project_id.ok_or_else(|| {
+            gcp: if let Some(secret_id) = self.gcp_keyshare_secret_id {
+                let project_id = self.gcp_project_id.ok_or_else(|| {
                     anyhow::anyhow!(
                         "GCP_PROJECT_ID must be specified to use GCP_KEYSHARE_SECRET_ID"
                     )
@@ -334,13 +364,12 @@ impl StartCmd {
         };
 
         // submit remote attestation
-        #[cfg(feature = "tee")]
         {
             let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key();
 
             submit_remote_attestation(
                 indexer_api.txn_sender.clone(),
-                report_data_contract.unwrap(),
+                attestation,
                 account_public_key,
             )
             .await?;

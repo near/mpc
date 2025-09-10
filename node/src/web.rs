@@ -77,7 +77,7 @@ impl DebugRequest {
 pub enum DebugRequestKind {
     RecentBlocks,
     RecentSignatures,
-    RecentCKD,
+    RecentCKDs,
 }
 
 async fn debug_request_from_node(
@@ -107,7 +107,7 @@ async fn debug_signatures(state: State<WebServerState>) -> Result<String, Anyhow
 }
 
 async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
-    debug_request_from_node(state, DebugRequestKind::RecentCKD).await
+    debug_request_from_node(state, DebugRequestKind::RecentCKDs).await
 }
 
 async fn contract_state(mut state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {

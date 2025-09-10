@@ -62,6 +62,12 @@ pub async fn keygen_computation_inner(
             let public_key = keyshare.public_key.to_near_sdk_public_key()?;
             (KeyshareData::Ed25519(keyshare), public_key)
         }
+        SignatureScheme::CkdSecp256k1 => {
+            let keyshare =
+                EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
+            let public_key = keyshare.public_key.to_near_sdk_public_key()?;
+            (KeyshareData::CkdSecp256k1(keyshare), public_key)
+        }
     };
 
     tracing::info!("Key generation attempt {:?}: committing keyshare.", key_id);
@@ -218,6 +224,25 @@ async fn resharing_computation_inner(
             )
             .await?;
             KeyshareData::Ed25519(res)
+        }
+        SignatureScheme::CkdSecp256k1 => {
+            let public_key =
+                frost_secp256k1::VerifyingKey::from_near_sdk_public_key(near_public_key)?;
+            let my_share = existing_keyshare
+                .map(|keyshare| match keyshare.data {
+                    KeyshareData::CkdSecp256k1(data) => Ok(data.private_share),
+                    _ => Err(anyhow::anyhow!("Expected ckd keyshare!")),
+                })
+                .transpose()?;
+            let res = EcdsaSignatureProvider::run_key_resharing_client(
+                args.new_threshold,
+                my_share,
+                public_key,
+                &args.old_participants,
+                channel,
+            )
+            .await?;
+            KeyshareData::CkdSecp256k1(res)
         }
     };
     tracing::info!("Key resharing attempt {:?}: committing keyshare.", key_id);

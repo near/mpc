@@ -55,6 +55,8 @@ presignature:
   timeout_sec: 60
 signature:
   timeout_sec: 60
+ckd:
+  timeout_sec: 60
 indexer:
   validate_genesis: false
   sync_mode: Latest
@@ -111,5 +113,11 @@ else
     echo "Using provided MPC_SECRET_STORE_KEY from environment"
 fi
 
+if [ -n "$DSTACK_ENDPOINT" ]; then
+    tee_authority=dstack
+else
+    tee_authority=local
+fi
+
 echo "Starting mpc node..."
-/app/mpc-node start
+/app/mpc-node start $tee_authority

@@ -296,12 +296,12 @@ pub async fn init_env_secp256k1(
 }
 
 pub fn make_key_for_domains(
-    schemes: Vec<SignatureScheme>,
+    protocols: Vec<SignatureScheme>,
 ) -> (Vec<near_sdk::PublicKey>, Vec<SharedSecretKey>) {
-    schemes
+    protocols
         .into_iter()
-        .map(|scheme| match scheme {
-            SignatureScheme::Secp256k1 => {
+        .map(|protocol| match protocol {
+            SignatureScheme::Secp256k1 | SignatureScheme::CkdSecp256k1 => {
                 let (pk, sk) = new_secp256k1();
                 (pk, SharedSecretKey::Secp256k1(sk))
             }

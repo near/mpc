@@ -23,7 +23,6 @@ pub trait Request {
     fn get_entropy(&self) -> [u8; 32];
     fn get_timestamp_nanosec(&self) -> u64;
     fn get_domain_id(&self) -> DomainId;
-    // fn get_name() -> String;
     fn get_type() -> RequestType;
 }
 
