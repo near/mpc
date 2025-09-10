@@ -106,7 +106,7 @@ async fn back_compatibility(network: Network) -> anyhow::Result<()> {
 
     println!("✅ Back compatibility check succeeded: migration() works fine 👍");
 
-    return Ok(());
+    Ok(())
 }
 
 #[tokio::test]
@@ -172,7 +172,7 @@ async fn test_all_participants_have_valid_attestation_for_soft_launch() -> anyho
 
     let participant_set: HashSet<AccountId> = initial_participants
         .participants()
-        .into_iter()
+        .iter()
         .map(|(account_id, _, _)| account_id)
         .cloned()
         .collect();
