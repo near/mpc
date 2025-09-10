@@ -1,4 +1,4 @@
-FROM rust:1.86.0-bookworm@sha256:878ca0e8df1305dcbbfffac5bb908cce6a4bc5f6b629c518e7112645ee8851d4 AS builder
+FROM rust:1.86-slim-bookworm@sha256:a044f7ab9a762f95be2ee7eb2c49e4d4a4ec60011210de9f7da01d552cae3a55
 
 # Install packages with exact versions for reproducibility
 RUN apt-get update -y && \
