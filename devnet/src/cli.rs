@@ -404,7 +404,7 @@ pub struct RunLoadtestCmd {
     #[clap(long)]
     pub qps: usize,
     /// The number of signatures to send per parallel-signature contract call.
-    /// Pass as --parallel-sign-calls-per-domain 0=3,1=2
+    /// Pass as --parallel-sign-calls-per-domain 0=3,1=2,2=3
     /// This will be divided into the QPS, so you don't need to change the QPS flag.
     #[clap(long, value_parser = parse_parallel_calls)]
     pub parallel_sign_calls_per_domain: Option<BTreeMap<u64, u64>>,
@@ -412,7 +412,7 @@ pub struct RunLoadtestCmd {
     /// `signatures_per_contract_call` is set.
     #[clap(long)]
     pub domain_id: Option<u64>,
-    /// Duration for loadtest (in seconds). If not set, the test runs indefinetely.
+    /// Duration for loadtest (in seconds). If not set, the test runs indefinitely.
     #[clap(long)]
     pub duration: Option<u64>,
 }

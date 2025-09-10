@@ -269,6 +269,26 @@ impl KeyshareStorage {
     }
 }
 
+#[cfg(test)]
+pub mod recovery_test_utils {
+    use crate::keyshare::permanent::PermanentKeyshareData;
+    use crate::keyshare::Keyshare;
+    use crate::keyshare::KeyshareStorage;
+
+    /// Do NOT use this for production
+    pub async fn put_keyshares(
+        keyshare_storage: &KeyshareStorage,
+        keyshares: Vec<Keyshare>,
+    ) -> anyhow::Result<()> {
+        let epoch_id = keyshares.first().unwrap().key_id.epoch_id;
+        let keyshare_data = &PermanentKeyshareData {
+            epoch_id,
+            keyshares,
+        };
+        keyshare_storage.permanent.store(keyshare_data).await
+    }
+}
+
 pub struct GcpPermanentKeyStorageConfig {
     pub project_id: String,
     pub secret_id: String,
