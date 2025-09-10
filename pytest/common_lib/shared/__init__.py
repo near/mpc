@@ -403,7 +403,7 @@ def start_cluster_with_mpc(
             pytest_signer_keys[0],
             candidate_account_id,
             [candidate.signer_key],
-            nonce,
+            2,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
             True,
