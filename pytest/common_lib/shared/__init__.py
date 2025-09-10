@@ -129,7 +129,7 @@ def sign_create_account_with_multiple_access_keys_tx(
     if createNewAccount:
         # Only when creating a brand-new account
         actions.append(create_create_account_action())
-        actions.append(create_payment_action(100 * NEAR_BASE))
+       
 
     if fullAccess:
         # Give full access to all keys
@@ -142,7 +142,7 @@ def sign_create_account_with_multiple_access_keys_tx(
             create_mpc_function_call_access_key_action(key.decoded_pk(), contract_id)
             for key in keys
         ]
-
+    actions.append(create_payment_action(100 * NEAR_BASE))
     actions.extend(access_key_actions)
 
     signed_tx = sign_transaction(
@@ -403,7 +403,7 @@ def start_cluster_with_mpc(
             pytest_signer_keys[0],
             candidate_account_id,
             [candidate.signer_key],
-            2,
+            nonce,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
             True,
