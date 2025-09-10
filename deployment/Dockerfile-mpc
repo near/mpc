@@ -1,6 +1,5 @@
-# TODO: these versions seem quite outdated, before merging create issue or solve
-FROM rust:1.86-bullseye@sha256:3ae85170272532616218575edad2310507f72991766775d095a82acf56b29fd6 AS builder
-RUN apt-get update -y && apt-get install -y --no-install-recommends clang=1:11.0-51+nmu5 # needed for rocksdb
+FROM rust:1.86.0-bookworm@sha256:878ca0e8df1305dcbbfffac5bb908cce6a4bc5f6b629c518e7112645ee8851d4 AS builder
+RUN apt-get update -y && apt-get install -y --no-install-recommends clang=1:14.0-55.7~deb12u1 # needed for rocksdb
 
 WORKDIR /app
 COPY .git .git
@@ -16,8 +15,8 @@ COPY Makefile .
 
 RUN make build-reproducible
 
-FROM google/cloud-sdk:debian_component_based@sha256:2724df777051d557c8ef2a272060ea3912d70f4f5313ec85c8d07d5da400ff73 AS runtime
-RUN apt-get update -y && apt-get install -y --no-install-recommends openssl=3.0.15-1~deb12u1 ca-certificates=20230311
+FROM google/cloud-sdk:538.0.0-debian_component_based@sha256:6a3b29f50ae5aece8d93cec072a8095a2d8c90bfbbf53435127b932097eff75d AS runtime
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl=3.0.17-1~deb12u2 ca-certificates=20250419
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 

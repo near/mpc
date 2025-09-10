@@ -9,6 +9,10 @@ DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
 
 
+SOURCE_DATE=$(git log -1 --pretty=%ct)
+GIT_COMMIT_HASH=$(git rev-parse HEAD)
+
+
 if [ ! "$(pwd)" = "$(git rev-parse --show-toplevel)" ]; then
     echo "Must be called from project root!"
     exit 1
@@ -29,7 +33,7 @@ if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
 fi
 
 docker buildx build --builder ${buildkit_image_name} --no-cache \
-    --build-arg SOURCE_DATE_EPOCH="0" \
+    --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
     --output type=docker,name=$NODE_IMAGE_NAME,rewrite-timestamp=true \
     -f "$DOCKERFILE_NODE" .
 
@@ -37,11 +41,13 @@ node_image_hash=$(docker inspect $NODE_IMAGE_NAME | jq .[0].Id)
 
 
 docker buildx build --builder ${buildkit_image_name} --no-cache \
-    --build-arg SOURCE_DATE_EPOCH="0" \
+    --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
     --output type=docker,name=$LAUNCHER_IMAGE_NAME,rewrite-timestamp=true \
     -f "$DOCKERFILE_LAUNCHER" .
 
 launcher_image_hash=$(docker inspect $LAUNCHER_IMAGE_NAME | jq .[0].Id)
 
+echo "commit hash: $GIT_COMMIT_HASH"
+echo "SOURCE_DATE_EPOCH used: $SOURCE_DATE"
 echo "node docker image hash: $node_image_hash"
 echo "launcher docker image hash: $launcher_image_hash"
