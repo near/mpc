@@ -87,7 +87,7 @@ impl Participants {
         self.next_id.clone()
     }
 
-    pub(crate) fn is_participant(&self, account_id: &AccountId) -> bool {
+    pub fn is_participant(&self, account_id: &AccountId) -> bool {
         self.participants
             .iter()
             .any(|(a_id, _, _)| a_id == account_id)
