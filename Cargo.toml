@@ -22,8 +22,12 @@ anyhow = "1.0.92"
 assert_matches = "1.5.0"
 async-trait = "0.1.83"
 axum = "0.7.9"
+axum-server = { version = "0.7.2", features  = ["tls-rustls"] }
 backon = { version = "1.5.1", features = ["tokio-sleep"] }
 base64 = "0.22.1"
+hyper = { version = "1", features = ["full"] }
+http-body-util = "0.1"
+hyper-util = { version = "0.1", features = ["full"] }
 borsh = { version = "1.5.1", features = ["derive", "unstable__schema"] }
 bs58 = { version = "0.5.1" }
 clap = { version = "4.5.20", features = ["derive", "env"] }

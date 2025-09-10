@@ -6,6 +6,9 @@ license = "MIT"
 
 [dependencies]
 actix = { workspace = true }
+axum-server = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }

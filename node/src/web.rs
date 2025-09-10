@@ -8,6 +8,9 @@ use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
 use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
+use hyper::client::conn::http1;
+use hyper::service::service_fn;
+use hyper_util::rt::TokioIo;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
 use prometheus::{default_registry, Encoder, TextEncoder};
@@ -15,6 +18,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
+use tokio_rustls::TlsAcceptor;
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -171,6 +175,52 @@ impl StaticWebData {
 
 async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
     state.static_web_data.clone().into()
+}
+
+use hyper;
+pub async fn start_secrets_server(
+    tls_config: Arc<rustls::server::ServerConfig>,
+) -> anyhow::Result<()> {
+    let tls_acceptor = TlsAcceptor::from(tls_config);
+
+    let app =
+        axum::Router::new().route("/", axum::routing::get(|| async { "Hellow, mTLS world!" }));
+    let make_svc = app.into_make_service();
+
+    let addr: std::net::SocketAddr = "0.0.0.0:3000".parse().unwrap();
+    let listener = TcpListener::bind(addr).await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+
+        let acceptor = tls_acceptor.clone();
+        let svc = make_svc.clone();
+
+        tokio::spawn(async move {
+            // TLS handshake
+            let tls_stream = match acceptor.accept(stream).await {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("TLS handshake failed: {:?}", e);
+                    return;
+                }
+            };
+            let io = TokioIo::new(tls_stream);
+            if let Err(err) = hyper::server::conn::http1::Builder::new()
+                .serve_connection(
+                    io,
+                    service_fn(move |req| {
+                        let svc = svc.clone();
+                        svc.call(req)
+                    }),
+                )
+                .await
+            {
+                eprintln!("server error: {:?}", err);
+            }
+        });
+    }
+    Ok(())
 }
 
 /// Starts the web server. This is an async function that returns a future.
