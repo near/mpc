@@ -51,6 +51,26 @@ Building the crate is fairly simple using
 
 Run ``cargo test`` to run all the built-in test cases. Some of the tests might take some time to run as they require running complex protocols with multiple participants at once.
 
+## Developer Pre-commit Checks
+Before committing code, developers should ensure all checks pass. This helps prevent CI failures. Run:
+```sh
+
+cargo check
+cargo clippy --all-features --all-targets --locked
+cargo fmt -- --check
+cargo nextest run --release --all-features --all-targets --locked
+```
+
+Or, if using `cargo-make` (`cargo install cargo-make`):
+```sh
+cargo make check-all
+```
+
+This ensures:
+- Code compiles (`cargo check`)
+- Linting passes (`cargo clippy`)
+- Code formatting is consistent (`cargo fmt`)
+
 # Benchmarks
 * Benchmarks with 8 nodes -- TODO: https://github.com/near/threshold-signatures/issues/8
 
