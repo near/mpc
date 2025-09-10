@@ -24,7 +24,7 @@ if ! docker buildx &>/dev/null; then
    exit 1
 fi
 
-buildkit_version="0.24.0"
+buildkit_version="0.20.0"
 buildkit_image_name="buildkit_${buildkit_version}"
 
 # Create our own builder (build env) to enable reproducible images
