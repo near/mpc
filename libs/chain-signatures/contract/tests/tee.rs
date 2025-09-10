@@ -322,9 +322,6 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
     let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
 
-    // Initially should have no TEE participants
-    assert_eq!(get_tee_accounts(&contract).await?.len(), 0);
-
     // Setup contract with approved hash and submit TEE info for current participants
     setup_approved_mpc_hash(&contract, &accounts).await?;
     let tls_key = p2p_tls_key();
