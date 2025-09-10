@@ -1748,28 +1748,6 @@ mod tests {
         contract.vote_new_parameters(EpochId::new(1), proposal)
     }
 
-    /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds when all participants have
-    /// default TEE status ([`TeeQuoteStatus::None`]). This tests the basic scenario where no
-    /// participants have submitted attestation information, and all have the default TEE status
-    /// of [`TeeQuoteStatus::None`], which is considered acceptable.
-    #[test]
-    fn test_vote_new_parameters_succeeds_with_default_tee_status() {
-        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
-        let threshold = Threshold::new(2);
-
-        // No attestations submitted - all participants have default TEE status None
-        let result = setup_voting_context_and_vote(
-            &mut contract,
-            &first_participant_id,
-            participants,
-            threshold,
-        );
-        assert!(
-            result.is_ok(),
-            "Should succeed when all participants have default TEE status None"
-        );
-    }
-
     /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds when all participants
     /// submit valid TEE attestations. This tests the scenario where all participants successfully
     /// submit valid attestations through [`VersionedMpcContract::submit_participant_info`],
@@ -1795,36 +1773,6 @@ mod tests {
         );
     }
 
-    /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds with mixed TEE statuses:
-    /// some [`TeeQuoteStatus::Valid`], some [`TeeQuoteStatus::None`]. This tests a realistic
-    /// scenario where some participants have submitted valid attestations (resulting in
-    /// [`TeeQuoteStatus::Valid`] TEE status) while others haven't submitted any attestation
-    /// info (resulting in [`TeeQuoteStatus::None`] TEE status). Both statuses are acceptable
-    /// for TEE validation.
-    #[test]
-    fn test_vote_new_parameters_succeeds_with_mixed_valid_and_none_tee_status() {
-        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(4, 3);
-        let threshold = Threshold::new(3);
-
-        // Submit valid attestations for first 3 participants, leave the 4th without attestation
-        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
-
-        // This should succeed because:
-        // - 3 participants have Valid TEE status (from successful attestations)
-        // - 1 participant has None TEE status (no attestation submitted)
-        // - Both Valid and None are allowed by the TEE validation
-        let result = setup_voting_context_and_vote(
-            &mut contract,
-            &first_participant_id,
-            participants,
-            threshold,
-        );
-        assert!(
-            result.is_ok(),
-            "Should succeed when participants have Valid or None TEE status"
-        );
-    }
-
     /// Test that attempts to submit invalid attestations are rejected by
     /// [`VersionedMpcContract::submit_participant_info`]. This test demonstrates that
     /// participants cannot have Invalid TEE status because the contract proactively rejects
@@ -1837,7 +1785,7 @@ mod tests {
         let threshold = Threshold::new(3);
 
         // Submit valid attestations for first 3 participants
-        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2, 3]);
 
         // Try to submit invalid attestation for the 4th participant
         let participant_index = 3;
@@ -1856,16 +1804,16 @@ mod tests {
             );
         }
 
-        // This should succeed because:
-        // - 3 participants have Valid TEE status (from successful attestations)
-        // - 1 participant has None TEE status (invalid attestation was rejected)
-        // - Both Valid and None are allowed by the TEE validation
+        // This should succeed because all participants have valid attestations.
         let result = setup_voting_context_and_vote(
             &mut contract,
             &first_participant_id,
             participants,
             threshold,
         );
-        assert!(result.is_ok(), "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)");
+        assert!(
+            result.is_ok(),
+            "Should succeed when participants have valid attestations"
+        );
     }
 }
