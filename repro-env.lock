@@ -146,6 +146,14 @@ sha256 = "9b4167ade67f899d5f4d1e0d3e8e8f18b5edfdd076f5aeffd100cb3093117987"
 signature = "iQEzBAABCAAdFiEEW34/txt/EDKaHAOrdx32Yn7faB8FAme8RWMACgkQdx32Yn7faB9bnQf+N2KYErONnv0FLvqScucx7dhD+DNMqRFEEruhqsnAtP9KZzRePYMys6Uhn4TlIysatDnz6qy2UMeXuLOKDAYXMz4M37lfRT6YsBzbNj93FQlVrfelM/ap6U3vGBnHUVv8zqPoI6SgF+qqRuDJtoE3DR6TiiHgYm2oHRR/0NwF9S3hxqVkc+Ebmz7VTTlXW0x/g2uOKRqPyJR17GCuVrRWW/B0eIYrNIVVTE9jcMVKC5Uil+OAYd1bPoTQRgolw/Vp13QnHyUC4u8OwM3yl1b3CWjdRkwz7ImS+K5aF6z9/bUGzPwM1WmPkiz4TNeYHqxnKAQ9GnSLZOJBv1rMl3mI+g=="
 
 [[package]]
+name = "libffi"
+version = "3.5.2-1"
+system = "archlinux"
+url = "https://archive.archlinux.org/packages/l/libffi/libffi-3.5.2-1-x86_64.pkg.tar.zst"
+sha256 = "6855aa68ae506c124f9e62c6be3dd40dd750a050d7126d5265118128638da5c3"
+signature = "iHUEABYKAB0WIQRizHP4hOUpV7L92IObeih9mi7GCAUCaI55JgAKCRCbeih9mi7GCPaiAQC9WCsvXA0sDvhUDGx5+cwDa1Fsnv62kHYgSitMS2fv3QD9FDuCdg+SHvmgzDAcNl30WraQ4IAQvJYUsJo1WBQjsAU="
+
+[[package]]
 name = "libisl"
 version = "0.27-1"
 system = "archlinux"
@@ -168,6 +176,14 @@ system = "archlinux"
 url = "https://archive.archlinux.org/packages/l/libtool/libtool-2.5.4+r62+g6389dce8-1-x86_64.pkg.tar.zst"
 sha256 = "e4aa6fa8364a4974804f24918c89a63b5ca356a035216d58cae0a673df71df59"
 signature = "iNUEABYKAH0WIQQFx3danouXdAf+COadTFqhVCbaCgUCaJzA4l8UgAAAAAAuAChpc3N1ZXItZnByQG5vdGF0aW9ucy5vcGVucGdwLmZpZnRoaG9yc2VtYW4ubmV0MDVDNzc3NUE5RThCOTc3NDA3RkUwOEU2OUQ0QzVBQTE1NDI2REEwQQAKCRCdTFqhVCbaCiveAQCqyG6/7wxz9r/jCRtFuVzIOLlUzOsNyJ6GS3h2vADwAwEAu9+clcghHkhbId7PuW5oxDp9rruBGCU3tmIfyhInvQI="
+
+[[package]]
+name = "libxml2"
+version = "2.14.6-1"
+system = "archlinux"
+url = "https://archive.archlinux.org/packages/l/libxml2/libxml2-2.14.6-1-x86_64.pkg.tar.zst"
+sha256 = "fe52c0d16cf2ced092477a0cbe57232a77d26acf22625f503cc795a1d653e4ab"
+signature = "iHUEABYKAB0WIQSDvIiJNRtd67toQW64rAhgDxCM3wUCaL9UQQAKCRC4rAhgDxCM36EBAQCNpqMBfBHGoUzQMFG7f6vovGlfL8DYCv/h5MzqPkxcqQEAu2p4qU46xk2OO53Gi/3wVG4nTSRU287x4d7XHJ9ubQk="
 
 [[package]]
 name = "llvm-libs"
