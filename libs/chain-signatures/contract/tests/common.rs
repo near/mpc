@@ -1,4 +1,5 @@
-use attestation::attestation::Attestation;
+use assert_matches::assert_matches;
+use attestation::attestation::{Attestation, MockAttestation};
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
@@ -207,6 +208,7 @@ pub async fn init_with_candidates(
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
     let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
+
     let threshold_parameters = {
         let threshold = Threshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
         ThresholdParameters::new(participants, threshold).unwrap()
@@ -258,6 +260,25 @@ pub async fn init_with_candidates(
         .into_result()
         .unwrap();
     dbg!(init);
+
+    // Give each participant a valid attestation initially
+    for account in &accounts {
+        let dummy_tls_key: PublicKey = example_secp256k1_point();
+
+        let tee_submission_result = submit_participant_info(
+            account,
+            &contract,
+            &Attestation::Mock(MockAttestation::Valid),
+            &dummy_tls_key,
+        )
+        .await;
+
+        assert_matches!(
+            tee_submission_result,
+            Ok(true),
+            "`submit_participant_info` must succeed for mock attestations"
+        );
+    }
     (worker, contract, accounts)
 }
 
@@ -666,6 +687,9 @@ pub async fn submit_participant_info(
         .max_gas()
         .transact()
         .await?;
+
+    dbg!(&result);
+
     Ok(result.is_success())
 }
 

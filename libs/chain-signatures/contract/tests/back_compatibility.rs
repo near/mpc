@@ -1,9 +1,12 @@
-use crate::common::{gen_accounts, PARTICIPANT_LEN};
+use std::collections::HashSet;
+
+use crate::common::{gen_accounts, get_participants, get_tee_accounts, PARTICIPANT_LEN};
 use common::current_contract;
 use mpc_contract::{
     config::InitConfig,
     primitives::thresholds::{Threshold, ThresholdParameters},
 };
+use near_sdk::AccountId;
 use near_workspaces::{network::Sandbox, Contract, Worker};
 pub mod common;
 
@@ -117,14 +120,66 @@ async fn test_back_compatiblity_testnet() {
 }
 
 #[tokio::test]
-async fn test_all_participants_have_valid_attestation_for_soft_launch() -> anyhow::Result<()> {
+async fn participant_set_is_unchanged_during_upgrade() -> anyhow::Result<()> {
     let worker = near_workspaces::sandbox().await?;
     let contract = deploy_old(&worker, Network::Testnet).await?;
+
+    init_contract(worker, &contract).await?;
+
+    let initial_participants = get_participants(&contract).await?;
+
     let contract = upgrade_to_new(contract).await?;
 
     migrate(&contract)
         .await
         .expect("❌ Back compatibility check failed: migration() failed");
 
+    let participants_after_upgrade = get_participants(&contract).await?;
+    assert_eq!(
+        initial_participants, participants_after_upgrade,
+        "Participant set must not change after an upgrade."
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_all_participants_have_valid_attestation_for_soft_launch() -> anyhow::Result<()> {
+    let worker = near_workspaces::sandbox().await?;
+    let contract = deploy_old(&worker, Network::Testnet).await?;
+
+    init_contract(worker, &contract).await?;
+
+    let initial_participants = get_participants(&contract).await?;
+    let participant_set_is_not_empty = !initial_participants.participants().is_empty();
+    assert!(
+        participant_set_is_not_empty,
+        "Test must contain a contract with at least one participant"
+    );
+
+    let contract = upgrade_to_new(contract).await?;
+
+    migrate(&contract)
+        .await
+        .expect("❌ Back compatibility check failed: migration() failed");
+
+    let accounts_with_tee_attestation_post_upgrade: HashSet<AccountId> =
+        get_tee_accounts(&contract)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect();
+
+    let participant_set: HashSet<AccountId> = initial_participants
+        .participants()
+        .into_iter()
+        .map(|(account_id, _, _)| account_id)
+        .cloned()
+        .collect();
+
+    assert_eq!(
+        accounts_with_tee_attestation_post_upgrade, participant_set,
+        "All initial participants must have a valid attestation post upgrade."
+    );
     Ok(())
 }
