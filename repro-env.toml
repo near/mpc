@@ -1,6 +1,0 @@
-[container]
-image = "docker.io/library/archlinux"
-
-[packages]
-system = "archlinux"
-dependencies = ["openssl", "clang", "base-devel", "rustup"]

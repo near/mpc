@@ -51,16 +51,19 @@ TZ_VAL = UTC
 
 # Set the target for the build, default to x86_64
 TARGET ?= x86_64-unknown-linux-gnu
+BUILD_PATH = "target/$(TARGET)/release"
 
 .PHONY: build-reproducible
 build-reproducible: ## Build reproducible static binary for x86_64
-	# Set timestamp from last git commit for reproducible builds
-	SOURCE_DATE_EPOCH=$(SOURCE_DATE) \
+	@# Set timestamp from last git commit for reproducible builds
+	@SOURCE_DATE_EPOCH=$(SOURCE_DATE) \
 	RUSTFLAGS="${RUST_BUILD_FLAGS} --remap-path-prefix $$(pwd)=." \
 	CARGO_INCREMENTAL=${CARGO_INCREMENTAL_VAL} \
 	LC_ALL=${LOCALE_VAL} \
 	TZ=${TZ_VAL} \
-	cargo build --release --locked --target $(TARGET)
+	cargo build -p mpc-node --release --locked --target $(TARGET)
+	@echo "SOURCE_DATE_EPOCH = $(SOURCE_DATE)"
+	@sha256sum $(BUILD_PATH)/mpc-node
 
 .PHONY: docker-image
 docker-image: ## Build a rbuilder Docker image

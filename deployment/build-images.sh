@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Script to reproducibly build MPC binary and the docker image.
+
+DOCKERFILE_NODE=deployment/Dockerfile-mpc
+: "${NODE_IMAGE_NAME:=mpc-node}"
+
+DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
+: "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
+
+
+if [ ! "$(pwd)" = "$(git rev-parse --show-toplevel)" ]; then
+    echo "Must be called from project root!"
+    exit 1
+fi
+
+# Create our own builder (build env) to enable reproducible images
+if ! docker buildx &>/dev/null; then
+    echo "Must install docker-buildx"
+   exit 1
+fi
+
+buildkit_version="0.24.0"
+buildkit_image_name="buildkit_${buildkit_version}"
+
+# Create our own builder (build env) to enable reproducible images
+if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
+    docker buildx create --use --driver-opt image=moby/buildkit:v${buildkit_version} --name ${buildkit_image_name}
+fi
+
+docker buildx build --builder ${buildkit_image_name} --no-cache \
+    --build-arg SOURCE_DATE_EPOCH="0" \
+    --output type=docker,name=$NODE_IMAGE_NAME,rewrite-timestamp=true \
+    -f "$DOCKERFILE_NODE" .
+
+node_image_hash=$(docker inspect $NODE_IMAGE_NAME | jq .[0].Id)
+
+
+docker buildx build --builder ${buildkit_image_name} --no-cache \
+    --build-arg SOURCE_DATE_EPOCH="0" \
+    --output type=docker,name=$LAUNCHER_IMAGE_NAME,rewrite-timestamp=true \
+    -f "$DOCKERFILE_LAUNCHER" .
+
+launcher_image_hash=$(docker inspect $LAUNCHER_IMAGE_NAME | jq .[0].Id)
+
+echo "node docker image hash: $node_image_hash"
+echo "launcher docker image hash: $launcher_image_hash"
