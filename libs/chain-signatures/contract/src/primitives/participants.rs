@@ -192,9 +192,9 @@ impl Participants {
         account_id: AccountId,
         new_info: ParticipantInfo,
     ) -> Result<(), Error> {
-        for (a_id, _, info) in self.participants.iter_mut() {
-            if *a_id == account_id {
-                *info = new_info.clone();
+        for (participant_id, _, participant_info) in self.participants.iter_mut() {
+            if *participant_id == account_id {
+                *participant_info = new_info.clone();
                 return Ok(());
             }
         }
