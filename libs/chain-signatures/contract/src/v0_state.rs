@@ -175,7 +175,7 @@ impl From<MpcContractV1> for MpcContract {
                 .participants()
                 .participants()
                 .iter()
-                .map(|(account_id, _, _)| account_id); // This API structure is so so bad. Create a TODO to revisit this.
+                .map(|(account_id, _, _)| account_id);
 
             for participant_account_id in participant_account_ids {
                 tee_state.add_participant(
