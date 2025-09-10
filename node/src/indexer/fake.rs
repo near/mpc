@@ -217,7 +217,7 @@ impl FakeMpcContractState {
         }
     }
 
-    pub fn change_participant_info(
+    pub fn update_participant_info(
         &mut self,
         account_id: AccountId,
         participant_info: ParticipantInfo,
@@ -226,7 +226,7 @@ impl FakeMpcContractState {
             ProtocolContractState::Running(state) => {
                 let mut new_participants = state.parameters.participants().clone();
                 new_participants
-                    .change_info(account_id, participant_info)
+                    .update_info(account_id, participant_info)
                     .unwrap();
                 let new_parameters =
                     ThresholdParameters::new(new_participants, state.parameters.threshold())
@@ -244,7 +244,7 @@ impl FakeMpcContractState {
             }
             _ => {
                 tracing::info!(
-                    "change_participant_info  ignored because the contract is not in running state"
+                    "update_participant_info  ignored because the contract is not in running state"
                 );
             }
         }

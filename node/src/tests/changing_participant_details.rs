@@ -108,7 +108,7 @@ async fn test_changing_participant_set() {
         .indexer
         .contract_mut()
         .await
-        .change_participant_info(p_config_info.near_account_id.clone(), p_info);
+        .update_participant_info(p_config_info.near_account_id.clone(), p_info);
 
     // as a precaution, disable the first node
     setup.indexer.disable(0.into()).await;

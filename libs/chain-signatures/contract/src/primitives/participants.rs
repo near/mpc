@@ -187,7 +187,7 @@ impl Participants {
         }
     }
 
-    pub fn change_info(
+    pub fn update_info(
         &mut self,
         account_id: AccountId,
         new_info: ParticipantInfo,
