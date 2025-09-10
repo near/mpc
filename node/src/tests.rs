@@ -286,7 +286,7 @@ impl IntegrationTestSetup {
     pub async fn new(
         clock: Clock,
         temp_dir: &Path,
-        participant_accounts: Vec<AccountId>, // we create per account. lol.
+        participant_accounts: Vec<AccountId>,
         threshold: usize,
         txn_delay_blocks: u64,
         port_seed: PortSeed,
@@ -340,7 +340,7 @@ impl IntegrationTestSetup {
                     near_signer_key: ed25519_dalek::SigningKey::generate(&mut OsRng),
                     near_responder_keys: vec![ed25519_dalek::SigningKey::generate(&mut OsRng)],
                 },
-                local_storage_aes_key: rand::random(), // change this after the fact
+                local_storage_aes_key: rand::random(),
             };
             let (indexer_api, task, currently_running_job_name) = indexer_manager
                 .add_indexer_node(i.into(), participant_accounts[i].clone())
