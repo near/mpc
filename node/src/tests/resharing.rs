@@ -43,6 +43,7 @@ async fn test_key_resharing_simple() {
 
     {
         let mut contract = setup.indexer.contract_mut().await;
+        // todo: fix (#1060)
         contract.initialize(setup.participants.clone());
         contract.add_domains(vec![domain.clone()]);
     }
@@ -127,6 +128,7 @@ async fn test_key_resharing_multistage() {
 
     {
         let mut contract = setup.indexer.contract_mut().await;
+        // todo: fix (#1060)
         contract.initialize(setup.participants.clone());
         contract.add_domains(vec![domain.clone()]);
     }
@@ -150,6 +152,7 @@ async fn test_key_resharing_multistage() {
     // Have the fifth node join.
     let mut participants_2 = setup.participants.clone();
     participants_2.participants.pop();
+    // todo: fix (#1060)
     participants_1.threshold = 3;
     setup
         .indexer
@@ -314,6 +317,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
 
     {
         let mut contract = setup.indexer.contract_mut().await;
+        // todo: fix (#1060)
         contract.initialize(setup.participants.clone());
         contract.add_domains(vec![domain.clone()]);
     }
@@ -343,25 +347,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
     .expect("Timed out generating the first signature");
 
     // Disable a node to make resharing stall.
-    let min_id = setup
-        .participants
-        .participants
-        .iter()
-        .map(|p| &p.id)
-        .min()
-        .unwrap();
-
-    let to_disable = setup
-        .participants
-        .participants
-        .iter()
-        .find(|p| p.id != *min_id)
-        .expect("No participant with non-minimum ID found")
-        .near_account_id
-        .clone();
-
-    tracing::error!("disabling: {}", to_disable);
-    let disabled = setup.indexer.disable(to_disable).await;
+    let disabled = setup.indexer.disable(0.into()).await;
 
     setup
         .indexer
