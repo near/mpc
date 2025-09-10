@@ -36,8 +36,7 @@ async fn test_changing_participant_set() {
         TXN_DELAY_BLOCKS,
         PortSeed::RECOVERY_TEST,
         DEFAULT_BLOCK_TIME,
-    )
-    .await;
+    );
 
     let home_dir_first = setup.configs.first().unwrap().home_dir.clone();
     let local_encryption_key_first = setup.configs.first().unwrap().secrets.local_storage_aes_key;

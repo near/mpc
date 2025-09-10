@@ -283,7 +283,7 @@ pub struct IntegrationTestSetup {
 impl IntegrationTestSetup {
     /// Generates test node configs and a fake indexer; each config can then be used
     /// to start running the node.
-    pub async fn new(
+    pub fn new(
         clock: Clock,
         temp_dir: &Path,
         participant_accounts: Vec<AccountId>,
@@ -342,9 +342,8 @@ impl IntegrationTestSetup {
                 },
                 local_storage_aes_key: rand::random(),
             };
-            let (indexer_api, task, currently_running_job_name) = indexer_manager
-                .add_indexer_node(i.into(), participant_accounts[i].clone())
-                .await;
+            let (indexer_api, task, currently_running_job_name) =
+                indexer_manager.add_indexer_node(i.into(), participant_accounts[i].clone());
             configs.push(OneNodeTestConfig {
                 clock: clock.clone(),
                 config,

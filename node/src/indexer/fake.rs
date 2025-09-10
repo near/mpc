@@ -28,7 +28,7 @@ use near_sdk::{AccountId, PublicKey};
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};
-use tokio::sync::{broadcast, mpsc, watch, Mutex};
+use tokio::sync::{broadcast, mpsc, watch};
 
 /// A simplification of the real MPC contract state for testing.
 pub struct FakeMpcContractState {
@@ -309,7 +309,7 @@ struct FakeIndexerCore {
     /// How long to wait before generating the next block.
     block_time: std::time::Duration,
 
-    account_id_by_uid: Arc<Mutex<BTreeMap<Uid, AccountId>>>,
+    account_id_by_uid: Arc<std::sync::Mutex<BTreeMap<Uid, AccountId>>>,
 }
 
 impl FakeIndexerCore {
@@ -429,7 +429,7 @@ impl FakeIndexerCore {
                 let account_id = self
                     .account_id_by_uid
                     .lock()
-                    .await
+                    .expect("expected lock")
                     .get(&uid)
                     .unwrap()
                     .clone();
@@ -532,7 +532,7 @@ pub struct FakeIndexerManager {
     /// Allows modification of the contract.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 
-    account_id_by_uid: Arc<Mutex<BTreeMap<Uid, AccountId>>>,
+    account_id_by_uid: Arc<std::sync::Mutex<BTreeMap<Uid, AccountId>>>,
 }
 
 /// Allows a node to be disabled during tests.
@@ -677,7 +677,7 @@ impl FakeIndexerManager {
         let (ckd_request_sender, ckd_request_receiver) = mpsc::unbounded_channel();
         let (ckd_response_sender, ckd_response_receiver) = mpsc::unbounded_channel();
         let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
-        let account_id_by_uid = Arc::new(Mutex::new(BTreeMap::new()));
+        let account_id_by_uid = Arc::new(std::sync::Mutex::new(BTreeMap::new()));
         let core = FakeIndexerCore {
             clock: clock.clone(),
             txn_delay_blocks,
@@ -731,7 +731,7 @@ impl FakeIndexerManager {
 
     /// Adds a new node to the fake indexer. Returns the API for the node, a task that
     /// runs the node's logic, and the running job name to passed to the coordinator.
-    pub async fn add_indexer_node(
+    pub fn add_indexer_node(
         &mut self,
         uid: Uid,
         account_id: AccountId,
@@ -773,7 +773,10 @@ impl FakeIndexerManager {
         };
         self.node_disabler.insert(uid, disabler);
         self.indexer_pauser.insert(uid, indexer_pauser);
-        self.account_id_by_uid.lock().await.insert(uid, account_id);
+        self.account_id_by_uid
+            .lock()
+            .expect("require mutex")
+            .insert(uid, account_id);
         (
             indexer,
             AutoAbortTask::from(tokio::spawn(one_node.run())),

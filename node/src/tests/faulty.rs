@@ -33,8 +33,7 @@ async fn test_faulty_cluster() {
         TXN_DELAY_BLOCKS,
         PortSeed::FAULTY_CLUSTER_TEST,
         DEFAULT_BLOCK_TIME,
-    )
-    .await;
+    );
 
     let domain = DomainConfig {
         id: DomainId(0),
@@ -170,8 +169,7 @@ async fn test_indexer_stuck() {
         TXN_DELAY_BLOCKS,
         PortSeed::FAULTY_STUCK_INDEXER_TEST,
         std::time::Duration::from_millis(100),
-    )
-    .await;
+    );
 
     let domain = DomainConfig {
         id: DomainId(0),

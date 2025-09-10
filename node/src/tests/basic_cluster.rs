@@ -27,8 +27,7 @@ async fn test_basic_cluster() {
         TXN_DELAY_BLOCKS,
         PortSeed::BASIC_CLUSTER_TEST,
         DEFAULT_BLOCK_TIME,
-    )
-    .await;
+    );
 
     let signature_domain = DomainConfig {
         id: DomainId(0),

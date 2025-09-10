@@ -30,8 +30,7 @@ async fn test_key_resharing_simple() {
         TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_SIMPLE_TEST,
         DEFAULT_BLOCK_TIME,
-    )
-    .await;
+    );
 
     // Initialize the contract with one fewer participant.
     let mut initial_participants = setup.participants.clone();
@@ -114,8 +113,7 @@ async fn test_key_resharing_multistage() {
         TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_MULTISTAGE_TEST,
         std::time::Duration::from_millis(600),
-    )
-    .await;
+    );
 
     // Initialize the contract with two fewer participants.
     let mut participants_1 = setup.participants.clone();
@@ -306,8 +304,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
         TXN_DELAY_BLOCKS,
         PortSeed::KEY_RESHARING_SIGNATURE_BUFFERING_TEST,
         DEFAULT_BLOCK_TIME,
-    )
-    .await;
+    );
 
     // Initialize the contract with one fewer participant.
     let mut initial_participants = setup.participants.clone();
