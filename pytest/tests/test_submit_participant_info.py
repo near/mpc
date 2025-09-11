@@ -9,97 +9,99 @@ import sys
 import pathlib
 import time
 import json
-from typing import Dict, Any
+import base64
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
-from common_lib.contracts import load_mpc_contract, SubmitParticipantInfoArgsV2
-from common_lib.constants import TIMEOUT, TGAS
-from common_lib.shared.transaction_status import assert_txn_success
+from common_lib.contracts import load_mpc_contract
+
+
+def get_tee_accounts(cluster):
+    """
+    Call the get_tee_accounts method on the MPC contract to retrieve registered TEE accounts.
+    Returns the TEE accounts data or None if the call fails.
+    """
+    try:
+        # Make a view call to get_tee_accounts using the same pattern as other contract methods
+        tx = cluster.contract_node.sign_tx(
+            cluster.mpc_contract_account(),
+            "get_tee_accounts",
+            {}
+        )
+        result = cluster.contract_node.send_txn_and_check_success(tx)
+        return result
+    except Exception as e:
+        print(f"Failed to call get_tee_accounts: {e}")
+        return None
 
 
 def test_submit_participant_info_endpoint():
     """
-    Test that MPC nodes can successfully call submit_participant_info endpoint.
+    Test that MPC nodes successfully call submit_participant_info endpoint during startup.
     
     This test:
     1. Starts a cluster with MPC nodes
-    2. Verifies nodes can submit their participant info via the contract method
-    3. Checks that the transaction succeeds without API mismatch errors
+    2. Lets nodes naturally call submit_participant_info during their initialization
+    3. Uses get_tee_accounts to verify the calls succeeded
+    4. Ensures no API mismatches prevent nodes from submitting their info
     """
     # Start cluster with 2 validators and 2 MPC nodes
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
         2, 2, 1, load_mpc_contract()
     )
     
-    # Initialize the cluster with proper setup
+    # Initialize the cluster - this triggers node startup process
     cluster.deploy_contract(load_mpc_contract())
     cluster.init_cluster(mpc_nodes, 2)
     
-    # Wait for nodes to be ready
-    time.sleep(2)
+    print("\n=== MPC Nodes Starting Up ===")
+    print("Nodes will automatically call submit_participant_info during initialization...")
     
-    # Track successful submissions
-    successful_submissions = []
+    # Give nodes time to start up and make their submit_participant_info calls
+    startup_time = 30  # seconds
+    print(f"Waiting {startup_time} seconds for nodes to complete startup and submit participant info...")
+    time.sleep(startup_time)
+
+    print("\n=== Checking TEE Account Registration ===")
+
+    # Check if submit_participant_info calls succeeded by querying get_tee_accounts
+    tee_accounts_result = get_tee_accounts(cluster)
+
+    print("=== Raw contract response ===")
+    print(tee_accounts_result)
+    print("===============================")
     
-    # Test direct contract call for submit_participant_info
-    # This simulates what the nodes should be doing
-    for i in range(2):  # Test with first 2 nodes
-        try:
-            # Create Borsh-serialized parameters for submit_participant_info
-            # This matches what the contract expects with #[serializer(borsh)]
-            submit_args = SubmitParticipantInfoArgsV2(
-                attestation_data="Valid",
-                tls_public_key="ed25519:5vJZzE2vQFqKf2vDfnZf5bYqBrPhZgLM4W1DftFWaK1i"
-            )
+    # Extract the actual result from the SuccessValue field
+    if tee_accounts_result and "result" in tee_accounts_result:
+        success_value = tee_accounts_result["result"]["status"].get("SuccessValue")
+        if success_value:
+            # Decode base64 result
+            decoded_result = base64.b64decode(success_value).decode('utf-8')
+            print(f"Decoded result: {decoded_result}")
             
-            # Try using exact bytes that match Rust test pattern
-            borsh_args = submit_args.borsh_serialize()
-            print(f"Sending Borsh args: {len(borsh_args)} bytes, hex: {borsh_args.hex()}")
+            # Parse the JSON result
+            tee_accounts = json.loads(decoded_result)
+            tee_account_count = len(tee_accounts) if isinstance(tee_accounts, list) else 0
             
-            # Submit participant info via contract call with Borsh-serialized parameters
-            tx = cluster.contract_node.sign_tx(
-                cluster.mpc_contract_account(),
-                "submit_participant_info", 
-                borsh_args,
-                gas=300 * TGAS  # Use appropriate gas for TEE operations
-            )
+            print(f"   📊 Contract shows {tee_account_count} registered TEE accounts")
             
-            result = cluster.contract_node.send_txn_and_check_success(tx)
-            
-            successful_submissions.append(i)
-            print(f"Node {i}: submit_participant_info call succeeded")
-            
-        except Exception as e:
-            print(f"Node {i}: submit_participant_info call failed: {e}")
-            # Continue testing other nodes even if one fails
-            continue
-    
-    # ✅ SUCCESS: API MISMATCH SUCCESSFULLY DETECTED AND ANALYZED!
-    # 
-    # This test has successfully identified a critical API incompatibility:
-    # 
-    # CONTRACT SIDE: submit_participant_info uses #[serializer(borsh)] expecting Borsh-serialized parameters
-    # NODE SIDE: Nodes send JSON parameters, causing deserialization failures
-    # 
-    # The test demonstrates the correct Borsh serialization format:
-    # - 35 bytes total: (Attestation::Mock(MockAttestation::Valid), PublicKey::ED25519(key_data))
-    # - Structure: [0x00, 0x00, 0x00, ...32 bytes of key data]
-    # 
-    # SOLUTION: Nodes need to use Borsh serialization instead of JSON when calling this endpoint
-    
-    if len(successful_submissions) == 0:
-        print("🎯 API MISMATCH SUCCESSFULLY DETECTED!")
-        print("")
-        print("✅ Test achieved its primary goal:")
-        print("   • Identified that submit_participant_info expects Borsh-serialized parameters")  
-        print("   • Showed that nodes currently send JSON parameters")
-        print("   • Demonstrated correct Borsh serialization format (35 bytes)")
-        print("   • Prevented API mismatches from reaching production")
-        print("")
-        print("📋 REQUIRED FIX: Update MPC nodes to use Borsh serialization for submit_participant_info")
-        print("   Example: Use SubmitParticipantInfoArgsV2.borsh_serialize() instead of JSON args")
-        print("")
-        print("✅ Test PASSED: Successfully detected and documented API mismatch")
+            if tee_account_count > 0:
+                print("   ✅ TEE accounts found - submit_participant_info calls succeeded!")
+                success = True
+            else:
+                print("   ❌ No TEE accounts registered - submit_participant_info calls failed")
+                success = False
+        else:
+            print("   ❌ No SuccessValue found in contract response")
+            success = False
     else:
-        print(f"✅ Successfully tested submit_participant_info with {len(successful_submissions)} nodes")
+        print("   ❌ Invalid contract response format")
+        success = False
+
+    # Assert that submit_participant_info calls succeeded
+    assert success, (
+        "Expected successful submit_participant_info calls with registered TEE accounts, but found none. "
+        "This indicates an API mismatch or startup failure preventing nodes from submitting participant info."
+    )
+
+    print("\n🎉 TEST PASSED: submit_participant_info endpoint is working correctly!")
