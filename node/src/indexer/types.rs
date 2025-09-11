@@ -171,7 +171,7 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubmitParticipantInfoArgs {
     pub proposed_tee_participant: Attestation,
-    pub sign_pk: PublicKey,
+    pub tls_public_key: PublicKey,
 }
 
 /// Request to send a transaction to the contract on chain.
