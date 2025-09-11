@@ -1,9 +1,13 @@
 FROM rust:1.86-slim-bookworm@sha256:a044f7ab9a762f95be2ee7eb2c49e4d4a4ec60011210de9f7da01d552cae3a55 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update -y && \
-    apt-get install -y --no-install-recommends make=4.3-4.1 git=1:2.39.5-0+deb12u2 \
-     libssl-dev=3.0.17-1~deb12u2 pkg-config=1.8.1-1 clang=1:14.0-55.7~deb12u1 && \
+RUN \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
+    repro-sources-list.sh && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends make git libssl-dev pkg-config clang && \
     : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 
@@ -23,8 +27,14 @@ RUN make build-reproducible
 
 FROM google/cloud-sdk:538.0.0-debian_component_based@sha256:6a3b29f50ae5aece8d93cec072a8095a2d8c90bfbbf53435127b932097eff75d AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
-    openssl=3.0.17-1~deb12u2 ca-certificates=20250419 && \
+
+RUN \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
+    repro-sources-list.sh && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends openssl ca-certificates && \
     : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 

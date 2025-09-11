@@ -2,15 +2,14 @@ FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install packages with exact versions for reproducibility
-RUN apt-get update -y && \
+RUN \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
+    repro-sources-list.sh && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
-        docker.io=20.10.24+dfsg1-1+deb12u1+b2 \
-        docker-compose=1.29.2-3 \
-        curl=7.88.1-10+deb12u14 \
-        jq=1.6-2.1+deb12u1 \
-        bash=5.2.15-2+b9 \
-        coreutils=9.1-1 \
-        python3=3.11.2-1+b1 && \
+        docker.io docker-compose curl jq bash coreutils python3
     : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 
