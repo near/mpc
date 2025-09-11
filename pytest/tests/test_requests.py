@@ -2,9 +2,9 @@
 """
 Starts 2 near validators and 2 mpc nodes.
 Deploys mpc contract in 'libs/chain-signatures/res/mpc_contract.wasm'
-Sends signature/ckd requests.
+Sends a signature and ckd requests.
 Verifies that the mpc nodes index the signature/ckd request.
-Waits for the signature/ckd responses. Fails if timeout is reached.
+Waits for the signature and ckd responses. Fails if timeout is reached.
 """
 
 import sys

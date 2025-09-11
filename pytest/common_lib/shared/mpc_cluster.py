@@ -168,7 +168,7 @@ class MpcCluster:
 
     def define_candidate_set(self, mpc_nodes: List[MpcNode]):
         """
-        Labels mpc_nodes as a candidate. Any node that is currently a participant but not in `mpc_nodes` will be labeled a `old_participant`
+        Labels mpc_nodes as a candidate. Any node that is currently a participant but not in `mpc_nodes` will be labeled an `old_participant`
         """
         for node in mpc_nodes:
             if node not in self.mpc_nodes:
