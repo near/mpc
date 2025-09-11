@@ -123,12 +123,12 @@ def sign_create_account_with_multiple_access_keys_tx(
 ) -> bytes:
     actions = []
 
-    if createNewAccount:
+    if create_new_account:
         # Only when creating a brand-new account
         actions.append(create_create_account_action())
         actions.append(create_payment_action(100 * NEAR_BASE))
 
-    if fullAccess:
+    if full_access:
         # Give full access to all keys
         access_key_actions = [
             create_full_access_key_action(key.decoded_pk()) for key in keys
@@ -393,8 +393,8 @@ def start_cluster_with_mpc(
             nonce,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
-            True,
-            True,
+            full_access=True,
+            create_new_account=True,
         )
         create_txs.append(tx)
         pytest_keys_per_node.append(pytest_signer_keys)
