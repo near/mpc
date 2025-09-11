@@ -75,7 +75,7 @@ def create_function_call_access_key_action(
 
 def create_mpc_function_call_access_key_action(
     pk: bytes, contract_id: str, allowance: int | None = None
-) -> "Action":
+) -> Action:
     """
     Create a restricted access key that only allows calling MPC-related contract methods.
     """
