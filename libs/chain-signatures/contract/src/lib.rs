@@ -24,7 +24,7 @@ use crate::{
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
     v0_state::MpcContractV1,
 };
-use attestation::attestation::Attestation;
+use attestation::attestation::{Attestation, MockAttestation};
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -153,6 +153,23 @@ impl MpcContract {
         );
         parameters.validate().unwrap();
 
+        let mut tee_state = TeeState::default();
+
+        {
+            let participant_account_ids = parameters
+                .participants()
+                .participants()
+                .iter()
+                .map(|(account_id, _, _)| account_id);
+
+            for participant_account_id in participant_account_ids {
+                tee_state.add_participant(
+                    participant_account_id.clone(),
+                    Attestation::Mock(MockAttestation::Valid),
+                )
+            }
+        }
+
         Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 DomainRegistry::default(),
@@ -163,7 +180,7 @@ impl MpcContract {
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: ProposedUpdates::default(),
             config: Config::from(init_config),
-            tee_state: TeeState::default(),
+            tee_state,
             accept_requests: true,
         }
     }
