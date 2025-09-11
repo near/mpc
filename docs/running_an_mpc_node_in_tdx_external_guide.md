@@ -244,7 +244,7 @@ near contract call-function as-transaction \
   send
 ```
 
-The transaction output will include the latest MPC Docker image hash (digest).
+The transaction output will include the latest MPC Docker image hash.
 
 
 
