@@ -118,8 +118,8 @@ def sign_create_account_with_multiple_access_keys_tx(
     nonce,
     block_hash,
     contract_id,
-    fullAccess: bool,
-    createNewAccount: bool,
+    full_access: bool,
+    create_new_account: bool,
 ) -> bytes:
     actions = []
 
