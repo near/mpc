@@ -261,6 +261,37 @@ class MpcCluster:
         self.contract_state().print()
         return n < n_attempts
 
+    def wait_for_participants_to_have_attestation(
+        self, participants: List[MpcNode]
+    ) -> bool:
+        n_attempts = 120
+        n = 0
+
+        participant_account_ids = [
+            participant.account_id() for participant in participants
+        ]
+
+        participant_account_ids = set(participant_account_ids)
+
+        while n <= n_attempts:
+            accounts_with_attestation = set(self.get_tee_approved_accounts())
+            all_accounts_have_attestation_submitted = (
+                accounts_with_attestation.issuperset(participant_account_ids)
+            )
+
+            if all_accounts_have_attestation_submitted:
+                return True
+
+            time.sleep(0.1)
+            n += 1
+            if n % 10 == 0:
+                print(
+                    f"Accounts with attestation: {accounts_with_attestation}. Accounts missing attestation: {participant_account_ids - accounts_with_attestation}"
+                )
+                self.contract_state().print()
+
+        return False
+
     def add_domains(
         self,
         schemes: List[SignatureScheme],
@@ -312,6 +343,13 @@ class MpcCluster:
         state = self.contract_state()
         assert state.is_state(ProtocolState.RUNNING), "Require running state"
 
+        # TODO: use ContractMethod.GET_TEE_ACCOUNTS to wait for all participants to enter running.
+        # wait for all participants to have submitted their attestations.
+
+        assert self.wait_for_participants_to_have_attestation(new_participants), (
+            "Failed to wait for all participants to submit valid attestation for resharing to start."
+        )
+
         self.parallel_contract_calls(
             method=ContractMethod.VOTE_NEW_PARAMETERS,
             nodes=self.get_voters(),
@@ -332,6 +370,17 @@ class MpcCluster:
                 "failed to conclude resharing"
             )
             self.update_participant_status()
+
+    def get_tee_approved_accounts(self) -> List[str]:
+        cn = self.contract_node
+        txn = cn.sign_tx(self.mpc_contract_account(), "get_tee_accounts", {})
+        res = cn.send_txn_and_check_success(txn)
+        assert "error" not in res, res
+        res = res["result"]["status"]["SuccessValue"]
+        res = base64.b64decode(res)
+        res = json.loads(res)
+
+        return res
 
     def get_contract_state(self):
         cn = self.contract_node
