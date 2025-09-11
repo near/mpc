@@ -44,7 +44,7 @@ SECRETS_JSON = "secrets.json"
 
 def create_function_call_access_key_action(
     pk: bytes, contract_id: str, method_names: list[str], allowance: int | None = None
-) -> "Action":
+) -> Action:
     permission = AccessKeyPermission()
     permission.enum = "functionCall"
 
