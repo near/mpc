@@ -155,6 +155,9 @@ impl MpcContract {
 
         let mut tee_state = TeeState::default();
 
+        // TODO: https://github.com/near/mpc/issues/1087
+        // Every participant must have a valid attestation, otherwise we risk
+        // participants being immediately kicked out once contract transitions into running.
         {
             let participant_account_ids = parameters
                 .participants()
