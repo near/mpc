@@ -33,11 +33,7 @@ fi
 # this is necessary to fix reproducibility with old docker versions where
 # rewrite-timestamp is not working as expected
 # https://github.com/moby/buildkit/issues/4986
-git ls-tree -r --name-only HEAD | while read filename; do
-  unixtime=$(git log -1 --format="%at" -- "${filename}")
-  touchtime=$(date -d @$unixtime +'%Y%m%d%H%M.%S')
-  touch -t ${touchtime} "${filename}"
-done
+find "." -type f -exec touch -d @"$SOURCE_DATE" {} +
 
 
 buildkit_version="0.24.0"
