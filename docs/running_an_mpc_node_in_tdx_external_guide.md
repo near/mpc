@@ -467,43 +467,37 @@ After sending the transaction, check that the new key was added:
 ```
 
 
-
-
 # Joining the MPC Cluster
 
-After the MPC node has been deployed, the next steps are:
+After the MPC node has been deployed and its NEAR account key successfully added to the operator's account, the node will attempt to sync and then submit its attestation information to the contract.
 
-* Register the node’s attestation information on the contract via **submit_participant_info**
-* Wait for the node to fully sync  
-* Vote for joining the node to the MPC cluster via **vote_new_parameters**.  
-  Note \- this step needs to be done by all the operators. 
+Once these steps are complete, the operator should request all other operators to vote for adding the new MPC node by calling the **vote_new_parameters** method.
 
-##  Submitting participate info (Submit_participant_info)
+## Wait for NEAR Indexer to Sync
 
-This method needs to be called in order to register the node attestation information on the contract and prove that the node is running inside a CVM with a valid configuration.
+Wait until the NEAR Indexer has completed state sync. This process can take several hours. You can check the progress in the Docker container logs or via the metrics endpoint:
 
-Node \- during the [transition phase](#transition-phase) \- this step is optional in case you want to register a node without TEE.
-
-After the MPC node is fully synced, the node will check if the operator has added the node’s account keys to the operator's near contract. If so, the MPC node will send to the contract its attestation information via the submit\_participant\_info contract method.
-
-This command can’t be called unless the key was added to the account, otherwise the call will fail due to lack of funds associated with the key.
-
-**Note \- Calling this method will cost TBD [#903](https://github.com/near/mpc/issues/903) Near to none participants.**  
-**So you need to have this amount associated with your account.**
-
-In case the node failed to call submit\_participant\_info. The operator can do it on its behalf, by retrieving the attestation info from \<IP\>:8080/public\_info and submitting it to the contract.  
-TBD [#904](https://github.com/near/mpc/issues/904) \- need to add some more details or script on how to do it.
-
-## Wait for node indexer to sync
-
-Wait till near-indexer state sync is completed. It will take a few hours. Check the docker container logs for sync progress. Indexer sync status is also available via metrics page:
-
-```
+```bash
 curl http://127.0.0.1:3030/metrics | grep near_sync_status
 # Sync is completed when status is 0: 
 near_sync_status 0
-
 ```
+
+## Submitting Participant Info
+
+> **Note:** During the [transition phase](#transition-phase), this step is optional. The contract will accept nodes that do not submit an attestation.  
+
+Once the MPC node is fully synced, it will call `submit_participant_info` to submit its attestation information to the contract.
+
+If the node’s key has not been added to the account, this operation will fail. In that case, the node will retry the operation in a loop.
+
+> **Note:** This behavior is not yet implemented. See issue [#1069](https://github.com/near/mpc/issues/1069).  
+
+> **TBD [#1079]:** Add screenshot/logs/cURL example for detecting when the MPC node has submitted attestation information.
+
+> **Note:** Calling this method will incur a cost (TBD, XXX NEAR). Ensure this amount is available in your account.  
+> _(TBD [#903](https://github.com/near/mpc/issues/903) – confirm exact cost)_
+
 
 ## Voting: (vote_new_parameters)
 
