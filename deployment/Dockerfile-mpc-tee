@@ -7,7 +7,7 @@ RUN \
     --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
     repro-sources-list.sh && \
     apt-get update && \
-    apt-get install -y --no-install-recommends make libssl-dev pkg-config clang && \
+    apt-get install -y --no-install-recommends make git libssl-dev pkg-config clang && \
     : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 
