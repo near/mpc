@@ -647,8 +647,8 @@ And when the resharing has finished look for… (TBD) [#906](https://github.com/
 From time to time, MPC nodes will need to be upgraded.  
 This section describes how to vote for a new MPC Docker image hash and how to securely upgrade the MPC node in the CVM. 
 
-NEAR will provide the following:
-* Git commit used to build the MPC image.  
+When a new MPC node is released, the release will along with precompiled binaries contain the following information:
+* Git commit used to build the MPC image, identified by the release tag.
 * Link to Docker Hub (or another repository) containing the released MPC Docker image.  
 * Hash of the MPC Docker image (note: this is not the same as the Docker image manifest hash published on Docker Hub).  
 
