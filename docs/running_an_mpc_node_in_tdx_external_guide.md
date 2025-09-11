@@ -95,7 +95,7 @@ In vmm.toml:
 ### Setting up a Local Gramine-Sealing-Key-Provider 
 
 
-In this solution, we use the **gramine-sealing-key-provider**, which runs inside an SGX enclave, to generate a key.  
+In this solution, we use the `gramine-sealing-key-provider`, which runs inside an SGX enclave, to generate a key.  
 This key is derived from TDX measurements and the SGX enclave’s hardware sealing key, and it is used to encrypt the CVM’s file system.  
 
 > **Note:** This key is tied to the platform. Losing it will prevent the CVM from decrypting the drive on subsequent VM boots.
