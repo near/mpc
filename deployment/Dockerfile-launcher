@@ -1,4 +1,5 @@
 FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2c2e87517371d82edb
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Install packages with exact versions for reproducibility
 RUN apt-get update -y && \
@@ -10,7 +11,7 @@ RUN apt-get update -y && \
         bash=5.2.15-2+b9 \
         coreutils=9.1-1 \
         python3=3.11.2-1+b1 && \
-    rm -rf /var/lib/apt/lists/* && \
+    : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 
 COPY tee_launcher/launcher.py /scripts/

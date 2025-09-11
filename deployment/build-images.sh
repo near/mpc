@@ -12,7 +12,7 @@ DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
 
 
-: docker image delete $NODE_IMAGE_NAME_TEE $NODE_IMAGE_NAME_GCP $LAUNCHER_IMAGE_NAME 2>/dev/null 
+docker image rm $NODE_IMAGE_NAME_TEE $NODE_IMAGE_NAME_GCP $LAUNCHER_IMAGE_NAME 2>/dev/null
 
 
 SOURCE_DATE=$(git log -1 --pretty=%ct)
@@ -30,8 +30,9 @@ if ! docker buildx &>/dev/null; then
    exit 1
 fi
 
-# this is necessary to fix reproducibility with old docjer versions where
+# this is necessary to fix reproducibility with old docker versions where
 # rewrite-timestamp is not working as expected
+# https://github.com/moby/buildkit/issues/4986
 git ls-tree -r --name-only HEAD | while read filename; do
   unixtime=$(git log -1 --format="%at" -- "${filename}")
   touchtime=$(date -d @$unixtime +'%Y%m%d%H%M.%S')
@@ -62,8 +63,6 @@ docker buildx build --builder ${buildkit_image_name} --no-cache \
     -f "$DOCKERFILE_NODE_GCP" .
 
 node_gcp_image_hash=$(docker inspect $NODE_IMAGE_NAME_GCP | jq .[0].Id)
-
-
 
 
 docker buildx build --builder ${buildkit_image_name} --no-cache \
