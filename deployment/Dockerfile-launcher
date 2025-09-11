@@ -16,6 +16,5 @@ RUN apt-get update -y && \
 
 COPY --chmod=0755 tee_launcher/launcher.py /scripts/
 ENV PATH="/scripts:${PATH}"
-RUN mkdir -p /app-data
-RUN mkdir -p /mnt/shared
+RUN mkdir -p /app-data && mkdir -p /mnt/shared
 CMD ["python3", "/scripts/launcher.py"]
