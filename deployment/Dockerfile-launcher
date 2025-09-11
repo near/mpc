@@ -14,8 +14,7 @@ RUN apt-get update -y && \
     : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 
-COPY tee_launcher/launcher.py /scripts/
-RUN chmod +x /scripts/launcher.py
+COPY --chmod=0755 tee_launcher/launcher.py /scripts/
 ENV PATH="/scripts:${PATH}"
 RUN mkdir -p /app-data
 RUN mkdir -p /mnt/shared
