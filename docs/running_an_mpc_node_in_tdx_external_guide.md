@@ -469,7 +469,7 @@ curl http://127.0.0.1:3030/metrics | grep near_sync_status
 near_sync_status 0
 ```
 
-## Submitting Participant Info (`submit_participant_info`)
+## Submitting Participant Info
 
 > **Note:** During the [transition phase](#transition-phase), this step is optional. The contract will accept nodes that do not submit an attestation.  
 
