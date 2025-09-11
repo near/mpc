@@ -25,7 +25,6 @@ from transaction import (
     create_create_account_action,
     create_payment_action,
     create_full_access_key_action,
-    # create_mpc_function_call_access_key_action
     sign_transaction,
     serialize_transaction,
     Action,
@@ -90,8 +89,6 @@ def create_mpc_function_call_access_key_action(
         "vote_abort_key_event_instance",
         "verify_tee",
         "submit_participant_info",
-        "vote_add_domains",
-        "vote_cancel_resharing",
     ]
 
     return create_function_call_access_key_action(
@@ -112,20 +109,6 @@ def deserialize_key(account_id: str, key: List[int]) -> Key:
     key_bytes = bytes(key)
     signing_key = SigningKey(key_bytes)
     return Key.from_keypair(account_id, signing_key)
-
-
-def dump(obj, indent=0):
-    pad = "  " * indent
-    if hasattr(obj, "__dict__"):
-        for k, v in vars(obj).items():
-            print(f"{pad}{k}:")
-            dump(v, indent + 1)
-    elif isinstance(obj, (list, tuple)):
-        for i, v in enumerate(obj):
-            print(f"{pad}[{i}]:")
-            dump(v, indent + 1)
-    else:
-        print(f"{pad}{obj}")
 
 
 def sign_create_account_with_multiple_access_keys_tx(
@@ -158,8 +141,7 @@ def sign_create_account_with_multiple_access_keys_tx(
             )
             for key in keys
         ]
-    print("access key actions:", access_key_actions)
-    dump(access_key_actions)
+
     actions.extend(access_key_actions)
 
     signed_tx = sign_transaction(
@@ -172,11 +154,6 @@ def sign_create_account_with_multiple_access_keys_tx(
         creator_key.decoded_sk(),
     )
 
-    print("signed tx: ", signed_tx)
-    dump(signed_tx)
-
-    # for name, value in vars(signed_tx).items():
-    #    print(name, "=", value)
     return serialize_transaction(signed_tx)
 
 
@@ -431,19 +408,12 @@ def start_cluster_with_mpc(
     ):
         candidate_account_id = candidate.signer_key.account_id
 
-        print(
-            "ALL ACCESS KEYS:",
-            cluster.contract_node.near_node.get_access_key_list(candidate_account_id),
-        )
         creator_key = pytest_signer_keys[0]
-        print("my signer key:", creator_key.pk)
+
         nonce = cluster.contract_node.near_node.get_nonce_for_pk(
             candidate_account_id, creator_key.pk
         )
-        print("candidate signer key:", candidate.signer_key)
-        assert nonce is not None
-        print("found nonce: ", nonce)
-        # nonce = 0
+
         # add node access key
         tx = sign_create_account_with_multiple_access_keys_tx(
             # key,
@@ -457,8 +427,6 @@ def start_cluster_with_mpc(
             False,
         )
         access_txs.append(tx)
-        print("access key tx:")
-        dump(tx)
 
         mpc_node = MpcNode(
             near_node,

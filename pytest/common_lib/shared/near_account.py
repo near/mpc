@@ -65,11 +65,8 @@ class NearAccount:
         txns: list[bytes],
         verification_callback: Callable[[dict[str, Any]], None],
     ):
-        print("sending")
         tx_hashes = self.send_txs_parallel_returning_hashes(txns, label)
-        print("awaiting")
         results = self.await_txs(tx_hashes)
-        print("received", results)
         verify_txs(results, verification_callback)
 
     def get_tx(self, tx_hash):
