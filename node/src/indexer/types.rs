@@ -136,6 +136,9 @@ pub struct ChainGetPendingCKDRequestArgs {
 }
 
 #[derive(Serialize, Debug)]
+pub struct GetApprovedAttestationsArgs;
+
+#[derive(Serialize, Debug)]
 pub struct ChainJoinArgs {
     pub url: String,
     pub cipher_pk: legacy_mpc_contract::primitives::hpke::PublicKey,
@@ -170,7 +173,7 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubmitParticipantInfoArgs {
-    pub proposed_tee_participant: Attestation,
+    pub participant_attestation: Attestation,
     pub tls_public_key: PublicKey,
 }
 

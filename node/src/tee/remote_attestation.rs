@@ -10,7 +10,7 @@ pub async fn submit_remote_attestation(
     tls_public_key: near_sdk::PublicKey,
 ) -> anyhow::Result<()> {
     let propose_join_args = SubmitParticipantInfoArgs {
-        proposed_tee_participant: report_data_contract,
+        participant_attestation: report_data_contract,
         tls_public_key,
     };
 

@@ -722,16 +722,16 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
-        proposed_participant_attestation: Attestation,
+        participant_attestation: Attestation,
         tls_public_key: PublicKey,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
         let account_key = env::signer_account_pk();
 
         log!(
-            "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
+            "submit_participant_info: signer={}, participant_attestation={:?}, account_key={:?}",
             account_id,
-            proposed_participant_attestation,
+            participant_attestation,
             account_key
         );
 
@@ -744,13 +744,11 @@ impl VersionedMpcContract {
         };
 
         // Verify the TEE quote and Docker image for the proposed participant
-        let status = mpc_contract
-            .tee_state
-            .verify_proposed_participant_attestation(
-                &proposed_participant_attestation,
-                tls_public_key,
-                mpc_contract.config.tee_upgrade_deadline_duration_blocks,
-            );
+        let status = mpc_contract.tee_state.verify_attestation(
+            &participant_attestation,
+            tls_public_key,
+            mpc_contract.config.tee_upgrade_deadline_duration_blocks,
+        );
 
         if status == TeeQuoteStatus::Invalid {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
@@ -760,7 +758,7 @@ impl VersionedMpcContract {
         // Add the participant information to the contract state
         mpc_contract
             .tee_state
-            .add_participant(account_id.clone(), proposed_participant_attestation);
+            .add_participant(account_id.clone(), participant_attestation);
 
         // Both participants and non-participants can propose. Non-participants must pay for the
         // storage they use; participants do not.

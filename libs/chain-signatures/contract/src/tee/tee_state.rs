@@ -59,7 +59,7 @@ impl TeeState {
         current_time_milliseconds / 1_000
     }
 
-    pub(crate) fn verify_proposed_participant_attestation(
+    pub(crate) fn verify_attestation(
         &mut self,
         attestation: &Attestation,
         tls_public_key: PublicKey,
