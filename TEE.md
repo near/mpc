@@ -1,4 +1,4 @@
-# TEE Integration
+# Migration Service
 
 ## Overview
 A **t**rusted **e**xecution **e**nvironment (TEE) is an environment isolated from the operating system. A TEE provides security guarantees about confidentiality and integrity of the code and memory executed inside it.
@@ -15,24 +15,37 @@ Therefore, Near-One will roll-out its TEE implementation in two phases:
 - Soft Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of the TEE.
 - Hard Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up inside a different TEE.
 
-In order to protect the network from the worst case scenario (permanent loss of the signing quorum), a disaster recovery system is to be deployed.
+As long as the secret shares of the MPC nodes are securely backed-up outside of the TEE's in which the nodes are running, it is highly likely that the network will be able to recover from otherwise catastrophic failures. 
 
-## Disaster Recovery on a high-level
-The purpose of the disaster recovery system is to prevent a permanent loss of the signing quorum.
-As long as the secret shares of the MPC nodes are securely backed-up outside of the TEE's in which the nodes are running, it is highly likely that the network will be able to recover from otherwise catastrophic failures. Therefore, each operator of an MPC node will be required to operate their own **backup service**. This service is separate from the MPC node and should run on a different machine.
+Besides the existential risk, TEE's make it (without additional precautions) impossible for node operators to migrate their node to a different machine without entering a resharing procedure (which requires the explicit approval of all MPC participants).
 
-### Backup service
-The backup service has two responsibilities:
-1. _Backup:_ Securely fetch the secret shares of the current key set from the MPC node it must back up and store the secrets in a secure manner.
-2. _Recovery:_ Securely provide the backup shares to the MPC node if required.
+Having keyshare backups outside of the TEE environment allows node operators not only to recover from a catastrophic event, but also to migrate their nodes to new machines without going through a reshring process. In fact, disaster recovery is just a special case of the more general migration use case.
 
-For the hard-launch, the backup service must run inside a TEE.
+## Migration of an MPC Node
+Migrating a node requires a procedure that allows an MPC node to:
+- _Back-up_: securely back-up and store their secret shares in an external environment;
+- _Recover_: securely request the backup from the external environment and join the MPC network.
 
-The backup service needs a current view of the MPC smart contract on the NEAR blockchin. For that reason, it will be operating a NEAR node.
+To allow migration, a node operator will need to run a **backup service**. This service is separate from the MPC node and should run on a different machine. Its responsiblities are:
+- to request an encrypted copy of the secret keys from the MPC node belonging to this node operator;
+- securely store the secret keys;
+- provide the secret keys to a newly set-up node.
+
+For the soft launch, the node operator (assisted by a script) can act as the backup service. For the hard launch, the backup service must run in its own TEE environment and it must have a current view of the MPC smart contract on the NEAR blockchain.
+
+For security reasons and to avoid edge cases and race conditions, the MPC network allows migration of nodes only while the protocol is in a `Running` state (as opposed to `Resharing` or `Initializing`, which are the two other well-defined states).
+
+Note that starting a migration does not require a signing quorum. Instead, each participant can migrate their node at their own discretion. But, to avoid making the migration process a DOS attack vector, protocol state changes must have priority over any ongoing migrations.
+If the protocol state changes into a `Resharing` or `Initializing` state, any ongoing Migration processes will simply be cancelled.
+
+### Backup Flow
+The node provides an HTTP `GET` endpoint on which requests for the encrypted keyshares can be submitted. 
+The node fetches the public key associated to the backup service from the MPC contract and uses it to derive a symmetric key, with which it will encrypt the shares (c.f. [cryptography](#cryptography) for more details on the encryption).
+The backup service requests the encrypted keyshares on the web endpoint. The request includes an authentication header.
 
 ```mermaid
 ---
-title: Backup system
+title: Backup Flow
 ---
 flowchart TD
 
@@ -45,159 +58,146 @@ flowchart TD
 
     MPC("
       **MPC node**
-      _Contains sensitive
-      key shares_.
+      _Currently participating in the MPC network.
+      Holds sensitive key shares_.
     ");
 
     BS("
       **Backup service**
-      _Contains backups
-     of sensitive key shares_.
+      _Stores encrypted backups
+      of key shares.
+      Uniquely identified by a public key._
     ");
 
-    BS -->| 1\. read MPC node Public Key and address| SC;
-    BS --> |2\. request encrypted key share| MPC;
-    MPC -->|3\. read backup service Public Key | SC;
-    MPC -->|4\. send encrypted key shares | BS;
+    NO("
+      **Node Operator**
+      _Owner of the MPC node and Backup Service._
+    ");
+    
+    NO -->|1\. register backup service in smart contract| SC;
+    BS -->|2\. read MPC node Public Key and address| SC;
+    BS --> |3\. request encrypted key share| MPC;
+    MPC -->|4\. read backup service Public Key | SC;
+    MPC -->|5\. send encrypted key shares | BS;
+
+    NO@{ shape: manual-input}
+    SC@{ shape: db}
+    BS@{ shape: proc}
+    MPC@{ shape: proc}
 ```
 
-### Contract
-The MPC contract is used for authenticating the backup service and the MPC node.
-The node and service will each submit a public key to the contract that is then used for mutual authentication during backup generation and recovery processes.
+#### Contract Methods
+For the backup flow, 
 
-### MPC network during a recovery process
-The MPC network allows three protocol states:
-- `Initializing` for generating new key shares
-- `Running` when handling signature request
-- `Resharing` when the network is resharing their secret keys for a change of the participant set, or for a change of the cryptography threshold
+### Recovery Flow
+The node provides an HTTP `PUT` endpoint on which the encrypted keyshares can be sent.
+The backup service monitors the smart contract for any onboarding events and uses the public key stored in the smart contract to derive a shared secret, used to encrypt the keys (c.f. [cryptography](#cryptography) for more details on the encryption).
+The backup service submits the encrypted keys via the nodes HTTP endpoint.
 
-Until now, when a node operator wanted to switch their machine, they needed to do so through a `Resharing` - they had to leave the network and then re-join.
-Unfortunately, it may not be possible to use the same mechanism for recovering from disaster, as by definition, a disaster implies that the network lost it signing quorum and thus, its ability to execute a resharing.
-
-To allow actual recovery, we must enable nodes to change their participant details during a `Running` state. We can do so by having a `RecoveryProcess` in parallel to the current `ProtocolState`.
-
-The purpose of a recovery process is to:
-- allow participants to change their participant information (e.g. TLS keys, IP address, and anything other than their account id) without going through a resharing;
-- allow a node to activate the Recovery mechanism and request the back-up share from the backup service.
-
-A recovery process may occur only while the protocol is in a `Running` state. This is to simplify the problem space. Having a recovery process in parallel to a `Resharing` or `Initializing` protcol state requires to account for many edge cases and race conditions, which we would prefer to avoid.
-
-Unlike changes in the `ProtocolState`, changes in `Recovery` process do not require a signing quorum. Instead, each participant can initiate and conclude a recovery process at their own discretion.
-To avoid making the `Recovery` process a DOS attack vector, protocol state changes must have priority over ongoing `Recovery` processes. If the protocol state changes into a `Resharing` or `Initializing` state, any ongoing `Recovery` processes will simply be cancelled.
-
-## Implementation Details
-_Note: In this document, the term node operator refers to a person operating a node that is acting as a participant in the MPC network. That person has a unique `AccountId` (an account on the NEAR blockchain) associated to its node. Without loss of generality, we assume that a node operator only operates a single node and that their `AccountId` serves as a unique identifier for the node as well as the operator._
-
-### Version 1: Establish TCP p2p connection
-The node crate already contains logic that allows mutual authentication via TLS. That logic sits in [`node/src/p2p.rs`](https://github.com/near/mpc/blob/b89d1084bcbd2fdc777140a4dda38de616b810ef/node/src/p2p.rs#L119). This implementation would re-use the existing logic. A PoC can be found in [PR #962](https://github.com/near/mpc/issues/962).
-
-#### Backup service workflow
-##### Onboarding
-1. The backup service generates a NEAR account public key and a TLS key.
-2. The node operator adds the NEAR account public key as an access key to their account and grants it access to necessary contract methods (_todo [946](https://github.com/near/mpc/issues/946): specify methods_).
-3. The backup service submits their [todo: specify with TEE] information to the MPC smart contract.
-
-##### Monitoring 
-The backup service periodically fetches the current protocol state and any ongoing recovery processes from the contract.
-It compares the key set of the current `Running` protocol state with the secret shares it has possession of.
-If there is a discrepancy, then the backup service requests a new copy of the key shares from the MPC node following the process outlined under [Backup](#backup).
-If there the contract has an active `Recovery` process, then the backup service follows the protocol outlined under [Recovery](#recovery).
-
-##### Backup 
-1. The backup service looks up the details of its MPC node in the set of participants of the `Running` protocol state.
-2. The backup service establishes a p2p connection with the node with mutual TLS authentication.
-3. The backup service waits for the node to send the key shares, stores them securely and then closes the connection.
-
-##### Recovery
-1. If one of the recovering nodes belongs to the same node operator as the backup service, then the backup service follows steps 2-4. otherwise, it will continue monitoring the contract.
-2. the backup service gets the connection details for its node from the ongoing recovery process and establishes a p2p connection with mutual TLS authentication.
-3. The backup service sends the key shares to the node.
-4. The backup service sends a confirmation to the MPC smart contract.
-
-#### MPC node workflow
-##### Onboarding
-1. The MPC node generates a NEAR account public key and a TLS key.
-2. The node operator adds the NEAR account public key as an access key to their account and grants it access to the necessary contract methods (_todo [(#946)](https://github.com/near/mpc/issues/946): specify methods_).
-3. The MPC node monitors the MPC smart contract.
-    - **If** the account ID of their node operator is **not** in the set of current participants:  
-        - Submit their information to `submit_participant_info`.  
-        - Wait to be included in the protocol via a `resharing`.  
-
-    - **If** the account ID of their node operator **is** in the set of current participants **and** the TLS key of the participant info matches theirs:  
-        - Submit their information to `submit_participant_info`.  
-        - Engage normally with the protocol.  
-        
-    - **If** the account ID of their node operator **is** in the set of current participants, **but** the TLS key of the participant info does **not** match theirs:  
-        - Submit their information to `submit_participant_recovery_info`. 
-        - This initiates a `Recovery` process for this node (c.f. also the [contract](#contract) section).
 ```mermaid
-flowchart TB
-    subgraph Onboarding
-        B[MPC node generates NEAR account and TLS key]
-        C[Operator adds access key and grants required methods]
-
-        D[MPC node checks  current contract state.]
-        E{Is operator AccountId in current participant set?}
-        EN[Call submit_participant_info]
-        ENA[Wait for protocol to enter Resharing]
-        EY{Does TLS key match participant info?}
-        EYY[Call submit_participant_recovery_info]
-        EYYA[Participate in protocol as a normal participant]
-        EYN[Call submit_participant_recovery_info]
-        EYNA[start Recovery process]
-
-        B --> C --> D --> E
-        E -- "No" --> EN --> ENA
-        E -- "Yes" --> EY
-        EY -- "Yes" --> EYY --> EYYA
-        EY -- "No" --> EYN --> EYNA
-    end
-```
-##### Recovery Process
-The node follows this protocol when its node operator has an active `Recovery` process:
-
-- **If** this nodes account ID matches the account ID of the recovering node:
-    - **If** this node is the recovering node (matches the TLS key):
-        - They wait for the backup service to provide the keyshares.
-        - Once in possession of key shares, the node calls `conclude_recovery()`, which resumes the protocol in the `Running` state.
-    - **Else** they shut down (_note: This case means that the node is about to be de-commissioned. The node must shut down now, because otherwise, it will itself request a "Recovery" state once the contract resumes `Running`_).
-- **Else** they wait for the protocol to resume `Running`
-```mermaid 
+---
+title: Recovery Flow
+---
 flowchart TD
-    subgraph Recovery_Protocol
-        S[Protocol state = Recovery]
+    NO["**Node Operator**
+      _Owner of the MPC node and Backup Service._"]
 
-        A{Does this node's AccountId match the recovering node?}
-        B{Does this node's TLS key match the recovering TLS key?}
+    SC["**Smart contract**
+      _Source of truth for
+      protocol state and
+      node information._"]
+      
+    BS@{ label: "**Backup service**
+        _Stores encrypted backups of key shares.     
+        Uniquely identified by a public key._" }
 
-        W[Wait for backup to provide keyshares]
-        C[Call conclude_recovery]
-        R[Protocol resumes Running]
+    MPC["**New MPC node**
+      _Needs keyshares from backup service._"]
+    
+    NO -- "1\. start onboarding for new node in smart contract" --> SC
+    BS -- "2\. read MPC node Public Key and address" --> SC
+    BS -- "3\. send encrypted key shares" --> MPC
+    MPC -- "4\. resolve recovery and participate in the network" --> SC
 
-        SD[Shut down node]
-
-        WR[Wait for protocol to resume Running]
-
-        S --> A
-        A -- Yes --> B
-        B -- Yes --> W --> C --> R
-        B -- No --> SD
-        A -- No --> WR
-    end
+    NO@{ shape: manual-input}
+    SC@{ shape: db}
+    BS@{ shape: proc}
+    MPC@{ shape: proc}
 ```
 
+### Implementation Details
 
-##### Backup:
-The MPC node listens for any connection attempts by the backup service.
-If it receives one, it compares the credentials sent by the p2p connection against the credentials stored in the contract.
+#### Node 
+##### Node behavior
+A node must only participate in the MPC protocol, if it is in the set of active participants of the current running or resharing epoch. For this, the TLS key of a node acts as a unique identifier _(implemented in [(#1032)](https://github.com/near/mpc/pull/1032/files#diff-c54adafe6cebf73c37af97ce573a28c60593be635aa568ec93e912b8f286aa83R181))_.
+
+Currently, due to limitations of our implementation, nodes need to drop and re-establish all connections in case of a change in the participant set. Before adding the migration feature, this was only possible if the epoch id changed, which happened only during a protocol state change.
+Now, nodes need to be able to recognize and re-establish a connection if the participant set changes without an epoch incrementing _(implemented in [(#1061)](https://github.com/near/mpc/pull/1061) and [(#1032)](https://github.com/near/mpc/pull/1032/))_.
+
+Additionally, nodes need to remove any triples and pre-signatures involving the node that was removed from the participant set in the migration process _(implemented in [(#1032)](https://github.com/near/mpc/pull/1032/))_
+
+##### Web Endpoints
+The **MPC node** will expose a web endpoint over which the backup service can submit requests. These endpoints require some sort of authentication using the published public keys _(todo: yet to be specified)_.
+The exposed endpoints are:
+- GET /shares_backup - with an authentication header
+    - Returns the encrypted shares, if a valid backup service is registered.
+- POST /shares_recover
+    - Posts encrypted shares to a new node.
+
+#### Contract
+The contract needs to store information related to the recovery process, namely:
+- any information related to the backup service
+- any ongoing recovery processes
+
+Below is a draft for the structs to add:
+
+```Rust
+struct Recovery {
+    backup_services: IterableMap<AccountId, BackupService>,
+    recoveries: IterableMap<AccountId, RecoveringNode>,
+}
+
+struct BackupService {
+    public_key: PublicKey,
+}
+
+struct RecoveringNode {
+    epoch_id: EpochId,
+    prospective_participant_info: ParticipantInfo,
+}
+```
+
+##### New Methods
+The contract also needs to proved the following methods:
+- `swap_node(participant_info: ParticipantInfo)`. This method:
+    - is called by the node operator
+    - generates a `RecoveringNode` for the given `AccountId`.
+    - returns an error if the protocol is not in `Running` state.
+- `conclude_recovery(public_keys: Vec<(KeyEventId, PublicKey)>)`. This method:
+    - is called by the new node after it received the keyshares from the backup service.
+    - concludes the recovery process in case it still exists, replacing the `ParticipantInfo` associated to `AccountId` in the current participant set with the information stored in the corresponding `RecoveringNode`.
+    - returns an error if the protocol is not in `Running` state.
+- `set_backup_service(backup_service: BackupService)`. This method:
+    - is called by the node operator
+    - defines or overrides the BackupService for the node operator.
 
 
-### Version 2: web-endpoint and ephemeral keys:
-Instead of establishing p2p connections, it is possible to leverage the web-endpoint already exposed by the node.
-The endpoints are currently unprotected, so an authentication mechanism would need to be implemented.
-Furthermore, the node and the backup service must be able to agree on a key for encrypting the secrets during transit.
+##### Behavior Changes
+- The map `Recovery::recoveries` needs to be emptied upon concluding a `Running` state and entering a `Resharing` or `Initialization` state
+- The contract must allow the same node operator (`AccountId`) to store multiple TEE attestations. Instead of using `AccountId` as a unique identifier in [`TEEState`](https://github.com/near/mpc/blob/2d0a7f62835da102bc21db0adb9bbf74c6b88afd/libs/chain-signatures/contract/src/tee/tee_state.rs#L29), Attestations shall be stored with respect to the TLS key.
+- It may be desirable if the Contract verified that the calls to `conclude_recovery` are actually coming from the onboarding node. It might actually be desirable that the contract verified for all calls stemming from a node, that are signed by the correct public key. That is, to avoid mistaking any calls from ill-behaved decomissioned nodes as valid instructions. For this:
+    - the contract would need to compare the `env::signer_account_pk()` with the public key associated to the nodee (note: this is a different key to the TLS Key. The TLS key is already stored in the contract under the name [`signer_pk`](https://github.com/near/mpc/blob/2d0a7f62835da102bc21db0adb9bbf74c6b88afd/libs/chain-signatures/contract/src/primitives/participants.rs#L14)) _(tangent: the team is aware the chosen name is not ideal and eager to change it when opportun)_)
+    - the public key used by the node would need to be part of the `ParticipantInfo` struct
+    - we would probably also want that public key to be part of the TEE attestation.
 
-This solution would be very similar to the one above, except that the contact and the node would need to submit ephemeral public keys to the contract each time they establish a connection. 
+#### Backup Service
+For the soft launch, the node operator and a few scripts will act as the backup-service. For the hard-launch, this section is WIP.
+
+#### Node Operator
+- needs to add backup service information
+- needs to submit `ParticipantInfo` for new (recovering) node
+- needs to act as the backup service before soft launch (there will be scripts or binaries to support).
+
 
 #### Cryptography
 A pair-wise key establishment scheme can be leveraged to establish a symmetric key. A suitable implementation can be found in [libsodium](https://doc.libsodium.org/) and its rust wrapper [libsodium-rs](https://docs.rs/crate/libsodium-rs/latest). Specifically, the **key exchange protocol based on X25519** would be a good fit for the given set-up (c.f. [libsodium](https://doc.libsodium.org/key_exchange) and [libsodium-rs](https://docs.rs/libsodium-rs/latest/libsodium_rs/crypto_kx/index.html)).
@@ -209,21 +209,10 @@ _Note: The curious reader might ask why this protocol does not simply use the NE
 - _While it is true that Curve25519 used in X25519 and edwards25519 used by the NEAR blockchain are [birationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically convert the NEAR account keys and use them for `X25519`, it is generally advised to use one key per application. This also allows us to use ephemeral keys, as opposed to static keys for the encryption. Which is desirable._
 
 
-#### Node
-The **MPC node** will expose a web endpoint over which the backup service can submit requests. These endpoints require some sort of authentication using the published public keys _(todo: yet to be specified)_.
-The exposed endpoints are:
-- GET /shares_backup - with an authentication header
-    - Returns the encrypted shares, if a valid backup service is registered.
-- POST /shares_recover
-    - Posts encrypted shares to a new node.
-
-
-## Todo
+#### Todo
 c.f. [(#949)](https://github.com/near/mpc/issues/949)
 - it is advised that the node operator grants access only to specific contract methods for the backup service and the node: [(#946)](https://github.com/near/mpc/issues/946)
 - define attestation for backup service [(#947)](https://github.com/near/mpc/issues/947)
-- contract changing state from Running --> Recovery --> Running might be missed by some nodes. Need a way to update participant set while in Running state. In that case, nodes will need to re-establish p2p connections and purge their assets to avoid timing out requests. While it is possible to force nodes to do this synchronously, the effort for this is quite high and it is probably unnecessary. [(#948)](https://github.com/near/mpc/issues/948)
-
 
 ## Materials:
 https://nearone.slack.com/archives/C07UW93JVQ8/p1753830474083739
