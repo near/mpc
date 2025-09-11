@@ -214,14 +214,17 @@ paste -sd',' -
 ```
 
 
-## Preparing a docker compose
 
-To launch the MPC node in the TEE environment, start by using the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml).
+## Preparing a Docker Compose File
 
-Update the `DEFAULT_IMAGE_DIGEST` field with the latest MPC Docker image digest.  
-This should be the digest that has been voted on in the contract or the latest digest published by NEAR.
+To launch the MPC node in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml).
 
-For example:
+Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image digest retrieved from the contract.
+
+For details on how to map this hash to a specific Docker image published on DockerHub, or to the corresponding source code, see the section [MPC Node Upgrades](#mpc-node-upgrades).
+
+
+Example digest value:
 ```bash
 DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
 ```
@@ -241,11 +244,11 @@ near contract call-function as-transaction \
   send
 ```
 
-The transaction output will include the latest MPC Docker image digest.
+The transaction output will include the latest MPC Docker image hash (digest).
 
-TBD [#899](https://github.com/near/mpc/issues/899)  \- where should it be published?  
-   
-Note \-  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including any white spaces).
+
+
+**Note:** -  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including  whitespaces).
 
 
 ## Required Ports and Port Collisions 
@@ -639,18 +642,24 @@ You can see this in the node logs (TBD) [#906](https://github.com/near/mpc/issue
 
 And when the resharing has finished look for… (TBD) [#906](https://github.com/near/mpc/issues/906)
 
-# MPC Node Upgrades:
+# MPC Node Upgrades
 
-From time to time, there will be a need to upgrade the MPC node.  
-This section describes how to vote for a new MPC docker image hash, and how to securely upgrade the MPC node in the CVM. 
+From time to time, MPC nodes will need to be upgraded.  
+This section describes how to vote for a new MPC Docker image hash and how to securely upgrade the MPC node in the CVM. 
 
-It is each operator’s responsibility to verify that the MPC docker image hash he votes for, corresponds to a specific MPC git commit, and do his own due diligence on the code. 
+NEAR will provide the following:
+* Git commit used to build the MPC image.  
+* Link to Docker Hub (or another repository) containing the released MPC Docker image.  
+* Hash of the MPC Docker image (note: this is not the same as the Docker image manifest hash published on Docker Hub).  
 
-Main steps are:
+> **Important:** Each operator is responsible for verifying that the MPC Docker image hash being voted for corresponds to the intended MPC Git commit, and for performing their own due diligence on the code.
 
-1. Verify that a specific docker image hash corresponds to a specific MPC node git commit.   
-2. Vote for the new node hash in the contract  
-3. Upgrade the MPC node running in your CVM.
+**Main Steps:**
+
+1. Verify that the Docker image hash matches the expected MPC node Git commit.  
+2. Vote for the new Docker image hash in the contract.  
+3. Upgrade the MPC node running in your CVM. 
+
 
 ##  MPC node Image/code inspection
 
