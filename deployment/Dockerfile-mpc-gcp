@@ -13,7 +13,7 @@ COPY libs/chain-signatures libs/chain-signatures
 COPY third-party-licenses third-party-licenses
 COPY Makefile .
 
-RUN make build-reproducible
+# RUN make build-reproducible
 
 FROM google/cloud-sdk:538.0.0-debian_component_based@sha256:6a3b29f50ae5aece8d93cec072a8095a2d8c90bfbbf53435127b932097eff75d AS runtime
 RUN apt-get update -y && apt-get install -y --no-install-recommends openssl=3.0.17-1~deb12u2 ca-certificates=20250419
@@ -21,7 +21,7 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends openssl=3.0.
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
-COPY --from=builder /app/target/x86_64-unknown-linux-gnu/release/mpc-node mpc-node
+# COPY --from=builder /app/target/x86_64-unknown-linux-gnu/release/mpc-node mpc-node
 COPY deployment/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 CMD [ "/app/start.sh" ]

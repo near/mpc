@@ -1,0 +1,27 @@
+FROM rust:1.86-slim-bookworm@sha256:a044f7ab9a762f95be2ee7eb2c49e4d4a4ec60011210de9f7da01d552cae3a55 AS builder
+RUN apt-get update -y && apt-get install -y --no-install-recommends make=4.3-4.1 libssl-dev=3.0.17-1~deb12u2 pkg-config=1.8.1-1 clang=1:14.0-55.7~deb12u1
+
+WORKDIR /app
+COPY .git .git
+COPY node node
+COPY devnet devnet
+COPY crates crates
+COPY Cargo.lock Cargo.lock
+COPY Cargo.toml Cargo.toml
+COPY rust-toolchain.toml rust-toolchain.toml
+COPY libs/chain-signatures libs/chain-signatures
+COPY third-party-licenses third-party-licenses
+COPY Makefile .
+
+# RUN make build-reproducible
+
+FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2c2e87517371d82edb AS runtime
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl=3.0.17-1~deb12u2 ca-certificates=20230311+deb12u1
+
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+WORKDIR /app
+# COPY --from=builder /app/target/x86_64-unknown-linux-gnu/release/mpc-node mpc-node
+COPY deployment/start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+CMD [ "/app/start.sh" ]

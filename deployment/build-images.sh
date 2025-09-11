@@ -2,11 +2,17 @@
 
 # Script to reproducibly build MPC binary and the docker image.
 
-DOCKERFILE_NODE=deployment/Dockerfile-mpc
-: "${NODE_IMAGE_NAME:=mpc-node}"
+DOCKERFILE_NODE_TEE=deployment/Dockerfile-mpc-tee
+: "${NODE_IMAGE_NAME_TEE:=mpc-node-tee}"
+
+DOCKERFILE_NODE_GCP=deployment/Dockerfile-mpc-gcp
+: "${NODE_IMAGE_NAME_GCP:=mpc-node-gcp}"
 
 DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
+
+
+: docker image delete $NODE_IMAGE_NAME_TEE $NODE_IMAGE_NAME_GCP $LAUNCHER_IMAGE_NAME 2>/dev/null 
 
 
 SOURCE_DATE=$(git log -1 --pretty=%ct)
@@ -24,7 +30,16 @@ if ! docker buildx &>/dev/null; then
    exit 1
 fi
 
-buildkit_version="0.20.0"
+# this is necessary to fix reproducibility with old docjer versions where
+# rewrite-timestamp is not working as expected
+git ls-tree -r --name-only HEAD | while read filename; do
+  unixtime=$(git log -1 --format="%at" -- "${filename}")
+  touchtime=$(date -d @$unixtime +'%Y%m%d%H%M.%S')
+  touch -t ${touchtime} "${filename}"
+done
+
+
+buildkit_version="0.24.0"
 buildkit_image_name="buildkit_${buildkit_version}"
 
 # Create our own builder (build env) to enable reproducible images
@@ -32,12 +47,23 @@ if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
     docker buildx create --use --driver-opt image=moby/buildkit:v${buildkit_version} --name ${buildkit_image_name}
 fi
 
+
 docker buildx build --builder ${buildkit_image_name} --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
-    --output type=docker,name=$NODE_IMAGE_NAME,rewrite-timestamp=true \
-    -f "$DOCKERFILE_NODE" .
+    --output type=docker,name=$NODE_IMAGE_NAME_TEE,rewrite-timestamp=true \
+    -f "$DOCKERFILE_NODE_TEE" .
 
-node_image_hash=$(docker inspect $NODE_IMAGE_NAME | jq .[0].Id)
+node_tee_image_hash=$(docker inspect $NODE_IMAGE_NAME_TEE | jq .[0].Id)
+
+
+docker buildx build --builder ${buildkit_image_name} --no-cache \
+    --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
+    --output type=docker,name=$NODE_IMAGE_NAME_GCP,rewrite-timestamp=true \
+    -f "$DOCKERFILE_NODE_GCP" .
+
+node_gcp_image_hash=$(docker inspect $NODE_IMAGE_NAME_GCP | jq .[0].Id)
+
+
 
 
 docker buildx build --builder ${buildkit_image_name} --no-cache \
@@ -49,5 +75,6 @@ launcher_image_hash=$(docker inspect $LAUNCHER_IMAGE_NAME | jq .[0].Id)
 
 echo "commit hash: $GIT_COMMIT_HASH"
 echo "SOURCE_DATE_EPOCH used: $SOURCE_DATE"
-echo "node docker image hash: $node_image_hash"
+echo "node tee docker image hash: $node_tee_image_hash"
+echo "node gcp docker image hash: $node_gcp_image_hash"
 echo "launcher docker image hash: $launcher_image_hash"
