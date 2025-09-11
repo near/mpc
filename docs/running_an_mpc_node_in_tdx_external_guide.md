@@ -94,26 +94,37 @@ In vmm.toml:
 - In the `[cvm]` section add: `max_disk_size = 1000`
 
 
-### Setting up local gramine-sealing-key-provider: {#setting-up-local-gramine-sealing-key-provider:}
+### Setting up a Local Gramine-Sealing-Key-Provider 
 
-In our solution we are using the gramine-sealing-key-provider that is running in an SGX enclave in order to generate a key (based on the TDX measurements and SGX enclaves hardware sealing key) that is used to encrypt the CVM’s file system.  
-**Note** - This key is tied to the platform, and losing it will cause the CVM to lose the ability to decrypt the drive on the following VM boot.
 
-#### Setup instructions:
+In this solution, we use the `gramine-sealing-key-provider`, which runs inside an SGX enclave, to generate a key.  
+This key is derived from TDX measurements and the SGX enclave’s hardware sealing key, and it is used to encrypt the CVM’s file system.  
 
-1\.  Follow the [canonical/tdx](https://github.com/canonical/tdx/blob/main/README.md) setup if not done before  especially step 9.1-2  (establishing a SGX PCCS - Provisioning Certification Caching Service ) 
+> **Note:** This key is tied to the platform. Losing it will prevent the CVM from decrypting the drive on subsequent VM boots.
 
-2\. An instance of [**gramine-sealing-key-provider**](https://github.com/MoeMahhouk/gramine-sealing-key-provider) is required to be deployed on the host machine.   
-The instance can be deployed by running the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh). For more information see  [local-key-provider-from-phala](https://github.com/Dstack-TEE/dstack/tree/master/kms#local-key-provider-mode-1)    
+For more information, see [local-key-provider-from-phala](https://github.com/Dstack-TEE/dstack/tree/master/kms#local-key-provider-mode-1).  
 
-**Note:** Having Docker installed is a prerequisite for this step.
+#### Setup Instructions
 
-You can find mr_enclave value (of the sgx key provider)  by printing the container logs:  
-docker logs gramine-sealing-key-provider 2\>&1 | grep mr_enclave | head -n 1
+1. Follow the [canonical/tdx setup](#) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
 
-Make sure the  mr_enclave of the sgx key provider is 1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
+2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.  
+   - On the DTX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)  
+   
+   > **Prerequisite:** Docker must be installed.
 
-TBD [#895](https://github.com/near/mpc/issues/895) - regenerate the MR_enclave again check it is the same. 
+3. To find the `mr_enclave` value of the SGX key provider, run:
+   ```bash
+   docker logs gramine-sealing-key-provider 2>&1 | grep mr_enclave | head -n 1
+   ```
+
+   Ensure that the `mr_enclave` matches the expected value:
+   ```
+   1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
+   ```
+ 
+ **Note**: As part of the mutual attestation between the CVM and the key provider, the CVM will check that the key provider’s `mr_enclave` matches the above hash.
+
 
 # MPC Node Setup and Deployment
 
@@ -214,14 +225,17 @@ paste -sd',' -
 ```
 
 
-## Preparing a docker compose
 
-To launch the MPC node in the TEE environment, start by using the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml).
+## Preparing a Docker Compose File
 
-Update the `DEFAULT_IMAGE_DIGEST` field with the latest MPC Docker image digest.  
-This should be the digest that has been voted on in the contract or the latest digest published by NEAR.
+To launch the MPC node in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml).
 
-For example:
+Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image digest retrieved from the contract.
+
+For details on how to map this hash to a specific Docker image published on DockerHub, or to the corresponding source code, see the section [MPC Node Upgrades](#mpc-node-upgrades).
+
+
+Example digest value:
 ```bash
 DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
 ```
@@ -241,11 +255,11 @@ near contract call-function as-transaction \
   send
 ```
 
-The transaction output will include the latest MPC Docker image digest.
+The transaction output will include the latest MPC Docker image hash.
 
-TBD [#899](https://github.com/near/mpc/issues/899)  \- where should it be published?  
-   
-Note \-  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including any white spaces).
+
+
+**Note:** -  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including  whitespaces).
 
 
 ## Required Ports and Port Collisions 
@@ -453,43 +467,37 @@ After sending the transaction, check that the new key was added:
 ```
 
 
-
-
 # Joining the MPC Cluster
 
-After the MPC node has been deployed, the next steps are:
+After the MPC node has been deployed and its NEAR account key successfully added to the operator's account, the node will attempt to sync and then submit its attestation information to the contract.
 
-* Register the node’s attestation information on the contract via **submit_participant_info**
-* Wait for the node to fully sync  
-* Vote for joining the node to the MPC cluster via **vote_new_parameters**.  
-  Note \- this step needs to be done by all the operators. 
+Once these steps are complete, the operator should request all other operators to vote for adding the new MPC node by calling the **vote_new_parameters** method.
 
-##  Submitting participate info (Submit_participant_info)
+## Wait for NEAR Indexer to Sync
 
-This method needs to be called in order to register the node attestation information on the contract and prove that the node is running inside a CVM with a valid configuration.
+Wait until the NEAR Indexer has completed state sync. This process can take several hours. You can check the progress in the Docker container logs or via the metrics endpoint:
 
-Node \- during the [transition phase](#transition-phase) \- this step is optional in case you want to register a node without TEE.
-
-After the MPC node is fully synced, the node will check if the operator has added the node’s account keys to the operator's near contract. If so, the MPC node will send to the contract its attestation information via the submit\_participant\_info contract method.
-
-This command can’t be called unless the key was added to the account, otherwise the call will fail due to lack of funds associated with the key.
-
-**Note \- Calling this method will cost TBD [#903](https://github.com/near/mpc/issues/903) Near to none participants.**  
-**So you need to have this amount associated with your account.**
-
-In case the node failed to call submit\_participant\_info. The operator can do it on its behalf, by retrieving the attestation info from \<IP\>:8080/public\_info and submitting it to the contract.  
-TBD [#904](https://github.com/near/mpc/issues/904) \- need to add some more details or script on how to do it.
-
-## Wait for node indexer to sync
-
-Wait till near-indexer state sync is completed. It will take a few hours. Check the docker container logs for sync progress. Indexer sync status is also available via metrics page:
-
-```
+```bash
 curl http://127.0.0.1:3030/metrics | grep near_sync_status
 # Sync is completed when status is 0: 
 near_sync_status 0
-
 ```
+
+## Submitting Participant Info
+
+> **Note:** During the [transition phase](#transition-phase), this step is optional. The contract will accept nodes that do not submit an attestation.  
+
+Once the MPC node is fully synced, it will call `submit_participant_info` to submit its attestation information to the contract.
+
+If the node’s key has not been added to the account, this operation will fail. In that case, the node will retry the operation in a loop.
+
+> **Note:** This behavior is not yet implemented. See issue [#1069](https://github.com/near/mpc/issues/1069).  
+
+> **TBD [#1079]:** Add screenshot/logs/cURL example for detecting when the MPC node has submitted attestation information.
+
+> **Note:** Calling this method will incur a cost (TBD, XXX NEAR). Ensure this amount is available in your account.  
+> _(TBD [#903](https://github.com/near/mpc/issues/903) – confirm exact cost)_
+
 
 ## Voting: (vote_new_parameters)
 
@@ -639,18 +647,24 @@ You can see this in the node logs (TBD) [#906](https://github.com/near/mpc/issue
 
 And when the resharing has finished look for… (TBD) [#906](https://github.com/near/mpc/issues/906)
 
-# MPC Node Upgrades:
+# MPC Node Upgrades
 
-From time to time, there will be a need to upgrade the MPC node.  
-This section describes how to vote for a new MPC docker image hash, and how to securely upgrade the MPC node in the CVM. 
+From time to time, MPC nodes will need to be upgraded.  
+This section describes how to vote for a new MPC Docker image hash and how to securely upgrade the MPC node in the CVM. 
 
-It is each operator’s responsibility to verify that the MPC docker image hash he votes for, corresponds to a specific MPC git commit, and do his own due diligence on the code. 
+When a new MPC node is released, the release will along with precompiled binaries contain the following information:
+* Git commit used to build the MPC image, identified by the release tag.
+* Link to Docker Hub (or another repository) containing the released MPC Docker image.  
+* Hash of the MPC Docker image (note: this is not the same as the Docker image manifest hash published on Docker Hub).  
 
-Main steps are:
+> **Important:** Each operator is responsible for verifying that the MPC Docker image hash being voted for corresponds to the intended MPC Git commit, and for performing their own due diligence on the code.
 
-1. Verify that a specific docker image hash corresponds to a specific MPC node git commit.   
-2. Vote for the new node hash in the contract  
-3. Upgrade the MPC node running in your CVM.
+**Main Steps:**
+
+1. Verify that the Docker image hash matches the expected MPC node Git commit.  
+2. Vote for the new Docker image hash in the contract.  
+3. Upgrade the MPC node running in your CVM. 
+
 
 ##  MPC node Image/code inspection
 
