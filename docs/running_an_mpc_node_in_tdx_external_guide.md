@@ -466,7 +466,7 @@ After the MPC node has been deployed, the next steps are:
 
 ## Submitting Participant Info (`submit_participant_info`)
 
-This method registers the node’s attestation information on the contract and proves that the node is running inside a CVM with a valid configuration.
+This method registers the node’s attestation information on the contract and verifies if the node is running inside a CVM with a valid configuration.
 
 During the [transition phase](#transition-phase), this step is optional. If no attestation is submitted, the contract will use a mock attestation instead.
 
