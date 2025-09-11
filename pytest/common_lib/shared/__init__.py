@@ -366,8 +366,8 @@ def start_cluster_with_mpc(
             nonce,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
-            True,
-            True,
+            full_access=True,
+            create_new_account=True,
         )
         create_txs.append(tx)
         candidate_account_id = candidate.signer_key.account_id
