@@ -172,7 +172,10 @@ pub fn verify<C: Ciphersuite>(
 
 #[cfg(test)]
 mod test {
+    use elliptic_curve::{bigint::Uint, scalar::FromUintUnchecked};
     use rand_core::OsRng;
+
+    use crate::test::MockCryptoRng;
 
     use super::*;
     use frost_secp256k1::Secp256K1Sha256;
@@ -205,5 +208,70 @@ mod test {
         let ok = verify(&mut transcript.fork(b"party", &[1]), statement, &proof).unwrap();
 
         assert!(ok);
+    }
+
+    #[test]
+    fn test_prove_fixed_randomness() {
+        let mut rng = MockCryptoRng::new([1; 8]);
+        let x = Scalar::generate_biased(&mut rng);
+        let h = Scalar::generate_biased(&mut rng);
+        let big_h = ProjectivePoint::GENERATOR * h;
+
+        let statement = Statement::<Secp256K1Sha256> {
+            public0: &(ProjectivePoint::GENERATOR * x),
+            generator1: &big_h,
+            public1: &(big_h * x),
+        };
+        let witness = Witness {
+            x: SerializableScalar::<Secp256K1Sha256>(x),
+        };
+
+        let transcript = Transcript::new(b"protocol");
+
+        let proof = prove(
+            &mut rng,
+            &mut transcript.fork(b"party", &[1]),
+            statement,
+            witness,
+        )
+        .unwrap();
+        assert_eq!(
+            Scalar::from_uint_unchecked(Uint::from_be_hex(
+                "067B14308E1E96A782791C10179F1801B6764037141CBA0462A4D495EB78B2D0"
+            )),
+            proof.s.0
+        );
+        assert_eq!(
+            Scalar::from_uint_unchecked(Uint::from_be_hex(
+                "95B6C33214488D2F0429129E9AF2CB2943F9F064421BB270918CFA412CB680E2"
+            )),
+            proof.e.0
+        );
+    }
+
+    #[test]
+    fn test_verify_fixed_randomness() {
+        let x = Scalar::from_uint_unchecked(Uint::from_be_hex(
+            "FC9A011DF3753BD79D841C11F6521F25AD2AB1DECEB96B7E8C28D87EA3303A06",
+        ));
+        let h = Scalar::from_uint_unchecked(Uint::from_be_hex(
+            "FC9A011DF3753BD79D841C11F6521F25AD2AB1DECEB96B7E8C28D87EA3303A06",
+        ));
+        let big_h = ProjectivePoint::GENERATOR * h;
+        let transcript = Transcript::new(b"protocol");
+        let statement = Statement::<Secp256K1Sha256> {
+            public0: &(ProjectivePoint::GENERATOR * x),
+            generator1: &big_h,
+            public1: &(big_h * x),
+        };
+        let proof: Proof<Secp256K1Sha256> = Proof {
+            s: SerializableScalar(Scalar::from_uint_unchecked(Uint::from_be_hex(
+                "067B14308E1E96A782791C10179F1801B6764037141CBA0462A4D495EB78B2D0",
+            ))),
+            e: SerializableScalar(Scalar::from_uint_unchecked(Uint::from_be_hex(
+                "95B6C33214488D2F0429129E9AF2CB2943F9F064421BB270918CFA412CB680E2",
+            ))),
+        };
+        assert!(verify(&mut transcript.fork(b"party", &[1]), statement, &proof).unwrap());
     }
 }

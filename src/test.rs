@@ -1,7 +1,7 @@
 // This module provides generic functions to be used
 // in the implemented schemes testing cases
 
-use rand_core::{OsRng, RngCore};
+use rand_core::{CryptoRng, OsRng, RngCore};
 use std::error::Error;
 
 use crate::protocol::{errors::InitializationError, run_protocol, Participant, Protocol};
@@ -176,4 +176,40 @@ where
     }
 
     Ok(run_protocol(protocols)?)
+}
+
+// Taken from https://rust-random.github.io/book/guide-test-fn-rng.html
+#[derive(Clone, Copy, Debug)]
+pub struct MockCryptoRng {
+    data: [u8; 8],
+    index: usize,
+}
+
+impl MockCryptoRng {
+    pub fn new(data: [u8; 8]) -> MockCryptoRng {
+        MockCryptoRng { data, index: 0 }
+    }
+}
+
+impl CryptoRng for MockCryptoRng {}
+
+impl RngCore for MockCryptoRng {
+    fn next_u32(&mut self) -> u32 {
+        unimplemented!()
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        unimplemented!()
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        for byte in dest.iter_mut() {
+            *byte = self.data[self.index];
+            self.index = (self.index + 1) % self.data.len();
+        }
+    }
+
+    fn try_fill_bytes(&mut self, _dest: &mut [u8]) -> Result<(), rand_core::Error> {
+        unimplemented!()
+    }
 }

@@ -110,9 +110,11 @@ pub fn verify<C: Ciphersuite>(
 
 #[cfg(test)]
 mod test {
+    use elliptic_curve::{bigint::Uint, scalar::FromUintUnchecked};
     use rand_core::OsRng;
 
     use super::*;
+    use crate::test::MockCryptoRng;
     use frost_secp256k1::Secp256K1Sha256;
     use k256::{ProjectivePoint, Scalar};
 
@@ -140,5 +142,60 @@ mod test {
         let ok = verify(&mut transcript.fork(b"party", &[1]), statement, &proof).unwrap();
 
         assert!(ok);
+    }
+
+    #[test]
+    fn test_prove_fixed_randomness() {
+        let mut rng = MockCryptoRng::new([1; 8]);
+        let x = Scalar::generate_biased(&mut rng);
+
+        let statement = Statement::<Secp256K1Sha256> {
+            public: &(ProjectivePoint::GENERATOR * x),
+        };
+        let witness = Witness {
+            x: SerializableScalar::<Secp256K1Sha256>(x),
+        };
+
+        let transcript = Transcript::new(b"protocol");
+
+        let proof = prove(
+            &mut rng,
+            &mut transcript.fork(b"party", &[1]),
+            statement,
+            witness,
+        )
+        .unwrap();
+        assert_eq!(
+            Scalar::from_uint_unchecked(Uint::from_be_hex(
+                "5086B275DC32C8CD1AAD377918E0B622BAF92844BDC46808BD5568D6E304DB33"
+            )),
+            proof.s.0
+        );
+        assert_eq!(
+            Scalar::from_uint_unchecked(Uint::from_be_hex(
+                "BA7718DDF60BC62FC6081B658322E908CD4FF161AB754748EC170CBC66898CDB"
+            )),
+            proof.e.0
+        );
+    }
+
+    #[test]
+    fn test_verify_fixed_randomness() {
+        let x = Scalar::from_uint_unchecked(Uint::from_be_hex(
+            "FC9A011DF3753BD79D841C11F6521F25AD2AB1DECEB96B7E8C28D87EA3303A06",
+        ));
+        let transcript = Transcript::new(b"protocol");
+        let statement = Statement::<Secp256K1Sha256> {
+            public: &(ProjectivePoint::GENERATOR * x),
+        };
+        let proof: Proof<Secp256K1Sha256> = Proof {
+            e: SerializableScalar(Scalar::from_uint_unchecked(Uint::from_be_hex(
+                "BA7718DDF60BC62FC6081B658322E908CD4FF161AB754748EC170CBC66898CDB",
+            ))),
+            s: SerializableScalar(Scalar::from_uint_unchecked(Uint::from_be_hex(
+                "5086B275DC32C8CD1AAD377918E0B622BAF92844BDC46808BD5568D6E304DB33",
+            ))),
+        };
+        assert!(verify(&mut transcript.fork(b"party", &[1]), statement, &proof).unwrap());
     }
 }
