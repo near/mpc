@@ -468,7 +468,7 @@ After the MPC node has been deployed, the next steps are:
 
 This method registers the node’s attestation information on the contract and verifies if the node is running inside a CVM with a valid configuration.
 
-During the [transition phase](#transition-phase), this step is optional. If no attestation is submitted, the contract will use a mock attestation instead.
+During the [transition phase](#transition-phase), this step is optional.  The contract will accept nodes the did not submit an attestation.  
 
 The MPC node submits this information by default. If it does not, the operator can perform the action on its behalf by retrieving the required data from the node.
 
