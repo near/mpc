@@ -423,8 +423,8 @@ def start_cluster_with_mpc(
             nonce + 1,
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
-            False,
-            False,
+            full_access=False,
+            create_new_account=False,
         )
         access_txs.append(tx)
 
