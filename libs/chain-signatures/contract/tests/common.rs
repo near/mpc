@@ -683,7 +683,7 @@ pub async fn submit_participant_info(
 ) -> anyhow::Result<bool> {
     let result = account
         .call(contract.id(), "submit_participant_info")
-        .args_borsh((attestation.clone(), tls_key.clone()))
+        .args_json((attestation.clone(), tls_key.clone()))
         .max_gas()
         .transact()
         .await?;

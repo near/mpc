@@ -702,8 +702,8 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
-        #[serializer(borsh)] proposed_participant_attestation: Attestation,
-        #[serializer(borsh)] tls_public_key: PublicKey,
+        proposed_participant_attestation: Attestation,
+        tls_public_key: PublicKey,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
         let account_key = env::signer_account_pk();
