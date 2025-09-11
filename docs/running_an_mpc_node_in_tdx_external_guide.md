@@ -461,7 +461,7 @@ Once these steps are complete, the operator should request all other operators t
 
 ## Wait for NEAR Indexer to Sync
 
-Wait until the NEAR Indexer has completed state sync. This process can take several hours. You can check progress in the Docker container logs or via the metrics endpoint:
+Wait until the NEAR Indexer has completed state sync. This process can take several hours. You can check the progress in the Docker container logs or via the metrics endpoint:
 
 ```bash
 curl http://127.0.0.1:3030/metrics | grep near_sync_status
