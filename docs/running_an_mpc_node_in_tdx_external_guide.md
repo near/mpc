@@ -121,7 +121,7 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
    1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
    ```
  
- **Note**: As part of the mutual attestation between the CVM and the key provider, the CVM will check that the key provider’s mr_enclave matches the above hash.
+ **Note**: As part of the mutual attestation between the CVM and the key provider, the CVM will check that the key provider’s `mr_enclave` matches the above hash.
 
 
 # MPC Node Setup and Deployment
