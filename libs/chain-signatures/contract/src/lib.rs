@@ -830,14 +830,15 @@ impl VersionedMpcContract {
                 let invalid_participants: Vec<_> = proposed_participants
                     .participants()
                     .iter()
-                    .filter(|(account_id, _, _)| {
+                    .map(|(account_id, _, _)| account_id)
+                    .filter(|account_id| {
                         participants_with_valid_attestation.is_participant(account_id)
                     })
                     .collect();
 
                 Err(
                     InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
-                        "The following participants have invalid TEE status: {:#?}",
+                        "The following participants have invalid TEE status: {:?}",
                         invalid_participants
                     )),
                 )
