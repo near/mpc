@@ -2,7 +2,7 @@ import json
 
 from utils import load_binary_file
 from enum import Enum
-from borsh_construct import Vec, U8, CStruct, U64, Option, Enum, String
+from borsh_construct import Vec, U8, CStruct, U64, Option
 from .constants import MPC_REPO_DIR
 
 COMPILED_CONTRACT_PATH = (
