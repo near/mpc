@@ -374,7 +374,8 @@ impl<'de, C: Ciphersuite> Deserialize<'de> for PolynomialCommitment<C> {
 /// Note: if `x` is None then consider it as 0.
 /// Note: `x_j` are elements in `point_set`
 /// Note: if `x_i` is not in `point_set` then return an error
-/// Note: `point_set` must not have repeating values.
+/// Warning: For correctness, this function assumes `point_set` does not have repeated values
+/// We dont actually enforce this for performance reasons
 pub fn compute_lagrange_coefficient<C: Ciphersuite>(
     points_set: &[Scalar<C>],
     x_i: &Scalar<C>,
@@ -415,9 +416,8 @@ pub fn compute_lagrange_coefficient<C: Ciphersuite>(
         return Err(ProtocolError::InvalidInterpolationArguments);
     }
 
-    // raises error if the denominator is null, i.e., the set contains duplicates
-    let den = <C::Group as Group>::Field::invert(&den)
-        .map_err(|_| ProtocolError::InvalidInterpolationArguments)?;
+    // denominator will never be 0 here, therefore it is safe to invert
+    let den = <C::Group as Group>::Field::invert(&den).unwrap();
     Ok(SerializableScalar(num * den))
 }
 
@@ -571,9 +571,10 @@ pub fn batch_invert<C: Ciphersuite>(values: &[Scalar<C>]) -> Result<Vec<Scalar<C
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test::generate_participants;
+    use crate::test::{generate_participants, generate_participants_with_random_ids};
     use frost_core::Field;
     use frost_secp256k1::{Secp256K1Group, Secp256K1ScalarField, Secp256K1Sha256};
+    use k256::Scalar;
     use rand_core::{OsRng, RngCore};
     type C = Secp256K1Sha256;
 
@@ -1055,6 +1056,74 @@ mod test {
             Some(&Secp256K1ScalarField::zero()),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_compute_lagrange_coefficient_cubic_polynomial() {
+        let points = generate_participants_with_random_ids(5)
+            .iter()
+            .map(|p| p.scalar::<C>())
+            .collect::<Vec<_>>();
+        let mut result = Secp256K1ScalarField::zero();
+        let target_point = Scalar::generate_biased(&mut OsRng);
+        for point in points.iter() {
+            let coefficient =
+                compute_lagrange_coefficient::<C>(&points, point, Some(&target_point))
+                    .unwrap()
+                    .0;
+            result += coefficient * point * point * point;
+        }
+        assert_eq!(result, target_point * target_point * target_point);
+    }
+
+    #[test]
+    fn test_compute_lagrange_coefficient_edge_cases() {
+        let one = Scalar::ONE;
+        let zero = Scalar::ZERO;
+        let target_point = Scalar::generate_biased(&mut OsRng);
+
+        // coefficients computed manually
+        assert_eq!(
+            compute_lagrange_coefficient::<C>(&[one, zero], &one, Some(&target_point))
+                .unwrap()
+                .0,
+            target_point
+        );
+        assert_eq!(
+            compute_lagrange_coefficient::<C>(&[one, zero], &zero, Some(&target_point))
+                .unwrap()
+                .0,
+            (one - target_point)
+        );
+
+        // target point is None should be treated as 0
+        let random_point1 = Scalar::generate_biased(&mut OsRng);
+        let random_point2 = Scalar::generate_biased(&mut OsRng);
+        assert_eq!(
+            compute_lagrange_coefficient::<C>(
+                &[random_point1, random_point2],
+                &random_point1,
+                Some(&zero)
+            )
+            .unwrap()
+            .0,
+            compute_lagrange_coefficient::<C>(
+                &[random_point1, random_point2],
+                &random_point1,
+                None
+            )
+            .unwrap()
+            .0
+        );
+
+        // point not in set
+        assert!(
+            compute_lagrange_coefficient::<C>(&[one, zero], &(one + one), Some(&target_point))
+                .is_err()
+        );
+
+        // not enough points
+        assert!(compute_lagrange_coefficient::<C>(&[one], &one, Some(&target_point)).is_err());
     }
 
     #[test]
