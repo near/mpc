@@ -20,6 +20,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time;
 
+const GET_TEE_ACCOUNTS_METHOD_NAME: &str = "get_tee_accounts";
+
 /// Creates, signs, and submits a function call with the given method and serialized arguments.
 async fn submit_tx(
     tx_signer: Arc<TransactionSigner>,
@@ -180,7 +182,7 @@ async fn observe_tx_result(
                         block_reference: BlockReference::Finality(Finality::Final),
                         request: QueryRequest::CallFunction {
                             account_id: indexer_state.mpc_contract_id.clone(),
-                            method_name: "get_tee_accounts".to_string(),
+                            method_name: GET_TEE_ACCOUNTS_METHOD_NAME.to_string(),
                             args: get_pending_request_args.into(),
                         },
                     }
