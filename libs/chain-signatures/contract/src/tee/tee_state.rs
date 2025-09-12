@@ -1,5 +1,4 @@
 use crate::{
-    errors::Error,
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
     tee::{
@@ -77,13 +76,13 @@ impl TeeState {
         account_id: &AccountId,
         tls_public_key: PublicKey,
         tee_upgrade_period_blocks: u64,
-    ) -> Result<TeeQuoteStatus, Error> {
+    ) -> TeeQuoteStatus {
         let allowed_mpc_docker_image_hashes = self.get_allowed_hashes(tee_upgrade_period_blocks);
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
 
         let participant_attestation = self.participants_attestations.get(account_id);
         let Some(participant_attestation) = participant_attestation else {
-            return Ok(TeeQuoteStatus::None);
+            return TeeQuoteStatus::None;
         };
 
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
@@ -96,13 +95,11 @@ impl TeeState {
             allowed_launcher_compose_hashes,
         );
 
-        let quote_result = if quote_result {
+        if quote_result {
             TeeQuoteStatus::Valid
         } else {
             TeeQuoteStatus::Invalid
-        };
-
-        Ok(quote_result)
+        }
     }
 
     /// Performs TEE validation on the given participants.
@@ -122,7 +119,11 @@ impl TeeState {
                 let tls_public_key = participant_info.sign_pk.clone();
 
                 matches!(
-                    self.tee_status(account_id, tls_public_key, tee_upgrade_period_blocks),
+                    self.verify_tee_participant(
+                        account_id,
+                        tls_public_key,
+                        tee_upgrade_period_blocks
+                    ),
                     TeeQuoteStatus::Valid | TeeQuoteStatus::None
                 )
             })
@@ -138,22 +139,6 @@ impl TeeState {
             }
         } else {
             TeeValidationResult::Full
-        }
-    }
-
-    /// Retrieves and validates the TEE status for a participant, combining both the TEE quote
-    /// verification and the Docker image verification. If both validations pass, the participant
-    /// is considered to have a valid TEE status. Otherwise, the participant is marked as invalid.
-    /// If no TEE information is found, the participant is marked with `TeeQuoteStatus::None`.
-    pub fn tee_status(
-        &mut self,
-        account_id: &AccountId,
-        tls_public_key: PublicKey,
-        tee_upgrade_period_blocks: u64,
-    ) -> TeeQuoteStatus {
-        match self.verify_tee_participant(account_id, tls_public_key, tee_upgrade_period_blocks) {
-            Ok(status) => status,
-            Err(_) => TeeQuoteStatus::Invalid,
         }
     }
 
