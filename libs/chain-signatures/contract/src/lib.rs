@@ -17,11 +17,14 @@ use crate::{
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
-    tee::{proposal::AllowedDockerImageHash, quote::TeeQuoteStatus, tee_state::TeeState},
+    tee::{
+        proposal::AllowedDockerImageHash,
+        tee_state::{TeeQuoteStatus, TeeState},
+    },
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
     v0_state::MpcContractV1,
 };
-use attestation::attestation::Attestation;
+use attestation::attestation::{Attestation, MockAttestation};
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -150,6 +153,26 @@ impl MpcContract {
         );
         parameters.validate().unwrap();
 
+        let mut tee_state = TeeState::default();
+
+        // TODO: https://github.com/near/mpc/issues/1087
+        // Every participant must have a valid attestation, otherwise we risk
+        // participants being immediately kicked out once contract transitions into running.
+        {
+            let participant_account_ids = parameters
+                .participants()
+                .participants()
+                .iter()
+                .map(|(account_id, _, _)| account_id);
+
+            for participant_account_id in participant_account_ids {
+                tee_state.add_participant(
+                    participant_account_id.clone(),
+                    Attestation::Mock(MockAttestation::Valid),
+                )
+            }
+        }
+
         Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 DomainRegistry::default(),
@@ -160,7 +183,7 @@ impl MpcContract {
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: ProposedUpdates::default(),
             config: Config::from(init_config),
-            tee_state: TeeState::default(),
+            tee_state,
             accept_requests: true,
         }
     }
@@ -699,16 +722,16 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
-        #[serializer(borsh)] proposed_participant_attestation: Attestation,
-        #[serializer(borsh)] tls_public_key: PublicKey,
+        participant_attestation: Attestation,
+        tls_public_key: PublicKey,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
         let account_key = env::signer_account_pk();
 
         log!(
-            "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
+            "submit_participant_info: signer={}, participant_attestation={:?}, account_key={:?}",
             account_id,
-            proposed_participant_attestation,
+            participant_attestation,
             account_key
         );
 
@@ -721,13 +744,11 @@ impl VersionedMpcContract {
         };
 
         // Verify the TEE quote and Docker image for the proposed participant
-        let status = mpc_contract
-            .tee_state
-            .verify_proposed_participant_attestation(
-                &proposed_participant_attestation,
-                tls_public_key,
-                mpc_contract.config.tee_upgrade_deadline_duration_blocks,
-            );
+        let status = mpc_contract.tee_state.verify_attestation(
+            &participant_attestation,
+            tls_public_key,
+            mpc_contract.config.tee_upgrade_deadline_duration_blocks,
+        );
 
         if status == TeeQuoteStatus::Invalid {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
@@ -737,7 +758,7 @@ impl VersionedMpcContract {
         // Add the participant information to the contract state
         mpc_contract
             .tee_state
-            .add_participant(account_id.clone(), proposed_participant_attestation);
+            .add_participant(account_id.clone(), participant_attestation);
 
         // Both participants and non-participants can propose. Non-participants must pay for the
         // storage they use; participants do not.
@@ -784,25 +805,42 @@ impl VersionedMpcContract {
             proposal,
         );
 
-        match self {
-            Self::V2(mpc_contract) => {
-                let validation_result = mpc_contract.tee_state.validate_tee(
-                    proposal.participants(),
-                    mpc_contract.config.tee_upgrade_deadline_duration_blocks,
-                );
-                match validation_result {
-                    TeeValidationResult::Full => {
-                        mpc_contract.vote_new_parameters(prospective_epoch_id, &proposal)
-                    }
-                    TeeValidationResult::Partial(invalid_participants) => Err(
-                        InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
-                            "The following participants have invalid TEE status: {:?}",
-                            invalid_participants
-                        )),
-                    ),
-                }
+        let Self::V2(mpc_contract) = self else {
+            env::panic_str("expected V2");
+        };
+
+        let proposed_participants = proposal.participants();
+
+        let validation_result = mpc_contract
+            .tee_state
+            .validate_participants_tee_attestation(
+                proposed_participants,
+                mpc_contract.config.tee_upgrade_deadline_duration_blocks,
+            );
+
+        match validation_result {
+            TeeValidationResult::Full => {
+                mpc_contract.vote_new_parameters(prospective_epoch_id, &proposal)
             }
-            _ => env::panic_str("expected V2"),
+            TeeValidationResult::Partial {
+                participants_with_valid_attestation,
+            } => {
+                let invalid_participants: Vec<_> = proposed_participants
+                    .participants()
+                    .iter()
+                    .map(|(account_id, _, _)| account_id)
+                    .filter(|account_id| {
+                        participants_with_valid_attestation.is_participant(account_id)
+                    })
+                    .collect();
+
+                Err(
+                    InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
+                        "The following participants have invalid TEE status: {:?}",
+                        invalid_participants
+                    )),
+                )
+            }
         }
     }
 
@@ -1102,7 +1140,7 @@ impl VersionedMpcContract {
         }
     }
 
-    /// Verifies if all current participants have an accepted TEE state.
+    /// Verifies if all current participants have a valid TEE attestation.
     /// Automatically enters a resharing, in case one or more participants do not have an accepted
     /// TEE state.
     /// Returns `false` and stops the contract from accepting new signature requests or responses,
@@ -1121,7 +1159,7 @@ impl VersionedMpcContract {
         let tee_upgrade_deadline_duration_blocks =
             contract.config.tee_upgrade_deadline_duration_blocks;
 
-        match contract.tee_state.validate_tee(
+        match contract.tee_state.validate_participants_tee_attestation(
             current_params.participants(),
             tee_upgrade_deadline_duration_blocks,
         ) {
@@ -1130,10 +1168,12 @@ impl VersionedMpcContract {
                 log!("All participants have an accepted Tee status");
                 Ok(true)
             }
-            TeeValidationResult::Partial(new_participants) => {
+            TeeValidationResult::Partial {
+                participants_with_valid_attestation,
+            } => {
                 let threshold = current_params.threshold().value() as usize;
-                let remaining = new_participants.len();
-                if threshold > remaining {
+                let proposed_remaining_participants = participants_with_valid_attestation.len();
+                if threshold > proposed_remaining_participants {
                     log!("Less than `threshold` participants are left with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.");
                     contract.accept_requests = false;
                     return Ok(false);
@@ -1150,7 +1190,7 @@ impl VersionedMpcContract {
                 let new_threshold = threshold;
 
                 let threshold_parameters = ThresholdParameters::new(
-                    new_participants,
+                    participants_with_valid_attestation,
                     Threshold::new(new_threshold as u64),
                 )
                 .expect("Require valid threshold parameters"); // this should never happen.
@@ -1727,28 +1767,6 @@ mod tests {
         contract.vote_new_parameters(EpochId::new(1), proposal)
     }
 
-    /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds when all participants have
-    /// default TEE status ([`TeeQuoteStatus::None`]). This tests the basic scenario where no
-    /// participants have submitted attestation information, and all have the default TEE status
-    /// of [`TeeQuoteStatus::None`], which is considered acceptable.
-    #[test]
-    fn test_vote_new_parameters_succeeds_with_default_tee_status() {
-        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
-        let threshold = Threshold::new(2);
-
-        // No attestations submitted - all participants have default TEE status None
-        let result = setup_voting_context_and_vote(
-            &mut contract,
-            &first_participant_id,
-            participants,
-            threshold,
-        );
-        assert!(
-            result.is_ok(),
-            "Should succeed when all participants have default TEE status None"
-        );
-    }
-
     /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds when all participants
     /// submit valid TEE attestations. This tests the scenario where all participants successfully
     /// submit valid attestations through [`VersionedMpcContract::submit_participant_info`],
@@ -1774,36 +1792,6 @@ mod tests {
         );
     }
 
-    /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds with mixed TEE statuses:
-    /// some [`TeeQuoteStatus::Valid`], some [`TeeQuoteStatus::None`]. This tests a realistic
-    /// scenario where some participants have submitted valid attestations (resulting in
-    /// [`TeeQuoteStatus::Valid`] TEE status) while others haven't submitted any attestation
-    /// info (resulting in [`TeeQuoteStatus::None`] TEE status). Both statuses are acceptable
-    /// for TEE validation.
-    #[test]
-    fn test_vote_new_parameters_succeeds_with_mixed_valid_and_none_tee_status() {
-        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(4, 3);
-        let threshold = Threshold::new(3);
-
-        // Submit valid attestations for first 3 participants, leave the 4th without attestation
-        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
-
-        // This should succeed because:
-        // - 3 participants have Valid TEE status (from successful attestations)
-        // - 1 participant has None TEE status (no attestation submitted)
-        // - Both Valid and None are allowed by the TEE validation
-        let result = setup_voting_context_and_vote(
-            &mut contract,
-            &first_participant_id,
-            participants,
-            threshold,
-        );
-        assert!(
-            result.is_ok(),
-            "Should succeed when participants have Valid or None TEE status"
-        );
-    }
-
     /// Test that attempts to submit invalid attestations are rejected by
     /// [`VersionedMpcContract::submit_participant_info`]. This test demonstrates that
     /// participants cannot have Invalid TEE status because the contract proactively rejects
@@ -1816,7 +1804,7 @@ mod tests {
         let threshold = Threshold::new(3);
 
         // Submit valid attestations for first 3 participants
-        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2, 3]);
 
         // Try to submit invalid attestation for the 4th participant
         let participant_index = 3;
@@ -1835,16 +1823,16 @@ mod tests {
             );
         }
 
-        // This should succeed because:
-        // - 3 participants have Valid TEE status (from successful attestations)
-        // - 1 participant has None TEE status (invalid attestation was rejected)
-        // - Both Valid and None are allowed by the TEE validation
+        // This should succeed because all participants have valid attestations.
         let result = setup_voting_context_and_vote(
             &mut contract,
             &first_participant_id,
             participants,
             threshold,
         );
-        assert!(result.is_ok(), "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)");
+        assert!(
+            result.is_ok(),
+            "Should succeed when participants have valid attestations"
+        );
     }
 }

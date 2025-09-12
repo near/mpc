@@ -197,11 +197,15 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
         balance.as_millinear() - new_balance.as_millinear() < 10,
         "refund should happen"
     );
-    assert!(
-        contract_balance.as_millinear() - new_contract_balance.as_millinear() <= 1,
-        "refund transfer should take less than 0.001 NEAR"
-    );
 
+    let contract_balance_drained_post_transaction_mili: u128 = contract_balance
+        .as_millinear()
+        .saturating_sub(new_contract_balance.as_millinear()); // Underflow can occur if the contract's balance increases after the transaction.
+
+    assert!(
+        contract_balance_drained_post_transaction_mili <= 1,
+        "refund transfer should take less than 0.001 NEAR.",
+    );
     Ok(())
 }
 
