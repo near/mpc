@@ -13,14 +13,12 @@ use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};
 use permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData};
 use serde::{Deserialize, Serialize};
 use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
-use threshold_signatures::frost_ed25519::Ed25519Sha512;
-use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum KeyshareData {
-    Secp256k1(threshold_signatures::KeygenOutput<Secp256K1Sha256>),
-    Ed25519(threshold_signatures::KeygenOutput<Ed25519Sha512>),
-    CkdSecp256k1(threshold_signatures::KeygenOutput<Secp256K1Sha256>),
+    Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
+    Ed25519(threshold_signatures::eddsa::KeygenOutput),
+    CkdSecp256k1(threshold_signatures::ecdsa::KeygenOutput),
 }
 
 /// A single keyshare, corresponding to one epoch, one domain, one attempt.
