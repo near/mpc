@@ -32,6 +32,7 @@ use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
     primitives::signature::{Payload, SignRequestArgs},
 };
+use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::{log, CurveType, PublicKey};
 use near_workspaces::{
     network::Sandbox,
@@ -666,4 +667,19 @@ pub async fn submit_participant_info(
         .transact()
         .await?;
     Ok(result.is_success())
+}
+
+pub async fn vote_for_hash(
+    account: &Account,
+    contract: &Contract,
+    hash: &MpcDockerImageHash,
+) -> anyhow::Result<()> {
+    check_call_success(
+        account
+            .call(contract.id(), "vote_code_hash")
+            .args_json(serde_json::json!({"code_hash": hash}))
+            .transact()
+            .await?,
+    );
+    Ok(())
 }
