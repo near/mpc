@@ -149,7 +149,7 @@ The contract needs to store information related to the recovery process, namely:
 - any information related to the backup service
 - any ongoing recovery processes
 
-Below is a draft for the structs to add:
+Below is a draft for the structs to add (c.f. _([(#1083)](https://github.com/near/mpc/issues/1083))_:
 
 ```Rust
 struct Recovery {
@@ -166,6 +166,8 @@ struct RecoveringNode {
     prospective_participant_info: ParticipantInfo,
 }
 ```
+
+Additionally, the contract must allow the same node operator (`AccountId`) to store multiple TEE attestations. Instead of using `AccountId` as a unique identifier in [`TEEState`](https://github.com/near/mpc/blob/2d0a7f62835da102bc21db0adb9bbf74c6b88afd/libs/chain-signatures/contract/src/tee/tee_state.rs#L29), Attestations shall be stored with respect to the TLS key _(c.f. [(#1084)](https://github.com/near/mpc/issues/1084))_.
 
 ##### New Methods
 The contract also needs to proved the following methods:
@@ -184,11 +186,11 @@ The contract also needs to proved the following methods:
 
 ##### Behavior Changes
 - The map `Recovery::recoveries` needs to be emptied upon concluding a `Running` state and entering a `Resharing` or `Initialization` state
-- The contract must allow the same node operator (`AccountId`) to store multiple TEE attestations. Instead of using `AccountId` as a unique identifier in [`TEEState`](https://github.com/near/mpc/blob/2d0a7f62835da102bc21db0adb9bbf74c6b88afd/libs/chain-signatures/contract/src/tee/tee_state.rs#L29), Attestations shall be stored with respect to the TLS key.
-- It may be desirable if the Contract verified that the calls to `conclude_recovery` are actually coming from the onboarding node. It might actually be desirable that the contract verified for all calls stemming from a node, that are signed by the correct public key. That is, to avoid mistaking any calls from ill-behaved decomissioned nodes as valid instructions. For this:
+- It may be desirable if the Contract verified that the calls to `conclude_recovery` are actually coming from the onboarding node. It might actually be desirable that the contract verified for all calls stemming from a node, that are signed by the correct public key. That is, to avoid mistaking any calls from ill-behaved decomissioned nodes as valid instructions _(c.f. [(#1086)](https://github.com/near/mpc/issues/1086))_. For this:
     - the contract would need to compare the `env::signer_account_pk()` with the public key associated to the nodee (note: this is a different key to the TLS Key. The TLS key is already stored in the contract under the name [`signer_pk`](https://github.com/near/mpc/blob/2d0a7f62835da102bc21db0adb9bbf74c6b88afd/libs/chain-signatures/contract/src/primitives/participants.rs#L14)) _(tangent: the team is aware the chosen name is not ideal and eager to change it when opportun)_)
     - the public key used by the node would need to be part of the `ParticipantInfo` struct
     - we would probably also want that public key to be part of the TEE attestation.
+
 
 #### Backup Service
 For the soft launch, the node operator and a few scripts will act as the backup-service. For the hard-launch, this section is WIP.
