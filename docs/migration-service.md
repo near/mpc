@@ -86,9 +86,6 @@ flowchart TD
     MPC@{ shape: proc}
 ```
 
-#### Contract Methods
-For the backup flow, 
-
 ### Recovery Flow
 The node provides an HTTP `PUT` endpoint on which the encrypted keyshares can be sent.
 The backup service monitors the smart contract for any onboarding events and uses the public key stored in the smart contract to derive a shared secret, used to encrypt the keys (c.f. [cryptography](#cryptography) for more details on the encryption).
