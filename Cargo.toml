@@ -61,3 +61,4 @@ bincode = { version = "2.0.1", features = ["serde"] }
 [[bench]]
 name = "main"
 harness = false
+

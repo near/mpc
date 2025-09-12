@@ -55,6 +55,9 @@ pub enum ProtocolError {
     #[error("encountered a zero scalar")]
     ZeroScalar,
 
+    #[error("this should never happen, please report upstream")]
+    Unreachable,
+
     // catch-all for foreign errors
     #[error("{0}")]
     Other(String),

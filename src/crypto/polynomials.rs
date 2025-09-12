@@ -417,7 +417,7 @@ pub fn compute_lagrange_coefficient<C: Ciphersuite>(
     }
 
     // denominator will never be 0 here, therefore it is safe to invert
-    let den = <C::Group as Group>::Field::invert(&den).unwrap();
+    let den = <C::Group as Group>::Field::invert(&den).map_err(|_| ProtocolError::Unreachable)?;
     Ok(SerializableScalar(num * den))
 }
 

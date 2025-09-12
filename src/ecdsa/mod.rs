@@ -69,15 +69,24 @@ impl Signature {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod test_verify {
-    use super::Signature;
+    use crate::test::MockCryptoRng;
+
+    use super::*;
+
     use elliptic_curve::ops::{Invert, LinearCombination, Reduce};
+    use frost_core::keys::SigningShare;
+    use frost_core::SigningKey as FrostSigningKey;
+    use frost_core::VerifyingKey as FrostVerifyingKey;
     use k256::{
         ecdsa::{signature::Verifier, SigningKey, VerifyingKey},
         ProjectivePoint, Scalar, Secp256k1,
     };
     use rand_core::OsRng;
     use sha2::{digest::FixedOutput, Digest, Sha256};
+
+    type C = Secp256K1Sha256;
 
     #[test]
     fn test_verify() {
@@ -109,5 +118,27 @@ mod test_verify {
         let is_verified = full_sig.verify(&pk.to_affine(), &z);
         // Should always be ok as signature contains Uint i.e. normalized elements
         assert!(is_verified)
+    }
+
+    #[test]
+    fn keygen_output__should_be_serializable() {
+        // Given
+        let mut rng = MockCryptoRng::new([1; 8]);
+        let signing_key = FrostSigningKey::<C>::new(&mut rng);
+
+        let keygen_output = KeygenOutput {
+            private_share: SigningShare::<C>::new(Scalar::ONE),
+            public_key: FrostVerifyingKey::<C>::from(signing_key),
+        };
+
+        // When
+        let serialized_keygen_output =
+            serde_json::to_string(&keygen_output).expect("should be able to serialize output");
+
+        // Then
+        assert_eq!(
+            serialized_keygen_output,
+            "{\"private_share\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"public_key\":\"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f\"}"
+        );
     }
 }

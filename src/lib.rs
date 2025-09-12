@@ -19,6 +19,7 @@ pub use frost_secp256k1;
 mod test;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(bound = "C: Ciphersuite")]
 /// Generic type of key pairs
 pub struct KeygenOutput<C: Ciphersuite> {
     pub private_share: SigningShare<C>,

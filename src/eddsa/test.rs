@@ -2,6 +2,14 @@ use crate::crypto::hash::HashOutput;
 use crate::eddsa::{sign::sign, KeygenOutput, Signature};
 use crate::participants::ParticipantList;
 use crate::protocol::{run_protocol, Participant, Protocol};
+use crate::test::MockCryptoRng;
+
+use frost_core::keys::SigningShare;
+use frost_core::VerifyingKey as FrostVerifyingKey;
+use frost_core::{Scalar as FrostScalar, SigningKey as FrostSigningKey};
+use frost_ed25519::Ed25519Sha512;
+
+type C = Ed25519Sha512;
 
 use rand_core::{OsRng, RngCore};
 use std::error::Error;
@@ -95,4 +103,27 @@ pub(crate) fn test_run_signature_protocols(
     }
 
     Ok(run_protocol(protocols)?)
+}
+
+#[test]
+#[allow(non_snake_case)]
+fn keygen_output__should_be_serializable() {
+    // Given
+    let mut rng = MockCryptoRng::new([1; 8]);
+    let signing_key = FrostSigningKey::<C>::new(&mut rng);
+
+    let keygen_output = KeygenOutput {
+        private_share: SigningShare::<C>::new(FrostScalar::<C>::from(7_u32)),
+        public_key: FrostVerifyingKey::<C>::from(signing_key),
+    };
+
+    // When
+    let serialized_keygen_output =
+        serde_json::to_string(&keygen_output).expect("should be able to serialize output");
+
+    // Then
+    assert_eq!(
+        serialized_keygen_output,
+        "{\"private_share\":\"0700000000000000000000000000000000000000000000000000000000000000\",\"public_key\":\"c6473159e19ed185b373e935081774e0c133b9416abdff319667187a71dff53e\"}"
+    );
 }
