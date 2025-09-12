@@ -5,14 +5,8 @@
 DOCKERFILE_NODE_TEE=deployment/Dockerfile-mpc-tee
 : "${NODE_IMAGE_NAME_TEE:=mpc-node-tee}"
 
-DOCKERFILE_NODE_GCP=deployment/Dockerfile-mpc-gcp
-: "${NODE_IMAGE_NAME_GCP:=mpc-node-gcp}"
-
 DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
-
-
-docker image rm $NODE_IMAGE_NAME_TEE $NODE_IMAGE_NAME_GCP $LAUNCHER_IMAGE_NAME 2>/dev/null
 
 
 SOURCE_DATE=$(git log -1 --pretty=%ct)
@@ -30,7 +24,7 @@ if ! docker buildx &>/dev/null; then
    exit 1
 fi
 
-# this is necessary to fix reproducibility with old docker versions where
+# This might be necessary to fix reproducibility with old docker versions where
 # rewrite-timestamp is not working as expected
 # https://github.com/moby/buildkit/issues/4986
 find . \( -type f -o -type d \) -exec touch -d @"$SOURCE_DATE" {} +
@@ -55,14 +49,6 @@ node_tee_image_hash=$(docker inspect $NODE_IMAGE_NAME_TEE | jq .[0].Id)
 
 docker buildx build --builder ${buildkit_image_name} --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
-    --output type=docker,name=$NODE_IMAGE_NAME_GCP,rewrite-timestamp=true \
-    -f "$DOCKERFILE_NODE_GCP" .
-
-node_gcp_image_hash=$(docker inspect $NODE_IMAGE_NAME_GCP | jq .[0].Id)
-
-
-docker buildx build --builder ${buildkit_image_name} --no-cache \
-    --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
     --output type=docker,name=$LAUNCHER_IMAGE_NAME,rewrite-timestamp=true \
     -f "$DOCKERFILE_LAUNCHER" .
 
@@ -71,5 +57,4 @@ launcher_image_hash=$(docker inspect $LAUNCHER_IMAGE_NAME | jq .[0].Id)
 echo "commit hash: $GIT_COMMIT_HASH"
 echo "SOURCE_DATE_EPOCH used: $SOURCE_DATE"
 echo "node tee docker image hash: $node_tee_image_hash"
-echo "node gcp docker image hash: $node_gcp_image_hash"
 echo "launcher docker image hash: $launcher_image_hash"
