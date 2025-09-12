@@ -2,6 +2,7 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
+use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
 use threshold_signatures::protocol::Participant;
 
 impl EcdsaSignatureProvider {
@@ -38,7 +39,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = threshold_signatures::ecdsa::dkg_ecdsa::keygen(
+        let protocol = threshold_signatures::keygen::<Secp256K1Sha256>(
             &cs_participants,
             me.into(),
             self.threshold,

@@ -3,6 +3,7 @@ use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use threshold_signatures::eddsa::KeygenOutput;
+use threshold_signatures::frost_ed25519::Ed25519Sha512;
 use threshold_signatures::protocol::Participant;
 
 impl EddsaSignatureProvider {
@@ -39,7 +40,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        let protocol = threshold_signatures::eddsa::dkg_ed25519::keygen(
+        let protocol = threshold_signatures::keygen::<Ed25519Sha512>(
             &cs_participants,
             me.into(),
             self.threshold,

@@ -73,7 +73,7 @@ rand = "0.8.5"
 rand_xorshift = "0.3"
 rcgen = "0.13.1"
 rocksdb = "0.21.0"
-rustls = { version = "0.23.31", default-features = false , features=["std"] }
+rustls = { version = "0.23.31", default-features = false, features = ["std"] }
 reqwest = { version = "0.12.9", features = ["multipart", "json"] }
 rstest = "0.25.0"
 schemars = "0.8.22" # This version needs to be exactly the same as in `near_sdk::schemars`
@@ -86,8 +86,8 @@ sha2 = "0.10.9"
 sha3 = "0.10.8"
 tempfile = "=3.14.0"
 thiserror = "2.0.12"
-# Current HEAD of main branch as of 28-08-2025
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "b4fbf84ad3244d54f4db54d3b283989861cd5f53"}
+# Current HEAD of main branch as of 12-09-2025
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "1ec0727181137b14d32a75ec58bb291ca38b5028"}
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-util = { version = "0.7.12", features = ["time"] }

@@ -3981,6 +3981,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_bytes"
+version = "0.11.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8437fd221bde2d4ca316d61b90e337e9e702b3820b87d63caa9ba6c02bd06d96"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "serde_derive"
 version = "1.0.219"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4448,9 +4457,10 @@ dependencies = [
 [[package]]
 name = "threshold-signatures"
 version = "0.1.0"
-source = "git+https://github.com/near/threshold-signatures?rev=b4fbf84ad3244d54f4db54d3b283989861cd5f53#b4fbf84ad3244d54f4db54d3b283989861cd5f53"
+source = "git+https://github.com/near/threshold-signatures?rev=1ec0727181137b14d32a75ec58bb291ca38b5028#1ec0727181137b14d32a75ec58bb291ca38b5028"
 dependencies = [
  "auto_ops",
+ "borsh",
  "byteorder",
  "digest",
  "ecdsa",
@@ -4459,6 +4469,7 @@ dependencies = [
  "frost-ed25519",
  "frost-secp256k1",
  "futures",
+ "hex",
  "itertools 0.14.0",
  "k256",
  "keccak",
@@ -4466,6 +4477,8 @@ dependencies = [
  "rand_core 0.6.4",
  "rmp-serde",
  "serde",
+ "serde_bytes",
+ "serde_json",
  "sha2",
  "sha3",
  "smol",
