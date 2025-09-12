@@ -193,7 +193,7 @@ The contract also needs to proved the following methods:
 
 
 #### Backup Service
-For the soft launch, the node operator and a few scripts will act as the backup-service. For the hard-launch, this section is WIP.
+For the soft launch, the node operator and a few scripts will act as the backup-service. For the hard-launch, the backup service will be a standalone application running inside a separate TEE from the MPC node. A detailed design of the hard launch backup service is currently out of the scope of this document.
 
 #### Node Operator
 - needs to add backup service information
