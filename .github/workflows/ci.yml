@@ -10,8 +10,8 @@ on:
   merge_group:
 
 jobs:
-  docker-build:
-    name: "Build Docker image"
+  docker-tee-build:
+    name: "Build MPC Node TEE Docker image"
     runs-on: warp-ubuntu-2204-x64-8x
     timeout-minutes: 60
     permissions:
@@ -29,7 +29,7 @@ jobs:
         with:
           context: .
           profile-name: "mpc-image-builder"
-          file: deployment/Dockerfile-mpc
+          file: deployment/Dockerfile-mpc-tee
           tags: test_image_tag_ci
           load: true
 

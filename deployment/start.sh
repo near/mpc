@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eo pipefail
 
-# This script is intended to be used for running nearone/mpc in a GCP environment.
+# This script is intended to be used for running nearone/mpc.
 # It will initialize the Near node in case it is not initialized yet and start the MPC node.
 
 MPC_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.yaml"
@@ -105,12 +105,8 @@ fi
 update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
 
 
-# Check if MPC_SECRET_STORE_KEY is empty - if so, fetch from GCP Secret Manager
 if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
-    echo "MPC_SECRET_STORE_KEY not provided in environment, will fetch from GCP Secret Manager..."
-    export MPC_SECRET_STORE_KEY=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_LOCAL_ENCRYPTION_KEY_SECRET_ID")
-else
-    echo "Using provided MPC_SECRET_STORE_KEY from environment"
+    echo "You must provide MPC_SECRET_STORE_KEY in env variable"
 fi
 
 if [ -n "$DSTACK_ENDPOINT" ]; then

@@ -46,12 +46,21 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push MPC Docker image to Docker Hub
+      
+      - name: Build and push MPC Node TEE Docker image to Docker Hub
         uses: Warpbuilds/build-push-action@v6
         with:
           context: .
           profile-name: "mpc-image-builder"
           push: true
-          file: deployment/Dockerfile-mpc
-          tags: nearone/mpc-node-gcp:latest,nearone/mpc-node-gcp:${{ env.sanitized_ref }},nearone/mpc-node-gcp:${{ env.sanitized_ref }}-${{ env.sha_short }}
+          file: deployment/Dockerfile-mpc-tee
+          tags: nearone/mpc-node-tee:latest,nearone/mpc-node-tee:${{ env.sanitized_ref }},nearone/mpc-node-tee:${{ env.sanitized_ref }}-${{ env.sha_short }}
+
+      - name: Build and push MPC Launcher Docker image to Docker Hub
+        uses: Warpbuilds/build-push-action@v6
+        with:
+          context: .
+          profile-name: "mpc-image-builder"
+          push: true
+          file: deployment/Dockerfile-launcher
+          tags: nearone/mpc-launcher:latest,nearone/mpc-launcher:${{ env.sanitized_ref }},nearone/mpc-launcher:${{ env.sanitized_ref }}-${{ env.sha_short }}
