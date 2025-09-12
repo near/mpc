@@ -17,7 +17,7 @@ Therefore, Near-One will roll-out its TEE implementation in two phases:
 
 As long as the secret shares of the MPC nodes are securely backed-up outside of the TEE's in which the nodes are running, it is highly likely that the network will be able to recover from otherwise catastrophic failures. 
 
-Besides the existential risk, TEE's make it (without additional precautions) impossible for node operators to migrate their node to a different machine without entering a resharing procedure (which requires the explicit approval of all MPC participants).
+Besides the existential risk, TEE's make it (without additional precautions) impossible for node operators to migrate their node to a different machine without entering a resharing procedure, which requires the explicit approval of all MPC participants.
 
 Having keyshare backups outside of the TEE environment allows node operators not only to recover from a catastrophic event, but also to migrate their nodes to new machines without going through a reshring process. In fact, disaster recovery is just a special case of the more general migration use case.
 
