@@ -137,7 +137,7 @@ Now, nodes need to be able to recognize and re-establish a connection if the par
 Additionally, nodes need to remove any triples and pre-signatures involving the node that was removed from the participant set in the migration process _(implemented in [(#1032)](https://github.com/near/mpc/pull/1032/))_
 
 ##### Web Endpoints
-The **MPC node** will expose a web endpoint over which the backup service can submit requests. These endpoints require some sort of authentication using the published public keys _(todo: yet to be specified)_.
+The **MPC node** will expose a web endpoint over which the backup service can submit requests. These endpoints require some sort of authentication using the published public keys _(todo: [(#1088)](https://github.com/near/mpc/issues/1088))_.
 The exposed endpoints are:
 - GET /shares_backup - with an authentication header
     - Returns the encrypted shares, if a valid backup service is registered.
