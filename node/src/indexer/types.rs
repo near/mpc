@@ -15,7 +15,7 @@ use near_indexer_primitives::types::Gas;
 use near_sdk::AccountId;
 use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
-use threshold_signatures::ecdsa::FullSignature;
+use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 
@@ -232,7 +232,7 @@ impl ChainSignatureRespondArgs {
     /// WARNING: this function assumes the input full signature is valid and comes from an authentic response
     pub fn new_ecdsa(
         request: &SignatureRequest,
-        response: &FullSignature,
+        response: &Signature,
         public_key: &VerifyingKey,
     ) -> anyhow::Result<Self> {
         let recovery_id = Self::brute_force_recovery_id(
@@ -276,7 +276,7 @@ impl ChainSignatureRespondArgs {
     /// Brute forces the recovery id to find a recovery_id that matches the public key
     pub(crate) fn brute_force_recovery_id(
         expected_pk: &AffinePoint,
-        signature: &FullSignature,
+        signature: &Signature,
         msg_hash: &[u8; 32],
     ) -> anyhow::Result<u8> {
         let partial_signature = k256::ecdsa::Signature::from_scalars(
@@ -316,7 +316,7 @@ mod recovery_id_tests {
     use k256::elliptic_curve::{point::DecompressPoint, PrimeField};
     use k256::AffinePoint;
     use rand::rngs::OsRng;
-    use threshold_signatures::ecdsa::FullSignature;
+    use threshold_signatures::ecdsa::Signature;
 
     #[test]
     fn test_brute_force_recovery_id() {
@@ -338,7 +338,7 @@ mod recovery_id_tests {
                     let r_bytes = r.to_repr();
                     let hypothetical_big_r = AffinePoint::decompress(&r_bytes, 0.into()).unwrap();
 
-                    let full_sig = FullSignature {
+                    let full_sig = Signature {
                         big_r: hypothetical_big_r,
                         s: *s.as_ref(),
                     };

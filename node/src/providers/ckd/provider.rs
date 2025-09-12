@@ -124,7 +124,7 @@ impl MpcLeaderCentricComputation<Option<(AffinePoint, AffinePoint)>> for CKDComp
             channel.sender().get_leader().into(),
             channel.my_participant_id().into(),
             self.keygen_output.private_share,
-            self.app_id.as_bytes().into(),
+            self.app_id.as_bytes(),
             VerifyingKey::from_near_sdk_public_key(&self.app_public_key)?,
         )?;
 
