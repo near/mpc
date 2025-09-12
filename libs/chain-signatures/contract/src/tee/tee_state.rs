@@ -16,8 +16,12 @@ use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
 use std::collections::HashSet;
 
 pub enum TeeValidationResult {
+    /// All participants are valid
     Full,
-    Partial(Participants),
+    /// Only a subset of the participants have a valid attestation.
+    Partial {
+        participants_with_valid_attestation: Participants,
+    },
 }
 
 #[near(serializers=[borsh])]
@@ -103,9 +107,6 @@ impl TeeState {
 
     /// Performs TEE validation on the given participants.
     ///
-    /// Returns [`TeeValidationResult::Full`] if all participants are valid, or
-    /// [`TeeValidationResult::Partial`] with the subset of valid participants otherwise.
-    ///
     /// Participants with [`TeeQuoteStatus::Valid`] or [`TeeQuoteStatus::None`] are considered
     /// valid. The returned [`Participants`] preserves participant data and
     /// [`Participants::next_id()`].
@@ -129,10 +130,12 @@ impl TeeState {
             .collect();
 
         if new_participants.len() != participants.len() {
-            TeeValidationResult::Partial(Participants::init(
-                participants.next_id(),
-                new_participants,
-            ))
+            let participants_with_valid_attestation =
+                Participants::init(participants.next_id(), new_participants);
+
+            TeeValidationResult::Partial {
+                participants_with_valid_attestation,
+            }
         } else {
             TeeValidationResult::Full
         }
