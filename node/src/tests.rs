@@ -20,6 +20,7 @@ use crate::keyshare;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
+use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, StaticWebData};
 use assert_matches::assert_matches;
@@ -37,6 +38,8 @@ use threshold_signatures::ecdsa::ot_based_ecdsa::PresignArguments;
 use threshold_signatures::ecdsa::FullSignature;
 use threshold_signatures::{ecdsa, eddsa};
 use tokio::time::timeout;
+
+pub mod common;
 
 mod basic_cluster;
 mod benchmark;
@@ -193,7 +196,7 @@ pub struct OneNodeTestConfig {
     home_dir: PathBuf,
     pub config: ConfigFile,
     secrets: SecretsConfig,
-    indexer: IndexerAPI,
+    indexer: IndexerAPI<MockTransactionSender>,
     _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
 }

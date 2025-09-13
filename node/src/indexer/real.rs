@@ -1,13 +1,14 @@
 use super::handler::listen_blocks;
 use super::participants::{monitor_contract_state, ContractState};
 use super::stats::indexer_logger;
-use super::tx_sender::handle_txn_requests;
+use super::tx_sender::start_transaction_processor;
 use super::{IndexerAPI, IndexerState};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::balances::monitor_balance;
 use crate::indexer::tee::monitor_allowed_docker_images;
+use crate::indexer::tx_sender::TransactionSender;
 use ed25519_dalek::SigningKey;
 use mpc_contract::state::ProtocolContractState;
 use near_sdk::AccountId;
@@ -50,12 +51,15 @@ pub fn spawn_real_indexer(
     respond_config: RespondConfig,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
-) -> IndexerAPI {
+) -> IndexerAPI<impl TransactionSender> {
     let (chain_config_sender, chain_config_receiver) =
         tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
-    let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
+
+    let (indexer_state_sender, indexer_state_receiver) = oneshot::channel();
+    let my_near_account_id_clone = my_near_account_id.clone();
+    let respond_config_clone = respond_config.clone();
 
     // TODO(#156): replace actix with tokio
     std::thread::spawn(move || {
@@ -71,6 +75,8 @@ pub fn spawn_real_indexer(
                 tx_processor,
                 indexer_config.mpc_contract_id.clone(),
             ));
+
+            let _ = indexer_state_sender.send(indexer_state.clone());
 
             #[cfg(feature = "network-hardship-simulation")]
             let process_blocks_receiver = {
@@ -91,13 +97,6 @@ pub fn spawn_real_indexer(
                 indexer_state.view_client.clone(),
             ));
 
-            actix::spawn(handle_txn_requests(
-                chain_txn_receiver,
-                my_near_account_id.clone(),
-                account_secret_key.clone(),
-                respond_config.clone(),
-                indexer_state.clone(),
-            ));
             actix::spawn(monitor_balance(
                 my_near_account_id.clone(),
                 respond_config.account_id.clone(),
@@ -138,10 +137,19 @@ pub fn spawn_real_indexer(
         });
     });
 
+    let indexer_state = indexer_state_receiver.blocking_recv().expect("Infallible");
+
+    let txn_sender = start_transaction_processor(
+        my_near_account_id_clone,
+        account_secret_key.clone(),
+        respond_config_clone,
+        indexer_state,
+    );
+
     IndexerAPI {
         contract_state_receiver: chain_config_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
-        txn_sender: chain_txn_sender,
+        txn_sender,
         allowed_docker_images_receiver,
     }
 }
