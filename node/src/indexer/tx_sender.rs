@@ -6,7 +6,7 @@ use crate::config::RespondConfig;
 use crate::indexer::types::ChainGetPendingCKDRequestArgs;
 use crate::metrics;
 use ed25519_dalek::SigningKey;
-use legacy_mpc_contract;
+use mpc_contract::primitives::signature::YieldIndex;
 use near_client::Query;
 use near_indexer_primitives::types::Gas;
 use near_indexer_primitives::types::{BlockReference, Finality};
@@ -109,9 +109,8 @@ async fn observe_tx_result(
                 .await??;
             match query_response.kind {
                 QueryResponseKind::CallResult(call_result) => {
-                    let pending_request = serde_json::from_slice::<
-                        Option<legacy_mpc_contract::primitives::YieldIndex>,
-                    >(&call_result.result)?;
+                    let pending_request =
+                        serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)?;
                     Ok(if pending_request.is_none() {
                         ChainTransactionState::Executed
                     } else {
@@ -148,9 +147,8 @@ async fn observe_tx_result(
                 .await??;
             match query_response.kind {
                 QueryResponseKind::CallResult(call_result) => {
-                    let pending_request = serde_json::from_slice::<
-                        Option<legacy_mpc_contract::primitives::YieldIndex>,
-                    >(&call_result.result)?;
+                    let pending_request =
+                        serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)?;
                     Ok(if pending_request.is_none() {
                         ChainTransactionState::Executed
                     } else {
