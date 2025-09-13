@@ -71,7 +71,7 @@ def current_contracts():
 
 # This function compiles a contract using cargo build
 def compile_contract_common(
-    contract_crate_path: Path, contract_name: str, contract_output_path: Path
+    repository_root_path: Path, contract_name: str, contract_output_path: Path
 ):
     print(f"compiling contract {contract_name}")
 
@@ -82,9 +82,8 @@ def compile_contract_common(
             "-p",
             contract_name,
             "--target=wasm32-unknown-unknown",
-            "--release",
+            "--profile=release-contract",
         ],
-        cwd=contract_crate_path,
         check=True,
         stdout=sys.stdout,
         stderr=sys.stderr,
@@ -96,22 +95,20 @@ def compile_contract_common(
         [
             "wasm-opt",
             "-Oz",
-            f"target/wasm32-unknown-unknown/release/{contract_bin_name}",
+            "target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm",
             "-o",
-            f"target/wasm32-unknown-unknown/release/{contract_bin_name}",
-            "--enable-bulk-memory",
+            "target/wasm32-unknown-unknown/release/mpc_contract.wasm",
         ],
-        cwd=contract_crate_path,
+        cwd=repository_root_path,
         check=True,
         stdout=sys.stdout,
         stderr=sys.stderr,
     )
-
     compiled_contract = (
-        contract_crate_path
+        repository_root_path
         / "target"
         / "wasm32-unknown-unknown"
-        / "release"
+        / "release-contract"
         / f"{contract_bin_name}"
     )
     os.makedirs(os.path.dirname(contract_output_path), exist_ok=True)
@@ -135,7 +132,8 @@ def compile_mpc_contract(request):
                 "cargo",
                 "near",
                 "build",
-                "reproducible-wasm",
+                "--target=wasm32-unknown-unknown",
+                "--profile=release-contract",
                 "--manifest-path",
                 Path("contract") / "Cargo.toml",
                 "--out-dir",
