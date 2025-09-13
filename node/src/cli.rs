@@ -1,4 +1,5 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
+use crate::indexer::tx_sender::TransactionSender;
 use crate::providers::PublicKeyConversion;
 use crate::web::StaticWebData;
 use crate::{
@@ -317,7 +318,7 @@ impl StartCmd {
         home_dir: PathBuf,
         config: ConfigFile,
         secrets: SecretsConfig,
-        indexer_api: IndexerAPI,
+        indexer_api: IndexerAPI<impl TransactionSender + 'static>,
         web_contract_receiver: tokio::sync::watch::Receiver<ProtocolContractState>,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();

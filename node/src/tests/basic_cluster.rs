@@ -17,7 +17,7 @@ async fn test_basic_cluster() {
     const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
-    let mut setup = IntegrationTestSetup::new(
+    let mut setup: IntegrationTestSetup = IntegrationTestSetup::new(
         Clock::real(),
         temp_dir.path(),
         (0..NUM_PARTICIPANTS)

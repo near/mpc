@@ -13,11 +13,117 @@ use near_indexer_primitives::types::{BlockReference, Finality};
 use near_indexer_primitives::views::{QueryRequest, QueryResponseKind};
 use near_o11y::WithSpanContextExt;
 use near_sdk::AccountId;
-use std::num::NonZeroUsize;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time;
+
+const TRANSACTION_PROCESSOR_CHANNEL_SIZE: usize = 10000;
+const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(10);
+
+pub trait TransactionSender: Clone + Send + Sync {
+    fn send(
+        &self,
+        transaction: ChainSendTransactionRequest,
+    ) -> impl Future<Output = Result<(), TransactionProcessorError>> + Send;
+
+    #[allow(dead_code)]
+    fn send_and_wait(
+        &self,
+        transaction: ChainSendTransactionRequest,
+    ) -> impl Future<Output = Result<TransactionStatus, TransactionProcessorError>> + Send;
+}
+
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum TransactionProcessorError {
+    #[error("The transaction processor is closed.")]
+    ProcessorIsClosed,
+}
+
+#[derive(Clone, Debug)]
+pub struct TransactionProcessorHandle {
+    transaction_sender: mpsc::Sender<TransactionSenderSubmission>,
+}
+
+impl TransactionSender for TransactionProcessorHandle {
+    async fn send(
+        &self,
+        transaction: ChainSendTransactionRequest,
+    ) -> Result<(), TransactionProcessorError> {
+        self.transaction_sender
+            .send(TransactionSenderSubmission {
+                transaction,
+                response_sender: None,
+            })
+            .await
+            .map_err(|_| TransactionProcessorError::ProcessorIsClosed)
+    }
+
+    async fn send_and_wait(
+        &self,
+        transaction: ChainSendTransactionRequest,
+    ) -> Result<TransactionStatus, TransactionProcessorError> {
+        let (response_sender, response_receiver) = oneshot::channel();
+
+        self.transaction_sender
+            .send(TransactionSenderSubmission {
+                transaction,
+                response_sender: Some(response_sender),
+            })
+            .await
+            .map_err(|_| TransactionProcessorError::ProcessorIsClosed)?;
+
+        response_receiver
+            .await
+            .map_err(|_| TransactionProcessorError::ProcessorIsClosed)
+    }
+}
+
+struct TransactionSenderSubmission {
+    transaction: ChainSendTransactionRequest,
+    #[allow(dead_code)]
+    response_sender: Option<oneshot::Sender<TransactionStatus>>,
+}
+
+pub enum TransactionStatus {
+    Executed,
+    NotExecuted,
+    Unknown,
+}
+
+pub(crate) fn start_transaction_processor(
+    owner_account_id: AccountId,
+    owner_secret_key: SigningKey,
+    config: RespondConfig,
+    indexer_state: Arc<IndexerState>,
+) -> impl TransactionSender {
+    let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
+        .expect("Failed to initialize transaction signers");
+
+    let (transaction_sender, mut transaction_receiver) =
+        mpsc::channel::<TransactionSenderSubmission>(TRANSACTION_PROCESSOR_CHANNEL_SIZE);
+
+    tokio::spawn(async move {
+        while let Some(transaction_submission) = transaction_receiver.recv().await {
+            let tx_request = transaction_submission.transaction;
+
+            let tx_signer = signers.signer_for(&tx_request);
+            let indexer_state = indexer_state.clone();
+            tokio::spawn(async move {
+                let Ok(txn_json) = serde_json::to_string(&tx_request) else {
+                    tracing::error!(target: "mpc", "Failed to serialize response args");
+                    return;
+                };
+                tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
+                ensure_send_transaction(tx_signer.clone(), indexer_state, tx_request, txn_json)
+                    .await;
+            });
+        }
+    });
+
+    TransactionProcessorHandle { transaction_sender }
+}
 
 /// Creates, signs, and submits a function call with the given method and serialized arguments.
 async fn submit_tx(
@@ -70,17 +176,11 @@ async fn submit_tx(
     }
 }
 
-enum ChainTransactionState {
-    Executed,
-    NotExecuted,
-    Unknown,
-}
-
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
 async fn observe_tx_result(
     indexer_state: Arc<IndexerState>,
     request: &ChainSendTransactionRequest,
-) -> anyhow::Result<ChainTransactionState> {
+) -> anyhow::Result<TransactionStatus> {
     use ChainSendTransactionRequest::*;
 
     match request {
@@ -113,9 +213,9 @@ async fn observe_tx_result(
                         Option<legacy_mpc_contract::primitives::YieldIndex>,
                     >(&call_result.result)?;
                     Ok(if pending_request.is_none() {
-                        ChainTransactionState::Executed
+                        TransactionStatus::Executed
                     } else {
-                        ChainTransactionState::NotExecuted
+                        TransactionStatus::NotExecuted
                     })
                 }
                 _ => {
@@ -152,9 +252,9 @@ async fn observe_tx_result(
                         Option<legacy_mpc_contract::primitives::YieldIndex>,
                     >(&call_result.result)?;
                     Ok(if pending_request.is_none() {
-                        ChainTransactionState::Executed
+                        TransactionStatus::Executed
                     } else {
-                        ChainTransactionState::NotExecuted
+                        TransactionStatus::NotExecuted
                     })
                 }
                 _ => {
@@ -168,8 +268,8 @@ async fn observe_tx_result(
         | VotePk(_)
         | VoteReshared(_)
         | VoteAbortKeyEventInstance(_)
-        | VerifyTee() => Ok(ChainTransactionState::Unknown),
-        SubmitParticipantInfo(_) => Ok(ChainTransactionState::Unknown),
+        | VerifyTee() => Ok(TransactionStatus::Unknown),
+        SubmitParticipantInfo(_) => Ok(TransactionStatus::Unknown),
     }
 }
 
@@ -181,92 +281,50 @@ async fn ensure_send_transaction(
     indexer_state: Arc<IndexerState>,
     request: ChainSendTransactionRequest,
     params_ser: String,
-    timeout: Duration,
-    num_attempts: NonZeroUsize,
 ) {
-    for _ in 0..num_attempts.into() {
-        if let Err(err) = submit_tx(
-            tx_signer.clone(),
-            indexer_state.clone(),
-            request.method().to_string(),
-            params_ser.clone(),
-            request.gas_required(),
-        )
-        .await
-        {
-            // If the transaction fails to send immediately, wait a short period and try again
+    if let Err(err) = submit_tx(
+        tx_signer.clone(),
+        indexer_state.clone(),
+        request.method().to_string(),
+        params_ser.clone(),
+        request.gas_required(),
+    )
+    .await
+    {
+        // If the transaction fails to send immediately, wait a short period and try again
+        metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+            .with_label_values(&[request.method(), "local_error"])
+            .inc();
+        tracing::error!(%err, "Failed to forward transaction {:?}", request);
+        time::sleep(Duration::from_secs(1)).await;
+        return;
+    };
+
+    // Allow time for the transaction to be included
+    time::sleep(TRANSACTION_TIMEOUT).await;
+
+    // Then try to check whether it had the intended effect
+    match observe_tx_result(indexer_state.clone(), &request).await {
+        Ok(TransactionStatus::Executed) => {
             metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                .with_label_values(&[request.method(), "local_error"])
+                .with_label_values(&[request.method(), "succeeded"])
                 .inc();
-            tracing::error!(%err, "Failed to forward transaction {:?}", request);
-            time::sleep(Duration::from_secs(1)).await;
-            continue;
-        };
-
-        // Allow time for the transaction to be included
-        time::sleep(timeout).await;
-        // Then try to check whether it had the intended effect
-        match observe_tx_result(indexer_state.clone(), &request).await {
-            Ok(ChainTransactionState::Executed) => {
-                metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                    .with_label_values(&[request.method(), "succeeded"])
-                    .inc();
-                return;
-            }
-            Ok(ChainTransactionState::NotExecuted) => {
-                metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                    .with_label_values(&[request.method(), "timed_out"])
-                    .inc();
-                continue;
-            }
-            Ok(ChainTransactionState::Unknown) => {
-                metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                    .with_label_values(&[request.method(), "unknown"])
-                    .inc();
-                return;
-            }
-            Err(err) => {
-                metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                    .with_label_values(&[request.method(), "unknown_err"])
-                    .inc();
-                tracing::warn!(target:"mpc", %err, "encountered error trying to confirm result of transaction {:?}", request);
-                return;
-            }
         }
-    }
-}
-
-pub(crate) async fn handle_txn_requests(
-    mut receiver: mpsc::Receiver<ChainSendTransactionRequest>,
-    owner_account_id: AccountId,
-    owner_secret_key: SigningKey,
-    config: RespondConfig,
-    indexer_state: Arc<IndexerState>,
-) {
-    let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
-        .expect("Failed to initialize transaction signers");
-
-    while let Some(tx_request) = receiver.recv().await {
-        let tx_signer = signers.signer_for(&tx_request);
-        let indexer_state = indexer_state.clone();
-        actix::spawn(async move {
-            let Ok(txn_json) = serde_json::to_string(&tx_request) else {
-                tracing::error!(target: "mpc", "Failed to serialize response args");
-                return;
-            };
-            tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
-            ensure_send_transaction(
-                tx_signer.clone(),
-                indexer_state.clone(),
-                tx_request,
-                txn_json,
-                Duration::from_secs(10),
-                // TODO(#226): We no longer need retries. However, the metrics from querying the
-                // tx results appear useful. We should probably export some metrics from the
-                // signature processing pipeline instead, and remove this retry.
-                NonZeroUsize::new(1).unwrap(),
-            )
-            .await;
-        });
+        Ok(TransactionStatus::NotExecuted) => {
+            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+                .with_label_values(&[request.method(), "timed_out"])
+                .inc();
+        }
+        Ok(TransactionStatus::Unknown) => {
+            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+                .with_label_values(&[request.method(), "unknown"])
+                .inc();
+        }
+        Err(err) => {
+            metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
+                .with_label_values(&[request.method(), "unknown_err"])
+                .inc();
+            tracing::warn!(target:"mpc", %err, "encountered error trying to confirm result of transaction {:?}", request);
+        }
     }
 }

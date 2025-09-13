@@ -1,4 +1,5 @@
 use crate::indexer::participants::KeyEventIdComparisonResult;
+use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainStartKeygenArgs, ChainStartReshareArgs, ChainVoteAbortKeyEventInstanceArgs,
 };
@@ -34,7 +35,7 @@ use tracing::{error, info};
 pub async fn keygen_computation_inner(
     channel: NetworkTaskChannel,
     keyshare_storage: Arc<KeyshareStorage>,
-    chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    chain_txn_sender: impl TransactionSender,
     generated_keys: Vec<KeyForDomain>,
     key_id: KeyEventId,
     domain: DomainConfig,
@@ -98,7 +99,7 @@ async fn keygen_computation(
     mut contract_key_event_id: watch::Receiver<ContractKeyEventInstance>,
     channel: NetworkTaskChannel,
     keyshare_storage: Arc<KeyshareStorage>,
-    chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    chain_txn_sender: impl TransactionSender,
     key_id: KeyEventId,
     threshold: usize,
 ) -> anyhow::Result<()> {
@@ -152,7 +153,7 @@ pub struct ResharingArgs {
 async fn resharing_computation_inner(
     channel: NetworkTaskChannel,
     keyshare_storage: Arc<KeyshareStorage>,
-    chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    chain_txn_sender: impl TransactionSender,
     reshared_keys: Vec<KeyForDomain>,
     key_id: KeyEventId,
     domain: DomainConfig,
@@ -274,7 +275,7 @@ async fn resharing_computation(
     mut contract_key_event_id: watch::Receiver<ContractKeyEventInstance>,
     channel: NetworkTaskChannel,
     keyshare_storage: Arc<KeyshareStorage>,
-    chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    chain_txn_sender: impl TransactionSender,
     key_id: KeyEventId,
     args: Arc<ResharingArgs>,
 ) -> anyhow::Result<()> {
@@ -356,7 +357,7 @@ pub async fn keygen_leader(
     client: Arc<MeshNetworkClient>,
     keyshare_storage: Arc<KeyshareStorage>,
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
-    chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    chain_txn_sender: impl TransactionSender,
     threshold: usize,
 ) -> anyhow::Result<()> {
     loop {
@@ -439,7 +440,7 @@ pub async fn keygen_follower(
     mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
     keyshare_storage: Arc<KeyshareStorage>,
     key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
-    chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    chain_txn_sender: impl TransactionSender + 'static,
     threshold: usize,
 ) -> anyhow::Result<()> {
     let mut tasks = AutoAbortTaskCollection::new();
@@ -481,7 +482,7 @@ pub async fn resharing_leader(
     client: Arc<MeshNetworkClient>,
     keyshare_storage: Arc<KeyshareStorage>,
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
-    chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    chain_txn_sender: impl TransactionSender,
     args: Arc<ResharingArgs>,
 ) -> anyhow::Result<()> {
     loop {
@@ -569,7 +570,7 @@ pub async fn resharing_follower(
     mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
     keyshare_storage: Arc<KeyshareStorage>,
     key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
-    chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    chain_txn_sender: impl TransactionSender + 'static,
     args: Arc<ResharingArgs>,
 ) -> anyhow::Result<()> {
     let mut tasks = AutoAbortTaskCollection::new();
