@@ -16,7 +16,14 @@ args = ["fmt", "--", "--check"]
 
 [tasks.test]
 command = "cargo"
-args = ["nextest", "run", "--release", "--all-features", "--all-targets", "--locked"]
+args = [
+  "test",
+  "--profile",
+  "test-release",
+  "--all-features",
+  "--all-targets",
+  "--locked",
+]
 
 [tasks.fmt-fix]
 command = "cargo"

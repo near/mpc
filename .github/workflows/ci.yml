@@ -46,6 +46,9 @@ jobs:
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked --all-features
 
+      - name: Run cargo test debug
+        run: cargo test --locked --all-features --all-targets
+
   ci-coverage:
     name: Coverage
     runs-on: warp-ubuntu-2204-x64-8x
@@ -69,3 +72,4 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: codecov.json
           fail_ci_if_error: false
+
