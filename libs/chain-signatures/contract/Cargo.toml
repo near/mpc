@@ -41,8 +41,8 @@ container_build_command = [
     # this is counter intuitive, but it correctly follows the docs,
     # the non-reproducible build inside a reproducible environment becomes reproducible
     "non-reproducible-wasm", 
-    "--profile=contract-release",
     "--locked",
+    "--profile=contract-release",
     "--features", "abi",
     "--no-embed-abi"
 ]
