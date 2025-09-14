@@ -248,7 +248,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libudev-dev
-          cargo install cargo-near --locked
+          # Install cargo-near with fix in https://github.com/near/cargo-near/pull/362
+          cargo install cargo-near --locked --git https://github.com/near/cargo-near --rev f65ab94e9b5b1929ee0d0139ddecabe8f89289f4
 
       - name: Install wasm-opt from crates.io
         run: |
