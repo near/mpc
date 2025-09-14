@@ -95,9 +95,9 @@ def compile_contract_common(
         [
             "wasm-opt",
             "-Oz",
-            "target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm",
+            f"target/wasm32-unknown-unknown/release-contract/{contract_bin_name}",
             "-o",
-            "target/wasm32-unknown-unknown/release/mpc_contract.wasm",
+            f"target/wasm32-unknown-unknown/release-contract/{contract_bin_name}",
         ],
         cwd=repository_root_path,
         check=True,
