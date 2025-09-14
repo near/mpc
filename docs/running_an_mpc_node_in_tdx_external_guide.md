@@ -134,9 +134,9 @@ Including
 
 *  Creating a Near account for your node
 
-*  Preparing  a configuration file based on [user-config.conf](https://github.com/near/mpc/blob/main/tee_deployment/user-config.conf)
+*  Preparing  a configuration file based on [user-config.conf](https://github.com/near/mpc/blob/main/tee_launcher/user-config.conf)
 
-* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml).  
+* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_launcher/launcher_docker_compose.yaml).  
 * Configuring and starting your CVM with the MPC node.  
 * Accessing mpc docker logs.  
 * Retrieve keys from the CVM.  
@@ -178,7 +178,7 @@ For more details, please refer to the NEAR account documentation.
 
 ##   Prepare MPC container environment variables
 
-Create a user-config.conf file based on the [user-config.conf](https://github.com/near/mpc/blob/main/tee_deployment/user-config.conf) . 
+Create a user-config.conf file based on the [user-config.conf](https://github.com/near/mpc/blob/main/tee_launcher/user-config.conf) . 
 
 ```
 # MPC docker image local override
@@ -228,7 +228,7 @@ paste -sd',' -
 
 ## Preparing a Docker Compose File
 
-To launch the MPC node in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml).
+To launch the MPC node in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_launcher/launcher_docker_compose.yaml).
 
 Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image digest retrieved from the contract.
 
@@ -259,7 +259,7 @@ The transaction output will include the latest MPC Docker image hash.
 
 
 
-**Note:** -  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including  whitespaces).
+**Note:** -  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_launcher/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including  whitespaces).
 
 
 ## Required Ports and Port Collisions 
@@ -323,8 +323,8 @@ Use the following custom settings for MPC:
 
 ###  Using the script: 
 
-Use the script [deploy-launcher.sh](https://github.com/near/mpc/blob/main/tee_deployment/deploy-launcher.sh) described here   
-[https://github.com/near/mpc/blob/main/tee\_deployment/deploy\_launcher\_guide.md](https://github.com/near/mpc/blob/main/tee_deployment/deploy_launcher_guide.md)  
+Use the script [deploy-launcher.sh](https://github.com/near/mpc/blob/main/tee_launcher/deploy-launcher.sh) described here   
+[https://github.com/near/mpc/blob/main/tee\_deployment/deploy\_launcher\_guide.md](https://github.com/near/mpc/blob/main/tee_launcher/deploy_launcher_guide.md)  
 To configure and start your VM.
 
 ## Accessing MPC (or Launcher) Docker Logs
