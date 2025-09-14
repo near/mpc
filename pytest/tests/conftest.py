@@ -132,7 +132,7 @@ def compile_mpc_contract(request):
                 "cargo",
                 "near",
                 "build",
-                "--target=wasm32-unknown-unknown",
+                "reproducible-wasm",
                 "--profile=release-contract",
                 "--manifest-path",
                 Path("contract") / "Cargo.toml",
