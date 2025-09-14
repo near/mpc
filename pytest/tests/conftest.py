@@ -133,7 +133,6 @@ def compile_mpc_contract(request):
                 "near",
                 "build",
                 "reproducible-wasm",
-                "--profile=release-contract",
                 "--manifest-path",
                 Path("contract") / "Cargo.toml",
                 "--out-dir",
