@@ -31,17 +31,10 @@ def verify_txs(results, verification_callback, verbose=False):
         total_tgas += gas_tx / TGAS
         total_receipts += n_rcpts_tx
         verification_callback(res)
-
     if verbose:
-        if num_txs == 0:
-            print("number of txs: 0\n")
-        else:
-            print(
-                f"number of txs: {num_txs}\n"
-                f" max gas used (Tgas):{max_tgas_used}\n"
-                f" average receipts: {total_receipts / num_txs}\n"
-                f" average gas used (Tgas): {total_tgas / num_txs}\n"
-            )
+        print(
+            f"number of txs: {num_txs}\n max gas used (Tgas):{max_tgas_used}\n average receipts: {total_receipts / num_txs}\n average gas used (Tgas): {total_tgas / num_txs}\n"
+        )
 
 
 def assert_txn_success(result: dict[str, Any]):
