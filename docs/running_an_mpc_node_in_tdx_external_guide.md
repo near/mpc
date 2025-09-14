@@ -61,37 +61,103 @@ Although a node can be accessed using a public IP address, it is recommended to 
 * [Namecheap](https://www.namecheap.com/support/knowledgebase/article.aspx/319/2237/how-can-i-set-up-an-a-address-record-for-my-domain/)  
 * [Cloudflare](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/)
 
-## TDX and Dstack setup
+## TDX and Dstack Setup
 
-This section describes how to enable TDX on your machine (BIOS, Operating System (OS) and software configurations), and also describes how to install and configure Dstack. 
+This section describes how to enable TDX on your machine (BIOS, operating system, and software configurations), and how to install and configure Dstack.  
 
-Make sure to follow the 3 steps below in order to have a working TDX machine with Dstack setup.
+Follow the three steps below to ensure you have a working TDX machine with Dstack configured:
 
-1. A bare metal TDX server setup following [canonical/tdx](https://github.com/canonical/tdx/blob/main/README.md)  
-   Follow steps 1-4 (basic TDX setup configuration)  and steps 9.1-9.2 (Setup Remote Attestation) in the canonical guide to make sure you have a working TDX setup.
+1. Set up a bare-metal TDX server  
+2. Set up Dstack  
+3. Set up a Local Gramine-Sealing-Key-Provider  
 
-2. Dstack setup following [https://github.com/Dstack-TEE/dstack](https://github.com/Dstack-TEE/dstack)  
-   Follow the steps in [build-and-play-locally](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#build-and-play-locally) up until (but not including) “[deploy an App](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app)”.  
-   Note \- you won’t need to enable or run KMS and TProxy (gateway).  
-   
+---
+
+### TDX Bare-Metal Server Setup
+
+To create a bare-metal TDX server, follow the [canonical/tdx guide](https://github.com/canonical/tdx/blob/main/README.md).  
+
+Make sure to complete:  
+- Steps 1–4 (basic TDX setup configuration)  
+- Steps 9.1–9.2 (Remote Attestation setup)  
+
+This ensures that your TDX setup is correctly configured.  
+
+---
+
+### Dstack Setup and Configuration
+
+#### Dstack Setup
+
+Follow the [Dstack repository](https://github.com/Dstack-TEE/dstack).  
+Run the steps in [build-and-play-locally](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#build-and-play-locally), stopping just before “[Deploy an App](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app)”.  
+
+#### Guest OS Image
+> **Important:** The guest OS image that runs inside the CVM must be exactly the same across all nodes. The OS image is measured, and those measurements are hardcoded in the contract.
+
+Clone the [meta-dstack repository](https://github.com/Dstack-TEE/meta-dstack) and check out **release `v0.5.4`** (commit `f7c795b76faa693f218e1c255007e3a68c541d79`).  
+This will automatically pull in the correct version of `dstack` as a submodule (commit `3e4e462cac2a57c204698d2443d252d13e75cd29`).  
+
+```bash
+#!/bin/bash
+set -e
+
+git clone https://github.com/Dstack-TEE/meta-dstack.git
+cd meta-dstack/
+git checkout f7c795b76faa693f218e1c255007e3a68c541d79
+git submodule update --init --recursive
+```
+
+At this point, you have two options:
+
+* Download a pre-built OS image:
+```bash
+./build.sh dl 0.5.4
+```
 
 
-[#693](https://github.com/near/mpc/issues/693) 
-[#635](https://github.com/near/mpc/issues/635) 
+Build a reproducible OS image yourself:
 
-TBD  [#894](https://github.com/near/mpc/issues/894)  : We need to choose a specific github commit and use the reproducible build script  in order to  generate the OS image. [https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file\#reproducible-build-the-guest-image](https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image)  
-Or we can choose a specific dstack image like 0.52
+```bash
+cd repro-build && ./repro-build.sh -n
+```
 
-3. Setup local gramine-sealing-key-provider (see details [below](#setting-up-local-gramine-sealing-key-provider:)).  
-   
+Expected output
 
-### Dstack Configuration
-In this section we describe specific Dstack configuration changes needed for deploying the MPC node in Dstack.
+```bash
+meta-dstack/repro-build$ cat build-a/images/dstack-0.5.4/sha256sum.txt
+76888ce69c91aed86c43f840b913899b40b981964b7ce6018667f91ad06301f0  ovmf.fd
+987083c434a937e47361377196644169b8d2183919c6c3ab89e251e021ab55cb  bzImage
+fd5267f04bf95dc073c21934de552517506acde6485524834376c8a479c92fcd  initramfs.cpio.gz
+a0a8489dd9f05db9ba26b37c1a7e3c99e94fa4a3e82736b57b1c19b058a11674  metadata.json
+```
 
-In vmm.toml: 
+Optional: Check that your generated OS image corresponds to the expected pre-calculated RTMR values:
 
-- Update `cvm.port_mapping.range` to include port number **24567**  
-- In the `[cvm]` section add: `max_disk_size = 1000`
+```json
+{
+  "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
+  "rtmr0": "7ae1c6bc1653c4cf037b0ee6029457ee67c475285bcf472a92f51843148e477f3126184dd69282279d278a7466b66cae",
+  "rtmr1": "fd08eadc0cc4a80f0e4cae11ed1123658c70b1b646834b45013088001f411446a8f5b2c6584ead65e978e0f628c6000f",
+  "rtmr2": "24847f5c5a2360d030bc4f7b8577ce32e87c4d051452c937e91220cab69542daef83433947c492b9c201182fc9769bbe"
+}
+```
+
+For more details, see the `expected_mrs` section in [verify.py](https://github.com/Dstack-TEE/dstack-examples/blob/main/attestation/rtmr3-based/verify.py).  
+
+---
+
+#### MPC-Specific Configurations
+
+You do not need to enable or run **KMS** or **TProxy (gateway)**.  
+
+Update `vmm.toml` as follows:
+
+- Set `cvm.port_mapping.range` to include port **24567**  
+- In the `[cvm]` section, add:  
+  ```toml
+  max_disk_size = 1000
+  ```
 
 
 ### Setting up a Local Gramine-Sealing-Key-Provider 
