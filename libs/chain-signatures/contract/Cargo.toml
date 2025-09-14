@@ -8,17 +8,6 @@ repository = "https://github.com/near/mpc"
 [lib]
 crate-type = ["cdylib", "lib"]
 
-[profile.release-contract]
-inherits = "release"
-lto = "fat"
-codegen-units = 1
-strip = true
-panic = "abort"
-# Optimize for binary size.
-# See https://doc.rust-lang.org/rustc/codegen-options/index.html#opt-level
-opt-level = "s"
-
-
 # fields to configure build with WASM reproducibility, according to specs
 # in https://github.com/near/NEPs/blob/master/neps/nep-0330.md
 [package.metadata.near.reproducible_build]
