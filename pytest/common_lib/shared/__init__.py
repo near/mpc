@@ -111,38 +111,19 @@ def deserialize_key(account_id: str, key: List[int]) -> Key:
     return Key.from_keypair(account_id, signing_key)
 
 
+#   Create a brand-new account and attach the given full access keys.
 def sign_create_account_with_multiple_access_keys_tx(
     creator_key: Key,
-    new_account_id,
+    new_account_id: str,
     keys: List[Key],
-    nonce,
-    block_hash,
-    contract_id,
-    full_access: bool,
-    create_new_account: bool,
+    nonce: int,
+    block_hash: bytes,
 ) -> bytes:
-    actions = []
-
-    if create_new_account:
-        # Only when creating a brand-new account
-        actions.append(create_create_account_action())
-        actions.append(create_payment_action(100 * NEAR_BASE))
-
-    if full_access:
-        # Give full access to all keys
-        access_key_actions = [
-            create_full_access_key_action(key.decoded_pk()) for key in keys
-        ]
-    else:
-        # Give restricted MPC-only access to all keys
-        access_key_actions = [
-            create_mpc_function_call_access_key_action(
-                key.decoded_pk(), contract_id, allowance=100 * NEAR_BASE
-            )
-            for key in keys
-        ]
-
-    actions.extend(access_key_actions)
+    actions = [
+        create_create_account_action(),
+        create_payment_action(100 * NEAR_BASE),
+    ]
+    actions.extend([create_full_access_key_action(key.decoded_pk()) for key in keys])
 
     signed_tx = sign_transaction(
         new_account_id,
@@ -153,7 +134,45 @@ def sign_create_account_with_multiple_access_keys_tx(
         creator_key.decoded_pk(),
         creator_key.decoded_sk(),
     )
+    return serialize_transaction(signed_tx)
 
+
+"""
+    Add access keys to an existing account.
+    Supports both full access keys and restricted  access keys.
+"""
+
+
+def sign_add_access_keys_tx(
+    creator_key: Key,
+    account_id: str,
+    keys: List[Key],
+    nonce: int,
+    block_hash: bytes,
+    contract_id: str,
+    full_access: bool = False,
+) -> bytes:
+    if full_access:
+        access_key_actions = [
+            create_full_access_key_action(key.decoded_pk()) for key in keys
+        ]
+    else:
+        access_key_actions = [
+            create_mpc_function_call_access_key_action(
+                key.decoded_pk(), contract_id, allowance=100 * NEAR_BASE
+            )
+            for key in keys
+        ]
+
+    signed_tx = sign_transaction(
+        account_id,
+        nonce,
+        access_key_actions,
+        block_hash,
+        creator_key.account_id,
+        creator_key.decoded_pk(),
+        creator_key.decoded_sk(),
+    )
     return serialize_transaction(signed_tx)
 
 
@@ -365,9 +384,6 @@ def start_cluster_with_mpc(
             candidate.responder_keys,
             nonce,
             cluster.contract_node.last_block_hash(),
-            cluster.mpc_contract_account(),
-            full_access=True,
-            create_new_account=True,
         )
         create_txs.append(tx)
         candidate_account_id = candidate.signer_key.account_id
@@ -392,9 +408,6 @@ def start_cluster_with_mpc(
             pytest_signer_keys,
             nonce,
             cluster.contract_node.last_block_hash(),
-            cluster.mpc_contract_account(),
-            full_access=True,
-            create_new_account=True,
         )
         create_txs.append(tx)
         pytest_keys_per_node.append(pytest_signer_keys)
@@ -415,7 +428,7 @@ def start_cluster_with_mpc(
         )
 
         # add node access key
-        tx = sign_create_account_with_multiple_access_keys_tx(
+        tx = sign_add_access_keys_tx(
             # key,
             pytest_signer_keys[0],
             candidate_account_id,
@@ -424,7 +437,6 @@ def start_cluster_with_mpc(
             cluster.contract_node.last_block_hash(),
             cluster.mpc_contract_account(),
             full_access=False,
-            create_new_account=False,
         )
         access_txs.append(tx)
 
