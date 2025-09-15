@@ -41,7 +41,7 @@ RUN make build-reproducible
 # ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
-COPY --from=builder /app/target/x86_64-unknown-linux-gnu/release/mpc-node mpc-node
+# COPY --from=builder /app/target/x86_64-unknown-linux-gnu/release/mpc-node mpc-node
 # The chmod part is also necessary for reproducibility
 COPY --chmod=0755 deployment/start.sh /app/start.sh
 CMD [ "/app/start.sh" ]
