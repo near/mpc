@@ -9765,7 +9765,7 @@ name = "test-parallel-contract"
 version = "0.2.0"
 dependencies = [
  "borsh",
- "getrandom 0.3.3",
+ "getrandom 0.2.16",
  "hex",
  "k256",
  "near-sdk",
