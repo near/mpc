@@ -60,7 +60,7 @@ impl IndexerState {
 /// with the indexer.
 /// TODO(#155): This would be the interface to abstract away having an indexer
 /// running in a separate process.
-pub struct IndexerAPI<T> {
+pub struct IndexerAPI<TransactionSender> {
     /// Provides the current contract state as well as updates to it.
     pub contract_state_receiver: watch::Receiver<ContractState>,
     /// Provides block updates (signature requests and other relevant receipts).
@@ -72,7 +72,7 @@ pub struct IndexerAPI<T> {
     /// happening we want to buffer the signature requests.
     pub block_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
     /// Handle to transaction processor.
-    pub txn_sender: T,
+    pub txn_sender: TransactionSender,
     /// Watcher that keeps track of allowed [`AllowedDockerImageHash`]es on the contract.
     pub allowed_docker_images_receiver: watch::Receiver<Vec<AllowedDockerImageHash>>,
 }
