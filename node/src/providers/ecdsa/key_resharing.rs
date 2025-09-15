@@ -5,7 +5,7 @@ use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
-use threshold_signatures::frost_secp256k1::VerifyingKey;
+use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
 use threshold_signatures::protocol::Participant;
 
 impl EcdsaSignatureProvider {
@@ -73,7 +73,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let protocol = threshold_signatures::ecdsa::dkg_ecdsa::reshare(
+        let protocol = threshold_signatures::reshare::<Secp256K1Sha256>(
             &old_participants,
             self.old_threshold,
             self.my_share,

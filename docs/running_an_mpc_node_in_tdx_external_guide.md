@@ -61,40 +61,173 @@ Although a node can be accessed using a public IP address, it is recommended to 
 * [Namecheap](https://www.namecheap.com/support/knowledgebase/article.aspx/319/2237/how-can-i-set-up-an-a-address-record-for-my-domain/)  
 * [Cloudflare](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/)
 
-## TDX and Dstack setup
+## TDX and Dstack Setup
 
-This section describes how to enable TDX on your machine (BIOS, Operating System (OS) and software configurations), and also describes how to install and configure Dstack. 
+This section describes how to enable TDX on your machine (BIOS, operating system, and software configurations), and how to install and configure Dstack.  
 
-Make sure to follow the 3 steps below in order to have a working TDX machine with Dstack setup.
+Follow the three steps below to ensure you have a working TDX machine with Dstack configured:
 
-1. A bare metal TDX server setup following [canonical/tdx](https://github.com/canonical/tdx/blob/main/README.md)  
-   Follow steps 1-4 (basic TDX setup configuration)  and steps 9.1-9.2 (Setup Remote Attestation) in the canonical guide to make sure you have a working TDX setup.
+1. [Set up a bare-metal TDX server](#1-tdx-bare-metal-server-setup)  
+2. [Dstack Setup and Configuration](#2-dstack-setup-and-configuration)  
+3. [Set up a Local Gramine-Sealing-Key-Provider](#3-local-gramine-sealing-key-provider-setup) 
 
-2. Dstack setup following [https://github.com/Dstack-TEE/dstack](https://github.com/Dstack-TEE/dstack)  
-   Follow the steps in [build-and-play-locally](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#build-and-play-locally) up until (but not including) “[deploy an App](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app)”.  
-   Note \- you won’t need to enable or run KMS and TProxy (gateway).  
-   
+---
+
+### 1. TDX Bare-Metal Server Setup
+
+To create a bare-metal TDX server, follow the [canonical/tdx guide](https://github.com/canonical/tdx/blob/main/README.md).  
+
+Make sure to complete:  
+- Steps 1–4 (basic TDX setup configuration)  
+- Steps 9.1–9.2 (Remote Attestation setup)  
+
+This ensures that your TDX setup is correctly configured.  
+
+---
+
+### 2. Dstack Setup and Configuration
+
+#### Dstack Setup
+
+Follow the [Dstack repository](https://github.com/Dstack-TEE/dstack).  
+Run the steps in [build-and-play-locally](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#build-and-play-locally), stopping just before “[Deploy an App](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app)”.  
+
+#### Guest OS Image
+
+> **Important:** The guest OS image that runs inside the CVM must be exactly the same across all nodes. The OS image is measured, and those measurements are hardcoded in the contract.
+
+Clone the [meta-dstack repository](https://github.com/Dstack-TEE/meta-dstack) and check out **release `v0.5.4`** (commit `f7c795b76faa693f218e1c255007e3a68c541d79`).  
+This will automatically pull in the correct version of `dstack` as a submodule (commit `3e4e462cac2a57c204698d2443d252d13e75cd29`).  
+
+```bash
+#!/bin/bash
+set -e
+
+git clone https://github.com/Dstack-TEE/meta-dstack.git
+cd meta-dstack/
+git checkout f7c795b76faa693f218e1c255007e3a68c541d79
+git submodule update --init --recursive
+```
+
+At this point, you have two options:
+
+* **Download a pre-built OS image (recommended, faster):**
+```bash
+./build.sh dl 0.5.4
+```
+
+* **Build a reproducible OS image yourself (slower, ~1–2 hours):**
+```bash
+cd repro-build && ./repro-build.sh -n
+```
+
+---
+
+#### Verification
+
+If you wish to verify your setup is correct:
+
+**Verify file hashes against expected values:**
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Hard-coded expected hashes
+declare -A EXPECTED
+EXPECTED["ovmf.fd"]="76888ce69c91aed86c43f840b913899b40b981964b7ce6018667f91ad06301f0"
+EXPECTED["bzImage"]="987083c434a937e47361377196644169b8d2183919c6c3ab89e251e021ab55cb"
+EXPECTED["initramfs.cpio.gz"]="fd5267f04bf95dc073c21934de552517506acde6485524834376c8a479c92fcd"
+EXPECTED["metadata.json"]="a0a8489dd9f05db9ba26b37c1a7e3c99e94fa4a3e82736b57b1c19b058a11674"
+
+ALL_OK=1
+
+for FILE in "${!EXPECTED[@]}"; do
+    if [[ ! -f "$FILE" ]]; then
+        echo "$FILE not found"
+        ALL_OK=0
+        continue
+    fi
+
+    CALC_HASH=$(sha256sum "$FILE" | awk '{print $1}')
+    if [[ "$CALC_HASH" == "${EXPECTED[$FILE]}" ]]; then
+        echo "$FILE: OK"
+    else
+        echo "$FILE: FAILED"
+        echo "  Expected: ${EXPECTED[$FILE]}"
+        echo "  Found:    $CALC_HASH"
+        ALL_OK=0
+    fi
+done
+
+if [[ $ALL_OK -eq 1 ]]; then
+    echo "All files verified successfully"
+else
+    echo "One or more files did not match"
+    exit 1
+fi
+```
+
+**Verify the rootfs.img.verity:**
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+META="metadata.json"
+
+# Extract values from metadata.json
+ROOTFS=$(jq -r '.rootfs' "$META")
+ROOTFS_SIZE=$(jq -r '.cmdline' "$META" | sed -n 's/.*dstack.rootfs_size=\([0-9]*\).*/\1/p')
+ROOTFS_HASH=$(jq -r '.cmdline' "$META" | sed -n 's/.*dstack.rootfs_hash=\([a-f0-9]*\).*/\1/p')
+
+# Compute parameters
+BLOCK_SIZE=4096
+DATA_BLOCKS=$(( ROOTFS_SIZE / BLOCK_SIZE ))
+HASH_OFFSET=$ROOTFS_SIZE
+
+echo "Verifying $ROOTFS"
+echo "  Rootfs size:   $ROOTFS_SIZE bytes"
+echo "  Data blocks:   $DATA_BLOCKS"
+echo "  Hash offset:   $HASH_OFFSET"
+echo "  Rootfs hash:   $ROOTFS_HASH"
+
+# Run verification
+sudo veritysetup verify   --data-blocks=$DATA_BLOCKS   --hash-offset=$HASH_OFFSET   --data-block-size=$BLOCK_SIZE   --hash-block-size=$BLOCK_SIZE   "$ROOTFS" "$ROOTFS" "$ROOTFS_HASH"
+
+echo "✅ Verification succeeded"
+```
+
+**Optional:** Check that your generated OS image corresponds to the expected RTMR values:
+
+```bash
+$dstack-mr -cpu 8 -memory 64G -metadata metadata.json
+
+MRTD: f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077
+RTMR0: 3744b154069500a466f514253b49858299b2e1bdc44e3d557337d81e828bedf6a0410f27d3a18c932e5e49e1c4215737
+RTMR1: a7b523278d4f914ee8df0ec80cd1c3d498cbf1152b0c5eaf65bad9425072874a3fcf891e8b01713d3d9937e3e0d26c15
+RTMR2: 24847f5c5a2360d030bc4f7b8577ce32e87c4d051452c937e91220cab69542daef83433947c492b9c201182fc9769bbe
+```
+
+For more details, see the [Dstack attestation guide](https://github.com/Dstack-TEE/dstack/blob/master/attestation.md).
+
+---
+
+#### MPC-Specific Configurations
+
+You do not need to enable or run **KMS** or **TProxy (gateway)**.  
+
+Update `vmm.toml` as follows:
+
+- Set `cvm.port_mapping.range` to include port **24567**  
+- In the `[cvm]` section, add:  
+  ```toml
+  max_disk_size = 1000
+  ```
 
 
-[#693](https://github.com/near/mpc/issues/693) 
-[#635](https://github.com/near/mpc/issues/635) 
 
-TBD  [#894](https://github.com/near/mpc/issues/894)  : We need to choose a specific github commit and use the reproducible build script  in order to  generate the OS image. [https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file\#reproducible-build-the-guest-image](https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image)  
-Or we can choose a specific dstack image like 0.52
-
-3. Setup local gramine-sealing-key-provider (see details [below](#setting-up-local-gramine-sealing-key-provider:)).  
-   
-
-### Dstack Configuration
-In this section we describe specific Dstack configuration changes needed for deploying the MPC node in Dstack.
-
-In vmm.toml: 
-
-- Update `cvm.port_mapping.range` to include port number **24567**  
-- In the `[cvm]` section add: `max_disk_size = 1000`
-
-
-### Setting up a Local Gramine-Sealing-Key-Provider 
+### 3. Local Gramine-Sealing-Key-Provider Setup
 
 
 In this solution, we use the `gramine-sealing-key-provider`, which runs inside an SGX enclave, to generate a key.  
@@ -134,9 +267,9 @@ Including
 
 *  Creating a Near account for your node
 
-*  Preparing  a configuration file based on [user-config.conf](https://github.com/near/mpc/blob/main/tee_deployment/user-config.conf)
+*  Preparing  a configuration file based on [user-config.conf](https://github.com/near/mpc/blob/main/tee_launcher/user-config.conf)
 
-* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml).  
+* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_launcher/launcher_docker_compose.yaml).  
 * Configuring and starting your CVM with the MPC node.  
 * Accessing mpc docker logs.  
 * Retrieve keys from the CVM.  
@@ -178,7 +311,7 @@ For more details, please refer to the NEAR account documentation.
 
 ##   Prepare MPC container environment variables
 
-Create a user-config.conf file based on the [user-config.conf](https://github.com/near/mpc/blob/main/tee_deployment/user-config.conf) . 
+Create a user-config.conf file based on the [user-config.conf](https://github.com/near/mpc/blob/main/tee_launcher/user-config.conf) . 
 
 ```
 # MPC docker image local override
@@ -228,7 +361,7 @@ paste -sd',' -
 
 ## Preparing a Docker Compose File
 
-To launch the MPC node in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml).
+To launch the MPC node in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_launcher/launcher_docker_compose.yaml).
 
 Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image digest retrieved from the contract.
 
@@ -259,7 +392,7 @@ The transaction output will include the latest MPC Docker image hash.
 
 
 
-**Note:** -  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including  whitespaces).
+**Note:** -  the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_launcher/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including  whitespaces).
 
 
 ## Required Ports and Port Collisions 
@@ -323,8 +456,8 @@ Use the following custom settings for MPC:
 
 ###  Using the script: 
 
-Use the script [deploy-launcher.sh](https://github.com/near/mpc/blob/main/tee_deployment/deploy-launcher.sh) described here   
-[https://github.com/near/mpc/blob/main/tee\_deployment/deploy\_launcher\_guide.md](https://github.com/near/mpc/blob/main/tee_deployment/deploy_launcher_guide.md)  
+Use the script [deploy-launcher.sh](https://github.com/near/mpc/blob/main/tee_launcher/deploy-launcher.sh) described here   
+[https://github.com/near/mpc/blob/main/tee\_deployment/deploy\_launcher\_guide.md](https://github.com/near/mpc/blob/main/tee_launcher/deploy_launcher_guide.md)  
 To configure and start your VM.
 
 ## Accessing MPC (or Launcher) Docker Logs

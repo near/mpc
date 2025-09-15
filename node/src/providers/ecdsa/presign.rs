@@ -217,8 +217,6 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
         let protocol = presign(
             &cs_participants,
             me.into(),
-            &cs_participants,
-            me.into(),
             PresignArguments {
                 triple0: self.triple0,
                 triple1: self.triple1,

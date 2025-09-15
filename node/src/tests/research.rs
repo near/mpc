@@ -259,8 +259,6 @@ fn presignature_network_research_best_case() {
             threshold_signatures::ecdsa::ot_based_ecdsa::presign::presign(
                 &participants,
                 participants[i],
-                &participants,
-                participants[i],
                 PresignArguments {
                     triple0: triple0s[&participants[i]].clone(),
                     triple1: triple1s[&participants[i]].clone(),

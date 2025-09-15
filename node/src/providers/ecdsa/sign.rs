@@ -15,7 +15,7 @@ use mpc_contract::primitives::signature::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
-use threshold_signatures::ecdsa::FullSignature;
+use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::protocol::Participant;
 use tokio::time::timeout;
@@ -24,7 +24,7 @@ impl EcdsaSignatureProvider {
     pub(super) async fn make_signature_leader(
         self: Arc<Self>,
         id: SignatureId,
-    ) -> anyhow::Result<(FullSignature, VerifyingKey)> {
+    ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
         let domain_data = self.domain_data(sign_request.domain)?;
         let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
@@ -105,11 +105,11 @@ pub struct SignComputation {
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<(FullSignature, VerifyingKey)> for SignComputation {
+impl MpcLeaderCentricComputation<(Signature, VerifyingKey)> for SignComputation {
     async fn compute(
         self,
         channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<(FullSignature, VerifyingKey)> {
+    ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let cs_participants = channel
             .participants()
             .iter()
