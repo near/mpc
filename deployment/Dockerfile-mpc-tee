@@ -15,6 +15,7 @@ WORKDIR /app
 COPY .git .git
 COPY node node
 COPY devnet devnet
+COPY pytest/test_contracts pytest/test_contracts
 COPY crates crates
 COPY Cargo.lock Cargo.lock
 COPY Cargo.toml Cargo.toml
