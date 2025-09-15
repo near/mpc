@@ -47,7 +47,7 @@ fi
 
 SOURCE_DATE_EPOCH=${SOURCE_DATE} repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --profile reproducible --locked 
 
-mpc_node_binary_hash=$(sha256sum target/release/mpc-node | cut -d' ' -f1)
+mpc_node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
 
 docker buildx build --builder ${buildkit_image_name} --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
