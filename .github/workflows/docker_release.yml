@@ -72,7 +72,7 @@ jobs:
           context: .
           profile-name: "mpc-image-builder"
           build-args:
-            SOURCE_DATE_EPOCH="${{ env.SOURCE_DATE_EPOCH }}"
+            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
           outputs:
             rewrite-timestamp=true
           push: false
