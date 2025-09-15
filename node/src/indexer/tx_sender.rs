@@ -16,7 +16,6 @@ use near_o11y::WithSpanContextExt;
 use near_sdk::AccountId;
 use std::future::Future;
 use std::sync::Arc;
-use std::thread::JoinHandle;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
