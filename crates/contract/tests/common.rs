@@ -24,8 +24,10 @@ use mpc_contract::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         signature::{Bytes, SignatureRequest, Tweak},
+        test_utils::bogus_ed25519_near_public_key,
         thresholds::{Threshold, ThresholdParameters},
     },
+    tee::tee_state::NodeUid,
     update::UpdateId,
 };
 use mpc_contract::{
@@ -48,7 +50,6 @@ use std::{
     io::{Read, Write},
     path::Path,
     process::Command,
-    str::FromStr,
     sync::OnceLock,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -80,10 +81,7 @@ pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
             account_id.clone(),
             ParticipantInfo {
                 url: "127.0.0.1".into(),
-                sign_pk: near_sdk::PublicKey::from_str(
-                    "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
-                )
-                .unwrap(),
+                sign_pk: bogus_ed25519_near_public_key(),
             },
         );
     }
@@ -649,7 +647,7 @@ pub fn check_call_success(result: ExecutionFinalResult) {
 }
 
 /// Helper function to get TEE participants from contract.
-pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<Vec<AccountId>> {
+pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<Vec<NodeUid>> {
     Ok(contract
         .call("get_tee_accounts")
         .args_json(serde_json::json!({}))

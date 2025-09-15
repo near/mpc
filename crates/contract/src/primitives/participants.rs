@@ -130,6 +130,12 @@ impl Participants {
             participants,
         }
     }
+    pub fn info(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
+        self.participants
+            .iter()
+            .find(|(a_id, _, _)| a_id == account_id)
+            .map(|(_, _, info)| info)
+    }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -140,13 +146,6 @@ impl Participants {
             .find(|(a_id, _, _)| a_id == account_id)
             .map(|(_, p_id, _)| p_id.clone())
             .ok_or_else(|| crate::errors::InvalidState::NotParticipant.into())
-    }
-
-    pub fn info(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
-        self.participants
-            .iter()
-            .find(|(a_id, _, _)| a_id == account_id)
-            .map(|(_, _, info)| info)
     }
 
     pub fn account_id(&self, id: &ParticipantId) -> Result<AccountId, Error> {

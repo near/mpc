@@ -1,22 +1,21 @@
 pub mod common;
-
 use anyhow::Result;
 use attestation::attestation::{Attestation, MockAttestation};
-use near_workspaces::AccountId;
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use common::{
     check_call_success, gen_accounts, get_tee_accounts, init_env_secp256k1, submit_participant_info,
 };
+use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
 use mpc_contract::{
     primitives::{
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
+    tee::tee_state::NodeUid,
 };
-use test_utils::attestation::p2p_tls_key;
 
 /// Integration test that validates the complete E2E flow of TEE cleanup after resharing.
 ///
@@ -31,37 +30,7 @@ use test_utils::attestation::p2p_tls_key;
 async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     let (worker, contract, initial_accounts, _) = init_env_secp256k1(1).await;
 
-    // Set up TEE attestations for all initial participants
-    let tls_key = p2p_tls_key();
-    let attestation = Attestation::Mock(MockAttestation::Valid);
-
-    for account in &initial_accounts {
-        let submission_result =
-            submit_participant_info(account, &contract, &attestation, &tls_key).await?;
-        assert!(submission_result);
-    }
-
-    // Verify TEE participants were added
-    let initial_tee_participants = get_tee_accounts(&contract).await?;
-    assert_eq!(initial_tee_participants.len(), initial_accounts.len());
-
-    // Create additional accounts to simulate stale participants
-    let (stale_accounts, _) = gen_accounts(&worker, 2).await;
-
-    // Add stale participants to TEE state
-    for stale_account in &stale_accounts {
-        let submission_result =
-            submit_participant_info(stale_account, &contract, &attestation, &tls_key).await?;
-        assert!(submission_result);
-    }
-
-    // Verify all participants are in TEE state (initial + stale)
-    let all_tee_participants = get_tee_accounts(&contract).await?;
-    assert_eq!(
-        all_tee_participants.len(),
-        initial_accounts.len() + stale_accounts.len()
-    );
-
+    // extract initial participants:
     // Get current state to extract participant info
     let state: ProtocolContractState = contract.view("state").await?.json()?;
     let running_state = match state {
@@ -69,20 +38,78 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         _ => panic!("Contract should be in running state initially"),
     };
 
-    // Create subset for new parameters (2 out of 3 initial participants)
-    let new_participant_accounts = &initial_accounts[0..2];
-
     // Get current participants to construct proper ThresholdParameters
-    let current_participants = running_state.parameters.participants().clone();
+    let init_participants = running_state.parameters.participants().clone();
+
+    // Set up TEE attestations for all initial participants
+    let mut expected_initial_tee_participants = BTreeSet::new();
+    for account in &initial_accounts {
+        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
+        let tls_p2p_key = init_participants
+            .info(account.id())
+            .unwrap()
+            .sign_pk
+            .clone();
+        let submission_result =
+            submit_participant_info(account, &contract, &attestation, &tls_p2p_key).await?;
+        assert!(submission_result);
+        expected_initial_tee_participants.insert(NodeUid {
+            account_id: account.id().clone(),
+            tls_public_key: tls_p2p_key,
+        });
+    }
+
+    // Verify TEE participants were added
+    let initial_tee_participants: BTreeSet<_> = get_tee_accounts(&contract)
+        .await
+        .unwrap()
+        .into_iter()
+        .collect();
+
+    assert_eq!(initial_tee_participants, expected_initial_tee_participants);
+
+    // Create additional accounts to simulate stale participants
+    let (non_participants, _) = gen_accounts(&worker, 2).await;
+
+    let mut expected_init_and_non_participants = initial_tee_participants.clone();
+    // Add stale participants to TEE state
+    for non_participant in &non_participants {
+        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
+        let random_tls_key = bogus_ed25519_near_public_key();
+        let submission_result =
+            submit_participant_info(non_participant, &contract, &attestation, &random_tls_key)
+                .await?;
+        assert!(submission_result);
+        expected_init_and_non_participants.insert(NodeUid {
+            account_id: non_participant.id().clone(),
+            tls_public_key: random_tls_key,
+        });
+    }
+
+    let initial_and_non_participants: BTreeSet<_> = get_tee_accounts(&contract)
+        .await
+        .unwrap()
+        .into_iter()
+        .collect();
+
+    assert_eq!(
+        initial_and_non_participants,
+        expected_init_and_non_participants
+    );
 
     // Create new participants list with first 2 participants
     let mut new_participants = Participants::new();
+    let mut expected_tee_post_resharing = BTreeSet::new();
     for (account_id, _participant_id, participant_info) in
-        current_participants.participants().iter().take(2)
+        init_participants.participants().iter().take(2)
     {
         new_participants
             .insert(account_id.clone(), participant_info.clone())
             .expect("Failed to insert participant");
+        expected_tee_post_resharing.insert(NodeUid {
+            account_id: account_id.clone(),
+            tls_public_key: participant_info.sign_pk.clone(),
+        });
     }
 
     // Create proper ThresholdParameters
@@ -159,36 +186,29 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     };
 
     // Get current participants to compare
-    let final_participants: HashSet<AccountId> = running_state
+    let final_participants: BTreeSet<NodeUid> = running_state
         .parameters
         .participants()
         .participants()
         .iter()
-        .map(|(account_id, _, _)| account_id.clone())
-        .collect();
-
-    // Create expected participants set
-    let expected_participants: HashSet<AccountId> = new_participant_accounts
-        .iter()
-        .map(|acc| acc.id().clone())
+        .map(|(account_id, _, p_info)| NodeUid {
+            account_id: account_id.clone(),
+            tls_public_key: p_info.sign_pk.clone(),
+        })
         .collect();
 
     // Verify only the new participants remain
-    assert_eq!(final_participants, expected_participants);
+    assert_eq!(final_participants, expected_tee_post_resharing);
 
     // Verify TEE participants are properly cleaned up
-    let tee_participants_after_cleanup: HashSet<AccountId> = contract
-        .call("get_tee_accounts")
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
-        .await?
-        .json::<Vec<AccountId>>()?
+    let tee_participants_after_cleanup: BTreeSet<NodeUid> = get_tee_accounts(&contract)
+        .await
+        .unwrap()
         .into_iter()
         .collect();
 
     // Verify that the remaining TEE participants match exactly the new contract participants
-    assert_eq!(tee_participants_after_cleanup, expected_participants);
+    assert_eq!(tee_participants_after_cleanup, expected_tee_post_resharing);
 
     Ok(())
 }

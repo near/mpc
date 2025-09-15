@@ -48,7 +48,10 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
-use tee::{proposal::MpcDockerImageHash, tee_state::TeeValidationResult};
+use tee::{
+    proposal::MpcDockerImageHash,
+    tee_state::{NodeUid, TeeValidationResult},
+};
 
 /// Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(15);
@@ -725,7 +728,7 @@ impl VersionedMpcContract {
             .tee_state
             .verify_proposed_participant_attestation(
                 &proposed_participant_attestation,
-                tls_public_key,
+                tls_public_key.clone(),
                 mpc_contract.config.tee_upgrade_deadline_duration_blocks,
             );
 
@@ -735,9 +738,13 @@ impl VersionedMpcContract {
         }
 
         // Add the participant information to the contract state
-        mpc_contract
-            .tee_state
-            .add_participant(account_id.clone(), proposed_participant_attestation);
+        mpc_contract.tee_state.add_participant(
+            NodeUid {
+                account_id: account_id.clone(),
+                tls_public_key,
+            },
+            proposed_participant_attestation,
+        );
 
         // Both participants and non-participants can propose. Non-participants must pay for the
         // storage they use; participants do not.
@@ -1109,7 +1116,7 @@ impl VersionedMpcContract {
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
-    pub fn get_tee_accounts(&self) -> Vec<AccountId> {
+    pub fn get_tee_accounts(&self) -> Vec<NodeUid> {
         log!("get_tee_accounts: signer={}", env::signer_account_id());
         match self {
             Self::V2(contract) => contract.tee_state.get_tee_accounts(),

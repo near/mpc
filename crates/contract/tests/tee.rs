@@ -8,11 +8,14 @@ use common::{
     check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
     submit_participant_info,
 };
-use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
+use mpc_contract::{
+    errors::InvalidState, primitives::test_utils::bogus_ed25519_near_public_key,
+    state::ProtocolContractState, tee::tee_state::NodeUid,
+};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use test_utils::attestation::{image_digest, mock_dstack_attestation, p2p_tls_key};
 
 /// Tests the basic TEE verification functionality when no TEE accounts are present.
@@ -338,13 +341,30 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     // Initially should have no TEE participants
     assert_eq!(get_tee_accounts(&contract).await?.len(), 0);
 
-    // Setup contract with approved hash and submit TEE info for current participants
-    setup_approved_mpc_hash(&contract, &accounts).await?;
-    let tls_key = p2p_tls_key();
-    let attestation = mock_dstack_attestation();
+    // extract initial participants:
+    // Get current state to extract participant info
+    let state: ProtocolContractState = contract.view("state").await?.json()?;
+    let running_state = match state {
+        ProtocolContractState::Running(running_state) => running_state,
+        _ => panic!("Contract should be in running state initially"),
+    };
 
+    // Get current participants to construct proper ThresholdParameters
+    let init_participants = running_state.parameters.participants().clone();
+
+    let mut expected_participants = BTreeSet::new();
     for account in &accounts {
+        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
+        let tls_key = init_participants
+            .info(account.id())
+            .unwrap()
+            .sign_pk
+            .clone();
         let success = submit_participant_info(account, &contract, &attestation, &tls_key).await?;
+        expected_participants.insert(NodeUid {
+            account_id: account.id().clone(),
+            tls_public_key: tls_key,
+        });
         assert!(success);
     }
 
@@ -355,6 +375,8 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
     let additional_accounts = gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await.0;
     for account in &additional_accounts {
+        let tls_key = bogus_ed25519_near_public_key();
+        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
         let success = submit_participant_info(account, &contract, &attestation, &tls_key).await?;
         assert!(success);
     }
@@ -380,11 +402,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     let tee_participants_after = get_tee_accounts(&contract).await?;
     assert_eq!(tee_participants_after.len(), accounts.len());
 
-    let expected_participants: HashSet<_> = accounts
-        .iter()
-        .map(|account| account.id().clone())
-        .collect();
-    let actual_participants: HashSet<_> = tee_participants_after.into_iter().collect();
+    let actual_participants: BTreeSet<_> = tee_participants_after.into_iter().collect();
 
     assert_eq!(expected_participants, actual_participants);
 
