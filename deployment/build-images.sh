@@ -2,6 +2,15 @@
 
 # Script to reproducibly build MPC binary and the docker image.
 
+
+push_flag=false
+
+for arg in "$@"; do
+  if [[ "$arg" == "--push" ]]; then
+    push_flag=true
+  fi
+done
+
 DOCKERFILE_NODE_TEE=deployment/Dockerfile-mpc-tee
 : "${NODE_IMAGE_NAME_TEE:=mpc-node-tee}"
 
@@ -38,10 +47,10 @@ if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
 fi
 
 
-# docker buildx build --builder ${buildkit_image_name} --no-cache \
-#     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
-#     --output type=image,name=$NODE_IMAGE_NAME_TEE,rewrite-timestamp=true \
-#     -f "$DOCKERFILE_NODE_TEE" .
+docker buildx build --builder ${buildkit_image_name} --no-cache \
+    --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
+    --output type=docker,name=$NODE_IMAGE_NAME_TEE,rewrite-timestamp=true \
+    -f "$DOCKERFILE_NODE_TEE" .
 
 node_tee_image_hash=$(docker inspect $NODE_IMAGE_NAME_TEE | jq .[0].Id)
 
@@ -58,6 +67,14 @@ echo "SOURCE_DATE_EPOCH used: $SOURCE_DATE"
 echo "node tee docker image hash: $node_tee_image_hash"
 echo "launcher docker image hash: $launcher_image_hash"
 
+if $push_flag; then
+    # This assumes that docker is logged-in dockerhub registry with nearone user
+    branch_name=$(git branch --show-current)
+    short_hash=$(git rev-parse --short HEAD)
 
-docker tag $LAUNCHER_IMAGE_NAME nearone/$LAUNCHER_IMAGE_NAME:$GIT_COMMIT_HASH
-docker push nearone/$LAUNCHER_IMAGE_NAME:$GIT_COMMIT_HASH
+    docker tag $NODE_IMAGE_NAME_TEE nearone/$NODE_IMAGE_NAME_TEE:$branch_name-$short_hash
+    docker push nearone/$NODE_IMAGE_NAME_TEE:$branch_name-$short_hash
+
+    docker tag $LAUNCHER_IMAGE_NAME nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
+    docker push nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
+fi

@@ -25,28 +25,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.build-ref }}
-        
-      - name: Get short SHA
-        shell: bash
-        run: |
-          echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
-  
-      # - name: Get SOURCE_DATE_EPOCH
-      #   shell: bash
-      #   run: |
-      #     echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
-
-      # - name: Fix file timestamps
-      #   shell: bash
-      #   run: |
-      #     find . \( -type f -o -type d \) -exec touch -d @"${{ env.SOURCE_DATE_EPOCH }}" {} +
-
-      - name: Sanitize build-ref for Docker tags
-        shell: bash
-        run: |
-          # Replace forward slashes with hyphens to create valid Docker tags
-          sanitized_ref=$(echo "${{ github.event.inputs.build-ref }}" | sed 's/\//-/g')
-          echo "sanitized_ref=$sanitized_ref" >> "$GITHUB_ENV"
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -54,39 +32,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # - name: Set up Docker Buildx
-      #   uses: docker/setup-buildx-action@v3
-      #   with:
-      #     driver-opts: image=moby/buildkit:v0.24.0
-      #     name: buildkit_0.24.0
-      
-      # - name: Build and push MPC Node TEE Docker image to Docker Hub
-      #   uses: Warpbuilds/build-push-action@v6
-      #   with:
-      #     context: .
-      #     profile-name: "mpc-image-builder"
-      #     push: true
-      #     file: deployment/Dockerfile-mpc-tee
-      #     tags: nearone/mpc-node-tee:latest,nearone/mpc-node-tee:${{ env.sanitized_ref }},nearone/mpc-node-tee:${{ env.sanitized_ref }}-${{ env.sha_short }}
-
-      # - name: Build and push MPC Launcher Docker image to Docker Hub
-      #   uses: Warpbuilds/build-push-action@v6
-      #   with:
-      #     context: .
-      #     profile-name: "mpc-image-builder"
-      #     build-args:
-      #       SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
-      #     builder: buildkit_0.24.0
-      #     no-cache: true
-      #     outputs:
-      #       # type=docker,name=mpc-launcher,rewrite-timestamp=true
-      #       rewrite-timestamp=true
-      #     push: true
-      #     file: deployment/Dockerfile-launcher
-      #     tags: nearone/mpc-launcher:${{ env.sanitized_ref }}
-      #     #tags: nearone/mpc-launcher:latest,nearone/mpc-launcher:${{ env.sanitized_ref }},nearone/mpc-launcher:${{ env.sanitized_ref }}-${{ env.sha_short }}
-
       - name: Build and publish images
         shell: bash
         run: |
-          ./deployment/build-images.sh
+          ./deployment/build-images.sh --push
