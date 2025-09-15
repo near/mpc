@@ -5,6 +5,7 @@ use super::IndexerState;
 use crate::config::RespondConfig;
 use crate::indexer::types::ChainGetPendingCKDRequestArgs;
 use crate::metrics;
+use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use legacy_mpc_contract;
 use near_client::Query;
@@ -15,6 +16,7 @@ use near_o11y::WithSpanContextExt;
 use near_sdk::AccountId;
 use std::future::Future;
 use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
@@ -52,9 +54,9 @@ impl TransactionProcessorHandle {
         owner_secret_key: SigningKey,
         config: RespondConfig,
         indexer_state: Arc<IndexerState>,
-    ) -> impl TransactionSender {
+    ) -> anyhow::Result<impl TransactionSender> {
         let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
-            .expect("Failed to initialize transaction signers");
+            .context("Failed to initialize transaction signers")?;
 
         let (transaction_sender, mut transaction_receiver) =
             mpsc::channel::<TransactionSenderSubmission>(TRANSACTION_PROCESSOR_CHANNEL_SIZE);
@@ -77,7 +79,7 @@ impl TransactionProcessorHandle {
             }
         });
 
-        TransactionProcessorHandle { transaction_sender }
+        Ok(TransactionProcessorHandle { transaction_sender })
     }
 }
 
