@@ -43,7 +43,7 @@ node_tee_image_hash=$(docker inspect $NODE_IMAGE_NAME_TEE | jq .[0].Id)
 
 docker buildx build --builder ${buildkit_image_name} --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
-    --output type=image,name=$LAUNCHER_IMAGE_NAME,rewrite-timestamp=true \
+    --output type=docker,name=$LAUNCHER_IMAGE_NAME,rewrite-timestamp=true \
     -f "$DOCKERFILE_LAUNCHER" .
 
 launcher_image_hash=$(docker inspect $LAUNCHER_IMAGE_NAME | jq .[0].Id)
