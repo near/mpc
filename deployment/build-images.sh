@@ -57,3 +57,5 @@ echo "commit hash: $GIT_COMMIT_HASH"
 echo "SOURCE_DATE_EPOCH used: $SOURCE_DATE"
 echo "node tee docker image hash: $node_tee_image_hash"
 echo "launcher docker image hash: $launcher_image_hash"
+
+docker push $launcher_image_hash
