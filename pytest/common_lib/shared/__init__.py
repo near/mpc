@@ -429,7 +429,6 @@ def start_cluster_with_mpc(
 
         # add node access key
         tx = sign_add_access_keys_tx(
-            # key,
             pytest_signer_keys[0],
             candidate_account_id,
             [candidate.signer_key],
