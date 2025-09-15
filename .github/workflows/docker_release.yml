@@ -79,11 +79,9 @@ jobs:
           builder: buildkit_0.24.0
           no-cache: true
           outputs:
-            type=docker,name=mpc-launcher,rewrite-timestamp=true
-          push: false
+            # type=docker,name=mpc-launcher,rewrite-timestamp=true
+            rewrite-timestamp=true
+          push: true
           file: deployment/Dockerfile-launcher
-          # tags: nearone/mpc-launcher:latest,nearone/mpc-launcher:${{ env.sanitized_ref }},nearone/mpc-launcher:${{ env.sanitized_ref }}-${{ env.sha_short }}
-      
-      - name: Inspect
-        run: |
-          docker inspect mpc-launcher
+          tags: nearone/mpc-launcher:${{ env.sanitized_ref }}
+          #tags: nearone/mpc-launcher:latest,nearone/mpc-launcher:${{ env.sanitized_ref }},nearone/mpc-launcher:${{ env.sanitized_ref }}-${{ env.sha_short }}
