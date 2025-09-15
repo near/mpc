@@ -1,13 +1,13 @@
 use super::handler::listen_blocks;
 use super::participants::{monitor_contract_state, ContractState};
 use super::stats::indexer_logger;
-use super::tx_sender::handle_txn_requests;
 use super::{IndexerAPI, IndexerState};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::balances::monitor_balance;
 use crate::indexer::tee::monitor_allowed_docker_images;
+use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use ed25519_dalek::SigningKey;
 use mpc_contract::state::ProtocolContractState;
 use near_sdk::AccountId;
@@ -50,16 +50,23 @@ pub fn spawn_real_indexer(
     respond_config: RespondConfig,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
-) -> IndexerAPI {
+) -> IndexerAPI<impl TransactionSender> {
     let (chain_config_sender, chain_config_receiver) =
         tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
-    let (chain_txn_sender, chain_txn_receiver) = mpsc::channel(10000);
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
+
+    let my_near_account_id_clone = my_near_account_id.clone();
+    let respond_config_clone = respond_config.clone();
+
+    let (txn_sender_sender, txn_sender_receiver) = oneshot::channel();
 
     // TODO(#156): replace actix with tokio
     std::thread::spawn(move || {
         actix::System::new().block_on(async {
+            // We have this indirection of using a oneshot for sending the indexer state,
+            // as we can't block the main thread for waiting on the `txn_sender`.
+            // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
             let indexer =
                 near_indexer::Indexer::new(indexer_config.to_near_indexer_config(home_dir.clone()))
                     .expect("Failed to initialize the Indexer");
@@ -71,6 +78,23 @@ pub fn spawn_real_indexer(
                 tx_processor,
                 indexer_config.mpc_contract_id.clone(),
             ));
+
+            let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
+                my_near_account_id_clone,
+                account_secret_key.clone(),
+                respond_config_clone,
+                Arc::clone(&indexer_state),
+            );
+
+            let Ok(txn_sender) = txn_sender_result else {
+                tracing::error!("Failed to start transaction processor. Exiting indexer.");
+                let _ = indexer_exit_sender.send(txn_sender_result.map(|_| ()));
+                return;
+            };
+
+            if txn_sender_sender.send(txn_sender).is_err() {
+                tracing::error!("Failed to send txn_sender back to main thread.")
+            };
 
             #[cfg(feature = "network-hardship-simulation")]
             let process_blocks_receiver = {
@@ -91,13 +115,6 @@ pub fn spawn_real_indexer(
                 indexer_state.view_client.clone(),
             ));
 
-            actix::spawn(handle_txn_requests(
-                chain_txn_receiver,
-                my_near_account_id.clone(),
-                account_secret_key.clone(),
-                respond_config.clone(),
-                indexer_state.clone(),
-            ));
             actix::spawn(monitor_balance(
                 my_near_account_id.clone(),
                 respond_config.account_id.clone(),
@@ -138,10 +155,14 @@ pub fn spawn_real_indexer(
         });
     });
 
+    let txn_sender = txn_sender_receiver
+        .blocking_recv()
+        .expect("txn_sender is returned from the `block_on` expression above.");
+
     IndexerAPI {
         contract_state_receiver: chain_config_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
-        txn_sender: chain_txn_sender,
+        txn_sender,
         allowed_docker_images_receiver,
     }
 }
