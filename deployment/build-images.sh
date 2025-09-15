@@ -21,7 +21,7 @@ fi
 # This might be necessary to fix reproducibility with old docker versions where
 # rewrite-timestamp is not working as expected
 # https://github.com/moby/buildkit/issues/4986
-@find . \( -type f -o -type d \) -exec touch -d @"$(SOURCE_DATE)" {} +
+@find . \( -type f -o -type d \) -exec touch -d @"$SOURCE_DATE" {} +
 
 # Create our own builder (build env) to enable reproducible images
 if ! docker buildx &>/dev/null; then
