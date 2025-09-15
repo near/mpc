@@ -117,9 +117,10 @@ async fn test_participant_kickout_after_expiration() -> Result<()> {
 
     // Step 3a: Start the resharing instance (required before voting)
     // The resharing state exists but the protocol instance needs to be started
+    // From the debug output, we can see resharing is happening for domain 0
     let key_event_id = serde_json::json!({
         "epoch_id": 6,  // Next epoch
-        "domain_id": 0, // First domain
+        "domain_id": 0, // Use domain 0 as shown in resharing_key
         "attempt_id": 0 // First attempt
     });
 
@@ -143,6 +144,60 @@ async fn test_participant_kickout_after_expiration() -> Result<()> {
 
     // Give the contract some time to process the votes and complete the resharing
     std::thread::sleep(std::time::Duration::from_secs(1));
+
+    // The resharing process is multi-domain. We need to continue resharing for the remaining domains.
+    // Complete resharing for domain 2
+    let key_event_id_domain_2 = serde_json::json!({
+        "epoch_id": 6,
+        "domain_id": 2,
+        "attempt_id": 0
+    });
+
+    let _start_reshare_result_2 = accounts[0]
+        .call(contract.id(), "start_reshare_instance")
+        .args_json(serde_json::json!({ "key_event_id": key_event_id_domain_2 }))
+        .max_gas()
+        .transact()
+        .await?;
+
+    // Vote for domain 2 resharing
+    for account in &accounts[0..2] {
+        let _vote_result = account
+            .call(contract.id(), "vote_reshared")
+            .args_json(serde_json::json!({ "key_event_id": key_event_id_domain_2 }))
+            .max_gas()
+            .transact()
+            .await?;
+    }
+
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    // Complete resharing for domain 4
+    let key_event_id_domain_4 = serde_json::json!({
+        "epoch_id": 6,
+        "domain_id": 4,
+        "attempt_id": 0
+    });
+
+    let _start_reshare_result_4 = accounts[0]
+        .call(contract.id(), "start_reshare_instance")
+        .args_json(serde_json::json!({ "key_event_id": key_event_id_domain_4 }))
+        .max_gas()
+        .transact()
+        .await?;
+
+    // Vote for domain 4 resharing
+    for account in &accounts[0..2] {
+        let _vote_result = account
+            .call(contract.id(), "vote_reshared")
+            .args_json(serde_json::json!({ "key_event_id": key_event_id_domain_4 }))
+            .max_gas()
+            .transact()
+            .await?;
+    }
+
+    // Give the contract some time to process all domain resharing and transition back to Running
+    std::thread::sleep(std::time::Duration::from_secs(2));
 
     // Check if resharing completed and state transitioned back to Running
     let state_after_voting = contract.call("state").max_gas().transact().await?;
