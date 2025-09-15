@@ -19,7 +19,6 @@ use crate::{
     storage_keys::StorageKey,
     tee::{proposal::AllowedDockerImageHash, quote::TeeQuoteStatus, tee_state::TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
-    v0_state::MpcContractV1,
 };
 use attestation::attestation::Attestation;
 use config::{Config, InitConfig};
@@ -34,7 +33,6 @@ use errors::{
 };
 use k256::elliptic_curve::{sec1::ToEncodedPoint, PrimeField};
 use near_sdk::{
-    borsh::{self, BorshDeserialize, BorshSerialize},
     env::{self, ed25519_verify},
     log, near, near_bindgen,
     store::LookupMap,
@@ -77,25 +75,13 @@ const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(3);
 /// Confidential Key Derivation only supports secp256k1
 const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
 
-/// Store two version of the MPC contract for migration and backward compatibility purposes.
-/// Note: Probably, you don't need to change this struct.
-#[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize, Debug)]
-pub enum VersionedMpcContract {
-    /// This is no longer deployed
-    V0,
-    /// Currently on mainnet and testnet
-    V1(MpcContractV1),
-    /// Current actual version
-    V2(MpcContract),
-}
-
-impl Default for VersionedMpcContract {
+impl Default for MpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
     }
 }
 
+#[near_bindgen]
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct MpcContract {
@@ -127,168 +113,17 @@ impl MpcContract {
             .is_some()
     }
 
-    fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
-        self.pending_signature_requests.get(request).cloned()
-    }
-
     /// Returns true if the request was already pending
     fn add_ckd_request(&mut self, request: &CKDRequest, data_id: CryptoHash) -> bool {
         self.pending_ckd_requests
             .insert(request.clone(), YieldIndex { data_id })
             .is_some()
     }
-
-    fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
-        self.pending_ckd_requests.get(request).cloned()
-    }
-
-    pub fn init(parameters: ThresholdParameters, init_config: Option<InitConfig>) -> Self {
-        log!(
-            "init: parameters={:?}, init_config={:?}",
-            parameters,
-            init_config,
-        );
-        parameters.validate().unwrap();
-
-        Self {
-            protocol_state: ProtocolContractState::Running(RunningContractState::new(
-                DomainRegistry::default(),
-                Keyset::new(EpochId::new(0), Vec::new()),
-                parameters,
-            )),
-            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
-            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
-            proposed_updates: ProposedUpdates::default(),
-            config: Config::from(init_config),
-            tee_state: TeeState::default(),
-            accept_requests: true,
-        }
-    }
-
-    pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
-        self.protocol_state
-            .start_keygen_instance(key_event_id, self.config.key_event_timeout_blocks)
-    }
-
-    pub fn start_reshare_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
-        self.protocol_state
-            .start_reshare_instance(key_event_id, self.config.key_event_timeout_blocks)
-    }
-
-    pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<bool, Error> {
-        if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
-            // Resharing has concluded, transition to running state
-            self.protocol_state = new_state;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
-    pub fn vote_cancel_resharing(&mut self) -> Result<(), Error> {
-        if let Some(new_state) = self.protocol_state.vote_cancel_resharing()? {
-            self.protocol_state = new_state;
-        }
-
-        Ok(())
-    }
-
-    pub fn vote_pk(
-        &mut self,
-        key_event_id: KeyEventId,
-        public_key: PublicKey,
-    ) -> Result<(), Error> {
-        let extended_key =
-            public_key
-                .try_into()
-                .map_err(|err: PublicKeyExtendedConversionError| {
-                    InvalidParameters::MalformedPayload.message(err.to_string())
-                })?;
-
-        if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
-            self.protocol_state = new_state;
-        }
-
-        Ok(())
-    }
-
-    pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
-        self.protocol_state
-            .vote_abort_key_event_instance(key_event_id)
-    }
-
-    pub fn vote_cancel_keygen(&mut self, next_domain_id: u64) -> Result<(), Error> {
-        if let Some(new_state) = self.protocol_state.vote_cancel_keygen(next_domain_id)? {
-            self.protocol_state = new_state;
-        }
-        Ok(())
-    }
-
-    pub fn vote_new_parameters(
-        &mut self,
-        prospective_epoch_id: EpochId,
-        proposal: &ThresholdParameters,
-    ) -> Result<(), Error> {
-        if let Some(new_state) = self
-            .protocol_state
-            .vote_new_parameters(prospective_epoch_id, proposal)?
-        {
-            self.protocol_state = new_state;
-        }
-        Ok(())
-    }
-
-    pub fn vote_add_domains(&mut self, domains: Vec<DomainConfig>) -> Result<(), Error> {
-        if let Some(new_state) = self.protocol_state.vote_add_domains(domains)? {
-            self.protocol_state = new_state;
-        }
-        Ok(())
-    }
-
-    pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
-        let ProtocolContractState::Running(state) = &self.protocol_state else {
-            return Err(InvalidState::ProtocolStateNotRunning.into());
-        };
-
-        let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
-        let votes = self.tee_state.vote(code_hash.clone(), &participant);
-
-        // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
-        // update the state
-        if votes >= self.threshold()?.value() {
-            self.tee_state.whitelist_tee_proposal(
-                code_hash,
-                self.config.tee_upgrade_deadline_duration_blocks,
-            );
-        }
-
-        Ok(())
-    }
-
-    pub fn latest_code_hash(&mut self) -> MpcDockerImageHash {
-        self.tee_state
-            .get_allowed_hashes(self.config.tee_upgrade_deadline_duration_blocks)
-            .last()
-            .expect("there must be at least one allowed code hash")
-            .clone()
-    }
-
-    pub fn clean_tee_status(&mut self) -> Result<(), Error> {
-        let participants = match &self.protocol_state {
-            ProtocolContractState::Running(state) => state.parameters.participants(),
-            _ => {
-                return Err(InvalidState::ProtocolStateNotRunning.into());
-            }
-        };
-
-        self.tee_state.clean_non_participants(participants);
-        Ok(())
-    }
 }
 
 // User contract API
 #[near_bindgen]
-impl VersionedMpcContract {
+impl MpcContract {
     /// `key_version` must be less than or equal to the value at `latest_key_version`
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each signature request.
@@ -370,11 +205,7 @@ impl VersionedMpcContract {
             &request.path,
         );
 
-        let Self::V2(mpc_contract) = self else {
-            env::panic_str("expected V2")
-        };
-
-        if !mpc_contract.accept_requests {
+        if !self.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
@@ -391,7 +222,7 @@ impl VersionedMpcContract {
             .expect("read_register failed")
             .try_into()
             .expect("conversion to CryptoHash failed");
-        if mpc_contract.add_signature_request(&request, return_sig_id) {
+        if self.add_signature_request(&request, return_sig_id) {
             log!("signature request already present, overriding callback.")
         }
 
@@ -403,15 +234,8 @@ impl VersionedMpcContract {
     /// the default is the first domain.
     #[handle_result]
     pub fn public_key(&self, domain_id: Option<DomainId>) -> Result<PublicKey, Error> {
+        let domain_id = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
         self.public_key_extended(domain_id).map(Into::into)
-    }
-
-    fn public_key_extended(&self, domain_id: Option<DomainId>) -> Result<PublicKeyExtended, Error> {
-        let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
-        match self {
-            Self::V2(mpc_contract) => mpc_contract.public_key_extended(domain),
-            _ => env::panic_str("expected v2"),
-        }
     }
 
     /// This is the derived public key of the caller given path and predecessor
@@ -430,10 +254,7 @@ impl VersionedMpcContract {
         let tweak = derive_tweak(&predecessor, &path);
 
         let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
-        let public_key = match self {
-            Self::V2(mpc_contract) => mpc_contract.public_key_extended(domain),
-            _ => env::panic_str("expected v2"),
-        }?;
+        let public_key = self.public_key_extended(domain)?;
 
         let derived_public_key = match public_key {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
@@ -543,9 +364,7 @@ impl VersionedMpcContract {
             }
         }
 
-        let Self::V2(mpc_contract) = self else {
-            env::panic_str("expected V2")
-        };
+        let mpc_contract = self;
 
         if !mpc_contract.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
@@ -577,7 +396,7 @@ impl VersionedMpcContract {
 
 // Node API
 #[near_bindgen]
-impl VersionedMpcContract {
+impl MpcContract {
     #[handle_result]
     pub fn respond(
         &mut self,
@@ -587,19 +406,16 @@ impl VersionedMpcContract {
         let signer = env::signer_account_id();
         log!("respond: signer={}, request={:?}", &signer, &request);
 
-        let Self::V2(mpc_contract) = self else {
-            env::panic_str("expected V2")
-        };
-        if !mpc_contract.protocol_state.is_running_or_resharing() {
+        if !self.protocol_state.is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
 
-        if !mpc_contract.accept_requests {
+        if !self.accept_requests {
             return Err(TeeError::TeeValidationFailed.into());
         }
 
         let domain = request.domain_id;
-        let public_key = mpc_contract.public_key_extended(domain)?;
+        let public_key = self.public_key_extended(domain)?;
 
         let signature_is_valid = match (&response, public_key) {
             (
@@ -656,9 +472,7 @@ impl VersionedMpcContract {
         }
 
         // First get the yield promise of the (potentially timed out) request.
-        if let Some(YieldIndex { data_id }) =
-            mpc_contract.pending_signature_requests.remove(&request)
-        {
+        if let Some(YieldIndex { data_id }) = self.pending_signature_requests.remove(&request) {
             // Finally, resolve the promise. This will have no effect if the request already timed.
             env::promise_yield_resume(&data_id, &serde_json::to_vec(&response).unwrap());
             Ok(())
@@ -672,19 +486,16 @@ impl VersionedMpcContract {
         let signer = env::signer_account_id();
         log!("respond_ckd: signer={}, request={:?}", &signer, &request);
 
-        let Self::V2(mpc_contract) = self else {
-            env::panic_str("expected V2")
-        };
-        if !mpc_contract.protocol_state.is_running_or_resharing() {
+        if !self.protocol_state.is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
 
-        if !mpc_contract.accept_requests {
+        if !self.accept_requests {
             return Err(TeeError::TeeValidationFailed.into());
         }
 
         // First get the yield promise of the (potentially timed out) request.
-        if let Some(YieldIndex { data_id }) = mpc_contract.pending_ckd_requests.remove(&request) {
+        if let Some(YieldIndex { data_id }) = self.pending_ckd_requests.remove(&request) {
             // Finally, resolve the promise. This will have no effect if the request already timed.
             env::promise_yield_resume(&data_id, &serde_json::to_vec(&response).unwrap());
             Ok(())
@@ -716,18 +527,12 @@ impl VersionedMpcContract {
         // used
         let initial_storage = env::storage_usage();
 
-        let Self::V2(mpc_contract) = self else {
-            env::panic_str("expected V2")
-        };
-
         // Verify the TEE quote and Docker image for the proposed participant
-        let status = mpc_contract
-            .tee_state
-            .verify_proposed_participant_attestation(
-                &proposed_participant_attestation,
-                tls_public_key,
-                mpc_contract.config.tee_upgrade_deadline_duration_blocks,
-            );
+        let status = self.tee_state.verify_proposed_participant_attestation(
+            &proposed_participant_attestation,
+            tls_public_key,
+            self.config.tee_upgrade_deadline_duration_blocks,
+        );
 
         if status == TeeQuoteStatus::Invalid {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
@@ -735,8 +540,7 @@ impl VersionedMpcContract {
         }
 
         // Add the participant information to the contract state
-        mpc_contract
-            .tee_state
+        self.tee_state
             .add_participant(account_id.clone(), proposed_participant_attestation);
 
         // Both participants and non-participants can propose. Non-participants must pay for the
@@ -784,40 +588,41 @@ impl VersionedMpcContract {
             proposal,
         );
 
-        match self {
-            Self::V2(mpc_contract) => {
-                let validation_result = mpc_contract.tee_state.validate_tee(
-                    proposal.participants(),
-                    mpc_contract.config.tee_upgrade_deadline_duration_blocks,
-                );
+        let validation_result = self.tee_state.validate_tee(
+            proposal.participants(),
+            self.config.tee_upgrade_deadline_duration_blocks,
+        );
 
-                let proposed_participants = proposal.participants();
+        let proposed_participants = proposal.participants();
 
-                match validation_result {
-                    TeeValidationResult::Full => {
-                        mpc_contract.vote_new_parameters(prospective_epoch_id, &proposal)
-                    }
-                    TeeValidationResult::Partial {
-                        participants_with_valid_attestation,
-                    } => {
-                        let invalid_participants: Vec<_> = proposed_participants
-                            .participants()
-                            .iter()
-                            .filter(|(account_id, _, _)| {
-                                participants_with_valid_attestation.is_participant(account_id)
-                            })
-                            .collect();
-
-                        Err(
-                            InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
-                                "The following participants have invalid TEE status: {:#?}",
-                                invalid_participants
-                            )),
-                        )
-                    }
+        match validation_result {
+            TeeValidationResult::Full => {
+                if let Some(new_state) = self
+                    .protocol_state
+                    .vote_new_parameters(prospective_epoch_id, &proposal)?
+                {
+                    self.protocol_state = new_state;
                 }
+                Ok(())
             }
-            _ => env::panic_str("expected V2"),
+            TeeValidationResult::Partial {
+                participants_with_valid_attestation,
+            } => {
+                let invalid_participants: Vec<_> = proposed_participants
+                    .participants()
+                    .iter()
+                    .filter(|(account_id, _, _)| {
+                        participants_with_valid_attestation.is_participant(account_id)
+                    })
+                    .collect();
+
+                Err(
+                    InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
+                        "The following participants have invalid TEE status: {:#?}",
+                        invalid_participants
+                    )),
+                )
+            }
         }
     }
 
@@ -834,10 +639,11 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             domains,
         );
-        match self {
-            Self::V2(mpc_contract) => mpc_contract.vote_add_domains(domains),
-            _ => env::panic_str("expected V2"),
+
+        if let Some(new_state) = self.protocol_state.vote_add_domains(domains)? {
+            self.protocol_state = new_state;
         }
+        Ok(())
     }
 
     /// Starts a new attempt to generate a key for the current domain.
@@ -845,10 +651,8 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         log!("start_keygen_instance: signer={}", env::signer_account_id(),);
-        match self {
-            Self::V2(contract_state) => contract_state.start_keygen_instance(key_event_id),
-            _ => env::panic_str("expected V2"),
-        }
+        self.protocol_state
+            .start_keygen_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
 
     /// Casts a vote for `public_key` for the attempt identified by `key_event_id`.
@@ -878,10 +682,19 @@ impl VersionedMpcContract {
             key_event_id,
             public_key,
         );
-        match self {
-            Self::V2(contract_state) => contract_state.vote_pk(key_event_id, public_key),
-            _ => env::panic_str("expected V2"),
+
+        let extended_key =
+            public_key
+                .try_into()
+                .map_err(|err: PublicKeyExtendedConversionError| {
+                    InvalidParameters::MalformedPayload.message(err.to_string())
+                })?;
+
+        if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
+            self.protocol_state = new_state;
         }
+
+        Ok(())
     }
 
     /// Starts a new attempt to reshare the key for the current domain.
@@ -892,10 +705,8 @@ impl VersionedMpcContract {
             "start_reshare_instance: signer={}",
             env::signer_account_id()
         );
-        match self {
-            Self::V2(contract_state) => contract_state.start_reshare_instance(key_event_id),
-            _ => env::panic_str("expected V2"),
-        }
+        self.protocol_state
+            .start_reshare_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
 
     /// Casts a vote for the successful resharing of the attempt identified by `key_event_id`.
@@ -918,22 +729,27 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             key_event_id,
         );
-        match self {
-            Self::V2(contract_state) => {
-                let resharing_concluded = contract_state.vote_reshared(key_event_id)?;
-                if resharing_concluded {
-                    // Spawn a promise to clean up TEE information for non-participants
-                    Promise::new(env::current_account_id()).function_call(
-                        "clean_tee_status".to_string(),
-                        vec![],
-                        NearToken::from_yoctonear(0),
-                        CLEAN_TEE_STATUS_GAS,
-                    );
-                }
-                Ok(())
-            }
-            _ => env::panic_str("expected V2"),
+
+        let resharing_concluded =
+            if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
+                // Resharing has concluded, transition to running state
+                self.protocol_state = new_state;
+                true
+            } else {
+                false
+            };
+
+        if resharing_concluded {
+            // Spawn a promise to clean up TEE information for non-participants
+            Promise::new(env::current_account_id()).function_call(
+                "clean_tee_status".to_string(),
+                vec![],
+                NearToken::from_yoctonear(0),
+                CLEAN_TEE_STATUS_GAS,
+            );
         }
+
+        Ok(())
     }
 
     /// Casts a vote to cancel the current key resharing. If a threshold number of unique
@@ -951,10 +767,12 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn vote_cancel_resharing(&mut self) -> Result<(), Error> {
         log!("vote_cancel_resharing: signer={}", env::signer_account_id());
-        match self {
-            Self::V2(contract_state) => contract_state.vote_cancel_resharing(),
-            _ => env::panic_str("expected V2"),
+
+        if let Some(new_state) = self.protocol_state.vote_cancel_resharing()? {
+            self.protocol_state = new_state;
         }
+
+        Ok(())
     }
 
     /// Casts a vote to cancel key generation. Any keys that have already been generated
@@ -966,10 +784,11 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn vote_cancel_keygen(&mut self, next_domain_id: u64) -> Result<(), Error> {
         log!("vote_cancel_keygen: signer={}", env::signer_account_id());
-        match self {
-            Self::V2(contract_state) => contract_state.vote_cancel_keygen(next_domain_id),
-            _ => env::panic_str("expected V2"),
+
+        if let Some(new_state) = self.protocol_state.vote_cancel_keygen(next_domain_id)? {
+            self.protocol_state = new_state;
         }
+        Ok(())
     }
 
     /// Casts a vote to abort the current key event instance. If succesful, the contract aborts the
@@ -980,10 +799,9 @@ impl VersionedMpcContract {
             "vote_abort_key_event_instance: signer={}",
             env::signer_account_id()
         );
-        match self {
-            Self::V2(contract_state) => contract_state.vote_abort_key_event_instance(key_event_id),
-            _ => env::panic_str("expected V2"),
-        }
+
+        self.protocol_state
+            .vote_abort_key_event_instance(key_event_id)
     }
 
     /// Propose update to either code or config, but not both of them at the same time.
@@ -1007,7 +825,7 @@ impl VersionedMpcContract {
             )));
         }
 
-        let id = self.proposed_updates().propose(update);
+        let id = self.proposed_updates.propose(update);
 
         log!(
             "propose_update: signer={}, id={:?}",
@@ -1038,19 +856,14 @@ impl VersionedMpcContract {
             env::signer_account_id(),
             id,
         );
-        let threshold = if let Self::V2(mpc_contract) = self {
-            if !matches!(
-                mpc_contract.protocol_state,
-                ProtocolContractState::Running(_)
-            ) {
-                env::panic_str("protocol must be in running state");
-            }
-            mpc_contract.threshold()?
-        } else {
-            env::panic_str("expected V2");
+        let ProtocolContractState::Running(_running_state) = &self.protocol_state else {
+            env::panic_str("protocol must be in running state");
         };
+
+        let threshold = self.threshold()?;
+
         let voter = self.voter_or_panic();
-        let Some(votes) = self.proposed_updates().vote(&id, voter) else {
+        let Some(votes) = self.proposed_updates.vote(&id, voter) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
 
@@ -1059,7 +872,7 @@ impl VersionedMpcContract {
             return Ok(false);
         }
 
-        let Some(_promise) = self.proposed_updates().do_update(&id, UPDATE_CONFIG_GAS) else {
+        let Some(_promise) = self.proposed_updates.do_update(&id, UPDATE_CONFIG_GAS) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
 
@@ -1074,36 +887,42 @@ impl VersionedMpcContract {
             code_hash,
         );
         self.voter_or_panic();
-        match self {
-            Self::V2(contract) => contract.vote_code_hash(code_hash)?,
-            _ => env::panic_str("expected V2"),
+
+        let ProtocolContractState::Running(state) = &self.protocol_state else {
+            return Err(InvalidState::ProtocolStateNotRunning.into());
+        };
+
+        let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
+        let votes = self.tee_state.vote(code_hash.clone(), &participant);
+
+        // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
+        // update the state
+        if votes >= self.threshold()?.value() {
+            self.tee_state.whitelist_tee_proposal(
+                code_hash,
+                self.config.tee_upgrade_deadline_duration_blocks,
+            );
         }
+
         Ok(())
     }
 
-    #[handle_result]
-    pub fn allowed_code_hashes(&mut self) -> Result<Vec<MpcDockerImageHash>, Error> {
+    pub fn allowed_code_hashes(&mut self) -> Vec<MpcDockerImageHash> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
-        match self {
-            Self::V2(contract) => {
-                let tee_upgrade_deadline_duration_blocks =
-                    contract.config.tee_upgrade_deadline_duration_blocks;
+        let tee_upgrade_deadline_duration_blocks = self.config.tee_upgrade_deadline_duration_blocks;
 
-                Ok(contract
-                    .tee_state
-                    .get_allowed_hashes(tee_upgrade_deadline_duration_blocks))
-            }
-            _ => env::panic_str("expected V2"),
-        }
+        self.tee_state
+            .get_allowed_hashes(tee_upgrade_deadline_duration_blocks)
     }
 
-    #[handle_result]
-    pub fn latest_code_hash(&mut self) -> Result<MpcDockerImageHash, Error> {
+    pub fn latest_code_hash(&mut self) -> MpcDockerImageHash {
         log!("latest_code_hash: signer={}", env::signer_account_id());
-        match self {
-            Self::V2(contract) => Ok(contract.latest_code_hash()),
-            _ => env::panic_str("expected V2"),
-        }
+
+        self.tee_state
+            .get_allowed_hashes(self.config.tee_upgrade_deadline_duration_blocks)
+            .last()
+            .expect("there must be at least one allowed code hash")
+            .clone()
     }
 
     /// Returns all accounts that have TEE attestations stored in the contract.
@@ -1111,10 +930,7 @@ impl VersionedMpcContract {
     /// submitted TEE information but are not currently part of the active participant set.
     pub fn get_tee_accounts(&self) -> Vec<AccountId> {
         log!("get_tee_accounts: signer={}", env::signer_account_id());
-        match self {
-            Self::V2(contract) => contract.tee_state.get_tee_accounts(),
-            _ => env::panic_str("expected V2"),
-        }
+        self.tee_state.get_tee_accounts()
     }
 
     /// Verifies if all current participants have an accepted TEE state.
@@ -1125,23 +941,19 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn verify_tee(&mut self) -> Result<bool, Error> {
         log!("verify_tee: signer={}", env::signer_account_id());
-        let Self::V2(contract) = self else {
-            env::panic_str("expected V1")
-        };
-        let ProtocolContractState::Running(running_state) = &mut contract.protocol_state else {
+        let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
         let current_params = running_state.parameters.clone();
 
-        let tee_upgrade_deadline_duration_blocks =
-            contract.config.tee_upgrade_deadline_duration_blocks;
+        let tee_upgrade_deadline_duration_blocks = self.config.tee_upgrade_deadline_duration_blocks;
 
-        match contract.tee_state.validate_tee(
+        match self.tee_state.validate_tee(
             current_params.participants(),
             tee_upgrade_deadline_duration_blocks,
         ) {
             TeeValidationResult::Full => {
-                contract.accept_requests = true;
+                self.accept_requests = true;
                 log!("All participants have an accepted Tee status");
                 Ok(true)
             }
@@ -1152,13 +964,13 @@ impl VersionedMpcContract {
                 let remaining = participants_with_valid_attestation.len();
                 if threshold > remaining {
                     log!("Less than `threshold` participants are left with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.");
-                    contract.accept_requests = false;
+                    self.accept_requests = false;
                     return Ok(false);
                 }
 
                 // here, we set it to true, because at this point, we have at least `threshold`
                 // number of participants with an accepted Tee status.
-                contract.accept_requests = true;
+                self.accept_requests = true;
 
                 // do we want to adjust the threshold?
                 //let n_participants_new = new_participants.len();
@@ -1174,7 +986,7 @@ impl VersionedMpcContract {
                 current_params.validate_incoming_proposal(&threshold_parameters)?;
                 let res = running_state.transition_to_resharing_no_checks(&threshold_parameters);
                 if let Some(resharing) = res {
-                    contract.protocol_state = ProtocolContractState::Resharing(resharing);
+                    self.protocol_state = ProtocolContractState::Resharing(resharing);
                 }
 
                 Ok(false)
@@ -1188,16 +1000,22 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn clean_tee_status(&mut self) -> Result<(), Error> {
         log!("clean_tee_status: signer={}", env::signer_account_id());
-        match self {
-            Self::V2(contract) => contract.clean_tee_status(),
-            _ => env::panic_str("expected V2"),
-        }
+
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                return Err(InvalidState::ProtocolStateNotRunning.into());
+            }
+        };
+
+        self.tee_state.clean_non_participants(participants);
+        Ok(())
     }
 }
 
 // Contract developer helper API
 #[near_bindgen]
-impl VersionedMpcContract {
+impl MpcContract {
     #[handle_result]
     #[init]
     pub fn init(
@@ -1212,7 +1030,21 @@ impl VersionedMpcContract {
         );
         parameters.validate()?;
 
-        Ok(Self::V2(MpcContract::init(parameters, init_config)))
+        parameters.validate().unwrap();
+
+        Ok(Self {
+            protocol_state: ProtocolContractState::Running(RunningContractState::new(
+                DomainRegistry::default(),
+                Keyset::new(EpochId::new(0), Vec::new()),
+                parameters,
+            )),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+            proposed_updates: ProposedUpdates::default(),
+            config: Config::from(init_config),
+            tee_state: TeeState::default(),
+            accept_requests: true,
+        })
     }
 
     // This function can be used to transfer the MPC network to a new contract.
@@ -1248,7 +1080,7 @@ impl VersionedMpcContract {
             return Err(DomainError::DomainsMismatch.into());
         }
 
-        Ok(Self::V2(MpcContract {
+        Ok(MpcContract {
             config: Config::from(init_config),
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 domains, keyset, parameters,
@@ -1258,7 +1090,7 @@ impl VersionedMpcContract {
             proposed_updates: Default::default(),
             tee_state: Default::default(),
             accept_requests: true,
-        }))
+        })
     }
 
     /// This will be called internally by the contract to migrate the state when a new contract
@@ -1272,62 +1104,42 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
-        if let Some(contract) = env::state_read::<VersionedMpcContract>() {
+        if let Some(contract) = env::state_read::<v0_state::VersionedMpcContract>() {
             return match contract {
-                VersionedMpcContract::V1(x) => Ok(VersionedMpcContract::V2(x.into())),
-                VersionedMpcContract::V2(_) => Ok(contract),
-                _ => env::panic_str("expected V1 or V2"),
+                v0_state::VersionedMpcContract::V1(x) => Ok(x.into()),
+                _ => env::panic_str("expected V1"),
             };
         }
         Err(InvalidState::ContractStateIsMissing.into())
     }
 
     pub fn state(&self) -> &ProtocolContractState {
-        match self {
-            Self::V2(mpc_contract) => &mpc_contract.protocol_state,
-            _ => env::panic_str("expected V2"),
-        }
+        &self.protocol_state
     }
 
     pub fn allowed_docker_image_hashes(&self) -> Vec<AllowedDockerImageHash> {
-        match self {
-            Self::V2(mpc_contract) => {
-                let tee_upgrade_deadline_duration_blocks =
-                    mpc_contract.config.tee_upgrade_deadline_duration_blocks;
+        let tee_upgrade_deadline_duration_blocks = self.config.tee_upgrade_deadline_duration_blocks;
 
-                let current_block_height = env::block_height();
+        let current_block_height = env::block_height();
 
-                // this is a query method, meaning no `&mut self`, so we need to clone.
-                let mut allowed_image_hashes =
-                    mpc_contract.tee_state.allowed_docker_image_hashes.clone();
+        // this is a query method, meaning no `&mut self`, so we need to clone.
+        let mut allowed_image_hashes = self.tee_state.allowed_docker_image_hashes.clone();
 
-                allowed_image_hashes
-                    .get(current_block_height, tee_upgrade_deadline_duration_blocks)
-                    .to_vec()
-            }
-            _ => env::panic_str("expected V2"),
-        }
+        allowed_image_hashes
+            .get(current_block_height, tee_upgrade_deadline_duration_blocks)
+            .to_vec()
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
-        match self {
-            Self::V2(mpc_contract) => mpc_contract.get_pending_request(request),
-            _ => env::panic_str("expected V2"),
-        }
+        self.pending_signature_requests.get(request).cloned()
     }
 
     pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
-        match self {
-            Self::V2(mpc_contract) => mpc_contract.get_pending_ckd_request(request),
-            _ => env::panic_str("expected V2"),
-        }
+        self.pending_ckd_requests.get(request).cloned()
     }
 
     pub fn config(&self) -> &Config {
-        match self {
-            Self::V2(mpc_contract) => &mpc_contract.config,
-            _ => env::panic_str("expected V2"),
-        }
+        &self.config
     }
 
     // contract version
@@ -1344,13 +1156,10 @@ impl VersionedMpcContract {
         request: SignatureRequest, // this change here should actually be ok.
         #[callback_result] signature: Result<SignatureResponse, PromiseError>,
     ) -> PromiseOrValue<SignatureResponse> {
-        let Self::V2(mpc_contract) = self else {
-            env::panic_str("expected V2")
-        };
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
-                mpc_contract.pending_signature_requests.remove(&request);
+                self.pending_signature_requests.remove(&request);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     "fail_on_timeout".to_string(),
                     vec![],
@@ -1371,13 +1180,10 @@ impl VersionedMpcContract {
         request: CKDRequest,
         #[callback_result] ck: Result<CKDResponse, PromiseError>,
     ) -> PromiseOrValue<CKDResponse> {
-        let Self::V2(mpc_contract) = self else {
-            env::panic_str("expected V2")
-        };
         match ck {
             Ok(ck) => PromiseOrValue::Value(ck),
             Err(_) => {
-                mpc_contract.pending_ckd_requests.remove(&request);
+                self.pending_ckd_requests.remove(&request);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     "fail_on_timeout".to_string(),
                     vec![],
@@ -1397,29 +1203,14 @@ impl VersionedMpcContract {
 
     #[private]
     pub fn update_config(&mut self, config: Config) {
-        let Self::V2(mpc_contract) = self else {
-            env::panic_str("expected v2")
-        };
-        mpc_contract.config = config;
-    }
-
-    fn proposed_updates(&mut self) -> &mut ProposedUpdates {
-        match self {
-            Self::V2(contract) => &mut contract.proposed_updates,
-            _ => env::panic_str("expected V2"),
-        }
+        self.config = config;
     }
 
     /// Get our own account id as a voter. Returns an error if we are not a participant.
     fn voter_account(&self) -> Result<AccountId, Error> {
         let voter = env::signer_account_id();
-        match self {
-            Self::V2(mpc_contract) => {
-                mpc_contract.protocol_state.authenticate_update_vote()?;
-                Ok(voter)
-            }
-            _ => env::panic_str("expected V2"),
-        }
+        self.protocol_state.authenticate_update_vote()?;
+        Ok(voter)
     }
 
     /// Get our own account id as a voter. If we are not a participant, panic.
@@ -1458,7 +1249,7 @@ mod tests {
         k256::SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
     }
 
-    fn basic_setup() -> (VMContext, VersionedMpcContract, SigningKey) {
+    fn basic_setup() -> (VMContext, MpcContract, SigningKey) {
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
             .build();
@@ -1483,8 +1274,7 @@ mod tests {
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
         let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
-        let contract =
-            VersionedMpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
+        let contract = MpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
         (context, contract, secret_key)
     }
 
@@ -1669,7 +1459,7 @@ mod tests {
     fn setup_tee_test_contract(
         num_participants: usize,
         threshold_value: u64,
-    ) -> (VersionedMpcContract, Participants, AccountId) {
+    ) -> (MpcContract, Participants, AccountId) {
         let participants = primitives::test_utils::gen_participants(num_participants);
         let first_participant_id = participants.participants()[0].0.clone();
 
@@ -1681,13 +1471,13 @@ mod tests {
 
         let threshold = Threshold::new(threshold_value);
         let parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
-        let contract = VersionedMpcContract::init(parameters, None).unwrap();
+        let contract = MpcContract::init(parameters, None).unwrap();
 
         (contract, participants, first_participant_id)
     }
 
     fn submit_attestation(
-        contract: &mut VersionedMpcContract,
+        contract: &mut MpcContract,
         participants: &Participants,
         participant_index: usize,
         is_valid: bool,
@@ -1712,7 +1502,7 @@ mod tests {
     }
 
     fn submit_valid_attestations(
-        contract: &mut VersionedMpcContract,
+        contract: &mut MpcContract,
         participants: &Participants,
         participant_indices: &[usize],
     ) {
@@ -1729,7 +1519,7 @@ mod tests {
     /// Sets up the voting context and calls [`VersionedMpcContract::vote_new_parameters`] with the
     /// given parameters.
     fn setup_voting_context_and_vote(
-        contract: &mut VersionedMpcContract,
+        contract: &mut MpcContract,
         first_participant_id: &AccountId,
         participants: Participants,
         threshold: Threshold,

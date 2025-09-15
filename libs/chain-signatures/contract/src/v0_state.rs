@@ -170,3 +170,14 @@ impl From<MpcContractV1> for MpcContract {
         }
     }
 }
+
+/// Store two version of the MPC contract for migration and backward compatibility purposes.
+/// Note: Probably, you don't need to change this struct.
+// #[near_bindgen]
+#[derive(borsh::BorshDeserialize, borsh::BorshSerialize, Debug)]
+pub enum VersionedMpcContract {
+    /// This is no longer deployed
+    V0,
+    /// Currently on mainnet and testnet
+    V1(MpcContractV1),
+}
