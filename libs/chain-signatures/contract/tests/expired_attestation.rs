@@ -27,9 +27,9 @@ async fn test_participant_kickout_after_expiration() -> Result<()> {
     // Setup: Give first two participants valid non-expiring attestations
     let valid_attestation = Attestation::Mock(MockAttestation::Valid);
 
-    for i in 0..2 {
+    for account in &accounts[0..2] {
         let submission_success =
-            submit_participant_info(&accounts[i], &contract, &valid_attestation, &tls_key).await?;
+            submit_participant_info(account, &contract, &valid_attestation, &tls_key).await?;
         assert!(submission_success);
     }
 
@@ -132,8 +132,8 @@ async fn test_participant_kickout_after_expiration() -> Result<()> {
 
     // Step 3b: Complete the resharing process by having valid participants vote
     // We'll have the valid participants (those without expired attestations) vote
-    for i in 0..2 {
-        let _vote_result = accounts[i]
+    for account in &accounts[0..2] {
+        let _vote_result = account
             .call(contract.id(), "vote_reshared")
             .args_json(serde_json::json!({ "key_event_id": key_event_id }))
             .max_gas()
