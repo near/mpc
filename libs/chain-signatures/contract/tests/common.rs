@@ -26,6 +26,7 @@ use mpc_contract::{
         signature::{Bytes, SignatureRequest, Tweak},
         thresholds::{Threshold, ThresholdParameters},
     },
+    tee::tee_state::NodeUid,
     update::UpdateId,
 };
 use mpc_contract::{
@@ -80,7 +81,8 @@ pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
             ParticipantInfo {
                 url: "127.0.0.1".into(),
                 sign_pk: near_sdk::PublicKey::from_str(
-                    "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae",
+                    "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae", // todo: replace with
+                                                                            // random string
                 )
                 .unwrap(),
             },
@@ -642,7 +644,7 @@ pub fn check_call_success(result: ExecutionFinalResult) {
 }
 
 /// Helper function to get TEE participants from contract.
-pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<Vec<AccountId>> {
+pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<Vec<NodeUid>> {
     Ok(contract
         .call("get_tee_accounts")
         .args_json(serde_json::json!({}))
