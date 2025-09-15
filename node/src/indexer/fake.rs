@@ -7,6 +7,7 @@ use crate::indexer::handler::CKDRequestFromChain;
 use crate::indexer::types::ChainCKDRespondArgs;
 use crate::providers::PublicKeyConversion;
 use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
+use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::CKDId;
 use crate::types::SignatureId;
@@ -738,7 +739,11 @@ impl FakeIndexerManager {
         &mut self,
         uid: TestNodeUid,
         account_id: AccountId,
-    ) -> (IndexerAPI, AutoAbortTask<()>, Arc<std::sync::Mutex<String>>) {
+    ) -> (
+        IndexerAPI<MockTransactionSender>,
+        AutoAbortTask<()>,
+        Arc<std::sync::Mutex<String>>,
+    ) {
         let (api_state_sender, api_state_receiver) = watch::channel(ContractState::WaitingForSync);
         let (api_signature_request_sender, api_signature_request_receiver) =
             mpsc::unbounded_channel();
@@ -746,12 +751,15 @@ impl FakeIndexerManager {
         let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
             watch::channel(vec![]);
 
+        let mock_transaction_sender = MockTransactionSender {
+            transaction_sender: api_txn_sender,
+        };
         let indexer = IndexerAPI {
             contract_state_receiver: api_state_receiver,
             block_update_receiver: Arc::new(tokio::sync::Mutex::new(
                 api_signature_request_receiver,
             )),
-            txn_sender: api_txn_sender,
+            txn_sender: mock_transaction_sender,
             allowed_docker_images_receiver,
         };
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

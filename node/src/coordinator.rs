@@ -5,8 +5,7 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::types::ChainSendTransactionRequest;
-use crate::indexer::IndexerAPI;
+use crate::indexer::{tx_sender, IndexerAPI};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
 };
@@ -47,7 +46,7 @@ use tracing::{error, info};
 /// accordingly: if the contract says we need to generate keys, we generate
 /// keys; if the contract says we're running, we run the MPC protocol; if the
 /// contract says we need to perform key resharing, we perform key resharing.
-pub struct Coordinator {
+pub struct Coordinator<TransactionSender> {
     pub clock: Clock,
     pub secrets: SecretsConfig,
     pub config_file: ConfigFile,
@@ -58,7 +57,7 @@ pub struct Coordinator {
     pub key_storage_config: KeyStorageConfig,
 
     /// For interaction with the indexer.
-    pub indexer: IndexerAPI,
+    pub indexer: IndexerAPI<TransactionSender>,
 
     /// For testing, to know what the current state is.
     pub currently_running_job_name: Arc<Mutex<String>>,
@@ -94,7 +93,10 @@ enum MpcJobResult {
     HaltUntilInterrupted,
 }
 
-impl Coordinator {
+impl<TransactionSender> Coordinator<TransactionSender>
+where
+    TransactionSender: tx_sender::TransactionSender + 'static,
+{
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
@@ -263,7 +265,7 @@ impl Coordinator {
         config_file: ConfigFile,
         keyshare_storage: Arc<KeyshareStorage>,
         participants: ParticipantsConfig,
-        chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+        chain_txn_sender: TransactionSender,
         key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     ) -> anyhow::Result<MpcJobResult> {
         let p2p_key = &secrets.persistent_secrets.p2p_private_key;
@@ -317,7 +319,7 @@ impl Coordinator {
         config_file: ConfigFile,
         keyshare_storage: KeyshareStorage,
         running_state: ContractRunningState,
-        chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+        chain_txn_sender: TransactionSender,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -592,7 +594,7 @@ impl Coordinator {
         mpc_config: &MpcConfig,
         network_client: Arc<MeshNetworkClient>,
         channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-        chain_txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+        chain_txn_sender: TransactionSender,
         key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Starting key resharing.");

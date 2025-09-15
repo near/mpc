@@ -24,6 +24,7 @@ pub mod tee;
 #[cfg(test)]
 pub mod fake;
 
+#[derive(Debug)]
 pub(crate) struct IndexerState {
     /// For querying blockchain state.
     view_client: actix::Addr<near_client::ViewClientActor>,
@@ -59,7 +60,7 @@ impl IndexerState {
 /// with the indexer.
 /// TODO(#155): This would be the interface to abstract away having an indexer
 /// running in a separate process.
-pub struct IndexerAPI {
+pub struct IndexerAPI<TransactionSender> {
     /// Provides the current contract state as well as updates to it.
     pub contract_state_receiver: watch::Receiver<ContractState>,
     /// Provides block updates (signature requests and other relevant receipts).
@@ -70,9 +71,8 @@ pub struct IndexerAPI {
     /// We do not want to re-create the channel, because while resharing is
     /// happening we want to buffer the signature requests.
     pub block_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
-    /// Sender to request transactions be signed (by a TransactionSigner that
-    /// the indexer is initialized with) and sent to the chain.
-    pub txn_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    /// Handle to transaction processor.
+    pub txn_sender: TransactionSender,
     /// Watcher that keeps track of allowed [`AllowedDockerImageHash`]es on the contract.
     pub allowed_docker_images_receiver: watch::Receiver<Vec<AllowedDockerImageHash>>,
 }
