@@ -46,6 +46,8 @@ if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
     docker buildx create --use --driver-opt image=moby/buildkit:v${buildkit_version} --name ${buildkit_image_name}
 fi
 
+SOURCE_DATE_EPOCH=${SOURCE_DATE} repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --release --locked
+
 
 docker buildx build --builder ${buildkit_image_name} --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
