@@ -88,15 +88,17 @@ def compile_contract_common(contract_package_name: str):
         stderr=sys.stderr,
     )
 
-    contract_bin_name = f"{contract_package_name.replace('-', '_')}.wasm"
+    contract_compiled_file_name = contracts.contract_compiled_file_name(
+        contract_package_name
+    )
 
     subprocess.run(
         [
             "wasm-opt",
             "-Oz",
-            f"target/wasm32-unknown-unknown/release-contract/{contract_bin_name}",
+            f"target/wasm32-unknown-unknown/release-contract/{contract_compiled_file_name}",
             "-o",
-            f"target/wasm32-unknown-unknown/release-contract/{contract_bin_name}",
+            f"target/wasm32-unknown-unknown/release-contract/{contract_compiled_file_name}",
         ],
         cwd=repository_root_path,
         check=True,
@@ -105,48 +107,37 @@ def compile_contract_common(contract_package_name: str):
     )
 
 
-# @pytest.fixture(scope="session", autouse=True)
-# def compile_mpc_contract(request):
-#     """
-#     This function navigates to the chain-signatures directory, compiles the mpc-contract and moves it in the res folder.
-#     This ensures that the pytests will always use the source code inside chain-signatures/contract.
-#     """
+@pytest.fixture(scope="session", autouse=True)
+def compile_mpc_contract(request):
+    """
+    This function navigates to the chain-signatures directory, compiles the mpc-contract and moves it in the res folder.
+    This ensures that the pytests will always use the source code inside chain-signatures/contract.
+    """
 
-#     git_root_directory = git_root()
-#     manifest_path = Path("libs") / "chain-signatures" / "contract" / "Cargo.toml"
-#     non_reproducible = request.config.getoption("--non-reproducible")
+    git_root_directory = git_root()
+    non_reproducible = request.config.getoption("--non-reproducible")
 
-#     if not non_reproducible:
-#         print("compiling mpc contract")
-#         subprocess.run(
-#             [
-#                 "cargo",
-#                 "near",
-#                 "build",
-#                 "reproducible-wasm",
-#                 "--manifest-path",
-#                 manifest_path,
-#                 "--out-dir",
-#                 Path("target") / "wasm32-unknown-unknown" / "release-reproducible",
-#             ],
-#             cwd=git_root_directory,
-#             check=True,
-#             stdout=sys.stdout,
-#             stderr=sys.stderr,
-#         )
+    if not non_reproducible:
+        print("compiling mpc contract")
+        subprocess.run(
+            [
+                "cargo",
+                "near",
+                "build",
+                "reproducible-wasm",
+                "--manifest-path",
+                contracts.MPC_CONTRACT_MANIFEST_PATH,
+                "--out-dir",
+                contracts.COMPILED_CONTRACT_DIRECTORY,
+            ],
+            cwd=git_root_directory,
+            check=True,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
 
-#         os.makedirs(os.path.dirname(contracts.COMPILED_CONTRACT_PATH), exist_ok=True)
-#         shutil.copy(
-#             git_root_directory
-#             / "target"
-#             / "wasm32-unknown-unknown"
-#             / "release-reproducible"
-#             / "mpc_contract.wasm",
-#             contracts.COMPILED_CONTRACT_PATH,
-#         )
-#     else:
-#         compile_contract_common("mpc-contract", contracts.COMPILED_CONTRACT_PATH
-#         )
+    else:
+        compile_contract_common(contracts.MPC_CONTRACT_PACKAGE_NAME)
 
 
 @pytest.fixture(scope="session")
@@ -157,7 +148,7 @@ def compile_parallel_contract(request):
     """
 
     compile_contract_common(
-        "parallel-contract",
+        contracts.PARALLEL_CONTRACT_PACKAGE_NAME,
     )
 
 
@@ -168,8 +159,7 @@ def compile_migration_contract(request):
     compiles the contract and moves it in the res folder.
     """
     compile_contract_common(
-        "test-migration-contract",
-        contracts.MIGRATE_CURRENT_CONTRACT_PATH,
+        contracts.MIGRATION_CONTRACT_PACKAGE_NAME,
     )
 
 

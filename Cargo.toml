@@ -1,19 +1,19 @@
 [workspace]
-members = ["node",
-"libs/chain-signatures/contract",
-"devnet", "crates/attestation", 
-"crates/primitives", 
-"crates/tee_authority", 
-"crates/test_utils", 
-"crates/tls",
-"crates/contract_history",
-"pytest/test_contracts/migration",
-"pytest/test_contracts/parallel",]
-
-
-
 resolver = "2"
-exclude = ["libs", "pytest"]
+exclude = ["libs/nearcore"]
+members = [
+    "libs/chain-signatures/contract",
+    "crates/attestation", 
+    "crates/primitives", 
+    "crates/tee_authority", 
+    "crates/test_utils", 
+    "crates/tls",
+    "crates/contract_history",
+    "devnet",
+    "node",
+    "pytest/test_contracts/migration",
+    "pytest/test_contracts/parallel"
+]
 
 [profile.dev-release]
 inherits = "release"
@@ -32,12 +32,14 @@ opt-level = "s"
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
-mpc-primitives = { path = "crates/primitives", features = ["abi"]}
+mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 test_utils = { path = "crates/test_utils" }
 tee_authority = { path = "crates/tee_authority" }
 mpc-contract = { path = "libs/chain-signatures/contract/", features = [
     "dev-utils",
 ] }
+mpc-tls = { path = "crates/tls" }
+
 
 actix = "0.13.0"
 aes-gcm = "0.10.3"
@@ -82,7 +84,6 @@ k256 = "0.13.4"
 lazy_static = "1.5.0"
 lru = "0.12.5"
 mockall = "0.13.1"
-mpc-tls = { path = "crates/tls" }
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
@@ -126,7 +127,6 @@ tracing-subscriber = { version = "0.3.20", features = [
 url = "2"
 x509-parser = "0.16.0"
 
-mpc-node = { path = "node" }
 
 # NEAR CORE DEPENDENCIES:
 near-indexer = { git = "https://github.com/near/nearcore", tag = "2.7.0" }

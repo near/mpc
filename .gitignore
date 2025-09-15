@@ -4,9 +4,9 @@ venv
 .vscode
 
 **/target/
+**/__pycache__/
 /pytest/output.log
 /pytest/venv/
-/pytest/**/__pycache__/
 /pytest/contract_history/*.wasm
 /pytest/nearcore_pytest/nearcore_pytest.egg-info/
 
