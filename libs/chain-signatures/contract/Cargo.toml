@@ -29,11 +29,12 @@ container_build_command = [
     "build",
     # this is counter intuitive, but it correctly follows the docs,
     # the non-reproducible build inside a reproducible environment becomes reproducible
-    "non-reproducible-wasm", 
+    "non-reproducible-wasm",
     "--locked",
-    "--profile=contract-release",
-    "--features", "abi",
-    "--no-embed-abi"
+    "--profile=release-contract",
+    "--features",
+    "abi",
+    "--no-embed-abi",
 ]
 
 [dependencies]
@@ -89,9 +90,8 @@ signature = "2.2.0"
 digest = "0.10.7"
 
 near-workspaces = "0.21.0"
-# near-primitives = "=0.29.2" # not entirely clear why this is needed but otherwise tests don't compile
 # Current HEAD of main branch as of 12-09-2025
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "de8fd0f3caef0920ba94eda48f9d772d9b88f924"}
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "de8fd0f3caef0920ba94eda48f9d772d9b88f924" }
 fs2 = "0.4"
 rstest = "0.25.0"
 
