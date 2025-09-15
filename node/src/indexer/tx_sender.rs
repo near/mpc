@@ -96,7 +96,7 @@ pub(crate) fn start_transaction_processor(
     owner_account_id: AccountId,
     owner_secret_key: SigningKey,
     config: RespondConfig,
-    indexer_state_receiver: oneshot::Receiver<Arc<IndexerState>>,
+    indexer_state: Arc<IndexerState>,
 ) -> impl TransactionSender {
     let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
         .expect("Failed to initialize transaction signers");
@@ -105,10 +105,6 @@ pub(crate) fn start_transaction_processor(
         mpsc::channel::<TransactionSenderSubmission>(TRANSACTION_PROCESSOR_CHANNEL_SIZE);
 
     tokio::spawn(async move {
-        let indexer_state = indexer_state_receiver
-            .await
-            .expect("Indexer must be running");
-
         while let Some(transaction_submission) = transaction_receiver.recv().await {
             let tx_request = transaction_submission.transaction;
 
