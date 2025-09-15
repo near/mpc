@@ -35,4 +35,4 @@ jobs:
       - name: Build and publish images
         shell: bash
         run: |
-          ./deployment/build-images.sh #--push
+          ./deployment/build-images.sh --push

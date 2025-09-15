@@ -9,6 +9,13 @@ exclude = ["libs", "pytest"]
 inherits = "release"
 debug = true
 
+[profile.reproducible]
+inherits = "release"
+debug = false
+panic = "abort"
+codegen-units = 1
+overflow-checks = true
+
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }

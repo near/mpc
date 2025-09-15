@@ -61,7 +61,7 @@ build-reproducible: ## Build reproducible static binary for x86_64
 	CARGO_INCREMENTAL=${CARGO_INCREMENTAL_VAL} \
 	LC_ALL=${LOCALE_VAL} \
 	TZ=${TZ_VAL} \
-	cargo build -p mpc-node --release --locked --target $(TARGET)
+	cargo build -p mpc-node --locked --target $(TARGET) --profile reproducible
 	@echo "SOURCE_DATE_EPOCH = $(SOURCE_DATE)"
 	@sha256sum $(BUILD_PATH)/mpc-node
 
