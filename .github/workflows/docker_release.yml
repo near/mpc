@@ -16,7 +16,7 @@ on:
 jobs:
   docker-image-build:
     name: "Build and push MPC Docker image"
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: warp-ubuntu-2404-x64-8x
     permissions:
       contents: read
 
@@ -35,7 +35,7 @@ jobs:
       - name: Install repro-env
         shell: bash
         run: |
-          sudo apt-get install -y repro-env
+          sudo apt-get install -y podman repro-env
 
       - name: Build and publish images
         shell: bash
