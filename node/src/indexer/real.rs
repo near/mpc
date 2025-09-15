@@ -64,7 +64,7 @@ pub fn spawn_real_indexer(
     // TODO(#156): replace actix with tokio
     std::thread::spawn(move || {
         actix::System::new().block_on(async {
-            // We have this indirection of using a oneshot for sending the sender,
+            // We have this indirection of using a oneshot for sending the indexer state,
             // as we can't block the main thread for waiting on the `txn_sender`.
             // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
             let indexer =
