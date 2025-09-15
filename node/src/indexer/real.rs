@@ -79,12 +79,18 @@ pub fn spawn_real_indexer(
                 indexer_config.mpc_contract_id.clone(),
             ));
 
-            let txn_sender = TransactionProcessorHandle::start_transaction_processor(
+            let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
                 account_secret_key.clone(),
                 respond_config_clone,
                 Arc::clone(&indexer_state),
             );
+
+            let Ok(txn_sender) = txn_sender_result else {
+                tracing::error!("Failed to start transaction processor. Exiting indexer.");
+                let _ = indexer_exit_sender.send(txn_sender_result.map(|_| ()));
+                return;
+            };
 
             if txn_sender_sender.send(txn_sender).is_err() {
                 tracing::error!("Failed to send txn_sender back to main thread.")
