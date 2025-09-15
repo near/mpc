@@ -5,6 +5,8 @@ use rand::rngs::OsRng;
 use std::collections::HashMap;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
+use threshold_signatures::frost_ed25519::Ed25519Sha512;
+use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
 use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
 
 use crate::config::{
@@ -34,8 +36,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignArguments;
-use threshold_signatures::ecdsa::FullSignature;
-use threshold_signatures::{ecdsa, eddsa};
+use threshold_signatures::ecdsa::Signature;
+use threshold_signatures::{ecdsa, eddsa, keygen};
 use tokio::time::timeout;
 
 mod basic_cluster;
@@ -86,7 +88,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    ecdsa::dkg_ecdsa::keygen(&self.participants, *participant, self.threshold)
+                    keygen::<Secp256K1Sha256>(&self.participants, *participant, self.threshold)
                         .unwrap(),
                 ),
             ));
@@ -100,7 +102,7 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    eddsa::dkg_ed25519::keygen(&self.participants, *participant, self.threshold)
+                    keygen::<Ed25519Sha512>(&self.participants, *participant, self.threshold)
                         .unwrap(),
                 ),
             ));
@@ -140,8 +142,6 @@ impl TestGenerators {
                     ecdsa::ot_based_ecdsa::presign::presign(
                         &self.participants,
                         *participant,
-                        &self.participants,
-                        *participant,
                         PresignArguments {
                             triple0: triple0s[participant].clone(),
                             triple1: triple1s[participant].clone(),
@@ -161,8 +161,8 @@ impl TestGenerators {
         presignatures: &HashMap<Participant, PresignOutput>,
         public_key: AffinePoint,
         msg_hash: Scalar,
-    ) -> FullSignature {
-        let mut protocols: Vec<ParticipantAndProtocol<FullSignature>> = Vec::new();
+    ) -> Signature {
+        let mut protocols: Vec<ParticipantAndProtocol<Signature>> = Vec::new();
         for participant in &self.participants {
             protocols.push((
                 *participant,

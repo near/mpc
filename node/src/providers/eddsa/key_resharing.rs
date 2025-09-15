@@ -6,7 +6,7 @@ use crate::protocol::run_protocol;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use threshold_signatures::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
-use threshold_signatures::frost_ed25519::VerifyingKey;
+use threshold_signatures::frost_ed25519::{Ed25519Sha512, VerifyingKey};
 use threshold_signatures::protocol::Participant;
 
 impl EddsaSignatureProvider {
@@ -74,7 +74,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let protocol = threshold_signatures::eddsa::dkg_ed25519::reshare(
+        let protocol = threshold_signatures::reshare::<Ed25519Sha512>(
             &old_participants,
             self.old_threshold,
             self.my_share,

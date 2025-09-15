@@ -89,8 +89,8 @@ digest = "0.10.7"
 
 near-workspaces = "0.18"
 near-primitives = "=0.29.2" # not entirely clear why this is needed but otherwise tests don't compile
-# Current HEAD of main branch as of 28-08-2025
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "b4fbf84ad3244d54f4db54d3b283989861cd5f53"}
+# Current HEAD of main branch as of 12-09-2025
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "de8fd0f3caef0920ba94eda48f9d772d9b88f924"}
 fs2 = "0.4"
 rstest = "0.25.0"
 

@@ -27,8 +27,8 @@ use k256::{AffinePoint, EncodedPoint};
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
-use threshold_signatures::ecdsa::FullSignature;
 use threshold_signatures::ecdsa::KeygenOutput;
+use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 
@@ -138,7 +138,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
     type PublicKey = VerifyingKey;
     type SecretShare = SigningShare;
     type KeygenOutput = KeygenOutput;
-    type Signature = FullSignature;
+    type Signature = Signature;
     type TaskId = EcdsaTaskId;
 
     async fn make_signature(

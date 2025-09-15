@@ -790,16 +790,31 @@ impl VersionedMpcContract {
                     proposal.participants(),
                     mpc_contract.config.tee_upgrade_deadline_duration_blocks,
                 );
+
+                let proposed_participants = proposal.participants();
+
                 match validation_result {
                     TeeValidationResult::Full => {
                         mpc_contract.vote_new_parameters(prospective_epoch_id, &proposal)
                     }
-                    TeeValidationResult::Partial(invalid_participants) => Err(
-                        InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
-                            "The following participants have invalid TEE status: {:?}",
-                            invalid_participants
-                        )),
-                    ),
+                    TeeValidationResult::Partial {
+                        participants_with_valid_attestation,
+                    } => {
+                        let invalid_participants: Vec<_> = proposed_participants
+                            .participants()
+                            .iter()
+                            .filter(|(account_id, _, _)| {
+                                participants_with_valid_attestation.is_participant(account_id)
+                            })
+                            .collect();
+
+                        Err(
+                            InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
+                                "The following participants have invalid TEE status: {:#?}",
+                                invalid_participants
+                            )),
+                        )
+                    }
                 }
             }
             _ => env::panic_str("expected V2"),
@@ -1130,9 +1145,11 @@ impl VersionedMpcContract {
                 log!("All participants have an accepted Tee status");
                 Ok(true)
             }
-            TeeValidationResult::Partial(new_participants) => {
+            TeeValidationResult::Partial {
+                participants_with_valid_attestation,
+            } => {
                 let threshold = current_params.threshold().value() as usize;
-                let remaining = new_participants.len();
+                let remaining = participants_with_valid_attestation.len();
                 if threshold > remaining {
                     log!("Less than `threshold` participants are left with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.");
                     contract.accept_requests = false;
@@ -1150,7 +1167,7 @@ impl VersionedMpcContract {
                 let new_threshold = threshold;
 
                 let threshold_parameters = ThresholdParameters::new(
-                    new_participants,
+                    participants_with_valid_attestation,
                     Threshold::new(new_threshold as u64),
                 )
                 .expect("Require valid threshold parameters"); // this should never happen.
