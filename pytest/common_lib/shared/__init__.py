@@ -27,12 +27,76 @@ from transaction import (
     create_full_access_key_action,
     sign_transaction,
     serialize_transaction,
+    Action,
+    AccessKey,
+    AccessKeyPermission,
+    FunctionCallPermission,
+    PublicKey,
+    AddKey,
 )
+
 
 from key import Key
 
 dot_near = pathlib.Path.home() / ".near"
 SECRETS_JSON = "secrets.json"
+
+
+def create_function_call_access_key_action(
+    pk: bytes, contract_id: str, method_names: list[str], allowance: int | None = None
+) -> Action:
+    permission = AccessKeyPermission()
+    permission.enum = "functionCall"
+
+    fc_perm = FunctionCallPermission()
+    fc_perm.allowance = allowance
+    fc_perm.receiverId = contract_id
+    fc_perm.methodNames = method_names
+    permission.functionCall = fc_perm
+
+    access_key = AccessKey()
+    access_key.nonce = 0
+    access_key.permission = permission
+
+    public_key = PublicKey()
+    public_key.keyType = 0
+    public_key.data = pk
+
+    add_key = AddKey()
+    add_key.accessKey = access_key
+    add_key.publicKey = public_key
+
+    action = Action()
+    action.enum = "addKey"
+    action.addKey = add_key
+
+    return action
+
+
+def create_mpc_function_call_access_key_action(
+    pk: bytes, contract_id: str, allowance: int | None = None
+) -> Action:
+    """
+    Create a restricted access key that only allows calling MPC-related contract methods.
+    """
+    mpc_methods_used_by_node = [
+        "respond",
+        "respond_ckd",
+        "vote_pk",
+        "start_keygen_instance",
+        "vote_reshared",
+        "start_reshare_instance",
+        "vote_abort_key_event_instance",
+        "verify_tee",
+        "submit_participant_info",
+    ]
+
+    return create_function_call_access_key_action(
+        pk=pk,
+        contract_id=contract_id,
+        method_names=mpc_methods_used_by_node,
+        allowance=allowance,
+    )
 
 
 # Output is deserializable into the rust type near_sdk::SecretKey
@@ -47,23 +111,63 @@ def deserialize_key(account_id: str, key: List[int]) -> Key:
     return Key.from_keypair(account_id, signing_key)
 
 
+#   Create a brand-new account and attach the given full access keys.
 def sign_create_account_with_multiple_access_keys_tx(
     creator_key: Key,
-    new_account_id,
+    new_account_id: str,
     keys: List[Key],
-    nonce,
-    block_hash,
+    nonce: int,
+    block_hash: bytes,
 ) -> bytes:
-    create_account_action = create_create_account_action()
-    payment_action = create_payment_action(100 * NEAR_BASE)
-    access_key_actions = [
-        create_full_access_key_action(key.decoded_pk()) for key in keys
+    actions = [
+        create_create_account_action(),
+        create_payment_action(100 * NEAR_BASE),
     ]
-    actions = [create_account_action, payment_action] + access_key_actions
+    actions.extend([create_full_access_key_action(key.decoded_pk()) for key in keys])
+
     signed_tx = sign_transaction(
         new_account_id,
         nonce,
         actions,
+        block_hash,
+        creator_key.account_id,
+        creator_key.decoded_pk(),
+        creator_key.decoded_sk(),
+    )
+    return serialize_transaction(signed_tx)
+
+
+"""
+    Add access keys to an existing account.
+    Supports both full access keys and restricted  access keys.
+"""
+
+
+def sign_add_access_keys_tx(
+    creator_key: Key,
+    account_id: str,
+    keys: List[Key],
+    nonce: int,
+    block_hash: bytes,
+    contract_id: str,
+    full_access: bool = False,
+) -> bytes:
+    if full_access:
+        access_key_actions = [
+            create_full_access_key_action(key.decoded_pk()) for key in keys
+        ]
+    else:
+        access_key_actions = [
+            create_mpc_function_call_access_key_action(
+                key.decoded_pk(), contract_id, allowance=100 * NEAR_BASE
+            )
+            for key in keys
+        ]
+
+    signed_tx = sign_transaction(
+        account_id,
+        nonce,
+        access_key_actions,
         block_hash,
         creator_key.account_id,
         creator_key.decoded_pk(),
@@ -267,10 +371,12 @@ def start_cluster_with_mpc(
     )
 
     (key, nonce) = cluster.contract_node.get_key_and_nonce()
-    txs = []
+    create_txs = []
+    access_txs = []
     mpc_nodes = []
+    pytest_keys_per_node = []
     for near_node, candidate in zip(observers, candidates):
-        # add the nodes access key to the list
+        # add the nodes responder access key to the list
         nonce += 1
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
@@ -279,7 +385,7 @@ def start_cluster_with_mpc(
             nonce,
             cluster.contract_node.last_block_hash(),
         )
-        txs.append(tx)
+        create_txs.append(tx)
         candidate_account_id = candidate.signer_key.account_id
         pytest_signer_keys = []
         for i in range(0, 5):
@@ -295,14 +401,43 @@ def start_cluster_with_mpc(
         nonce += 1
 
         # Observer nodes haven't started yet so we use cluster node to send txs
+        # add pytest_signer_keys that are used for voting, need to access
         tx = sign_create_account_with_multiple_access_keys_tx(
             key,
             candidate_account_id,
-            [candidate.signer_key] + pytest_signer_keys,
+            pytest_signer_keys,
             nonce,
             cluster.contract_node.last_block_hash(),
         )
-        txs.append(tx)
+        create_txs.append(tx)
+        pytest_keys_per_node.append(pytest_signer_keys)
+
+    cluster.contract_node.send_await_check_txs_parallel(
+        "create account", create_txs, assert_txn_success
+    )
+
+    for near_node, candidate, pytest_signer_keys in zip(
+        observers, candidates, pytest_keys_per_node
+    ):
+        candidate_account_id = candidate.signer_key.account_id
+
+        creator_key = pytest_signer_keys[0]
+
+        nonce = cluster.contract_node.near_node.get_nonce_for_pk(
+            candidate_account_id, creator_key.pk
+        )
+
+        # add node access key
+        tx = sign_add_access_keys_tx(
+            pytest_signer_keys[0],
+            candidate_account_id,
+            [candidate.signer_key],
+            nonce + 1,
+            cluster.contract_node.last_block_hash(),
+            cluster.mpc_contract_account(),
+            full_access=False,
+        )
+        access_txs.append(tx)
 
         mpc_node = MpcNode(
             near_node,
@@ -315,7 +450,7 @@ def start_cluster_with_mpc(
         mpc_nodes.append(mpc_node)
 
     cluster.contract_node.send_await_check_txs_parallel(
-        "create account", txs, assert_txn_success
+        "access keys", access_txs, assert_txn_success
     )
 
     # Deploy the mpc contract
