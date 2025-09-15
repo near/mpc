@@ -51,7 +51,8 @@ TZ_VAL = UTC
 
 # Set the target for the build, default to x86_64
 TARGET ?= x86_64-unknown-linux-gnu
-BUILD_PATH = "target/$(TARGET)/release"
+PROFILE = reproducible
+BUILD_PATH = "target/$(TARGET)/$(PROFILE)"
 
 .PHONY: build-reproducible
 build-reproducible: ## Build reproducible static binary for x86_64
@@ -61,7 +62,7 @@ build-reproducible: ## Build reproducible static binary for x86_64
 	CARGO_INCREMENTAL=${CARGO_INCREMENTAL_VAL} \
 	LC_ALL=${LOCALE_VAL} \
 	TZ=${TZ_VAL} \
-	cargo build -p mpc-node --locked --target $(TARGET) --profile reproducible
+	cargo build -p mpc-node --locked --target $(TARGET) --profile $(PROFILE)
 	@echo "SOURCE_DATE_EPOCH = $(SOURCE_DATE)"
 	@sha256sum $(BUILD_PATH)/mpc-node
 
