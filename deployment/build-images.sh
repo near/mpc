@@ -33,17 +33,17 @@ if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
 fi
 
 
-docker buildx build --builder ${buildkit_image_name} --no-cache \
-    --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
-    --output type=docker,name=$NODE_IMAGE_NAME_TEE,rewrite-timestamp=true \
-    -f "$DOCKERFILE_NODE_TEE" .
+# docker buildx build --builder ${buildkit_image_name} --no-cache \
+#     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
+#     --output type=image,name=$NODE_IMAGE_NAME_TEE,rewrite-timestamp=true \
+#     -f "$DOCKERFILE_NODE_TEE" .
 
 node_tee_image_hash=$(docker inspect $NODE_IMAGE_NAME_TEE | jq .[0].Id)
 
 
 docker buildx build --builder ${buildkit_image_name} --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
-    --output type=docker,name=$LAUNCHER_IMAGE_NAME,rewrite-timestamp=true \
+    --output type=image,name=$LAUNCHER_IMAGE_NAME,rewrite-timestamp=true \
     -f "$DOCKERFILE_LAUNCHER" .
 
 launcher_image_hash=$(docker inspect $LAUNCHER_IMAGE_NAME | jq .[0].Id)
