@@ -75,7 +75,6 @@ Follow the three steps below to ensure you have a working TDX machine with Dstac
 
 ### 1. TDX Bare-Metal Server Setup
 
-
 To create a bare-metal TDX server, follow the [canonical/tdx guide](https://github.com/canonical/tdx/blob/main/README.md).  
 
 Make sure to complete:  
@@ -94,6 +93,7 @@ Follow the [Dstack repository](https://github.com/Dstack-TEE/dstack).
 Run the steps in [build-and-play-locally](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#build-and-play-locally), stopping just before “[Deploy an App](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app)”.  
 
 #### Guest OS Image
+
 > **Important:** The guest OS image that runs inside the CVM must be exactly the same across all nodes. The OS image is measured, and those measurements are hardcoded in the contract.
 
 Clone the [meta-dstack repository](https://github.com/Dstack-TEE/meta-dstack) and check out **release `v0.5.4`** (commit `f7c795b76faa693f218e1c255007e3a68c541d79`).  
@@ -111,20 +111,23 @@ git submodule update --init --recursive
 
 At this point, you have two options:
 
-* Download a pre-built OS image (recommended):
+* **Download a pre-built OS image (recommended, faster):**
 ```bash
 ./build.sh dl 0.5.4
 ```
 
-Build a reproducible OS image yourself (may take ~1-2 hours):
-
+* **Build a reproducible OS image yourself (slower, ~1–2 hours):**
 ```bash
 cd repro-build && ./repro-build.sh -n
 ```
+
+---
+
+#### Verification
+
 If you wish to verify your setup is correct:
 
-Verify the hash against expected value:
-
+**Verify file hashes against expected values:**
 
 ```bash
 #!/usr/bin/env bash
@@ -165,9 +168,7 @@ else
 fi
 ```
 
-
-
-Verifying the  **rootfs.img.verity** can be done via the following script:
+**Verify the rootfs.img.verity:**
 
 ```bash
 #!/usr/bin/env bash
@@ -192,19 +193,12 @@ echo "  Hash offset:   $HASH_OFFSET"
 echo "  Rootfs hash:   $ROOTFS_HASH"
 
 # Run verification
-sudo veritysetup verify \
-  --data-blocks=$DATA_BLOCKS \
-  --hash-offset=$HASH_OFFSET \
-  --data-block-size=$BLOCK_SIZE \
-  --hash-block-size=$BLOCK_SIZE \
-  "$ROOTFS" "$ROOTFS" "$ROOTFS_HASH"
+sudo veritysetup verify   --data-blocks=$DATA_BLOCKS   --hash-offset=$HASH_OFFSET   --data-block-size=$BLOCK_SIZE   --hash-block-size=$BLOCK_SIZE   "$ROOTFS" "$ROOTFS" "$ROOTFS_HASH"
 
 echo "✅ Verification succeeded"
-
 ```
 
-Optional: Check that your generated OS image corresponds to the expected RTMR values:
-
+**Optional:** Check that your generated OS image corresponds to the expected RTMR values:
 
 ```bash
 $dstack-mr -cpu 8 -memory 64G -metadata metadata.json
@@ -215,7 +209,7 @@ RTMR1: a7b523278d4f914ee8df0ec80cd1c3d498cbf1152b0c5eaf65bad9425072874a3fcf891e8
 RTMR2: 24847f5c5a2360d030bc4f7b8577ce32e87c4d051452c937e91220cab69542daef83433947c492b9c201182fc9769bbe
 ```
 
-For more details, see the [Dstack attestation guide](https://github.com/Dstack-TEE/dstack/blob/master/attestation.md)
+For more details, see the [Dstack attestation guide](https://github.com/Dstack-TEE/dstack/blob/master/attestation.md).
 
 ---
 
@@ -230,6 +224,7 @@ Update `vmm.toml` as follows:
   ```toml
   max_disk_size = 1000
   ```
+
 
 
 ### 3. Local Gramine-Sealing-Key-Provider Setup
