@@ -23,6 +23,7 @@ use alloc::string::ToString;
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema),
     derive(borsh::BorshSchema)
 )]
 pub struct QuoteBytes(Vec<u8>);

@@ -1117,6 +1117,20 @@ impl VersionedMpcContract {
         }
     }
 
+    pub fn get_my_attestation(&self) -> Vec<Attestation> {
+        log!("get_tee_accounts: signer={}", env::signer_account_id());
+        let Self::V2(mpc_contract) = self else {
+            env::panic_str("expected V2")
+        };
+
+        mpc_contract
+            .tee_state
+            .participants_attestations
+            .values()
+            .cloned()
+            .collect()
+    }
+
     /// Verifies if all current participants have an accepted TEE state.
     /// Automatically enters a resharing, in case one or more participants do not have an accepted
     /// TEE state.
