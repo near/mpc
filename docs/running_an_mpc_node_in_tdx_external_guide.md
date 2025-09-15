@@ -67,13 +67,14 @@ This section describes how to enable TDX on your machine (BIOS, operating system
 
 Follow the three steps below to ensure you have a working TDX machine with Dstack configured:
 
-1. Set up a bare-metal TDX server  
-2. Set up Dstack  
-3. Set up a Local Gramine-Sealing-Key-Provider  
+1. [Set up a bare-metal TDX server](#1-tdx-bare-metal-server-setup)  
+2. [Dstack Setup and Configuration](#2-dstack-setup-and-configuration)  
+3. [Set up a Local Gramine-Sealing-Key-Provider](#3-local-gramine-sealing-key-provider-setup) 
 
 ---
 
-### TDX Bare-Metal Server Setup
+### 1. TDX Bare-Metal Server Setup
+
 
 To create a bare-metal TDX server, follow the [canonical/tdx guide](https://github.com/canonical/tdx/blob/main/README.md).  
 
@@ -85,7 +86,7 @@ This ensures that your TDX setup is correctly configured.
 
 ---
 
-### Dstack Setup and Configuration
+### 2. Dstack Setup and Configuration
 
 #### Dstack Setup
 
@@ -110,40 +111,111 @@ git submodule update --init --recursive
 
 At this point, you have two options:
 
-* Download a pre-built OS image:
+* Download a pre-built OS image (recommended):
 ```bash
 ./build.sh dl 0.5.4
 ```
 
-
-Build a reproducible OS image yourself:
+Build a reproducible OS image yourself (may take ~1-2 hours):
 
 ```bash
 cd repro-build && ./repro-build.sh -n
 ```
+If you wish to verify your setup is correct:
 
-Expected output
+Verify the hash against expected value:
+
 
 ```bash
-meta-dstack/repro-build$ cat build-a/images/dstack-0.5.4/sha256sum.txt
-76888ce69c91aed86c43f840b913899b40b981964b7ce6018667f91ad06301f0  ovmf.fd
-987083c434a937e47361377196644169b8d2183919c6c3ab89e251e021ab55cb  bzImage
-fd5267f04bf95dc073c21934de552517506acde6485524834376c8a479c92fcd  initramfs.cpio.gz
-a0a8489dd9f05db9ba26b37c1a7e3c99e94fa4a3e82736b57b1c19b058a11674  metadata.json
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Hard-coded expected hashes
+declare -A EXPECTED
+EXPECTED["ovmf.fd"]="76888ce69c91aed86c43f840b913899b40b981964b7ce6018667f91ad06301f0"
+EXPECTED["bzImage"]="987083c434a937e47361377196644169b8d2183919c6c3ab89e251e021ab55cb"
+EXPECTED["initramfs.cpio.gz"]="fd5267f04bf95dc073c21934de552517506acde6485524834376c8a479c92fcd"
+EXPECTED["metadata.json"]="a0a8489dd9f05db9ba26b37c1a7e3c99e94fa4a3e82736b57b1c19b058a11674"
+
+ALL_OK=1
+
+for FILE in "${!EXPECTED[@]}"; do
+    if [[ ! -f "$FILE" ]]; then
+        echo "$FILE not found"
+        ALL_OK=0
+        continue
+    fi
+
+    CALC_HASH=$(sha256sum "$FILE" | awk '{print $1}')
+    if [[ "$CALC_HASH" == "${EXPECTED[$FILE]}" ]]; then
+        echo "$FILE: OK"
+    else
+        echo "$FILE: FAILED"
+        echo "  Expected: ${EXPECTED[$FILE]}"
+        echo "  Found:    $CALC_HASH"
+        ALL_OK=0
+    fi
+done
+
+if [[ $ALL_OK -eq 1 ]]; then
+    echo "All files verified successfully"
+else
+    echo "One or more files did not match"
+    exit 1
+fi
 ```
 
-Optional: Check that your generated OS image corresponds to the expected pre-calculated RTMR values:
 
-```json
-{
-  "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
-  "rtmr0": "7ae1c6bc1653c4cf037b0ee6029457ee67c475285bcf472a92f51843148e477f3126184dd69282279d278a7466b66cae",
-  "rtmr1": "fd08eadc0cc4a80f0e4cae11ed1123658c70b1b646834b45013088001f411446a8f5b2c6584ead65e978e0f628c6000f",
-  "rtmr2": "24847f5c5a2360d030bc4f7b8577ce32e87c4d051452c937e91220cab69542daef83433947c492b9c201182fc9769bbe"
-}
+
+Verifying the  **rootfs.img.verity** can be done via the following script:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+META="metadata.json"
+
+# Extract values from metadata.json
+ROOTFS=$(jq -r '.rootfs' "$META")
+ROOTFS_SIZE=$(jq -r '.cmdline' "$META" | sed -n 's/.*dstack.rootfs_size=\([0-9]*\).*/\1/p')
+ROOTFS_HASH=$(jq -r '.cmdline' "$META" | sed -n 's/.*dstack.rootfs_hash=\([a-f0-9]*\).*/\1/p')
+
+# Compute parameters
+BLOCK_SIZE=4096
+DATA_BLOCKS=$(( ROOTFS_SIZE / BLOCK_SIZE ))
+HASH_OFFSET=$ROOTFS_SIZE
+
+echo "Verifying $ROOTFS"
+echo "  Rootfs size:   $ROOTFS_SIZE bytes"
+echo "  Data blocks:   $DATA_BLOCKS"
+echo "  Hash offset:   $HASH_OFFSET"
+echo "  Rootfs hash:   $ROOTFS_HASH"
+
+# Run verification
+sudo veritysetup verify \
+  --data-blocks=$DATA_BLOCKS \
+  --hash-offset=$HASH_OFFSET \
+  --data-block-size=$BLOCK_SIZE \
+  --hash-block-size=$BLOCK_SIZE \
+  "$ROOTFS" "$ROOTFS" "$ROOTFS_HASH"
+
+echo "✅ Verification succeeded"
+
 ```
 
-For more details, see the `expected_mrs` section in [verify.py](https://github.com/Dstack-TEE/dstack-examples/blob/main/attestation/rtmr3-based/verify.py).  
+Optional: Check that your generated OS image corresponds to the expected RTMR values:
+
+
+```bash
+$dstack-mr -cpu 8 -memory 64G -metadata metadata.json
+
+MRTD: f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077
+RTMR0: 3744b154069500a466f514253b49858299b2e1bdc44e3d557337d81e828bedf6a0410f27d3a18c932e5e49e1c4215737
+RTMR1: a7b523278d4f914ee8df0ec80cd1c3d498cbf1152b0c5eaf65bad9425072874a3fcf891e8b01713d3d9937e3e0d26c15
+RTMR2: 24847f5c5a2360d030bc4f7b8577ce32e87c4d051452c937e91220cab69542daef83433947c492b9c201182fc9769bbe
+```
+
+For more details, see the [Dstack attestation guide](https://github.com/Dstack-TEE/dstack/blob/master/attestation.md)
 
 ---
 
@@ -160,7 +232,7 @@ Update `vmm.toml` as follows:
   ```
 
 
-### Setting up a Local Gramine-Sealing-Key-Provider 
+### 3. Local Gramine-Sealing-Key-Provider Setup
 
 
 In this solution, we use the `gramine-sealing-key-provider`, which runs inside an SGX enclave, to generate a key.  
