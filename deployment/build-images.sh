@@ -45,7 +45,7 @@ if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
     docker buildx create --use --driver-opt image=moby/buildkit:v${buildkit_version} --name ${buildkit_image_name}
 fi
 
-SOURCE_DATE_EPOCH=${SOURCE_DATE} repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --profile reproducible --locked 
+SOURCE_DATE_EPOCH=${SOURCE_DATE} repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --profile reproducible --locked
 
 mpc_node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
 

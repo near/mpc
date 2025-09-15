@@ -21,8 +21,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
+      - name: Build MPC Node binary
+        run: cargo build -p mpc-node --profile reproducible --locked
 
       - name: Build MPC Docker image
         uses: Warpbuilds/build-push-action@v6
