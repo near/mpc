@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 use alloc::string::ToString;
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use schemars::{JsonSchema, schema::Schema, schema_for};
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -33,6 +35,7 @@ const RTMR3_INDEX: u32 = 3;
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema),
     derive(borsh::BorshSchema)
 )]
 pub enum Attestation {
@@ -49,6 +52,65 @@ pub struct DstackAttestation {
     pub quote: QuoteBytes,
     pub collateral: Collateral,
     pub tcb_info: TcbInfo,
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl JsonSchema for DstackAttestation {
+    fn schema_name() -> String {
+        "DstackAttestation".to_string()
+    }
+
+    fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        #[derive(JsonSchema)]
+        struct DstackAttestation {
+            pub _quote: QuoteBytes,
+            pub _collateral: Collateral,
+            pub _tcb_info: TcbInfo,
+        }
+
+        #[derive(JsonSchema)]
+        pub struct EventLog {
+            pub _imr: u32,
+            pub _event_type: u32,
+            pub _digest: String,
+            pub _event: String,
+            pub _event_payload: String,
+        }
+
+        #[derive(JsonSchema)]
+        struct TcbInfo {
+            pub _mrtd: String,
+            pub _rtmr0: String,
+            pub _rtmr1: String,
+            pub _rtmr2: String,
+            pub _rtmr3: String,
+            pub _os_image_hash: String,
+            pub _compose_hash: String,
+            pub _device_id: String,
+            pub _app_compose: String,
+            pub _event_log: Vec<EventLog>,
+        }
+
+        #[derive(schemars::JsonSchema)]
+        struct QuoteCollateralV3 {
+            pub _pck_crl_issuer_chain: String,
+            pub _root_ca_crl: Vec<u8>,
+            pub _pck_crl: Vec<u8>,
+            pub _tcb_info_issuer_chain: String,
+            pub _tcb_info: String,
+            pub _tcb_info_signature: Vec<u8>,
+            pub _qe_identity_issuer_chain: String,
+            pub _qe_identity: String,
+            pub _qe_identity_signature: Vec<u8>,
+        }
+
+        #[derive(schemars::JsonSchema)]
+        struct Collateral(QuoteCollateralV3);
+
+        let root_schema = schema_for!(DstackAttestation);
+
+        Schema::Object(root_schema.schema)
+    }
 }
 
 impl fmt::Debug for DstackAttestation {
@@ -78,6 +140,7 @@ impl fmt::Debug for DstackAttestation {
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema),
     derive(borsh::BorshSchema)
 )]
 #[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
