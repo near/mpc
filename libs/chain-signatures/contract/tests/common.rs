@@ -132,12 +132,13 @@ impl BuildLock {
 
 pub fn current_contract() -> &'static Vec<u8> {
     CONTRACT.get_or_init(|| {
-        let pkg_dir = Path::new(env!("CARGO_MANIFEST_DIR")); // this should point to
-                                                             // libs/chain-signatures/contract
-        let project_dir = pkg_dir.join("../../../"); // pointing to libs/chain-signatures
+        // Points to `libs/chain-signatures/contract`
+        let pkg_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        // pointing to repository root directory.
+        let project_dir = pkg_dir.join("../../../");
         let wasm_path =
             project_dir.join("target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm");
-        // get lock-file:
+
         let lock_path = project_dir.join(".contract.itest.build.lock");
         let mut lockfile = OpenOptions::new()
             .create(true)
