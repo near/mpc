@@ -34,7 +34,11 @@ jobs:
       - name: Get SOURCE_DATE_EPOCH
         shell: bash
         run: |
-          echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
+
+      - name: Fix file timestamps
+        shell: bash
+        run: |
+          find . \( -type f -o -type d \) -exec touch -d @"${{ env.SOURCE_DATE_EPOCH }}" {} +
 
       - name: Sanitize build-ref for Docker tags
         shell: bash
