@@ -34,6 +34,7 @@ jobs:
       - name: Get SOURCE_DATE_EPOCH
         shell: bash
         run: |
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
 
       - name: Fix file timestamps
         shell: bash
