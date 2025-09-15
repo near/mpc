@@ -35,7 +35,8 @@ jobs:
       - name: Install repro-env
         shell: bash
         run: |
-          sudo apt-get install -y podman repro-env
+          sudo apt-get install -y repro-env
+          podman info
 
       - name: Build and publish images
         shell: bash
