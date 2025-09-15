@@ -57,13 +57,29 @@ pub fn spawn_real_indexer(
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
 
-    let (indexer_state_sender, indexer_state_receiver) = oneshot::channel();
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
+
+    let (txn_sender_sender, txn_sender_receiver) = oneshot::channel();
 
     // TODO(#156): replace actix with tokio
     std::thread::spawn(move || {
         actix::System::new().block_on(async {
+            // We have this indirection of using a oneshot for sending the sender,
+            // as we can't block the main thread for waiting on the `txn_sender`.
+            // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
+            let (indexer_state_sender, indexer_state_receiver) = oneshot::channel();
+            let txn_sender = start_transaction_processor(
+                my_near_account_id_clone,
+                account_secret_key.clone(),
+                respond_config_clone,
+                indexer_state_receiver,
+            );
+
+            if txn_sender_sender.send(txn_sender).is_err() {
+                tracing::error!("Failed to send txn_sender back to main thread.")
+            };
+
             let indexer =
                 near_indexer::Indexer::new(indexer_config.to_near_indexer_config(home_dir.clone()))
                     .expect("Failed to initialize the Indexer");
@@ -137,14 +153,9 @@ pub fn spawn_real_indexer(
         });
     });
 
-    let indexer_state = indexer_state_receiver.blocking_recv().expect("Infallible");
-
-    let txn_sender = start_transaction_processor(
-        my_near_account_id_clone,
-        account_secret_key.clone(),
-        respond_config_clone,
-        indexer_state,
-    );
+    let txn_sender = txn_sender_receiver
+        .blocking_recv()
+        .expect("txn_sender is returned from the `block_on` expression above.");
 
     IndexerAPI {
         contract_state_receiver: chain_config_receiver,
