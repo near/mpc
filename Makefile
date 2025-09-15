@@ -56,6 +56,10 @@ BUILD_PATH = "target/$(TARGET)/release"
 .PHONY: build-reproducible
 build-reproducible: ## Build reproducible static binary for x86_64
 	@# Set timestamp from last git commit for reproducible builds
+# This might be necessary to fix reproducibility with old docker versions where
+# rewrite-timestamp is not working as expected
+# https://github.com/moby/buildkit/issues/4986
+	@find . \( -type f -o -type d \) -exec touch -d @"$(SOURCE_DATE)" {} +
 	@SOURCE_DATE_EPOCH=$(SOURCE_DATE) \
 	RUSTFLAGS="${RUST_BUILD_FLAGS} --remap-path-prefix $$(pwd)=." \
 	CARGO_INCREMENTAL=${CARGO_INCREMENTAL_VAL} \
