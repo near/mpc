@@ -9753,6 +9753,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
+name = "test-migration-contract"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "near-sdk",
+]
+
+[[package]]
+name = "test-parallel-contract"
+version = "0.2.0"
+dependencies = [
+ "borsh",
+ "getrandom 0.3.3",
+ "hex",
+ "k256",
+ "near-sdk",
+ "serde",
+ "sha2",
+]
+
+[[package]]
 name = "test_utils"
 version = "0.1.0"
 dependencies = [

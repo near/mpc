@@ -5,26 +5,11 @@ from enum import Enum
 from borsh_construct import Vec, U8, CStruct, U64, Option
 from .constants import MPC_REPO_DIR
 
+MIGRATE_CONTRACT_PACKAGE_NAME = "test-migration-contract"
+PARALLEL_CONTRACT_PACKAGE_NAME = "test-parallel-contract"
+
 COMPILED_CONTRACT_PATH = (
-    MPC_REPO_DIR / "libs" / "chain-signatures" / "res" / "mpc_contract.wasm"
-)
-MIGRATE_CURRENT_CONTRACT_PATH = (
-    MPC_REPO_DIR
-    / "pytest"
-    / "tests"
-    / "test_contracts"
-    / "migration"
-    / "res"
-    / "migration_contract.wasm"
-)
-PARALLEL_CONTRACT_PATH = (
-    MPC_REPO_DIR
-    / "pytest"
-    / "tests"
-    / "test_contracts"
-    / "parallel"
-    / "res"
-    / "contract.wasm"
+    MPC_REPO_DIR / "target" / "release-contract" / "mpc_contract.wasm"
 )
 
 TESTNET_ACCOUNT_ID = "v1.signer-prod.testnet"
