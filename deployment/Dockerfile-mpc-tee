@@ -1,30 +1,3 @@
-# FROM rust:1.86-slim-bookworm@sha256:a044f7ab9a762f95be2ee7eb2c49e4d4a4ec60011210de9f7da01d552cae3a55 AS builder
-# ENV DEBIAN_FRONTEND=noninteractive
-
-# RUN \
-#     --mount=type=cache,target=/var/cache/apt,sharing=locked \
-#     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-#     --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
-#     repro-sources-list.sh && \
-#     apt-get update && \
-#     apt-get install -y --no-install-recommends make git libssl-dev pkg-config clang && \
-#     : "Clean up for improving reproducibility" && \
-#     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
-
-# WORKDIR /app
-# COPY .git .git
-# COPY node node
-# COPY devnet devnet
-# COPY crates crates
-# COPY Cargo.lock Cargo.lock
-# COPY Cargo.toml Cargo.toml
-# COPY rust-toolchain.toml rust-toolchain.toml
-# COPY libs/chain-signatures libs/chain-signatures
-# COPY third-party-licenses third-party-licenses
-# COPY Makefile .
-
-# RUN make build-reproducible
-
 FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2c2e87517371d82edb
 ENV DEBIAN_FRONTEND=noninteractive
 

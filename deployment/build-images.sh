@@ -2,7 +2,6 @@
 
 # Script to reproducibly build MPC binary and the docker image.
 
-
 push_flag=false
 
 for arg in "$@"; do
@@ -48,6 +47,7 @@ fi
 
 SOURCE_DATE_EPOCH=${SOURCE_DATE} repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --release --locked
 
+mpc_node_binary_hash=$(sha256sum target/release/mpc-node)
 
 docker buildx build --builder ${buildkit_image_name} --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
@@ -55,7 +55,6 @@ docker buildx build --builder ${buildkit_image_name} --no-cache \
     --progress plain -f "$DOCKERFILE_NODE_TEE" .
 
 node_tee_image_hash=$(docker inspect $NODE_IMAGE_NAME_TEE | jq .[0].Id)
-
 
 docker buildx build --builder ${buildkit_image_name} --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE" \
@@ -66,6 +65,7 @@ launcher_image_hash=$(docker inspect $LAUNCHER_IMAGE_NAME | jq .[0].Id)
 
 echo "commit hash: $GIT_COMMIT_HASH"
 echo "SOURCE_DATE_EPOCH used: $SOURCE_DATE"
+echo "node binary hash: $mpc_node_binary_hash"
 echo "node tee docker image hash: $node_tee_image_hash"
 echo "launcher docker image hash: $launcher_image_hash"
 
