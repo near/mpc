@@ -46,6 +46,41 @@ pub struct TransactionProcessorHandle {
     transaction_sender: mpsc::Sender<TransactionSenderSubmission>,
 }
 
+impl TransactionProcessorHandle {
+    pub(crate) fn start_transaction_processor(
+        owner_account_id: AccountId,
+        owner_secret_key: SigningKey,
+        config: RespondConfig,
+        indexer_state: Arc<IndexerState>,
+    ) -> impl TransactionSender {
+        let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
+            .expect("Failed to initialize transaction signers");
+
+        let (transaction_sender, mut transaction_receiver) =
+            mpsc::channel::<TransactionSenderSubmission>(TRANSACTION_PROCESSOR_CHANNEL_SIZE);
+
+        tokio::spawn(async move {
+            while let Some(transaction_submission) = transaction_receiver.recv().await {
+                let tx_request = transaction_submission.transaction;
+
+                let tx_signer = signers.signer_for(&tx_request);
+                let indexer_state = indexer_state.clone();
+                tokio::spawn(async move {
+                    let Ok(txn_json) = serde_json::to_string(&tx_request) else {
+                        tracing::error!(target: "mpc", "Failed to serialize response args");
+                        return;
+                    };
+                    tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
+                    ensure_send_transaction(tx_signer.clone(), indexer_state, tx_request, txn_json)
+                        .await;
+                });
+            }
+        });
+
+        TransactionProcessorHandle { transaction_sender }
+    }
+}
+
 impl TransactionSender for TransactionProcessorHandle {
     async fn send(
         &self,
@@ -90,39 +125,6 @@ pub enum TransactionStatus {
     Executed,
     NotExecuted,
     Unknown,
-}
-
-pub(crate) fn start_transaction_processor(
-    owner_account_id: AccountId,
-    owner_secret_key: SigningKey,
-    config: RespondConfig,
-    indexer_state: Arc<IndexerState>,
-) -> impl TransactionSender {
-    let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
-        .expect("Failed to initialize transaction signers");
-
-    let (transaction_sender, mut transaction_receiver) =
-        mpsc::channel::<TransactionSenderSubmission>(TRANSACTION_PROCESSOR_CHANNEL_SIZE);
-
-    tokio::spawn(async move {
-        while let Some(transaction_submission) = transaction_receiver.recv().await {
-            let tx_request = transaction_submission.transaction;
-
-            let tx_signer = signers.signer_for(&tx_request);
-            let indexer_state = indexer_state.clone();
-            tokio::spawn(async move {
-                let Ok(txn_json) = serde_json::to_string(&tx_request) else {
-                    tracing::error!(target: "mpc", "Failed to serialize response args");
-                    return;
-                };
-                tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
-                ensure_send_transaction(tx_signer.clone(), indexer_state, tx_request, txn_json)
-                    .await;
-            });
-        }
-    });
-
-    TransactionProcessorHandle { transaction_sender }
 }
 
 /// Creates, signs, and submits a function call with the given method and serialized arguments.
