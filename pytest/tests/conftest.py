@@ -8,7 +8,6 @@ import atexit
 import subprocess
 import git
 import sys
-import shutil
 from pathlib import Path
 import os
 import tempfile
