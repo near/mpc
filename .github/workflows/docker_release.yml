@@ -36,6 +36,8 @@ jobs:
         shell: bash
         run: |
           sudo apt-get install -y repro-env
+          echo "kernel.apparmor_restrict_unprivileged_userns = 0" | sudo tee /etc/sysctl.d/99-userns.conf
+          sudo sysctl --system
           sudo podman info
 
       - name: Build and publish images
