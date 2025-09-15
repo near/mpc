@@ -331,7 +331,7 @@ impl StartCmd {
             .verifying_key()
             .to_near_sdk_public_key()?;
 
-        let report_data = ReportData::new(tls_public_key);
+        let report_data = ReportData::new(tls_public_key.clone());
         let tee_authority = TeeAuthority::try_from(self.tee_authority)?;
         let attestation = tee_authority.generate_attestation(report_data).await?;
         let web_server = start_web_server(
@@ -366,14 +366,8 @@ impl StartCmd {
 
         // submit remote attestation
         {
-            let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key();
-
-            submit_remote_attestation(
-                indexer_api.txn_sender.clone(),
-                attestation,
-                account_public_key,
-            )
-            .await?;
+            submit_remote_attestation(indexer_api.txn_sender.clone(), attestation, tls_public_key)
+                .await?;
         }
 
         let coordinator = Coordinator {

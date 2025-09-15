@@ -3,7 +3,7 @@ use super::types::ChainGetPendingSignatureRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
 use crate::config::RespondConfig;
-use crate::indexer::types::ChainGetPendingCKDRequestArgs;
+use crate::indexer::types::{ChainGetPendingCKDRequestArgs, GetApprovedAttestationsArgs};
 use crate::metrics;
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
@@ -22,6 +22,7 @@ use tokio::time;
 
 const TRANSACTION_PROCESSOR_CHANNEL_SIZE: usize = 10000;
 const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(10);
+const GET_TEE_ACCOUNTS_METHOD_NAME: &str = "get_tee_accounts";
 
 pub trait TransactionSender: Clone + Send + Sync {
     fn send(
@@ -265,6 +266,50 @@ async fn observe_tx_result(
                 }
             }
         }
+        SubmitParticipantInfo(_submit_participant_info_args) => {
+            // Confirm whether the attestation submission call succeeded by checking if the local node
+            // is in the list of nodes with valid attestations.
+            let get_pending_request_args: Vec<u8> =
+                serde_json::to_string(&GetApprovedAttestationsArgs)
+                    .unwrap()
+                    .into_bytes();
+
+            let Ok(Ok(query_response)) = indexer_state
+                .view_client
+                .send(
+                    Query {
+                        block_reference: BlockReference::Finality(Finality::Final),
+                        request: QueryRequest::CallFunction {
+                            account_id: indexer_state.mpc_contract_id.clone(),
+                            method_name: GET_TEE_ACCOUNTS_METHOD_NAME.to_string(),
+                            args: get_pending_request_args.into(),
+                        },
+                    }
+                    .with_span_context(),
+                )
+                .await
+            else {
+                return Ok(TransactionStatus::Unknown);
+            };
+
+            let accounts_with_attestations: Vec<AccountId> = match query_response.kind {
+                QueryResponseKind::CallResult(result) => serde_json::from_slice(&result.result)
+                    .context("Failed to deserialize get_tee_accounts response")?,
+                _ => {
+                    anyhow::bail!("got unexpected response querying mpc contract state")
+                }
+            };
+
+            let owner_account_id = todo!();
+            let node_has_valid_attestation = accounts_with_attestations.contains(owner_account_id);
+
+            if node_has_valid_attestation {
+                Ok(TransactionStatus::Executed)
+            } else {
+                Ok(TransactionStatus::NotExecuted)
+            }
+        }
+
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
         | StartReshare(_)
@@ -272,7 +317,6 @@ async fn observe_tx_result(
         | VoteReshared(_)
         | VoteAbortKeyEventInstance(_)
         | VerifyTee() => Ok(TransactionStatus::Unknown),
-        SubmitParticipantInfo(_) => Ok(TransactionStatus::Unknown),
     }
 }
 
