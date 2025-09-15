@@ -43,9 +43,6 @@ jobs:
           sanitized_ref=$(echo "${{ github.event.inputs.build-ref }}" | sed 's/\//-/g')
           echo "sanitized_ref=$sanitized_ref" >> "$GITHUB_ENV"
 
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
-
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -76,5 +73,11 @@ jobs:
           outputs:
             rewrite-timestamp=true
           push: false
+          load: true
+          tags: mpc-launcher
           file: deployment/Dockerfile-launcher
-          tags: nearone/mpc-launcher:latest,nearone/mpc-launcher:${{ env.sanitized_ref }},nearone/mpc-launcher:${{ env.sanitized_ref }}-${{ env.sha_short }}
+          # tags: nearone/mpc-launcher:latest,nearone/mpc-launcher:${{ env.sanitized_ref }},nearone/mpc-launcher:${{ env.sanitized_ref }}-${{ env.sha_short }}
+      
+      - name: Inspect
+        run: |
+          docker inspect mpc-launcher
