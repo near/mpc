@@ -23,83 +23,6 @@ use mpc_contract::{
     tee::tee_state::NodeUid,
 };
 
-async fn do_resharing(
-    remaining_accounts: &[Account],
-    contract: &Contract,
-    new_threshold_parameters: ThresholdParameters,
-    prospective_epoch_id: EpochId,
-    domain_ids: &[DomainId],
-) -> Result<()> {
-    // vote for new parameters
-    for account in remaining_accounts {
-        check_call_success(
-            account
-                .call(contract.id(), "vote_new_parameters")
-                .args_json(json!({
-                    "prospective_epoch_id": prospective_epoch_id,
-                    "proposal": new_threshold_parameters,
-                }))
-                .max_gas()
-                .transact()
-                .await?,
-        );
-    }
-
-    // Verify contract is now in resharing state
-    let state: ProtocolContractState = contract.view("state").await?.json()?;
-    let ProtocolContractState::Resharing(resharing_state) = state else {
-        panic!("Expected contract to be in Resharing state after voting");
-    };
-
-    for domain_id in domain_ids {
-        // Use hardcoded key event ID for test simplicity
-        let key_event_id = json!({
-            "epoch_id": prospective_epoch_id.get(),
-            "domain_id": domain_id.0,
-            "attempt_id": 0,
-        });
-
-        let leader = remaining_accounts
-            .iter()
-            .min_by_key(|a| {
-                resharing_state
-                    .resharing_key
-                    .proposed_parameters()
-                    .participants()
-                    .id(a.id())
-                    .unwrap()
-            })
-            .unwrap();
-
-        check_call_success(
-            leader
-                .call(contract.id(), "start_reshare_instance")
-                .args_json(json!({
-                    "key_event_id": key_event_id,
-                }))
-                .max_gas()
-                .transact()
-                .await?,
-        );
-
-        // Wait for threshold participants to vote for resharing (2 out of 3)
-        // The transition should happen after 2 votes when threshold is reached
-        for account in remaining_accounts {
-            check_call_success_all_receipts(
-                account
-                    .call(contract.id(), "vote_reshared")
-                    .args_json(json!({
-                        "key_event_id": key_event_id,
-                    }))
-                    .max_gas()
-                    .transact()
-                    .await?,
-            );
-        }
-    }
-    Ok(())
-}
-
 /// Integration test that validates the complete E2E flow of TEE cleanup after resharing.
 ///
 /// This test:
@@ -206,5 +129,82 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Verify that the remaining TEE participants match exactly the new contract participants
     assert_eq!(tee_participants_after_cleanup, expected_tee_post_resharing);
 
+    Ok(())
+}
+
+async fn do_resharing(
+    remaining_accounts: &[Account],
+    contract: &Contract,
+    new_threshold_parameters: ThresholdParameters,
+    prospective_epoch_id: EpochId,
+    domain_ids: &[DomainId],
+) -> Result<()> {
+    // vote for new parameters
+    for account in remaining_accounts {
+        check_call_success(
+            account
+                .call(contract.id(), "vote_new_parameters")
+                .args_json(json!({
+                    "prospective_epoch_id": prospective_epoch_id,
+                    "proposal": new_threshold_parameters,
+                }))
+                .max_gas()
+                .transact()
+                .await?,
+        );
+    }
+
+    // Verify contract is now in resharing state
+    let state: ProtocolContractState = contract.view("state").await?.json()?;
+    let ProtocolContractState::Resharing(resharing_state) = state else {
+        panic!("Expected contract to be in Resharing state after voting");
+    };
+
+    for domain_id in domain_ids {
+        // Use hardcoded key event ID for test simplicity
+        let key_event_id = json!({
+            "epoch_id": prospective_epoch_id.get(),
+            "domain_id": domain_id.0,
+            "attempt_id": 0,
+        });
+
+        let leader = remaining_accounts
+            .iter()
+            .min_by_key(|a| {
+                resharing_state
+                    .resharing_key
+                    .proposed_parameters()
+                    .participants()
+                    .id(a.id())
+                    .unwrap()
+            })
+            .unwrap();
+
+        check_call_success(
+            leader
+                .call(contract.id(), "start_reshare_instance")
+                .args_json(json!({
+                    "key_event_id": key_event_id,
+                }))
+                .max_gas()
+                .transact()
+                .await?,
+        );
+
+        // Wait for threshold participants to vote for resharing (2 out of 3)
+        // The transition should happen after 2 votes when threshold is reached
+        for account in remaining_accounts {
+            check_call_success_all_receipts(
+                account
+                    .call(contract.id(), "vote_reshared")
+                    .args_json(json!({
+                        "key_event_id": key_event_id,
+                    }))
+                    .max_gas()
+                    .transact()
+                    .await?,
+            );
+        }
+    }
     Ok(())
 }
