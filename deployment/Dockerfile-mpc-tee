@@ -1,4 +1,5 @@
 FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2c2e87517371d82edb
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN \

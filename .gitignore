@@ -3,13 +3,15 @@
 venv
 .vscode
 
+# Lock file generated in contract integration tests
+*.contract.itest.build.lock
+
 **/target/
+**/__pycache__/
 /pytest/output.log
 /pytest/venv/
-/pytest/**/__pycache__/
 /pytest/contract_history/*.wasm
 /pytest/nearcore_pytest/nearcore_pytest.egg-info/
-/pytest/tests/test_contracts/parallel/target/
 
 /devnet/generate_keys/target/
 /libs/chain-signatures/res/
