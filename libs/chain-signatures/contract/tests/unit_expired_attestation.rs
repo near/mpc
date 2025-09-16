@@ -31,12 +31,16 @@ use test_utils::attestation::p2p_tls_key;
 /// 9. Manually trigger TEE cleanup and verify final counts reduced from 3 to 2
 #[test]
 fn test_unit_participant_kickout_after_expiration() {
-    const INITIAL_TIMESTAMP: u64 = Duration::from_secs(1).as_nanos() as u64;
+    const INITIAL_TIME_SECONDS: u64 = 1;
+    const INITIAL_TIMESTAMP_NANOS: u64 =
+        Duration::from_secs(INITIAL_TIME_SECONDS).as_nanos() as u64;
     const PARTICIPANT_COUNT: usize = 3;
     const THRESHOLD: u64 = 2;
+    const EXPIRY_OFFSET_SECONDS: u64 = 10; // Attestation expires 10 seconds after start
+    const POST_EXPIRY_WAIT_SECONDS: u64 = 20; // Wait 20 seconds after start to trigger resharing
 
     testing_env!(VMContextBuilder::new()
-        .block_timestamp(INITIAL_TIMESTAMP)
+        .block_timestamp(INITIAL_TIMESTAMP_NANOS)
         .attached_deposit(NearToken::from_near(1))
         .build());
     let domain_id = DomainId::default();
@@ -77,11 +81,11 @@ fn test_unit_participant_kickout_after_expiration() {
             account_id,
             valid_attestation.clone(),
             &tls_key,
-            INITIAL_TIMESTAMP,
+            INITIAL_TIMESTAMP_NANOS,
         );
     }
 
-    let expiry_seconds = Duration::from_nanos(INITIAL_TIMESTAMP).as_secs() + 10;
+    let expiry_seconds = INITIAL_TIME_SECONDS + EXPIRY_OFFSET_SECONDS;
     let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
@@ -92,13 +96,14 @@ fn test_unit_participant_kickout_after_expiration() {
         &participants_list[2].0,
         expiring_attestation,
         &tls_key,
-        INITIAL_TIMESTAMP,
+        INITIAL_TIMESTAMP_NANOS,
     );
 
     assert_eq!(contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 
     // Fast-forward time past expiry and trigger resharing
-    let expired_timestamp = INITIAL_TIMESTAMP + Duration::from_secs(20).as_nanos() as u64;
+    let expired_timestamp =
+        INITIAL_TIMESTAMP_NANOS + Duration::from_secs(POST_EXPIRY_WAIT_SECONDS).as_nanos() as u64;
     testing_env!(VMContextBuilder::new()
         .block_timestamp(expired_timestamp)
         .build());
