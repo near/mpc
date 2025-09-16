@@ -1,128 +1,37 @@
 pub mod common;
 use anyhow::Result;
 use attestation::attestation::{Attestation, MockAttestation};
+use near_workspaces::{Account, Contract};
 use serde_json::json;
-use std::collections::BTreeSet;
+use std::time::Duration;
+use tokio::time;
 
 use common::{
-    check_call_success, gen_accounts, get_tee_accounts, init_env_secp256k1, submit_participant_info,
+    assert_running_return_participants, check_call_success, check_call_success_all_receipts,
+    gen_accounts, get_tee_accounts, init_env_secp256k1, submit_participant_info,
+    submit_tee_attestations,
 };
-use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
 use mpc_contract::{
     primitives::{
+        domain::DomainId,
+        key_state::EpochId,
         participants::Participants,
+        test_utils::bogus_ed25519_near_public_key,
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
     tee::tee_state::NodeUid,
 };
 
-/// Integration test that validates the complete E2E flow of TEE cleanup after resharing.
-///
-/// This test:
-/// 1. Sets up an initial participant set with TEE attestations
-/// 2. Adds additional TEE participants (simulating stale data)
-/// 3. Initiates a new resharing with a subset of the original participants
-/// 4. Completes the resharing process by voting
-/// 5. Verifies that vote_reshared triggered cleanup of stale TEE attestations
-/// 6. Confirms only the new participant set remains in TEE state
-#[tokio::test]
-async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
-    let (worker, contract, initial_accounts, _) = init_env_secp256k1(1).await;
-
-    // extract initial participants:
-    // Get current state to extract participant info
-    let state: ProtocolContractState = contract.view("state").await?.json()?;
-    let running_state = match state {
-        ProtocolContractState::Running(running_state) => running_state,
-        _ => panic!("Contract should be in running state initially"),
-    };
-
-    // Get current participants to construct proper ThresholdParameters
-    let init_participants = running_state.parameters.participants().clone();
-
-    // Set up TEE attestations for all initial participants
-    let mut expected_initial_tee_participants = BTreeSet::new();
-    for account in &initial_accounts {
-        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
-        let tls_p2p_key = init_participants
-            .info(account.id())
-            .unwrap()
-            .sign_pk
-            .clone();
-        let submission_result =
-            submit_participant_info(account, &contract, &attestation, &tls_p2p_key).await?;
-        assert!(submission_result);
-        expected_initial_tee_participants.insert(NodeUid {
-            account_id: account.id().clone(),
-            tls_public_key: tls_p2p_key,
-        });
-    }
-
-    // Verify TEE participants were added
-    let initial_tee_participants: BTreeSet<_> = get_tee_accounts(&contract)
-        .await
-        .unwrap()
-        .into_iter()
-        .collect();
-
-    assert_eq!(initial_tee_participants, expected_initial_tee_participants);
-
-    // Create additional accounts to simulate stale participants
-    let (non_participants, _) = gen_accounts(&worker, 2).await;
-
-    let mut expected_init_and_non_participants = initial_tee_participants.clone();
-    // Add stale participants to TEE state
-    for non_participant in &non_participants {
-        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
-        let random_tls_key = bogus_ed25519_near_public_key();
-        let submission_result =
-            submit_participant_info(non_participant, &contract, &attestation, &random_tls_key)
-                .await?;
-        assert!(submission_result);
-        expected_init_and_non_participants.insert(NodeUid {
-            account_id: non_participant.id().clone(),
-            tls_public_key: random_tls_key,
-        });
-    }
-
-    let initial_and_non_participants: BTreeSet<_> = get_tee_accounts(&contract)
-        .await
-        .unwrap()
-        .into_iter()
-        .collect();
-
-    assert_eq!(
-        initial_and_non_participants,
-        expected_init_and_non_participants
-    );
-
-    // Create new participants list with first 2 participants
-    let mut new_participants = Participants::new();
-    let mut expected_tee_post_resharing = BTreeSet::new();
-    for (account_id, _participant_id, participant_info) in
-        init_participants.participants().iter().take(2)
-    {
-        new_participants
-            .insert(account_id.clone(), participant_info.clone())
-            .expect("Failed to insert participant");
-        expected_tee_post_resharing.insert(NodeUid {
-            account_id: account_id.clone(),
-            tls_public_key: participant_info.sign_pk.clone(),
-        });
-    }
-
-    // Create proper ThresholdParameters
-    let new_threshold_parameters =
-        ThresholdParameters::new(new_participants, Threshold::new(2)).unwrap();
-
-    // Use hardcoded prospective epoch ID for test simplicity
-    // Based on the test setup, the contract starts with epoch 5, so next epoch is 6
-    let prospective_epoch_id = 6;
-
-    // Vote for new parameters with threshold participants (2 out of 3)
-    // The transition to resharing should happen after 2 votes when threshold is reached
-    for account in initial_accounts.iter().take(2) {
+async fn do_resharing(
+    remaining_accounts: &[Account],
+    contract: &Contract,
+    new_threshold_parameters: ThresholdParameters,
+    prospective_epoch_id: EpochId,
+    domain_ids: &[DomainId],
+) -> Result<()> {
+    // vote for new parameters
+    for account in remaining_accounts {
         check_call_success(
             account
                 .call(contract.id(), "vote_new_parameters")
@@ -138,35 +47,33 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // Verify contract is now in resharing state
     let state: ProtocolContractState = contract.view("state").await?.json()?;
-    let ProtocolContractState::Resharing(_resharing_state) = state else {
+    let ProtocolContractState::Resharing(resharing_state) = state else {
         panic!("Expected contract to be in Resharing state after voting");
     };
 
-    // Use hardcoded key event ID for test simplicity
-    let key_event_id = json!({
-        "epoch_id": 6,
-        "domain_id": 0,
-        "attempt_id": 0,
-    });
+    for domain_id in domain_ids {
+        // Use hardcoded key event ID for test simplicity
+        let key_event_id = json!({
+            "epoch_id": prospective_epoch_id.get(),
+            "domain_id": domain_id.0,
+            "attempt_id": 0,
+        });
 
-    // Start the reshare instance
-    check_call_success(
-        initial_accounts[0]
-            .call(contract.id(), "start_reshare_instance")
-            .args_json(json!({
-                "key_event_id": key_event_id,
-            }))
-            .max_gas()
-            .transact()
-            .await?,
-    );
+        let leader = remaining_accounts
+            .iter()
+            .min_by_key(|a| {
+                resharing_state
+                    .resharing_key
+                    .proposed_parameters()
+                    .participants()
+                    .id(a.id())
+                    .unwrap()
+            })
+            .unwrap();
 
-    // Wait for threshold participants to vote for resharing (2 out of 3)
-    // The transition should happen after 2 votes when threshold is reached
-    for account in initial_accounts.iter().take(2) {
         check_call_success(
-            account
-                .call(contract.id(), "vote_reshared")
+            leader
+                .call(contract.id(), "start_reshare_instance")
                 .args_json(json!({
                     "key_event_id": key_event_id,
                 }))
@@ -174,38 +81,127 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
                 .transact()
                 .await?,
         );
+
+        // Wait for threshold participants to vote for resharing (2 out of 3)
+        // The transition should happen after 2 votes when threshold is reached
+        for account in remaining_accounts {
+            check_call_success_all_receipts(
+                account
+                    .call(contract.id(), "vote_reshared")
+                    .args_json(json!({
+                        "key_event_id": key_event_id,
+                    }))
+                    .max_gas()
+                    .transact()
+                    .await?,
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Integration test that validates the complete E2E flow of TEE cleanup after resharing.
+///
+/// This test:
+/// 1. Sets up an initial participant set with TEE attestations
+/// 2. Adds additional TEE participants (simulating stale data)
+/// 3. Initiates a new resharing with a subset of the original participants
+/// 4. Completes the resharing process by voting
+/// 5. Verifies that vote_reshared triggered cleanup of stale TEE attestations
+/// 6. Confirms only the new participant set remains in TEE state
+#[tokio::test]
+async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
+    let (worker, contract, mut env_accounts, _) = init_env_secp256k1(1).await;
+
+    // sanity check: assert we don't have any tee information to begin with
+    let initial_tee_participants = get_tee_accounts(&contract).await.unwrap();
+    assert!(initial_tee_participants.is_empty());
+
+    // extract initial participants:
+    let initial_participants = assert_running_return_participants(&contract).await?;
+    let expected_node_uids = initial_participants.get_node_uids();
+
+    // submit attestations
+    submit_tee_attestations(&contract, &mut env_accounts, &expected_node_uids).await?;
+
+    // Verify TEE info for initial participants was added
+    let nodes_with_tees = get_tee_accounts(&contract).await.unwrap();
+    assert_eq!(nodes_with_tees, expected_node_uids);
+
+    // Add two prospective Participants
+    // Note: this test fails if `vote_reshared` needs to clean up more than 3 attestations
+    let (mut env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
+    let non_participant_uids = non_participants.get_node_uids();
+    submit_tee_attestations(
+        &contract,
+        &mut env_non_participant_accounts,
+        &non_participant_uids,
+    )
+    .await?;
+    let mut expected_node_uids = expected_node_uids;
+    expected_node_uids.extend(non_participant_uids);
+
+    // add a new TEE quote for an existing participant, but with a different signer key
+    let new_uid = NodeUid {
+        account_id: env_accounts[0].id().clone(),
+        tls_public_key: bogus_ed25519_near_public_key(),
+    };
+    let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
+    submit_participant_info(
+        &env_accounts[0],
+        &contract,
+        &attestation,
+        &new_uid.tls_public_key,
+    )
+    .await?;
+
+    expected_node_uids.insert(new_uid);
+
+    // Verify TEE info for prospective participants was added and TEE info for initial participants persists
+    let initial_and_non_participants = get_tee_accounts(&contract).await.unwrap();
+    assert_eq!(initial_and_non_participants, expected_node_uids);
+
+    // Now, we do a resharing. We only retain two of the three initial participants
+    let mut new_participants = Participants::new();
+    for (account_id, participant_id, participant_info) in
+        initial_participants.participants().iter().take(2)
+    {
+        new_participants
+            .insert_with_id(
+                account_id.clone(),
+                participant_info.clone(),
+                participant_id.clone(),
+            )
+            .expect("Failed to insert participant");
     }
 
+    let expected_tee_post_resharing = new_participants.get_node_uids();
+    let new_threshold_parameters =
+        ThresholdParameters::new(new_participants, Threshold::new(2)).unwrap();
+
+    let prospective_epoch_id = EpochId::new(6);
+
+    do_resharing(
+        &env_accounts[..2],
+        &contract,
+        new_threshold_parameters,
+        prospective_epoch_id,
+        &[DomainId(0)],
+    )
+    .await?;
+
     // Verify contract is back to running state with new threshold
-    let final_state: ProtocolContractState = contract.view("state").await?.json()?;
-    let ProtocolContractState::Running(running_state) = final_state else {
-        panic!(
-            "Expected contract to be in Running state after resharing, but got: {:?}",
-            final_state
-        );
-    };
+    let final_participants = assert_running_return_participants(&contract)
+        .await
+        .expect("Expected contract to be in Running state after resharing.");
 
     // Get current participants to compare
-    let final_participants: BTreeSet<NodeUid> = running_state
-        .parameters
-        .participants()
-        .participants()
-        .iter()
-        .map(|(account_id, _, p_info)| NodeUid {
-            account_id: account_id.clone(),
-            tls_public_key: p_info.sign_pk.clone(),
-        })
-        .collect();
-
+    let final_participants_node_uids = final_participants.get_node_uids();
     // Verify only the new participants remain
-    assert_eq!(final_participants, expected_tee_post_resharing);
-
+    assert_eq!(final_participants_node_uids, expected_tee_post_resharing);
     // Verify TEE participants are properly cleaned up
-    let tee_participants_after_cleanup: BTreeSet<NodeUid> = get_tee_accounts(&contract)
-        .await
-        .unwrap()
-        .into_iter()
-        .collect();
+    time::sleep(Duration::from_secs(1)).await;
+    let tee_participants_after_cleanup = get_tee_accounts(&contract).await.unwrap();
 
     // Verify that the remaining TEE participants match exactly the new contract participants
     assert_eq!(tee_participants_after_cleanup, expected_tee_post_resharing);

@@ -5,17 +5,13 @@ use anyhow::Result;
 use assert_matches::assert_matches;
 use attestation::attestation::{Attestation, MockAttestation};
 use common::{
-    check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
-    submit_participant_info,
+    assert_running_return_participants, check_call_success, get_tee_accounts, init_env_ed25519,
+    init_env_secp256k1, submit_participant_info, submit_tee_attestations,
 };
-use mpc_contract::{
-    errors::InvalidState, primitives::test_utils::bogus_ed25519_near_public_key,
-    state::ProtocolContractState, tee::tee_state::NodeUid,
-};
+use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
-use std::collections::BTreeSet;
 use test_utils::attestation::{image_digest, mock_dstack_attestation, p2p_tls_key};
 
 /// Tests the basic TEE verification functionality when no TEE accounts are present.
@@ -336,56 +332,31 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 /// TEE data for accounts that are no longer participants. Uses the test method to populate initial TEE state.
 #[tokio::test]
 async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
-    let (worker, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (worker, contract, mut accounts, _) = init_env_secp256k1(1).await;
 
     // Initially should have no TEE participants
     assert_eq!(get_tee_accounts(&contract).await?.len(), 0);
 
-    // extract initial participants:
-    // Get current state to extract participant info
-    let state: ProtocolContractState = contract.view("state").await?.json()?;
-    let running_state = match state {
-        ProtocolContractState::Running(running_state) => running_state,
-        _ => panic!("Contract should be in running state initially"),
-    };
-
-    // Get current participants to construct proper ThresholdParameters
-    let init_participants = running_state.parameters.participants().clone();
-
-    let mut expected_participants = BTreeSet::new();
-    for account in &accounts {
-        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
-        let tls_key = init_participants
-            .info(account.id())
-            .unwrap()
-            .sign_pk
-            .clone();
-        let success = submit_participant_info(account, &contract, &attestation, &tls_key).await?;
-        expected_participants.insert(NodeUid {
-            account_id: account.id().clone(),
-            tls_public_key: tls_key,
-        });
-        assert!(success);
-    }
+    let participant_uids = assert_running_return_participants(&contract)
+        .await?
+        .get_node_uids();
+    submit_tee_attestations(&contract, &mut accounts, &participant_uids).await?;
 
     // Verify current participants have TEE data
-    assert_eq!(get_tee_accounts(&contract).await?.len(), accounts.len());
+    assert_eq!(get_tee_accounts(&contract).await?, participant_uids);
 
     // Create additional accounts (non-participants) and submit TEE info for them
     const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
-    let additional_accounts = gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await.0;
-    for account in &additional_accounts {
-        let tls_key = bogus_ed25519_near_public_key();
-        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
-        let success = submit_participant_info(account, &contract, &attestation, &tls_key).await?;
-        assert!(success);
-    }
+    let (mut additional_accounts, additional_participants) =
+        gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await;
+    let additional_uids = additional_participants.get_node_uids();
+    submit_tee_attestations(&contract, &mut additional_accounts, &additional_uids).await?;
 
     // Verify we have TEE data for all accounts before cleanup
     let tee_participants_before = get_tee_accounts(&contract).await?;
     assert_eq!(
-        tee_participants_before.len(),
-        accounts.len() + additional_accounts.len()
+        tee_participants_before,
+        &additional_uids | &participant_uids
     );
 
     // Contract should be able to call clean_tee_status on itself
@@ -401,10 +372,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     // Verify cleanup worked: only current participants should have TEE data
     let tee_participants_after = get_tee_accounts(&contract).await?;
     assert_eq!(tee_participants_after.len(), accounts.len());
-
-    let actual_participants: BTreeSet<_> = tee_participants_after.into_iter().collect();
-
-    assert_eq!(expected_participants, actual_participants);
+    assert_eq!(participant_uids, tee_participants_after);
 
     Ok(())
 }

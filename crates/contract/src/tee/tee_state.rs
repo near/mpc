@@ -209,7 +209,7 @@ impl TeeState {
             .collect();
 
         // Collect accounts to remove (can't remove while iterating)
-        let accounts_to_remove: Vec<NodeUid> = self
+        let nodes_to_remove: Vec<NodeUid> = self
             .participants_attestations
             .keys()
             .filter(|node_uid| !participant_accounts.contains(node_uid))
@@ -217,8 +217,8 @@ impl TeeState {
             .collect();
 
         // Remove non-participant TEE information
-        for account_id in &accounts_to_remove {
-            self.participants_attestations.remove(account_id);
+        for node_uid in &nodes_to_remove {
+            self.participants_attestations.remove(node_uid);
         }
     }
 

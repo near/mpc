@@ -1,4 +1,4 @@
-use attestation::attestation::Attestation;
+use attestation::attestation::{Attestation, MockAttestation};
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
@@ -27,6 +27,7 @@ use mpc_contract::{
         test_utils::bogus_ed25519_near_public_key,
         thresholds::{Threshold, ThresholdParameters},
     },
+    state::ProtocolContractState,
     tee::tee_state::NodeUid,
     update::UpdateId,
 };
@@ -46,6 +47,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use signature::DigestSigner;
 use std::{
+    collections::BTreeSet,
     fs::OpenOptions,
     io::{Read, Write},
     path::Path,
@@ -646,15 +648,26 @@ pub fn check_call_success(result: ExecutionFinalResult) {
     );
 }
 
+pub fn check_call_success_all_receipts(result: ExecutionFinalResult) {
+    for outcome in result.outcomes() {
+        assert!(
+            outcome.is_success(),
+            "execution should have succeeded: {result:#?}"
+        );
+    }
+}
+
 /// Helper function to get TEE participants from contract.
-pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<Vec<NodeUid>> {
+pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<NodeUid>> {
     Ok(contract
         .call("get_tee_accounts")
         .args_json(serde_json::json!({}))
         .max_gas()
         .transact()
         .await?
-        .json()?)
+        .json::<Vec<NodeUid>>()?
+        .into_iter()
+        .collect())
 }
 
 /// Helper function to submit participant info with TEE attestation.
@@ -671,4 +684,35 @@ pub async fn submit_participant_info(
         .transact()
         .await?;
     Ok(result.is_success())
+}
+
+pub async fn assert_running_return_participants(
+    contract: &Contract,
+) -> anyhow::Result<Participants> {
+    // Verify contract is back to running state with new threshold
+    let final_state: ProtocolContractState = contract.view("state").await?.json()?;
+    let ProtocolContractState::Running(running_state) = final_state else {
+        panic!(
+            "Expected contract to be in Running state after resharing, but got: {:?}",
+            final_state
+        );
+    };
+    Ok(running_state.parameters.participants().clone())
+}
+
+pub async fn submit_tee_attestations(
+    contract: &Contract,
+    env_accounts: &mut [Account],
+    node_uids: &BTreeSet<NodeUid>,
+) -> anyhow::Result<()> {
+    env_accounts.sort_by(|a, b| a.id().cmp(b.id()));
+    for (account, node_uid) in env_accounts.iter().zip(node_uids) {
+        assert_eq!(*account.id(), node_uid.account_id, "AccountId mismatch");
+        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
+        let result =
+            submit_participant_info(account, contract, &attestation, &node_uid.tls_public_key)
+                .await?;
+        assert!(result);
+    }
+    Ok(())
 }
