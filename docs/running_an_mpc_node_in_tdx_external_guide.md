@@ -90,7 +90,16 @@ This ensures that your TDX setup is correctly configured.
 #### Dstack Setup
 
 Follow the [Dstack repository](https://github.com/Dstack-TEE/dstack).  
-Run the steps in [build-and-play-locally](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#build-and-play-locally), stopping just before “[Deploy an App](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app)”.  
+Run the steps in [Getting Started](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#-getting-started):
+* Prerequisites
+* Install Dependencies
+* Build and Run
+
+With some adjustments, see more details below:
+* We are using specific Dstack version for reproducibility
+* We are NOT using KMS and Gateway.
+* Some port adjustment may be needed.
+
 
 #### Guest OS Image
 
@@ -897,26 +906,18 @@ MPC_IMAGE_TAGS=SHA256:abc
 
 ## Options for performing the update
 
-### Manually (WebUI + file edit)
+### Manually from WebUI
 
-- You can only **start** and **stop** a CVM from the WebUI.  
-- The **config must be edited manually**.  
-- The config file can be found under the VM’s shared directory:
+- Stop the CVM from the WebUI.  
+- Press the **update** button  
+- Update The config file and press **Upgrade**
+- Start the CVM
 
-```
-/meta-dstack/build/run/vm/<VM-ID>/shared
-```
+![](/attachments/cvm_options.png)
 
-For example:
+![](/attachments/config_upgrade.png)
 
-```bash
-ubuntu@near-tdx-test02:/mnt/data/barak/test/meta-dstack/build/run/vm/e44abe87-6c5b-46ec-83b8-5d8357fd001a/shared$ ls -a
-.  ..  .instance_info  .sys-config.json  .user-config  app-compose.json
-```
 
-Here, the file you need is `.user-config`.
-
----
 
 ### Via Command Line
 
