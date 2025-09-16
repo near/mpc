@@ -11,7 +11,7 @@ use attestation::{
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
+use near_sdk::{env, near, store::IterableMap, AccountId};
 use std::collections::HashSet;
 
 pub enum TeeValidationResult {
@@ -52,7 +52,7 @@ impl TeeState {
     pub(crate) fn verify_proposed_participant_attestation(
         &mut self,
         attestation: &Attestation,
-        tls_public_key: PublicKey,
+        tls_public_key: ed25519_dalek::VerifyingKey,
         tee_upgrade_period_blocks: u64,
     ) -> TeeQuoteStatus {
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
@@ -74,7 +74,7 @@ impl TeeState {
     pub(crate) fn verify_tee_participant(
         &mut self,
         account_id: &AccountId,
-        tls_public_key: PublicKey,
+        tls_public_key: ed25519_dalek::VerifyingKey,
         tee_upgrade_period_blocks: u64,
     ) -> TeeQuoteStatus {
         let allowed_mpc_docker_image_hashes = self.get_allowed_hashes(tee_upgrade_period_blocks);
@@ -119,11 +119,7 @@ impl TeeState {
                 let tls_public_key = participant_info.sign_pk.clone();
 
                 matches!(
-                    self.verify_tee_participant(
-                        account_id,
-                        tls_public_key,
-                        tee_upgrade_period_blocks
-                    ),
+                    self.verify_tee_participant(account_id, todo!(), tee_upgrade_period_blocks),
                     TeeQuoteStatus::Valid | TeeQuoteStatus::None
                 )
             })

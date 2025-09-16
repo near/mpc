@@ -1,6 +1,5 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::indexer::tx_sender::TransactionSender;
-use crate::providers::PublicKeyConversion;
 use crate::web::StaticWebData;
 use crate::{
     config::{
@@ -325,11 +324,7 @@ impl StartCmd {
 
         let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
 
-        let tls_public_key = secrets
-            .persistent_secrets
-            .p2p_private_key
-            .verifying_key()
-            .to_near_sdk_public_key()?;
+        let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
 
         let report_data = ReportData::new(tls_public_key);
         let tee_authority = TeeAuthority::try_from(self.tee_authority)?;

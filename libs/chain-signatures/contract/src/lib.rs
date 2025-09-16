@@ -700,7 +700,7 @@ impl VersionedMpcContract {
     pub fn submit_participant_info(
         &mut self,
         #[serializer(borsh)] proposed_participant_attestation: Attestation,
-        #[serializer(borsh)] tls_public_key: PublicKey,
+        #[serializer(borsh)] tls_public_key: [u8; 32],
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
         let account_key = env::signer_account_pk();
@@ -711,6 +711,8 @@ impl VersionedMpcContract {
             proposed_participant_attestation,
             account_key
         );
+
+        let tls_public_key = ed25519_dalek::VerifyingKey::from_bytes(&tls_public_key).unwrap();
 
         // Save the initial storage usage to know how much to charge the proposer for the storage
         // used

@@ -9,6 +9,7 @@ borsh = { workspace = true }
 dcap-qvl = { workspace = true }
 derive_more = { workspace = true }
 dstack-sdk-types = { workspace = true }
+ed25519-dalek = { workspace = true }
 hex = { workspace = true }
 k256 = { workspace = true }
 mpc-primitives = { workspace = true }
