@@ -1,5 +1,9 @@
-use attestation::attestation::{Attestation, DstackAttestation, StaticWebData};
+use attestation::{
+    app_compose::AppCompose,
+    attestation::{Attestation, DstackAttestation, StaticWebData},
+};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
+use near_sdk::env::sha256;
 use regex::Regex;
 
 pub const STATIC_WEB_DATA_STRING: &str = include_str!("../assets/static_web_data.json");
@@ -32,14 +36,13 @@ impl DstackAttestationTestUtils for DstackAttestation {
     }
 
     fn launcher_compose_digest(&self) -> LauncherDockerComposeHash {
-        let hex_formatted_compose_digest = &self.tcb_info.compose_hash;
+        let app_compose: AppCompose = serde_json::from_str(&self.tcb_info.app_compose).unwrap();
 
-        let compose_digest: [u8; 32] = hex::decode(hex_formatted_compose_digest)
-            .expect("File has valid hex encoding.")
+        let launcher_compose_digest: [u8; 32] = sha256(app_compose.docker_compose_file.as_bytes())
             .try_into()
-            .expect("Hex file decoded is 32 bytes.");
+            .expect("Hash is 32 bytes");
 
-        LauncherDockerComposeHash::from(compose_digest)
+        LauncherDockerComposeHash::from(launcher_compose_digest)
     }
 
     fn mpc_image_digest(&self) -> MpcDockerImageHash {

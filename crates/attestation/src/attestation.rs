@@ -37,18 +37,6 @@ pub struct StaticWebData<PublicKey> {
     pub tee_participant_info: Attestation,
 }
 
-// impl<PublicKey> StaticWebData<PublicKey> {
-//     pub fn new(value: &SecretsConfig, tee_participant_info: Option<Attestation>) -> Self {
-//         // let public_keys = get_public_keys(value);
-//         Self {
-//             near_signer_public_key: public_keys.near_signer_public_key,
-//             near_p2p_public_key: public_keys.near_p2p_public_key,
-//             near_responder_public_keys: public_keys.near_responder_public_keys,
-//             tee_participant_info,
-//         }
-//     }
-// }
-
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
@@ -308,16 +296,13 @@ impl Attestation {
     /// Verifies report data matches expected values.
     fn verify_report_data(
         &self,
-        expected: &ReportData,
+        expected_report_data: &ReportData,
         actual: &dcap_qvl::quote::TDReport10,
     ) -> bool {
         // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
         // proves that tls_public_key was included in the quote's report_data by an app running
         // inside a TDX enclave.
-        let expected_bytes = expected.to_bytes();
-        println!("EXPECTED: {:?}", expected_bytes);
-        println!("ACTUAL: {:?}", actual.report_data);
-        expected.to_bytes() == actual.report_data
+        expected_report_data.to_bytes() == actual.report_data
     }
 
     /// Verifies static RTMRs match expected values.
@@ -433,10 +418,14 @@ impl Attestation {
                 return false;
             }
         };
+
         let launcher_bytes = sha256(app_compose.docker_compose_file.as_bytes());
-        allowed_hashes
+
+        let verify_result = allowed_hashes
             .iter()
-            .any(|hash| hash.as_hex() == hex::encode(&launcher_bytes))
+            .any(|hash| hash.as_hex() == hex::encode(&launcher_bytes));
+
+        verify_result
     }
 
     // Implementation taken to match Dstack's https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/cc-eventlog/src/lib.rs#L54
