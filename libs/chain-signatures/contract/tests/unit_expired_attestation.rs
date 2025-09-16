@@ -12,7 +12,7 @@ use mpc_contract::{
 
 use attestation::attestation::{Attestation, MockAttestation};
 use near_sdk::{
-    test_utils::VMContextBuilder, testing_env, AccountId, CurveType, NearToken, PublicKey,
+    test_utils::VMContextBuilder, testing_env, AccountId, CurveType, Gas, NearToken, PublicKey,
     VMContext,
 };
 use std::time::Duration;
@@ -104,10 +104,11 @@ fn test_unit_participant_kickout_after_expiration() {
     // Fast-forward time past expiry and trigger resharing
     let expired_timestamp =
         INITIAL_TIMESTAMP_NANOS + Duration::from_secs(POST_EXPIRY_WAIT_SECONDS).as_nanos() as u64;
+
     testing_env!(VMContextBuilder::new()
         .block_timestamp(expired_timestamp)
+        .prepaid_gas(Gas::from_gas(29_000_000_000))
         .build());
-
     assert!(!contract.verify_tee().unwrap());
 
     let resharing_state = match contract.state() {
@@ -142,6 +143,10 @@ fn test_unit_participant_kickout_after_expiration() {
         ProtocolContractState::Running(_)
     ));
 
+    testing_env!(VMContextBuilder::new()
+        .block_timestamp(expired_timestamp)
+        .prepaid_gas(Gas::from_gas(460_000_000_000))
+        .build());
     contract.clean_tee_status().unwrap();
 
     let final_running_state = match contract.state() {
