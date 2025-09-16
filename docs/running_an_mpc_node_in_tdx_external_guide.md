@@ -234,7 +234,7 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
 
 ##### Setup Instructions
 
-1. Follow the [canonical/tdx setup](todo) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
+1. Follow the [canonical/tdx setup](#1-tdx-bare-metal-server-setup) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
 
 2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.  
    * On the DTX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)  

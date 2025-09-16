@@ -4,7 +4,6 @@ services:
   launcher:
     image: nearone/mpc-launcher:main-5bac07e@sha256:b36f9672aecfe17bf1565786e8c51d493f000dfcc56b55007bf2ac5e11ba7ee6
 
- # isuse #531: TODO (security): Replace with a specific image digest
     container_name: launcher
 
     environment:
