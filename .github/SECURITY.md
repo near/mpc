@@ -6,7 +6,7 @@ and privacy of all our users.
 
 Please do NOT raise a GitHub Issue to report a security vulnerability. If you
 believe you have found a security vulnerability, please submit a report to
-<mpc-security@nearone.org>, preferably with a proof of concept. We ask that you
+<security@nearone.org>, preferably with a proof of concept. We ask that you
 do not use other channels or contact project contributors directly.
 
 Non-vulnerability-related security issues, such as new ideas for security
