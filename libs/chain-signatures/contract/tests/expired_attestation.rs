@@ -15,7 +15,7 @@ use test_utils::attestation::p2p_tls_key;
 /// 4. verify_tee() returns false when expired attestations are detected
 /// 5. Contract automatically transitions from Running to Resharing state
 /// 6. Resharing state preserves all participants during transition
-/// 7. Valid participants vote for resharing completion for all domains (0, 2, 4)
+/// 7. Start resharing instance and vote for completion sequentially for each domain (0, 2, 4)
 /// 8. Multi-domain resharing protocol generates new key shares among valid participants only
 /// 9. Contract transitions back to Running state with new participant set (expired participant filtered out)
 /// 10. Verify TEE state cleanup - expired participant is removed from TEE accounts
@@ -62,7 +62,13 @@ async fn test_participant_kickout_after_expiration() -> Result<()> {
     let initial_tee_accounts = get_tee_accounts(&contract).await?;
     assert_eq!(initial_tee_accounts.len(), 3);
 
-    let initial_participants = get_participant_count(&contract).await?;
+    // Verify initial participant count
+    let contract_state = contract.call("state").max_gas().transact().await?;
+    let contract_state: ProtocolContractState = contract_state.json()?;
+    let initial_participants = match contract_state {
+        ProtocolContractState::Running(running) => running.parameters.participants().len(),
+        _ => panic!("Expected contract to be in Running state when getting participant count"),
+    };
     assert_eq!(initial_participants, 3);
 
     // Wait for the attestation to expire
@@ -113,9 +119,9 @@ async fn test_participant_kickout_after_expiration() -> Result<()> {
         "verify_tee should return false when expired attestations are detected"
     );
 
-    // Now test steps 3-4: Complete the resharing process to see actual participant removal
+    // Complete the multi-domain resharing process to remove the expired participant
 
-    // Step 3a: Start the resharing instance (required before voting)
+    // Start the resharing instance (required before voting)
     // The resharing state exists but the protocol instance needs to be started
     let key_event_id = serde_json::json!({
         "epoch_id": 6,
@@ -130,7 +136,7 @@ async fn test_participant_kickout_after_expiration() -> Result<()> {
         .transact()
         .await?;
 
-    // Step 3b: Complete the resharing process by having valid participants vote
+    // Complete the resharing process by having valid participants vote
     // We'll have the valid participants (those without expired attestations) vote
     for account in &accounts[0..2] {
         let _vote_result = account
@@ -183,7 +189,7 @@ async fn test_participant_kickout_after_expiration() -> Result<()> {
         ProtocolContractState::Running(running_state) => {
             let _final_participants = running_state.parameters.participants().len();
 
-            // Step 4: Verify actual cleanup happened
+            // Verify actual cleanup happened - the expired participant should be removed from TEE state
             // The cleanup should have been triggered by vote_reshared via clean_tee_status
 
             // Check TEE accounts after cleanup - this should show the actual removal
@@ -206,14 +212,4 @@ async fn test_participant_kickout_after_expiration() -> Result<()> {
     }
 
     Ok(())
-}
-
-// Helper function to get participant count
-async fn get_participant_count(contract: &near_workspaces::Contract) -> Result<usize> {
-    let contract_state = contract.call("state").max_gas().transact().await?;
-    let contract_state: ProtocolContractState = contract_state.json()?;
-    match contract_state {
-        ProtocolContractState::Running(running) => Ok(running.parameters.participants().len()),
-        _ => panic!("Expected contract to be in Running state when getting participant count"),
-    }
 }
