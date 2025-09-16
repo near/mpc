@@ -42,7 +42,7 @@ impl ReportDataVersion {
 
 #[derive(Debug, Clone, Constructor)]
 pub struct ReportDataV1 {
-    tls_public_key: PublicKey,
+    tls_public_key: ed25519_dalek::VerifyingKey,
 }
 
 /// report_data_v1: [u8; 64] =
@@ -107,7 +107,7 @@ pub enum ReportData {
 }
 
 impl ReportData {
-    pub fn new(tls_public_key: PublicKey) -> Self {
+    pub fn new(tls_public_key: ed25519_dalek::VerifyingKey) -> Self {
         ReportData::V1(ReportDataV1::new(tls_public_key))
     }
 

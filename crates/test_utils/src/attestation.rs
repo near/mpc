@@ -1,62 +1,64 @@
-use attestation::{
-    attestation::{Attestation, DstackAttestation},
-    collateral::Collateral,
-    quote::QuoteBytes,
-};
-use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+use attestation::attestation::{Attestation, DstackAttestation, StaticWebData};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
-use near_sdk::PublicKey;
-use serde_json::Value;
-use sha2::{Digest, Sha256};
+use regex::Regex;
 
-pub const TEST_TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
-pub const TEST_APP_COMPOSE_STRING: &str = include_str!("../assets/app_compose.json");
-pub const TEST_APP_COMPOSE_WITH_SERVICES_STRING: &str =
-    include_str!("../assets/app_compose_with_services.json");
+pub const STATIC_WEB_DATA_STRING: &str = include_str!("../assets/static_web_data.json");
 
-/// App compose field corresponds to the `DEFAULT_IMAGE_DIGEST` field in
-/// test_utils/assets/launcher_image_compose.yaml
-pub const TEST_MPC_IMAGE_DIGEST_HEX: &str = include_str!("../assets/mpc_image_digest.txt");
-pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
-    include_str!("../assets/launcher_image_compose.yaml");
+pub fn mock_dstack_attestation() -> DstackAttestation {
+    let static_web_data: StaticWebData<Vec<u8>> =
+        serde_json::from_str(STATIC_WEB_DATA_STRING).unwrap();
 
-pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
-    let digest: [u8; 32] = Sha256::digest(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).into();
-    LauncherDockerComposeHash::from(digest)
+    let Attestation::Dstack(dstack_attestation) = static_web_data.tee_participant_info else {
+        panic!("STATIC_WEB_DATA_STRING must be a dstack attestation.")
+    };
+
+    dstack_attestation
 }
 
-pub fn image_digest() -> MpcDockerImageHash {
-    let digest: [u8; 32] = hex::decode(TEST_MPC_IMAGE_DIGEST_HEX)
-        .expect("File has valid hex encoding.")
-        .try_into()
-        .expect("Hex file decoded is 32 bytes.");
+pub trait DstackAttestationTestUtils {
+    fn p2p_tls_public_key(&self) -> ed25519_dalek::VerifyingKey;
 
-    MpcDockerImageHash::from(digest)
+    fn launcher_compose_digest(&self) -> LauncherDockerComposeHash;
+
+    fn mpc_image_digest(&self) -> MpcDockerImageHash;
 }
 
-pub fn collateral() -> Value {
-    let quote_collateral_json_string = include_str!("../assets/collateral.json");
-    quote_collateral_json_string
-        .parse()
-        .expect("Quote collateral file is a valid json.")
-}
+impl DstackAttestationTestUtils for DstackAttestation {
+    fn p2p_tls_public_key(&self) -> ed25519_dalek::VerifyingKey {
+        let static_web_data: StaticWebData<ed25519_dalek::VerifyingKey> =
+            serde_json::from_str(STATIC_WEB_DATA_STRING).unwrap();
 
-pub fn quote() -> QuoteBytes {
-    let quote_collateral_json_string = include_str!("../assets/quote.json");
-    serde_json::from_str(quote_collateral_json_string)
-        .expect("Quote collateral file is a valid json.")
-}
+        static_web_data.near_p2p_public_key
+    }
 
-pub fn p2p_tls_key() -> PublicKey {
-    let key_file = include_str!("../assets/near_p2p_public_key.pub");
-    key_file.parse().expect("File contains a valid public key")
-}
+    fn launcher_compose_digest(&self) -> LauncherDockerComposeHash {
+        let hex_formatted_compose_digest = &self.tcb_info.compose_hash;
 
-pub fn mock_dstack_attestation() -> Attestation {
-    let quote = quote();
-    let collateral = Collateral::try_from_json(collateral()).unwrap();
+        let compose_digest: [u8; 32] = hex::decode(hex_formatted_compose_digest)
+            .expect("File has valid hex encoding.")
+            .try_into()
+            .expect("Hex file decoded is 32 bytes.");
 
-    let tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
+        LauncherDockerComposeHash::from(compose_digest)
+    }
 
-    Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
+    fn mpc_image_digest(&self) -> MpcDockerImageHash {
+        let app_compose_string = &self.tcb_info.app_compose;
+
+        let hex_regex = Regex::new(r"[a-f0-9]{64}").unwrap();
+
+        let hex_formatted_image_digest = app_compose_string
+            .lines()
+            .find(|line| line.contains("DEFAULT_IMAGE_DIGEST"))
+            .and_then(|line| hex_regex.find(line))
+            .map(|m| m.as_str())
+            .expect("No DEFAULT_IMAGE_DIGEST hash found");
+
+        let image_digest: [u8; 32] = hex::decode(hex_formatted_image_digest)
+            .expect("File has valid hex encoding.")
+            .try_into()
+            .expect("Hex file decoded is 32 bytes.");
+
+        MpcDockerImageHash::from(image_digest)
+    }
 }

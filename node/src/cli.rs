@@ -1,7 +1,6 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::indexer::tx_sender::TransactionSender;
 use crate::providers::PublicKeyConversion;
-use crate::web::StaticWebData;
 use crate::{
     config::{
         load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
@@ -21,6 +20,7 @@ use crate::{
     web::start_web_server,
 };
 use anyhow::{anyhow, Context};
+use attestation::attestation::StaticWebData;
 use attestation::report_data::ReportData;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
@@ -334,11 +334,25 @@ impl StartCmd {
         let report_data = ReportData::new(tls_public_key);
         let tee_authority = TeeAuthority::try_from(self.tee_authority)?;
         let attestation = tee_authority.generate_attestation(report_data).await?;
+
+        let PublicKeys {
+            near_signer_public_key,
+            near_p2p_public_key,
+            near_responder_public_keys,
+        } = PublicKeys::new(&secrets);
+
+        let static_web_data = StaticWebData {
+            near_signer_public_key,
+            near_p2p_public_key,
+            near_responder_public_keys,
+            tee_participant_info: attestation.clone(),
+        };
+
         let web_server = start_web_server(
             root_task_handle,
             debug_request_sender.clone(),
             config.web_ui.clone(),
-            StaticWebData::new(&secrets, Some(attestation.clone())),
+            static_web_data,
             web_contract_receiver,
         )
         .await?;
@@ -641,6 +655,37 @@ impl ExportKeyshareCmd {
 
             Ok(())
         })
+    }
+}
+
+pub struct PublicKeys {
+    pub near_signer_public_key: ed25519_dalek::VerifyingKey,
+    pub near_p2p_public_key: ed25519_dalek::VerifyingKey,
+    pub near_responder_public_keys: Vec<ed25519_dalek::VerifyingKey>,
+}
+
+impl PublicKeys {
+    pub fn new(secrets_config: &SecretsConfig) -> Self {
+        let near_signer_public_key = secrets_config
+            .persistent_secrets
+            .near_signer_key
+            .verifying_key();
+        let near_p2p_public_key = secrets_config
+            .persistent_secrets
+            .p2p_private_key
+            .verifying_key();
+        let near_responder_public_keys = secrets_config
+            .persistent_secrets
+            .near_responder_keys
+            .iter()
+            .map(|x| x.verifying_key())
+            .collect();
+
+        PublicKeys {
+            near_signer_public_key,
+            near_p2p_public_key,
+            near_responder_public_keys,
+        }
     }
 }
 

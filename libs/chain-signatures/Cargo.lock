@@ -305,6 +305,7 @@ dependencies = [
  "dcap-qvl",
  "derive_more 2.0.1",
  "dstack-sdk-types",
+ "ed25519-dalek",
  "hex",
  "k256",
  "mpc-primitives",
@@ -4398,6 +4399,7 @@ version = "0.1.0"
 dependencies = [
  "attestation",
  "dstack-sdk-types",
+ "ed25519-dalek",
  "hex",
  "mpc-primitives",
  "near-sdk",

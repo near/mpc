@@ -221,7 +221,7 @@ mod tests {
     use hex::ToHex;
 
     #[cfg(feature = "external-services-tests")]
-    use test_utils::attestation::quote;
+    use test_utils::attestation::mock_dstack_attestation;
 
     extern crate std;
 
@@ -299,12 +299,11 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "external-services-tests")]
     async fn test_upload_quote_for_collateral_with_phala_endpoint() {
-        let quote_data = quote();
-        let quote_hex: String = serde_json::from_str::<Vec<u8>>(
-            &serde_json::to_string(&quote_data).expect("Valid quote data"),
-        )
-        .expect("Is valid json")
-        .encode_hex();
+        let dstack_attestation = mock_dstack_attestation();
+
+        let quote_data = dstack_attestation.quote;
+
+        let quote_hex: String = quote_data.encode_hex();
 
         let tee_authority = TeeAuthority::Dstack(DstackTeeAuthorityConfig::default());
         let config = DstackTeeAuthorityConfig::default();

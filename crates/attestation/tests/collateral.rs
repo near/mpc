@@ -2,12 +2,19 @@ use std::str::FromStr;
 
 use attestation::collateral::{Collateral, CollateralError};
 use dcap_qvl::QuoteCollateralV3;
-use serde_json::json;
-use test_utils::attestation::collateral;
+use serde_json::{Value, json};
+use test_utils::attestation::mock_dstack_attestation;
+
+fn collateral_as_value() -> Value {
+    let attestation = mock_dstack_attestation();
+    let collateral = attestation.collateral;
+    serde_json::to_value(collateral).unwrap()
+}
 
 #[test]
 fn test_collateral_missing_field() {
-    let mut json_value = collateral();
+    let mut json_value = collateral_as_value();
+
     // Remove a required field
     json_value.as_object_mut().unwrap().remove("tcb_info");
 
@@ -24,7 +31,8 @@ fn test_collateral_missing_field() {
 
 #[test]
 fn test_collateral_invalid_hex() {
-    let mut json_value = collateral();
+    let mut json_value = collateral_as_value();
+
     // Set invalid hex value
     json_value["tcb_info_signature"] = json!("not_valid_hex");
 
@@ -41,7 +49,8 @@ fn test_collateral_invalid_hex() {
 
 #[test]
 fn test_collateral_null_field() {
-    let mut json_value = collateral();
+    let mut json_value = collateral_as_value();
+
     // Set field to null
     json_value["qe_identity"] = json!(null);
 
@@ -58,7 +67,8 @@ fn test_collateral_null_field() {
 
 #[test]
 fn test_collateral_wrong_type_field() {
-    let mut json_value = collateral();
+    let mut json_value = collateral_as_value();
+
     // Set field to wrong type (number instead of string)
     json_value["tcb_info_issuer_chain"] = json!(12345);
 
@@ -75,7 +85,8 @@ fn test_collateral_wrong_type_field() {
 
 #[test]
 fn test_hex_signature_lengths() {
-    let json_value = collateral();
+    let mut json_value = collateral_as_value();
+
     let collateral = Collateral::try_from_json(json_value).unwrap();
 
     // TCB info signature should be 64 hex chars (32 bytes)
@@ -86,7 +97,8 @@ fn test_hex_signature_lengths() {
 
 #[test]
 fn test_derive_traits() {
-    let json_value = collateral();
+    let mut json_value = collateral_as_value();
+
     let collateral = Collateral::try_from_json(json_value.clone()).unwrap();
 
     // Test From trait (should work through derive_more)
@@ -100,7 +112,10 @@ fn test_derive_traits() {
 
 #[test]
 fn test_from_str_valid_json() {
-    let json_str = serde_json::to_string(&collateral()).unwrap();
+    let attestation = mock_dstack_attestation();
+    let collateral = attestation.collateral;
+    let json_str = serde_json::to_string(&collateral).unwrap();
+
     let collateral = Collateral::from_str(&json_str).unwrap();
 
     assert!(collateral.tcb_info.contains("\"id\":\"TDX\""));

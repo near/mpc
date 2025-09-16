@@ -2,7 +2,7 @@ use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
     quote::QuoteBytes, report_data::ReportData,
 };
-use alloc::{format, string::String};
+use alloc::{format, string::String, vec::Vec};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::fmt;
 use dcap_qvl::verify::VerifiedReport;
@@ -28,6 +28,26 @@ const KEY_PROVIDER_EVENT: &str = "key-provider";
 const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 
 const RTMR3_INDEX: u32 = 3;
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct StaticWebData<PublicKey> {
+    pub near_signer_public_key: PublicKey,
+    pub near_p2p_public_key: PublicKey,
+    pub near_responder_public_keys: Vec<PublicKey>,
+    pub tee_participant_info: Attestation,
+}
+
+// impl<PublicKey> StaticWebData<PublicKey> {
+//     pub fn new(value: &SecretsConfig, tee_participant_info: Option<Attestation>) -> Self {
+//         // let public_keys = get_public_keys(value);
+//         Self {
+//             near_signer_public_key: public_keys.near_signer_public_key,
+//             near_p2p_public_key: public_keys.near_p2p_public_key,
+//             near_responder_public_keys: public_keys.near_responder_public_keys,
+//             tee_participant_info,
+//         }
+//     }
+// }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
@@ -294,6 +314,9 @@ impl Attestation {
         // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
         // proves that tls_public_key was included in the quote's report_data by an app running
         // inside a TDX enclave.
+        let expected_bytes = expected.to_bytes();
+        println!("EXPECTED: {:?}", expected_bytes);
+        println!("ACTUAL: {:?}", actual.report_data);
         expected.to_bytes() == actual.report_data
     }
 

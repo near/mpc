@@ -1,17 +1,15 @@
-use crate::config::{SecretsConfig, WebUIConfig};
+use crate::config::WebUIConfig;
 use crate::tracking::TaskHandle;
-use attestation::attestation::Attestation;
+use attestation::attestation::StaticWebData;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
-use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
 use prometheus::{default_registry, Encoder, TextEncoder};
-use serde::Serialize;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -54,7 +52,7 @@ struct WebServerState {
     debug_request_sender: broadcast::Sender<DebugRequest>,
     /// Receiver for contract state
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
-    static_web_data: StaticWebData,
+    static_web_data: StaticWebData<ed25519_dalek::VerifyingKey>,
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
@@ -120,56 +118,9 @@ async fn third_party_licenses() -> Html<&'static str> {
     Html(include_str!("../../third-party-licenses/licenses.html"))
 }
 
-#[derive(Clone, Serialize)]
-pub struct StaticWebData {
-    pub near_signer_public_key: VerifyingKey,
-    pub near_p2p_public_key: VerifyingKey,
-    pub near_responder_public_keys: Vec<VerifyingKey>,
-    pub tee_participant_info: Option<Attestation>,
-}
-
-struct PublicKeys {
-    near_signer_public_key: VerifyingKey,
-    near_p2p_public_key: VerifyingKey,
-    near_responder_public_keys: Vec<VerifyingKey>,
-}
-
-fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
-    let near_signer_public_key = secrets_config
-        .persistent_secrets
-        .near_signer_key
-        .verifying_key();
-    let near_p2p_public_key = secrets_config
-        .persistent_secrets
-        .p2p_private_key
-        .verifying_key();
-    let near_responder_public_keys = secrets_config
-        .persistent_secrets
-        .near_responder_keys
-        .iter()
-        .map(|x| x.verifying_key())
-        .collect();
-
-    PublicKeys {
-        near_signer_public_key,
-        near_p2p_public_key,
-        near_responder_public_keys,
-    }
-}
-
-impl StaticWebData {
-    pub fn new(value: &SecretsConfig, tee_participant_info: Option<Attestation>) -> Self {
-        let public_keys = get_public_keys(value);
-        Self {
-            near_signer_public_key: public_keys.near_signer_public_key,
-            near_p2p_public_key: public_keys.near_p2p_public_key,
-            near_responder_public_keys: public_keys.near_responder_public_keys,
-            tee_participant_info,
-        }
-    }
-}
-
-async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
+async fn public_data(
+    state: State<WebServerState>,
+) -> Json<StaticWebData<ed25519_dalek::VerifyingKey>> {
     state.static_web_data.clone().into()
 }
 
@@ -183,7 +134,7 @@ pub async fn start_web_server(
     root_task_handle: Arc<crate::tracking::TaskHandle>,
     debug_request_sender: broadcast::Sender<DebugRequest>,
     config: WebUIConfig,
-    static_web_data: StaticWebData,
+    static_web_data: StaticWebData<ed25519_dalek::VerifyingKey>,
     contract_state_receiver: watch::Receiver<ProtocolContractState>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;

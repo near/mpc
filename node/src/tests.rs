@@ -1,3 +1,4 @@
+use attestation::attestation::{Attestation, MockAttestation, StaticWebData};
 use k256::{AffinePoint, Scalar};
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
@@ -9,6 +10,7 @@ use threshold_signatures::frost_ed25519::Ed25519Sha512;
 use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
 use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
 
+use crate::cli::PublicKeys;
 use crate::config::{
     CKDConfig, ConfigFile, IndexerConfig, KeygenConfig, ParticipantsConfig, PersistentSecrets,
     PresignatureConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
@@ -24,7 +26,7 @@ use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
-use crate::web::{start_web_server, StaticWebData};
+use crate::web::start_web_server;
 use assert_matches::assert_matches;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
@@ -241,11 +243,24 @@ impl OneNodeTestConfig {
                 let (_, web_contract_receiver) =
                     tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
 
+                let PublicKeys {
+                    near_signer_public_key,
+                    near_p2p_public_key,
+                    near_responder_public_keys,
+                } = PublicKeys::new(&self.secrets);
+
+                let static_web_data = StaticWebData {
+                    near_signer_public_key,
+                    near_p2p_public_key,
+                    near_responder_public_keys,
+                    tee_participant_info: Attestation::Mock(MockAttestation::Valid),
+                };
+
                 let web_server = start_web_server(
                     root_task_handle,
                     debug_request_sender.clone(),
                     self.config.web_ui.clone(),
-                    StaticWebData::new(&self.secrets, None),
+                    static_web_data,
                     web_contract_receiver.clone(),
                 )
                 .await?;
