@@ -1,6 +1,7 @@
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use subtle::{Choice, ConstantTimeEq};
 
 use crate::protocol::errors::ProtocolError;
 
@@ -33,7 +34,13 @@ impl Commitment {
     /// Check that a value and a randomizer match this commitment.
     pub fn check<T: Serialize>(&self, val: &T, r: &Randomness) -> Result<bool, ProtocolError> {
         let actual = Self::compute(val, r)?;
-        Ok(*self == actual)
+        Ok(self.ct_eq(&actual).into())
+    }
+}
+
+impl ConstantTimeEq for Commitment {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.0.ct_eq(&other.0)
     }
 }
 

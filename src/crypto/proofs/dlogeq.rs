@@ -1,4 +1,5 @@
 use rand_core::CryptoRngCore;
+use subtle::ConstantTimeEq;
 
 use crate::{
     crypto::ciphersuite::{Ciphersuite, Element},
@@ -119,12 +120,14 @@ pub fn prove<C: Ciphersuite>(
     transcript: &mut Transcript,
     statement: Statement<'_, C>,
     witness: Witness<C>,
-) -> Result<Proof<C>, ProtocolError> {
-    transcript.message(STATEMENT_LABEL, &statement.encode()?);
-
-    if *statement.generator1 == C::Group::identity() {
+) -> Result<Proof<C>, ProtocolError>
+where
+    Element<C>: ConstantTimeEq,
+{
+    if statement.generator1.ct_eq(&C::Group::identity()).into() {
         return Err(ProtocolError::IdentityElement);
     }
+    transcript.message(STATEMENT_LABEL, &statement.encode()?);
 
     let k = frost_core::random_nonzero::<C, _>(rng);
     let (big_k_0, big_k_1) = statement.phi(&k);
@@ -150,11 +153,13 @@ pub fn verify<C: Ciphersuite>(
     transcript: &mut Transcript,
     statement: Statement<'_, C>,
     proof: &Proof<C>,
-) -> Result<bool, ProtocolError> {
-    if *statement.generator1 == C::Group::identity() {
+) -> Result<bool, ProtocolError>
+where
+    Element<C>: ConstantTimeEq,
+{
+    if statement.generator1.ct_eq(&C::Group::identity()).into() {
         return Err(ProtocolError::IdentityElement);
     }
-
     transcript.message(STATEMENT_LABEL, &statement.encode()?);
 
     let (phi0, phi1) = statement.phi(&proof.s.0);
@@ -273,5 +278,67 @@ mod test {
             ))),
         };
         assert!(verify(&mut transcript.fork(b"party", &[1]), statement, &proof).unwrap());
+    }
+
+    #[test]
+    fn test_prove_with_identity_generator1_fails() {
+        let x = Scalar::generate_biased(&mut OsRng);
+
+        let statement = Statement::<Secp256K1Sha256> {
+            public0: &(ProjectivePoint::GENERATOR * x),
+            generator1: &<Secp256K1Sha256 as frost_core::Ciphersuite>::Group::identity(), // Identity element
+            public1: &(<Secp256K1Sha256 as frost_core::Ciphersuite>::Group::identity() * x),
+        };
+        let witness = Witness {
+            x: SerializableScalar::<Secp256K1Sha256>(x),
+        };
+
+        let transcript = Transcript::new(b"protocol");
+
+        let proof_result = prove(
+            &mut OsRng,
+            &mut transcript.fork(b"party", &[1]),
+            statement,
+            witness,
+        );
+
+        assert!(proof_result.is_err());
+        if let Err(e) = proof_result {
+            assert_eq!(e, ProtocolError::IdentityElement);
+        } else {
+            panic!("Expected an error, but got Ok");
+        }
+    }
+
+    #[test]
+    fn test_verify_with_identity_generator1_fails() {
+        let x = Scalar::generate_biased(&mut OsRng);
+
+        let statement = Statement::<Secp256K1Sha256> {
+            public0: &(ProjectivePoint::GENERATOR * x),
+            generator1: &<Secp256K1Sha256 as frost_core::Ciphersuite>::Group::identity(), // Identity element
+            public1: &(<Secp256K1Sha256 as frost_core::Ciphersuite>::Group::identity() * x),
+        };
+
+        // A dummy proof, its content doesn't matter for this test
+        let dummy_proof = Proof {
+            e: SerializableScalar::<Secp256K1Sha256>(Scalar::from(1u64)),
+            s: SerializableScalar::<Secp256K1Sha256>(Scalar::from(1u64)),
+        };
+
+        let transcript = Transcript::new(b"protocol");
+
+        let verify_result = verify(
+            &mut transcript.fork(b"party", &[1]),
+            statement,
+            &dummy_proof,
+        );
+
+        assert!(verify_result.is_err());
+        if let Err(e) = verify_result {
+            assert_eq!(e, ProtocolError::IdentityElement);
+        } else {
+            panic!("Expected an error, but got Ok");
+        }
     }
 }

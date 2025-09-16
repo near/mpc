@@ -2,6 +2,7 @@ use frost_core::{
     keys::CoefficientCommitment, serialization::SerializableScalar, Field, Group, Scalar,
 };
 use rand_core::CryptoRngCore;
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::ciphersuite::Ciphersuite;
 use crate::protocol::{errors::ProtocolError, Participant};
@@ -119,7 +120,10 @@ impl<C: Ciphersuite> Polynomial<C> {
         identifiers: &[Scalar<C>],
         shares: &[SerializableScalar<C>],
         point: Option<&Scalar<C>>,
-    ) -> Result<SerializableScalar<C>, ProtocolError> {
+    ) -> Result<SerializableScalar<C>, ProtocolError>
+    where
+        Scalar<C>: ConstantTimeEq,
+    {
         let mut interpolation = <C::Group as Group>::Field::zero();
         // raise Error if the lengths are not the same
         // or the number of identifiers (<= 1)
@@ -288,7 +292,10 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
         identifiers: &[Scalar<C>],
         shares: &[CoefficientCommitment<C>],
         point: Option<&Scalar<C>>,
-    ) -> Result<CoefficientCommitment<C>, ProtocolError> {
+    ) -> Result<CoefficientCommitment<C>, ProtocolError>
+    where
+        Scalar<C>: ConstantTimeEq,
+    {
         let mut interpolation = C::Group::identity();
         // raise Error if the lengths are not the same
         // or the number of identifiers (<= 1)
@@ -460,7 +467,10 @@ pub fn compute_lagrange_coefficient<C: Ciphersuite>(
 pub fn batch_compute_lagrange_coefficients<C: Ciphersuite>(
     points_set: &[Scalar<C>],
     x: Option<&Scalar<C>>,
-) -> Result<Vec<SerializableScalar<C>>, ProtocolError> {
+) -> Result<Vec<SerializableScalar<C>>, ProtocolError>
+where
+    Scalar<C>: ConstantTimeEq,
+{
     let n = points_set.len();
     if n <= 1 {
         return Err(ProtocolError::InvalidInterpolationArguments);
@@ -471,9 +481,24 @@ pub fn batch_compute_lagrange_coefficients<C: Ciphersuite>(
     let x = x.unwrap_or(&zero);
 
     // If x exactly equals some x_i, return Kronecker delta vector
-    if let Some(k) = points_set.iter().position(|&p| p == *x) {
+    // This is done in constant time by iterating through all elements
+    // and accumulating a Choice without short-circuiting.
+    let mut kronecker_index = CtOption::new(0u32, Choice::from(0u8)); // Initialize as CtOption::none() effectively
+
+    for (i, p) in points_set.iter().enumerate() {
+        let is_equal = p.ct_eq(x);
+        // If is_equal is true, select 'i', otherwise keep the current k_index_val
+        kronecker_index = CtOption::conditional_select(
+            &kronecker_index,
+            &CtOption::new(i as u32, is_equal),
+            is_equal,
+        );
+    }
+
+    if kronecker_index.is_some().into() {
+        let kronecker_index_value = kronecker_index.unwrap() as usize;
         let mut coeffs = vec![SerializableScalar(<C::Group as Group>::Field::zero()); n];
-        coeffs[k] = SerializableScalar(<C::Group as Group>::Field::one());
+        coeffs[kronecker_index_value] = SerializableScalar(<C::Group as Group>::Field::one());
         return Ok(coeffs);
     }
 
@@ -1155,6 +1180,35 @@ mod test {
         {
             assert_eq!(a.0, b.0);
         }
+    }
+
+    #[test]
+    fn test_batch_compute_lagrange_coefficients_early_exit() {
+        use frost_core::Field;
+        use k256::Scalar;
+        use std::ops::Neg;
+        let points_set = [Scalar::from(1u32), Scalar::from(2u32), Scalar::from(3u32)];
+        let x_equals_point = Scalar::from(2u32); // x is equal to points_set[1]
+
+        let coeffs =
+            batch_compute_lagrange_coefficients::<C>(&points_set[..], Some(&x_equals_point))
+                .unwrap();
+
+        // Expect Kronecker delta vector: [0, 1, 0]
+        assert_eq!(coeffs.len(), 3);
+        assert_eq!(coeffs[0].0, Secp256K1ScalarField::zero());
+        assert_eq!(coeffs[1].0, Secp256K1ScalarField::one());
+        assert_eq!(coeffs[2].0, Secp256K1ScalarField::zero());
+
+        let x_not_equals_point = Scalar::from(4u32); // x is not equal to any point
+        let coeffs_no_early_exit =
+            batch_compute_lagrange_coefficients::<C>(&points_set[..], Some(&x_not_equals_point))
+                .unwrap();
+        // Verify the calculated Lagrange coefficients
+        assert_eq!(coeffs_no_early_exit.len(), 3);
+        assert_eq!(coeffs_no_early_exit[0].0, Scalar::from(1u32)); // lambda_0(4) = 1
+        assert_eq!(coeffs_no_early_exit[1].0, Scalar::from(3u32).neg()); // lambda_1(4) = -3
+        assert_eq!(coeffs_no_early_exit[2].0, Scalar::from(3u32)); // lambda_2(4) = 3
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use crate::protocol::errors::ProtocolError;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use subtle::{Choice, ConstantTimeEq};
 
 const HASH_LABEL: &[u8] = b"Near threshold signature generic hash";
 const HASH_LEN: usize = 32;
@@ -12,6 +13,12 @@ pub struct HashOutput([u8; HASH_LEN]);
 impl AsRef<[u8]> for HashOutput {
     fn as_ref(&self) -> &[u8] {
         &self.0
+    }
+}
+
+impl ConstantTimeEq for HashOutput {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.0.ct_eq(&other.0)
     }
 }
 
@@ -38,8 +45,9 @@ pub fn domain_separate_hash<T: Serialize>(
 #[cfg(test)]
 pub mod test {
     use elliptic_curve::{ops::Reduce, Curve, CurveArithmetic};
+    use subtle::ConstantTimeEq;
 
-    use super::{domain_separate_hash, hash};
+    use super::{domain_separate_hash, hash, HashOutput};
     use digest::{Digest, FixedOutput};
     use ecdsa::hazmat::DigestPrimitive;
     use k256::{FieldBytes, Scalar, Secp256k1};
@@ -79,6 +87,22 @@ pub mod test {
 
         let hash2 = domain_separate_hash(41, &val2).unwrap();
         assert_ne!(hash1.0, hash2.0);
+    }
+
+    #[test]
+    fn test_ct_eq_equal() {
+        let a = HashOutput([1u8; 32]);
+        let b = HashOutput([1u8; 32]);
+        let result = a.ct_eq(&b);
+        assert!(result.unwrap_u8() == 1);
+    }
+
+    #[test]
+    fn test_ct_eq_not_equal() {
+        let a = HashOutput([1u8; 32]);
+        let b = HashOutput([2u8; 32]);
+        let result = a.ct_eq(&b);
+        assert!(result.unwrap_u8() == 0);
     }
 
     /// Hashes a message string into an arbitrary scalar

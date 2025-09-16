@@ -1,6 +1,7 @@
 use frost_core::serialization::SerializableScalar;
 use frost_secp256k1::{Group, Secp256K1Group};
 use rand_core::OsRng;
+use subtle::ConstantTimeEq;
 
 use super::{PresignArguments, PresignOutput};
 use crate::{
@@ -201,7 +202,11 @@ async fn do_presign(
     )?;
 
     // check R is not identity
-    if big_r.value().eq(&<Secp256K1Group as Group>::identity()) {
+    if big_r
+        .value()
+        .ct_eq(&<Secp256K1Group as Group>::identity())
+        .into()
+    {
         return Err(ProtocolError::IdentityElement);
     }
 
@@ -259,7 +264,8 @@ async fn do_presign(
         // check W == g^w
         if big_w
             .value()
-            .ne(&(<Secp256K1Group as Group>::generator() * w.0))
+            .ct_ne(&(<Secp256K1Group as Group>::generator() * w.0))
+            .into()
         {
             return Err(ProtocolError::AssertionFailed(
                 "Exponent interpolation check failed.".to_string(),
