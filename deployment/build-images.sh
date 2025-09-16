@@ -72,6 +72,12 @@ echo "launcher docker image hash: $launcher_image_hash"
 if $push_flag; then
     # This assumes that docker is logged-in dockerhub registry with nearone user
     branch_name=$(git branch --show-current)
+
+    # Set a default value if branch_name is empty
+    if [ -z "$branch_name" ]; then
+        branch_name="detached"
+    fi
+
     short_hash=$(git rev-parse --short HEAD)
 
     docker tag $NODE_IMAGE_NAME_TEE nearone/$NODE_IMAGE_NAME_TEE:$branch_name-$short_hash
