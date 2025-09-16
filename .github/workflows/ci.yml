@@ -159,7 +159,7 @@ jobs:
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
 
       - name: Run cargo-nextest
-        run: cargo nextest run --release --locked --features test-utils
+        run: cargo nextest run --release --locked
 
   mpc-pytests:
     name: "MPC Node: pytests"
