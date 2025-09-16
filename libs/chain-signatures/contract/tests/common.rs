@@ -61,7 +61,8 @@ use threshold_signatures::{
     frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey},
 };
 
-pub const CONTRACT_FILE_PATH: &str = "../target/wasm32-unknown-unknown/release/mpc_contract.wasm";
+pub const CONTRACT_FILE_PATH: &str =
+    "../../../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
@@ -131,12 +132,13 @@ impl BuildLock {
 
 pub fn current_contract() -> &'static Vec<u8> {
     CONTRACT.get_or_init(|| {
-        let pkg_dir = Path::new(env!("CARGO_MANIFEST_DIR")); // this should point to
-                                                             // libs/chain-signatures/contract
-        let project_dir = pkg_dir.join("../"); // pointing to libs/chain-signatures
+        // Points to `libs/chain-signatures/contract`
+        let pkg_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        // pointing to repository root directory.
+        let project_dir = pkg_dir.join("../../../");
+        let wasm_path =
+            project_dir.join("target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm");
 
-        let wasm_path = project_dir.join("target/wasm32-unknown-unknown/release/mpc_contract.wasm");
-        // get lock-file:
         let lock_path = project_dir.join(".contract.itest.build.lock");
         let mut lockfile = OpenOptions::new()
             .create(true)
@@ -164,7 +166,12 @@ pub fn current_contract() -> &'static Vec<u8> {
 
         if do_build {
             let status = Command::new("cargo")
-                .args(["build", "--release", "--target=wasm32-unknown-unknown"])
+                .args([
+                    "build",
+                    "--package=mpc-contract",
+                    "--profile=release-contract",
+                    "--target=wasm32-unknown-unknown",
+                ])
                 .current_dir(&project_dir)
                 .status()
                 .expect("Failed to run cargo build");
