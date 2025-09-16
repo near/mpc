@@ -1,15 +1,17 @@
 use anyhow::Context;
 use attestation::attestation::Attestation;
 use ed25519_dalek::VerifyingKey;
-use tokio::sync::mpsc;
 
 use crate::{
-    indexer::types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
+    indexer::{
+        tx_sender::TransactionSender,
+        types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
+    },
     providers::PublicKeyConversion,
 };
 
 pub async fn submit_remote_attestation(
-    tx_sender: mpsc::Sender<ChainSendTransactionRequest>,
+    tx_sender: impl TransactionSender,
     report_data_contract: Attestation,
     account_public_key: VerifyingKey,
 ) -> anyhow::Result<()> {

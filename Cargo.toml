@@ -29,6 +29,14 @@ panic = "abort"
 # See https://doc.rust-lang.org/rustc/codegen-options/index.html#opt-level
 opt-level = "s"
 
+
+[profile.reproducible]
+inherits = "release"
+debug = false
+panic = "abort"
+codegen-units = 1
+overflow-checks = true
+
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }

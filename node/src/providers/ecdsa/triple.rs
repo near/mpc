@@ -20,7 +20,7 @@ use threshold_signatures::protocol::Participant;
 
 pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
 
-// IMPORTANT: if we add domain_ids as an idetifier to triples, ensure to also update the asset cleanup mechanism on startup (the other place where this constant is used).
+// IMPORTANT: if we add domain_ids as an identifier to triples, ensure to also update the asset cleanup mechanism on startup (the other place where this constant is used).
 pub const TRIPLE_STORE_DOMAIN_ID: Option<DomainId> = None;
 impl TripleStorage {
     pub fn new(
