@@ -790,9 +790,11 @@ When a new MPC node is released, the release will along with precompiled binarie
 
 ### MPC node Image/code inspection
 
-The following steps allow you to inspect the code that was used to build the docker image.
-Let's assume you want to vote for a docker image with tag
-[mpc-node-tee:main-5bac07e](https://hub.docker.com/layers/nearone/mpc-node-tee/main-5bac07e/images/sha256-62800a435ef81fad072379e9006cdb51ca83bd7024d7968db75bfa8ecdf64717).
+The following steps allow you to inspect the code that was used to build the
+docker image. Let's assume you want to vote for a docker image with tag
+[mpc-node-tee:main-5bac07e](https://hub.docker.com/layers/nearone/mpc-node-tee/main-5bac07e/images/sha256-62800a435ef81fad072379e9006cdb51ca83bd7024d7968db75bfa8ecdf64717),
+corresponding to the commit hash `5bac07e013f3a1e6a373bc706f313aecbfce81d9`.
+Notice that the suffix of the image tag is the short version of the git hash.
 
 * First, we need to obtain the image hash, which is not the same as the manifest
   hash shown in DockerHub. For that you need to install `docker` and `jq`, and
@@ -809,6 +811,7 @@ $ docker inspect nearone/mpc-node-tee:main-5bac07e | jq .[0].Id
 ```bash
 git clone https://github.com/near/mpc
 cd mpc/
+git checkout 5bac07e013f3a1e6a373bc706f313aecbfce81d9
 ```
 
 * Compile it using the reproduce build script. For this you need to install
