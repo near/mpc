@@ -1,4 +1,4 @@
-## 🛠 `deploy-launcher.sh` – Dstack VM Deployment Script
+# 🛠 `deploy-launcher.sh` – Dstack VM Deployment Script
 
 This script automates the deployment of a **Dstack Launcher VM** (`launcher_test_app`) using a templated Docker Compose file and the Dstack VMM CLI.
 
@@ -13,7 +13,7 @@ It:
 
 ---
 
-### 📦 Requirements
+## 📦 Requirements
 
 - A working Dstack setup and Dstack VMM service (`vmm-server`) accessible at `$VMM_RPC`.
 See Phala's [setup guide](https://github.com/Dstack-TEE/dstack).
@@ -28,7 +28,7 @@ Also review specific MPC configuration in [running_an_mpc_node_in_tdx_external_g
 
 ---
 
-### 📂 Expected Files
+## 📂 Expected Files
 
 Ensure the following files are present in the working directory before running the script:
 
@@ -43,7 +43,7 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
 
 ---
 
-### 🚀 How to Use
+## 🚀 How to Use
 
 1. **Make the script executable** (if not already):
 
@@ -76,7 +76,7 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
 
 ---
 
-### 🔧 Available Options
+## 🔧 Available Options
 
 | Option                | Description                                                               |
 | --------------------- | ------------------------------------------------------------------------- |
@@ -86,7 +86,7 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
 
 ---
 
-### 💡 Examples
+## 💡 Examples
 
 ```bash
 # Use KMS config from configs directory
@@ -103,9 +103,10 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
   --base-path /home/barak/project \
   --python-exec /home/barak/project/.venv/bin/python
 ```
+
 ---
 
-### 📄 `.env` File Format
+## 📄 `.env` File Format
 
 Make sure to create and fill in a `.env` file. Example (`default.env`):
 
