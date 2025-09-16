@@ -363,7 +363,7 @@ For details on how to map this hash to a specific Docker image published on Dock
 Example digest value:
 
 ```bash
-DEFAULT_IMAGE_DIGEST=sha256:4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
+DEFAULT_IMAGE_DIGEST=sha256:971fb1eddff6d41fc6b8141fc03dce16000c07593e42a41b009da0255f4b007a
 ```
 
 You can retrieve the latest MPC Docker image hash directly from the contract using the NEAR CLI:
@@ -383,7 +383,7 @@ near contract call-function as-transaction \
 
 The transaction output will include the latest MPC Docker image hash.
 
-**Note:** - the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_launcher/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including  whitespaces).
+**Note:** - the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_launcher/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including whitespaces).
 
 ### Required Ports and Port Collisions
 
@@ -790,16 +790,48 @@ When a new MPC node is released, the release will along with precompiled binarie
 
 ### MPC node Image/code inspection
 
-The following steps allow you to inspect the code that was used to build the docker image: Assuming you want to vote for a docker image hash of Sha256:xyz…
+The following steps allow you to inspect the code that was used to build the docker image.
+Let's assume you want to vote for a docker image with tag
+[mpc-node-tee:main-5bac07e](https://hub.docker.com/layers/nearone/mpc-node-tee/main-5bac07e/images/sha256-62800a435ef81fad072379e9006cdb51ca83bd7024d7968db75bfa8ecdf64717).
 
-1. Download the MPC code from \<TBD\>  [#907](https://github.com/near/mpc/issues/907)
-2. Compile it using the reproduce build script \<TBD\> [#907](https://github.com/near/mpc/issues/907)
-[#693](https://github.com/near/mpc/issues/693)
-[#635](https://github.com/near/mpc/issues/635)
+* First, we need to obtain the image hash, which is not the same as the manifest
+  hash shown in DockerHub. For that you need to install `docker` and `jq`, and
+  have the `docker` daemon running.
 
-3. Dockerize it using the script \<TBD\>   [#907](https://github.com/near/mpc/issues/907)
-4. Make sure the image hash you get is Sha256:xyz…
-5. Do your own self do diligence on the code/binary
+```bash
+$ docker pull nearone/mpc-node-tee:main-5bac07e
+$ docker inspect nearone/mpc-node-tee:main-5bac07e | jq .[0].Id
+"sha256:971fb1eddff6d41fc6b8141fc03dce16000c07593e42a41b009da0255f4b007a"
+```
+
+* Download the MPC code from this repository:
+
+```bash
+git clone https://github.com/near/mpc
+cd mpc/
+```
+
+* Compile it using the reproduce build script. For this you need to install
+  `repro-env` and `docker-buildx`, and have the `docker` daemon
+  running.
+
+```bash
+$ ./deployment/build-images.sh
+...
+commit hash: 5bac07e013f3a1e6a373bc706f313aecbfce81d9
+SOURCE_DATE_EPOCH used: 1758011128
+node binary hash: 1e2603063f3d4300be0e5d19c9d11f7fe47cf5d7fb7761c4805827512c96ebea
+node tee docker image hash: "sha256:971fb1eddff6d41fc6b8141fc03dce16000c07593e42a41b009da0255f4b007a"
+launcher docker image hash: "sha256:ca56b630fed5040b2508eefb9622306106144ab6221fca0fd9c9fda205918c60"
+```
+
+Note that the `node tee docker image hash` must coincide with the one obtained
+before. In the same way, the launcher images published in
+[mpc-launcher tags](https://hub.docker.com/r/nearone/mpc-launcher/tags) can be
+verified. The one shown above corresponds to
+[mpc-launcher:main-5bac07e](https://hub.docker.com/layers/nearone/mpc-launcher/main-5bac07e/images/sha256-b36f9672aecfe17bf1565786e8c51d493f000dfcc56b55007bf2ac5e11ba7ee6)
+
+* Do your own self do diligence on the code/binary
 
 ### **Voting for the Image**
 

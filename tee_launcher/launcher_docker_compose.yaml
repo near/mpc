@@ -2,14 +2,14 @@ version: '3.8'
 
 services:
   launcher:
-    image: barakeinavnear/launcher@sha256:3a27e5157281d4feea649ba27b2c814129650a874fe29e23df29bc0f1ff56fad
+    image: nearone/mpc-launcher:main-5bac07e@sha256:b36f9672aecfe17bf1565786e8c51d493f000dfcc56b55007bf2ac5e11ba7ee6
 
  # isuse #531: TODO (security): Replace with a specific image digest
     container_name: launcher
 
     environment:
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:c22901e52cfa91b2e71eb8694ac9558065c6e3b13783d9e3d36b792d93ce153b
+      - DEFAULT_IMAGE_DIGEST=sha256:971fb1eddff6d41fc6b8141fc03dce16000c07593e42a41b009da0255f4b007a
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
