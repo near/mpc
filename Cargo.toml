@@ -109,7 +109,7 @@ rustls = { version = "0.23.31", default-features = false, features = ["std"] }
 reqwest = { version = "0.12.9", features = ["multipart", "json"] }
 rstest = "0.25.0"
 schemars = "0.8.22" # This version needs to be exactly the same as in `near_sdk::schemars`
-serde = { version = "1.0.214", features = ["derive"] }
+serde = { version = "=1.0.219", features = ["derive"] }
 serde_json = "1.0.132"
 serde_with = "3.14.0"
 serde_yaml = "0.9.34"
